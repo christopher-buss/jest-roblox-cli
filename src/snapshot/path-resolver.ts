@@ -39,10 +39,14 @@ export function createSnapshotPathResolver(
 				const suffix = normalized.slice(prefix.length);
 				const result = `${basePath}${suffix}`;
 
-				const mapping = findMapping(result, tsconfigMappings);
+				const mapping = findMapping({ filePath: result, mappings: tsconfigMappings });
 				if (mapping !== undefined) {
 					return {
-						filePath: replacePrefix(result, mapping.outDir, mapping.rootDir),
+						filePath: replacePrefix({
+							filePath: result,
+							from: mapping.outDir,
+							to: mapping.rootDir,
+						}),
 						mapping,
 					};
 				}

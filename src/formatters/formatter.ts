@@ -42,6 +42,24 @@ export { formatSourceSnippet, parseSourceLocation } from "./snippets.ts";
 export { formatProjectBadge } from "./styles.ts";
 export { formatFailedTestsHeader, formatRunHeader, formatTestSummary } from "./summary.ts";
 
+export interface FormatResultOptions {
+	options: FormatOptions;
+	result: JestResult;
+	timing: TimingResult;
+}
+
+export interface FormatMultiProjectResultOptions {
+	options: FormatOptions;
+	projects: Array<FormatterProjectEntry>;
+	timing: TimingResult;
+}
+
+interface ReportPhaseOptions {
+	options: FormatOptions;
+	result: JestResult;
+	styles: Styles;
+}
+
 interface ProjectHeaderOptions {
 	displayColor?: string | undefined;
 	displayName: string;
@@ -70,15 +88,11 @@ interface ProjectSectionOptions {
 // with no project identity, and Game Output is per-project. Every runtime
 // project result reaches the block through formatProjectSection; the only
 // production path left on this function is the typecheck-only report.
-export function formatResult(
-	result: JestResult,
-	timing: TimingResult,
-	options: FormatOptions,
-): string {
+export function formatResult({ options, result, timing }: FormatResultOptions): string {
 	const styles = createStyles(options.color, options.slowTestThreshold);
 	// The run header is emitted at the start of the run (see run/run-header.ts);
 	// keep a leading blank line here so results stay visually separated.
-	const lines: Array<string> = ["", ...formatFileSummaries(result, options, styles)];
+	const lines: Array<string> = ["", ...formatFileSummaries({ options, result, styles })];
 
 	const totalDetailedFailures = countDetailedFailures(result);
 	if (totalDetailedFailures > 0) {
@@ -89,11 +103,11 @@ export function formatResult(
 		lines.push(
 			"",
 			formatFailedTestsHeader(totalDetailedFailures, styles),
-			...formatDetailedFailures(result, options, styles, failureCtx),
+			...formatDetailedFailures({ failureCtx, options, result, styles }),
 		);
 	}
 
-	lines.push(...formatSummaryAndHints(result, timing, options, styles));
+	lines.push(...formatSummaryAndHints({ options, result, styles, timing }));
 
 	return lines.join("\n");
 }
@@ -120,7 +134,7 @@ export function formatProjectHeader({
 	const duration = stats.durationMs > 0 ? ` - ${stats.durationMs}ms` : "";
 	const meta = resolved.dim(`(${stats.totalTests} tests${duration})`);
 	const fileStats = parts.join(" | ");
-	const badge = formatProjectBadge(displayName, useColor, displayColor);
+	const badge = formatProjectBadge({ displayColor, displayName, useColor });
 
 	return `${badge}  ${fileStats} ${meta}`;
 }
@@ -143,8 +157,8 @@ export function formatProjectSection({
 			styles: resolved,
 			useColor: options.color,
 		}),
-		...formatFileSummaries(result, options, resolved),
-		...formatDetailedFailures(result, options, resolved, failureCtx),
+		...formatFileSummaries({ options, result, styles: resolved }),
+		...formatDetailedFailures({ failureCtx, options, result, styles: resolved }),
 	];
 
 	// Only a failing project earns its Game Output inline: on a pass the
@@ -156,11 +170,11 @@ export function formatProjectSection({
 	return lines.join("\n");
 }
 
-export function formatMultiProjectResult(
-	projects: Array<FormatterProjectEntry>,
-	timing: TimingResult,
-	options: FormatOptions,
-): string {
+export function formatMultiProjectResult({
+	options,
+	projects,
+	timing,
+}: FormatMultiProjectResultOptions): string {
 	const styles = createStyles(options.color, options.slowTestThreshold);
 
 	// One counter threaded through every project so the `[n/total]` footers run
@@ -187,7 +201,7 @@ export function formatMultiProjectResult(
 	const lines: Array<string> = ["", sections.join("\n\n")];
 
 	const mergedResult = mergeJestResults(projects.map((project) => project.result));
-	lines.push(...formatSummaryAndHints(mergedResult, timing, options, styles));
+	lines.push(...formatSummaryAndHints({ options, result: mergedResult, styles, timing }));
 
 	return lines.join("\n");
 }
@@ -229,11 +243,7 @@ export function formatTypecheckReport(
 /**
  * Phase 1 of a report: one summary block per test file, minus filtered files.
  */
-function formatFileSummaries(
-	result: JestResult,
-	options: FormatOptions,
-	styles: Styles,
-): Array<string> {
+function formatFileSummaries({ options, result, styles }: ReportPhaseOptions): Array<string> {
 	const lines: Array<string> = [];
 
 	for (const file of result.testResults) {
@@ -241,7 +251,7 @@ function formatFileSummaries(
 			continue;
 		}
 
-		lines.push(formatFileSummary(file, options, styles));
+		lines.push(formatFileSummary({ file, options, styles }));
 	}
 
 	return lines;
@@ -256,47 +266,52 @@ function countDetailedFailures(result: JestResult): number {
 }
 
 /** Phase 2 of a report: the expanded failure blocks, in file order. */
-function formatDetailedFailures(
-	result: JestResult,
-	options: FormatOptions,
-	styles: Styles,
-	failureCtx: FailureContext,
-): Array<string> {
+function formatDetailedFailures({
+	failureCtx,
+	options,
+	result,
+	styles,
+}: ReportPhaseOptions & { failureCtx: FailureContext }): Array<string> {
 	const lines: Array<string> = [];
 	const execErrors = result.testResults.filter(hasExecError);
 
 	for (const file of result.testResults) {
-		const failures = formatFileFailures(file, options, styles, failureCtx);
+		const failures = formatFileFailures({ failureCtx, file, options, styles });
 		if (failures !== "") {
 			lines.push(failures);
 		}
 	}
 
 	for (const file of execErrors) {
-		lines.push(formatExecErrorDetail(file, styles, failureCtx, options.sourceMapper));
+		lines.push(
+			formatExecErrorDetail({ failureCtx, file, sourceMapper: options.sourceMapper, styles }),
+		);
 	}
 
 	return lines;
 }
 
 /** Phase 3 of a report: the totals block, plus the hints a failed run earns. */
-function formatSummaryAndHints(
-	result: JestResult,
-	timing: TimingResult,
-	options: FormatOptions,
-	styles: Styles,
-): Array<string> {
+function formatSummaryAndHints({
+	options,
+	result,
+	styles,
+	timing,
+}: ReportPhaseOptions & { timing: TimingResult }): Array<string> {
 	const lines: Array<string> = [
 		"",
-		formatTestSummary(result, timing, styles, {
+		formatTestSummary({
 			bail: options.bail,
+			result,
 			snapshotWriteFailures: options.snapshotWriteFailures,
+			styles,
+			timing,
 			typeErrors: options.typeErrors,
 		}),
 	];
 
 	if (!result.success) {
-		const hints = formatLogHints(options, styles, result.snapshot);
+		const hints = formatLogHints({ options, snapshot: result.snapshot, styles });
 		if (hints !== "") {
 			lines.push("", hints);
 		}

@@ -36,6 +36,13 @@ interface GlobOptions {
 	fileSystem?: FileSystem;
 }
 
+interface WalkDirectoryOptions {
+	readonly baseDirectory: string;
+	readonly directoryPath: string;
+	readonly fileSystem: FileSystem;
+	readonly keepBasename: ((basename: string) => boolean) | undefined;
+}
+
 /**
  * A cache for the patterns given, or for any pattern when none are.
  *
@@ -67,7 +74,12 @@ export function globSync(pattern: string, options: GlobOptions = {}): Array<stri
 		// "keep everything", which this pattern's own leaf must not narrow
 		// while later patterns are still to read the same walk.
 		const leaves = cache === undefined ? leafOf(pattern) : cache.leaves;
-		allFiles = walkDirectory(fileSystem, cwd, cwd, compileLeafMatcher(leaves));
+		allFiles = walkDirectory({
+			baseDirectory: cwd,
+			directoryPath: cwd,
+			fileSystem,
+			keepBasename: compileLeafMatcher(leaves),
+		});
 		cache?.walks.set(cwd, allFiles);
 	}
 
@@ -174,12 +186,12 @@ function compileLeafMatcher(
  * files a caller asked about rather than to the size of the checkout, build
  * output included.
  */
-function walkDirectory(
-	fileSystem: FileSystem,
-	directoryPath: string,
-	baseDirectory: string,
-	keepBasename?: (basename: string) => boolean,
-): Array<string> {
+function walkDirectory({
+	baseDirectory,
+	directoryPath,
+	fileSystem,
+	keepBasename,
+}: WalkDirectoryOptions): Array<string> {
 	const results: Array<string> = [];
 
 	try {
@@ -190,7 +202,12 @@ function walkDirectory(
 				if (!entry.name.startsWith(".") && entry.name !== "node_modules") {
 					const fullPath = path.join(directoryPath, entry.name);
 					results.push(
-						...walkDirectory(fileSystem, fullPath, baseDirectory, keepBasename),
+						...walkDirectory({
+							baseDirectory,
+							directoryPath: fullPath,
+							fileSystem,
+							keepBasename,
+						}),
 					);
 				}
 			} else if (keepBasename?.(entry.name) !== false) {

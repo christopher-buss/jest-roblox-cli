@@ -78,12 +78,12 @@ describe(writeSnapshots, () => {
 
 		seedProject(fileSystem);
 
-		const counts = writeSnapshots(
-			{ "ReplicatedStorage/Button.spec.snap.luau": "snapshot body" },
-			config(),
-			[{ outDir: "out", rootDir: "src" }],
+		const counts = writeSnapshots({
+			config: config(),
 			fileSystem,
-		);
+			snapshotWrites: { "ReplicatedStorage/Button.spec.snap.luau": "snapshot body" },
+			tsconfigMappings: [{ outDir: "out", rootDir: "src" }],
+		});
 
 		expect(counts).toStrictEqual({ attempted: 1, failed: 0, written: 1 });
 
@@ -104,15 +104,15 @@ describe(writeSnapshots, () => {
 
 		const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
 
-		const counts = writeSnapshots(
-			{
+		const counts = writeSnapshots({
+			config: config({ silent: false }),
+			fileSystem,
+			snapshotWrites: {
 				"ReplicatedStorage/valid.snap.luau": "valid",
 				"Workspace/missing.snap.luau": "missing",
 			},
-			config({ silent: false }),
-			[],
-			fileSystem,
-		);
+			tsconfigMappings: [],
+		});
 
 		expect(counts).toStrictEqual({ attempted: 2, failed: 1, written: 1 });
 		expect(stderr).toHaveBeenCalledWith("Wrote 1 of 2 snapshot files\n");
@@ -127,24 +127,24 @@ describe(writeSnapshots, () => {
 
 		const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
 
-		writeSnapshots(
-			{ "ReplicatedStorage/one.snap.luau": "one" },
-			config({ silent: false }),
-			[],
+		writeSnapshots({
+			config: config({ silent: false }),
 			fileSystem,
-		);
+			snapshotWrites: { "ReplicatedStorage/one.snap.luau": "one" },
+			tsconfigMappings: [],
+		});
 
 		expect(stderr).toHaveBeenLastCalledWith("Wrote 1 snapshot file\n");
 
-		writeSnapshots(
-			{
+		writeSnapshots({
+			config: config({ silent: false }),
+			fileSystem,
+			snapshotWrites: {
 				"ReplicatedStorage/one.snap.luau": "one",
 				"ReplicatedStorage/two.snap.luau": "two",
 			},
-			config({ silent: false }),
-			[],
-			fileSystem,
-		);
+			tsconfigMappings: [],
+		});
 
 		expect(stderr).toHaveBeenLastCalledWith("Wrote 2 snapshot files\n");
 	});
@@ -159,12 +159,12 @@ describe(writeSnapshots, () => {
 		const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
 
 		expect(
-			writeSnapshots(
-				{ "ReplicatedStorage/one.snap.luau": "one" },
-				config({ rojoProject: "missing.project.json" }),
-				[],
+			writeSnapshots({
+				config: config({ rojoProject: "missing.project.json" }),
 				fileSystem,
-			),
+				snapshotWrites: { "ReplicatedStorage/one.snap.luau": "one" },
+				tsconfigMappings: [],
+			}),
 		).toStrictEqual({ attempted: 1, failed: 1, written: 0 });
 		expect(stderr).toHaveBeenCalledWith(
 			"Warning: Cannot write snapshots - no rojo project found\n",
@@ -181,12 +181,12 @@ describe(writeSnapshots, () => {
 		const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
 
 		expect(
-			writeSnapshots(
-				{ "Workspace/missing.snap.luau": "missing" },
-				config({ silent: false }),
-				[],
+			writeSnapshots({
+				config: config({ silent: false }),
 				fileSystem,
-			),
+				snapshotWrites: { "Workspace/missing.snap.luau": "missing" },
+				tsconfigMappings: [],
+			}),
 		).toStrictEqual({ attempted: 1, failed: 1, written: 0 });
 		expect(stderr).not.toHaveBeenCalledWith(expect.stringMatching(/^Wrote /));
 	});
@@ -203,7 +203,12 @@ describe(writeSnapshots, () => {
 		const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
 
 		expect(
-			writeSnapshots({ "ReplicatedStorage/one.snap.luau": "one" }, config(), [], fileSystem),
+			writeSnapshots({
+				config: config(),
+				fileSystem,
+				snapshotWrites: { "ReplicatedStorage/one.snap.luau": "one" },
+				tsconfigMappings: [],
+			}),
 		).toStrictEqual({ attempted: 1, failed: 1, written: 0 });
 
 		const warning = String(stderr.mock.calls[0]![0]);
@@ -224,7 +229,12 @@ describe(writeSnapshots, () => {
 		});
 
 		expect(
-			writeSnapshots({ "ReplicatedStorage/one.snap.luau": "one" }, config(), [], fileSystem),
+			writeSnapshots({
+				config: config(),
+				fileSystem,
+				snapshotWrites: { "ReplicatedStorage/one.snap.luau": "one" },
+				tsconfigMappings: [],
+			}),
 		).toStrictEqual({ attempted: 1, failed: 1, written: 0 });
 		expect(stderr).toHaveBeenCalledWith(
 			"Warning: Failed to write snapshot ReplicatedStorage/one.snap.luau: Error: disk full\n",

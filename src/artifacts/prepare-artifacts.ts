@@ -210,7 +210,7 @@ async function produceArtifactsAsync({
 		collectCoverage: true,
 		collectPerTestCoverage: true,
 	});
-	const result = await runSingleOrMultiAsync(cli, merged, timing, entry);
+	const result = await runSingleOrMultiAsync({ cli, rootConfig: merged, timing, ...entry });
 	const artifacts = requireCoverageArtifacts(result.coverageArtifacts);
 	const coverageManifest = requireCoverageManifest(COVERAGE_MANIFEST_PATH, fileSystem);
 	const cleanPlace = await buildCleanPlaceAsync({

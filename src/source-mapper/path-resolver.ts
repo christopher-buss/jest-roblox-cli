@@ -52,7 +52,7 @@ export function createPathResolver(
 				const result =
 					suffix === "" ? basePath : `${basePath}/${convertToFilePath(suffix)}`;
 
-				const mapping = findMapping(result, tsconfigMappings);
+				const mapping = findMapping({ filePath: result, mappings: tsconfigMappings });
 				if (mapping !== undefined) {
 					return { filePath: mapTypeScriptPath(result, mapping), mapping };
 				}
@@ -66,7 +66,7 @@ export function createPathResolver(
 }
 
 function mapTypeScriptPath(filePath: string, mapping: TsconfigMapping): string {
-	const mapped = replacePrefix(filePath, mapping.outDir, mapping.rootDir)
+	const mapped = replacePrefix({ filePath, from: mapping.outDir, to: mapping.rootDir })
 		.replace(LEADING_DOT_SLASH, "")
 		.replace(LUA_EXTENSION, "");
 	return luauInitToIndex(`${mapped}.ts`);

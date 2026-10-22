@@ -31,8 +31,8 @@ describe(formatLogHints, () => {
 		};
 
 		expect(
-			formatLogHints(
-				{
+			formatLogHints({
+				options: {
 					color: false,
 					gameOutput: "game.log",
 					outputFile: "jest.log",
@@ -40,9 +40,9 @@ describe(formatLogHints, () => {
 					verbose: false,
 					version: "1.0.0",
 				},
-				createTaggedStyles(),
 				snapshot,
-			),
+				styles: createTaggedStyles(),
+			}),
 		).toBe(
 			[
 				"<dim>  Inspect your code changes or rerun with `-u` to update snapshots.</dim>",
@@ -56,11 +56,11 @@ describe(formatLogHints, () => {
 		expect.assertions(1);
 
 		expect(
-			formatLogHints(
-				{ color: false, rootDir: "/repo", verbose: false, version: "1.0.0" },
-				createTaggedStyles(),
-				{ added: 0, matched: 1, total: 1, unmatched: 0, updated: 0 },
-			),
+			formatLogHints({
+				options: { color: false, rootDir: "/repo", verbose: false, version: "1.0.0" },
+				snapshot: { added: 0, matched: 1, total: 1, unmatched: 0, updated: 0 },
+				styles: createTaggedStyles(),
+			}),
 		).toBe("");
 	});
 });
@@ -100,9 +100,12 @@ describe(formatTestSummary, () => {
 		};
 
 		expect(
-			formatTestSummary(result, timing, createTaggedStyles(), {
+			formatTestSummary({
 				bail: { notRun: 2, ran: 1 },
+				result,
 				snapshotWriteFailures: 2,
+				styles: createTaggedStyles(),
+				timing,
 				typeErrors: 1,
 			}),
 		).toMatchSnapshot();

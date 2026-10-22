@@ -45,7 +45,7 @@ describe(mapWithLimitAsync, () => {
 
 		const gate = createGate();
 		const items = ["a", "b", "c", "d", "e"];
-		const pending = mapWithLimitAsync(items, 2, gate.track);
+		const pending = mapWithLimitAsync({ func: gate.track, items, limit: 2 });
 		await settleAsync();
 
 		expect(gate.started).toStrictEqual([0, 1]);
@@ -68,7 +68,7 @@ describe(mapWithLimitAsync, () => {
 		expect.assertions(1);
 
 		const gate = createGate();
-		const pending = mapWithLimitAsync(["a", "b", "c"], 3, gate.track);
+		const pending = mapWithLimitAsync({ func: gate.track, items: ["a", "b", "c"], limit: 3 });
 		await settleAsync();
 
 		// Backwards, so the input order cannot come from the settle order.
@@ -83,7 +83,7 @@ describe(mapWithLimitAsync, () => {
 		expect.assertions(2);
 
 		const gate = createGate();
-		const pending = mapWithLimitAsync(["a", "b"], 0, gate.track);
+		const pending = mapWithLimitAsync({ func: gate.track, items: ["a", "b"], limit: 0 });
 		await settleAsync();
 
 		expect(gate.started).toStrictEqual([0]);
@@ -101,7 +101,7 @@ describe(mapWithLimitAsync, () => {
 		expect.assertions(2);
 
 		const gate = createGate();
-		const pending = mapWithLimitAsync(["a"], 32, gate.track);
+		const pending = mapWithLimitAsync({ func: gate.track, items: ["a"], limit: 32 });
 		await settleAsync();
 
 		expect(gate.started).toStrictEqual([0]);
@@ -116,7 +116,9 @@ describe(mapWithLimitAsync, () => {
 
 		const gate = createGate();
 
-		await expect(mapWithLimitAsync([], 4, gate.track)).resolves.toStrictEqual([]);
+		await expect(
+			mapWithLimitAsync({ func: gate.track, items: [], limit: 4 }),
+		).resolves.toStrictEqual([]);
 		expect(gate.started).toStrictEqual([]);
 	});
 });

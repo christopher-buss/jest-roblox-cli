@@ -421,11 +421,11 @@ function narrowProjectFilter({
 			mountBase: packageDirectory,
 			mounts: project.rojoMounts,
 			rootDirectory: packageDirectory,
-			tsconfigMappings: resolveAllTsconfigMappings(
-				packageDirectory,
-				tsconfigCache,
+			tsconfigMappings: resolveAllTsconfigMappings({
+				cache: tsconfigCache,
 				fileSystem,
-			),
+				projectRoot: packageDirectory,
+			}),
 		}),
 	});
 }

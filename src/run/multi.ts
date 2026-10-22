@@ -38,12 +38,17 @@ export interface MultiRunOptions extends RunOptions {
 	rawProjects: Array<ProjectEntry>;
 }
 
+export interface ResolvedProjectsRunInput extends ResolvedRunInput {
+	allProjects: Array<ResolvedProjectConfig>;
+	rootConfig: ResolvedConfig;
+}
+
 /**
  * The run-wide inputs discovery and execution share, with the seam already
  * settled — resolved once at the entry point rather than re-defaulted at each
  * layer, so no stage below can reach the real disk by omitting it.
  */
-export interface ResolvedRunInput {
+interface ResolvedRunInput {
 	cli: RunOptions["cli"];
 	fileSystem: FileSystem;
 	seams: RunSeams;
@@ -53,6 +58,13 @@ export interface ResolvedRunInput {
 interface SelectedProjects {
 	filesByProject?: ReadonlyMap<string, Array<string>> | undefined;
 	projects: Array<ResolvedProjectConfig>;
+}
+
+interface SelectProjectsOptions {
+	allProjects: Array<ResolvedProjectConfig>;
+	cliFiles: Array<string> | undefined;
+	projectNames: Array<string> | undefined;
+	rootDirectory: string;
 }
 
 export function loadRojoTree(
@@ -78,12 +90,15 @@ export function loadRojoTree(
  * identical per-root `jest.config` stub injection, place rebuild, coverage, and
  * result shaping.
  */
-export async function runResolvedProjectsAsync(
-	allProjects: Array<ResolvedProjectConfig>,
-	rootConfig: ResolvedConfig,
-	{ cli, fileSystem, seams, timing }: ResolvedRunInput,
-): Promise<MultiRunResult> {
-	const discovery = beginRun(allProjects, rootConfig, { cli, fileSystem, seams, timing });
+export async function runResolvedProjectsAsync({
+	allProjects,
+	cli,
+	fileSystem,
+	rootConfig,
+	seams,
+	timing,
+}: ResolvedProjectsRunInput): Promise<MultiRunResult> {
+	const discovery = beginRun({ allProjects, cli, fileSystem, rootConfig, seams, timing });
 	if (isTypecheckOnlyRun(discovery)) {
 		return runMultiTypecheckOnlyAsync(discovery);
 	}
@@ -130,7 +145,7 @@ export async function runMultiProjectAsync(options: MultiRunOptions): Promise<Mu
 		});
 	});
 
-	return runResolvedProjectsAsync(allProjects, rootConfig, { cli, fileSystem, seams, timing });
+	return runResolvedProjectsAsync({ allProjects, cli, fileSystem, rootConfig, seams, timing });
 }
 
 /**
@@ -216,12 +231,12 @@ function filterProjectsByName(
 	return projects.filter((project) => nameSet.has(project.displayName));
 }
 
-function selectProjects(
-	allProjects: Array<ResolvedProjectConfig>,
-	projectNames: Array<string> | undefined,
-	cliFiles: Array<string> | undefined,
-	rootDirectory: string,
-): SelectedProjects {
+function selectProjects({
+	allProjects,
+	cliFiles,
+	projectNames,
+	rootDirectory,
+}: SelectProjectsOptions): SelectedProjects {
 	if (projectNames !== undefined) {
 		return { projects: filterProjectsByName(allProjects, projectNames) };
 	}
@@ -247,11 +262,12 @@ function selectProjects(
  * Resolve the run's shared discovery inputs: the CLI typecheck layer, the
  * setup-file rewrite, and the `--project`/positional project selection.
  */
-function beginRun(
-	allProjects: Array<ResolvedProjectConfig>,
-	rootConfig: ResolvedConfig,
-	{ cli, fileSystem, seams, timing }: ResolvedRunInput,
-): RunDiscovery {
+function beginRun({
+	allProjects,
+	cli,
+	rootConfig,
+	...run
+}: ResolvedProjectsRunInput): RunDiscovery {
 	const cliTypecheck: TypecheckCliOptions = {
 		enabled: cli.typecheck,
 		only: cli.typecheckOnly,
@@ -261,25 +277,28 @@ function beginRun(
 	// Rewrites setup specifiers to DataModel paths in place. Must precede
 	// staging: `toBuildManifestProjects` bakes the resolved paths into the Build
 	// Manifest the coverage place is published with.
-	timing.profile("resolveSetupFilePaths", () => {
+	run.timing.profile("resolveSetupFilePaths", () => {
 		resolveAllSetupFilePaths(
 			allProjects.map((project) => project.config),
-			seams.createSetupResolver,
+			run.seams.createSetupResolver,
 		);
 	});
 
-	const { filesByProject, projects } = timing.profile("selectProjects", () => {
-		return selectProjects(allProjects, cli.project, cli.files, rootConfig.rootDir);
+	const { filesByProject, projects } = run.timing.profile("selectProjects", () => {
+		return selectProjects({
+			allProjects,
+			cliFiles: cli.files,
+			projectNames: cli.project,
+			rootDirectory: rootConfig.rootDir,
+		});
 	});
 	return {
+		...run,
 		cliFiles: cli.files,
 		cliTypecheck,
 		filesByProject,
-		fileSystem,
 		projects,
 		rootConfig,
-		seams,
-		timing,
 	};
 }
 
@@ -333,12 +352,12 @@ async function runMultiTypecheckOnlyAsync(discovery: RunDiscovery): Promise<Mult
 		return emptyMultiResult(plan.emptiness);
 	}
 
-	const typecheck = await runTypecheckPassAsync(
-		plan.typeTestEntries,
-		discovery.rootConfig,
-		discovery.cliTypecheck,
-		discovery.seams.runTypecheck,
-	);
+	const typecheck = await runTypecheckPassAsync({
+		cliTypecheck: discovery.cliTypecheck,
+		entries: plan.typeTestEntries,
+		rootConfig: discovery.rootConfig,
+		runTypecheck: discovery.seams.runTypecheck,
+	});
 	discovery.timing.record("runTypecheck", typecheck.elapsedMs);
 	return { ...emptyMultiResult({}), typecheckResult: typecheck.result };
 }

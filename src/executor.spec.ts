@@ -2594,12 +2594,11 @@ describe(resolveAllTsconfigMappings, () => {
 			JSON.stringify({ compilerOptions: { outDir: "out-test", rootDir: "src" } }),
 		);
 
-		const result = resolveAllTsconfigMappings(
-			temporaryDirectory,
-			undefined,
+		const result = resolveAllTsconfigMappings({
 			fileSystem,
-			readingVolume(fileSystem),
-		);
+			projectRoot: temporaryDirectory,
+			tsconfigReader: readingVolume(fileSystem),
+		});
 
 		expect(result).toHaveLength(2);
 		expect(result).toContainEqual({ outDir: "out-test", rootDir: "src" });
@@ -2616,12 +2615,11 @@ describe(resolveAllTsconfigMappings, () => {
 			JSON.stringify({ compilerOptions: { outDir: "out", rootDir: "src" } }),
 		);
 
-		const result = resolveAllTsconfigMappings(
-			temporaryDirectory,
-			undefined,
+		const result = resolveAllTsconfigMappings({
 			fileSystem,
-			readingVolume(fileSystem),
-		);
+			projectRoot: temporaryDirectory,
+			tsconfigReader: readingVolume(fileSystem),
+		});
 
 		expect(result).toStrictEqual([{ outDir: "out", rootDir: "src" }]);
 	});
@@ -2633,12 +2631,11 @@ describe(resolveAllTsconfigMappings, () => {
 
 		const temporaryDirectory = createTemporaryDirectory(volume, "tsconfig-none-");
 
-		const result = resolveAllTsconfigMappings(
-			temporaryDirectory,
-			undefined,
+		const result = resolveAllTsconfigMappings({
 			fileSystem,
-			readingVolume(fileSystem),
-		);
+			projectRoot: temporaryDirectory,
+			tsconfigReader: readingVolume(fileSystem),
+		});
 
 		expect(result).toBeEmpty();
 	});
@@ -2654,12 +2651,11 @@ describe(resolveAllTsconfigMappings, () => {
 			JSON.stringify({ include: ["src/**/*"] }),
 		);
 
-		const result = resolveAllTsconfigMappings(
-			temporaryDirectory,
-			undefined,
+		const result = resolveAllTsconfigMappings({
 			fileSystem,
-			readingVolume(fileSystem),
-		);
+			projectRoot: temporaryDirectory,
+			tsconfigReader: readingVolume(fileSystem),
+		});
 
 		expect(result).toBeEmpty();
 	});
@@ -2669,12 +2665,11 @@ describe(resolveAllTsconfigMappings, () => {
 
 		const { fileSystem } = memoryFileSystem();
 
-		const result = resolveAllTsconfigMappings(
-			"/nonexistent/path/xyz",
-			undefined,
+		const result = resolveAllTsconfigMappings({
 			fileSystem,
-			readingVolume(fileSystem),
-		);
+			projectRoot: "/nonexistent/path/xyz",
+			tsconfigReader: readingVolume(fileSystem),
+		});
 
 		expect(result).toBeEmpty();
 	});
@@ -2694,19 +2689,19 @@ describe(resolveAllTsconfigMappings, () => {
 		);
 		const cache = createTsconfigMappingCache();
 
-		const first = resolveAllTsconfigMappings(
-			temporaryDirectory,
+		const first = resolveAllTsconfigMappings({
 			cache,
 			fileSystem,
-			readingVolume(fileSystem),
-		);
+			projectRoot: temporaryDirectory,
+			tsconfigReader: readingVolume(fileSystem),
+		});
 		fileSystem.rmSync(tsconfigPath);
-		const second = resolveAllTsconfigMappings(
-			temporaryDirectory,
+		const second = resolveAllTsconfigMappings({
 			cache,
 			fileSystem,
-			readingVolume(fileSystem),
-		);
+			projectRoot: temporaryDirectory,
+			tsconfigReader: readingVolume(fileSystem),
+		});
 
 		expect(first).toStrictEqual([{ outDir: "out", rootDir: "src" }]);
 		expect(second).toStrictEqual(first);
@@ -2727,12 +2722,11 @@ describe(resolveAllTsconfigMappings, () => {
 			JSON.stringify({ compilerOptions: { outDir: "out", rootDir: "src" } }),
 		);
 
-		const result = resolveAllTsconfigMappings(
-			temporaryDirectory,
-			undefined,
+		const result = resolveAllTsconfigMappings({
 			fileSystem,
-			readingVolume(fileSystem),
-		);
+			projectRoot: temporaryDirectory,
+			tsconfigReader: readingVolume(fileSystem),
+		});
 
 		expect(result).toStrictEqual([{ outDir: "out", rootDir: "src" }]);
 	});
@@ -2745,12 +2739,11 @@ describe(resolveAllTsconfigMappings, () => {
 		const temporaryDirectory = createTemporaryDirectory(volume, "tsconfig-bad-");
 		fileSystem.writeFileSync(path.join(temporaryDirectory, "tsconfig.json"), "not json {{{");
 
-		const result = resolveAllTsconfigMappings(
-			temporaryDirectory,
-			undefined,
+		const result = resolveAllTsconfigMappings({
 			fileSystem,
-			readingVolume(fileSystem),
-		);
+			projectRoot: temporaryDirectory,
+			tsconfigReader: readingVolume(fileSystem),
+		});
 
 		expect(result).toBeEmpty();
 	});

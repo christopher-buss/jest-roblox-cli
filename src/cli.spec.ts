@@ -756,7 +756,7 @@ describe(runAsync, () => {
 
 		const spies = setupOutputSpies();
 		const cli = setupDefaults();
-		cli.runJestRoblox.mockImplementation((_options, _config, progress) => {
+		cli.runJestRoblox.mockImplementation(({ progress }) => {
 			assert(progress !== undefined);
 			progress.reveal({ color: false });
 			progress.begin("boot", "version 88");
@@ -1442,10 +1442,12 @@ describe(main, () => {
 
 		expect(process.exitCode).toBe(0);
 		expect(cli.runJestRoblox).toHaveBeenCalledWith(
-			expect.objectContaining({ files: undefined, parallel: 2 }),
-			expect.any(Object),
-			expect.any(Object),
-			{ fileSystem: cli.fileSystem },
+			expect.objectContaining<Record<string, unknown>>({
+				cli: expect.objectContaining({ files: undefined, parallel: 2 }),
+				config: expect.any(Object),
+				fileSystem: cli.fileSystem,
+				progress: expect.any(Object),
+			}),
 		);
 	});
 });
@@ -1602,10 +1604,12 @@ describe("runInner orchestration", () => {
 		await runAsync(["--verbose"], cli.dependencies);
 
 		expect(cli.runJestRoblox).toHaveBeenCalledExactlyOnceWith(
-			expect.objectContaining({ verbose: true }),
-			expect.anything(),
-			expect.anything(),
-			{ fileSystem: cli.fileSystem },
+			expect.objectContaining<Record<string, unknown>>({
+				cli: expect.objectContaining({ verbose: true }),
+				config: expect.anything(),
+				fileSystem: cli.fileSystem,
+				progress: expect.anything(),
+			}),
 		);
 	});
 
@@ -1632,9 +1636,12 @@ describe("runInner orchestration", () => {
 		const code = await runAsync([], cli.dependencies);
 
 		expect(code).toBe(0);
-		expect(cli.outputMultiResult).toHaveBeenCalledWith(expect.any(Object), multi, {
-			fileSystem: cli.fileSystem,
-		});
+		expect(cli.outputMultiResult).toHaveBeenCalledWith(
+			expect.objectContaining({
+				dependencies: { fileSystem: cli.fileSystem },
+				result: multi,
+			}),
+		);
 	});
 
 	it("should dispatch WorkspaceRunResult to outputMultiResult", async () => {
@@ -1648,9 +1655,12 @@ describe("runInner orchestration", () => {
 		const code = await runAsync([], cli.dependencies);
 
 		expect(code).toBe(0);
-		expect(cli.outputMultiResult).toHaveBeenCalledWith(expect.any(Object), workspace, {
-			fileSystem: cli.fileSystem,
-		});
+		expect(cli.outputMultiResult).toHaveBeenCalledWith(
+			expect.objectContaining({
+				dependencies: { fileSystem: cli.fileSystem },
+				result: workspace,
+			}),
+		);
 	});
 
 	it("should write validationMessage to stderr and return validationExitCode", async () => {
@@ -1725,9 +1735,12 @@ describe("runInner orchestration", () => {
 		const code = await runAsync([], cli.dependencies);
 
 		expect(code).toBe(0);
-		expect(cli.outputMultiResult).toHaveBeenCalledExactlyOnceWith(expect.anything(), result, {
-			fileSystem: cli.fileSystem,
-		});
+		expect(cli.outputMultiResult).toHaveBeenCalledExactlyOnceWith(
+			expect.objectContaining({
+				dependencies: { fileSystem: cli.fileSystem },
+				result,
+			}),
+		);
 	});
 
 	it("should let --no-coverage override config that enables coverage", async () => {
@@ -1738,7 +1751,7 @@ describe("runInner orchestration", () => {
 
 		await runAsync(["--no-coverage"], cli.dependencies);
 
-		const [, config] = cli.runJestRoblox.mock.calls[0]!;
+		const [{ config }] = cli.runJestRoblox.mock.calls[0]!;
 
 		expect(config.collectCoverage).toBeFalse();
 	});
@@ -1751,7 +1764,7 @@ describe("runInner orchestration", () => {
 
 		await runAsync(["--formatters", "json"], cli.dependencies);
 
-		const [, config] = cli.runJestRoblox.mock.calls[0]!;
+		const [{ config }] = cli.runJestRoblox.mock.calls[0]!;
 
 		expect(config.formatters).toStrictEqual(["json"]);
 	});
@@ -1764,7 +1777,7 @@ describe("runInner orchestration", () => {
 
 		await runAsync([], cli.dependencies);
 
-		const [, config] = cli.runJestRoblox.mock.calls[0]!;
+		const [{ config }] = cli.runJestRoblox.mock.calls[0]!;
 
 		expect(config.formatters).toStrictEqual(defaultFormatters());
 	});
@@ -1779,7 +1792,7 @@ describe("runInner orchestration", () => {
 
 		await runAsync([], cli.dependencies);
 
-		const [, config] = cli.runJestRoblox.mock.calls[0]!;
+		const [{ config }] = cli.runJestRoblox.mock.calls[0]!;
 
 		expect(config.formatters).toContain("github-actions");
 	});

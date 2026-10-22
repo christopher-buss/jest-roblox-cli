@@ -113,8 +113,18 @@ describe(resolveAllTsconfigMappings, () => {
 		});
 		const cache = createTsconfigMappingCache();
 
-		const first = resolveAllTsconfigMappings("/project", cache, fileSystem, getTsconfig);
-		const second = resolveAllTsconfigMappings("/project", cache, fileSystem, getTsconfig);
+		const first = resolveAllTsconfigMappings({
+			cache,
+			fileSystem,
+			projectRoot: "/project",
+			tsconfigReader: getTsconfig,
+		});
+		const second = resolveAllTsconfigMappings({
+			cache,
+			fileSystem,
+			projectRoot: "/project",
+			tsconfigReader: getTsconfig,
+		});
 
 		expect(first).toStrictEqual([
 			{ outDir: "out/generated", rootDir: "src" },

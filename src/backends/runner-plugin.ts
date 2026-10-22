@@ -111,7 +111,7 @@ export async function installRunnerPluginAsync({
 
 	return installManagedPluginAsync({
 		buildAsync: async (projectPath, outputPath) => {
-			return buildWithRojoAsync(projectPath, outputPath, childProcess);
+			return buildWithRojoAsync({ childProcess, outputPath, projectPath });
 		},
 		fileSystem,
 		now: Date.now(),

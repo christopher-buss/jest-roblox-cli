@@ -65,13 +65,9 @@ export async function writeWorkspaceSinksAsync(input: WorkspaceSinkInput): Promi
 	const fileSystem = input.fileSystem ?? nodeFileSystem;
 
 	if (runOptions.workspaceOutputFile) {
+		const typeByPackage = input.typecheckByPackage;
 		writePerPackageOutputFiles({
-			entries: buildPerPackageResults({
-				pending,
-				results,
-				typeByPackage: input.typecheckByPackage,
-				typeTestProjects,
-			}),
+			entries: buildPerPackageResults({ pending, results, typeByPackage, typeTestProjects }),
 			fileSystem,
 			workspaceRoot,
 		});
@@ -81,12 +77,13 @@ export async function writeWorkspaceSinksAsync(input: WorkspaceSinkInput): Promi
 	// `mergeProjectResults` folds every project's coverage + source mappers, so
 	// computing it for a run without `outputFile` (the common case) is wasted
 	// work. `writeResultFile` still owns the merge-and-write across all modes.
-	await writeResultFileAsync(
-		runOptions.outputFile,
-		input.typecheckResult,
-		runOptions.outputFile !== undefined ? mergeProjectResults(results).result : undefined,
+	await writeResultFileAsync({
 		fileSystem,
-	);
+		outputFile: runOptions.outputFile,
+		runtime:
+			runOptions.outputFile !== undefined ? mergeProjectResults(results).result : undefined,
+		typecheck: input.typecheckResult,
+	});
 
 	emitWorkspaceGameOutput({
 		fileSystem,
@@ -115,12 +112,12 @@ export async function writeTypecheckOnlySinksAsync(
 	>,
 ): Promise<void> {
 	const { fileSystem = nodeFileSystem } = input;
-	await writeResultFileAsync(
-		input.runOptions.outputFile,
-		input.typecheckResult,
-		undefined,
+	await writeResultFileAsync({
 		fileSystem,
-	);
+		outputFile: input.runOptions.outputFile,
+		runtime: undefined,
+		typecheck: input.typecheckResult,
+	});
 
 	// Per-package files route through the same writer as the runtime path.
 	if (input.runOptions.workspaceOutputFile) {
@@ -239,7 +236,7 @@ function writePerPackageGameOutputFiles({
 		)}.game-output.log`;
 		const filePath = path.join(directory, filename);
 		const entries = parseGameOutput(result.gameOutput);
-		writeGameOutput(filePath, entries, fileSystem);
+		writeGameOutput({ entries, filePath, fileSystem });
 		return { count: entries.length, path: filePath };
 	});
 }
@@ -268,7 +265,7 @@ function writeAggregateGameOutput({
 			};
 		}),
 	);
-	writeGroupedGameOutput(aggregatePath, groups, fileSystem);
+	writeGroupedGameOutput({ filePath: aggregatePath, fileSystem, groups });
 	return formatGameOutputNotice(aggregatePath, countGroupedEntries(groups));
 }
 

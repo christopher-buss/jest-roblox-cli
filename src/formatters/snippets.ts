@@ -18,10 +18,23 @@ const SOURCE_LOCATION = /([^\s:]{1,512}\.(?:tsx?|luau?)):(\d+)(?::(\d+))?/;
 
 const SNIPPET_INDENT = "\t";
 
+export interface SourceSnippetOptions {
+	filePath: string;
+	language?: string | undefined;
+	snippet: SourceSnippet;
+	styles?: Styles | undefined;
+	useColor?: boolean | undefined;
+}
+
 interface SourceLocation {
 	column?: number | undefined;
 	line: number;
 	path: string;
+}
+
+interface SnippetStyle {
+	styles: Styles;
+	useColor: boolean;
 }
 
 interface TsSnippetOptions {
@@ -35,18 +48,29 @@ interface TsSnippetOptions {
 	useColor: boolean;
 }
 
-export function formatSourceSnippet(
-	snippet: SourceSnippet,
-	filePath: string,
-	options?: {
-		language?: string | undefined;
-		styles?: Styles | undefined;
-		useColor?: boolean | undefined;
-	},
-): string {
-	const isColorEnabled = options?.useColor ?? true;
-	const styles = options?.styles ?? createStyles(isColorEnabled);
-	const lines = [formatLocationHeader(snippet, filePath, options?.language, styles)];
+interface FormatLocationHeaderOptions {
+	filePath: string;
+	language: string | undefined;
+	snippet: SourceSnippet;
+	styles: Styles;
+}
+
+interface FormatCaretLineOptions {
+	column: number;
+	content: string;
+	padding: number;
+	styles: Styles;
+}
+
+export function formatSourceSnippet({
+	filePath,
+	language,
+	snippet,
+	styles: snippetStyles,
+	useColor: isColorEnabled = true,
+}: SourceSnippetOptions): string {
+	const styles = snippetStyles ?? createStyles(isColorEnabled);
+	const lines = [formatLocationHeader({ filePath, language, snippet, styles })];
 
 	// Determine padding for line numbers
 	const maxLineNumber = Math.max(...snippet.lines.map((line) => line.num));
@@ -55,11 +79,17 @@ export function formatSourceSnippet(
 	for (const line of snippet.lines) {
 		const prefix = `${String(line.num).padStart(padding)}|`;
 		const expandedContent = expandTabs(line.content);
-		const highlighted = highlightSyntax(filePath, expandedContent, isColorEnabled);
+		const highlighted = highlightSyntax({
+			code: expandedContent,
+			filePath,
+			useColor: isColorEnabled,
+		});
 		lines.push(`${SNIPPET_INDENT}${styles.lineNumber(prefix)} ${highlighted}`);
 
 		if (line.num === snippet.failureLine && snippet.column !== undefined) {
-			lines.push(formatCaretLine(line.content, snippet.column, padding, styles));
+			lines.push(
+				formatCaretLine({ column: snippet.column, content: line.content, padding, styles }),
+			);
 		}
 	}
 
@@ -112,11 +142,11 @@ export function resolveSourceSnippets({
 }): Array<string> {
 	if (mappedLocations.length > 0) {
 		return mappedLocations.flatMap((loc) => {
-			return formatMappedLocationSnippets(loc, showLuau, styles, useColor);
+			return formatMappedLocationSnippets({ loc, showLuau, styles, useColor });
 		});
 	}
 
-	const fallback = formatFallbackSnippet(message, styles, useColor);
+	const fallback = formatFallbackSnippet({ message, styles, useColor });
 	if (fallback.length > 0) {
 		return fallback;
 	}
@@ -127,19 +157,19 @@ export function resolveSourceSnippets({
 		// file is still `init.*`, so reading would fail and the snippet would
 		// silently disappear.
 		const resolvedPath = sourceMapper?.resolveTestFilePath(filePath) ?? filePath;
-		return formatSnapshotCallSnippet(fileSystem, resolvedPath, styles, useColor);
+		return formatSnapshotCallSnippet({ filePath: resolvedPath, fileSystem, styles, useColor });
 	}
 
 	return [];
 }
 
 // Location header: ❯ path:line:col  (Language)
-function formatLocationHeader(
-	snippet: SourceSnippet,
-	filePath: string,
-	language: string | undefined,
-	styles: Styles,
-): string {
+function formatLocationHeader({
+	filePath,
+	language,
+	snippet,
+	styles,
+}: FormatLocationHeaderOptions): string {
 	const location =
 		snippet.column !== undefined
 			? `${filePath}:${snippet.failureLine}:${snippet.column}`
@@ -162,7 +192,15 @@ function expandTabs(text: string, tabWidth = 4): string {
 	return result;
 }
 
-function highlightSyntax(filePath: string, code: string, useColor: boolean): string {
+function highlightSyntax({
+	code,
+	filePath,
+	useColor,
+}: {
+	code: string;
+	filePath: string;
+	useColor: boolean;
+}): string {
 	if (!useColor) {
 		return code;
 	}
@@ -172,7 +210,7 @@ function highlightSyntax(filePath: string, code: string, useColor: boolean): str
 
 // Tabs before the column widen the caret's offset, so the prefix is expanded
 // the same way the rendered line was.
-function formatCaretLine(content: string, column: number, padding: number, styles: Styles): string {
+function formatCaretLine({ column, content, padding, styles }: FormatCaretLineOptions): string {
 	const beforeColumn = expandTabs(content.slice(0, column - 1));
 	const gutterPrefix = styles.lineNumber(`${" ".repeat(padding)}|`);
 	return `${SNIPPET_INDENT}${gutterPrefix} ${" ".repeat(beforeColumn.length)}${styles.status.fail("^")}`;
@@ -202,15 +240,18 @@ function tsSnippetLines({
 
 	// The label only earns its space when the Luau snippet follows it.
 	const language = showLuau ? "TypeScript" : undefined;
-	return ["", formatSourceSnippet(tsSnippet, tsPath, { language, styles, useColor })];
+	return [
+		"",
+		formatSourceSnippet({ filePath: tsPath, language, snippet: tsSnippet, styles, useColor }),
+	];
 }
 
-function luauSnippetLines(
-	loc: MappedLocation,
-	styles: Styles,
-	useColor: boolean,
-	language?: string,
-): Array<string> {
+function luauSnippetLines({
+	language,
+	loc,
+	styles,
+	useColor,
+}: SnippetStyle & { language?: string; loc: MappedLocation }): Array<string> {
 	const luauSnippet = getSourceSnippet({
 		context: 2,
 		filePath: loc.luauPath,
@@ -220,32 +261,45 @@ function luauSnippetLines(
 		return [];
 	}
 
-	return ["", formatSourceSnippet(luauSnippet, loc.luauPath, { language, styles, useColor })];
+	return [
+		"",
+		formatSourceSnippet({
+			filePath: loc.luauPath,
+			language,
+			snippet: luauSnippet,
+			styles,
+			useColor,
+		}),
+	];
 }
 
-function formatMappedLocationSnippets(
-	loc: MappedLocation,
-	showLuau: boolean,
-	styles: Styles,
-	useColor: boolean,
-): Array<string> {
+function formatMappedLocationSnippets({
+	loc,
+	showLuau,
+	styles,
+	useColor,
+}: SnippetStyle & { loc: MappedLocation; showLuau: boolean }): Array<string> {
 	const { tsLine, tsPath } = loc;
 
 	// Luau-only: show the Luau snippet without a language label
 	if (tsPath === undefined || tsLine === undefined) {
-		return luauSnippetLines(loc, styles, useColor);
+		return luauSnippetLines({ loc, styles, useColor });
 	}
 
 	// When TS fields are present, show TypeScript snippet (+ optional Luau)
 	const snippets = tsSnippetLines({ loc, showLuau, styles, tsLine, tsPath, useColor });
 	if (showLuau) {
-		snippets.push(...luauSnippetLines(loc, styles, useColor, "Luau"));
+		snippets.push(...luauSnippetLines({ language: "Luau", loc, styles, useColor }));
 	}
 
 	return snippets;
 }
 
-function formatFallbackSnippet(message: string, styles: Styles, useColor: boolean): Array<string> {
+function formatFallbackSnippet({
+	message,
+	styles,
+	useColor,
+}: SnippetStyle & { message: string }): Array<string> {
 	const location = parseSourceLocation(message);
 	if (location === undefined) {
 		return [];
@@ -261,22 +315,22 @@ function formatFallbackSnippet(message: string, styles: Styles, useColor: boolea
 		return [];
 	}
 
-	return ["", formatSourceSnippet(snippet, location.path, { styles, useColor })];
+	return ["", formatSourceSnippet({ filePath: location.path, snippet, styles, useColor })];
 }
 
-function formatSnapshotCallSnippet(
-	fileSystem: FileSystem,
-	filePath: string,
-	styles: Styles,
-	useColor: boolean,
-): Array<string> {
+function formatSnapshotCallSnippet({
+	filePath,
+	fileSystem,
+	styles,
+	useColor,
+}: SnippetStyle & { filePath: string; fileSystem: FileSystem }): Array<string> {
 	if (!fileSystem.existsSync(filePath)) {
 		return [];
 	}
 
 	const content = fileSystem.readFileSync(filePath, "utf-8");
 	const fileLines = content.split("\n");
-	const snapshotIndices = fileLines.reduce<Array<number>>((accumulator, fileLine, index) => {
+	const snapshotIndices = fileLines.reduce<Array<number>>((...[accumulator, fileLine, index]) => {
 		if (fileLine.includes("toMatchSnapshot")) {
 			accumulator.push(index);
 		}
@@ -292,5 +346,5 @@ function formatSnapshotCallSnippet(
 	const snippet = getSourceSnippet({ context: 2, filePath, line, sourceContent: content });
 	assert(snippet !== undefined);
 
-	return ["", formatSourceSnippet(snippet, filePath, { styles, useColor })];
+	return ["", formatSourceSnippet({ filePath, snippet, styles, useColor })];
 }

@@ -381,7 +381,7 @@ describe("synthesizer + rojo build integration", () => {
 			const synthRbxlPath = path.join(synthDirectory, "synthesized.rbxl");
 			fs.writeFileSync(synthProjectPath, synthesized);
 
-			await buildWithRojoAsync(synthProjectPath, synthRbxlPath);
+			await buildWithRojoAsync({ outputPath: synthRbxlPath, projectPath: synthProjectPath });
 
 			expect(fs.existsSync(synthRbxlPath)).toBeTrue();
 			expect(fs.statSync(synthRbxlPath).size).toBeGreaterThan(0);

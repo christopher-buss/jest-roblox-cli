@@ -555,8 +555,9 @@ describe("math", () => {
 			line: 4,
 		});
 
-		expect(formatSourceSnippet(snippet!, "math.spec.ts", { useColor: false }))
-			.toMatchInlineSnapshot(`
+		expect(
+			formatSourceSnippet({ filePath: "math.spec.ts", snippet: snippet!, useColor: false }),
+		).toMatchInlineSnapshot(`
 				" ❯ math.spec.ts:4:19
 					2| describe("math", () => {
 					3|   it("should add", () => {

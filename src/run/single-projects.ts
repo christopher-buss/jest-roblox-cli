@@ -21,6 +21,11 @@ export interface ImplicitProjectSeams {
 	tsconfigReader: TsconfigReader;
 }
 
+export interface BuildImplicitProjectOptions extends ImplicitProjectSeams {
+	config: ResolvedConfig;
+	rojoTree: RojoTreeNode | undefined;
+}
+
 /**
  * Map each compiled-Luau root to its Rojo mount (FS path ↔ DataModel path) via
  * the Rojo tree. Roots that don't map (a compiled-output dir the Rojo project
@@ -60,11 +65,11 @@ export function deriveProjectMounts(
  * the project carries no mounts. The "no mounts" `ConfigError` therefore only
  * fires when a tree was actually consulted.
  */
-export function buildImplicitProject(
-	config: ResolvedConfig,
-	rojoTree: RojoTreeNode | undefined,
-	seams: ImplicitProjectSeams,
-): ResolvedProjectConfig {
+export function buildImplicitProject({
+	config,
+	rojoTree,
+	...seams
+}: BuildImplicitProjectOptions): ResolvedProjectConfig {
 	const mounts =
 		rojoTree === undefined
 			? []

@@ -68,6 +68,18 @@ const NODE_OUTPUT_DEPENDENCIES: ResolvedDependencies = {
 	renderer: defaultResultRenderer,
 };
 
+export interface OutputSingleResultOptions {
+	config: ResolvedConfig;
+	dependencies?: OutputDependencies;
+	result: SingleRunResult;
+}
+
+export interface OutputMultiResultOptions {
+	dependencies?: OutputDependencies;
+	result: MultiRunResult | WorkspaceRunResult;
+	rootConfig: ResolvedConfig;
+}
+
 /**
  * Per-project fields the shared Jest merge doesn't know about — the timing
  * splits, the snapshot-write tally, and the raw coverage fold.
@@ -100,6 +112,34 @@ interface SingleRunReport extends Pick<
 > {
 	agentTextFilter: SingleRunResult["coverageDisplayFilter"];
 	mergedResult: JestResult;
+}
+
+interface WriteGameOutputIfConfiguredOptions {
+	config: ResolvedConfig;
+	fileSystem: FileSystem;
+	gameOutput: string | undefined;
+	hintsShown?: boolean;
+}
+
+interface RunGitHubActionsFormatterOptions {
+	config: ResolvedConfig;
+	fileSystem: FileSystem;
+	result: JestResult;
+	sourceMapper: SourceMapper | undefined;
+}
+
+interface WriteAggregatedGameOutputOptions {
+	config: ResolvedConfig;
+	fileSystem: FileSystem;
+	hintsShown?: boolean;
+	projectResults: Array<ProjectResult>;
+}
+
+interface ToMultiOutputContextOptions {
+	config: ResolvedConfig;
+	merged: ExecuteResult;
+	renderer: ResultRenderer;
+	result: MultiRunResult | WorkspaceRunResult;
 }
 
 // Combines a Type Test result with the runtime result into one aggregate (counts
@@ -135,25 +175,38 @@ export function mergeResults(
 // sides through `mergeResults` here means a new result dimension lands in the
 // file for every mode by a one-line change to that merge, with no second writer
 // to keep in sync.
-export async function writeResultFileAsync(
-	outputFile: string | undefined,
-	typecheck: JestResult | undefined,
-	runtime: JestResult | undefined,
-	fileSystem: FileSystem = nodeFileSystem,
-): Promise<void> {
+export async function writeResultFileAsync({
+	fileSystem = nodeFileSystem,
+	outputFile,
+	runtime,
+	typecheck,
+}: {
+	fileSystem?: FileSystem | undefined;
+	outputFile: string | undefined;
+	runtime: JestResult | undefined;
+	typecheck: JestResult | undefined;
+}): Promise<void> {
 	if (outputFile === undefined) {
 		return;
 	}
 
-	await writeJsonFileAsync(mergeResults(typecheck, runtime), outputFile, fileSystem);
+	await writeJsonFileAsync({
+		filePath: outputFile,
+		fileSystem,
+		result: mergeResults(typecheck, runtime),
+	});
 }
 
-export async function outputSingleResultAsync(
-	config: ResolvedConfig,
-	result: SingleRunResult,
-	dependencies: OutputDependencies = {},
-): Promise<number> {
-	return emitSingleResultAsync(config, result, resolveDependencies(dependencies));
+export async function outputSingleResultAsync({
+	config,
+	dependencies = {},
+	result,
+}: OutputSingleResultOptions): Promise<number> {
+	return emitSingleResultAsync({
+		config,
+		dependencies: resolveDependencies(dependencies),
+		result,
+	});
 }
 
 export function mergeProjectResults(results: Array<ExecuteResult>): ExecuteResult {
@@ -183,28 +236,28 @@ export function mergeProjectResults(results: Array<ExecuteResult>): ExecuteResul
 		snapshotWriteFailures:
 			extras.snapshotWriteFailures > 0 ? extras.snapshotWriteFailures : undefined,
 		sourceMapper: combineSourceMappers(sourceMappers),
-		timing: mergeProjectTiming(results, firstResult, extras),
+		timing: mergeProjectTiming({ extras, firstResult, results }),
 	};
 }
 
-export async function outputMultiResultAsync(
-	rootConfig: ResolvedConfig,
-	result: MultiRunResult | WorkspaceRunResult,
-	dependencies: OutputDependencies = {},
-): Promise<number> {
+export async function outputMultiResultAsync({
+	dependencies = {},
+	result,
+	rootConfig,
+}: OutputMultiResultOptions): Promise<number> {
 	const resolved = resolveDependencies(dependencies);
 	const { coverageMs, projectResults, stagingMs, typecheckResult } = result;
 	const config = buildReportConfig(rootConfig, result);
 
 	if (projectResults.length === 0) {
-		return emitSingleResultAsync(
+		return emitSingleResultAsync({
 			config,
-			{ coverageMs, mode: "single", stagingMs, typecheckResult },
-			resolved,
-		);
+			dependencies: resolved,
+			result: { coverageMs, mode: "single", stagingMs, typecheckResult },
+		});
 	}
 
-	return emitMultiResultAsync(config, result, resolved);
+	return emitMultiResultAsync({ config, dependencies: resolved, result });
 }
 
 function resolveDependencies(dependencies: OutputDependencies): ResolvedDependencies {
@@ -263,18 +316,22 @@ function emitResultsAndCoverage({
 }
 
 /** Prints the run and reports whether its coverage cleared the thresholds. */
-function reportSingleRun(
-	config: ResolvedConfig,
-	{
+function reportSingleRun({
+	config,
+	dependencies: { coveragePipeline, renderer },
+	report: {
 		agentTextFilter,
 		coverageMs,
 		mergedResult,
 		runtimeResult,
 		stagingMs,
 		typecheckResult,
-	}: SingleRunReport,
-	{ coveragePipeline, renderer }: ResolvedDependencies,
-): boolean {
+	},
+}: {
+	config: ResolvedConfig;
+	dependencies: ResolvedDependencies;
+	report: SingleRunReport;
+}): boolean {
 	return emitResultsAndCoverage({
 		config,
 		coverageEnabled: config.collectCoverage,
@@ -299,20 +356,20 @@ function reportSingleRun(
 	});
 }
 
-function writeGameOutputIfConfigured(
-	fileSystem: FileSystem,
-	config: ResolvedConfig,
-	gameOutput: string | undefined,
-	options: { hintsShown?: boolean },
-): void {
+function writeGameOutputIfConfigured({
+	config,
+	fileSystem,
+	gameOutput,
+	hintsShown,
+}: WriteGameOutputIfConfiguredOptions): void {
 	if (config.gameOutput === undefined) {
 		return;
 	}
 
 	const entries = parseGameOutput(gameOutput);
-	writeGameOutput(config.gameOutput, entries, fileSystem);
+	writeGameOutput({ entries, filePath: config.gameOutput, fileSystem });
 
-	if (!config.silent && options.hintsShown !== true) {
+	if (hintsShown !== true && !config.silent) {
 		const notice = formatGameOutputNotice(config.gameOutput, entries.length);
 		if (notice) {
 			console.error(notice);
@@ -320,18 +377,18 @@ function writeGameOutputIfConfigured(
 	}
 }
 
-function runGitHubActionsFormatter(
-	fileSystem: FileSystem,
-	config: ResolvedConfig,
-	result: JestResult,
-	sourceMapper: SourceMapper | undefined,
-): void {
+function runGitHubActionsFormatter({
+	config,
+	fileSystem,
+	result,
+	sourceMapper,
+}: RunGitHubActionsFormatterOptions): void {
 	const userOptions = findFormatterOptions(config.formatters, "github-actions");
 	if (userOptions === undefined) {
 		return;
 	}
 
-	const options = resolveGitHubActionsOptions(userOptions, sourceMapper);
+	const options = resolveGitHubActionsOptions({ sourceMapper, userOptions });
 
 	if (userOptions.displayAnnotations !== false) {
 		const annotations = formatAnnotations(result, options);
@@ -354,29 +411,39 @@ function runGitHubActionsFormatter(
  * Every file a single run leaves behind: the result JSON, Game Output,
  * annotations.
  */
-async function writeSingleRunSinksAsync(
-	fileSystem: FileSystem,
-	config: ResolvedConfig,
-	{
-		mergedResult,
-		runtimeResult,
-		typecheckResult,
-	}: Pick<SingleRunResult, "runtimeResult" | "typecheckResult"> & { mergedResult: JestResult },
-): Promise<void> {
-	await writeResultFileAsync(
-		config.outputFile,
-		typecheckResult,
-		runtimeResult?.result,
+async function writeSingleRunSinksAsync({
+	config,
+	fileSystem,
+	mergedResult,
+	runtimeResult,
+	typecheckResult,
+}: Pick<SingleRunResult, "runtimeResult" | "typecheckResult"> & {
+	config: ResolvedConfig;
+	fileSystem: FileSystem;
+	mergedResult: JestResult;
+}): Promise<void> {
+	await writeResultFileAsync({
 		fileSystem,
-	);
+		outputFile: config.outputFile,
+		runtime: runtimeResult?.result,
+		typecheck: typecheckResult,
+	});
 
 	if (runtimeResult !== undefined) {
-		writeGameOutputIfConfigured(fileSystem, config, runtimeResult.gameOutput, {
+		writeGameOutputIfConfigured({
+			config,
+			fileSystem,
+			gameOutput: runtimeResult.gameOutput,
 			hintsShown: !mergedResult.success,
 		});
 	}
 
-	runGitHubActionsFormatter(fileSystem, config, mergedResult, runtimeResult?.sourceMapper);
+	runGitHubActionsFormatter({
+		config,
+		fileSystem,
+		result: mergedResult,
+		sourceMapper: runtimeResult?.sourceMapper,
+	});
 }
 
 // The shared pass/fail tail: single and multi judge a run on the same four
@@ -398,27 +465,40 @@ function emitFinalStatus(
 	return isPassed ? 0 : 1;
 }
 
-async function emitSingleResultAsync(
-	config: ResolvedConfig,
-	{
+async function emitSingleResultAsync({
+	config,
+	dependencies,
+	result: {
 		coverageDisplayFilter: agentTextFilter,
 		coverageMs,
 		runtimeResult,
 		stagingMs,
 		typecheckResult,
-	}: SingleRunResult,
-	dependencies: ResolvedDependencies,
-): Promise<number> {
+	},
+}: {
+	config: ResolvedConfig;
+	dependencies: ResolvedDependencies;
+	result: SingleRunResult;
+}): Promise<number> {
 	const mergedResult = mergeResults(typecheckResult, runtimeResult?.result);
-	const isCoveragePassed = reportSingleRun(
+	const isCoveragePassed = reportSingleRun({
 		config,
-		{ agentTextFilter, coverageMs, mergedResult, runtimeResult, stagingMs, typecheckResult },
 		dependencies,
-	);
+		report: {
+			agentTextFilter,
+			coverageMs,
+			mergedResult,
+			runtimeResult,
+			stagingMs,
+			typecheckResult,
+		},
+	});
 
 	printGapSummary(config, runtimeResult);
 
-	await writeSingleRunSinksAsync(dependencies.fileSystem, config, {
+	await writeSingleRunSinksAsync({
+		config,
+		fileSystem: dependencies.fileSystem,
 		mergedResult,
 		runtimeResult,
 		typecheckResult,
@@ -463,11 +543,15 @@ function mergeProjectExtras(results: Array<ExecuteResult>): ProjectExtras {
 	return { coverageData, setupMs, snapshotWriteFailures, testsMs };
 }
 
-function mergeProjectTiming(
-	results: Array<ExecuteResult>,
-	firstResult: ExecuteResult,
-	extras: ProjectExtras,
-): TimingResult {
+function mergeProjectTiming({
+	extras,
+	firstResult,
+	results,
+}: {
+	extras: ProjectExtras;
+	firstResult: ExecuteResult;
+	results: Array<ExecuteResult>;
+}): TimingResult {
 	return {
 		// Upload, coverage, and execution are one shared phase across the
 		// projects, so they read off the first result rather than summing.
@@ -504,20 +588,20 @@ function buildAggregatedGroups(projectResults: Array<ProjectResult>): Array<Pack
 	);
 }
 
-function writeAggregatedGameOutput(
-	fileSystem: FileSystem,
-	config: ResolvedConfig,
-	projectResults: Array<ProjectResult>,
-	options: { hintsShown?: boolean },
-): void {
+function writeAggregatedGameOutput({
+	config,
+	fileSystem,
+	hintsShown,
+	projectResults,
+}: WriteAggregatedGameOutputOptions): void {
 	if (config.gameOutput === undefined) {
 		return;
 	}
 
 	const groups = buildAggregatedGroups(projectResults);
-	writeGroupedGameOutput(config.gameOutput, groups, fileSystem);
+	writeGroupedGameOutput({ filePath: config.gameOutput, fileSystem, groups });
 
-	if (!config.silent && options.hintsShown !== true) {
+	if (hintsShown !== true && !config.silent) {
 		const notice = formatGameOutputNotice(config.gameOutput, countGroupedEntries(groups));
 		if (notice) {
 			console.error(notice);
@@ -525,13 +609,21 @@ function writeAggregatedGameOutput(
 	}
 }
 
-async function writeMultiRunSinksAsync(
-	fileSystem: FileSystem,
-	config: ResolvedConfig,
-	{ hintsShown, merged, projectResults, typecheckResult }: MultiRunSinks,
-): Promise<void> {
-	await writeResultFileAsync(config.outputFile, typecheckResult, merged.result, fileSystem);
-	writeAggregatedGameOutput(fileSystem, config, projectResults, { hintsShown });
+async function writeMultiRunSinksAsync({
+	config,
+	fileSystem,
+	hintsShown,
+	merged,
+	projectResults,
+	typecheckResult,
+}: MultiRunSinks & { config: ResolvedConfig; fileSystem: FileSystem }): Promise<void> {
+	await writeResultFileAsync({
+		fileSystem,
+		outputFile: config.outputFile,
+		runtime: merged.result,
+		typecheck: typecheckResult,
+	});
+	writeAggregatedGameOutput({ config, fileSystem, hintsShown, projectResults });
 }
 
 function resolveBailSummary(
@@ -553,12 +645,12 @@ function resolveSinkHints(
 	};
 }
 
-function toMultiOutputContext(
-	config: ResolvedConfig,
-	result: MultiRunResult | WorkspaceRunResult,
-	merged: ExecuteResult,
-	renderer: ResultRenderer,
-): MultiOutputContext {
+function toMultiOutputContext({
+	config,
+	merged,
+	renderer,
+	result,
+}: ToMultiOutputContextOptions): MultiOutputContext {
 	return {
 		...resolveBailSummary(result),
 		config,
@@ -572,11 +664,15 @@ function toMultiOutputContext(
 	};
 }
 
-function reportMultiRun(
-	context: MultiOutputContext,
-	result: MultiRunResult | WorkspaceRunResult,
-	pipeline: CoveragePipeline,
-): boolean {
+function reportMultiRun({
+	context,
+	pipeline,
+	result,
+}: {
+	context: MultiOutputContext;
+	pipeline: CoveragePipeline;
+	result: MultiRunResult | WorkspaceRunResult;
+}): boolean {
 	const { config, merged } = context;
 	const displayFilter = extractCoverageDisplayFilter(result);
 
@@ -598,30 +694,41 @@ function reportMultiRun(
 	});
 }
 
-async function emitMultiResultAsync(
-	config: ResolvedConfig,
-	result: MultiRunResult | WorkspaceRunResult,
-	{ coveragePipeline, fileSystem, renderer }: ResolvedDependencies,
-): Promise<number> {
+async function emitMultiResultAsync({
+	config,
+	dependencies: { coveragePipeline, fileSystem, renderer },
+	result,
+}: {
+	config: ResolvedConfig;
+	dependencies: ResolvedDependencies;
+	result: MultiRunResult | WorkspaceRunResult;
+}): Promise<number> {
 	const { projectResults, typecheckResult } = result;
 	const merged = mergeProjectResults(projectResults.map((entry) => entry.result));
 	const mergedResult = mergeResults(typecheckResult, merged.result);
-	const isCoveragePassed = reportMultiRun(
-		toMultiOutputContext(config, result, merged, renderer),
+	const isCoveragePassed = reportMultiRun({
+		context: toMultiOutputContext({ config, merged, renderer, result }),
+		pipeline: coveragePipeline,
 		result,
-		coveragePipeline,
-	);
+	});
 
 	printGapSummary(config, merged);
 
-	await writeMultiRunSinksAsync(fileSystem, config, {
+	await writeMultiRunSinksAsync({
+		config,
+		fileSystem,
 		hintsShown: !mergedResult.success,
 		merged,
 		projectResults,
 		typecheckResult,
 	});
 
-	runGitHubActionsFormatter(fileSystem, config, mergedResult, merged.sourceMapper);
+	runGitHubActionsFormatter({
+		config,
+		fileSystem,
+		result: mergedResult,
+		sourceMapper: merged.sourceMapper,
+	});
 
 	return emitFinalStatus(config, {
 		isCoveragePassed,

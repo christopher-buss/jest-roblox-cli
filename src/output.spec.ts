@@ -258,7 +258,11 @@ describe(outputSingleResultAsync, () => {
 		const spies = setupOutputSpies();
 		const config = makeConfig();
 
-		const code = await outputSingleResultAsync(config, makeSingleResult(), dependencies);
+		const code = await outputSingleResultAsync({
+			config,
+			dependencies,
+			result: makeSingleResult(),
+		});
 
 		expect(code).toBe(0);
 		expect(spies.consoleLog).toHaveBeenCalledWith("formatted-execute");
@@ -270,11 +274,11 @@ describe(outputSingleResultAsync, () => {
 		const { dependencies } = setupOutput();
 		const spies = setupOutputSpies();
 
-		await outputSingleResultAsync(
-			makeConfig(),
-			makeSingleResult({ runtimeResult: makeExecuteResult({ gaps: { script: 1 } }) }),
+		await outputSingleResultAsync({
+			config: makeConfig(),
 			dependencies,
-		);
+			result: makeSingleResult({ runtimeResult: makeExecuteResult({ gaps: { script: 1 } }) }),
+		});
 
 		expect(spies.consoleError).toHaveBeenCalledWith(
 			"Not emulated (1):\n  script  0 tests blocked, 1 raise",
@@ -287,11 +291,11 @@ describe(outputSingleResultAsync, () => {
 		const { dependencies } = setupOutput();
 		const spies = setupOutputSpies();
 
-		await outputSingleResultAsync(
-			makeConfig({ silent: true }),
-			makeSingleResult({ runtimeResult: makeExecuteResult({ gaps: { script: 1 } }) }),
+		await outputSingleResultAsync({
+			config: makeConfig({ silent: true }),
 			dependencies,
-		);
+			result: makeSingleResult({ runtimeResult: makeExecuteResult({ gaps: { script: 1 } }) }),
+		});
 
 		expect(spies.consoleError).not.toHaveBeenCalledWith(
 			expect.stringContaining("Not emulated"),
@@ -304,13 +308,13 @@ describe(outputSingleResultAsync, () => {
 		const { dependencies } = setupOutput();
 		setupOutputSpies();
 
-		const code = await outputSingleResultAsync(
-			makeConfig(),
-			makeSingleResult({
+		const code = await outputSingleResultAsync({
+			config: makeConfig(),
+			dependencies,
+			result: makeSingleResult({
 				runtimeResult: makeExecuteResult({ result: makeJestResult({ success: false }) }),
 			}),
-			dependencies,
-		);
+		});
 
 		expect(code).toBe(1);
 	});
@@ -321,13 +325,13 @@ describe(outputSingleResultAsync, () => {
 		const { dependencies } = setupOutput();
 		setupOutputSpies();
 
-		const code = await outputSingleResultAsync(
-			makeConfig(),
-			makeSingleResult({
+		const code = await outputSingleResultAsync({
+			config: makeConfig(),
+			dependencies,
+			result: makeSingleResult({
 				runtimeResult: makeExecuteResult({ snapshotWriteFailures: 2 }),
 			}),
-			dependencies,
-		);
+		});
 
 		expect(code).toBe(1);
 	});
@@ -338,9 +342,10 @@ describe(outputSingleResultAsync, () => {
 		const { dependencies } = setupOutput();
 		setupOutputSpies();
 
-		const code = await outputSingleResultAsync(
-			makeConfig(),
-			makeSingleResult({
+		const code = await outputSingleResultAsync({
+			config: makeConfig(),
+			dependencies,
+			result: makeSingleResult({
 				runtimeResult: makeExecuteResult({
 					result: makeJestResult({
 						snapshot: {
@@ -354,8 +359,7 @@ describe(outputSingleResultAsync, () => {
 					}),
 				}),
 			}),
-			dependencies,
-		);
+		});
 
 		expect(code).toBe(1);
 	});
@@ -366,13 +370,13 @@ describe(outputSingleResultAsync, () => {
 		const { dependencies } = setupOutput();
 		setupOutputSpies();
 
-		await outputSingleResultAsync(
-			makeConfig(),
-			makeSingleResult({
+		await outputSingleResultAsync({
+			config: makeConfig(),
+			dependencies,
+			result: makeSingleResult({
 				runtimeResult: makeExecuteResult({ snapshotWriteFailures: 3 }),
 			}),
-			dependencies,
-		);
+		});
 
 		expect(renderer.formatExecuteOutput).toHaveBeenCalledWith(
 			expect.objectContaining({ snapshotWriteFailures: 3 }),
@@ -387,9 +391,9 @@ describe(outputSingleResultAsync, () => {
 		const { dependencies } = setupOutput();
 		setupOutputSpies();
 
-		const code = await outputMultiResultAsync(
-			makeConfig(),
-			makeWorkspaceResult({
+		const code = await outputMultiResultAsync({
+			dependencies,
+			result: makeWorkspaceResult({
 				bail: { notRun: 2, ran: 1 },
 				projectResults: [
 					makeProjectResult("@halcyon/foo", {
@@ -397,8 +401,8 @@ describe(outputSingleResultAsync, () => {
 					}),
 				],
 			}),
-			dependencies,
-		);
+			rootConfig: makeConfig(),
+		});
 
 		expect(code).toBe(1);
 	});
@@ -409,14 +413,14 @@ describe(outputSingleResultAsync, () => {
 		const { dependencies } = setupOutput();
 		setupOutputSpies();
 
-		await outputMultiResultAsync(
-			makeConfig({ formatters: ["agent"] }),
-			makeWorkspaceResult({
+		await outputMultiResultAsync({
+			dependencies,
+			result: makeWorkspaceResult({
 				bail: { notRun: 2, ran: 1 },
 				reportOptions: { ...makeReportOptions(), formatters: ["agent"] },
 			}),
-			dependencies,
-		);
+			rootConfig: makeConfig({ formatters: ["agent"] }),
+		});
 
 		expect(renderer.formatAgentMultiProject).toHaveBeenCalledWith(
 			expect.anything(),
@@ -430,16 +434,16 @@ describe(outputSingleResultAsync, () => {
 		const { dependencies } = setupOutput();
 		setupOutputSpies();
 
-		await outputMultiResultAsync(
-			makeConfig(),
-			makeWorkspaceResult({ stagingMs: 400 }),
+		await outputMultiResultAsync({
 			dependencies,
-		);
+			result: makeWorkspaceResult({ stagingMs: 400 }),
+			rootConfig: makeConfig(),
+		});
 
 		expect(renderer.formatMultiProjectResult).toHaveBeenCalledWith(
-			expect.anything(),
-			expect.objectContaining({ coverageMs: 0, stagingMs: 400, totalMs: 600 }),
-			expect.anything(),
+			expect.objectContaining({
+				timing: expect.objectContaining({ coverageMs: 0, stagingMs: 400, totalMs: 600 }),
+			}),
 		);
 	});
 
@@ -449,16 +453,16 @@ describe(outputSingleResultAsync, () => {
 		const { dependencies } = setupOutput();
 		setupOutputSpies();
 
-		await outputMultiResultAsync(
-			makeConfig(),
-			makeMultiResult({ coverageMs: 120, stagingMs: 300 }),
+		await outputMultiResultAsync({
 			dependencies,
-		);
+			result: makeMultiResult({ coverageMs: 120, stagingMs: 300 }),
+			rootConfig: makeConfig(),
+		});
 
 		expect(renderer.formatMultiProjectResult).toHaveBeenCalledWith(
-			expect.anything(),
-			expect.objectContaining({ coverageMs: 120, stagingMs: 300, totalMs: 620 }),
-			expect.anything(),
+			expect.objectContaining({
+				timing: expect.objectContaining({ coverageMs: 120, stagingMs: 300, totalMs: 620 }),
+			}),
 		);
 	});
 
@@ -468,16 +472,16 @@ describe(outputSingleResultAsync, () => {
 		const { dependencies } = setupOutput();
 		setupOutputSpies();
 
-		await outputMultiResultAsync(
-			makeConfig(),
-			makeWorkspaceResult({ bail: { notRun: 2, ran: 1 } }),
+		await outputMultiResultAsync({
 			dependencies,
-		);
+			result: makeWorkspaceResult({ bail: { notRun: 2, ran: 1 } }),
+			rootConfig: makeConfig(),
+		});
 
 		expect(renderer.formatMultiProjectResult).toHaveBeenCalledWith(
-			expect.anything(),
-			expect.anything(),
-			expect.objectContaining({ bail: { notRun: 2, ran: 1 } }),
+			expect.objectContaining({
+				options: expect.objectContaining({ bail: { notRun: 2, ran: 1 } }),
+			}),
 		);
 	});
 
@@ -487,11 +491,11 @@ describe(outputSingleResultAsync, () => {
 		const { dependencies } = setupOutput();
 		const spies = setupOutputSpies();
 
-		await outputSingleResultAsync(
-			makeConfig({ silent: true }),
-			makeSingleResult(),
+		await outputSingleResultAsync({
+			config: makeConfig({ silent: true }),
 			dependencies,
-		);
+			result: makeSingleResult(),
+		});
 
 		expect(spies.consoleLog).not.toHaveBeenCalled();
 	});
@@ -502,11 +506,11 @@ describe(outputSingleResultAsync, () => {
 		const { dependencies } = setupOutput();
 		const spies = setupOutputSpies();
 
-		await outputSingleResultAsync(
-			makeConfig({ collectCoverage: true, silent: true }),
-			makeSingleResult(),
+		await outputSingleResultAsync({
+			config: makeConfig({ collectCoverage: true, silent: true }),
 			dependencies,
-		);
+			result: makeSingleResult(),
+		});
 
 		expect(spies.stdout).not.toHaveBeenCalled();
 	});
@@ -517,11 +521,11 @@ describe(outputSingleResultAsync, () => {
 		const { dependencies, volume } = setupOutput();
 		setupOutputSpies();
 
-		await outputSingleResultAsync(
-			makeConfig({ outputFile: "/tmp/results.json" }),
-			makeSingleResult(),
+		await outputSingleResultAsync({
+			config: makeConfig({ outputFile: "/tmp/results.json" }),
 			dependencies,
-		);
+			result: makeSingleResult(),
+		});
 
 		expect(readSink(volume, "/tmp/results.json")).toBe(
 			JSON.stringify(makeJestResult(), null, 2),
@@ -534,13 +538,13 @@ describe(outputSingleResultAsync, () => {
 		const { dependencies, volume } = setupOutput();
 		const spies = setupOutputSpies();
 
-		await outputSingleResultAsync(
-			makeConfig({ gameOutput: "/tmp/game.json" }),
-			makeSingleResult({
+		await outputSingleResultAsync({
+			config: makeConfig({ gameOutput: "/tmp/game.json" }),
+			dependencies,
+			result: makeSingleResult({
 				runtimeResult: makeExecuteResult({ gameOutput: RAW_GAME_OUTPUT }),
 			}),
-			dependencies,
-		);
+		});
 
 		expect(readSink(volume, "/tmp/game.json")).toBe(
 			JSON.stringify([GAME_OUTPUT_ENTRY], null, 2),
@@ -556,14 +560,14 @@ describe(outputSingleResultAsync, () => {
 		const { dependencies } = setupOutput();
 		const spies = setupOutputSpies();
 
-		await outputSingleResultAsync(
-			makeConfig(),
-			makeSingleResult({
+		await outputSingleResultAsync({
+			config: makeConfig(),
+			dependencies,
+			result: makeSingleResult({
 				runtimeResult: undefined,
 				typecheckResult: makeJestResult(),
 			}),
-			dependencies,
-		);
+		});
 
 		expect(spies.stdout).toHaveBeenCalledWith("typecheck-summary");
 	});
@@ -574,14 +578,14 @@ describe(outputSingleResultAsync, () => {
 		const { dependencies } = setupOutput();
 		setupOutputSpies();
 
-		await outputSingleResultAsync(
-			makeConfig({ color }),
-			makeSingleResult({
+		await outputSingleResultAsync({
+			config: makeConfig({ color }),
+			dependencies,
+			result: makeSingleResult({
 				runtimeResult: undefined,
 				typecheckResult: makeJestResult(),
 			}),
-			dependencies,
-		);
+		});
 
 		expect(renderer.formatTypecheckReport).toHaveBeenCalledWith(expect.anything(), {
 			useColor: color,
@@ -594,13 +598,13 @@ describe(outputSingleResultAsync, () => {
 		const { dependencies } = setupOutput();
 		const spies = setupOutputSpies();
 
-		await outputSingleResultAsync(
-			makeConfig(),
-			makeSingleResult({
+		await outputSingleResultAsync({
+			config: makeConfig(),
+			dependencies,
+			result: makeSingleResult({
 				typecheckResult: makeJestResult({ numFailedTests: 1, success: false }),
 			}),
-			dependencies,
-		);
+		});
 
 		expect(spies.consoleLog).toHaveBeenCalledWith("formatted-result");
 	});
@@ -611,11 +615,11 @@ describe(outputSingleResultAsync, () => {
 		const { dependencies } = setupOutput();
 		const spies = setupOutputSpies();
 
-		await outputSingleResultAsync(
-			makeConfig({ formatters: ["json"] }),
-			makeSingleResult({ typecheckResult: makeJestResult() }),
+		await outputSingleResultAsync({
+			config: makeConfig({ formatters: ["json"] }),
 			dependencies,
-		);
+			result: makeSingleResult({ typecheckResult: makeJestResult() }),
+		});
 
 		expect(spies.consoleLog).toHaveBeenCalledWith("formatted-execute");
 		expect(spies.stderr).toHaveBeenCalledWith("typecheck-summary");
@@ -627,13 +631,13 @@ describe(outputSingleResultAsync, () => {
 		const { dependencies } = setupOutput();
 		const spies = setupOutputSpies();
 
-		await outputSingleResultAsync(
-			makeConfig({ formatters: ["agent"] }),
-			makeSingleResult({
+		await outputSingleResultAsync({
+			config: makeConfig({ formatters: ["agent"] }),
+			dependencies,
+			result: makeSingleResult({
 				typecheckResult: makeJestResult({ numFailedTests: 2, success: false }),
 			}),
-			dependencies,
-		);
+		});
 
 		expect(renderer.formatExecuteOutput).toHaveBeenCalledWith(
 			expect.objectContaining({ typeErrorCount: 2 }),
@@ -651,11 +655,11 @@ describe(outputSingleResultAsync, () => {
 		const { dependencies } = setupOutput();
 		const spies = setupOutputSpies();
 
-		await outputSingleResultAsync(
-			makeConfig({ collectCoverage: true }),
-			makeSingleResult(),
+		await outputSingleResultAsync({
+			config: makeConfig({ collectCoverage: true }),
 			dependencies,
-		);
+			result: makeSingleResult(),
+		});
 
 		expect(spies.stdout).toHaveBeenCalledWith(expect.stringContaining("PASS"));
 	});
@@ -666,13 +670,13 @@ describe(outputSingleResultAsync, () => {
 		const { dependencies } = setupOutput();
 		const spies = setupOutputSpies();
 
-		await outputSingleResultAsync(
-			makeConfig({ collectCoverage: true }),
-			makeSingleResult({
+		await outputSingleResultAsync({
+			config: makeConfig({ collectCoverage: true }),
+			dependencies,
+			result: makeSingleResult({
 				runtimeResult: makeExecuteResult({ result: makeJestResult({ success: false }) }),
 			}),
-			dependencies,
-		);
+		});
 
 		expect(spies.stdout).toHaveBeenCalledWith(expect.stringContaining("FAIL"));
 	});
@@ -685,14 +689,16 @@ describe(outputMultiResultAsync, () => {
 		const { dependencies } = setupOutput();
 		const spies = setupOutputSpies();
 
-		const code = await outputMultiResultAsync(makeConfig(), makeMultiResult(), dependencies);
+		const code = await outputMultiResultAsync({
+			dependencies,
+			result: makeMultiResult(),
+			rootConfig: makeConfig(),
+		});
 
 		expect(code).toBe(0);
 		expect(spies.consoleLog).toHaveBeenCalledWith("formatted-multi");
 		expect(renderer.formatMultiProjectResult).toHaveBeenCalledExactlyOnceWith(
-			expect.any(Array),
-			expect.anything(),
-			expect.anything(),
+			expect.objectContaining<Record<string, unknown>>({ projects: expect.any(Array) }),
 		);
 	});
 
@@ -702,16 +708,16 @@ describe(outputMultiResultAsync, () => {
 		const { dependencies } = setupOutput();
 		const spies = setupOutputSpies();
 
-		await outputMultiResultAsync(
-			makeConfig(),
-			makeMultiResult({
+		await outputMultiResultAsync({
+			dependencies,
+			result: makeMultiResult({
 				projectResults: [
 					{ displayName: "client", result: makeExecuteResult({ gaps: { script: 1 } }) },
 					{ displayName: "server", result: makeExecuteResult({ gaps: { script: 2 } }) },
 				],
 			}),
-			dependencies,
-		);
+			rootConfig: makeConfig(),
+		});
 
 		expect(spies.consoleError).toHaveBeenCalledWith(
 			"Not emulated (1):\n  script  0 tests blocked, 3 raises",
@@ -724,9 +730,9 @@ describe(outputMultiResultAsync, () => {
 		const { dependencies } = setupOutput();
 		setupOutputSpies();
 
-		const code = await outputMultiResultAsync(
-			makeConfig(),
-			makeMultiResult({
+		const code = await outputMultiResultAsync({
+			dependencies,
+			result: makeMultiResult({
 				projectResults: [
 					{
 						displayName: "client",
@@ -734,8 +740,8 @@ describe(outputMultiResultAsync, () => {
 					},
 				],
 			}),
-			dependencies,
-		);
+			rootConfig: makeConfig(),
+		});
 
 		expect(code).toBe(1);
 	});
@@ -746,9 +752,9 @@ describe(outputMultiResultAsync, () => {
 		const { dependencies } = setupOutput();
 		setupOutputSpies();
 
-		const code = await outputMultiResultAsync(
-			makeConfig(),
-			makeMultiResult({
+		const code = await outputMultiResultAsync({
+			dependencies,
+			result: makeMultiResult({
 				projectResults: [
 					{
 						displayName: "client",
@@ -760,8 +766,8 @@ describe(outputMultiResultAsync, () => {
 					},
 				],
 			}),
-			dependencies,
-		);
+			rootConfig: makeConfig(),
+		});
 
 		expect(code).toBe(1);
 	});
@@ -772,9 +778,9 @@ describe(outputMultiResultAsync, () => {
 		const { dependencies } = setupOutput();
 		setupOutputSpies();
 
-		const code = await outputMultiResultAsync(
-			makeConfig(),
-			makeMultiResult({
+		const code = await outputMultiResultAsync({
+			dependencies,
+			result: makeMultiResult({
 				projectResults: [
 					{
 						displayName: "client",
@@ -797,8 +803,8 @@ describe(outputMultiResultAsync, () => {
 					},
 				],
 			}),
-			dependencies,
-		);
+			rootConfig: makeConfig(),
+		});
 
 		expect(code).toBe(1);
 	});
@@ -809,9 +815,9 @@ describe(outputMultiResultAsync, () => {
 		const { dependencies } = setupOutput();
 		setupOutputSpies();
 
-		await outputMultiResultAsync(
-			makeConfig(),
-			makeMultiResult({
+		await outputMultiResultAsync({
+			dependencies,
+			result: makeMultiResult({
 				projectResults: [
 					{
 						displayName: "client",
@@ -823,13 +829,13 @@ describe(outputMultiResultAsync, () => {
 					},
 				],
 			}),
-			dependencies,
-		);
+			rootConfig: makeConfig(),
+		});
 
 		expect(renderer.formatMultiProjectResult).toHaveBeenCalledWith(
-			expect.anything(),
-			expect.anything(),
-			expect.objectContaining({ snapshotWriteFailures: 5 }),
+			expect.objectContaining({
+				options: expect.objectContaining({ snapshotWriteFailures: 5 }),
+			}),
 		);
 	});
 
@@ -839,9 +845,9 @@ describe(outputMultiResultAsync, () => {
 		const { dependencies } = setupOutput();
 		setupOutputSpies();
 
-		await outputMultiResultAsync(
-			makeConfig(),
-			makeMultiResult({
+		await outputMultiResultAsync({
+			dependencies,
+			result: makeMultiResult({
 				projectResults: [
 					{
 						displayName: "client",
@@ -853,16 +859,16 @@ describe(outputMultiResultAsync, () => {
 					},
 				],
 			}),
-			dependencies,
-		);
+			rootConfig: makeConfig(),
+		});
 
 		expect(renderer.formatMultiProjectResult).toHaveBeenCalledWith(
-			[
-				expect.objectContaining({ displayName: "client", gameOutput: "client-raw" }),
-				expect.objectContaining({ displayName: "server", gameOutput: "server-raw" }),
-			],
-			expect.anything(),
-			expect.anything(),
+			expect.objectContaining<Record<string, unknown>>({
+				projects: [
+					expect.objectContaining({ displayName: "client", gameOutput: "client-raw" }),
+					expect.objectContaining({ displayName: "server", gameOutput: "server-raw" }),
+				],
+			}),
 		);
 	});
 
@@ -872,7 +878,11 @@ describe(outputMultiResultAsync, () => {
 		const { dependencies } = setupOutput();
 		const spies = setupOutputSpies();
 
-		await outputMultiResultAsync(makeConfig({ silent: true }), makeMultiResult(), dependencies);
+		await outputMultiResultAsync({
+			dependencies,
+			result: makeMultiResult(),
+			rootConfig: makeConfig({ silent: true }),
+		});
 
 		expect(spies.consoleLog).not.toHaveBeenCalled();
 	});
@@ -883,11 +893,11 @@ describe(outputMultiResultAsync, () => {
 		const { dependencies, volume } = setupOutput();
 		setupOutputSpies();
 
-		await outputMultiResultAsync(
-			makeConfig({ outputFile: "/tmp/results.json" }),
-			makeMultiResult(),
+		await outputMultiResultAsync({
 			dependencies,
-		);
+			result: makeMultiResult(),
+			rootConfig: makeConfig({ outputFile: "/tmp/results.json" }),
+		});
 
 		expect(readSink(volume, "/tmp/results.json")).toBe(
 			JSON.stringify(makeJestResult(), null, 2),
@@ -900,11 +910,11 @@ describe(outputMultiResultAsync, () => {
 		const { dependencies, volume } = setupOutput();
 		setupOutputSpies();
 
-		await outputMultiResultAsync(
-			makeConfig({ outputFile: "/tmp/results.json" }),
-			makeWorkspaceResult(),
+		await outputMultiResultAsync({
 			dependencies,
-		);
+			result: makeWorkspaceResult(),
+			rootConfig: makeConfig({ outputFile: "/tmp/results.json" }),
+		});
 
 		expect(hasSink(volume, "/tmp/results.json")).toBeFalse();
 	});
@@ -915,13 +925,13 @@ describe(outputMultiResultAsync, () => {
 		const { dependencies, volume } = setupOutput();
 		setupOutputSpies();
 
-		await outputMultiResultAsync(
-			makeConfig({ gameOutput: "/tmp/game.json" }),
-			makeMultiResult({
+		await outputMultiResultAsync({
+			dependencies,
+			result: makeMultiResult({
 				projectResults: [makeProjectResult("client", { gameOutput: RAW_GAME_OUTPUT })],
 			}),
-			dependencies,
-		);
+			rootConfig: makeConfig({ gameOutput: "/tmp/game.json" }),
+		});
 
 		expect(readSink(volume, "/tmp/game.json")).toBe(
 			JSON.stringify([{ entries: [GAME_OUTPUT_ENTRY], project: "client" }], null, 2),
@@ -937,16 +947,16 @@ describe(outputMultiResultAsync, () => {
 		// The plugin runs the sequential path when no VM host is ready, and
 		// says so by not marking the capture batch-scoped. Each result then
 		// carries its own log, which one batch group would throw away.
-		await outputMultiResultAsync(
-			makeConfig({ experimentalVmParallel: 2, gameOutput: "/tmp/game.json" }),
-			makeMultiResult({
+		await outputMultiResultAsync({
+			dependencies,
+			result: makeMultiResult({
 				projectResults: [
 					makeProjectResult("client", { gameOutput: RAW_GAME_OUTPUT }),
 					makeProjectResult("server"),
 				],
 			}),
-			dependencies,
-		);
+			rootConfig: makeConfig({ experimentalVmParallel: 2, gameOutput: "/tmp/game.json" }),
+		});
 
 		expect(readSink(volume, "/tmp/game.json")).toBe(
 			JSON.stringify(
@@ -968,9 +978,9 @@ describe(outputMultiResultAsync, () => {
 
 		// `gameOutputScope` is the runner's own report of what it did: the
 		// coordinator sets it only on the path where the hosts actually ran.
-		await outputMultiResultAsync(
-			makeConfig({ experimentalVmParallel: 2, gameOutput: "/tmp/game.json" }),
-			makeMultiResult({
+		await outputMultiResultAsync({
+			dependencies,
+			result: makeMultiResult({
 				projectResults: [
 					makeProjectResult("client", {
 						gameOutput: RAW_GAME_OUTPUT,
@@ -979,8 +989,8 @@ describe(outputMultiResultAsync, () => {
 					makeProjectResult("server", { gameOutputScope: "batch" }),
 				],
 			}),
-			dependencies,
-		);
+			rootConfig: makeConfig({ experimentalVmParallel: 2, gameOutput: "/tmp/game.json" }),
+		});
 
 		expect(readSink(volume, "/tmp/game.json")).toBe(
 			JSON.stringify(
@@ -1003,13 +1013,13 @@ describe(outputMultiResultAsync, () => {
 		const { dependencies, volume } = setupOutput();
 		setupOutputSpies();
 
-		await outputMultiResultAsync(
-			makeConfig({ experimentalVmParallel: 1, gameOutput: "/tmp/game.json" }),
-			makeMultiResult({
+		await outputMultiResultAsync({
+			dependencies,
+			result: makeMultiResult({
 				projectResults: [makeProjectResult("client"), makeProjectResult("server")],
 			}),
-			dependencies,
-		);
+			rootConfig: makeConfig({ experimentalVmParallel: 1, gameOutput: "/tmp/game.json" }),
+		});
 
 		expect(readSink(volume, "/tmp/game.json")).toBe(
 			JSON.stringify(
@@ -1029,11 +1039,11 @@ describe(outputMultiResultAsync, () => {
 		const { dependencies, volume } = setupOutput();
 		setupOutputSpies();
 
-		await outputMultiResultAsync(
-			makeConfig({ gameOutput: "/tmp/game.json" }),
-			makeWorkspaceResult(),
+		await outputMultiResultAsync({
 			dependencies,
-		);
+			result: makeWorkspaceResult(),
+			rootConfig: makeConfig({ gameOutput: "/tmp/game.json" }),
+		});
 
 		expect(hasSink(volume, "/tmp/game.json")).toBeFalse();
 	});
@@ -1044,14 +1054,14 @@ describe(outputMultiResultAsync, () => {
 		const { dependencies } = setupOutput();
 		const spies = setupOutputSpies();
 
-		await outputMultiResultAsync(
-			makeConfig(),
-			makeMultiResult({
+		await outputMultiResultAsync({
+			dependencies,
+			result: makeMultiResult({
 				projectResults: [],
 				typecheckResult: makeJestResult(),
 			}),
-			dependencies,
-		);
+			rootConfig: makeConfig(),
+		});
 
 		expect(spies.stdout).toHaveBeenCalledWith("typecheck-summary");
 	});
@@ -1062,11 +1072,11 @@ describe(outputMultiResultAsync, () => {
 		const { dependencies } = setupOutput();
 		const spies = setupOutputSpies();
 
-		await outputMultiResultAsync(
-			makeConfig({ formatters: ["agent"] }),
-			makeMultiResult(),
+		await outputMultiResultAsync({
 			dependencies,
-		);
+			result: makeMultiResult(),
+			rootConfig: makeConfig({ formatters: ["agent"] }),
+		});
 
 		expect(spies.consoleLog).toHaveBeenCalledWith("formatted-agent");
 	});
@@ -1077,11 +1087,11 @@ describe(outputMultiResultAsync, () => {
 		const { dependencies } = setupOutput();
 		setupOutputSpies();
 
-		await outputMultiResultAsync(
-			makeConfig({ formatters: [["agent", { maxFailures: 5 }]] }),
-			makeMultiResult(),
+		await outputMultiResultAsync({
 			dependencies,
-		);
+			result: makeMultiResult(),
+			rootConfig: makeConfig({ formatters: [["agent", { maxFailures: 5 }]] }),
+		});
 
 		expect(renderer.formatAgentMultiProject).toHaveBeenCalledWith(
 			expect.any(Array),
@@ -1095,18 +1105,18 @@ describe(outputMultiResultAsync, () => {
 		const { dependencies } = setupOutput();
 		setupOutputSpies();
 
-		await outputMultiResultAsync(
-			makeConfig({
-				gameOutput: "/root/cfg.log",
-				outputFile: "/root/cfg.json",
-			}),
-			makeWorkspaceResult({
+		await outputMultiResultAsync({
+			dependencies,
+			result: makeWorkspaceResult({
 				gameOutput: "/ws/game-output.log",
 				outputFile: "/ws/jest-output.log",
 				reportOptions: makeReportOptions({ formatters: ["agent"] }),
 			}),
-			dependencies,
-		);
+			rootConfig: makeConfig({
+				gameOutput: "/root/cfg.log",
+				outputFile: "/root/cfg.json",
+			}),
+		});
 
 		expect(renderer.formatAgentMultiProject).toHaveBeenCalledWith(
 			expect.any(Array),
@@ -1123,15 +1133,15 @@ describe(outputMultiResultAsync, () => {
 		const { dependencies } = setupOutput();
 		setupOutputSpies();
 
-		await outputMultiResultAsync(
-			makeConfig({
+		await outputMultiResultAsync({
+			dependencies,
+			result: makeMultiResult(),
+			rootConfig: makeConfig({
 				formatters: ["agent"],
 				gameOutput: "/root/cfg.log",
 				outputFile: "/root/cfg.json",
 			}),
-			makeMultiResult(),
-			dependencies,
-		);
+		});
 
 		expect(renderer.formatAgentMultiProject).toHaveBeenCalledWith(
 			expect.any(Array),
@@ -1145,11 +1155,11 @@ describe(outputMultiResultAsync, () => {
 		const { dependencies } = setupOutput();
 		const spies = setupOutputSpies();
 
-		await outputMultiResultAsync(
-			makeConfig({ formatters: ["json"] }),
-			makeMultiResult(),
+		await outputMultiResultAsync({
 			dependencies,
-		);
+			result: makeMultiResult(),
+			rootConfig: makeConfig({ formatters: ["json"] }),
+		});
 
 		expect(spies.consoleLog).toHaveBeenCalledWith("formatted-execute");
 	});
@@ -1160,11 +1170,11 @@ describe(outputMultiResultAsync, () => {
 		const { dependencies } = setupOutput();
 		const spies = setupOutputSpies();
 
-		await outputMultiResultAsync(
-			makeConfig({ formatters: ["json"] }),
-			makeMultiResult({ typecheckResult: makeJestResult() }),
+		await outputMultiResultAsync({
 			dependencies,
-		);
+			result: makeMultiResult({ typecheckResult: makeJestResult() }),
+			rootConfig: makeConfig({ formatters: ["json"] }),
+		});
 
 		expect(spies.stderr).toHaveBeenCalledWith("typecheck-summary");
 	});
@@ -1175,13 +1185,13 @@ describe(outputMultiResultAsync, () => {
 		const { dependencies } = setupOutput();
 		const spies = setupOutputSpies();
 
-		await outputMultiResultAsync(
-			makeConfig({ formatters: ["agent"] }),
-			makeMultiResult({
+		await outputMultiResultAsync({
+			dependencies,
+			result: makeMultiResult({
 				typecheckResult: makeJestResult({ numFailedTests: 2, success: false }),
 			}),
-			dependencies,
-		);
+			rootConfig: makeConfig({ formatters: ["agent"] }),
+		});
 
 		expect(spies.stderr).toHaveBeenCalledWith("typecheck-summary");
 		expect(renderer.formatTypecheckReport).toHaveBeenCalledWith(
@@ -1197,11 +1207,11 @@ describe(outputMultiResultAsync, () => {
 		renderer.formatTypecheckReport.mockReturnValue("");
 		const spies = setupOutputSpies();
 
-		await outputMultiResultAsync(
-			makeConfig({ formatters: ["agent"] }),
-			makeMultiResult({ typecheckResult: makeJestResult() }),
+		await outputMultiResultAsync({
 			dependencies,
-		);
+			result: makeMultiResult({ typecheckResult: makeJestResult() }),
+			rootConfig: makeConfig({ formatters: ["agent"] }),
+		});
 
 		expect(spies.stderr).not.toHaveBeenCalled();
 	});
@@ -1214,9 +1224,9 @@ describe(outputMultiResultAsync, () => {
 		pipeline.mapCoverageToTypeScript.mockReturnValue(fromAny({}));
 		setupOutputSpies();
 
-		await outputMultiResultAsync(
-			makeConfig({ collectCoverage: true }),
-			makeMultiResult({
+		await outputMultiResultAsync({
+			dependencies,
+			result: makeMultiResult({
 				collectCoverageFrom: ["src/**/*.ts"],
 				projectResults: [
 					{
@@ -1225,8 +1235,8 @@ describe(outputMultiResultAsync, () => {
 					},
 				],
 			}),
-			dependencies,
-		);
+			rootConfig: makeConfig({ collectCoverage: true }),
+		});
 
 		expect(pipeline.generateReports).toHaveBeenCalledWith(
 			expect.objectContaining({ collectCoverageFrom: ["src/**/*.ts"] }),
@@ -1241,9 +1251,9 @@ describe(outputMultiResultAsync, () => {
 		pipeline.mapCoverageToTypeScript.mockReturnValue(fromAny({}));
 		setupOutputSpies();
 
-		await outputMultiResultAsync(
-			makeConfig({ collectCoverage: true, collectCoverageFrom: ["src/**/*.ts"] }),
-			makeMultiResult({
+		await outputMultiResultAsync({
+			dependencies,
+			result: makeMultiResult({
 				projectResults: [
 					{
 						displayName: "client",
@@ -1251,8 +1261,8 @@ describe(outputMultiResultAsync, () => {
 					},
 				],
 			}),
-			dependencies,
-		);
+			rootConfig: makeConfig({ collectCoverage: true, collectCoverageFrom: ["src/**/*.ts"] }),
+		});
 
 		expect(pipeline.generateReports).toHaveBeenCalledWith(
 			expect.objectContaining({ collectCoverageFrom: ["src/**/*.ts"] }),
@@ -1265,11 +1275,11 @@ describe(outputMultiResultAsync, () => {
 		const { dependencies } = setupOutput();
 		const spies = setupOutputSpies();
 
-		const code = await outputMultiResultAsync(
-			makeConfig(),
-			makeWorkspaceResult(),
+		const code = await outputMultiResultAsync({
 			dependencies,
-		);
+			result: makeWorkspaceResult(),
+			rootConfig: makeConfig(),
+		});
 
 		expect(code).toBe(0);
 		expect(spies.consoleLog).toHaveBeenCalledWith("formatted-multi");
@@ -1287,9 +1297,9 @@ describe(outputMultiResultAsync, () => {
 			return true;
 		}
 
-		await outputMultiResultAsync(
-			makeConfig({ collectCoverage: true }),
-			makeMultiResult({
+		await outputMultiResultAsync({
+			dependencies,
+			result: makeMultiResult({
 				coverageDisplayFilter: displayFilter,
 				projectResults: [
 					{
@@ -1298,8 +1308,8 @@ describe(outputMultiResultAsync, () => {
 					},
 				],
 			}),
-			dependencies,
-		);
+			rootConfig: makeConfig({ collectCoverage: true }),
+		});
 
 		expect(pipeline.generateReports).toHaveBeenCalledWith(
 			expect.objectContaining({ agentTextFilter: displayFilter }),
@@ -1318,11 +1328,11 @@ describe("workspace output ignores the bootstrap config", () => {
 		const { dependencies } = setupOutput();
 		const spies = setupOutputSpies();
 
-		await outputMultiResultAsync(
-			makeConfig({ formatters: ["agent"] }),
-			makeWorkspaceResult(),
+		await outputMultiResultAsync({
 			dependencies,
-		);
+			result: makeWorkspaceResult(),
+			rootConfig: makeConfig({ formatters: ["agent"] }),
+		});
 
 		expect(spies.consoleLog).toHaveBeenCalledWith("formatted-multi");
 		expect(renderer.formatAgentMultiProject).not.toHaveBeenCalled();
@@ -1334,11 +1344,11 @@ describe("workspace output ignores the bootstrap config", () => {
 		const { dependencies } = setupOutput();
 		const spies = setupOutputSpies();
 
-		await outputMultiResultAsync(
-			makeConfig({ silent: true }),
-			makeWorkspaceResult(),
+		await outputMultiResultAsync({
 			dependencies,
-		);
+			result: makeWorkspaceResult(),
+			rootConfig: makeConfig({ silent: true }),
+		});
 
 		expect(spies.consoleLog).toHaveBeenCalledWith("formatted-multi");
 	});
@@ -1349,11 +1359,13 @@ describe("workspace output ignores the bootstrap config", () => {
 		const { dependencies } = setupOutput();
 		setupOutputSpies();
 
-		await outputMultiResultAsync(
-			makeConfig({ rootDir: "/bootstrap" }),
-			makeWorkspaceResult({ reportOptions: makeReportOptions({ formatters: ["agent"] }) }),
+		await outputMultiResultAsync({
 			dependencies,
-		);
+			result: makeWorkspaceResult({
+				reportOptions: makeReportOptions({ formatters: ["agent"] }),
+			}),
+			rootConfig: makeConfig({ rootDir: "/bootstrap" }),
+		});
 
 		expect(renderer.formatAgentMultiProject).toHaveBeenCalledWith(
 			expect.any(Array),
@@ -1367,11 +1379,11 @@ describe("workspace output ignores the bootstrap config", () => {
 		const { dependencies, volume } = setupOutput();
 		setupOutputSpies();
 
-		await outputMultiResultAsync(
-			makeConfig({ outputFile: "/root/cfg.json" }),
-			makeWorkspaceResult({ projectResults: [], typecheckResult: makeJestResult() }),
+		await outputMultiResultAsync({
 			dependencies,
-		);
+			result: makeWorkspaceResult({ projectResults: [], typecheckResult: makeJestResult() }),
+			rootConfig: makeConfig({ outputFile: "/root/cfg.json" }),
+		});
 
 		expect(hasSink(volume, "/root/cfg.json")).toBeFalse();
 	});
@@ -1382,15 +1394,15 @@ describe("workspace output ignores the bootstrap config", () => {
 		const { dependencies } = setupOutput();
 		const spies = setupOutputSpies();
 
-		await outputMultiResultAsync(
-			makeConfig({ formatters: ["default", "github-actions"] }),
-			makeWorkspaceResult({
+		await outputMultiResultAsync({
+			dependencies,
+			result: makeWorkspaceResult({
 				projectResults: [
 					makeProjectResult("@halcyon/foo", { result: makeFailingResult() }),
 				],
 			}),
-			dependencies,
-		);
+			rootConfig: makeConfig({ formatters: ["default", "github-actions"] }),
+		});
 
 		expect(spies.stderr).not.toHaveBeenCalledWith(expect.stringContaining("::error"));
 	});
@@ -1401,17 +1413,17 @@ describe("workspace output ignores the bootstrap config", () => {
 		const { dependencies } = setupOutput();
 		setupOutputSpies();
 
-		await outputMultiResultAsync(
-			makeConfig({
+		await outputMultiResultAsync({
+			dependencies,
+			result: makeWorkspaceResult({ coveragePackages: [makeCoverageGate()] }),
+			rootConfig: makeConfig({
 				collectCoverage: true,
 				collectCoverageFrom: ["src/server/**/ecs/**"],
 				coverageDirectory: "bootstrap-coverage",
 				coverageReporters: ["cobertura"],
 				rootDir: "/bootstrap",
 			}),
-			makeWorkspaceResult({ coveragePackages: [makeCoverageGate()] }),
-			dependencies,
-		);
+		});
 
 		expect(pipeline.generateReports).toHaveBeenCalledWith(
 			expect.objectContaining({
@@ -1428,11 +1440,11 @@ describe("workspace output ignores the bootstrap config", () => {
 		const { dependencies } = setupOutput();
 		setupOutputSpies();
 
-		const code = await outputMultiResultAsync(
-			makeConfig({ collectCoverage: true, coverageThreshold: { lines: 80 } }),
-			makeWorkspaceResult({ coveragePackages: [makeCoverageGate()] }),
+		const code = await outputMultiResultAsync({
 			dependencies,
-		);
+			result: makeWorkspaceResult({ coveragePackages: [makeCoverageGate()] }),
+			rootConfig: makeConfig({ collectCoverage: true, coverageThreshold: { lines: 80 } }),
+		});
 
 		expect(pipeline.checkThresholds).not.toHaveBeenCalled();
 		expect(code).toBe(0);
@@ -1446,9 +1458,9 @@ describe("workspace output ignores the bootstrap config", () => {
 		pipeline.mapCoverageToTypeScript.mockReturnValue(fromAny({}));
 		setupOutputSpies();
 
-		await outputMultiResultAsync(
-			makeConfig({ collectCoverage: true }),
-			makeWorkspaceResult({
+		await outputMultiResultAsync({
+			dependencies,
+			result: makeWorkspaceResult({
 				projectResults: [
 					{
 						displayName: "@halcyon/foo",
@@ -1456,8 +1468,8 @@ describe("workspace output ignores the bootstrap config", () => {
 					},
 				],
 			}),
-			dependencies,
-		);
+			rootConfig: makeConfig({ collectCoverage: true }),
+		});
 
 		expect(pipeline.loadCoverageManifest).not.toHaveBeenCalled();
 		expect(pipeline.generateReports).not.toHaveBeenCalled();
@@ -1471,7 +1483,11 @@ describe("processCoverage via outputSingleResult", () => {
 		const { dependencies } = setupOutput();
 		setupOutputSpies();
 
-		await outputSingleResultAsync(makeConfig(), makeSingleResult(), dependencies);
+		await outputSingleResultAsync({
+			config: makeConfig(),
+			dependencies,
+			result: makeSingleResult(),
+		});
 
 		expect(pipeline.generateReports).not.toHaveBeenCalled();
 	});
@@ -1482,11 +1498,11 @@ describe("processCoverage via outputSingleResult", () => {
 		const { dependencies } = setupOutput();
 		const spies = setupOutputSpies();
 
-		await outputSingleResultAsync(
-			makeConfig({ collectCoverage: true }),
-			makeSingleResult(),
+		await outputSingleResultAsync({
+			config: makeConfig({ collectCoverage: true }),
 			dependencies,
-		);
+			result: makeSingleResult(),
+		});
 
 		expect(spies.stderr).toHaveBeenCalledWith(
 			expect.stringContaining("coverage data was empty"),
@@ -1499,11 +1515,11 @@ describe("processCoverage via outputSingleResult", () => {
 		const { dependencies } = setupOutput();
 		const spies = setupOutputSpies();
 
-		await outputSingleResultAsync(
-			makeConfig({ collectCoverage: true, silent: true }),
-			makeSingleResult(),
+		await outputSingleResultAsync({
+			config: makeConfig({ collectCoverage: true, silent: true }),
 			dependencies,
-		);
+			result: makeSingleResult(),
+		});
 
 		expect(spies.stderr).not.toHaveBeenCalled();
 	});
@@ -1514,13 +1530,13 @@ describe("processCoverage via outputSingleResult", () => {
 		const { dependencies } = setupOutput();
 		const spies = setupOutputSpies();
 
-		await outputSingleResultAsync(
-			makeConfig({ collectCoverage: true }),
-			makeSingleResult({
+		await outputSingleResultAsync({
+			config: makeConfig({ collectCoverage: true }),
+			dependencies,
+			result: makeSingleResult({
 				runtimeResult: makeExecuteResult({ coverageData: fromAny({ "x.luau": {} }) }),
 			}),
-			dependencies,
-		);
+		});
 
 		expect(spies.stderr).toHaveBeenCalledWith(
 			expect.stringContaining("Coverage manifest not found"),
@@ -1533,13 +1549,13 @@ describe("processCoverage via outputSingleResult", () => {
 		const { dependencies } = setupOutput();
 		const spies = setupOutputSpies();
 
-		await outputSingleResultAsync(
-			makeConfig({ collectCoverage: true, silent: true }),
-			makeSingleResult({
+		await outputSingleResultAsync({
+			config: makeConfig({ collectCoverage: true, silent: true }),
+			dependencies,
+			result: makeSingleResult({
 				runtimeResult: makeExecuteResult({ coverageData: fromAny({ "x.luau": {} }) }),
 			}),
-			dependencies,
-		);
+		});
 
 		expect(spies.stderr).not.toHaveBeenCalled();
 	});
@@ -1553,13 +1569,13 @@ describe("processCoverage via outputSingleResult", () => {
 		pipeline.mapCoverageToTypeScript.mockReturnValue(mapped);
 		const spies = setupOutputSpies();
 
-		await outputSingleResultAsync(
-			makeConfig({ collectCoverage: true }),
-			makeSingleResult({
+		await outputSingleResultAsync({
+			config: makeConfig({ collectCoverage: true }),
+			dependencies,
+			result: makeSingleResult({
 				runtimeResult: makeExecuteResult({ coverageData: fromAny({ "x.luau": {} }) }),
 			}),
-			dependencies,
-		);
+		});
 
 		expect(spies.stdout).toHaveBeenCalledWith(expect.stringContaining(COVERAGE_HEADER));
 		expect(spies.stdout).not.toHaveBeenCalledWith("\nundefined\n");
@@ -1577,13 +1593,13 @@ describe("processCoverage via outputSingleResult", () => {
 		pipeline.mapCoverageToTypeScript.mockReturnValue(mapped);
 		const spies = setupOutputSpies();
 
-		await outputSingleResultAsync(
-			makeConfig({ collectCoverage: true, silent: true }),
-			makeSingleResult({
+		await outputSingleResultAsync({
+			config: makeConfig({ collectCoverage: true, silent: true }),
+			dependencies,
+			result: makeSingleResult({
 				runtimeResult: makeExecuteResult({ coverageData: fromAny({ "x.luau": {} }) }),
 			}),
-			dependencies,
-		);
+		});
 
 		expect(spies.stdout).not.toHaveBeenCalledWith(expect.stringContaining(COVERAGE_HEADER));
 		expect(pipeline.generateReports).toHaveBeenCalledExactlyOnceWith(
@@ -1603,16 +1619,16 @@ describe("processCoverage via outputSingleResult", () => {
 		});
 		const spies = setupOutputSpies();
 
-		const code = await outputSingleResultAsync(
-			makeConfig({
+		const code = await outputSingleResultAsync({
+			config: makeConfig({
 				collectCoverage: true,
 				coverageThreshold: { lines: 100 },
 			}),
-			makeSingleResult({
+			dependencies,
+			result: makeSingleResult({
 				runtimeResult: makeExecuteResult({ coverageData: fromAny({ "x.luau": {} }) }),
 			}),
-			dependencies,
-		);
+		});
 
 		expect(code).toBe(1);
 		expect(spies.stderr).toHaveBeenCalledWith(
@@ -1631,16 +1647,18 @@ describe("processCoverage via outputSingleResult", () => {
 		setupOutputSpies();
 
 		await expect(
-			outputSingleResultAsync(
-				makeConfig({
+			outputSingleResultAsync({
+				config: makeConfig({
 					collectCoverage: true,
 					coverageThreshold: { lines: 100 },
 				}),
-				makeSingleResult({
-					runtimeResult: makeExecuteResult({ coverageData: fromAny({ "x.luau": {} }) }),
-				}),
 				dependencies,
-			),
+				result: makeSingleResult({
+					runtimeResult: makeExecuteResult({
+						coverageData: fromAny({ "x.luau": {} }),
+					}),
+				}),
+			}),
 		).rejects.toThrow(CoverageMapMalformedError);
 
 		expect(pipeline.generateReports).not.toHaveBeenCalled();
@@ -1657,13 +1675,13 @@ describe("agent-mode summary ordering vs coverage", () => {
 		pipeline.mapCoverageToTypeScript.mockReturnValue(fromAny({}));
 		const spies = setupOutputSpies();
 
-		await outputSingleResultAsync(
-			makeConfig({ collectCoverage: true, formatters: ["agent"] }),
-			makeSingleResult({
+		await outputSingleResultAsync({
+			config: makeConfig({ collectCoverage: true, formatters: ["agent"] }),
+			dependencies,
+			result: makeSingleResult({
 				runtimeResult: makeExecuteResult({ coverageData: fromAny({ "x.luau": {} }) }),
 			}),
-			dependencies,
-		);
+		});
 
 		expect(spies.consoleLog).toHaveBeenCalledWith("formatted-execute");
 
@@ -1681,13 +1699,13 @@ describe("agent-mode summary ordering vs coverage", () => {
 		pipeline.mapCoverageToTypeScript.mockReturnValue(fromAny({}));
 		const spies = setupOutputSpies();
 
-		await outputSingleResultAsync(
-			makeConfig({ collectCoverage: true }),
-			makeSingleResult({
+		await outputSingleResultAsync({
+			config: makeConfig({ collectCoverage: true }),
+			dependencies,
+			result: makeSingleResult({
 				runtimeResult: makeExecuteResult({ coverageData: fromAny({ "x.luau": {} }) }),
 			}),
-			dependencies,
-		);
+		});
 
 		expect(spies.consoleLog).toHaveBeenCalledExactlyOnceWith("formatted-execute");
 
@@ -1705,13 +1723,13 @@ describe("agent-mode summary ordering vs coverage", () => {
 		pipeline.mapCoverageToTypeScript.mockReturnValue(fromAny({}));
 		const spies = setupOutputSpies();
 
-		await outputSingleResultAsync(
-			makeConfig({ collectCoverage: true, formatters: ["agent"], verbose: true }),
-			makeSingleResult({
+		await outputSingleResultAsync({
+			config: makeConfig({ collectCoverage: true, formatters: ["agent"], verbose: true }),
+			dependencies,
+			result: makeSingleResult({
 				runtimeResult: makeExecuteResult({ coverageData: fromAny({ "x.luau": {} }) }),
 			}),
-			dependencies,
-		);
+		});
 
 		expect(spies.consoleLog).toHaveBeenCalledWith("formatted-execute");
 
@@ -1729,15 +1747,15 @@ describe("agent-mode summary ordering vs coverage", () => {
 		pipeline.mapCoverageToTypeScript.mockReturnValue(fromAny({}));
 		const spies = setupOutputSpies();
 
-		await outputMultiResultAsync(
-			makeConfig({ collectCoverage: true, formatters: ["agent"] }),
-			makeMultiResult({
+		await outputMultiResultAsync({
+			dependencies,
+			result: makeMultiResult({
 				projectResults: [
 					makeProjectResult("client", { coverageData: fromAny({ "x.luau": {} }) }),
 				],
 			}),
-			dependencies,
-		);
+			rootConfig: makeConfig({ collectCoverage: true, formatters: ["agent"] }),
+		});
 
 		expect(spies.consoleLog).toHaveBeenCalledWith("formatted-agent");
 
@@ -1753,11 +1771,11 @@ describe("agent-mode summary ordering vs coverage", () => {
 		const { dependencies } = setupOutput();
 		const spies = setupOutputSpies();
 
-		await outputSingleResultAsync(
-			makeConfig({ formatters: ["agent"] }),
-			makeSingleResult(),
+		await outputSingleResultAsync({
+			config: makeConfig({ formatters: ["agent"] }),
 			dependencies,
-		);
+			result: makeSingleResult(),
+		});
 
 		expect(spies.consoleLog).toHaveBeenCalledWith("formatted-execute");
 		expect(pipeline.generateReports).not.toHaveBeenCalled();
@@ -1774,13 +1792,13 @@ describe("agent-mode summary ordering vs coverage", () => {
 		const spies = setupOutputSpies();
 
 		await expect(
-			outputSingleResultAsync(
-				makeConfig({ collectCoverage: true, formatters: ["agent"] }),
-				makeSingleResult({
+			outputSingleResultAsync({
+				config: makeConfig({ collectCoverage: true, formatters: ["agent"] }),
+				dependencies,
+				result: makeSingleResult({
 					runtimeResult: makeExecuteResult({ coverageData: fromAny({ "x.luau": {} }) }),
 				}),
-				dependencies,
-			),
+			}),
 		).rejects.toThrow(CoverageMapMalformedError);
 
 		expect(spies.consoleLog).toHaveBeenCalledWith("formatted-execute");
@@ -1795,13 +1813,13 @@ describe("per-package coverage reports via outputMultiResult", () => {
 		setupOutputSpies();
 
 		const fooUniverse: MappedCoverageResult = fromAny({ files: { "foo.ts": {} } });
-		await outputMultiResultAsync(
-			makeConfig({ collectCoverage: true }),
-			makeWorkspaceResult({
+		await outputMultiResultAsync({
+			dependencies,
+			result: makeWorkspaceResult({
 				coveragePackages: [makeCoverageGate({ universe: fooUniverse })],
 			}),
-			dependencies,
-		);
+			rootConfig: makeConfig({ collectCoverage: true }),
+		});
 
 		expect(pipeline.loadCoverageManifest).not.toHaveBeenCalled();
 		expect(pipeline.mapCoverageToTypeScript).not.toHaveBeenCalled();
@@ -1817,13 +1835,13 @@ describe("per-package coverage reports via outputMultiResult", () => {
 		setupOutputSpies();
 
 		const fooUniverse: MappedCoverageResult = fromAny({ files: { "foo.ts": {} } });
-		await outputMultiResultAsync(
-			makeConfig(),
-			makeWorkspaceResult({
+		await outputMultiResultAsync({
+			dependencies,
+			result: makeWorkspaceResult({
 				coveragePackages: [makeCoverageGate({ universe: fooUniverse })],
 			}),
-			dependencies,
-		);
+			rootConfig: makeConfig(),
+		});
 
 		expect(pipeline.generateReports).toHaveBeenCalledWith(
 			expect.objectContaining({ mapped: fooUniverse }),
@@ -1836,14 +1854,14 @@ describe("per-package coverage reports via outputMultiResult", () => {
 		const { dependencies } = setupOutput();
 		const spies = setupOutputSpies();
 
-		await outputMultiResultAsync(
-			makeConfig(),
-			makeWorkspaceResult({
+		await outputMultiResultAsync({
+			dependencies,
+			result: makeWorkspaceResult({
 				coveragePackages: [makeCoverageGate()],
 				reportOptions: makeReportOptions({ silent: true }),
 			}),
-			dependencies,
-		);
+			rootConfig: makeConfig(),
+		});
 
 		expect(spies.stdout).not.toHaveBeenCalled();
 		expect(pipeline.generateReports).toHaveBeenCalledExactlyOnceWith(
@@ -1860,9 +1878,9 @@ describe("per-package coverage reports via outputMultiResult", () => {
 		const { dependencies } = setupOutput();
 		setupOutputSpies();
 
-		await outputMultiResultAsync(
-			makeConfig(),
-			makeWorkspaceResult({
+		await outputMultiResultAsync({
+			dependencies,
+			result: makeWorkspaceResult({
 				coveragePackages: [
 					makeCoverageGate({
 						coverageDirectory: "/ws/packages/foo/coverage",
@@ -1875,8 +1893,8 @@ describe("per-package coverage reports via outputMultiResult", () => {
 					}),
 				],
 			}),
-			dependencies,
-		);
+			rootConfig: makeConfig(),
+		});
 
 		expect(pipeline.generateReports).toHaveBeenCalledTimes(2);
 		expect(pipeline.generateReports).toHaveBeenCalledWith(
@@ -1899,11 +1917,11 @@ describe("per-package coverage reports via outputMultiResult", () => {
 		const { dependencies } = setupOutput();
 		setupOutputSpies();
 
-		await outputMultiResultAsync(
-			makeConfig(),
-			makeWorkspaceResult({ coveragePackages: [makeCoverageGate()] }),
+		await outputMultiResultAsync({
 			dependencies,
-		);
+			result: makeWorkspaceResult({ coveragePackages: [makeCoverageGate()] }),
+			rootConfig: makeConfig(),
+		});
 
 		expect(pipeline.generateReports).toHaveBeenCalledWith(
 			expect.objectContaining({
@@ -1919,11 +1937,11 @@ describe("per-package coverage reports via outputMultiResult", () => {
 		const { dependencies } = setupOutput();
 		const spies = setupOutputSpies();
 
-		await outputMultiResultAsync(
-			makeConfig(),
-			makeWorkspaceResult({ coveragePackages: [makeCoverageGate()] }),
+		await outputMultiResultAsync({
 			dependencies,
-		);
+			result: makeWorkspaceResult({ coveragePackages: [makeCoverageGate()] }),
+			rootConfig: makeConfig(),
+		});
 
 		expect(spies.stdout).toHaveBeenCalledWith("\n@halcyon/foo\n");
 	});
@@ -1934,11 +1952,11 @@ describe("per-package coverage reports via outputMultiResult", () => {
 		const { dependencies } = setupOutput();
 		const spies = setupOutputSpies();
 
-		await outputMultiResultAsync(
-			makeConfig({ collectCoverage: true }),
-			makeWorkspaceResult({ coveragePackages: [] }),
+		await outputMultiResultAsync({
 			dependencies,
-		);
+			result: makeWorkspaceResult({ coveragePackages: [] }),
+			rootConfig: makeConfig({ collectCoverage: true }),
+		});
 
 		expect(spies.stdout).not.toHaveBeenCalledWith(expect.stringContaining(COVERAGE_HEADER));
 		expect(pipeline.generateReports).not.toHaveBeenCalled();
@@ -1954,13 +1972,13 @@ describe("per-package coverage reports via outputMultiResult", () => {
 		});
 		const spies = setupOutputSpies();
 
-		const code = await outputMultiResultAsync(
-			makeConfig(),
-			makeWorkspaceResult({
+		const code = await outputMultiResultAsync({
+			dependencies,
+			result: makeWorkspaceResult({
 				coveragePackages: [makeCoverageGate({ coverageThreshold: { lines: 100 } })],
 			}),
-			dependencies,
-		);
+			rootConfig: makeConfig(),
+		});
 
 		expect(code).toBe(1);
 		expect(spies.stderr).toHaveBeenCalledWith(
@@ -1977,15 +1995,15 @@ describe("per-package threshold gates via outputMultiResult", () => {
 		setupOutputSpies();
 
 		const fooUniverse: MappedCoverageResult = fromAny({ files: { "foo.ts": {} } });
-		const code = await outputMultiResultAsync(
-			makeConfig(),
-			makeWorkspaceResult({
+		const code = await outputMultiResultAsync({
+			dependencies,
+			result: makeWorkspaceResult({
 				coveragePackages: [
 					makeCoverageGate({ coverageThreshold: { lines: 70 }, universe: fooUniverse }),
 				],
 			}),
-			dependencies,
-		);
+			rootConfig: makeConfig(),
+		});
 
 		// One call only: the pooled merged-universe check is replaced by the
 		// per-package gates.
@@ -2003,9 +2021,9 @@ describe("per-package threshold gates via outputMultiResult", () => {
 		setupOutputSpies();
 
 		const fooUniverse: MappedCoverageResult = fromAny({ files: { "foo.ts": {} } });
-		await outputMultiResultAsync(
-			makeConfig(),
-			makeWorkspaceResult({
+		await outputMultiResultAsync({
+			dependencies,
+			result: makeWorkspaceResult({
 				coveragePackages: [
 					makeCoverageGate({
 						coverageThreshold: { statements: 70 },
@@ -2013,8 +2031,8 @@ describe("per-package threshold gates via outputMultiResult", () => {
 					}),
 				],
 			}),
-			dependencies,
-		);
+			rootConfig: makeConfig(),
+		});
 
 		expect(pipeline.checkThresholds).toHaveBeenCalledWith({
 			mapped: fooUniverse,
@@ -2028,11 +2046,11 @@ describe("per-package threshold gates via outputMultiResult", () => {
 		const { dependencies } = setupOutput();
 		setupOutputSpies();
 
-		const code = await outputMultiResultAsync(
-			makeConfig(),
-			makeWorkspaceResult({ coveragePackages: [makeCoverageGate()] }),
+		const code = await outputMultiResultAsync({
 			dependencies,
-		);
+			result: makeWorkspaceResult({ coveragePackages: [makeCoverageGate()] }),
+			rootConfig: makeConfig(),
+		});
 
 		expect(pipeline.checkThresholds).not.toHaveBeenCalled();
 		expect(code).toBe(0);
@@ -2050,16 +2068,16 @@ describe("per-package threshold gates via outputMultiResult", () => {
 			});
 		const spies = setupOutputSpies();
 
-		const code = await outputMultiResultAsync(
-			makeConfig(),
-			makeWorkspaceResult({
+		const code = await outputMultiResultAsync({
+			dependencies,
+			result: makeWorkspaceResult({
 				coveragePackages: [
 					makeCoverageGate({ coverageThreshold: { lines: 70 } }),
 					makeCoverageGate({ coverageThreshold: { lines: 80 }, pkg: "@halcyon/bar" }),
 				],
 			}),
-			dependencies,
-		);
+			rootConfig: makeConfig(),
+		});
 
 		expect(code).toBe(1);
 		expect(spies.stderr).toHaveBeenCalledWith(
@@ -2080,13 +2098,13 @@ describe("runGitHubActionsFormatter via outputSingleResult", () => {
 		process.env["GITHUB_STEP_SUMMARY"] = "/tmp/summary.md";
 		volume.mkdirSync("/tmp", { recursive: true });
 
-		await outputSingleResultAsync(
-			makeConfig(),
-			makeSingleResult({
+		await outputSingleResultAsync({
+			config: makeConfig(),
+			dependencies,
+			result: makeSingleResult({
 				runtimeResult: makeExecuteResult({ result: makeFailingResult() }),
 			}),
-			dependencies,
-		);
+		});
 
 		expect(spies.stderr).not.toHaveBeenCalled();
 		expect(volume.existsSync("/tmp/summary.md")).toBeFalse();
@@ -2098,13 +2116,13 @@ describe("runGitHubActionsFormatter via outputSingleResult", () => {
 		const { dependencies } = setupOutput();
 		const spies = setupOutputSpies();
 
-		await outputSingleResultAsync(
-			makeConfig({ formatters: ["default", "github-actions"] }),
-			makeSingleResult({
+		await outputSingleResultAsync({
+			config: makeConfig({ formatters: ["default", "github-actions"] }),
+			dependencies,
+			result: makeSingleResult({
 				runtimeResult: makeExecuteResult({ result: makeFailingResult() }),
 			}),
-			dependencies,
-		);
+		});
 
 		expect(spies.stderr).toHaveBeenCalledWith(expect.stringContaining(FAILURE_ANNOTATION));
 	});
@@ -2115,13 +2133,13 @@ describe("runGitHubActionsFormatter via outputSingleResult", () => {
 		const { dependencies } = setupOutput();
 		const spies = setupOutputSpies();
 
-		await outputMultiResultAsync(
-			makeConfig({ formatters: ["default", "github-actions"] }),
-			makeMultiResult({
+		await outputMultiResultAsync({
+			dependencies,
+			result: makeMultiResult({
 				projectResults: [makeProjectResult("client", { result: makeFailingResult() })],
 			}),
-			dependencies,
-		);
+			rootConfig: makeConfig({ formatters: ["default", "github-actions"] }),
+		});
 
 		expect(spies.stderr).toHaveBeenCalledWith(expect.stringContaining(FAILURE_ANNOTATION));
 	});
@@ -2132,15 +2150,15 @@ describe("runGitHubActionsFormatter via outputSingleResult", () => {
 		const { dependencies } = setupOutput();
 		const spies = setupOutputSpies();
 
-		await outputSingleResultAsync(
-			makeConfig({
+		await outputSingleResultAsync({
+			config: makeConfig({
 				formatters: ["default", ["github-actions", { displayAnnotations: false }]],
 			}),
-			makeSingleResult({
+			dependencies,
+			result: makeSingleResult({
 				runtimeResult: makeExecuteResult({ result: makeFailingResult() }),
 			}),
-			dependencies,
-		);
+		});
 
 		expect(spies.stderr).not.toHaveBeenCalledWith(expect.stringContaining("::error"));
 	});
@@ -2151,11 +2169,11 @@ describe("runGitHubActionsFormatter via outputSingleResult", () => {
 		const { dependencies } = setupOutput();
 		const spies = setupOutputSpies();
 
-		await outputSingleResultAsync(
-			makeConfig({ formatters: ["default", "github-actions"] }),
-			makeSingleResult(),
+		await outputSingleResultAsync({
+			config: makeConfig({ formatters: ["default", "github-actions"] }),
 			dependencies,
-		);
+			result: makeSingleResult(),
+		});
 
 		expect(spies.stderr).not.toHaveBeenCalled();
 	});
@@ -2169,11 +2187,11 @@ describe("runGitHubActionsFormatter via outputSingleResult", () => {
 		process.env["GITHUB_STEP_SUMMARY"] = "/tmp/summary.md";
 		volume.mkdirSync("/tmp", { recursive: true });
 
-		await outputSingleResultAsync(
-			makeConfig({ formatters: ["default", "github-actions"] }),
-			makeSingleResult(),
+		await outputSingleResultAsync({
+			config: makeConfig({ formatters: ["default", "github-actions"] }),
 			dependencies,
-		);
+			result: makeSingleResult(),
+		});
 
 		expect(volume.readFileSync("/tmp/summary.md", "utf8")).toContain("## Test Results");
 	});
@@ -2187,16 +2205,16 @@ describe("runGitHubActionsFormatter via outputSingleResult", () => {
 
 		setupOutputSpies();
 
-		await outputSingleResultAsync(
-			makeConfig({
+		await outputSingleResultAsync({
+			config: makeConfig({
 				formatters: [
 					"default",
 					["github-actions", { jobSummary: { outputPath: "/tmp/explicit.md" } }],
 				],
 			}),
-			makeSingleResult(),
 			dependencies,
-		);
+			result: makeSingleResult(),
+		});
 
 		expect(volume.readFileSync("/tmp/explicit.md", "utf8")).toContain("## Test Results");
 	});
@@ -2209,13 +2227,13 @@ describe("runGitHubActionsFormatter via outputSingleResult", () => {
 		process.env["GITHUB_STEP_SUMMARY"] = "/tmp/summary.md";
 		volume.mkdirSync("/tmp", { recursive: true });
 
-		await outputSingleResultAsync(
-			makeConfig({
+		await outputSingleResultAsync({
+			config: makeConfig({
 				formatters: ["default", ["github-actions", { jobSummary: { enabled: false } }]],
 			}),
-			makeSingleResult(),
 			dependencies,
-		);
+			result: makeSingleResult(),
+		});
 
 		expect(volume.existsSync("/tmp/summary.md")).toBeFalse();
 	});
@@ -2226,11 +2244,11 @@ describe("runGitHubActionsFormatter via outputSingleResult", () => {
 		const { dependencies, volume } = setupOutput();
 		setupOutputSpies();
 
-		await outputSingleResultAsync(
-			makeConfig({ formatters: ["default", "github-actions"] }),
-			makeSingleResult(),
+		await outputSingleResultAsync({
+			config: makeConfig({ formatters: ["default", "github-actions"] }),
 			dependencies,
-		);
+			result: makeSingleResult(),
+		});
 
 		expect(volume.toJSON()).toStrictEqual({});
 	});
@@ -2243,13 +2261,13 @@ describe("writeGameOutput integration", () => {
 		const { dependencies } = setupOutput();
 		const spies = setupOutputSpies();
 
-		await outputSingleResultAsync(
-			makeConfig({ gameOutput: "/tmp/game.json" }),
-			makeSingleResult({
+		await outputSingleResultAsync({
+			config: makeConfig({ gameOutput: "/tmp/game.json" }),
+			dependencies,
+			result: makeSingleResult({
 				runtimeResult: makeExecuteResult({ gameOutput: RAW_GAME_OUTPUT }),
 			}),
-			dependencies,
-		);
+		});
 
 		expect(spies.consoleError).toHaveBeenCalledExactlyOnceWith(
 			"Game output (1 entries) written to /tmp/game.json",
@@ -2262,16 +2280,16 @@ describe("writeGameOutput integration", () => {
 		const { dependencies, volume } = setupOutput();
 		const spies = setupOutputSpies();
 
-		await outputSingleResultAsync(
-			makeConfig({ gameOutput: "/tmp/game.json" }),
-			makeSingleResult({
+		await outputSingleResultAsync({
+			config: makeConfig({ gameOutput: "/tmp/game.json" }),
+			dependencies,
+			result: makeSingleResult({
 				runtimeResult: makeExecuteResult({
 					gameOutput: RAW_GAME_OUTPUT,
 					result: makeJestResult({ success: false }),
 				}),
 			}),
-			dependencies,
-		);
+		});
 
 		expect(hasSink(volume, "/tmp/game.json")).toBeTrue();
 		expect(spies.consoleError).not.toHaveBeenCalled();
@@ -2283,11 +2301,11 @@ describe("writeGameOutput integration", () => {
 		const { dependencies, volume } = setupOutput();
 		const spies = setupOutputSpies();
 
-		await outputSingleResultAsync(
-			makeConfig({ gameOutput: "/tmp/game.json" }),
-			makeSingleResult(),
+		await outputSingleResultAsync({
+			config: makeConfig({ gameOutput: "/tmp/game.json" }),
 			dependencies,
-		);
+			result: makeSingleResult(),
+		});
 
 		expect(readSink(volume, "/tmp/game.json")).toBe("[]");
 		expect(spies.consoleError).not.toHaveBeenCalled();
@@ -2299,13 +2317,13 @@ describe("writeGameOutput integration", () => {
 		const { dependencies } = setupOutput();
 		const spies = setupOutputSpies();
 
-		await outputMultiResultAsync(
-			makeConfig({ gameOutput: "/tmp/game.json" }),
-			makeMultiResult({
+		await outputMultiResultAsync({
+			dependencies,
+			result: makeMultiResult({
 				projectResults: [makeProjectResult("client", { gameOutput: RAW_GAME_OUTPUT })],
 			}),
-			dependencies,
-		);
+			rootConfig: makeConfig({ gameOutput: "/tmp/game.json" }),
+		});
 
 		expect(spies.consoleError).toHaveBeenCalledExactlyOnceWith(
 			"Game output (1 entries) written to /tmp/game.json",
@@ -2318,9 +2336,9 @@ describe("writeGameOutput integration", () => {
 		const { dependencies, volume } = setupOutput();
 		const spies = setupOutputSpies();
 
-		await outputMultiResultAsync(
-			makeConfig({ gameOutput: "/tmp/game.json" }),
-			makeMultiResult({
+		await outputMultiResultAsync({
+			dependencies,
+			result: makeMultiResult({
 				projectResults: [
 					{
 						displayName: "client",
@@ -2331,8 +2349,8 @@ describe("writeGameOutput integration", () => {
 					},
 				],
 			}),
-			dependencies,
-		);
+			rootConfig: makeConfig({ gameOutput: "/tmp/game.json" }),
+		});
 
 		expect(hasSink(volume, "/tmp/game.json")).toBeTrue();
 		expect(spies.consoleError).not.toHaveBeenCalled();
@@ -2344,11 +2362,11 @@ describe("writeGameOutput integration", () => {
 		const { dependencies, volume } = setupOutput();
 		const spies = setupOutputSpies();
 
-		await outputMultiResultAsync(
-			makeConfig({ gameOutput: "/tmp/game.json" }),
-			makeMultiResult(),
+		await outputMultiResultAsync({
 			dependencies,
-		);
+			result: makeMultiResult(),
+			rootConfig: makeConfig({ gameOutput: "/tmp/game.json" }),
+		});
 
 		expect(readSink(volume, "/tmp/game.json")).toBe(
 			JSON.stringify([{ entries: [], project: "client" }], null, 2),
@@ -2427,7 +2445,12 @@ describe(writeResultFileAsync, () => {
 		const typecheck = makeJestResult({ numPassedTests: 1, numTotalTests: 1 });
 		const runtime = makeJestResult({ numPassedTests: 2, numTotalTests: 2 });
 
-		await writeResultFileAsync("/tmp/results.json", typecheck, runtime, fileSystem);
+		await writeResultFileAsync({
+			fileSystem,
+			outputFile: "/tmp/results.json",
+			runtime,
+			typecheck,
+		});
 
 		expect(readSink(volume, "/tmp/results.json")).toBe(
 			JSON.stringify(mergeResults(typecheck, runtime), null, 2),
@@ -2440,7 +2463,12 @@ describe(writeResultFileAsync, () => {
 		const { fileSystem, volume } = setupOutput();
 		setupOutputSpies();
 
-		await writeResultFileAsync(undefined, makeJestResult(), makeJestResult(), fileSystem);
+		await writeResultFileAsync({
+			fileSystem,
+			outputFile: undefined,
+			runtime: makeJestResult(),
+			typecheck: makeJestResult(),
+		});
 
 		expect(volume.toJSON()).toStrictEqual({});
 	});
@@ -2453,7 +2481,12 @@ describe(writeResultFileAsync, () => {
 
 		const typecheck = makeJestResult({ numFailedTests: 1, success: false });
 
-		await writeResultFileAsync("/tmp/results.json", typecheck, undefined, fileSystem);
+		await writeResultFileAsync({
+			fileSystem,
+			outputFile: "/tmp/results.json",
+			runtime: undefined,
+			typecheck,
+		});
 
 		expect(readSink(volume, "/tmp/results.json")).toBe(JSON.stringify(typecheck, null, 2));
 	});
@@ -2472,14 +2505,14 @@ describe(writeResultFileAsync, () => {
 		const typecheckResult = makeJestResult({ numFailedTests: 1, success: false });
 		const runtime = makeJestResult({ numPassedTests: 3, numTotalTests: 3 });
 
-		await outputSingleResultAsync(
-			makeConfig({ outputFile: "/tmp/results.json" }),
-			makeSingleResult({
+		await outputSingleResultAsync({
+			config: makeConfig({ outputFile: "/tmp/results.json" }),
+			dependencies,
+			result: makeSingleResult({
 				runtimeResult: makeExecuteResult({ result: runtime }),
 				typecheckResult,
 			}),
-			dependencies,
-		);
+		});
 
 		expect(readSink(volume, "/tmp/results.json")).toBe(
 			JSON.stringify(mergeResults(typecheckResult, runtime), null, 2),
@@ -2495,14 +2528,14 @@ describe(writeResultFileAsync, () => {
 		const typecheckResult = makeJestResult({ numFailedTests: 1, success: false });
 		const runtime = makeJestResult({ numPassedTests: 3, numTotalTests: 3 });
 
-		await outputMultiResultAsync(
-			makeConfig({ outputFile: "/tmp/results.json" }),
-			makeMultiResult({
+		await outputMultiResultAsync({
+			dependencies,
+			result: makeMultiResult({
 				projectResults: [makeProjectResult("client", { result: runtime })],
 				typecheckResult,
 			}),
-			dependencies,
-		);
+			rootConfig: makeConfig({ outputFile: "/tmp/results.json" }),
+		});
 
 		expect(readSink(volume, "/tmp/results.json")).toBe(
 			JSON.stringify(mergeResults(typecheckResult, runtime), null, 2),
@@ -2825,16 +2858,16 @@ describe("merged typecheck + runtime branches", () => {
 		const { dependencies } = setupOutput();
 		setupOutputSpies();
 
-		const code = await outputSingleResultAsync(
-			makeConfig(),
-			makeSingleResult({
+		const code = await outputSingleResultAsync({
+			config: makeConfig(),
+			dependencies,
+			result: makeSingleResult({
 				runtimeResult: makeExecuteResult({
 					result: { ...makeJestResult(), numTodoTests: undefined },
 				}),
 				typecheckResult: { ...makeJestResult(), numTodoTests: undefined },
 			}),
-			dependencies,
-		);
+		});
 
 		expect(code).toBe(0);
 	});
@@ -2848,7 +2881,11 @@ describe("printOutput empty branch", () => {
 		renderer.formatExecuteOutput.mockReturnValue("");
 		const spies = setupOutputSpies();
 
-		await outputSingleResultAsync(makeConfig(), makeSingleResult(), dependencies);
+		await outputSingleResultAsync({
+			config: makeConfig(),
+			dependencies,
+			result: makeSingleResult(),
+		});
 
 		expect(spies.consoleLog).not.toHaveBeenCalled();
 	});
@@ -2864,16 +2901,16 @@ describe("processCoverage threshold passed branch", () => {
 		pipeline.checkThresholds.mockReturnValue({ failures: [], passed: true });
 		const spies = setupOutputSpies();
 
-		const code = await outputSingleResultAsync(
-			makeConfig({
+		const code = await outputSingleResultAsync({
+			config: makeConfig({
 				collectCoverage: true,
 				coverageThreshold: { lines: 80 },
 			}),
-			makeSingleResult({
+			dependencies,
+			result: makeSingleResult({
 				runtimeResult: makeExecuteResult({ coverageData: fromAny({ "x.luau": {} }) }),
 			}),
-			dependencies,
-		);
+		});
 
 		expect(code).toBe(0);
 		expect(spies.stderr).not.toHaveBeenCalledWith(

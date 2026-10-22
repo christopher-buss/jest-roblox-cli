@@ -43,6 +43,12 @@ export interface Styles {
 	timeoutBadge: ColorFunc;
 }
 
+export interface FormatProjectBadgeOptions {
+	displayColor?: string | undefined;
+	displayName: string;
+	useColor: boolean;
+}
+
 type StyleSet = Except<Styles, "slowTestThreshold">;
 
 /**
@@ -62,11 +68,11 @@ export function formatDuration(ms: number, styles: Styles): string {
 	return colorFunc(` ${ms}${styles.dim("ms")}`);
 }
 
-export function formatProjectBadge(
-	displayName: string,
-	useColor: boolean,
-	displayColor?: string,
-): string {
+export function formatProjectBadge({
+	displayColor,
+	displayName,
+	useColor,
+}: FormatProjectBadgeOptions): string {
 	if (!useColor) {
 		return `▶ ${displayName}`;
 	}

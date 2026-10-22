@@ -386,7 +386,7 @@ async function stageAndBuildAsync({
 	// exists for every caller rather than relying on each one to pre-create it.
 	fileSystem.mkdirSync(path.dirname(placeFile), { recursive: true });
 
-	await buildWithRojoAsync(projectFile, placeFile, childProcess);
+	await buildWithRojoAsync({ childProcess, outputPath: placeFile, projectPath: projectFile });
 	const hash = await hashFileAsync(placeFile, fileSystem);
 	if (plan !== undefined) {
 		writePlaceReuseRecord({

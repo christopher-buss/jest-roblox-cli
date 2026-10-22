@@ -209,9 +209,11 @@ describe(resolveWorkspacePackages, () => {
 		const { fileSystem } = createMemoryFileSystem(seedTurboWorkspace(["@org/a", "@org/b"]));
 		turboReturns(childProcess, ["@org/a", "@org/b"]);
 
-		const result = resolveWorkspacePackages(makeCli({ affectedSince: "HEAD~1" }), ROOT, {
+		const result = resolveWorkspacePackages({
 			childProcess,
+			cli: makeCli({ affectedSince: "HEAD~1" }),
 			fileSystem,
+			workspaceRoot: ROOT,
 		});
 
 		// The affected branch carries name + directory from turbo/nx, so it
@@ -232,10 +234,12 @@ describe(resolveWorkspacePackages, () => {
 		const { fileSystem } = createMemoryFileSystem(seedTurboWorkspace(["@org/a"]));
 		turboReturns(childProcess, ["@org/a"]);
 
-		const result = resolveWorkspacePackages(makeCli({ affectedSince: "HEAD~1" }), ROOT, {
+		const result = resolveWorkspacePackages({
 			childProcess,
+			cli: makeCli({ affectedSince: "HEAD~1" }),
 			exclude: ["packages/**"],
 			fileSystem,
+			workspaceRoot: ROOT,
 		});
 
 		expect(result).toBeEmpty();
@@ -246,10 +250,12 @@ describe(resolveWorkspacePackages, () => {
 
 		const { fileSystem } = createMemoryFileSystem(seedWorkspace(["a", "b"]));
 
-		const result = resolveWorkspacePackages(makeCli({ workspace: true }), ROOT, {
+		const result = resolveWorkspacePackages({
 			childProcess: createRunner(),
+			cli: makeCli({ workspace: true }),
 			fileSystem,
 			patterns: ["packages/*"],
+			workspaceRoot: ROOT,
 		});
 
 		expect(result).toStrictEqual([packageInfoFor("a"), packageInfoFor("b")]);
@@ -260,11 +266,13 @@ describe(resolveWorkspacePackages, () => {
 
 		const { fileSystem } = createMemoryFileSystem(seedWorkspace(["a", "b"]));
 
-		const result = resolveWorkspacePackages(makeCli({ workspace: true }), ROOT, {
+		const result = resolveWorkspacePackages({
 			childProcess: createRunner(),
+			cli: makeCli({ workspace: true }),
 			exclude: ["packages/b"],
 			fileSystem,
 			patterns: ["packages/*"],
+			workspaceRoot: ROOT,
 		});
 
 		expect(result).toStrictEqual([packageInfoFor("a")]);
@@ -275,10 +283,12 @@ describe(resolveWorkspacePackages, () => {
 
 		const { fileSystem } = createMemoryFileSystem(seedWorkspace(["a", "b", "c"]));
 
-		const result = resolveWorkspacePackages(makeCli({ packages: "a,b,c" }), ROOT, {
+		const result = resolveWorkspacePackages({
 			childProcess: createRunner(),
+			cli: makeCli({ packages: "a,b,c" }),
 			fileSystem,
 			patterns: ["packages/*"],
+			workspaceRoot: ROOT,
 		});
 
 		expect(result.map((info) => info.name)).toStrictEqual(["a", "b", "c"]);
@@ -289,10 +299,12 @@ describe(resolveWorkspacePackages, () => {
 
 		const { fileSystem } = createMemoryFileSystem(seedWorkspace(["a", "b"]));
 
-		const result = resolveWorkspacePackages(makeCli({ packages: " a , , b " }), ROOT, {
+		const result = resolveWorkspacePackages({
 			childProcess: createRunner(),
+			cli: makeCli({ packages: " a , , b " }),
 			fileSystem,
 			patterns: ["packages/*"],
+			workspaceRoot: ROOT,
 		});
 
 		expect(result.map((info) => info.name)).toStrictEqual(["a", "b"]);
@@ -303,11 +315,13 @@ describe(resolveWorkspacePackages, () => {
 
 		const { fileSystem } = createMemoryFileSystem(seedWorkspace(["a"]));
 
-		const result = resolveWorkspacePackages(makeCli({ packages: "a" }), ROOT, {
+		const result = resolveWorkspacePackages({
 			childProcess: createRunner(),
+			cli: makeCli({ packages: "a" }),
 			exclude: ["packages/**"],
 			fileSystem,
 			patterns: ["packages/*"],
+			workspaceRoot: ROOT,
 		});
 
 		expect(result.map((info) => info.name)).toStrictEqual(["a"]);

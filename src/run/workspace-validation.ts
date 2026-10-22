@@ -15,7 +15,7 @@ import {
 } from "../workspace/package-resolver.ts";
 
 /** {@link EnumerationOptions} plus what `--affected-since` launches. */
-export interface WorkspacePackageSelection extends EnumerationOptions {
+interface WorkspacePackageSelection extends EnumerationOptions {
 	childProcess: ChildProcessRunner;
 	fileSystem: FileSystem;
 }
@@ -49,6 +49,11 @@ const WORKSPACE_ONLY_FLAGS: ReadonlyArray<{
 	{ name: "--packages", isPresent: (cli) => cli.packages !== undefined },
 	{ name: "--bail", isPresent: (cli) => cli.bail === true },
 ];
+
+export interface ResolveWorkspacePackagesOptions extends WorkspacePackageSelection {
+	cli: CliOptions;
+	workspaceRoot: string;
+}
 
 /**
  * Whether this invocation belongs on the workspace path.
@@ -100,11 +105,14 @@ export function validateBasicWorkspaceFlags(cli: CliOptions): WorkspaceValidatio
  * The `--affected-since` branch already carries directory +
  * `package.json#name` from turbo/nx, so it skips enumeration entirely.
  */
-export function resolveWorkspacePackages(
-	cli: CliOptions,
-	workspaceRoot: string,
-	{ childProcess, exclude, fileSystem, patterns }: WorkspacePackageSelection,
-): Array<PackageInfo> {
+export function resolveWorkspacePackages({
+	childProcess,
+	cli,
+	exclude,
+	fileSystem,
+	patterns,
+	workspaceRoot,
+}: ResolveWorkspacePackagesOptions): Array<PackageInfo> {
 	if (cli.affectedSince !== undefined) {
 		return excludePackages({
 			exclude,

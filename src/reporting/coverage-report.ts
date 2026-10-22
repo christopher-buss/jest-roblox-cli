@@ -83,7 +83,7 @@ export function processCoverage({
 	// anything runs — there is no run-level `collectCoverage` to consult.
 	const units =
 		packageGates === undefined
-			? resolveSingleUnit(config, coverageData, pipeline)
+			? resolveSingleUnit({ config, coverageData, pipeline })
 			: packageGates.map(toPackageUnit);
 	if (units.length === 0) {
 		return true;
@@ -157,11 +157,15 @@ function toPackageUnit(gate: WorkspacePackageCoverageGate): CoverageReportUnit {
 // Single and multi report one universe, mapped here from the run's raw hit
 // counts through the one manifest at `rootDir`. Returns no unit — so no header,
 // no report, no gate — when coverage is off or nothing mappable came back.
-function resolveSingleUnit(
-	config: ResolvedConfig,
-	coverageData: RawCoverageData | undefined,
-	pipeline: CoveragePipeline,
-): Array<CoverageReportUnit> {
+function resolveSingleUnit({
+	config,
+	coverageData,
+	pipeline,
+}: {
+	config: ResolvedConfig;
+	coverageData: RawCoverageData | undefined;
+	pipeline: CoveragePipeline;
+}): Array<CoverageReportUnit> {
 	if (!config.collectCoverage) {
 		return [];
 	}

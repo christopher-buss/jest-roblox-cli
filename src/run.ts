@@ -31,6 +31,18 @@ export interface RunEntryOptions {
 	seams?: RunSeams;
 }
 
+export interface RunJestRobloxOptions extends RunEntryOptions {
+	cli: CliOptions;
+	config: ResolvedConfig;
+	progress?: RunProgress | undefined;
+}
+
+export interface SingleOrMultiRunInput extends Required<RunEntryOptions> {
+	cli: CliOptions;
+	rootConfig: ResolvedConfig;
+	timing: TimingCollector;
+}
+
 /** The real run paths, for every caller that is not a test. */
 export function nodeRunDispatch(): RunDispatch {
 	return {
@@ -48,12 +60,11 @@ export function nodeRunDispatch(): RunDispatch {
  * runs the suite, returning `coverageArtifacts` for the caller to emit a Build
  * Manifest from — the core never writes that manifest itself.
  */
-export async function runSingleOrMultiAsync(
-	cli: CliOptions,
-	merged: ResolvedConfig,
-	timing: TimingCollector,
-	{ dispatch, fileSystem, seams }: Required<RunEntryOptions>,
-): Promise<MultiRunResult> {
+export async function runSingleOrMultiAsync({
+	dispatch,
+	...run
+}: SingleOrMultiRunInput): Promise<MultiRunResult> {
+	const { cli, fileSystem, rootConfig: merged, seams, timing } = run;
 	const rawProjects = merged.projects;
 	if (rawProjects !== undefined && rawProjects.length > 0) {
 		return dispatch.runMultiProject({
@@ -84,19 +95,21 @@ export async function runSingleOrMultiAsync(
 	const rojoTree = typecheck.only
 		? undefined
 		: timing.profile("loadRojoTree", () => dispatch.loadRojoTree(merged, fileSystem));
-	const project = dispatch.buildImplicitProject(merged, rojoTree, {
+	const project = dispatch.buildImplicitProject({
+		config: merged,
 		fileSystem,
+		rojoTree,
 		tsconfigReader: seams.tsconfigReader,
 	});
-	return dispatch.runResolvedProjects([project], merged, { cli, fileSystem, seams, timing });
+	return dispatch.runResolvedProjects({ ...run, allProjects: [project] });
 }
 
-export async function runJestRobloxAsync(
-	cli: CliOptions,
-	config: ResolvedConfig,
-	progress: RunProgress = NOOP_RUN_PROGRESS,
-	options: RunEntryOptions = {},
-): Promise<MultiRunResult | WorkspaceRunResult> {
+export async function runJestRobloxAsync({
+	cli,
+	config,
+	progress = NOOP_RUN_PROGRESS,
+	...options
+}: RunJestRobloxOptions): Promise<MultiRunResult | WorkspaceRunResult> {
 	const settled: Required<RunEntryOptions> = { ...nodeRunEntryOptions(), ...options };
 	const { dispatch, fileSystem, seams } = settled;
 	// One collector per top-level run, flushed in `finally` so a TIMING run
@@ -116,16 +129,18 @@ export async function runJestRobloxAsync(
 		// absolute at load) and drive package enumeration in repos without a
 		// pnpm-workspace.yaml.
 		if (isWorkspaceInvocation(cli)) {
-			return await dispatch.runWorkspaceMode(cli, config.workspace, timing, {
-				childProcess: seams.childProcess,
-				fileSystem,
+			return await dispatch.runWorkspaceMode({
+				cli,
+				dependencies: { childProcess: seams.childProcess, fileSystem },
+				timing,
+				workspace: config.workspace,
 			});
 		}
 
 		// Single/multi paths keep the CLI > config precedence so programmatic
 		// callers passing a raw config still get CLI overrides folded in.
 		const merged = mergeCliWithConfig(cli, config);
-		const result = await runSingleOrMultiAsync(cli, merged, timing, settled);
+		const result = await runSingleOrMultiAsync({ cli, rootConfig: merged, timing, ...settled });
 
 		// Entry point owns Build Manifest emission. A `runJestRoblox` run never
 		// builds a Clean Place, so it records `coveragePlace` only. The reuse

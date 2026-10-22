@@ -51,7 +51,7 @@ describe(writeJsonFileAsync, () => {
 		};
 
 		const filePath = path.join(temporaryDirectory, "results.json");
-		await writeJsonFileAsync(result, filePath);
+		await writeJsonFileAsync({ filePath, result });
 
 		const content = fs.readFileSync(filePath, "utf8");
 
@@ -77,7 +77,7 @@ describe(writeJsonFileAsync, () => {
 		};
 
 		const filePath = path.join(temporaryDirectory, "nested", "deep", "results.json");
-		await writeJsonFileAsync(result, filePath);
+		await writeJsonFileAsync({ filePath, result });
 
 		expect(fs.existsSync(filePath)).toBeTrue();
 	});

@@ -86,7 +86,7 @@ export function atomicWrite({
 	fileSystem.mkdirSync(directory, { recursive: true });
 	const basename = path.basename(targetPath);
 	if (sweepStrays) {
-		sweepAbandonedTemporaries(fileSystem, directory, basename);
+		sweepAbandonedTemporaries({ basename, directory, fileSystem });
 	}
 
 	const stamp = `${process.pid}.${randomBytes(NONCE_BYTES).toString("hex")}`;
@@ -154,17 +154,16 @@ function isProcessAlive(pid: number): boolean {
  * writer from before the nonce existed makes one, and that writer is the one
  * case where a recycled pid can put a live write behind a name this sweep has
  * already judged abandoned.
- *
- * @param fileSystem - Where the temp files live.
- * @param directory - The target's own directory, where its temp files live.
- * @param basename - The target's filename, which its temp files are prefixed
- *   with.
  */
-function sweepAbandonedTemporaries(
-	fileSystem: FileSystem,
-	directory: string,
-	basename: string,
-): void {
+function sweepAbandonedTemporaries({
+	basename,
+	directory,
+	fileSystem,
+}: {
+	readonly basename: string;
+	readonly directory: string;
+	readonly fileSystem: FileSystem;
+}): void {
 	const prefix = `${basename}${TEMPORARY_INFIX}`;
 	let entries: Array<string>;
 	try {

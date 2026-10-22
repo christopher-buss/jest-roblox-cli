@@ -98,21 +98,19 @@ describe(runJestRobloxAsync, () => {
 			begin: vi.fn<typeof NOOP_RUN_PROGRESS.begin>(NOOP_RUN_PROGRESS.begin),
 		};
 
-		const result = await runJestRobloxAsync(
-			makeCli({ workspace: true }),
-			makeConfig(),
+		const result = await runJestRobloxAsync({
+			cli: makeCli({ workspace: true }),
+			config: makeConfig(),
+			dispatch,
 			progress,
-			{
-				dispatch,
-			},
-		);
+		});
 
 		expect(result).toBe(WORKSPACE);
 		expect(dispatch.runWorkspaceMode).toHaveBeenCalledExactlyOnceWith(
-			expect.anything(),
-			undefined,
-			expect.objectContaining({ progress }),
-			expect.anything(),
+			expect.objectContaining({
+				timing: expect.objectContaining({ progress }),
+				workspace: undefined,
+			}),
 		);
 	});
 
@@ -123,15 +121,10 @@ describe(runJestRobloxAsync, () => {
 
 		const cli = makeCli({ packages: "foo,bar" });
 
-		await runJestRobloxAsync(cli, makeConfig(), undefined, {
-			dispatch,
-		});
+		await runJestRobloxAsync({ cli, config: makeConfig(), dispatch });
 
 		expect(dispatch.runWorkspaceMode).toHaveBeenCalledExactlyOnceWith(
-			cli,
-			undefined,
-			expect.anything(),
-			expect.anything(),
+			expect.objectContaining({ cli, workspace: undefined }),
 		);
 	});
 
@@ -142,15 +135,10 @@ describe(runJestRobloxAsync, () => {
 
 		const cli = makeCli({ affectedSince: "main" });
 
-		await runJestRobloxAsync(cli, makeConfig(), undefined, {
-			dispatch,
-		});
+		await runJestRobloxAsync({ cli, config: makeConfig(), dispatch });
 
 		expect(dispatch.runWorkspaceMode).toHaveBeenCalledExactlyOnceWith(
-			cli,
-			undefined,
-			expect.anything(),
-			expect.anything(),
+			expect.objectContaining({ cli, workspace: undefined }),
 		);
 	});
 
@@ -162,7 +150,7 @@ describe(runJestRobloxAsync, () => {
 			projects: [{ test: { displayName: "client", include: ["a.spec.ts"] } }],
 		});
 
-		const result = await runJestRobloxAsync(makeCli(), config, undefined, { dispatch });
+		const result = await runJestRobloxAsync({ cli: makeCli(), config, dispatch });
 
 		expect(result).toBe(MULTI);
 		expect(dispatch.runMultiProject).toHaveBeenCalledExactlyOnceWith(
@@ -176,12 +164,10 @@ describe(runJestRobloxAsync, () => {
 		const dispatch = makeDispatch();
 		const stderr = captureTimingReport();
 
-		await runJestRobloxAsync(makeCli(), makeConfig(), undefined, { dispatch });
+		await runJestRobloxAsync({ cli: makeCli(), config: makeConfig(), dispatch });
 
 		expect(dispatch.runResolvedProjects).toHaveBeenCalledExactlyOnceWith(
-			[IMPLICIT_PROJECT],
-			expect.anything(),
-			expect.anything(),
+			expect.objectContaining({ allProjects: [IMPLICIT_PROJECT] }),
 		);
 		expect(dispatch.loadRojoTree).toHaveBeenCalledExactlyOnceWith(
 			expect.objectContaining({ rootDir: "/test" }),
@@ -197,12 +183,10 @@ describe(runJestRobloxAsync, () => {
 		const dispatch = makeDispatch();
 		const { fileSystem } = createMemoryFileSystem();
 
-		await runJestRobloxAsync(makeCli(), makeConfig(), undefined, { dispatch, fileSystem });
+		await runJestRobloxAsync({ cli: makeCli(), config: makeConfig(), dispatch, fileSystem });
 
 		expect(dispatch.loadRojoTree).toHaveBeenCalledWith(expect.anything(), fileSystem);
 		expect(dispatch.buildImplicitProject).toHaveBeenCalledWith(
-			expect.anything(),
-			expect.anything(),
 			expect.objectContaining({ fileSystem }),
 		);
 	});
@@ -216,13 +200,15 @@ describe(runJestRobloxAsync, () => {
 			execFileSync: vi.fn<ChildProcessRunner["execFileSync"]>(),
 		});
 
-		await runJestRobloxAsync(makeCli({ workspace: true }), makeConfig(), undefined, {
+		await runJestRobloxAsync({
+			cli: makeCli({ workspace: true }),
+			config: makeConfig(),
 			dispatch,
 			fileSystem,
 			seams: { ...nodeRunSeams(), childProcess },
 		});
 
-		const forwarded = vi.mocked(dispatch.runWorkspaceMode).mock.calls[0]![3];
+		const forwarded = vi.mocked(dispatch.runWorkspaceMode).mock.calls[0]![0].dependencies;
 
 		expect(forwarded).toStrictEqual({ childProcess, fileSystem });
 	});
@@ -232,16 +218,18 @@ describe(runJestRobloxAsync, () => {
 
 		const dispatch = makeDispatch();
 		const error = new Error("workspace failed");
-		vi.mocked(dispatch.runWorkspaceMode).mockImplementation(
-			async (_cli, _workspace, timing) => {
-				timing!.profile("enumeratePackages", () => {});
-				throw error;
-			},
-		);
+		vi.mocked(dispatch.runWorkspaceMode).mockImplementation(async ({ timing }) => {
+			timing!.profile("enumeratePackages", () => {});
+			throw error;
+		});
 		const stderr = captureTimingReport();
 
 		await expect(
-			runJestRobloxAsync(makeCli({ workspace: true }), makeConfig(), undefined, { dispatch }),
+			runJestRobloxAsync({
+				cli: makeCli({ workspace: true }),
+				config: makeConfig(),
+				dispatch,
+			}),
 		).rejects.toBe(error);
 		expect(timingLines(stderr).at(-1)).toContain("TOTAL (host)");
 	});
@@ -251,12 +239,14 @@ describe(runJestRobloxAsync, () => {
 
 		const dispatch = makeDispatch();
 
-		await runJestRobloxAsync(makeCli(), makeConfig({ projects: [] }), undefined, { dispatch });
+		await runJestRobloxAsync({
+			cli: makeCli(),
+			config: makeConfig({ projects: [] }),
+			dispatch,
+		});
 
 		expect(dispatch.runResolvedProjects).toHaveBeenCalledExactlyOnceWith(
-			[IMPLICIT_PROJECT],
-			expect.anything(),
-			expect.anything(),
+			expect.objectContaining({ allProjects: [IMPLICIT_PROJECT] }),
 		);
 	});
 
@@ -268,18 +258,15 @@ describe(runJestRobloxAsync, () => {
 
 		const dispatch = makeDispatch();
 
-		const result = await runJestRobloxAsync(
-			makeCli({ typecheckOnly: true }),
-			makeConfig(),
-			undefined,
-			{ dispatch },
-		);
+		const result = await runJestRobloxAsync({
+			cli: makeCli({ typecheckOnly: true }),
+			config: makeConfig(),
+			dispatch,
+		});
 
 		expect(result).toBe(MULTI);
 		expect(dispatch.runResolvedProjects).toHaveBeenCalledExactlyOnceWith(
-			[IMPLICIT_PROJECT],
-			expect.anything(),
-			expect.anything(),
+			expect.objectContaining({ allProjects: [IMPLICIT_PROJECT] }),
 		);
 		expect(dispatch.loadRojoTree).not.toHaveBeenCalled();
 	});
@@ -290,12 +277,12 @@ describe(runJestRobloxAsync, () => {
 		const runTypecheck = vi.fn<RunSeams["runTypecheck"]>();
 		const { fileSystem } = createMemoryFileSystem();
 
-		const result = await runJestRobloxAsync(
-			makeCli({ typecheckOnly: true }),
-			makeConfig({ passWithNoTests: true }),
-			undefined,
-			{ fileSystem, seams: { ...nodeRunSeams(), runTypecheck } },
-		);
+		const result = await runJestRobloxAsync({
+			cli: makeCli({ typecheckOnly: true }),
+			config: makeConfig({ passWithNoTests: true }),
+			fileSystem,
+			seams: { ...nodeRunSeams(), runTypecheck },
+		});
 
 		expect(result.mode).toBe("multi");
 		expect(result.projectResults).toBeEmpty();
@@ -307,11 +294,9 @@ describe(runJestRobloxAsync, () => {
 		const dispatch = makeDispatch();
 		const cli = makeCli({ collectCoverage: true, packages: "a", workspace: true });
 
-		await runJestRobloxAsync(cli, makeConfig({ collectCoverage: false }), undefined, {
-			dispatch,
-		});
+		await runJestRobloxAsync({ cli, config: makeConfig({ collectCoverage: false }), dispatch });
 
-		const [forwardedCli] = vi.mocked(dispatch.runWorkspaceMode).mock.calls[0]!;
+		const [{ cli: forwardedCli }] = vi.mocked(dispatch.runWorkspaceMode).mock.calls[0]!;
 
 		expect(forwardedCli).toBe(cli);
 	});
@@ -322,11 +307,13 @@ describe(runJestRobloxAsync, () => {
 		const dispatch = makeDispatch();
 		const config = makeConfig({ workspace: { packages: ["packages/*"], root: "/ws" } });
 
-		await runJestRobloxAsync(makeCli({ packages: "foo", workspace: true }), config, undefined, {
+		await runJestRobloxAsync({
+			cli: makeCli({ packages: "foo", workspace: true }),
+			config,
 			dispatch,
 		});
 
-		const [, forwardedWorkspace] = vi.mocked(dispatch.runWorkspaceMode).mock.calls[0]!;
+		const forwardedWorkspace = vi.mocked(dispatch.runWorkspaceMode).mock.calls[0]![0].workspace;
 
 		expect(forwardedWorkspace).toStrictEqual({ packages: ["packages/*"], root: "/ws" });
 	});
@@ -341,7 +328,7 @@ describe(runJestRobloxAsync, () => {
 		});
 		const { fileSystem, volume } = createMemoryFileSystem();
 
-		await runJestRobloxAsync(makeCli(), makeConfig(), undefined, { dispatch, fileSystem });
+		await runJestRobloxAsync({ cli: makeCli(), config: makeConfig(), dispatch, fileSystem });
 
 		const manifest = readBuildManifest(volume);
 
@@ -359,7 +346,7 @@ describe(runJestRobloxAsync, () => {
 		});
 		const { fileSystem, volume } = createMemoryFileSystem();
 
-		await runJestRobloxAsync(makeCli(), makeConfig(), undefined, { dispatch, fileSystem });
+		await runJestRobloxAsync({ cli: makeCli(), config: makeConfig(), dispatch, fileSystem });
 
 		expect(volume.existsSync(COVERAGE_BUILD_MANIFEST_PATH)).toBeFalse();
 	});
@@ -370,7 +357,7 @@ describe(runJestRobloxAsync, () => {
 		const dispatch = makeDispatch();
 		const { fileSystem, volume } = createMemoryFileSystem();
 
-		await runJestRobloxAsync(makeCli(), makeConfig(), undefined, { dispatch, fileSystem });
+		await runJestRobloxAsync({ cli: makeCli(), config: makeConfig(), dispatch, fileSystem });
 
 		expect(volume.existsSync(COVERAGE_BUILD_MANIFEST_PATH)).toBeFalse();
 	});

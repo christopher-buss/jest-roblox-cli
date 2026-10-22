@@ -65,6 +65,13 @@ export interface ExecutionOutcome {
 	typecheck: TypecheckPassOutcome;
 }
 
+export interface RunTypecheckPassOptions {
+	cliTypecheck: TypecheckCliOptions;
+	entries: Array<TypecheckGroupEntry>;
+	rootConfig: ResolvedConfig;
+	runTypecheck: RunSeams["runTypecheck"];
+}
+
 /** Where the non-coverage dispatch place is built, and from what. */
 interface DispatchPlaceOptions {
 	cacheRoot: string;
@@ -90,12 +97,12 @@ interface PlaceBuildOutcome {
  * `test.typecheck` + CLI (the per-project tsconfig drives grouping, not the
  * source-error decision), then applied to every group's pass.
  */
-export async function runTypecheckPassAsync(
-	entries: Array<TypecheckGroupEntry>,
-	rootConfig: ResolvedConfig,
-	cliTypecheck: TypecheckCliOptions,
-	runTypecheck: RunSeams["runTypecheck"],
-): Promise<TypecheckPassOutcome> {
+export async function runTypecheckPassAsync({
+	cliTypecheck,
+	entries,
+	rootConfig,
+	runTypecheck,
+}: RunTypecheckPassOptions): Promise<TypecheckPassOutcome> {
 	const rootTypecheck = resolveTypecheckConfig({ cli: cliTypecheck, root: rootConfig.typecheck });
 	return runGroupedTypecheckPassAsync(entries, async (group) => {
 		return runTypecheck({
@@ -159,12 +166,12 @@ export async function runTestPlanAsync(input: ExecutionInput): Promise<Execution
 			timing,
 			...dispatch,
 		}),
-		runTypecheckPassAsync(
-			plan.typeTestEntries,
-			rootConfig,
+		runTypecheckPassAsync({
 			cliTypecheck,
-			discovery.seams.runTypecheck,
-		),
+			entries: plan.typeTestEntries,
+			rootConfig,
+			runTypecheck: discovery.seams.runTypecheck,
+		}),
 	]);
 
 	// Record the tsgo span at root once both branches settle — the collector's

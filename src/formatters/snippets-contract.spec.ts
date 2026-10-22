@@ -38,10 +38,10 @@ describe(formatSourceSnippet, () => {
 	it("should enable color by default", () => {
 		expect.assertions(1);
 
-		const output = formatSourceSnippet(
-			{ failureLine: 1, lines: [{ content: "return nil", num: 1 }] },
-			"src/example.luau",
-		);
+		const output = formatSourceSnippet({
+			filePath: "src/example.luau",
+			snippet: { failureLine: 1, lines: [{ content: "return nil", num: 1 }] },
+		});
 
 		expect(output).toContain(color.cyan(" ❯ src/example.luau:1"));
 	});
@@ -60,14 +60,18 @@ describe(formatSourceSnippet, () => {
 		};
 
 		expect(
-			formatSourceSnippet(snippet, "src/example.luau", {
+			formatSourceSnippet({
+				filePath: "src/example.luau",
 				language: "Luau",
+				snippet,
 				useColor: false,
 			}),
 		).toMatchSnapshot("plain");
 		expect(
-			formatSourceSnippet(snippet, "src/example.luau", {
+			formatSourceSnippet({
+				filePath: "src/example.luau",
 				language: "Luau",
+				snippet,
 				useColor: true,
 			}),
 		).toMatchSnapshot("colored");
@@ -77,11 +81,11 @@ describe(formatSourceSnippet, () => {
 		expect.assertions(1);
 
 		expect(
-			formatSourceSnippet(
-				{ failureLine: 1, lines: [{ content: "return nil", num: 1 }] },
-				"src/example.luau",
-				{ useColor: false },
-			),
+			formatSourceSnippet({
+				filePath: "src/example.luau",
+				snippet: { failureLine: 1, lines: [{ content: "return nil", num: 1 }] },
+				useColor: false,
+			}),
 		).toBe(" ❯ src/example.luau:1\n\t1| return nil");
 	});
 
@@ -89,11 +93,11 @@ describe(formatSourceSnippet, () => {
 		expect.assertions(1);
 
 		expect(
-			formatSourceSnippet(
-				{ failureLine: 1, lines: [{ content: "a\tb", num: 1 }] },
-				"src/example.luau",
-				{ useColor: false },
-			),
+			formatSourceSnippet({
+				filePath: "src/example.luau",
+				snippet: { failureLine: 1, lines: [{ content: "a\tb", num: 1 }] },
+				useColor: false,
+			}),
 		).toBe(" ❯ src/example.luau:1\n\t1| a   b");
 	});
 });

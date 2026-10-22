@@ -68,7 +68,7 @@ describe("workspace e2e — foundation pipeline", () => {
 			const synthProjectPath = path.join(cacheDirectory, "synthesized.project.json");
 			const synthRbxlPath = path.join(cacheDirectory, "synthesized.rbxl");
 			fs.writeFileSync(synthProjectPath, projectJson);
-			await buildWithRojoAsync(synthProjectPath, synthRbxlPath);
+			await buildWithRojoAsync({ outputPath: synthRbxlPath, projectPath: synthProjectPath });
 
 			expect(fs.statSync(synthRbxlPath).size).toBeGreaterThan(0);
 		},

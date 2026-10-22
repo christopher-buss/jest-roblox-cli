@@ -220,7 +220,13 @@ describe(formatExecErrorDetail, () => {
 			testFilePath: "src/init.spec.ts",
 		});
 
-		expect(formatExecErrorDetail(file, createStyles(false), failureContext)).toMatchSnapshot();
+		expect(
+			formatExecErrorDetail({
+				failureCtx: failureContext,
+				file,
+				styles: createStyles(false),
+			}),
+		).toMatchSnapshot();
 		expect(failureContext.currentIndex).toBe(2);
 	});
 
@@ -232,7 +238,11 @@ describe(formatExecErrorDetail, () => {
 			failureMessage: "first line\n\nsecond line",
 			testFilePath: "src/init.spec.ts",
 		});
-		const output = formatExecErrorDetail(file, createTaggedStyles(), failureContext);
+		const output = formatExecErrorDetail({
+			failureCtx: failureContext,
+			file,
+			styles: createTaggedStyles(),
+		});
 
 		expect(output).toContain("  <fail>first line</fail>\n\n  <fail>second line</fail>");
 		expect(output).not.toContain("<fail></fail>");

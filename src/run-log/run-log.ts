@@ -52,8 +52,8 @@ export async function withRunLogAsync<T>(
 	}
 
 	const restore = [
-		tee(streams.stdout, fileSystem, descriptor),
-		tee(streams.stderr, fileSystem, descriptor),
+		tee({ descriptor, fileSystem, stream: streams.stdout }),
+		tee({ descriptor, fileSystem, stream: streams.stderr }),
 	];
 	try {
 		return await runAsync();
@@ -79,7 +79,15 @@ function openLog(fileSystem: FileSystem, logPath: string): number | undefined {
 	}
 }
 
-function tee(stream: RunLogStream, fileSystem: FileSystem, descriptor: number): () => void {
+function tee({
+	descriptor,
+	fileSystem,
+	stream,
+}: {
+	descriptor: number;
+	fileSystem: FileSystem;
+	stream: RunLogStream;
+}): () => void {
 	const original = stream.write;
 	const passThrough = original.bind(stream);
 	stream.write = (chunk, ...rest): boolean => {

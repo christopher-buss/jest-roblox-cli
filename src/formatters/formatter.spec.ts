@@ -90,7 +90,7 @@ describe(formatTestSummary, () => {
 			],
 		};
 
-		const summary = formatTestSummary(result, createTiming(2500));
+		const summary = formatTestSummary({ result, timing: createTiming(2500) });
 
 		expect(summary).toContain("Test Files");
 		expect(summary).toContain("5 passed");
@@ -127,7 +127,7 @@ describe(formatTestSummary, () => {
 			],
 		};
 
-		const summary = formatTestSummary(result, createTiming(1000));
+		const summary = formatTestSummary({ result, timing: createTiming(1000) });
 
 		expect(summary).toContain("Test Files");
 		expect(summary).toContain("7 passed");
@@ -140,7 +140,7 @@ describe(formatTestSummary, () => {
 		expect.assertions(2);
 
 		const summary = stripVTControlCharacters(
-			formatTestSummary(MIXED_RESULT, createTiming(1000)),
+			formatTestSummary({ result: MIXED_RESULT, timing: createTiming(1000) }),
 		);
 
 		expect(summary).toContain(" Test Files  1 failed | 1 passed (2)");
@@ -151,7 +151,7 @@ describe(formatTestSummary, () => {
 		expect.assertions(2);
 
 		const summary = stripVTControlCharacters(
-			formatTestSummary(EMPTY_FILE_RESULT, createTiming(1000)),
+			formatTestSummary({ result: EMPTY_FILE_RESULT, timing: createTiming(1000) }),
 		);
 
 		expect(summary).toContain(" Test Files  2 passed (2)");
@@ -179,7 +179,7 @@ describe(formatTestSummary, () => {
 			],
 		};
 
-		const summary = formatTestSummary(result, createTiming(1000));
+		const summary = formatTestSummary({ result, timing: createTiming(1000) });
 
 		expect(summary).not.toContain("Snapshots");
 	});
@@ -206,7 +206,7 @@ describe(formatTestSummary, () => {
 			],
 		};
 
-		const summary = formatTestSummary(result, createTiming(1000));
+		const summary = formatTestSummary({ result, timing: createTiming(1000) });
 
 		expect(summary).not.toContain("Snapshots");
 	});
@@ -233,7 +233,7 @@ describe(formatTestSummary, () => {
 			],
 		};
 
-		const summary = formatTestSummary(result, createTiming(1000));
+		const summary = formatTestSummary({ result, timing: createTiming(1000) });
 
 		expect(summary).toContain("Snapshots");
 		expect(summary).toContain("3 passed");
@@ -262,7 +262,7 @@ describe(formatTestSummary, () => {
 			],
 		};
 
-		const summary = formatTestSummary(result, createTiming(1000));
+		const summary = formatTestSummary({ result, timing: createTiming(1000) });
 
 		expect(summary).toContain("Snapshots");
 		expect(summary).toMatch(/Snapshots.*1 failed/);
@@ -292,7 +292,7 @@ describe(formatTestSummary, () => {
 			],
 		};
 
-		const summary = formatTestSummary(result, createTiming(1000));
+		const summary = formatTestSummary({ result, timing: createTiming(1000) });
 
 		expect(summary).toMatch(/Snapshots.*1 written/);
 		expect(summary).toMatch(/Snapshots.*2 passed/);
@@ -320,7 +320,7 @@ describe(formatTestSummary, () => {
 			],
 		};
 
-		const summary = formatTestSummary(result, createTiming(1000));
+		const summary = formatTestSummary({ result, timing: createTiming(1000) });
 
 		expect(summary).toMatch(/Snapshots.*2 updated/);
 		expect(summary).toMatch(/Snapshots.*1 passed/);
@@ -355,7 +355,7 @@ describe(formatTestSummary, () => {
 			],
 		};
 
-		const summary = formatTestSummary(result, createTiming(1000));
+		const summary = formatTestSummary({ result, timing: createTiming(1000) });
 
 		expect(summary).toMatch(/Snapshots.*2 obsolete/);
 	});
@@ -390,7 +390,7 @@ describe(formatTestSummary, () => {
 			],
 		};
 
-		const summary = formatTestSummary(result, createTiming(1000));
+		const summary = formatTestSummary({ result, timing: createTiming(1000) });
 
 		expect(summary).not.toMatch(/Snapshots.*obsolete/);
 		expect(summary).not.toContain("  Snapshots");
@@ -425,7 +425,7 @@ describe(formatTestSummary, () => {
 			],
 		};
 
-		const summary = formatTestSummary(result, createTiming(1000));
+		const summary = formatTestSummary({ result, timing: createTiming(1000) });
 
 		expect(summary).toContain("Snapshots");
 		expect(summary).toMatch(/Snapshots.*2 obsolete/);
@@ -454,8 +454,10 @@ describe(formatTestSummary, () => {
 			],
 		};
 
-		const summary = formatTestSummary(result, createTiming(1000), undefined, {
+		const summary = formatTestSummary({
+			result,
 			snapshotWriteFailures: 1,
+			timing: createTiming(1000),
 		});
 		const writeLine = summary.split("\n").find((line) => line.includes("Snapshot Write"));
 
@@ -492,7 +494,7 @@ describe(formatTestSummary, () => {
 			],
 		};
 
-		const summary = formatTestSummary(result, createTiming(1000));
+		const summary = formatTestSummary({ result, timing: createTiming(1000) });
 		const snapshotLine = summary.split("\n").find((line) => line.includes("Snapshots"));
 
 		expect(snapshotLine).toMatch(/1 failed.*1 obsolete.*2 updated.*1 written.*2 passed.*\(6\)/);
@@ -526,7 +528,7 @@ describe(formatTestSummary, () => {
 			],
 		};
 
-		const summary = formatTestSummary(result, createTiming(1000));
+		const summary = formatTestSummary({ result, timing: createTiming(1000) });
 
 		expect(summary).toContain("Test Files");
 		expect(summary).toMatch(/1 failed.*\|.*1 passed/);
@@ -769,7 +771,7 @@ describe(formatSourceSnippet, () => {
 			],
 		};
 
-		const formatted = formatSourceSnippet(snippet, "test.ts");
+		const formatted = formatSourceSnippet({ filePath: "test.ts", snippet });
 
 		expect(formatted).toContain("❯ test.ts:2:10");
 		expect(formatted).toContain("1|");
@@ -785,7 +787,7 @@ describe(formatSourceSnippet, () => {
 			lines: [{ content: "print('hello')", num: 1 }],
 		};
 
-		const formatted = formatSourceSnippet(snippet, "test.ts");
+		const formatted = formatSourceSnippet({ filePath: "test.ts", snippet });
 
 		expect(formatted).toContain("❯ test.ts:1");
 		expect(formatted).not.toContain(":1:");
@@ -1007,7 +1009,11 @@ describe(formatResult, () => {
 			testResults: [fileResult],
 		};
 
-		const formatted = formatResult(result, createTiming(1000), defaultOptions);
+		const formatted = formatResult({
+			options: defaultOptions,
+			result,
+			timing: createTiming(1000),
+		});
 
 		expect(formatted).toContain("✓");
 		expect(formatted).toContain("utils.spec.ts");
@@ -1051,7 +1057,11 @@ describe(formatResult, () => {
 			testResults: [fileResult],
 		};
 
-		const formatted = formatResult(result, createTiming(1000), defaultOptions);
+		const formatted = formatResult({
+			options: defaultOptions,
+			result,
+			timing: createTiming(1000),
+		});
 
 		expect(formatted).toContain("Failed Tests 1");
 		expect(formatted).toContain("FAIL");
@@ -1097,9 +1107,13 @@ describe(formatResult, () => {
 			testResults: [fileResult],
 		};
 
-		const formatted = formatResult(result, createTiming(1000), {
-			...defaultOptions,
-			verbose: true,
+		const formatted = formatResult({
+			options: {
+				...defaultOptions,
+				verbose: true,
+			},
+			result,
+			timing: createTiming(1000),
 		});
 
 		expect(formatted).toContain("✓ Utils add works");
@@ -1127,9 +1141,13 @@ describe(formatResult, () => {
 			testResults: [fileResult],
 		};
 
-		const formatted = formatResult(result, createTiming(1000), {
-			...defaultOptions,
-			color: false,
+		const formatted = formatResult({
+			options: {
+				...defaultOptions,
+				color: false,
+			},
+			result,
+			timing: createTiming(1000),
 		});
 
 		expect(stripVTControlCharacters(formatted)).toBe(formatted);
@@ -1157,9 +1175,13 @@ describe(formatResult, () => {
 			testResults: [fileResult],
 		};
 
-		const formatted = formatResult(result, createTiming(1000), {
-			...defaultOptions,
-			color: false,
+		const formatted = formatResult({
+			options: {
+				...defaultOptions,
+				color: false,
+			},
+			result,
+			timing: createTiming(1000),
 		});
 
 		expect(formatted).toContain("src/components/");
@@ -1179,7 +1201,7 @@ describe("formatResult failuresOnly", () => {
 	it("should omit passing file summaries in mixed results", () => {
 		expect.assertions(2);
 
-		const output = formatResult(MIXED_RESULT, TIMING, baseOptions);
+		const output = formatResult({ options: baseOptions, result: MIXED_RESULT, timing: TIMING });
 
 		expect(output).not.toContain("utils.spec.ts");
 		expect(output).toContain("game.spec.ts");
@@ -1188,7 +1210,7 @@ describe("formatResult failuresOnly", () => {
 	it("should still show failing file with describe groups", () => {
 		expect.assertions(3);
 
-		const output = formatResult(MIXED_RESULT, TIMING, baseOptions);
+		const output = formatResult({ options: baseOptions, result: MIXED_RESULT, timing: TIMING });
 
 		expect(output).toContain("❯ src/game.spec.ts");
 		expect(output).toContain("should end");
@@ -1198,7 +1220,7 @@ describe("formatResult failuresOnly", () => {
 	it("should still show summary footer", () => {
 		expect.assertions(2);
 
-		const output = formatResult(MIXED_RESULT, TIMING, baseOptions);
+		const output = formatResult({ options: baseOptions, result: MIXED_RESULT, timing: TIMING });
 
 		expect(output).toContain("Test Files");
 		expect(output).toContain("Tests");
@@ -1207,7 +1229,11 @@ describe("formatResult failuresOnly", () => {
 	it("should show no file summaries when all tests pass", () => {
 		expect.assertions(2);
 
-		const output = formatResult(PASSING_RESULT, TIMING, baseOptions);
+		const output = formatResult({
+			options: baseOptions,
+			result: PASSING_RESULT,
+			timing: TIMING,
+		});
 
 		expect(output).not.toContain("utils.spec.ts");
 		expect(output).toContain("Test Files");
@@ -1218,10 +1244,14 @@ describe("formatResult log hints", () => {
 	it("should show output file hint on failure", () => {
 		expect.assertions(2);
 
-		const output = formatResult(FAILING_RESULT, TIMING, {
-			...defaultOptions,
-			color: false,
-			outputFile: "/tmp/results.json",
+		const output = formatResult({
+			options: {
+				...defaultOptions,
+				color: false,
+				outputFile: "/tmp/results.json",
+			},
+			result: FAILING_RESULT,
+			timing: TIMING,
 		});
 
 		expect(output).toContain("View /tmp/results.json for full Jest output");
@@ -1231,10 +1261,14 @@ describe("formatResult log hints", () => {
 	it("should show game output hint on failure", () => {
 		expect.assertions(1);
 
-		const output = formatResult(FAILING_RESULT, TIMING, {
-			...defaultOptions,
-			color: false,
-			gameOutput: "/tmp/game.json",
+		const output = formatResult({
+			options: {
+				...defaultOptions,
+				color: false,
+				gameOutput: "/tmp/game.json",
+			},
+			result: FAILING_RESULT,
+			timing: TIMING,
 		});
 
 		expect(output).toContain("View /tmp/game.json for Roblox game logs");
@@ -1243,11 +1277,15 @@ describe("formatResult log hints", () => {
 	it("should show both hints when both paths configured", () => {
 		expect.assertions(2);
 
-		const output = formatResult(FAILING_RESULT, TIMING, {
-			...defaultOptions,
-			color: false,
-			gameOutput: "/tmp/game.json",
-			outputFile: "/tmp/results.json",
+		const output = formatResult({
+			options: {
+				...defaultOptions,
+				color: false,
+				gameOutput: "/tmp/game.json",
+				outputFile: "/tmp/results.json",
+			},
+			result: FAILING_RESULT,
+			timing: TIMING,
 		});
 
 		expect(output).toContain("View /tmp/results.json for full Jest output");
@@ -1257,11 +1295,15 @@ describe("formatResult log hints", () => {
 	it("should not show hints on passing results", () => {
 		expect.assertions(2);
 
-		const output = formatResult(PASSING_RESULT, TIMING, {
-			...defaultOptions,
-			color: false,
-			gameOutput: "/tmp/game.json",
-			outputFile: "/tmp/results.json",
+		const output = formatResult({
+			options: {
+				...defaultOptions,
+				color: false,
+				gameOutput: "/tmp/game.json",
+				outputFile: "/tmp/results.json",
+			},
+			result: PASSING_RESULT,
+			timing: TIMING,
 		});
 
 		expect(output).not.toContain("View /tmp/results.json");
@@ -1271,9 +1313,13 @@ describe("formatResult log hints", () => {
 	it("should not show hints when no paths configured", () => {
 		expect.assertions(2);
 
-		const output = formatResult(FAILING_RESULT, TIMING, {
-			...defaultOptions,
-			color: false,
+		const output = formatResult({
+			options: {
+				...defaultOptions,
+				color: false,
+			},
+			result: FAILING_RESULT,
+			timing: TIMING,
 		});
 
 		expect(output).not.toContain("View");
@@ -1302,7 +1348,11 @@ describe("formatResult log hints", () => {
 			],
 		};
 
-		const output = formatResult(result, TIMING, { ...defaultOptions, color: false });
+		const output = formatResult({
+			options: { ...defaultOptions, color: false },
+			result,
+			timing: TIMING,
+		});
 
 		expect(output).toMatch(/Inspect your code changes or rerun with `-u` to update snapshots/);
 	});
@@ -1310,9 +1360,13 @@ describe("formatResult log hints", () => {
 	it("should not suggest -u when no snapshot mismatches", () => {
 		expect.assertions(1);
 
-		const output = formatResult(FAILING_RESULT, TIMING, {
-			...defaultOptions,
-			color: false,
+		const output = formatResult({
+			options: {
+				...defaultOptions,
+				color: false,
+			},
+			result: FAILING_RESULT,
+			timing: TIMING,
 		});
 
 		expect(output).not.toContain("rerun with `-u`");
@@ -1330,7 +1384,11 @@ describe("formatResult snapshots", () => {
 	it("should format passing results", () => {
 		expect.assertions(1);
 
-		const output = formatResult(PASSING_RESULT, TIMING, baseOptions);
+		const output = formatResult({
+			options: baseOptions,
+			result: PASSING_RESULT,
+			timing: TIMING,
+		});
 
 		expect(output).toMatchInlineSnapshot(`
 			"
@@ -1346,7 +1404,11 @@ describe("formatResult snapshots", () => {
 	it("should format failing results", () => {
 		expect.assertions(1);
 
-		const output = formatResult(FAILING_RESULT, TIMING, baseOptions);
+		const output = formatResult({
+			options: baseOptions,
+			result: FAILING_RESULT,
+			timing: TIMING,
+		});
 
 		expect(output).toMatchInlineSnapshot(`
 			"
@@ -1390,7 +1452,7 @@ describe("formatResult snapshots", () => {
 	it("should format mixed results", () => {
 		expect.assertions(1);
 
-		const output = formatResult(MIXED_RESULT, TIMING, baseOptions);
+		const output = formatResult({ options: baseOptions, result: MIXED_RESULT, timing: TIMING });
 
 		expect(output).toMatchInlineSnapshot(`
 			"
@@ -1425,7 +1487,11 @@ describe("formatResult snapshots", () => {
 	it("should format skipped file results", () => {
 		expect.assertions(1);
 
-		const output = formatResult(SKIPPED_RESULT, TIMING, baseOptions);
+		const output = formatResult({
+			options: baseOptions,
+			result: SKIPPED_RESULT,
+			timing: TIMING,
+		});
 
 		expect(output).toMatchInlineSnapshot(`
 			"
@@ -1443,7 +1509,11 @@ describe("formatResult snapshots", () => {
 	it("should render snapshot failure in full output", () => {
 		expect.assertions(4);
 
-		const output = formatResult(SNAPSHOT_FAILING_RESULT, TIMING, baseOptions);
+		const output = formatResult({
+			options: baseOptions,
+			result: SNAPSHOT_FAILING_RESULT,
+			timing: TIMING,
+		});
 
 		expect(output).toContain("- Snapshot  - 2");
 		expect(output).toContain("+ Received  + 2");
@@ -1454,7 +1524,11 @@ describe("formatResult snapshots", () => {
 	it("should format without upload when timing has no upload", () => {
 		expect.assertions(1);
 
-		const output = formatResult(PASSING_RESULT, TIMING_NO_UPLOAD, baseOptions);
+		const output = formatResult({
+			options: baseOptions,
+			result: PASSING_RESULT,
+			timing: TIMING_NO_UPLOAD,
+		});
 
 		expect(output).toMatchInlineSnapshot(`
 			"
@@ -1470,7 +1544,11 @@ describe("formatResult snapshots", () => {
 	it("should format with verbose mode", () => {
 		expect.assertions(1);
 
-		const output = formatResult(PASSING_RESULT, TIMING, { ...baseOptions, verbose: true });
+		const output = formatResult({
+			options: { ...baseOptions, verbose: true },
+			result: PASSING_RESULT,
+			timing: TIMING,
+		});
 
 		expect(output).toMatchInlineSnapshot(`
 			"
@@ -1489,9 +1567,13 @@ describe("formatResult snapshots", () => {
 	it("should format with coverage enabled", () => {
 		expect.assertions(1);
 
-		const output = formatResult(PASSING_RESULT, TIMING, {
-			...baseOptions,
-			collectCoverage: true,
+		const output = formatResult({
+			options: {
+				...baseOptions,
+				collectCoverage: true,
+			},
+			result: PASSING_RESULT,
+			timing: TIMING,
 		});
 
 		expect(output).toMatchInlineSnapshot(`
@@ -1508,10 +1590,14 @@ describe("formatResult snapshots", () => {
 	it("should format with coverage enabled and verbose mode", () => {
 		expect.assertions(1);
 
-		const output = formatResult(PASSING_RESULT, TIMING, {
-			...baseOptions,
-			collectCoverage: true,
-			verbose: true,
+		const output = formatResult({
+			options: {
+				...baseOptions,
+				collectCoverage: true,
+				verbose: true,
+			},
+			result: PASSING_RESULT,
+			timing: TIMING,
 		});
 
 		expect(output).toMatchInlineSnapshot(`
@@ -1569,7 +1655,10 @@ describe("formatTestSummary exec errors", () => {
 	it("should count exec-error files as failed, not skipped", () => {
 		expect.assertions(3);
 
-		const summary = formatTestSummary(EXEC_ERROR_RESULT, createTiming(1000));
+		const summary = formatTestSummary({
+			result: EXEC_ERROR_RESULT,
+			timing: createTiming(1000),
+		});
 
 		expect(summary).toContain("1 failed");
 		expect(summary).not.toContain("skipped");
@@ -1579,7 +1668,10 @@ describe("formatTestSummary exec errors", () => {
 	it("should count exec-error files alongside passing files", () => {
 		expect.assertions(3);
 
-		const summary = formatTestSummary(MIXED_WITH_EXEC_ERROR_RESULT, createTiming(1000));
+		const summary = formatTestSummary({
+			result: MIXED_WITH_EXEC_ERROR_RESULT,
+			timing: createTiming(1000),
+		});
 
 		expect(summary).toContain("1 passed");
 		expect(summary).toContain("1 failed");
@@ -1591,9 +1683,13 @@ describe("formatResult exec errors", () => {
 	it("should show exec-error file with fail symbol and error message", () => {
 		expect.assertions(3);
 
-		const output = formatResult(EXEC_ERROR_RESULT, TIMING, {
-			...defaultOptions,
-			color: false,
+		const output = formatResult({
+			options: {
+				...defaultOptions,
+				color: false,
+			},
+			result: EXEC_ERROR_RESULT,
+			timing: TIMING,
 		});
 
 		expect(output).toContain("unit-menu-app.test");
@@ -1605,9 +1701,13 @@ describe("formatResult exec errors", () => {
 	it("should show exec-error in detailed failures section", () => {
 		expect.assertions(2);
 
-		const output = formatResult(EXEC_ERROR_RESULT, TIMING, {
-			...defaultOptions,
-			color: false,
+		const output = formatResult({
+			options: {
+				...defaultOptions,
+				color: false,
+			},
+			result: EXEC_ERROR_RESULT,
+			timing: TIMING,
 		});
 
 		expect(output).toContain("Failed Tests");
@@ -1617,10 +1717,14 @@ describe("formatResult exec errors", () => {
 	it("should show log hints for exec-error results", () => {
 		expect.assertions(1);
 
-		const output = formatResult(EXEC_ERROR_RESULT, TIMING, {
-			...defaultOptions,
-			color: false,
-			outputFile: "/tmp/results.json",
+		const output = formatResult({
+			options: {
+				...defaultOptions,
+				color: false,
+				outputFile: "/tmp/results.json",
+			},
+			result: EXEC_ERROR_RESULT,
+			timing: TIMING,
 		});
 
 		expect(output).toContain("View /tmp/results.json for full Jest output");
@@ -1629,9 +1733,13 @@ describe("formatResult exec errors", () => {
 	it("should render the exec-error message exactly once", () => {
 		expect.assertions(1);
 
-		const output = formatResult(EXEC_ERROR_RESULT, TIMING, {
-			...defaultOptions,
-			color: false,
+		const output = formatResult({
+			options: {
+				...defaultOptions,
+				color: false,
+			},
+			result: EXEC_ERROR_RESULT,
+			timing: TIMING,
 		});
 
 		const occurrences =
@@ -1646,9 +1754,13 @@ describe("formatResult timeouts", () => {
 	it("should name the budget rather than a suite that threw", () => {
 		expect.assertions(5);
 
-		const output = formatResult(TIMED_OUT_RESULT, TIMING, {
-			...defaultOptions,
-			color: false,
+		const output = formatResult({
+			options: {
+				...defaultOptions,
+				color: false,
+			},
+			result: TIMED_OUT_RESULT,
+			timing: TIMING,
 		});
 
 		expect(output).toContain("Test suite timed out");
@@ -1661,9 +1773,13 @@ describe("formatResult timeouts", () => {
 	it("should keep the test the run was abandoned in", () => {
 		expect.assertions(1);
 
-		const output = formatResult(TIMED_OUT_RESULT, TIMING, {
-			...defaultOptions,
-			color: false,
+		const output = formatResult({
+			options: {
+				...defaultOptions,
+				color: false,
+			},
+			result: TIMED_OUT_RESULT,
+			timing: TIMING,
 		});
 
 		expect(output).toContain(
@@ -1674,13 +1790,21 @@ describe("formatResult timeouts", () => {
 	it("should paint the timeout badge apart from the fail badge", () => {
 		expect.assertions(2);
 
-		const output = formatResult(TIMED_OUT_RESULT, TIMING, {
-			...defaultOptions,
-			color: true,
+		const output = formatResult({
+			options: {
+				...defaultOptions,
+				color: true,
+			},
+			result: TIMED_OUT_RESULT,
+			timing: TIMING,
 		});
-		const plainFailure = formatResult(EXEC_ERROR_RESULT, TIMING, {
-			...defaultOptions,
-			color: true,
+		const plainFailure = formatResult({
+			options: {
+				...defaultOptions,
+				color: true,
+			},
+			result: EXEC_ERROR_RESULT,
+			timing: TIMING,
 		});
 
 		expect(output).toContain(color.bgYellow(color.black(color.bold(" TIMEOUT "))));
@@ -1690,7 +1814,7 @@ describe("formatResult timeouts", () => {
 	it("should still count the run as failed", () => {
 		expect.assertions(2);
 
-		const summary = formatTestSummary(TIMED_OUT_RESULT, createTiming(1000));
+		const summary = formatTestSummary({ result: TIMED_OUT_RESULT, timing: createTiming(1000) });
 
 		expect(summary).toContain("1 failed");
 		expect(summary).not.toContain("skipped");
@@ -1708,7 +1832,11 @@ describe("formatResult exec error snapshots", () => {
 	it("should format exec-error-only result", () => {
 		expect.assertions(1);
 
-		const output = formatResult(EXEC_ERROR_RESULT, TIMING, baseOptions);
+		const output = formatResult({
+			options: baseOptions,
+			result: EXEC_ERROR_RESULT,
+			timing: TIMING,
+		});
 
 		expect(output).toMatchInlineSnapshot(`
 			"
@@ -1732,7 +1860,11 @@ describe("formatResult exec error snapshots", () => {
 	it("should format mixed passing + exec-error result", () => {
 		expect.assertions(1);
 
-		const output = formatResult(MIXED_WITH_EXEC_ERROR_RESULT, TIMING, baseOptions);
+		const output = formatResult({
+			options: baseOptions,
+			result: MIXED_WITH_EXEC_ERROR_RESULT,
+			timing: TIMING,
+		});
 
 		expect(output).toMatchInlineSnapshot(`
 			"
@@ -1766,7 +1898,11 @@ describe("formatResult with typecheck data", () => {
 	it("should format passing typecheck result", () => {
 		expect.assertions(1);
 
-		const output = formatResult(TYPECHECK_PASSING_RESULT, TIMING_NO_UPLOAD, baseOptions);
+		const output = formatResult({
+			options: baseOptions,
+			result: TYPECHECK_PASSING_RESULT,
+			timing: TIMING_NO_UPLOAD,
+		});
 
 		expect(output).toMatchInlineSnapshot(`
 			"
@@ -1782,7 +1918,11 @@ describe("formatResult with typecheck data", () => {
 	it("should format failing typecheck result", () => {
 		expect.assertions(1);
 
-		const output = formatResult(TYPECHECK_FAILING_RESULT, TIMING_NO_UPLOAD, baseOptions);
+		const output = formatResult({
+			options: baseOptions,
+			result: TYPECHECK_FAILING_RESULT,
+			timing: TIMING_NO_UPLOAD,
+		});
 
 		expect(output).toMatchInlineSnapshot(`
 			"
@@ -1808,7 +1948,11 @@ describe("formatResult with typecheck data", () => {
 	it("should format mixed typecheck result", () => {
 		expect.assertions(1);
 
-		const output = formatResult(TYPECHECK_MIXED_RESULT, TIMING_NO_UPLOAD, baseOptions);
+		const output = formatResult({
+			options: baseOptions,
+			result: TYPECHECK_MIXED_RESULT,
+			timing: TIMING_NO_UPLOAD,
+		});
 
 		expect(output).toMatchInlineSnapshot(`
 			"
@@ -1837,7 +1981,9 @@ describe("formatTestSummary type errors line", () => {
 	it("should show 'no errors' when typeErrors is 0", () => {
 		expect.assertions(1);
 
-		const output = formatTestSummary(PASSING_RESULT, TIMING_NO_UPLOAD, undefined, {
+		const output = formatTestSummary({
+			result: PASSING_RESULT,
+			timing: TIMING_NO_UPLOAD,
 			typeErrors: 0,
 		});
 		const plain = stripVTControlCharacters(output);
@@ -1848,7 +1994,9 @@ describe("formatTestSummary type errors line", () => {
 	it("should show failed count when typeErrors > 0", () => {
 		expect.assertions(1);
 
-		const output = formatTestSummary(PASSING_RESULT, TIMING_NO_UPLOAD, undefined, {
+		const output = formatTestSummary({
+			result: PASSING_RESULT,
+			timing: TIMING_NO_UPLOAD,
 			typeErrors: 3,
 		});
 		const plain = stripVTControlCharacters(output);
@@ -1859,7 +2007,7 @@ describe("formatTestSummary type errors line", () => {
 	it("should omit type errors line when typeErrors is undefined", () => {
 		expect.assertions(1);
 
-		const output = formatTestSummary(PASSING_RESULT, TIMING_NO_UPLOAD);
+		const output = formatTestSummary({ result: PASSING_RESULT, timing: TIMING_NO_UPLOAD });
 		const plain = stripVTControlCharacters(output);
 
 		expect(plain).not.toContain("Type Errors");
@@ -2117,9 +2265,13 @@ describe("formatDescribeGroup all-passing else branch", () => {
 		};
 
 		// color: true exercises the colored else-branch of formatDescribeGroup
-		const formatted = formatResult(result, createTiming(1000), {
-			...defaultOptions,
-			color: true,
+		const formatted = formatResult({
+			options: {
+				...defaultOptions,
+				color: true,
+			},
+			result,
+			timing: createTiming(1000),
 		});
 		const plain = stripVTControlCharacters(formatted);
 
@@ -2153,9 +2305,13 @@ describe("formatFilePath bare filename", () => {
 			testResults: [fileResult],
 		};
 
-		const formatted = formatResult(result, createTiming(500), {
-			...defaultOptions,
-			color: false,
+		const formatted = formatResult({
+			options: {
+				...defaultOptions,
+				color: false,
+			},
+			result,
+			timing: createTiming(500),
 		});
 
 		expect(formatted).toContain("test.spec.ts");
@@ -2203,9 +2359,13 @@ describe("formatTestInGroup duration undefined", () => {
 			testResults: [fileResult],
 		};
 
-		const formatted = formatResult(result, createTiming(500), {
-			...defaultOptions,
-			color: false,
+		const formatted = formatResult({
+			options: {
+				...defaultOptions,
+				color: false,
+			},
+			result,
+			timing: createTiming(500),
 		});
 		const plain = stripVTControlCharacters(formatted);
 
@@ -2256,9 +2416,13 @@ describe("formatTestInGroup skipped statuses", () => {
 	it("should render pending test with yellow ↓ and no ms suffix", () => {
 		expect.assertions(4);
 
-		const formatted = formatResult(buildResult("pending"), createTiming(500), {
-			...defaultOptions,
-			color: true,
+		const formatted = formatResult({
+			options: {
+				...defaultOptions,
+				color: true,
+			},
+			result: buildResult("pending"),
+			timing: createTiming(500),
 		});
 		const plain = stripVTControlCharacters(formatted);
 
@@ -2271,9 +2435,13 @@ describe("formatTestInGroup skipped statuses", () => {
 	it("should render skipped status with yellow ↓ and no ms suffix", () => {
 		expect.assertions(4);
 
-		const formatted = formatResult(buildResult("skipped"), createTiming(500), {
-			...defaultOptions,
-			color: true,
+		const formatted = formatResult({
+			options: {
+				...defaultOptions,
+				color: true,
+			},
+			result: buildResult("skipped"),
+			timing: createTiming(500),
 		});
 		const plain = stripVTControlCharacters(formatted);
 
@@ -2286,9 +2454,13 @@ describe("formatTestInGroup skipped statuses", () => {
 	it("should render todo status with yellow □ and no ms suffix", () => {
 		expect.assertions(4);
 
-		const formatted = formatResult(buildResult("todo"), createTiming(500), {
-			...defaultOptions,
-			color: true,
+		const formatted = formatResult({
+			options: {
+				...defaultOptions,
+				color: true,
+			},
+			result: buildResult("todo"),
+			timing: createTiming(500),
 		});
 		const plain = stripVTControlCharacters(formatted);
 
@@ -2301,9 +2473,13 @@ describe("formatTestInGroup skipped statuses", () => {
 	it("should render disabled status with yellow ↓ and no ms suffix", () => {
 		expect.assertions(4);
 
-		const formatted = formatResult(buildResult("disabled"), createTiming(500), {
-			...defaultOptions,
-			color: true,
+		const formatted = formatResult({
+			options: {
+				...defaultOptions,
+				color: true,
+			},
+			result: buildResult("disabled"),
+			timing: createTiming(500),
 		});
 		const plain = stripVTControlCharacters(formatted);
 
@@ -2318,9 +2494,13 @@ describe("formatTestInGroup skipped statuses", () => {
 
 		// buildResult has failed.duration=5 and skipped.duration=99. The group
 		// header total must reflect only counted (passed/failed) durations.
-		const formatted = formatResult(buildResult("pending"), createTiming(500), {
-			...defaultOptions,
-			color: false,
+		const formatted = formatResult({
+			options: {
+				...defaultOptions,
+				color: false,
+			},
+			result: buildResult("pending"),
+			timing: createTiming(500),
 		});
 		const plain = stripVTControlCharacters(formatted);
 
@@ -2334,7 +2514,7 @@ describe("formatTestSummary coverage timing", () => {
 	it("should show coverage bucket when coverageMs is provided", () => {
 		expect.assertions(2);
 
-		const summary = formatTestSummary(PASSING_RESULT, TIMING_COVERAGE);
+		const summary = formatTestSummary({ result: PASSING_RESULT, timing: TIMING_COVERAGE });
 		const plain = stripVTControlCharacters(summary);
 
 		expect(plain).toContain("coverage 3000ms");
@@ -2344,7 +2524,7 @@ describe("formatTestSummary coverage timing", () => {
 	it("should subtract coverageMs from cli bucket", () => {
 		expect.assertions(1);
 
-		const summary = formatTestSummary(PASSING_RESULT, TIMING_COVERAGE);
+		const summary = formatTestSummary({ result: PASSING_RESULT, timing: TIMING_COVERAGE });
 		const plain = stripVTControlCharacters(summary);
 
 		// totalMs=3250, uploadMs=50, executionMs=150, coverageMs=3000 → cli=50
@@ -2354,7 +2534,7 @@ describe("formatTestSummary coverage timing", () => {
 	it("should omit coverage bucket when coverageMs is undefined", () => {
 		expect.assertions(1);
 
-		const summary = formatTestSummary(PASSING_RESULT, TIMING);
+		const summary = formatTestSummary({ result: PASSING_RESULT, timing: TIMING });
 		const plain = stripVTControlCharacters(summary);
 
 		expect(plain).not.toContain("coverage");
@@ -2363,7 +2543,10 @@ describe("formatTestSummary coverage timing", () => {
 	it("should omit coverage bucket when coverageMs is zero", () => {
 		expect.assertions(1);
 
-		const summary = formatTestSummary(PASSING_RESULT, { ...TIMING, coverageMs: 0 });
+		const summary = formatTestSummary({
+			result: PASSING_RESULT,
+			timing: { ...TIMING, coverageMs: 0 },
+		});
 		const plain = stripVTControlCharacters(summary);
 
 		expect(plain).not.toContain("coverage");
@@ -2374,7 +2557,7 @@ describe("formatTestSummary staging timing", () => {
 	it("should show staging bucket when stagingMs is provided", () => {
 		expect.assertions(2);
 
-		const summary = formatTestSummary(PASSING_RESULT, TIMING_STAGING);
+		const summary = formatTestSummary({ result: PASSING_RESULT, timing: TIMING_STAGING });
 		const plain = stripVTControlCharacters(summary);
 
 		expect(plain).toContain("staging 400ms");
@@ -2385,7 +2568,7 @@ describe("formatTestSummary staging timing", () => {
 		expect.assertions(1);
 
 		// totalMs=650, uploadMs=50, executionMs=150, stagingMs=400 -> cli=50
-		const summary = formatTestSummary(PASSING_RESULT, TIMING_STAGING);
+		const summary = formatTestSummary({ result: PASSING_RESULT, timing: TIMING_STAGING });
 		const plain = stripVTControlCharacters(summary);
 
 		expect(plain).toContain("cli 50ms");
@@ -2394,7 +2577,10 @@ describe("formatTestSummary staging timing", () => {
 	it("should omit staging bucket when stagingMs is zero", () => {
 		expect.assertions(1);
 
-		const summary = formatTestSummary(PASSING_RESULT, { ...TIMING, stagingMs: 0 });
+		const summary = formatTestSummary({
+			result: PASSING_RESULT,
+			timing: { ...TIMING, stagingMs: 0 },
+		});
 		const plain = stripVTControlCharacters(summary);
 
 		expect(plain).not.toContain("staging");
@@ -2405,11 +2591,14 @@ describe("formatTestSummary setup timing", () => {
 	it("should show setup bucket when setupMs is provided", () => {
 		expect.assertions(1);
 
-		const summary = formatTestSummary(PASSING_RESULT, {
-			...TIMING,
-			executionMs: 500,
-			setupMs: 200,
-			totalMs: 600,
+		const summary = formatTestSummary({
+			result: PASSING_RESULT,
+			timing: {
+				...TIMING,
+				executionMs: 500,
+				setupMs: 200,
+				totalMs: 600,
+			},
 		});
 		const plain = stripVTControlCharacters(summary);
 
@@ -2420,11 +2609,14 @@ describe("formatTestSummary setup timing", () => {
 		expect.assertions(1);
 
 		// executionMs=500, testsMs=100, setupMs=200 → environment=200
-		const summary = formatTestSummary(PASSING_RESULT, {
-			...TIMING,
-			executionMs: 500,
-			setupMs: 200,
-			totalMs: 600,
+		const summary = formatTestSummary({
+			result: PASSING_RESULT,
+			timing: {
+				...TIMING,
+				executionMs: 500,
+				setupMs: 200,
+				totalMs: 600,
+			},
 		});
 		const plain = stripVTControlCharacters(summary);
 
@@ -2435,9 +2627,12 @@ describe("formatTestSummary setup timing", () => {
 		expect.assertions(1);
 
 		// executionMs=150, testsMs=100, setupMs=200 → would be -150, clamp to 0
-		const summary = formatTestSummary(PASSING_RESULT, {
-			...TIMING,
-			setupMs: 200,
+		const summary = formatTestSummary({
+			result: PASSING_RESULT,
+			timing: {
+				...TIMING,
+				setupMs: 200,
+			},
 		});
 		const plain = stripVTControlCharacters(summary);
 
@@ -2447,7 +2642,7 @@ describe("formatTestSummary setup timing", () => {
 	it("should omit setup bucket when setupMs is undefined", () => {
 		expect.assertions(1);
 
-		const summary = formatTestSummary(PASSING_RESULT, TIMING);
+		const summary = formatTestSummary({ result: PASSING_RESULT, timing: TIMING });
 		const plain = stripVTControlCharacters(summary);
 
 		expect(plain).not.toContain("setup");
@@ -2456,7 +2651,10 @@ describe("formatTestSummary setup timing", () => {
 	it("should omit setup bucket when setupMs is zero", () => {
 		expect.assertions(1);
 
-		const summary = formatTestSummary(PASSING_RESULT, { ...TIMING, setupMs: 0 });
+		const summary = formatTestSummary({
+			result: PASSING_RESULT,
+			timing: { ...TIMING, setupMs: 0 },
+		});
 		const plain = stripVTControlCharacters(summary);
 
 		expect(plain).not.toContain("setup");
@@ -2659,7 +2857,7 @@ describe("expandTabs via formatSourceSnippet", () => {
 			],
 		};
 
-		const formatted = formatSourceSnippet(snippet, "file.ts", { useColor: false });
+		const formatted = formatSourceSnippet({ filePath: "file.ts", snippet, useColor: false });
 
 		// Content tabs are expanded to spaces (gutter indent is a literal \t)
 		expect(formatted).toContain("    const a = 1;");
@@ -2833,10 +3031,14 @@ describe("formatPass duration undefined", () => {
 			testResults: [fileResult],
 		};
 
-		const formatted = formatResult(result, createTiming(500), {
-			...defaultOptions,
-			color: false,
-			verbose: true,
+		const formatted = formatResult({
+			options: {
+				...defaultOptions,
+				color: false,
+				verbose: true,
+			},
+			result,
+			timing: createTiming(500),
 		});
 
 		expect(formatted).toContain("✓ Suite should work");
@@ -2884,10 +3086,14 @@ describe("formatPassedFileSummary with non-passed test", () => {
 			testResults: [fileResult],
 		};
 
-		const formatted = formatResult(result, createTiming(500), {
-			...defaultOptions,
-			color: false,
-			verbose: true,
+		const formatted = formatResult({
+			options: {
+				...defaultOptions,
+				color: false,
+				verbose: true,
+			},
+			result,
+			timing: createTiming(500),
 		});
 
 		// Passed test shown in verbose output
@@ -2930,9 +3136,13 @@ describe("groupByDescribe root fallback", () => {
 			testResults: [fileResult],
 		};
 
-		const formatted = formatResult(result, createTiming(500), {
-			...defaultOptions,
-			color: false,
+		const formatted = formatResult({
+			options: {
+				...defaultOptions,
+				color: false,
+			},
+			result,
+			timing: createTiming(500),
 		});
 
 		expect(formatted).toContain("(root)");
@@ -2973,19 +3183,23 @@ describe("formatResult testFilePath resolution", () => {
 		};
 
 		const output = stripVTControlCharacters(
-			formatResult(result, TIMING, {
-				...defaultOptions,
-				color: true,
-				sourceMapper: fromPartial({
-					mapFailureWithLocations: (message: string) => {
-						return {
-							locations: [],
-							message,
-						};
-					},
-					resolveDisplayPath: () => "src/client/example/test.spec.ts",
-					resolveTestFilePath: () => "src/client/example/test.spec.ts",
-				}),
+			formatResult({
+				options: {
+					...defaultOptions,
+					color: true,
+					sourceMapper: fromPartial({
+						mapFailureWithLocations: (message: string) => {
+							return {
+								locations: [],
+								message,
+							};
+						},
+						resolveDisplayPath: () => "src/client/example/test.spec.ts",
+						resolveTestFilePath: () => "src/client/example/test.spec.ts",
+					}),
+				},
+				result,
+				timing: TIMING,
 			}),
 		);
 
@@ -3024,16 +3238,20 @@ describe("formatResult testFilePath resolution", () => {
 		};
 
 		const output = stripVTControlCharacters(
-			formatResult(result, TIMING, {
-				...defaultOptions,
-				color: false,
-				sourceMapper: fromPartial({
-					mapFailureWithLocations: (message: string) => ({ locations: [], message }),
-					resolveDisplayPath: (testFilePath: string) => {
-						return testFilePath.replace("init.spec", "index.spec");
-					},
-					resolveTestFilePath: () => {},
-				}),
+			formatResult({
+				options: {
+					...defaultOptions,
+					color: false,
+					sourceMapper: fromPartial({
+						mapFailureWithLocations: (message: string) => ({ locations: [], message }),
+						resolveDisplayPath: (testFilePath: string) => {
+							return testFilePath.replace("init.spec", "index.spec");
+						},
+						resolveTestFilePath: () => {},
+					}),
+				},
+				result,
+				timing: TIMING,
 			}),
 		);
 
@@ -3064,9 +3282,13 @@ describe("formatResult loadstring hint", () => {
 	it("should show hint when loadstring is not available", () => {
 		expect.assertions(2);
 
-		const output = formatResult(LOADSTRING_ERROR_RESULT, TIMING, {
-			...defaultOptions,
-			color: false,
+		const output = formatResult({
+			options: {
+				...defaultOptions,
+				color: false,
+			},
+			result: LOADSTRING_ERROR_RESULT,
+			timing: TIMING,
 		});
 
 		expect(output).toContain("loadstring() is not available");
@@ -3331,14 +3553,14 @@ describe(formatMultiProjectResult, () => {
 	it("should report how far a bailed run got", () => {
 		expect.assertions(1);
 
-		const output = formatMultiProjectResult(
-			[
+		const output = formatMultiProjectResult({
+			options: { ...noColorOptions, bail: { notRun: 3, ran: 2 } },
+			projects: [
 				{ displayName: "core", result: PASSING_RESULT },
 				{ displayName: "integration", result: PASSING_RESULT },
 			],
-			TIMING,
-			{ ...noColorOptions, bail: { notRun: 3, ran: 2 } },
-		);
+			timing: TIMING,
+		});
 
 		expect(output).toContain("Bailed  after 2 packages, 3 not run");
 	});
@@ -3346,11 +3568,11 @@ describe(formatMultiProjectResult, () => {
 	it("should say package, singular, when a bail stopped after one", () => {
 		expect.assertions(1);
 
-		const output = formatMultiProjectResult(
-			[{ displayName: "core", result: PASSING_RESULT }],
-			TIMING,
-			{ ...noColorOptions, bail: { notRun: 1, ran: 1 } },
-		);
+		const output = formatMultiProjectResult({
+			options: { ...noColorOptions, bail: { notRun: 1, ran: 1 } },
+			projects: [{ displayName: "core", result: PASSING_RESULT }],
+			timing: TIMING,
+		});
 
 		expect(output).toContain("Bailed  after 1 package, 1 not run");
 	});
@@ -3358,11 +3580,11 @@ describe(formatMultiProjectResult, () => {
 	it("should leave the bail line out of a run that did not bail", () => {
 		expect.assertions(1);
 
-		const output = formatMultiProjectResult(
-			[{ displayName: "core", result: PASSING_RESULT }],
-			TIMING,
-			noColorOptions,
-		);
+		const output = formatMultiProjectResult({
+			options: noColorOptions,
+			projects: [{ displayName: "core", result: PASSING_RESULT }],
+			timing: TIMING,
+		});
 
 		expect(output).not.toContain("Bailed");
 	});
@@ -3370,14 +3592,14 @@ describe(formatMultiProjectResult, () => {
 	it("should group files under project headers with combined summary", () => {
 		expect.assertions(5);
 
-		const output = formatMultiProjectResult(
-			[
+		const output = formatMultiProjectResult({
+			options: noColorOptions,
+			projects: [
 				{ displayName: "core", result: PASSING_RESULT },
 				{ displayName: "integration", result: PASSING_RESULT },
 			],
-			TIMING,
-			noColorOptions,
-		);
+			timing: TIMING,
+		});
 
 		expect(output).toContain("▶ core");
 		expect(output).toContain("▶ integration");
@@ -3391,14 +3613,14 @@ describe(formatMultiProjectResult, () => {
 	it("should show failure details within project sections", () => {
 		expect.assertions(4);
 
-		const output = formatMultiProjectResult(
-			[
+		const output = formatMultiProjectResult({
+			options: noColorOptions,
+			projects: [
 				{ displayName: "core", result: PASSING_RESULT },
 				{ displayName: "auth", result: FAILING_RESULT },
 			],
-			TIMING,
-			noColorOptions,
-		);
+			timing: TIMING,
+		});
 
 		expect(output).toContain("▶ core");
 		expect(output).toContain("▶ auth");
@@ -3409,14 +3631,14 @@ describe(formatMultiProjectResult, () => {
 	it("should show failures from multiple projects", () => {
 		expect.assertions(3);
 
-		const output = formatMultiProjectResult(
-			[
+		const output = formatMultiProjectResult({
+			options: noColorOptions,
+			projects: [
 				{ displayName: "a", result: FAILING_RESULT },
 				{ displayName: "b", result: MIXED_RESULT },
 			],
-			TIMING,
-			noColorOptions,
-		);
+			timing: TIMING,
+		});
 
 		expect(output).toContain("▶ a");
 		expect(output).toContain("▶ b");
@@ -3480,14 +3702,14 @@ describe(formatMultiProjectResult, () => {
 			],
 		};
 
-		const output = formatMultiProjectResult(
-			[
+		const output = formatMultiProjectResult({
+			options: noColorOptions,
+			projects: [
 				{ displayName: "a", result: projectA },
 				{ displayName: "b", result: projectB },
 			],
-			TIMING,
-			noColorOptions,
-		);
+			timing: TIMING,
+		});
 		const snapshotLine = output.split("\n").find((line) => line.includes("Snapshots"));
 
 		expect(snapshotLine).toMatch(/5 obsolete/);
@@ -3549,14 +3771,14 @@ describe(formatMultiProjectResult, () => {
 			],
 		};
 
-		const output = formatMultiProjectResult(
-			[
+		const output = formatMultiProjectResult({
+			options: noColorOptions,
+			projects: [
 				{ displayName: "a", result: projectA },
 				{ displayName: "b", result: projectB },
 			],
-			TIMING,
-			noColorOptions,
-		);
+			timing: TIMING,
+		});
 		const snapshotLine = output.split("\n").find((line) => line.includes("Snapshots"));
 
 		expect(snapshotLine).toMatch(/2 obsolete/);
@@ -3567,8 +3789,9 @@ describe(formatMultiProjectResult, () => {
 	it("should keep each failing project's game output under its own section", () => {
 		expect.assertions(3);
 
-		const output = formatMultiProjectResult(
-			[
+		const output = formatMultiProjectResult({
+			options: noColorOptions,
+			projects: [
 				{
 					displayName: "auth",
 					gameOutput: JSON.stringify([
@@ -3584,9 +3807,8 @@ describe(formatMultiProjectResult, () => {
 					result: PASSING_RESULT,
 				},
 			],
-			TIMING,
-			noColorOptions,
-		);
+			timing: TIMING,
+		});
 
 		const authSection = output.slice(output.indexOf("▶ auth"), output.indexOf("▶ core"));
 
@@ -3825,14 +4047,14 @@ describe("multi-project output snapshots", () => {
 	it("should format multi-project result with two passing projects", () => {
 		expect.assertions(1);
 
-		const output = formatMultiProjectResult(
-			[
+		const output = formatMultiProjectResult({
+			options: baseOptions,
+			projects: [
 				{ displayName: "core", result: PASSING_RESULT },
 				{ displayName: "integration", result: PASSING_RESULT },
 			],
-			TIMING,
-			baseOptions,
-		);
+			timing: TIMING,
+		});
 
 		expect(output).toMatchInlineSnapshot(`
 			"
@@ -3852,14 +4074,14 @@ describe("multi-project output snapshots", () => {
 	it("should format multi-project result with passing and failing projects", () => {
 		expect.assertions(1);
 
-		const output = formatMultiProjectResult(
-			[
+		const output = formatMultiProjectResult({
+			options: baseOptions,
+			projects: [
 				{ displayName: "core", result: PASSING_RESULT },
 				{ displayName: "auth", result: FAILING_RESULT },
 			],
-			TIMING,
-			baseOptions,
-		);
+			timing: TIMING,
+		});
 
 		expect(output).toMatchInlineSnapshot(`
 			"
@@ -3905,14 +4127,14 @@ describe("multi-project output snapshots", () => {
 	it("should format multi-project result with skipped files in summary", () => {
 		expect.assertions(3);
 
-		const output = formatMultiProjectResult(
-			[
+		const output = formatMultiProjectResult({
+			options: baseOptions,
+			projects: [
 				{ displayName: "core", result: PASSING_RESULT },
 				{ displayName: "utils", result: SKIPPED_RESULT },
 			],
-			TIMING,
-			baseOptions,
-		);
+			timing: TIMING,
+		});
 
 		expect(output).toContain("2 skipped");
 		expect(output).toContain("7 skipped");
@@ -3927,14 +4149,14 @@ describe("multi-project output snapshots", () => {
 			numTodoTests: 2,
 		};
 
-		const output = formatMultiProjectResult(
-			[
+		const output = formatMultiProjectResult({
+			options: baseOptions,
+			projects: [
 				{ displayName: "core", result: withTodo },
 				{ displayName: "utils", result: PASSING_RESULT },
 			],
-			TIMING,
-			baseOptions,
-		);
+			timing: TIMING,
+		});
 
 		expect(output).toContain("6 passed");
 		expect(output).not.toContain("todo");
@@ -3948,14 +4170,14 @@ describe("multi-project output snapshots", () => {
 			snapshot: { added: 0, matched: 3, total: 5, unmatched: 2, updated: 0 },
 		};
 
-		const output = formatMultiProjectResult(
-			[
+		const output = formatMultiProjectResult({
+			options: baseOptions,
+			projects: [
 				{ displayName: "core", result: withSnapshot },
 				{ displayName: "utils", result: PASSING_RESULT },
 			],
-			TIMING,
-			baseOptions,
-		);
+			timing: TIMING,
+		});
 
 		expect(output).toContain("Snapshots");
 		expect(output).toContain("2 failed");
@@ -3966,7 +4188,7 @@ describe(formatProjectBadge, () => {
 	it("should return plain text when color is disabled", () => {
 		expect.assertions(1);
 
-		const output = formatProjectBadge("core", false);
+		const output = formatProjectBadge({ displayName: "core", useColor: false });
 
 		expect(output).toBe("▶ core");
 	});
@@ -3974,7 +4196,11 @@ describe(formatProjectBadge, () => {
 	it("should apply named displayColor when provided", () => {
 		expect.assertions(2);
 
-		const output = formatProjectBadge("core", true, "red");
+		const output = formatProjectBadge({
+			displayColor: "red",
+			displayName: "core",
+			useColor: true,
+		});
 
 		expect(output).toContain("core");
 		expect(output).not.toBe("▶ core");
@@ -3983,7 +4209,11 @@ describe(formatProjectBadge, () => {
 	it("should fall back to hash-based color for unknown displayColor", () => {
 		expect.assertions(2);
 
-		const output = formatProjectBadge("core", true, "nonexistent");
+		const output = formatProjectBadge({
+			displayColor: "nonexistent",
+			displayName: "core",
+			useColor: true,
+		});
 
 		expect(output).toContain("core");
 		expect(output).not.toBe("▶ core");
@@ -3992,7 +4222,9 @@ describe(formatProjectBadge, () => {
 	it("should treat Object prototype names as unknown displayColors", () => {
 		expect.assertions(1);
 
-		expect(formatProjectBadge("core", true, "toString")).toBe(formatProjectBadge("core", true));
+		expect(
+			formatProjectBadge({ displayColor: "toString", displayName: "core", useColor: true }),
+		).toBe(formatProjectBadge({ displayName: "core", useColor: true }));
 	});
 
 	it("should apply all named displayColors", () => {
@@ -4000,7 +4232,13 @@ describe(formatProjectBadge, () => {
 
 		const colors = ["blue", "cyan", "green", "magenta", "red", "white", "yellow"];
 
-		const badges = colors.map((colorName) => formatProjectBadge("x", true, colorName));
+		const badges = colors.map((colorName) => {
+			return formatProjectBadge({
+				displayColor: colorName,
+				displayName: "x",
+				useColor: true,
+			});
+		});
 
 		expect(badges).not.toContain("▶ x");
 	});
@@ -4011,7 +4249,9 @@ describe(formatProjectBadge, () => {
 		// d→0 (bgYellow), a→1 (bgCyan), b→2 (bgGreen), c→3 (bgMagenta)
 		const names = ["d", "a", "b", "c"];
 
-		const badges = names.map((name) => formatProjectBadge(name, true));
+		const badges = names.map((name) => {
+			return formatProjectBadge({ displayName: name, useColor: true });
+		});
 
 		expect(badges).not.toIncludeAnyMembers(names.map((name) => `▶ ${name}`));
 	});
@@ -4045,10 +4285,14 @@ describe(formatProjectBadge, () => {
 				},
 			],
 		};
-		const output = formatMultiProjectResult([{ displayName: "core", result }], TIMING, {
-			...defaultOptions,
-			color: true,
-			slowTestThreshold: 50,
+		const output = formatMultiProjectResult({
+			options: {
+				...defaultOptions,
+				color: true,
+				slowTestThreshold: 50,
+			},
+			projects: [{ displayName: "core", result }],
+			timing: TIMING,
 		});
 
 		expect(output).toContain("[33m 100[2mms[22m[39m");
@@ -4093,14 +4337,14 @@ describe("multi-project log hints", () => {
 			version: "1.0.0",
 		};
 
-		const output = formatMultiProjectResult(
-			[
+		const output = formatMultiProjectResult({
+			options,
+			projects: [
 				{ displayName: "core", result: PASSING_RESULT },
 				{ displayName: "auth", result: FAILING_RESULT },
 			],
-			TIMING,
-			options,
-		);
+			timing: TIMING,
+		});
 
 		expect(output).toContain("View results.json");
 		expect(output).toContain("View game.log");
@@ -4140,10 +4384,14 @@ describe("test duration coloring", () => {
 	it("should color slow passing test duration yellow when over 300ms threshold", () => {
 		expect.assertions(2);
 
-		const formatted = formatResult(passingFile(450), createTiming(500), {
-			...defaultOptions,
-			color: true,
-			verbose: true,
+		const formatted = formatResult({
+			options: {
+				...defaultOptions,
+				color: true,
+				verbose: true,
+			},
+			result: passingFile(450),
+			timing: createTiming(500),
 		});
 
 		expect(formatted).toContain("[33m 450[2mms[22m[39m");
@@ -4153,10 +4401,14 @@ describe("test duration coloring", () => {
 	it("should still color exactly 300ms green (strict > comparison)", () => {
 		expect.assertions(2);
 
-		const formatted = formatResult(passingFile(300), createTiming(500), {
-			...defaultOptions,
-			color: true,
-			verbose: true,
+		const formatted = formatResult({
+			options: {
+				...defaultOptions,
+				color: true,
+				verbose: true,
+			},
+			result: passingFile(300),
+			timing: createTiming(500),
 		});
 
 		expect(formatted).toContain("[32m 300[2mms[22m[39m");
@@ -4193,9 +4445,13 @@ describe("test duration coloring", () => {
 			testResults: [fileResult],
 		};
 
-		const formatted = formatResult(result, createTiming(500), {
-			...defaultOptions,
-			color: true,
+		const formatted = formatResult({
+			options: {
+				...defaultOptions,
+				color: true,
+			},
+			result,
+			timing: createTiming(500),
 		});
 
 		const plain = stripVTControlCharacters(formatted);
@@ -4241,9 +4497,13 @@ describe("test duration coloring", () => {
 			testResults: [fileResult],
 		};
 
-		const formatted = formatResult(result, createTiming(500), {
-			...defaultOptions,
-			color: true,
+		const formatted = formatResult({
+			options: {
+				...defaultOptions,
+				color: true,
+			},
+			result,
+			timing: createTiming(500),
 		});
 
 		expect(formatted).toContain("[33m 400[2mms[22m[39m");
@@ -4252,10 +4512,14 @@ describe("test duration coloring", () => {
 	it("should render duration without ANSI coloring when color is disabled", () => {
 		expect.assertions(2);
 
-		const formatted = formatResult(passingFile(42), createTiming(500), {
-			...defaultOptions,
-			color: false,
-			verbose: true,
+		const formatted = formatResult({
+			options: {
+				...defaultOptions,
+				color: false,
+				verbose: true,
+			},
+			result: passingFile(42),
+			timing: createTiming(500),
 		});
 
 		expect(formatted).not.toContain("[");
@@ -4300,9 +4564,13 @@ describe("test duration coloring", () => {
 			testResults: [fileResult],
 		};
 
-		const formatted = formatResult(result, createTiming(1000), {
-			...defaultOptions,
-			color: true,
+		const formatted = formatResult({
+			options: {
+				...defaultOptions,
+				color: true,
+			},
+			result,
+			timing: createTiming(1000),
 		});
 
 		expect(formatted).toContain("[32m 50[2mms[22m[39m");
@@ -4312,10 +4580,14 @@ describe("test duration coloring", () => {
 	it("should color fast passing test duration green with dim ms suffix", () => {
 		expect.assertions(1);
 
-		const formatted = formatResult(passingFile(42), createTiming(500), {
-			...defaultOptions,
-			color: true,
-			verbose: true,
+		const formatted = formatResult({
+			options: {
+				...defaultOptions,
+				color: true,
+				verbose: true,
+			},
+			result: passingFile(42),
+			timing: createTiming(500),
 		});
 
 		expect(formatted).toContain("[32m 42[2mms[22m[39m");
@@ -4324,11 +4596,15 @@ describe("test duration coloring", () => {
 	it("should treat duration above caller-supplied slowTestThreshold as slow", () => {
 		expect.assertions(1);
 
-		const formatted = formatResult(passingFile(100), createTiming(500), {
-			...defaultOptions,
-			color: true,
-			slowTestThreshold: 50,
-			verbose: true,
+		const formatted = formatResult({
+			options: {
+				...defaultOptions,
+				color: true,
+				slowTestThreshold: 50,
+				verbose: true,
+			},
+			result: passingFile(100),
+			timing: createTiming(500),
 		});
 
 		expect(formatted).toContain("[33m 100[2mms[22m[39m");
@@ -4337,11 +4613,15 @@ describe("test duration coloring", () => {
 	it("should treat duration below caller-supplied slowTestThreshold as fast", () => {
 		expect.assertions(1);
 
-		const formatted = formatResult(passingFile(400), createTiming(500), {
-			...defaultOptions,
-			color: true,
-			slowTestThreshold: 500,
-			verbose: true,
+		const formatted = formatResult({
+			options: {
+				...defaultOptions,
+				color: true,
+				slowTestThreshold: 500,
+				verbose: true,
+			},
+			result: passingFile(400),
+			timing: createTiming(500),
 		});
 
 		expect(formatted).toContain("[32m 400[2mms[22m[39m");
@@ -4407,7 +4687,13 @@ describe("complete formatter contracts", () => {
 		expect.assertions(1);
 
 		const reports = [PASSING_RESULT, SKIPPED_RESULT, FAILING_RESULT, EXEC_ERROR_RESULT].map(
-			(result) => formatResult(result, TIMING, { ...defaultOptions, color: false }),
+			(result) => {
+				return formatResult({
+					options: { ...defaultOptions, color: false },
+					result,
+					timing: TIMING,
+				});
+			},
 		);
 
 		expect(reports).toMatchSnapshot();
@@ -4426,8 +4712,10 @@ describe("complete formatter contracts", () => {
 		};
 
 		expect(
-			formatSourceSnippet(snippet, "src/inventory.spec.ts", {
+			formatSourceSnippet({
+				filePath: "src/inventory.spec.ts",
 				language: "TypeScript",
+				snippet,
 				useColor: false,
 			}),
 		).toMatchSnapshot();

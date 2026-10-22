@@ -53,7 +53,7 @@ export function buildExecutionErrorResult({
 	startTime,
 	version,
 }: ExecutionErrorOptions): ExecuteResult {
-	const result = buildExecErrorJestResult(error, entry, startTime);
+	const result = buildExecErrorJestResult({ entry, error, startTime });
 	const timing = buildErrorTiming(backendTiming, startTime);
 
 	const output =
@@ -207,11 +207,15 @@ function composeExecErrorMessage(error: LuauScriptError, entry: ExecErrorEntry):
 	return `${buildDiagnosticReport(error, entry)}\n\n${error.message}`;
 }
 
-function buildExecErrorJestResult(
-	error: LuauScriptError,
-	entry: ExecErrorEntry,
-	startTime: number,
-): JestResult {
+function buildExecErrorJestResult({
+	entry,
+	error,
+	startTime,
+}: {
+	entry: ExecErrorEntry;
+	error: LuauScriptError;
+	startTime: number;
+}): JestResult {
 	// Exec-error file shape (see `hasExecError`): `failureMessage` set with
 	// empty `testResults` — the file errored before any tests ran, so
 	// `numFailingTests`/`numFailedTests`/`numTotalTests` all stay 0.

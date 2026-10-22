@@ -24,6 +24,20 @@ const EXEC_ERROR_HINTS: Array<[pattern: RegExp, hint: string]> = [
 	],
 ];
 
+export interface FormatFileFailuresOptions {
+	failureCtx: FailureContext;
+	file: TestFileResult;
+	options: FormatOptions;
+	styles: Styles;
+}
+
+export interface FormatExecErrorDetailOptions {
+	failureCtx: FailureContext;
+	file: TestFileResult;
+	sourceMapper?: SourceMapper | undefined;
+	styles: Styles;
+}
+
 interface ParsedError {
 	expected?: string | undefined;
 	message: string;
@@ -159,12 +173,12 @@ export function formatFailure({
 }
 
 /** Renders every failed test case in one file, advancing the shared counter. */
-export function formatFileFailures(
-	file: TestFileResult,
-	options: FormatOptions,
-	styles: Styles,
-	failureCtx: FailureContext,
-): string {
+export function formatFileFailures({
+	failureCtx,
+	file,
+	options,
+	styles,
+}: FormatFileFailuresOptions): string {
 	const lines: Array<string> = [];
 	const displayPath = resolveDisplayPath(file.testFilePath, options.sourceMapper);
 
@@ -197,12 +211,12 @@ export function formatFileFailures(
  * Renders a file that never got as far as running tests — the suite itself
  * threw — as one failure block in the shared numbering.
  */
-export function formatExecErrorDetail(
-	file: TestFileResult,
-	styles: Styles,
-	failureCtx: FailureContext,
-	sourceMapper?: SourceMapper,
-): string {
+export function formatExecErrorDetail({
+	failureCtx,
+	file,
+	sourceMapper,
+	styles,
+}: FormatExecErrorDetailOptions): string {
 	const index = failureCtx.currentIndex;
 	failureCtx.currentIndex++;
 
@@ -243,7 +257,15 @@ function formatFailureSeparator(failureIndex: number, totalFailures: number): st
 	return `${"⎯".repeat(fillWidth)}${counter}⎯`;
 }
 
-function formatErrorLine(parsed: ParsedError, styles: Styles, useColor: boolean): string {
+function formatErrorLine({
+	parsed,
+	styles,
+	useColor,
+}: {
+	parsed: ParsedError;
+	styles: Styles;
+	useColor: boolean;
+}): string {
 	if (useColor && parsed.message.startsWith("Error:")) {
 		return styles.status.fail(color.bold("Error:") + parsed.message.slice(6));
 	}
@@ -308,7 +330,7 @@ function formatFailureMessage(
 	const parsed = parseErrorMessage(originalMessage);
 
 	return [
-		formatErrorLine(parsed, styles, useColor),
+		formatErrorLine({ parsed, styles, useColor }),
 		...formatDiffBlock(parsed, styles),
 		...resolveSourceSnippets({
 			filePath,

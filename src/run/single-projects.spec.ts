@@ -76,7 +76,11 @@ describe(buildImplicitProject, () => {
 		expect.assertions(2);
 
 		const config = makeConfig({ displayName: "shared" });
-		const { config: projectConfig, ...rest } = buildImplicitProject(config, tree, emptySeams());
+		const { config: projectConfig, ...rest } = buildImplicitProject({
+			config,
+			...emptySeams(),
+			rojoTree: tree,
+		});
 
 		expect(projectConfig).toBe(config);
 		expect(rest).toStrictEqual({
@@ -95,11 +99,11 @@ describe(buildImplicitProject, () => {
 	it("should exclude type-test (-d) globs from include so a coverage run does not throw", () => {
 		expect.assertions(3);
 
-		const project = buildImplicitProject(
-			makeConfig({ testMatch: DEFAULT_CONFIG.testMatch }),
-			tree,
-			emptySeams(),
-		);
+		const project = buildImplicitProject({
+			config: makeConfig({ testMatch: DEFAULT_CONFIG.testMatch }),
+			...emptySeams(),
+			rojoTree: tree,
+		});
 
 		expect(project.include).not.toContain("**/*.spec-d.ts");
 		expect(project.include).not.toContain("**/*.test-d.ts");
@@ -113,8 +117,11 @@ describe(buildImplicitProject, () => {
 		expect.assertions(1);
 
 		expect(
-			buildImplicitProject(makeConfig({ testMatch: ["*.spec.ts"] }), tree, emptySeams())
-				.testMatch,
+			buildImplicitProject({
+				config: makeConfig({ testMatch: ["*.spec.ts"] }),
+				...emptySeams(),
+				rojoTree: tree,
+			}).testMatch,
 		).toStrictEqual(["**/*.spec"]);
 	});
 
@@ -122,19 +129,22 @@ describe(buildImplicitProject, () => {
 		expect.assertions(1);
 
 		expect(
-			buildImplicitProject(makeConfig({ exclude: ["**/*.gen.spec.ts"] }), tree, emptySeams())
-				.exclude,
+			buildImplicitProject({
+				config: makeConfig({ exclude: ["**/*.gen.spec.ts"] }),
+				...emptySeams(),
+				rojoTree: tree,
+			}).exclude,
 		).toStrictEqual(["**/*.gen.spec.ts"]);
 	});
 
 	it("should leave outDir undefined when the project spans multiple mounts", () => {
 		expect.assertions(2);
 
-		const project = buildImplicitProject(
-			makeConfig({ displayName: "all", luauRoots: ["out/shared", "out/server"] }),
-			tree,
-			emptySeams(),
-		);
+		const project = buildImplicitProject({
+			config: makeConfig({ displayName: "all", luauRoots: ["out/shared", "out/server"] }),
+			...emptySeams(),
+			rojoTree: tree,
+		});
 
 		expect(project.outDir).toBeUndefined();
 		expect(project.projects).toStrictEqual([
@@ -147,8 +157,11 @@ describe(buildImplicitProject, () => {
 		expect.assertions(1);
 
 		expect(
-			buildImplicitProject(makeConfig({ rootDir: "/path/to/my-pkg/" }), tree, emptySeams())
-				.displayName,
+			buildImplicitProject({
+				config: makeConfig({ rootDir: "/path/to/my-pkg/" }),
+				...emptySeams(),
+				rojoTree: tree,
+			}).displayName,
 		).toBe("my-pkg");
 	});
 
@@ -156,22 +169,22 @@ describe(buildImplicitProject, () => {
 		expect.assertions(1);
 
 		expect(
-			buildImplicitProject(
-				makeConfig({ displayName: "", rootDir: "/x/pkg" }),
-				tree,
-				emptySeams(),
-			).displayName,
+			buildImplicitProject({
+				config: makeConfig({ displayName: "", rootDir: "/x/pkg" }),
+				...emptySeams(),
+				rojoTree: tree,
+			}).displayName,
 		).toBe("pkg");
 	});
 
 	it("should carry the name and color from a DisplayName object", () => {
 		expect.assertions(2);
 
-		const project = buildImplicitProject(
-			makeConfig({ displayName: { name: "tinted", color: "magenta" } }),
-			tree,
-			emptySeams(),
-		);
+		const project = buildImplicitProject({
+			config: makeConfig({ displayName: { name: "tinted", color: "magenta" } }),
+			...emptySeams(),
+			rojoTree: tree,
+		});
 
 		expect(project.displayName).toBe("tinted");
 		expect(project.displayColor).toBe("magenta");
@@ -181,7 +194,11 @@ describe(buildImplicitProject, () => {
 		expect.assertions(2);
 
 		const error = captureConfigError(() => {
-			buildImplicitProject(makeConfig({ luauRoots: ["out/missing"] }), tree, emptySeams());
+			buildImplicitProject({
+				config: makeConfig({ luauRoots: ["out/missing"] }),
+				...emptySeams(),
+				rojoTree: tree,
+			});
 		});
 
 		expect(error.message).toBe(
@@ -196,11 +213,11 @@ describe(buildImplicitProject, () => {
 	it("should build a project with no mounts when no rojo tree is supplied", () => {
 		expect.assertions(3);
 
-		const project = buildImplicitProject(
-			fromAny({ rootDir: "/pkg", testMatch: ["**/*.spec.ts"] }),
-			undefined,
-			emptySeams(),
-		);
+		const project = buildImplicitProject({
+			config: fromAny({ rootDir: "/pkg", testMatch: ["**/*.spec.ts"] }),
+			...emptySeams(),
+			rojoTree: undefined,
+		});
 
 		expect(project.rojoMounts).toStrictEqual([]);
 		expect(project.projects).toStrictEqual([]);
@@ -210,7 +227,13 @@ describe(buildImplicitProject, () => {
 	it("should not throw the no-mounts ConfigError when no rojo tree is supplied", () => {
 		expect.assertions(1);
 
-		expect(() => buildImplicitProject(makeConfig(), undefined, emptySeams())).not.toThrow();
+		expect(() => {
+			return buildImplicitProject({
+				config: makeConfig(),
+				...emptySeams(),
+				rojoTree: undefined,
+			});
+		}).not.toThrow();
 	});
 
 	// `include` strips `-d` globs and the multi pipeline derives Type Tests from
@@ -219,11 +242,11 @@ describe(buildImplicitProject, () => {
 	it("should seed typecheck.include from the -d globs in testMatch", () => {
 		expect.assertions(1);
 
-		const project = buildImplicitProject(
-			makeConfig({ testMatch: ["**/*.spec.ts", "**/*.spec-d.ts", "**/*.test-d.ts"] }),
-			undefined,
-			emptySeams(),
-		);
+		const project = buildImplicitProject({
+			config: makeConfig({ testMatch: ["**/*.spec.ts", "**/*.spec-d.ts", "**/*.test-d.ts"] }),
+			...emptySeams(),
+			rojoTree: undefined,
+		});
 
 		expect(project.typecheck!.include).toStrictEqual(["**/*.spec-d.ts", "**/*.test-d.ts"]);
 	});
@@ -231,14 +254,14 @@ describe(buildImplicitProject, () => {
 	it("should keep an explicit typecheck.include over the derived -d globs", () => {
 		expect.assertions(1);
 
-		const project = buildImplicitProject(
-			makeConfig({
+		const project = buildImplicitProject({
+			config: makeConfig({
 				testMatch: ["**/*.spec.ts", "**/*.spec-d.ts"],
 				typecheck: { enabled: true, include: ["types/**/*.spec-d.ts"] },
 			}),
-			undefined,
-			emptySeams(),
-		);
+			...emptySeams(),
+			rojoTree: undefined,
+		});
 
 		expect(project.typecheck).toStrictEqual({
 			enabled: true,
@@ -249,6 +272,9 @@ describe(buildImplicitProject, () => {
 	it("should leave typecheck unset when testMatch carries no -d globs", () => {
 		expect.assertions(1);
 
-		expect(buildImplicitProject(makeConfig(), tree, emptySeams()).typecheck).toBeUndefined();
+		expect(
+			buildImplicitProject({ config: makeConfig(), ...emptySeams(), rojoTree: tree })
+				.typecheck,
+		).toBeUndefined();
 	});
 });

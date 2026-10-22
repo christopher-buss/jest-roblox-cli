@@ -41,6 +41,13 @@ export interface TsconfigDirectories {
  */
 export type TsconfigMappingCache = Map<string, Array<TsconfigMapping>>;
 
+export interface ResolveAllTsconfigMappingsOptions {
+	cache?: TsconfigMappingCache | undefined;
+	fileSystem?: FileSystem | undefined;
+	projectRoot: string;
+	tsconfigReader?: TsconfigReader | undefined;
+}
+
 export function createTsconfigMappingCache(): TsconfigMappingCache {
 	return new Map();
 }
@@ -79,19 +86,19 @@ export function readTsconfigMapping(
 	}
 }
 
-export function resolveAllTsconfigMappings(
-	projectRoot: string,
-	cache?: TsconfigMappingCache,
-	fileSystem: FileSystem = nodeFileSystem,
-	tsconfigReader: TsconfigReader = nodeTsconfigReader,
-): Array<TsconfigMapping> {
+export function resolveAllTsconfigMappings({
+	cache,
+	fileSystem = nodeFileSystem,
+	projectRoot,
+	tsconfigReader = nodeTsconfigReader,
+}: ResolveAllTsconfigMappingsOptions): Array<TsconfigMapping> {
 	const resolvedRoot = path.resolve(projectRoot);
 	const cached = cache?.get(resolvedRoot);
 	if (cached !== undefined) {
 		return cached;
 	}
 
-	const mappings = scanTsconfigMappings(fileSystem, resolvedRoot, tsconfigReader);
+	const mappings = scanTsconfigMappings({ fileSystem, resolvedRoot, tsconfigReader });
 	cache?.set(resolvedRoot, mappings);
 	return mappings;
 }
@@ -168,11 +175,15 @@ function parseTsconfigMappings(options: TsconfigCompilerOptions): Array<Tsconfig
 	return [{ outDir: outDirectory, rootDir: normalizeDirectoryPath(options.rootDir ?? "src") }];
 }
 
-function scanTsconfigMappings(
-	fileSystem: FileSystem,
-	resolvedRoot: string,
-	tsconfigReader: TsconfigReader,
-): Array<TsconfigMapping> {
+function scanTsconfigMappings({
+	fileSystem,
+	resolvedRoot,
+	tsconfigReader,
+}: {
+	fileSystem: FileSystem;
+	resolvedRoot: string;
+	tsconfigReader: TsconfigReader;
+}): Array<TsconfigMapping> {
 	let files: Array<string>;
 	try {
 		files = fileSystem.readdirSync(resolvedRoot).filter((file) => TSCONFIG_FILENAME.test(file));

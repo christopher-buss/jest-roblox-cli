@@ -1,10 +1,22 @@
 import type { TsconfigMapping } from "../types/tsconfig.ts";
 
-export function findMapping(
-	filePath: string,
-	mappings: ReadonlyArray<TsconfigMapping>,
-	key: "outDir" | "rootDir" = "outDir",
-): TsconfigMapping | undefined {
+export interface FindMappingOptions {
+	readonly key?: "outDir" | "rootDir";
+	readonly filePath: string;
+	readonly mappings: ReadonlyArray<TsconfigMapping>;
+}
+
+export interface ReplacePrefixOptions {
+	readonly filePath: string;
+	readonly from: string;
+	readonly to: string;
+}
+
+export function findMapping({
+	key = "outDir",
+	filePath,
+	mappings,
+}: FindMappingOptions): TsconfigMapping | undefined {
 	let best: TsconfigMapping | undefined;
 	let bestLength = -1;
 
@@ -21,7 +33,7 @@ export function findMapping(
 	return best;
 }
 
-export function replacePrefix(filePath: string, from: string, to: string): string {
+export function replacePrefix({ filePath, from, to }: ReplacePrefixOptions): string {
 	if (filePath === from) {
 		return to;
 	}

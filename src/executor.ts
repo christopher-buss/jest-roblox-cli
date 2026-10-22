@@ -51,7 +51,6 @@ import { nodeFileSystem } from "./utils/file-system.ts";
 
 export { loadCoverageManifest } from "./coverage-pipeline/manifest-load.ts";
 export { formatExecuteOutput } from "./executor/format-output.ts";
-export type { TsconfigReader } from "./executor/tsconfig-mappings.ts";
 export {
 	isLuauProject,
 	readTsconfigMapping,
@@ -126,6 +125,13 @@ export interface RunProjectsResult {
 	results: Array<ExecuteResult>;
 }
 
+export interface BuildProjectJobOptions {
+	cache: TsconfigMappingCache;
+	fileSystem?: FileSystem | undefined;
+	project: ProjectInput;
+	tsconfigReader?: TsconfigReader | undefined;
+}
+
 export type RunProjects = typeof runProjectsAsync;
 
 interface ProcessProjectOptions {
@@ -173,12 +179,12 @@ interface ProjectArtifacts {
  * function for that reason: resolve a field anywhere downstream of the payload
  * and it reaches multi mode only.
  */
-export function buildProjectJob(
-	project: ProjectInput,
-	cache: TsconfigMappingCache,
-	fileSystem: FileSystem = nodeFileSystem,
-	tsconfigReader: TsconfigReader = nodeTsconfigReader,
-): ProjectJob {
+export function buildProjectJob({
+	cache,
+	fileSystem = nodeFileSystem,
+	project,
+	tsconfigReader = nodeTsconfigReader,
+}: BuildProjectJobOptions): ProjectJob {
 	return {
 		config: resolveSnapshotFormat({
 			cache,
@@ -220,7 +226,7 @@ export async function runProjectsAsync(options: RunProjectsOptions): Promise<Run
 		bailedJobIndices,
 		rawResults,
 		timing: backendTiming,
-	} = await dispatchToBackendAsync(options, jobs, timing);
+	} = await dispatchToBackendAsync({ jobs, options, timing });
 
 	const ranProjectIndices = selectRanIndices(jobs.length, bailedJobIndices);
 	assertResultParity(rawResults.length, ranProjectIndices.length);
@@ -240,7 +246,7 @@ export async function runProjectsAsync(options: RunProjectsOptions): Promise<Run
 		return rawResults.map((raw, index) => {
 			// oxlint-disable-next-line typescript/no-non-null-assertion -- length equality asserted above
 			const job = jobs[ranProjectIndices[index]!]!;
-			return withGaps(processOrRecoverEntry(raw, job, context), raw.gaps);
+			return withGaps(processOrRecoverEntry({ context, job, raw }), raw.gaps);
 		});
 	});
 
@@ -261,7 +267,7 @@ function buildRunJobs(
 ): Array<ProjectJob> {
 	return timing.profile("buildJobs", () => {
 		return options.projects.map((project) => {
-			return buildProjectJob(project, tsconfigCache, fileSystem, tsconfigReader);
+			return buildProjectJob({ cache: tsconfigCache, fileSystem, project, tsconfigReader });
 		});
 	});
 }
@@ -279,11 +285,15 @@ function selectRanIndices(
 	);
 }
 
-async function dispatchToBackendAsync(
-	options: RunProjectsOptions,
-	jobs: Array<ProjectJob>,
-	timing: TimingCollector,
-): Promise<BackendResult> {
+async function dispatchToBackendAsync({
+	jobs,
+	options,
+	timing,
+}: {
+	jobs: Array<ProjectJob>;
+	options: RunProjectsOptions;
+	timing: TimingCollector;
+}): Promise<BackendResult> {
 	return timing.profileAsync("backend.runTests", async () => {
 		const result = await options.backend.runTestsAsync({
 			bail: options.bail,
@@ -341,15 +351,19 @@ function writeProjectSnapshots({
 	}
 
 	return timing.profile("writeSnapshots", () => {
-		return writeSnapshots(snapshotWrites, config, tsconfigMappings, fileSystem);
+		return writeSnapshots({ config, fileSystem, snapshotWrites, tsconfigMappings });
 	});
 }
 
-function buildSourceMapper(
-	fileSystem: FileSystem,
-	config: ResolvedConfig,
-	tsconfigMappings: ReadonlyArray<TsconfigMapping>,
-): SourceMapper | undefined {
+function buildSourceMapper({
+	config,
+	fileSystem,
+	tsconfigMappings,
+}: {
+	config: ResolvedConfig;
+	fileSystem: FileSystem;
+	tsconfigMappings: ReadonlyArray<TsconfigMapping>;
+}): SourceMapper | undefined {
 	const rojoProjectPath = config.rojoProject ?? findRojoProject(config.rootDir, fileSystem);
 	if (rojoProjectPath === undefined || !fileSystem.existsSync(rojoProjectPath)) {
 		return undefined;
@@ -396,11 +410,17 @@ function resolveTestFilePaths(result: JestResult, sourceMapper: SourceMapper | u
  * attribution because the caller threads it into both the formatter and the
  * `ExecuteResult`.
  */
-function collectProjectArtifacts(
-	{ coverageData, perTestCoverage, result, snapshotWrites }: ProjectBackendResult,
-	{ config, fileSystem, timing }: ProcessProjectOptions,
-	tsconfigMappings: ReadonlyArray<TsconfigMapping>,
-): ProjectArtifacts {
+function collectProjectArtifacts({
+	coverageData,
+	options: { config, fileSystem, timing },
+	perTestCoverage,
+	result,
+	snapshotWrites,
+	tsconfigMappings,
+}: ProjectBackendResult & {
+	options: ProcessProjectOptions;
+	tsconfigMappings: ReadonlyArray<TsconfigMapping>;
+}): ProjectArtifacts {
 	const writeCounts = writeProjectSnapshots({
 		config,
 		fileSystem,
@@ -411,7 +431,7 @@ function collectProjectArtifacts(
 
 	const sourceMapper = config.sourceMap
 		? timing.profile("buildSourceMapper", () => {
-				return buildSourceMapper(fileSystem, config, tsconfigMappings);
+				return buildSourceMapper({ config, fileSystem, tsconfigMappings });
 			})
 		: undefined;
 
@@ -452,12 +472,16 @@ function buildResultTiming(
 	};
 }
 
-function renderProjectOutput(
-	{ result }: ProjectBackendResult,
-	{ config, deferFormatting, version }: ProcessProjectOptions,
-	timing: TimingResult,
-	{ sourceMapper, writeCounts }: ProjectArtifacts,
-): string {
+function renderProjectOutput({
+	artifacts: { sourceMapper, writeCounts },
+	options: { config, deferFormatting, version },
+	result,
+	timing,
+}: ProjectBackendResult & {
+	artifacts: ProjectArtifacts;
+	options: ProcessProjectOptions;
+	timing: TimingResult;
+}): string {
 	if (deferFormatting === true) {
 		return "";
 	}
@@ -477,12 +501,12 @@ function renderProjectOutput(
  */
 function resolveProjectTsconfigMappings(options: ProcessProjectOptions): Array<TsconfigMapping> {
 	return options.timing.profile("resolveTsconfigMappings", () => {
-		return resolveAllTsconfigMappings(
-			options.config.rootDir,
-			options.tsconfigCache,
-			options.fileSystem,
-			options.tsconfigReader,
-		);
+		return resolveAllTsconfigMappings({
+			cache: options.tsconfigCache,
+			fileSystem: options.fileSystem,
+			projectRoot: options.config.rootDir,
+			tsconfigReader: options.tsconfigReader,
+		});
 	});
 }
 
@@ -498,9 +522,14 @@ function processProjectResult(
 	const { luauTiming, result } = backendResult;
 
 	const tsconfigMappings = resolveProjectTsconfigMappings(options);
-	const artifacts = collectProjectArtifacts(backendResult, options, tsconfigMappings);
+	const artifacts = collectProjectArtifacts({ ...backendResult, options, tsconfigMappings });
 	const resultTiming = buildResultTiming(backendResult, options);
-	const output = renderProjectOutput(backendResult, options, resultTiming, artifacts);
+	const output = renderProjectOutput({
+		...backendResult,
+		artifacts,
+		options,
+		timing: resultTiming,
+	});
 
 	// Workspace runs (deferFormatting) surface these phases as nested
 	// `luau.*` spans in the collector tree instead; the flat print would
@@ -525,11 +554,15 @@ function processProjectResult(
 	};
 }
 
-function processOrRecoverEntry(
-	raw: RawBackendEntry,
-	job: ProjectJob,
-	context: EntryContext,
-): ExecuteResult {
+function processOrRecoverEntry({
+	context,
+	job,
+	raw,
+}: {
+	context: EntryContext;
+	job: ProjectJob;
+	raw: RawBackendEntry;
+}): ExecuteResult {
 	// When one entry's envelope decodes to `{success:false,
 	// err:...}` (Jest's per-entry pcall in `runEntry` encodes deferred
 	// Promise rejections this way — e.g. when jest-core's runJest:345

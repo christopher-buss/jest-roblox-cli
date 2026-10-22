@@ -153,6 +153,14 @@ interface WorkspaceRuntimeInput {
  */
 type OpenedWorkspace = Pick<WorkspaceRuntimeInput, "cacheDirectory" | "loaded">;
 
+interface WriteRuntimeSinksOptions {
+	options: ResolvedRunWorkspaceOptions;
+	pending: Array<PendingEntry>;
+	results: Array<ExecuteResult>;
+	selection: WorkspaceTestSelection;
+	typecheckPass: WorkspaceTypecheckPass;
+}
+
 export async function runWorkspaceAsync(
 	options: RunWorkspaceOptions,
 ): Promise<undefined | WorkspaceRunnerOutput> {
@@ -181,11 +189,15 @@ export async function runWorkspaceAsync(
 }
 
 /** How this run hands its jobs to the backend, measured under its own span. */
-async function prepareDispatchSpecAsync(
-	options: ResolvedRunWorkspaceOptions,
-	jobs: Array<WorkspaceJob>,
-	timing: TimingCollector,
-): Promise<WorkspaceDispatchSpec> {
+async function prepareDispatchSpecAsync({
+	jobs,
+	options,
+	timing,
+}: {
+	jobs: Array<WorkspaceJob>;
+	options: ResolvedRunWorkspaceOptions;
+	timing: TimingCollector;
+}): Promise<WorkspaceDispatchSpec> {
 	return timing.profileAsync("prepareDispatch", async () => {
 		return prepareWorkspaceDispatchAsync({
 			bail: options.runOptions.bail,
@@ -232,7 +244,7 @@ async function executeWorkspaceRunAsync({
 		});
 	});
 
-	const dispatchSpec = await prepareDispatchSpecAsync(options, jobs, timing);
+	const dispatchSpec = await prepareDispatchSpecAsync({ jobs, options, timing });
 
 	// The grouped tsgo pass depends only on the filesystem (discovery already
 	// ran), so it overlaps the network-bound Open Cloud upload/poll. Await both,
@@ -340,19 +352,13 @@ async function stagePlaceForRunAsync({
 }
 
 /** The sinks a run with runtime jobs writes, once the results have landed. */
-async function writeRuntimeSinksAsync(
-	options: ResolvedRunWorkspaceOptions,
-	selection: WorkspaceTestSelection,
-	{
-		pending,
-		results,
-		typecheckPass,
-	}: {
-		pending: Array<PendingEntry>;
-		results: Array<ExecuteResult>;
-		typecheckPass: WorkspaceTypecheckPass;
-	},
-): Promise<void> {
+async function writeRuntimeSinksAsync({
+	options,
+	pending,
+	results,
+	selection,
+	typecheckPass,
+}: WriteRuntimeSinksOptions): Promise<void> {
 	await writeWorkspaceSinksAsync({
 		fileSystem: options.fileSystem,
 		pending,
@@ -384,11 +390,7 @@ async function runWorkspaceRuntimeAsync(
 
 	const { bailedPackages, ran } = splitBailedSelection(selection.pending, ranProjectIndices);
 
-	await writeRuntimeSinksAsync(options, selection, {
-		pending: ran,
-		results,
-		typecheckPass,
-	});
+	await writeRuntimeSinksAsync({ options, pending: ran, results, selection, typecheckPass });
 
 	return {
 		...attachTypecheck({
@@ -410,11 +412,15 @@ async function runWorkspaceRuntimeAsync(
 // packages), skip instrumentation, the synthesized place build, and Open Cloud
 // dispatch entirely — run only the host-side type pass and return it. Without
 // Type Tests, nothing to test.
-async function runWorkspaceNoRuntimeAsync(
-	options: ResolvedRunWorkspaceOptions,
-	selection: WorkspaceTestSelection,
-	timing: TimingCollector,
-): Promise<WorkspaceRunnerOutput> {
+async function runWorkspaceNoRuntimeAsync({
+	options,
+	selection,
+	timing,
+}: {
+	options: ResolvedRunWorkspaceOptions;
+	selection: WorkspaceTestSelection;
+	timing: TimingCollector;
+}): Promise<WorkspaceRunnerOutput> {
 	if (selection.typeTestEntries.length === 0) {
 		return { results: [] };
 	}
@@ -501,11 +507,15 @@ function reportTestSelectionErrors(selection: WorkspaceTestSelection): void {
 /**
  * Resolve each package to its projects, then to the tests those projects own.
  */
-async function selectTestsAsync(
-	options: ResolvedRunWorkspaceOptions,
-	timing: TimingCollector,
-	{ cacheDirectory, loaded }: OpenedWorkspace,
-): Promise<WorkspaceTestSelection> {
+async function selectTestsAsync({
+	cacheDirectory,
+	loaded,
+	options,
+	timing,
+}: OpenedWorkspace & {
+	options: ResolvedRunWorkspaceOptions;
+	timing: TimingCollector;
+}): Promise<WorkspaceTestSelection> {
 	const { cli, createResolver, fileSystem, tsconfigReader } = options;
 	const contexts = await timing.profileAsync("resolveContexts", async () => {
 		return resolvePackageContextsAsync({
@@ -538,14 +548,14 @@ async function runWorkspaceProfiledAsync(
 
 	const { cacheDirectory, loaded } = opened;
 
-	const selection = await selectTestsAsync(options, timing, { cacheDirectory, loaded });
+	const selection = await selectTestsAsync({ cacheDirectory, loaded, options, timing });
 	if (selection.emptyPackageErrors.length > 0) {
 		reportTestSelectionErrors(selection);
 		return undefined;
 	}
 
 	if (selection.pending.length === 0) {
-		return runWorkspaceNoRuntimeAsync(options, selection, timing);
+		return runWorkspaceNoRuntimeAsync({ options, selection, timing });
 	}
 
 	return runWorkspaceRuntimeAsync({

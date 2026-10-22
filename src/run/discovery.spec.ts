@@ -55,7 +55,11 @@ describe(discoverTestFiles, () => {
 		const { fileSystem } = createMemoryFileSystem();
 
 		const config = makeConfig();
-		const result = discoverTestFiles(config, ["a.spec.ts", "sub/b.spec.ts"], fileSystem);
+		const result = discoverTestFiles({
+			cliFiles: ["a.spec.ts", "sub/b.spec.ts"],
+			config,
+			fileSystem,
+		});
 
 		expect(result).toStrictEqual({
 			files: [
@@ -74,7 +78,7 @@ describe(discoverTestFiles, () => {
 		volume.mkdirSync("/project", { recursive: true });
 		volume.writeFileSync("/project/a.spec.ts", "");
 		const config = makeConfig();
-		const result = discoverTestFiles(config, [], fileSystem);
+		const result = discoverTestFiles({ cliFiles: [], config, fileSystem });
 
 		expect(result.files).toStrictEqual(["a.spec.ts"]);
 	});
@@ -89,7 +93,7 @@ describe(discoverTestFiles, () => {
 		volume.writeFileSync("/project/src/b.spec.ts", "");
 		volume.writeFileSync("/project/src/c.test.ts", "");
 		const config = makeConfig({ testMatch: ["**/*.spec.ts"] });
-		const result = discoverTestFiles(config, undefined, fileSystem);
+		const result = discoverTestFiles({ config, fileSystem });
 
 		expect(result.files.toSorted()).toStrictEqual(["src/a.spec.ts", "src/b.spec.ts"]);
 	});
@@ -103,7 +107,7 @@ describe(discoverTestFiles, () => {
 		volume.writeFileSync("/project/src/a.spec.ts", "");
 		volume.writeFileSync("/project/src/skip.spec.ts", "");
 		const config = makeConfig({ testPathIgnorePatterns: ["skip"] });
-		const result = discoverTestFiles(config, undefined, fileSystem);
+		const result = discoverTestFiles({ config, fileSystem });
 
 		expect(result.files).toStrictEqual(["src/a.spec.ts"]);
 		expect(result.totalFiles).toBe(1);
@@ -118,7 +122,7 @@ describe(discoverTestFiles, () => {
 		volume.writeFileSync("/project/src/keep.spec.ts", "");
 		volume.writeFileSync("/project/src/other.spec.ts", "");
 		const config = makeConfig({ testPathPattern: "keep" });
-		const result = discoverTestFiles(config, undefined, fileSystem);
+		const result = discoverTestFiles({ config, fileSystem });
 
 		expect(result.files).toStrictEqual(["src/keep.spec.ts"]);
 		expect(result.totalFiles).toBe(2);
@@ -132,7 +136,7 @@ describe(discoverTestFiles, () => {
 		volume.mkdirSync("/project", { recursive: true });
 		volume.writeFileSync("/project/a.spec.ts", "");
 		const config = makeConfig({ testMatch: ["**/*.spec.ts", "*.spec.ts"] });
-		const result = discoverTestFiles(config, undefined, fileSystem);
+		const result = discoverTestFiles({ config, fileSystem });
 
 		expect(result.files).toStrictEqual(["a.spec.ts"]);
 	});

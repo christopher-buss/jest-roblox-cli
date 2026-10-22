@@ -250,7 +250,7 @@ async function writeFolderShadowAsync({
 			tree: { $path: normalizeWindowsPath(mount.source) },
 		}),
 	);
-	await buildWithRojoAsync(projectFile, shadowFile, childProcess);
+	await buildWithRojoAsync({ childProcess, outputPath: shadowFile, projectPath: projectFile });
 
 	fileSystem.writeFileSync(
 		shadowFile,

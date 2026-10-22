@@ -76,9 +76,7 @@ describe.skipIf(!IS_BINARY_INPUT)("cLI Open Cloud recovery", () => {
 					uploadCache: false,
 				};
 			},
-			runJestRoblox: async (...args) => {
-				return runJestRobloxAsync(args[0], args[1], args[2], { ...args[3], seams });
-			},
+			runJestRoblox: async (options) => runJestRobloxAsync({ ...options, seams }),
 		});
 
 		expect(actual).toBe(0);
@@ -149,9 +147,7 @@ describe.skipIf(!IS_BINARY_INPUT)("cLI Open Cloud recovery", () => {
 					uploadCache: false,
 				};
 			},
-			runJestRoblox: async (...args) => {
-				return runJestRobloxAsync(args[0], args[1], args[2], { ...args[3], seams });
-			},
+			runJestRoblox: async (options) => runJestRobloxAsync({ ...options, seams }),
 		});
 
 		expect(actual).toBe(0);
@@ -262,9 +258,7 @@ describe.skipIf(!IS_BINARY_INPUT)("cLI Open Cloud recovery", () => {
 						uploadCache: false,
 					};
 				},
-				runJestRoblox: async (...args) => {
-					return runJestRobloxAsync(args[0], args[1], args[2], { ...args[3], seams });
-				},
+				runJestRoblox: async (options) => runJestRobloxAsync({ ...options, seams }),
 			});
 
 			const output = stripVTControlCharacters(

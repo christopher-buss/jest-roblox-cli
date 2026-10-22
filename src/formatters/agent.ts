@@ -83,6 +83,13 @@ interface AgentProjectStats {
 // through the no-op palette rather than growing a plain-text twin.
 const PLAIN_STYLES = createStyles(false);
 
+interface FormatAgentFailureOptions {
+	filePath: string;
+	options: ResolvedAgentOptions;
+	snippetLevel: SnippetLevel;
+	test: TestCaseResult;
+}
+
 export function formatAgent(result: JestResult, agentOptions: AgentOptions): string {
 	const options = resolveAgentOptions(agentOptions);
 	const lines: Array<string> = [];
@@ -96,7 +103,7 @@ export function formatAgent(result: JestResult, agentOptions: AgentOptions): str
 			"",
 			`${"⎯".repeat(3)} Failed Tests ${totalFailures} ${"⎯".repeat(3)}`,
 			"",
-			...formatFailures(result, result.numFailedTests, options),
+			...formatFailures({ options, result, totalFailures: result.numFailedTests }),
 		);
 
 		for (const file of execErrors) {
@@ -121,15 +128,15 @@ export function formatAgentMultiProject(
 	const options = resolveAgentOptions(agentOptions);
 	const lines: Array<string> = [];
 
-	for (const { displayName, result } of projects) {
-		lines.push(...formatAgentProjectHeader(displayName, result, options));
+	for (const project of projects) {
+		lines.push(...formatAgentProjectHeader({ ...project, options }));
 	}
 
 	const stats = collectMultiProjectStats(projects);
 	const totalFailures = stats.tests.counts.failed + stats.allExecErrors.length;
 
 	if (totalFailures > 0) {
-		lines.push(...formatMultiProjectFailures(projects, stats, options));
+		lines.push(...formatMultiProjectFailures({ options, projects, stats }));
 	}
 
 	lines.push(...formatMultiProjectSummary(stats, options));
@@ -386,11 +393,15 @@ function getFallbackSnippet(
 	return snippet !== undefined ? [snippet] : [];
 }
 
-function getFailureSnippets(
-	mappedLocations: Array<MappedLocation>,
-	location: undefined | { line: number; path: string },
-	context: SnippetContext,
-): Array<string> {
+function getFailureSnippets({
+	context,
+	location,
+	mappedLocations,
+}: {
+	context: SnippetContext;
+	location: undefined | { line: number; path: string };
+	mappedLocations: Array<MappedLocation>;
+}): Array<string> {
 	if (context.snippetLevel === "none") {
 		return [];
 	}
@@ -450,27 +461,27 @@ function formatFailureMessage({
 	lines.push(
 		` FAIL ${relativePath}${lineInfo}${ancestors} > ${test.title}`,
 		...buildFailureDetail(parsed),
+		...getFailureSnippets({
+			context: {
+				getSnippet: agentOptions.getSourceSnippet,
+				rootDir: agentOptions.rootDir,
+				snippetLevel,
+			},
+			location,
+			mappedLocations,
+		}),
+		"",
 	);
 
-	const snippets = getFailureSnippets(mappedLocations, location, {
-		getSnippet: agentOptions.getSourceSnippet,
-		rootDir: agentOptions.rootDir,
-		snippetLevel,
-	});
-	for (const snippet of snippets) {
-		lines.push(snippet);
-	}
-
-	lines.push("");
 	return lines;
 }
 
-function formatAgentFailure(
-	test: TestCaseResult,
-	filePath: string,
-	options: ResolvedAgentOptions,
-	snippetLevel: SnippetLevel,
-): string {
+function formatAgentFailure({
+	filePath,
+	options,
+	snippetLevel,
+	test,
+}: FormatAgentFailureOptions): string {
 	const lines: Array<string> = [];
 
 	for (const originalMessage of test.failureMessages) {
@@ -488,32 +499,36 @@ function formatAgentFailure(
 	return lines.join("\n");
 }
 
-function formatFailures(
-	result: JestResult,
-	totalFailures: number,
-	options: ResolvedAgentOptions,
-): Array<string> {
+function formatFailures({
+	options,
+	result,
+	totalFailures,
+}: {
+	options: ResolvedAgentOptions;
+	result: JestResult;
+	totalFailures: number;
+}): Array<string> {
 	const lines: Array<string> = [];
 	const failures = collectFailedTests(result, options.sourceMapper);
 	const snippetLevel = getSnippetLevel(totalFailures);
 
-	for (const [index, { filePath, test }] of failures.entries()) {
+	for (const [index, failure] of failures.entries()) {
 		if (index >= options.maxFailures) {
 			lines.push(`... ${result.numFailedTests - index} more failures omitted`, "");
 			break;
 		}
 
-		lines.push(formatAgentFailure(test, filePath, options, snippetLevel));
+		lines.push(formatAgentFailure({ ...failure, options, snippetLevel }));
 	}
 
 	return lines;
 }
 
-function formatAgentProjectHeader(
-	displayName: string,
-	result: JestResult,
-	options: AgentOptions,
-): Array<string> {
+function formatAgentProjectHeader({
+	displayName,
+	options,
+	result,
+}: AgentProjectEntry & { options: AgentOptions }): Array<string> {
 	const fileParts = formatSummaryParts(countFileBuckets(result), PLAIN_STYLES);
 	return [
 		`▶ ${displayName}  ${fileParts.join(" | ")} (${result.numTotalTests} tests)`,
@@ -545,11 +560,15 @@ function collectMultiProjectStats(projects: Array<AgentProjectEntry>): AgentProj
 	return stats;
 }
 
-function formatMultiProjectFailures(
-	projects: Array<AgentProjectEntry>,
-	stats: AgentProjectStats,
-	options: ResolvedAgentOptions,
-): Array<string> {
+function formatMultiProjectFailures({
+	options,
+	projects,
+	stats,
+}: {
+	options: ResolvedAgentOptions;
+	projects: Array<AgentProjectEntry>;
+	stats: AgentProjectStats;
+}): Array<string> {
 	const totalFailures = stats.tests.counts.failed + stats.allExecErrors.length;
 	const lines: Array<string> = [
 		"",
@@ -558,7 +577,7 @@ function formatMultiProjectFailures(
 	];
 
 	for (const { result } of projects) {
-		lines.push(...formatFailures(result, totalFailures, options));
+		lines.push(...formatFailures({ options, result, totalFailures }));
 	}
 
 	for (const file of stats.allExecErrors) {

@@ -39,7 +39,9 @@ describe(formatFileSummary, () => {
 	it("should render a collected file with no tests as passed", () => {
 		expect.assertions(1);
 
-		expect(formatFileSummary(makeFile({}), options, createTaggedStyles())).toBe(
+		expect(
+			formatFileSummary({ file: makeFile({}), options, styles: createTaggedStyles() }),
+		).toBe(
 			" <pass>✓</pass> <dir>src/</dir><file>example.spec.ts</file> <dim>(0 tests</dim><dim>)</dim>",
 		);
 	});
@@ -48,7 +50,11 @@ describe(formatFileSummary, () => {
 		expect.assertions(1);
 
 		expect(
-			formatFileSummary(makeFile({ numPendingTests: 2 }), options, createTaggedStyles()),
+			formatFileSummary({
+				file: makeFile({ numPendingTests: 2 }),
+				options,
+				styles: createTaggedStyles(),
+			}),
 		).toBe(
 			" <pending>↓</pending> <dir>src/</dir><file>example.spec.ts</file> <dim>(2 tests)</dim>",
 		);
@@ -63,7 +69,7 @@ describe(formatFileSummary, () => {
 			timedOut: true,
 		});
 
-		expect(formatFileSummary(file, options, createTaggedStyles())).toBe(
+		expect(formatFileSummary({ file, options, styles: createTaggedStyles() })).toBe(
 			" <pending>⏱</pending> <file><exec-error></file>",
 		);
 	});
@@ -86,7 +92,9 @@ describe(formatFileSummary, () => {
 			],
 		});
 
-		expect(formatFileSummary(file, options, createTaggedStyles())).toMatchSnapshot();
+		expect(
+			formatFileSummary({ file, options, styles: createTaggedStyles() }),
+		).toMatchSnapshot();
 	});
 
 	it("should render only passing tests in verbose passed-file output", () => {
@@ -102,7 +110,11 @@ describe(formatFileSummary, () => {
 		});
 
 		expect(
-			formatFileSummary(file, { ...options, verbose: true }, createTaggedStyles()),
+			formatFileSummary({
+				file,
+				options: { ...options, verbose: true },
+				styles: createTaggedStyles(),
+			}),
 		).toMatchSnapshot();
 	});
 
@@ -111,7 +123,7 @@ describe(formatFileSummary, () => {
 
 		const file = makeFile({ numPassingTests: 1, testResults: [makeTest({})] });
 
-		expect(formatFileSummary(file, options, createTaggedStyles())).toBe(
+		expect(formatFileSummary({ file, options, styles: createTaggedStyles() })).toBe(
 			" <pass>✓</pass> <dir>src/</dir><file>example.spec.ts</file> <dim>(1 tests</dim><dim>)</dim>",
 		);
 	});
@@ -121,7 +133,13 @@ describe(formatFileSummary, () => {
 
 		const file = makeFile({ numPassingTests: 1, testResults: [makeTest({})] });
 
-		expect(formatFileSummary(file, { ...options, verbose: true }, createTaggedStyles())).toBe(
+		expect(
+			formatFileSummary({
+				file,
+				options: { ...options, verbose: true },
+				styles: createTaggedStyles(),
+			}),
+		).toBe(
 			" <pass>✓</pass> <dir>src/</dir><file>example.spec.ts</file> <dim>(1 tests</dim><dim>)</dim>\n" +
 				"<pass>  ✓ suite test</pass>",
 		);

@@ -58,10 +58,11 @@ export function createFrameMapper(
 		}
 
 		const { filePath, mapping } = resolved;
-		const luauPath = replacePrefix(filePath, mapping.rootDir, mapping.outDir).replace(
-			TS_EXTENSION,
-			".luau",
-		);
+		const luauPath = replacePrefix({
+			filePath,
+			from: mapping.rootDir,
+			to: mapping.outDir,
+		}).replace(TS_EXTENSION, ".luau");
 
 		return { luauPath, source: mapToSource({ ...context, frame, luauPath }) };
 	};
@@ -91,11 +92,11 @@ export function createLineMapper(
 			return luauLine;
 		}
 
-		const luauPath = replacePrefix(
-			resolved.filePath,
-			resolved.mapping.rootDir,
-			resolved.mapping.outDir,
-		).replace(TS_EXTENSION, ".luau");
+		const luauPath = replacePrefix({
+			filePath: resolved.filePath,
+			from: resolved.mapping.rootDir,
+			to: resolved.mapping.outDir,
+		}).replace(TS_EXTENSION, ".luau");
 
 		return context.v3Mapper.mapLineStart(luauPath, luauLine)?.line ?? undefined;
 	};

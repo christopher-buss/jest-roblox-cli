@@ -152,7 +152,9 @@ function toOutputCandidates(
 	}
 
 	return [
-		...mappings.map((mapping) => replacePrefix(stem, mapping.rootDir, mapping.outDir)),
+		...mappings.map((mapping) => {
+			return replacePrefix({ filePath: stem, from: mapping.rootDir, to: mapping.outDir });
+		}),
 		stem,
 	];
 }

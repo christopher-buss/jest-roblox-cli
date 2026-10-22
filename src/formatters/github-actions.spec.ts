@@ -306,8 +306,12 @@ describe(collectAnnotations, () => {
 				},
 			],
 		};
-		const options = resolveGitHubActionsOptions({}, undefined, {
-			GITHUB_WORKSPACE: "/home/runner/work/project/",
+		const options = resolveGitHubActionsOptions({
+			environment: {
+				GITHUB_WORKSPACE: "/home/runner/work/project/",
+			},
+			sourceMapper: undefined,
+			userOptions: {},
 		});
 
 		expect(collectAnnotations(result, options)[0]!.file).toBe("src/test.spec.ts");
@@ -595,12 +599,16 @@ describe(resolveGitHubActionsOptions, () => {
 	it("should use env var defaults when no user options provided", () => {
 		expect.assertions(4);
 
-		const result = resolveGitHubActionsOptions({}, undefined, {
-			GITHUB_REPOSITORY: "owner/repo",
-			GITHUB_SERVER_URL: "https://github.com",
-			GITHUB_SHA: "abc123",
-			GITHUB_STEP_SUMMARY: "/tmp/summary.md",
-			GITHUB_WORKSPACE: "/home/runner/work",
+		const result = resolveGitHubActionsOptions({
+			environment: {
+				GITHUB_REPOSITORY: "owner/repo",
+				GITHUB_SERVER_URL: "https://github.com",
+				GITHUB_SHA: "abc123",
+				GITHUB_STEP_SUMMARY: "/tmp/summary.md",
+				GITHUB_WORKSPACE: "/home/runner/work",
+			},
+			sourceMapper: undefined,
+			userOptions: {},
 		});
 
 		expect(result.repository).toBe("owner/repo");
@@ -612,8 +620,13 @@ describe(resolveGitHubActionsOptions, () => {
 	it("should override env vars with user options", () => {
 		expect.assertions(2);
 
-		const result = resolveGitHubActionsOptions(
-			{
+		const result = resolveGitHubActionsOptions({
+			environment: {
+				GITHUB_REPOSITORY: "owner/repo",
+				GITHUB_WORKSPACE: "/home/runner/work",
+			},
+			sourceMapper: undefined,
+			userOptions: {
 				jobSummary: {
 					fileLinks: {
 						repository: "custom/repo",
@@ -621,12 +634,7 @@ describe(resolveGitHubActionsOptions, () => {
 					},
 				},
 			},
-			undefined,
-			{
-				GITHUB_REPOSITORY: "owner/repo",
-				GITHUB_WORKSPACE: "/home/runner/work",
-			},
-		);
+		});
 
 		expect(result.repository).toBe("custom/repo");
 		expect(result.workspace).toBe(toPosixRoot("/custom/path"));
@@ -639,7 +647,11 @@ describe(resolveGitHubActionsOptions, () => {
 			mapFailureWithLocations: () => ({ locations: [], message: "" }),
 		});
 
-		const result = resolveGitHubActionsOptions({}, sourceMapper, {});
+		const result = resolveGitHubActionsOptions({
+			environment: {},
+			sourceMapper,
+			userOptions: {},
+		});
 
 		expect(result.sourceMapper).toBe(sourceMapper);
 	});

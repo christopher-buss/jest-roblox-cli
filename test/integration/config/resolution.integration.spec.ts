@@ -24,7 +24,7 @@ describe("config resolution", () => {
 		it("should be detected as a luau project", async () => {
 			expect.assertions(1);
 
-			const tsconfigMappings = resolveAllTsconfigMappings(LUAU_FIXTURE);
+			const tsconfigMappings = resolveAllTsconfigMappings({ projectRoot: LUAU_FIXTURE });
 			const testFiles = ["example.spec.luau"];
 
 			expect(isLuauProject(testFiles, tsconfigMappings)).toBeTrue();
@@ -33,7 +33,7 @@ describe("config resolution", () => {
 		it("should have no tsconfig mappings", () => {
 			expect.assertions(1);
 
-			const mappings = resolveAllTsconfigMappings(LUAU_FIXTURE);
+			const mappings = resolveAllTsconfigMappings({ projectRoot: LUAU_FIXTURE });
 
 			expect(mappings).toHaveLength(0);
 		});
@@ -51,7 +51,7 @@ describe("config resolution", () => {
 		it("should be detected as a roblox-ts project", () => {
 			expect.assertions(1);
 
-			const tsconfigMappings = resolveAllTsconfigMappings(RBXTS_FIXTURE);
+			const tsconfigMappings = resolveAllTsconfigMappings({ projectRoot: RBXTS_FIXTURE });
 			const testFiles = ["example.spec.ts"];
 
 			expect(isLuauProject(testFiles, tsconfigMappings)).toBeFalse();
@@ -60,7 +60,7 @@ describe("config resolution", () => {
 		it("should resolve tsconfig mappings with outDir and rootDir", () => {
 			expect.assertions(3);
 
-			const mappings = resolveAllTsconfigMappings(RBXTS_FIXTURE);
+			const mappings = resolveAllTsconfigMappings({ projectRoot: RBXTS_FIXTURE });
 
 			expect(mappings.length).toBeGreaterThan(0);
 			expect(mappings[0]!.outDir).toContain("out");

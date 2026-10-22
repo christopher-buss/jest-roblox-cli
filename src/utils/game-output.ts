@@ -21,6 +21,18 @@ const gameOutputEntriesSchema = type({
 	timestamp: "number",
 }).array();
 
+export interface WriteGameOutputOptions {
+	readonly entries: Array<GameOutputEntry>;
+	readonly filePath: string;
+	readonly fileSystem?: FileSystem;
+}
+
+export interface WriteGroupedGameOutputOptions {
+	readonly filePath: string;
+	readonly fileSystem?: FileSystem;
+	readonly groups: Array<PackageGameOutput>;
+}
+
 export function formatGameOutputNotice(filePath: string, entryCount: number): string {
 	if (entryCount === 0) {
 		return "";
@@ -46,12 +58,12 @@ export function parseGameOutput(raw: string | undefined): Array<GameOutputEntry>
 	}
 }
 
-export function writeGameOutput(
-	filePath: string,
-	entries: Array<GameOutputEntry>,
-	fileSystem: FileSystem = nodeFileSystem,
-): void {
-	writeJsonFile(fileSystem, filePath, entries);
+export function writeGameOutput({
+	entries,
+	filePath,
+	fileSystem = nodeFileSystem,
+}: WriteGameOutputOptions): void {
+	writeJsonFile({ filePath, fileSystem, value: entries });
 }
 
 /**
@@ -89,23 +101,27 @@ export function buildBatchGameOutput(raw: string | undefined): Array<PackageGame
 	return [{ entries: parseGameOutput(raw), project: BATCH_PROJECT_LABEL, scope: "batch" }];
 }
 
-export function writeGroupedGameOutput(
-	filePath: string,
-	groups: Array<PackageGameOutput>,
-	fileSystem: FileSystem = nodeFileSystem,
-): void {
-	writeJsonFile(fileSystem, filePath, groups);
+export function writeGroupedGameOutput({
+	filePath,
+	fileSystem = nodeFileSystem,
+	groups,
+}: WriteGroupedGameOutputOptions): void {
+	writeJsonFile({ filePath, fileSystem, value: groups });
 }
 
 export function countGroupedEntries(groups: ReadonlyArray<PackageGameOutput>): number {
 	return groups.reduce((total, group) => total + group.entries.length, 0);
 }
 
-function writeJsonFile(
-	fileSystem: FileSystem,
-	filePath: string,
-	value: Array<GameOutputEntry> | Array<PackageGameOutput>,
-): void {
+function writeJsonFile({
+	filePath,
+	fileSystem,
+	value,
+}: {
+	readonly filePath: string;
+	readonly fileSystem: FileSystem;
+	readonly value: Array<GameOutputEntry> | Array<PackageGameOutput>;
+}): void {
 	const absolutePath = path.resolve(filePath);
 	const directoryPath = path.dirname(absolutePath);
 

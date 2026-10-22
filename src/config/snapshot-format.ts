@@ -41,7 +41,12 @@ export function resolveSnapshotFormat({
 		return config;
 	}
 
-	const mappings = resolveAllTsconfigMappings(config.rootDir, cache, fileSystem, tsconfigReader);
+	const mappings = resolveAllTsconfigMappings({
+		cache,
+		fileSystem,
+		projectRoot: config.rootDir,
+		tsconfigReader,
+	});
 	return {
 		...config,
 		snapshotFormat: {

@@ -170,10 +170,12 @@ function makeCli(overrides: Partial<CliOptions> = {}): CliOptions {
 function timedRojo(fileSystem: FileSystem, onBuild: () => void): ChildProcessRunner {
 	return fromAny({
 		execFile: (
-			_file: string,
-			args: Array<string>,
-			_options: object,
-			callback: (cause: Error | null, stdout: string, stderr: string) => void,
+			...[, args, , callback]: [
+				file: string,
+				args: Array<string>,
+				options: object,
+				callback: (cause: Error | null, stdout: string, stderr: string) => void,
+			]
 		) => {
 			onBuild();
 			fileSystem.writeFileSync(String(args[3]), PLACE_BYTES);
@@ -189,12 +191,14 @@ function stubRojo(fileSystem: FileSystem): ChildProcessRunner {
 function failingRojo(stderr: string): ChildProcessRunner {
 	return fromAny({
 		execFile: (
-			_file: string,
-			_args: Array<string>,
-			_options: object,
-			callback: (cause: Error | null, stdout: string, stderr: string) => void,
+			...args: [
+				file: string,
+				args: Array<string>,
+				options: object,
+				callback: (cause: Error | null, stdout: string, stderr: string) => void,
+			]
 		) => {
-			callback(new Error("rojo exited with 1"), "", stderr);
+			args[3](new Error("rojo exited with 1"), "", stderr);
 		},
 	});
 }

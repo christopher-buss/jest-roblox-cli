@@ -9,7 +9,7 @@ describe(formatProjectBadge, () => {
 
 		expect(
 			["blue", "cyan", "green", "magenta", "red", "white", "yellow"].map((displayColor) => {
-				return formatProjectBadge("project", true, displayColor);
+				return formatProjectBadge({ displayColor, displayName: "project", useColor: true });
 			}),
 		).toStrictEqual([
 			`▶ ${color.bgBlue(color.white(" project "))}`,
@@ -26,7 +26,9 @@ describe(formatProjectBadge, () => {
 		expect.assertions(1);
 
 		expect(
-			["d", "a", "b", "c", "aa"].map((name) => formatProjectBadge(name, true)),
+			["d", "a", "b", "c", "aa"].map((name) => {
+				return formatProjectBadge({ displayName: name, useColor: true });
+			}),
 		).toStrictEqual([
 			`▶ ${color.bgYellow(color.black(" d "))}`,
 			`▶ ${color.bgCyan(color.black(" a "))}`,
@@ -39,7 +41,9 @@ describe(formatProjectBadge, () => {
 	it("should render plain project names without an ANSI label", () => {
 		expect.assertions(1);
 
-		expect(formatProjectBadge("plain", false, "red")).toBe("▶ plain");
+		expect(
+			formatProjectBadge({ displayColor: "red", displayName: "plain", useColor: false }),
+		).toBe("▶ plain");
 	});
 });
 

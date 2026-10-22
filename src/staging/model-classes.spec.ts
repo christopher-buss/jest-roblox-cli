@@ -72,7 +72,7 @@ async function buildModelAsync(rootClass: string): Promise<string> {
 	);
 
 	const modelPath = path.join(directory, "model.rbxm");
-	await buildWithRojoAsync(projectPath, modelPath);
+	await buildWithRojoAsync({ outputPath: modelPath, projectPath });
 	return modelPath;
 }
 

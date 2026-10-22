@@ -18,8 +18,8 @@ function answeringWith(cause: Error | null, stderr = ""): ChildProcessRunner {
 	return fromAny({
 		execFile: vi.fn<
 			(file: string, args: Array<string>, options: object, callback: ExecCallback) => void
-		>((_file, _args, _options, callback) => {
-			callback(cause, "", stderr);
+		>((...args) => {
+			args[3](cause, "", stderr);
 		}),
 	});
 }
@@ -30,7 +30,11 @@ describe(buildWithRojoAsync, () => {
 
 		const childProcess = answeringWith(null);
 
-		await buildWithRojoAsync("my.project.json", "output/game.rbxl", childProcess);
+		await buildWithRojoAsync({
+			childProcess,
+			outputPath: "output/game.rbxl",
+			projectPath: "my.project.json",
+		});
 
 		expect(childProcess.execFile).toHaveBeenCalledWith(
 			"rojo",
@@ -48,7 +52,11 @@ describe(buildWithRojoAsync, () => {
 		);
 
 		await expect(
-			buildWithRojoAsync("my.project.json", "output/game.rbxl", childProcess),
+			buildWithRojoAsync({
+				childProcess,
+				outputPath: "output/game.rbxl",
+				projectPath: "my.project.json",
+			}),
 		).rejects.toThrowWithMessage(Error, "rojo was not found on PATH");
 	});
 
@@ -61,7 +69,11 @@ describe(buildWithRojoAsync, () => {
 		);
 
 		await expect(
-			buildWithRojoAsync("my.project.json", "output/game.rbxl", childProcess),
+			buildWithRojoAsync({
+				childProcess,
+				outputPath: "output/game.rbxl",
+				projectPath: "my.project.json",
+			}),
 		).rejects.toThrowWithMessage(
 			Error,
 			"rojo build failed: Found an error in project at path node.project.json",
@@ -74,7 +86,11 @@ describe(buildWithRojoAsync, () => {
 		const childProcess = answeringWith(new Error("rojo exited with code 1"));
 
 		await expect(
-			buildWithRojoAsync("my.project.json", "output/game.rbxl", childProcess),
+			buildWithRojoAsync({
+				childProcess,
+				outputPath: "output/game.rbxl",
+				projectPath: "my.project.json",
+			}),
 		).rejects.toThrowWithMessage(Error, "rojo build failed");
 	});
 
@@ -85,10 +101,18 @@ describe(buildWithRojoAsync, () => {
 		const childProcess = answeringWith(originalError);
 
 		await expect(
-			buildWithRojoAsync("my.project.json", "output/game.rbxl", childProcess),
+			buildWithRojoAsync({
+				childProcess,
+				outputPath: "output/game.rbxl",
+				projectPath: "my.project.json",
+			}),
 		).rejects.toThrowWithMessage(Error, "rojo build failed");
 		await expect(
-			buildWithRojoAsync("my.project.json", "output/game.rbxl", childProcess),
+			buildWithRojoAsync({
+				childProcess,
+				outputPath: "output/game.rbxl",
+				projectPath: "my.project.json",
+			}),
 		).rejects.toThrow(expect.objectContaining({ cause: originalError }));
 	});
 });

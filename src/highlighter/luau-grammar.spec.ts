@@ -14,7 +14,13 @@ describe(luauGrammar, () => {
 		const hljs = fromAny<HLJSApi, Record<string, unknown>>({
 			APOS_STRING_MODE: { scope: "apostrophe-string" },
 			C_NUMBER_MODE: { scope: "number" },
-			COMMENT(begin: RegExp | string, end: RegExp | string, options: Mode = {}) {
+			COMMENT(
+				...[begin, end, options = {}]: [
+					begin: RegExp | string,
+					end: RegExp | string,
+					options?: Mode,
+				]
+			) {
 				return { ...options, begin, end, scope: "comment" };
 			},
 			inherit(original: Mode, overrides: Mode) {

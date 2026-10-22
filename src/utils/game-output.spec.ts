@@ -78,7 +78,7 @@ describe(writeGameOutput, () => {
 			{ message: "test", messageType: 0, timestamp: 1000 },
 		];
 
-		writeGameOutput(testFile, entries);
+		writeGameOutput({ entries, filePath: testFile });
 
 		onTestFinished(() => {
 			fs.rmSync(testDirectory, { force: true, recursive: true });
@@ -93,7 +93,7 @@ describe(writeGameOutput, () => {
 		expect.assertions(1);
 
 		// First call creates the directory
-		writeGameOutput(testFile, []);
+		writeGameOutput({ entries: [], filePath: testFile });
 
 		onTestFinished(() => {
 			fs.rmSync(testDirectory, { force: true, recursive: true });
@@ -104,7 +104,7 @@ describe(writeGameOutput, () => {
 			{ message: "second", messageType: 0, timestamp: 2000 },
 		];
 
-		writeGameOutput(testFile, entries);
+		writeGameOutput({ entries, filePath: testFile });
 
 		const written = JSON.parse(fs.readFileSync(testFile, "utf-8"));
 
@@ -115,7 +115,7 @@ describe(writeGameOutput, () => {
 		expect.assertions(1);
 
 		const nested = path.join(testDirectory, "nested", "game-output.json");
-		writeGameOutput(nested, []);
+		writeGameOutput({ entries: [], filePath: nested });
 
 		onTestFinished(() => {
 			fs.rmSync(testDirectory, { force: true, recursive: true });
@@ -215,7 +215,7 @@ describe(writeGroupedGameOutput, () => {
 			},
 		];
 
-		writeGroupedGameOutput(testFile, groups);
+		writeGroupedGameOutput({ filePath: testFile, groups });
 
 		onTestFinished(() => {
 			fs.rmSync(testDirectory, { force: true, recursive: true });

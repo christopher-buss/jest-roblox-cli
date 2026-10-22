@@ -65,7 +65,15 @@ function createRunner(): ChildProcessRunner {
 	return fromAny({ execFileSync: vi.fn<ChildProcessRunner["execFileSync"]>() });
 }
 
-function turboReturns(childProcess: ChildProcessRunner, root: string, names: Array<string>): void {
+function turboReturns({
+	childProcess,
+	names,
+	root,
+}: {
+	childProcess: ChildProcessRunner;
+	names: Array<string>;
+	root: string;
+}): void {
 	vi.mocked(childProcess.execFileSync).mockReturnValue(
 		JSON.stringify({
 			packages: {
@@ -208,11 +216,11 @@ function setupHappyPath(seed: Record<string, string> = seedWorkspace(ROOT, WORKS
 	};
 }
 
-function runWorkspaceReturns(
-	{ runWorkspace }: Harness,
-	results: Array<WorkspaceProjectResult>,
-	typecheckResult?: JestResult,
-): void {
+function runWorkspaceReturns({
+	results,
+	runWorkspace,
+	typecheckResult,
+}: Harness & { results: Array<WorkspaceProjectResult>; typecheckResult?: JestResult }): void {
 	runWorkspace.mockResolvedValue({ results, typecheckResult });
 }
 
@@ -230,12 +238,10 @@ describe(runWorkspaceModeAsync, () => {
 			expect.assertions(2);
 
 			const { dependencies } = setupHappyPath();
-			const result = await runWorkspaceModeAsync(
-				makeCli({ affectedSince: "main", packages: "a", workspace: true }),
-				undefined,
-				undefined,
+			const result = await runWorkspaceModeAsync({
+				cli: makeCli({ affectedSince: "main", packages: "a", workspace: true }),
 				dependencies,
-			);
+			});
 
 			expect(result.validationExitCode).toBe(2);
 			expect(result.validationMessage).toContain(
@@ -247,16 +253,15 @@ describe(runWorkspaceModeAsync, () => {
 			expect.assertions(2);
 
 			const harness = setupHappyPath();
-			runWorkspaceReturns(harness, [
-				{ displayName: "a", pkg: "a", result: makeExecuteResult() },
-			]);
+			runWorkspaceReturns({
+				...harness,
+				results: [{ displayName: "a", pkg: "a", result: makeExecuteResult() }],
+			});
 
-			const result = await runWorkspaceModeAsync(
-				makeCli({ workspace: true }),
-				undefined,
-				undefined,
-				harness.dependencies,
-			);
+			const result = await runWorkspaceModeAsync({
+				cli: makeCli({ workspace: true }),
+				dependencies: harness.dependencies,
+			});
 
 			expect(result.validationExitCode).toBeUndefined();
 			expect(packageNames(harness)).toIncludeSameMembers(WORKSPACE_PACKAGES);
@@ -267,12 +272,10 @@ describe(runWorkspaceModeAsync, () => {
 
 			const { dependencies } = setupHappyPath(seedWorkspace(ROOT, []));
 
-			const result = await runWorkspaceModeAsync(
-				makeCli({ workspace: true }),
-				undefined,
-				undefined,
+			const result = await runWorkspaceModeAsync({
+				cli: makeCli({ workspace: true }),
 				dependencies,
-			);
+			});
 
 			// Distinct from --affected-since finding nothing: a workspace with
 			// no testable package in it is a misconfiguration, not a clean run.
@@ -288,12 +291,11 @@ describe(runWorkspaceModeAsync, () => {
 
 			const { dependencies } = setupHappyPath(seedWorkspace(CONFIG_ROOT, []));
 
-			const result = await runWorkspaceModeAsync(
-				makeCli({ workspace: true }),
-				{ packages: ["packages/*"], root: CONFIG_ROOT },
-				undefined,
+			const result = await runWorkspaceModeAsync({
+				cli: makeCli({ workspace: true }),
 				dependencies,
-			);
+				workspace: { packages: ["packages/*"], root: CONFIG_ROOT },
+			});
 
 			expect(result.validationMessage).toContain("Widen `workspace.packages`");
 		});
@@ -302,15 +304,19 @@ describe(runWorkspaceModeAsync, () => {
 			expect.assertions(1);
 
 			const harness = setupHappyPath();
-			runWorkspaceReturns(harness, [
-				{ displayName: "a", pkg: "a", result: makeExecuteResult() },
-			]);
-			const result = await runWorkspaceModeAsync(
-				makeCli({ backend: "studio-cli", packages: "a", parallel: 2, workspace: true }),
-				undefined,
-				undefined,
-				harness.dependencies,
-			);
+			runWorkspaceReturns({
+				...harness,
+				results: [{ displayName: "a", pkg: "a", result: makeExecuteResult() }],
+			});
+			const result = await runWorkspaceModeAsync({
+				cli: makeCli({
+					backend: "studio-cli",
+					packages: "a",
+					parallel: 2,
+					workspace: true,
+				}),
+				dependencies: harness.dependencies,
+			});
 
 			expect(result.validationExitCode).toBeUndefined();
 		});
@@ -319,20 +325,19 @@ describe(runWorkspaceModeAsync, () => {
 			expect.assertions(1);
 
 			const harness = setupHappyPath();
-			runWorkspaceReturns(harness, [
-				{ displayName: "a", pkg: "a", result: makeExecuteResult() },
-			]);
-			const result = await runWorkspaceModeAsync(
-				makeCli({
+			runWorkspaceReturns({
+				...harness,
+				results: [{ displayName: "a", pkg: "a", result: makeExecuteResult() }],
+			});
+			const result = await runWorkspaceModeAsync({
+				cli: makeCli({
 					backend: "studio-cli",
 					packages: "a",
 					parallel: "auto",
 					workspace: true,
 				}),
-				undefined,
-				undefined,
-				harness.dependencies,
-			);
+				dependencies: harness.dependencies,
+			});
 
 			expect(result.validationExitCode).toBeUndefined();
 		});
@@ -344,15 +349,14 @@ describe(runWorkspaceModeAsync, () => {
 
 			const harness = setupHappyPath();
 			harness.loadPackageConfig.mockResolvedValue({ parallel: "auto" });
-			runWorkspaceReturns(harness, [
-				{ displayName: "a", pkg: "a", result: makeExecuteResult() },
-			]);
-			const result = await runWorkspaceModeAsync(
-				makeCli({ backend: "studio-cli", packages: "a", workspace: true }),
-				undefined,
-				undefined,
-				harness.dependencies,
-			);
+			runWorkspaceReturns({
+				...harness,
+				results: [{ displayName: "a", pkg: "a", result: makeExecuteResult() }],
+			});
+			const result = await runWorkspaceModeAsync({
+				cli: makeCli({ backend: "studio-cli", packages: "a", workspace: true }),
+				dependencies: harness.dependencies,
+			});
 
 			expect(result.validationExitCode).toBeUndefined();
 		});
@@ -364,12 +368,10 @@ describe(runWorkspaceModeAsync, () => {
 
 			const harness = setupHappyPath();
 
-			const result = await runWorkspaceModeAsync(
-				makeCli({ experimentalVmParallel: "auto", packages: "a", workspace: true }),
-				undefined,
-				undefined,
-				harness.dependencies,
-			);
+			const result = await runWorkspaceModeAsync({
+				cli: makeCli({ experimentalVmParallel: "auto", packages: "a", workspace: true }),
+				dependencies: harness.dependencies,
+			});
 
 			expect(result.validationExitCode).toBe(2);
 			expect(result.validationMessage).toContain("--experimental-vm-parallel is Studio-only");
@@ -380,17 +382,15 @@ describe(runWorkspaceModeAsync, () => {
 
 			const harness = setupHappyPath();
 
-			await runWorkspaceModeAsync(
-				makeCli({
+			await runWorkspaceModeAsync({
+				cli: makeCli({
 					backend: "studio-cli",
 					experimentalVmParallel: "auto",
 					packages: "a",
 					workspace: true,
 				}),
-				undefined,
-				undefined,
-				harness.dependencies,
-			);
+				dependencies: harness.dependencies,
+			});
 
 			expect(runnerCall(harness).runOptions.experimentalVmParallel).toBe("auto");
 		});
@@ -400,16 +400,15 @@ describe(runWorkspaceModeAsync, () => {
 
 			const harness = setupHappyPath();
 			vi.spyOn(process.stderr, "write").mockReturnValue(true);
-			runWorkspaceReturns(harness, [
-				{ displayName: "a", pkg: "a", result: makeExecuteResult() },
-			]);
+			runWorkspaceReturns({
+				...harness,
+				results: [{ displayName: "a", pkg: "a", result: makeExecuteResult() }],
+			});
 
-			await runWorkspaceModeAsync(
-				makeCli({ backend: "auto", packages: "a", workspace: true }),
-				undefined,
-				undefined,
-				{ ...harness.dependencies, isStudioInstalled: () => true },
-			);
+			await runWorkspaceModeAsync({
+				cli: makeCli({ backend: "auto", packages: "a", workspace: true }),
+				dependencies: { ...harness.dependencies, isStudioInstalled: () => true },
+			});
 
 			expect(harness.studioCliBackend).toHaveBeenCalledExactlyOnceWith({
 				headed: undefined,
@@ -423,12 +422,10 @@ describe(runWorkspaceModeAsync, () => {
 
 			const harness = setupHappyPath();
 
-			const result = await runWorkspaceModeAsync(
-				makeCli({ backend: "auto", bail: true, packages: "a", workspace: true }),
-				undefined,
-				undefined,
-				{ ...harness.dependencies, isStudioInstalled: () => true },
-			);
+			const result = await runWorkspaceModeAsync({
+				cli: makeCli({ backend: "auto", bail: true, packages: "a", workspace: true }),
+				dependencies: { ...harness.dependencies, isStudioInstalled: () => true },
+			});
 
 			expect(result.validationExitCode).toBeUndefined();
 			expect(harness.studioCliBackend).toHaveBeenCalledExactlyOnceWith({
@@ -441,16 +438,15 @@ describe(runWorkspaceModeAsync, () => {
 			expect.assertions(3);
 
 			const harness = setupHappyPath();
-			runWorkspaceReturns(harness, [
-				{ displayName: "a", pkg: "a", result: makeExecuteResult() },
-			]);
+			runWorkspaceReturns({
+				...harness,
+				results: [{ displayName: "a", pkg: "a", result: makeExecuteResult() }],
+			});
 
-			await runWorkspaceModeAsync(
-				makeCli({ backend: "studio-cli", packages: "a", workspace: true }),
-				undefined,
-				undefined,
-				harness.dependencies,
-			);
+			await runWorkspaceModeAsync({
+				cli: makeCli({ backend: "studio-cli", packages: "a", workspace: true }),
+				dependencies: harness.dependencies,
+			});
 
 			expect(harness.studioCliBackend).toHaveBeenCalledExactlyOnceWith({
 				headed: undefined,
@@ -465,16 +461,15 @@ describe(runWorkspaceModeAsync, () => {
 
 			const harness = setupHappyPath();
 			harness.loadPackageConfig.mockResolvedValue({ studioPath: "C:/s.exe" });
-			runWorkspaceReturns(harness, [
-				{ displayName: "a", pkg: "a", result: makeExecuteResult() },
-			]);
+			runWorkspaceReturns({
+				...harness,
+				results: [{ displayName: "a", pkg: "a", result: makeExecuteResult() }],
+			});
 
-			await runWorkspaceModeAsync(
-				makeCli({ backend: "studio-cli", packages: "a", workspace: true }),
-				undefined,
-				undefined,
-				harness.dependencies,
-			);
+			await runWorkspaceModeAsync({
+				cli: makeCli({ backend: "studio-cli", packages: "a", workspace: true }),
+				dependencies: harness.dependencies,
+			});
 
 			expect(harness.studioCliBackend).toHaveBeenCalledWith(
 				expect.objectContaining({ studioPath: "C:/s.exe" }),
@@ -486,16 +481,15 @@ describe(runWorkspaceModeAsync, () => {
 
 			const harness = setupHappyPath();
 			harness.loadPackageConfig.mockResolvedValue({ pluginsDirectory: "/plugins" });
-			runWorkspaceReturns(harness, [
-				{ displayName: "a", pkg: "a", result: makeExecuteResult() },
-			]);
+			runWorkspaceReturns({
+				...harness,
+				results: [{ displayName: "a", pkg: "a", result: makeExecuteResult() }],
+			});
 
-			await runWorkspaceModeAsync(
-				makeCli({ backend: "studio-cli", packages: "a", workspace: true }),
-				undefined,
-				undefined,
-				harness.dependencies,
-			);
+			await runWorkspaceModeAsync({
+				cli: makeCli({ backend: "studio-cli", packages: "a", workspace: true }),
+				dependencies: harness.dependencies,
+			});
 
 			expect(harness.studioCliBackend).toHaveBeenCalledWith(
 				expect.objectContaining({ pluginsDirectory: "/plugins" }),
@@ -506,16 +500,20 @@ describe(runWorkspaceModeAsync, () => {
 			expect.assertions(1);
 
 			const harness = setupHappyPath();
-			runWorkspaceReturns(harness, [
-				{ displayName: "a", pkg: "a", result: makeExecuteResult() },
-			]);
+			runWorkspaceReturns({
+				...harness,
+				results: [{ displayName: "a", pkg: "a", result: makeExecuteResult() }],
+			});
 
-			await runWorkspaceModeAsync(
-				makeCli({ backend: "studio-cli", headed: true, packages: "a", workspace: true }),
-				undefined,
-				undefined,
-				harness.dependencies,
-			);
+			await runWorkspaceModeAsync({
+				cli: makeCli({
+					backend: "studio-cli",
+					headed: true,
+					packages: "a",
+					workspace: true,
+				}),
+				dependencies: harness.dependencies,
+			});
 
 			expect(harness.studioCliBackend).toHaveBeenCalledWith(
 				expect.objectContaining({ headed: true }),
@@ -526,16 +524,15 @@ describe(runWorkspaceModeAsync, () => {
 			expect.assertions(2);
 
 			const harness = setupHappyPath();
-			runWorkspaceReturns(harness, [
-				{ displayName: "a", pkg: "a", result: makeExecuteResult() },
-			]);
+			runWorkspaceReturns({
+				...harness,
+				results: [{ displayName: "a", pkg: "a", result: makeExecuteResult() }],
+			});
 
-			await runWorkspaceModeAsync(
-				makeCli({ backend: "studio", packages: "a", workspace: true }),
-				undefined,
-				undefined,
-				harness.dependencies,
-			);
+			await runWorkspaceModeAsync({
+				cli: makeCli({ backend: "studio", packages: "a", workspace: true }),
+				dependencies: harness.dependencies,
+			});
 
 			expect(harness.studioBackend).toHaveBeenCalledExactlyOnceWith({
 				port: DEFAULT_CONFIG.port,
@@ -549,17 +546,26 @@ describe(runWorkspaceModeAsync, () => {
 			expect.assertions(3);
 
 			const harness = setupHappyPath();
-			runWorkspaceReturns(harness, [
-				{ displayName: "@halcyon/foo", pkg: "@halcyon/foo", result: makeExecuteResult() },
-				{ displayName: "@halcyon/bar", pkg: "@halcyon/bar", result: makeExecuteResult() },
-			]);
+			runWorkspaceReturns({
+				...harness,
+				results: [
+					{
+						displayName: "@halcyon/foo",
+						pkg: "@halcyon/foo",
+						result: makeExecuteResult(),
+					},
+					{
+						displayName: "@halcyon/bar",
+						pkg: "@halcyon/bar",
+						result: makeExecuteResult(),
+					},
+				],
+			});
 
-			const result = await runWorkspaceModeAsync(
-				makeCli({ packages: "@halcyon/foo,@halcyon/bar", workspace: true }),
-				undefined,
-				undefined,
-				harness.dependencies,
-			);
+			const result = await runWorkspaceModeAsync({
+				cli: makeCli({ packages: "@halcyon/foo,@halcyon/bar", workspace: true }),
+				dependencies: harness.dependencies,
+			});
 
 			expect(result.validationExitCode).toBeUndefined();
 			expect(result.projectResults).toHaveLength(2);
@@ -570,17 +576,22 @@ describe(runWorkspaceModeAsync, () => {
 			expect.assertions(1);
 
 			const harness = setupHappyPath();
-			runWorkspaceReturns(harness, [
-				{ displayName: "@halcyon/foo", pkg: "@halcyon/foo", result: makeExecuteResult() },
-			]);
+			runWorkspaceReturns({
+				...harness,
+				results: [
+					{
+						displayName: "@halcyon/foo",
+						pkg: "@halcyon/foo",
+						result: makeExecuteResult(),
+					},
+				],
+			});
 			const stdout = vi.spyOn(process.stdout, "write").mockReturnValue(true);
 
-			await runWorkspaceModeAsync(
-				makeCli({ packages: "@halcyon/foo", workspace: true }),
-				undefined,
-				undefined,
-				harness.dependencies,
-			);
+			await runWorkspaceModeAsync({
+				cli: makeCli({ packages: "@halcyon/foo", workspace: true }),
+				dependencies: harness.dependencies,
+			});
 
 			expect(stdout).toHaveBeenCalledWith(expect.stringContaining(" RUN "));
 		});
@@ -589,17 +600,22 @@ describe(runWorkspaceModeAsync, () => {
 			expect.assertions(1);
 
 			const harness = setupHappyPath();
-			runWorkspaceReturns(harness, [
-				{ displayName: "@halcyon/foo", pkg: "@halcyon/foo", result: makeExecuteResult() },
-			]);
+			runWorkspaceReturns({
+				...harness,
+				results: [
+					{
+						displayName: "@halcyon/foo",
+						pkg: "@halcyon/foo",
+						result: makeExecuteResult(),
+					},
+				],
+			});
 			const stdout = vi.spyOn(process.stdout, "write").mockReturnValue(true);
 
-			await runWorkspaceModeAsync(
-				makeCli({ packages: "@halcyon/foo", silent: true, workspace: true }),
-				undefined,
-				undefined,
-				harness.dependencies,
-			);
+			await runWorkspaceModeAsync({
+				cli: makeCli({ packages: "@halcyon/foo", silent: true, workspace: true }),
+				dependencies: harness.dependencies,
+			});
 
 			expect(stdout).not.toHaveBeenCalledWith(expect.stringContaining(" RUN "));
 		});
@@ -609,16 +625,21 @@ describe(runWorkspaceModeAsync, () => {
 
 			const harness = setupHappyPath();
 			harness.loadPackageConfig.mockResolvedValue({ gameOutput: true, outputFile: true });
-			runWorkspaceReturns(harness, [
-				{ displayName: "@halcyon/foo", pkg: "@halcyon/foo", result: makeExecuteResult() },
-			]);
+			runWorkspaceReturns({
+				...harness,
+				results: [
+					{
+						displayName: "@halcyon/foo",
+						pkg: "@halcyon/foo",
+						result: makeExecuteResult(),
+					},
+				],
+			});
 
-			const result = await runWorkspaceModeAsync(
-				makeCli({ packages: "@halcyon/foo", workspace: true }),
-				undefined,
-				undefined,
-				harness.dependencies,
-			);
+			const result = await runWorkspaceModeAsync({
+				cli: makeCli({ packages: "@halcyon/foo", workspace: true }),
+				dependencies: harness.dependencies,
+			});
 
 			expect(result.gameOutput).toBe(path.join(ROOT, "game-output.log"));
 			expect(result.outputFile).toBe(path.join(ROOT, "jest-output.log"));
@@ -630,12 +651,10 @@ describe(runWorkspaceModeAsync, () => {
 			const harness = setupHappyPath();
 			vi.stubEnv("JEST_ROBLOX_OPEN_CLOUD_BASE_URL", "http://127.0.0.1:4010/");
 
-			await runWorkspaceModeAsync(
-				makeCli({ packages: "@halcyon/foo", workspace: true }),
-				undefined,
-				undefined,
-				harness.dependencies,
-			);
+			await runWorkspaceModeAsync({
+				cli: makeCli({ packages: "@halcyon/foo", workspace: true }),
+				dependencies: harness.dependencies,
+			});
 
 			expect(runnerCall(harness).workStealingCredentials!.baseUrl).toBe(
 				"http://127.0.0.1:4010",
@@ -646,16 +665,21 @@ describe(runWorkspaceModeAsync, () => {
 			expect.assertions(1);
 
 			const harness = setupHappyPath();
-			runWorkspaceReturns(harness, [
-				{ displayName: "@halcyon/foo", pkg: "@halcyon/foo", result: makeExecuteResult() },
-			]);
+			runWorkspaceReturns({
+				...harness,
+				results: [
+					{
+						displayName: "@halcyon/foo",
+						pkg: "@halcyon/foo",
+						result: makeExecuteResult(),
+					},
+				],
+			});
 
-			const result = await runWorkspaceModeAsync(
-				makeCli({ packages: "@halcyon/foo", workspace: true }),
-				undefined,
-				undefined,
-				harness.dependencies,
-			);
+			const result = await runWorkspaceModeAsync({
+				cli: makeCli({ packages: "@halcyon/foo", workspace: true }),
+				dependencies: harness.dependencies,
+			});
 
 			expect(result.projectResults[0]!.displayName).toBe("@halcyon/foo");
 		});
@@ -665,12 +689,10 @@ describe(runWorkspaceModeAsync, () => {
 
 			const harness = setupHappyPath();
 
-			await runWorkspaceModeAsync(
-				makeCli({ packages: "@halcyon/foo", workspace: true }),
-				undefined,
-				undefined,
-				harness.dependencies,
-			);
+			await runWorkspaceModeAsync({
+				cli: makeCli({ packages: "@halcyon/foo", workspace: true }),
+				dependencies: harness.dependencies,
+			});
 
 			expect(runnerCall(harness).onStreamingResult).toBeFunction();
 		});
@@ -680,12 +702,10 @@ describe(runWorkspaceModeAsync, () => {
 
 			const harness = setupHappyPath();
 
-			await runWorkspaceModeAsync(
-				makeCli({ formatters: ["json"], packages: "@halcyon/foo", workspace: true }),
-				undefined,
-				undefined,
-				harness.dependencies,
-			);
+			await runWorkspaceModeAsync({
+				cli: makeCli({ formatters: ["json"], packages: "@halcyon/foo", workspace: true }),
+				dependencies: harness.dependencies,
+			});
 
 			expect(runnerCall(harness).onStreamingResult).toBeUndefined();
 		});
@@ -695,12 +715,10 @@ describe(runWorkspaceModeAsync, () => {
 
 			const harness = setupHappyPath();
 
-			await runWorkspaceModeAsync(
-				makeCli({ packages: "@halcyon/foo", silent: true, workspace: true }),
-				undefined,
-				undefined,
-				harness.dependencies,
-			);
+			await runWorkspaceModeAsync({
+				cli: makeCli({ packages: "@halcyon/foo", silent: true, workspace: true }),
+				dependencies: harness.dependencies,
+			});
 
 			expect(runnerCall(harness).onStreamingResult).toBeUndefined();
 		});
@@ -710,12 +728,10 @@ describe(runWorkspaceModeAsync, () => {
 
 			const harness = setupHappyPath();
 
-			await runWorkspaceModeAsync(
-				makeCli({ formatters: ["agent"], packages: "@halcyon/foo", workspace: true }),
-				undefined,
-				undefined,
-				harness.dependencies,
-			);
+			await runWorkspaceModeAsync({
+				cli: makeCli({ formatters: ["agent"], packages: "@halcyon/foo", workspace: true }),
+				dependencies: harness.dependencies,
+			});
 
 			expect(runnerCall(harness).onStreamingResult).toBeUndefined();
 		});
@@ -733,12 +749,10 @@ describe(runWorkspaceModeAsync, () => {
 					return true;
 				});
 
-			await runWorkspaceModeAsync(
-				makeCli({ color: false, packages: "@halcyon/foo", workspace: true }),
-				undefined,
-				undefined,
-				harness.dependencies,
-			);
+			await runWorkspaceModeAsync({
+				cli: makeCli({ color: false, packages: "@halcyon/foo", workspace: true }),
+				dependencies: harness.dependencies,
+			});
 
 			const { onStreamingResult } = runnerCall(harness);
 			onStreamingResult!({
@@ -762,17 +776,18 @@ describe(runWorkspaceModeAsync, () => {
 			expect.assertions(2);
 
 			const harness = setupHappyPath();
-			runWorkspaceReturns(harness, [
-				{ displayName: "client", pkg: "@halcyon/foo", result: makeExecuteResult() },
-				{ displayName: "server", pkg: "@halcyon/foo", result: makeExecuteResult() },
-			]);
+			runWorkspaceReturns({
+				...harness,
+				results: [
+					{ displayName: "client", pkg: "@halcyon/foo", result: makeExecuteResult() },
+					{ displayName: "server", pkg: "@halcyon/foo", result: makeExecuteResult() },
+				],
+			});
 
-			const result = await runWorkspaceModeAsync(
-				makeCli({ packages: "@halcyon/foo", workspace: true }),
-				undefined,
-				undefined,
-				harness.dependencies,
-			);
+			const result = await runWorkspaceModeAsync({
+				cli: makeCli({ packages: "@halcyon/foo", workspace: true }),
+				dependencies: harness.dependencies,
+			});
 
 			expect(result.projectResults[0]!.displayName).toBe("@halcyon/foo › client");
 			expect(result.projectResults[1]!.displayName).toBe("@halcyon/foo › server");
@@ -805,12 +820,10 @@ describe(runWorkspaceModeAsync, () => {
 				],
 			});
 
-			const result = await runWorkspaceModeAsync(
-				makeCli({ bail: true, packages: "@halcyon/foo", workspace: true }),
-				undefined,
-				undefined,
-				harness.dependencies,
-			);
+			const result = await runWorkspaceModeAsync({
+				cli: makeCli({ bail: true, packages: "@halcyon/foo", workspace: true }),
+				dependencies: harness.dependencies,
+			});
 
 			expect(result.bail).toStrictEqual({ notRun: 2, ran: 2 });
 
@@ -820,12 +833,10 @@ describe(runWorkspaceModeAsync, () => {
 					{ displayName: "unit", pkg: "@halcyon/foo", result: makeExecuteResult() },
 				],
 			});
-			const complete = await runWorkspaceModeAsync(
-				makeCli({ bail: true, packages: "@halcyon/foo", workspace: true }),
-				undefined,
-				undefined,
-				harness.dependencies,
-			);
+			const complete = await runWorkspaceModeAsync({
+				cli: makeCli({ bail: true, packages: "@halcyon/foo", workspace: true }),
+				dependencies: harness.dependencies,
+			});
 
 			expect(complete.bail).toBeUndefined();
 		});
@@ -834,16 +845,21 @@ describe(runWorkspaceModeAsync, () => {
 			expect.assertions(1);
 
 			const harness = setupHappyPath();
-			runWorkspaceReturns(harness, [
-				{ displayName: "@halcyon/foo", pkg: "@halcyon/foo", result: makeExecuteResult() },
-			]);
+			runWorkspaceReturns({
+				...harness,
+				results: [
+					{
+						displayName: "@halcyon/foo",
+						pkg: "@halcyon/foo",
+						result: makeExecuteResult(),
+					},
+				],
+			});
 
-			const result = await runWorkspaceModeAsync(
-				makeCli({ packages: "@halcyon/foo", workspace: true }),
-				undefined,
-				undefined,
-				harness.dependencies,
-			);
+			const result = await runWorkspaceModeAsync({
+				cli: makeCli({ packages: "@halcyon/foo", workspace: true }),
+				dependencies: harness.dependencies,
+			});
 
 			expect(result.bail).toBeUndefined();
 		});
@@ -852,18 +868,22 @@ describe(runWorkspaceModeAsync, () => {
 			expect.assertions(2);
 
 			const harness = setupHappyPath();
-			runWorkspaceReturns(
-				harness,
-				[{ displayName: "@halcyon/foo", pkg: "@halcyon/foo", result: makeExecuteResult() }],
-				makeJestResult(),
-			);
+			runWorkspaceReturns({
+				...harness,
+				results: [
+					{
+						displayName: "@halcyon/foo",
+						pkg: "@halcyon/foo",
+						result: makeExecuteResult(),
+					},
+				],
+				typecheckResult: makeJestResult(),
+			});
 
-			const result = await runWorkspaceModeAsync(
-				makeCli({ packages: "@halcyon/foo", workspace: true }),
-				undefined,
-				undefined,
-				harness.dependencies,
-			);
+			const result = await runWorkspaceModeAsync({
+				cli: makeCli({ packages: "@halcyon/foo", workspace: true }),
+				dependencies: harness.dependencies,
+			});
 
 			expect(result.typecheckResult).toBeDefined();
 			expect(result.projectResults).toHaveLength(1);
@@ -874,14 +894,12 @@ describe(runWorkspaceModeAsync, () => {
 
 			const harness = setupHappyPath();
 			const typecheckResult = makeJestResult({ numFailedTests: 1, success: false });
-			runWorkspaceReturns(harness, [], typecheckResult);
+			runWorkspaceReturns({ ...harness, results: [], typecheckResult });
 
-			const result = await runWorkspaceModeAsync(
-				makeCli({ packages: "@halcyon/foo", typecheckOnly: true, workspace: true }),
-				undefined,
-				undefined,
-				harness.dependencies,
-			);
+			const result = await runWorkspaceModeAsync({
+				cli: makeCli({ packages: "@halcyon/foo", typecheckOnly: true, workspace: true }),
+				dependencies: harness.dependencies,
+			});
 
 			expect(result.typecheckResult).toStrictEqual(typecheckResult);
 			expect(result.projectResults).toStrictEqual([]);
@@ -891,20 +909,18 @@ describe(runWorkspaceModeAsync, () => {
 			expect.assertions(1);
 
 			const harness = setupHappyPath();
-			runWorkspaceReturns(harness, [], makeJestResult());
+			runWorkspaceReturns({ ...harness, results: [], typecheckResult: makeJestResult() });
 			const isStudioInstalled = vi.fn<() => boolean>(() => true);
 
-			await runWorkspaceModeAsync(
-				makeCli({
+			await runWorkspaceModeAsync({
+				cli: makeCli({
 					backend: "auto",
 					packages: "@halcyon/foo",
 					typecheckOnly: true,
 					workspace: true,
 				}),
-				undefined,
-				undefined,
-				{ ...harness.dependencies, isStudioInstalled },
-			);
+				dependencies: { ...harness.dependencies, isStudioInstalled },
+			});
 
 			expect(isStudioInstalled).not.toHaveBeenCalled();
 		});
@@ -913,14 +929,12 @@ describe(runWorkspaceModeAsync, () => {
 			expect.assertions(2);
 
 			const harness = setupHappyPath();
-			runWorkspaceReturns(harness, [], makeJestResult());
+			runWorkspaceReturns({ ...harness, results: [], typecheckResult: makeJestResult() });
 
-			const result = await runWorkspaceModeAsync(
-				makeCli({ packages: "@halcyon/foo", typecheckOnly: true, workspace: true }),
-				undefined,
-				undefined,
-				harness.dependencies,
-			);
+			const result = await runWorkspaceModeAsync({
+				cli: makeCli({ packages: "@halcyon/foo", typecheckOnly: true, workspace: true }),
+				dependencies: harness.dependencies,
+			});
 
 			// Pure-local tsgo needs no credentials: the backend (and its secrets)
 			// must not be created when there is no Open Cloud dispatch.
@@ -934,16 +948,16 @@ describe(runWorkspaceModeAsync, () => {
 			expect.assertions(2);
 
 			const harness = setupHappyPath(seedWorkspace(CONFIG_ROOT, ["foo"]));
-			runWorkspaceReturns(harness, [
-				{ displayName: "foo", pkg: "foo", result: makeExecuteResult() },
-			]);
+			runWorkspaceReturns({
+				...harness,
+				results: [{ displayName: "foo", pkg: "foo", result: makeExecuteResult() }],
+			});
 
-			const result = await runWorkspaceModeAsync(
-				makeCli({ packages: "foo", workspace: true }),
-				{ packages: ["packages/*"], root: CONFIG_ROOT },
-				undefined,
-				harness.dependencies,
-			);
+			const result = await runWorkspaceModeAsync({
+				cli: makeCli({ packages: "foo", workspace: true }),
+				dependencies: harness.dependencies,
+				workspace: { packages: ["packages/*"], root: CONFIG_ROOT },
+			});
 
 			expect(result.validationExitCode).toBeUndefined();
 			expect(runnerCall(harness).packageInfos).toStrictEqual([
@@ -956,16 +970,16 @@ describe(runWorkspaceModeAsync, () => {
 
 			const harness = setupHappyPath(seedWorkspace(CONFIG_ROOT, ["foo"]));
 			harness.loadPackageConfig.mockResolvedValue({ outputFile: true });
-			runWorkspaceReturns(harness, [
-				{ displayName: "foo", pkg: "foo", result: makeExecuteResult() },
-			]);
+			runWorkspaceReturns({
+				...harness,
+				results: [{ displayName: "foo", pkg: "foo", result: makeExecuteResult() }],
+			});
 
-			const result = await runWorkspaceModeAsync(
-				makeCli({ packages: "foo", workspace: true }),
-				{ packages: ["packages/*"], root: CONFIG_ROOT },
-				undefined,
-				harness.dependencies,
-			);
+			const result = await runWorkspaceModeAsync({
+				cli: makeCli({ packages: "foo", workspace: true }),
+				dependencies: harness.dependencies,
+				workspace: { packages: ["packages/*"], root: CONFIG_ROOT },
+			});
 
 			expect(result.outputFile).toBe(path.join(CONFIG_ROOT, "jest-output.log"));
 		});
@@ -977,18 +991,31 @@ describe(runWorkspaceModeAsync, () => {
 
 			stubLinux();
 			const harness = setupHappyPath(seedTurboWorkspace(ROOT, WORKSPACE_PACKAGES));
-			turboReturns(harness.childProcess, ROOT, ["@halcyon/foo", "@halcyon/bar"]);
-			runWorkspaceReturns(harness, [
-				{ displayName: "@halcyon/foo", pkg: "@halcyon/foo", result: makeExecuteResult() },
-				{ displayName: "@halcyon/bar", pkg: "@halcyon/bar", result: makeExecuteResult() },
-			]);
+			turboReturns({
+				childProcess: harness.childProcess,
+				names: ["@halcyon/foo", "@halcyon/bar"],
+				root: ROOT,
+			});
+			runWorkspaceReturns({
+				...harness,
+				results: [
+					{
+						displayName: "@halcyon/foo",
+						pkg: "@halcyon/foo",
+						result: makeExecuteResult(),
+					},
+					{
+						displayName: "@halcyon/bar",
+						pkg: "@halcyon/bar",
+						result: makeExecuteResult(),
+					},
+				],
+			});
 
-			const result = await runWorkspaceModeAsync(
-				makeCli({ affectedSince: "main", workspace: true }),
-				undefined,
-				undefined,
-				harness.dependencies,
-			);
+			const result = await runWorkspaceModeAsync({
+				cli: makeCli({ affectedSince: "main", workspace: true }),
+				dependencies: harness.dependencies,
+			});
 
 			expect(result.projectResults).toHaveLength(2);
 			expect(harness.childProcess.execFileSync).toHaveBeenCalledExactlyOnceWith(
@@ -1004,15 +1031,13 @@ describe(runWorkspaceModeAsync, () => {
 
 			stubLinux();
 			const harness = setupHappyPath(seedTurboWorkspace(ROOT, WORKSPACE_PACKAGES));
-			turboReturns(harness.childProcess, ROOT, []);
+			turboReturns({ childProcess: harness.childProcess, names: [], root: ROOT });
 			const stdoutSpy = vi.spyOn(process.stdout, "write").mockReturnValue(true);
 
-			const result = await runWorkspaceModeAsync(
-				makeCli({ affectedSince: "main", workspace: true }),
-				undefined,
-				undefined,
-				harness.dependencies,
-			);
+			const result = await runWorkspaceModeAsync({
+				cli: makeCli({ affectedSince: "main", workspace: true }),
+				dependencies: harness.dependencies,
+			});
 
 			expect(result.projectResults).toStrictEqual([]);
 			expect(result.validationExitCode).toBeUndefined();
@@ -1026,12 +1051,10 @@ describe(runWorkspaceModeAsync, () => {
 
 			const { dependencies } = setupHappyPath({});
 
-			const result = await runWorkspaceModeAsync(
-				makeCli({ packages: "@halcyon/foo", workspace: true }),
-				undefined,
-				undefined,
+			const result = await runWorkspaceModeAsync({
+				cli: makeCli({ packages: "@halcyon/foo", workspace: true }),
 				dependencies,
-			);
+			});
 
 			expect(result.validationExitCode).toBe(2);
 			expect(result.validationMessage).toContain("No workspace root");
@@ -1042,12 +1065,10 @@ describe(runWorkspaceModeAsync, () => {
 
 			const { dependencies } = setupHappyPath();
 
-			const result = await runWorkspaceModeAsync(
-				makeCli({ packages: "@halcyon/absent", workspace: true }),
-				undefined,
-				undefined,
+			const result = await runWorkspaceModeAsync({
+				cli: makeCli({ packages: "@halcyon/absent", workspace: true }),
 				dependencies,
-			);
+			});
 
 			expect(result.validationExitCode).toBe(2);
 			expect(result.validationMessage).toContain(
@@ -1063,12 +1084,10 @@ describe(runWorkspaceModeAsync, () => {
 				vi.stubEnv(`JEST_ROBLOX_${suffix}`, "");
 			}
 
-			const result = await runWorkspaceModeAsync(
-				makeCli({ packages: "@halcyon/foo", workspace: true }),
-				undefined,
-				undefined,
+			const result = await runWorkspaceModeAsync({
+				cli: makeCli({ packages: "@halcyon/foo", workspace: true }),
 				dependencies,
-			);
+			});
 
 			expect(result.validationExitCode).toBe(2);
 			expect(result.validationMessage).toContain("Open Cloud credentials are required");
@@ -1079,12 +1098,10 @@ describe(runWorkspaceModeAsync, () => {
 
 			const { dependencies } = setupHappyPath();
 
-			const result = await runWorkspaceModeAsync(
-				makeCli({ packages: " , , ", workspace: true }),
-				undefined,
-				undefined,
+			const result = await runWorkspaceModeAsync({
+				cli: makeCli({ packages: " , , ", workspace: true }),
 				dependencies,
-			);
+			});
 
 			expect(result.validationExitCode).toBe(2);
 			expect(result.validationMessage).toContain("--packages names no packages");
@@ -1096,12 +1113,10 @@ describe(runWorkspaceModeAsync, () => {
 			const harness = setupHappyPath();
 			harness.runWorkspace.mockResolvedValue(undefined);
 
-			const result = await runWorkspaceModeAsync(
-				makeCli({ packages: "@halcyon/foo", workspace: true }),
-				undefined,
-				undefined,
-				harness.dependencies,
-			);
+			const result = await runWorkspaceModeAsync({
+				cli: makeCli({ packages: "@halcyon/foo", workspace: true }),
+				dependencies: harness.dependencies,
+			});
 
 			expect(result.validationExitCode).toBe(2);
 			expect(result).not.toHaveProperty("validationMessage");
@@ -1115,12 +1130,10 @@ describe(runWorkspaceModeAsync, () => {
 			harness.runWorkspace.mockRejectedValue(new Error("boom"));
 
 			await expect(
-				runWorkspaceModeAsync(
-					makeCli({ packages: "@halcyon/foo", workspace: true }),
-					undefined,
-					undefined,
-					harness.dependencies,
-				),
+				runWorkspaceModeAsync({
+					cli: makeCli({ packages: "@halcyon/foo", workspace: true }),
+					dependencies: harness.dependencies,
+				}),
 			).rejects.toThrow("boom");
 
 			expect(harness.backend.closeAsync).toHaveBeenCalledWith();
@@ -1134,12 +1147,10 @@ describe(runWorkspaceModeAsync, () => {
 				return colorForPackageDirectory(cwd);
 			});
 
-			const result = await runWorkspaceModeAsync(
-				makeCli({ packages: "@halcyon/foo,@halcyon/bar", workspace: true }),
-				undefined,
-				undefined,
-				harness.dependencies,
-			);
+			const result = await runWorkspaceModeAsync({
+				cli: makeCli({ packages: "@halcyon/foo,@halcyon/bar", workspace: true }),
+				dependencies: harness.dependencies,
+			});
 
 			expect(result.validationExitCode).toBe(2);
 			expect(result.validationMessage).toContain("workspace packages disagree on `color`");
@@ -1149,16 +1160,21 @@ describe(runWorkspaceModeAsync, () => {
 			expect.assertions(1);
 
 			const harness = setupHappyPath();
-			runWorkspaceReturns(harness, [
-				{ displayName: "@halcyon/foo", pkg: "@halcyon/foo", result: makeExecuteResult() },
-			]);
+			runWorkspaceReturns({
+				...harness,
+				results: [
+					{
+						displayName: "@halcyon/foo",
+						pkg: "@halcyon/foo",
+						result: makeExecuteResult(),
+					},
+				],
+			});
 
-			await runWorkspaceModeAsync(
-				makeCli({ packages: "@halcyon/foo", workspace: true }),
-				undefined,
-				undefined,
-				harness.dependencies,
-			);
+			await runWorkspaceModeAsync({
+				cli: makeCli({ packages: "@halcyon/foo", workspace: true }),
+				dependencies: harness.dependencies,
+			});
 
 			expect(harness.loadPackageConfig).toHaveBeenCalledExactlyOnceWith({
 				configPath: undefined,
@@ -1173,12 +1189,10 @@ describe(runWorkspaceModeAsync, () => {
 			const harness = setupHappyPath();
 			harness.loadPackageConfig.mockRejectedValueOnce(new Error("Bad config file"));
 
-			const result = await runWorkspaceModeAsync(
-				makeCli({ packages: "@halcyon/foo", workspace: true }),
-				undefined,
-				undefined,
-				harness.dependencies,
-			);
+			const result = await runWorkspaceModeAsync({
+				cli: makeCli({ packages: "@halcyon/foo", workspace: true }),
+				dependencies: harness.dependencies,
+			});
 
 			expect(result.validationExitCode).toBe(2);
 			expect(result.validationMessage).toBe("Error: Bad config file\n");
@@ -1190,12 +1204,10 @@ describe(runWorkspaceModeAsync, () => {
 			const harness = setupHappyPath();
 			harness.loadPackageConfig.mockRejectedValueOnce("raw string failure");
 
-			const result = await runWorkspaceModeAsync(
-				makeCli({ packages: "@halcyon/foo", workspace: true }),
-				undefined,
-				undefined,
-				harness.dependencies,
-			);
+			const result = await runWorkspaceModeAsync({
+				cli: makeCli({ packages: "@halcyon/foo", workspace: true }),
+				dependencies: harness.dependencies,
+			});
 
 			expect(result.validationExitCode).toBe(2);
 			expect(result.validationMessage).toBe("Error: raw string failure\n");
@@ -1210,12 +1222,10 @@ describe(runWorkspaceModeAsync, () => {
 				throw "raw credential failure";
 			});
 
-			const result = await runWorkspaceModeAsync(
-				makeCli({ packages: "@halcyon/foo", workspace: true }),
-				undefined,
-				undefined,
-				harness.dependencies,
-			);
+			const result = await runWorkspaceModeAsync({
+				cli: makeCli({ packages: "@halcyon/foo", workspace: true }),
+				dependencies: harness.dependencies,
+			});
 
 			expect(result.validationExitCode).toBe(2);
 			expect(result.validationMessage).toBe("Error: raw credential failure\n");
@@ -1227,33 +1237,34 @@ describe(runWorkspaceModeAsync, () => {
 			expect.assertions(2);
 
 			const harness = setupHappyPath();
-			runWorkspaceReturns(harness, [
-				{
-					coverageManifest: MANIFEST,
-					coverageSettings: {
-						collectCoverageFrom: ["src/**/*.ts"],
-						coverageDirectory: "/ws/packages/foo/coverage",
-						coveragePathIgnorePatterns: ["**/node_modules/**"],
-						coverageReporters: ["text"],
-						rootDir: "/ws/packages/foo",
+			runWorkspaceReturns({
+				...harness,
+				results: [
+					{
+						coverageManifest: MANIFEST,
+						coverageSettings: {
+							collectCoverageFrom: ["src/**/*.ts"],
+							coverageDirectory: "/ws/packages/foo/coverage",
+							coveragePathIgnorePatterns: ["**/node_modules/**"],
+							coverageReporters: ["text"],
+							rootDir: "/ws/packages/foo",
+						},
+						displayName: "@halcyon/foo",
+						pkg: "@halcyon/foo",
+						result: makeExecuteResult({
+							coverageData: { "out/foo.luau": { s: { "1": 3 } } },
+						}),
 					},
-					displayName: "@halcyon/foo",
-					pkg: "@halcyon/foo",
-					result: makeExecuteResult({
-						coverageData: { "out/foo.luau": { s: { "1": 3 } } },
-					}),
-				},
-			]);
+				],
+			});
 			harness.aggregateCoverage.mockReturnValue([
 				{ pkg: "@halcyon/foo", universe: { files: {} } },
 			]);
 
-			const result = await runWorkspaceModeAsync(
-				makeCli({ collectCoverage: true, packages: "@halcyon/foo", workspace: true }),
-				undefined,
-				undefined,
-				harness.dependencies,
-			);
+			const result = await runWorkspaceModeAsync({
+				cli: makeCli({ collectCoverage: true, packages: "@halcyon/foo", workspace: true }),
+				dependencies: harness.dependencies,
+			});
 
 			// The package's own globs reach the aggregator, along with the
 			// rootDir they are written relative to, so the universe it builds
@@ -1275,42 +1286,43 @@ describe(runWorkspaceModeAsync, () => {
 			expect.assertions(3);
 
 			const harness = setupHappyPath();
-			runWorkspaceReturns(harness, [
-				// Two projects under the same pkg — coverageData must MERGE
-				// (each project runs Jest with its own _G.__jest_roblox_cov
-				// reset, so the maps are disjoint).
-				{
-					coverageManifest: MANIFEST,
-					coverageSettings: coverageSettingsStub(),
-					displayName: "client",
-					pkg: "@halcyon/foo",
-					result: makeExecuteResult({
-						coverageData: { "out/foo.luau": { s: { "1": 3 } } },
-					}),
-				},
-				{
-					coverageManifest: MANIFEST,
-					coverageSettings: coverageSettingsStub(),
-					displayName: "server",
-					pkg: "@halcyon/foo",
-					result: makeExecuteResult({
-						coverageData: { "out/foo.luau": { s: { "1": 4 } } },
-					}),
-				},
-				// Different pkg, no manifest — must be skipped.
-				{
-					displayName: "@halcyon/bar",
-					pkg: "@halcyon/bar",
-					result: makeExecuteResult(),
-				},
-			]);
+			runWorkspaceReturns({
+				...harness,
+				results: [
+					// Two projects under the same pkg — coverageData must MERGE
+					// (each project runs Jest with its own _G.__jest_roblox_cov
+					// reset, so the maps are disjoint).
+					{
+						coverageManifest: MANIFEST,
+						coverageSettings: coverageSettingsStub(),
+						displayName: "client",
+						pkg: "@halcyon/foo",
+						result: makeExecuteResult({
+							coverageData: { "out/foo.luau": { s: { "1": 3 } } },
+						}),
+					},
+					{
+						coverageManifest: MANIFEST,
+						coverageSettings: coverageSettingsStub(),
+						displayName: "server",
+						pkg: "@halcyon/foo",
+						result: makeExecuteResult({
+							coverageData: { "out/foo.luau": { s: { "1": 4 } } },
+						}),
+					},
+					// Different pkg, no manifest — must be skipped.
+					{
+						displayName: "@halcyon/bar",
+						pkg: "@halcyon/bar",
+						result: makeExecuteResult(),
+					},
+				],
+			});
 
-			await runWorkspaceModeAsync(
-				makeCli({ collectCoverage: true, packages: "@halcyon/foo", workspace: true }),
-				undefined,
-				undefined,
-				harness.dependencies,
-			);
+			await runWorkspaceModeAsync({
+				cli: makeCli({ collectCoverage: true, packages: "@halcyon/foo", workspace: true }),
+				dependencies: harness.dependencies,
+			});
 
 			const aggregateCall = harness.aggregateCoverage.mock.calls[0]![0];
 
@@ -1324,25 +1336,26 @@ describe(runWorkspaceModeAsync, () => {
 			expect.assertions(1);
 
 			const harness = setupHappyPath();
-			runWorkspaceReturns(harness, [
-				{
-					coverageManifest: MANIFEST,
-					coverageSettings: coverageSettingsStub(),
-					displayName: "@halcyon/foo",
-					pkg: "@halcyon/foo",
-					result: makeExecuteResult(),
-				},
-			]);
+			runWorkspaceReturns({
+				...harness,
+				results: [
+					{
+						coverageManifest: MANIFEST,
+						coverageSettings: coverageSettingsStub(),
+						displayName: "@halcyon/foo",
+						pkg: "@halcyon/foo",
+						result: makeExecuteResult(),
+					},
+				],
+			});
 
 			// Coverage ran but no package produced data: `coveragePackages` is
 			// present-but-empty, which is what tells the report layer to emit
 			// nothing rather than an empty table.
-			const result = await runWorkspaceModeAsync(
-				makeCli({ collectCoverage: true, packages: "@halcyon/foo", workspace: true }),
-				undefined,
-				undefined,
-				harness.dependencies,
-			);
+			const result = await runWorkspaceModeAsync({
+				cli: makeCli({ collectCoverage: true, packages: "@halcyon/foo", workspace: true }),
+				dependencies: harness.dependencies,
+			});
 
 			expect(result.coveragePackages).toStrictEqual([]);
 		});
@@ -1351,20 +1364,21 @@ describe(runWorkspaceModeAsync, () => {
 			expect.assertions(2);
 
 			const harness = setupHappyPath();
-			runWorkspaceReturns(harness, [
-				{
-					displayName: "@halcyon/foo",
-					pkg: "@halcyon/foo",
-					result: makeExecuteResult(),
-				},
-			]);
+			runWorkspaceReturns({
+				...harness,
+				results: [
+					{
+						displayName: "@halcyon/foo",
+						pkg: "@halcyon/foo",
+						result: makeExecuteResult(),
+					},
+				],
+			});
 
-			const result = await runWorkspaceModeAsync(
-				makeCli({ packages: "@halcyon/foo", workspace: true }),
-				undefined,
-				undefined,
-				harness.dependencies,
-			);
+			const result = await runWorkspaceModeAsync({
+				cli: makeCli({ packages: "@halcyon/foo", workspace: true }),
+				dependencies: harness.dependencies,
+			});
 
 			expect(harness.aggregateCoverage).not.toHaveBeenCalled();
 			expect(result.coveragePackages).toBeUndefined();
@@ -1379,24 +1393,25 @@ describe(runWorkspaceModeAsync, () => {
 
 			const harness = setupHappyPath();
 			const { aggregateCoverage, ...dependencies } = harness.dependencies;
-			runWorkspaceReturns(harness, [
-				{
-					coverageManifest: MANIFEST,
-					coverageSettings: coverageSettingsStub(),
-					displayName: "@halcyon/foo",
-					pkg: "@halcyon/foo",
-					result: makeExecuteResult({
-						coverageData: { "out/foo.luau": { s: { "1": 3 } } },
-					}),
-				},
-			]);
+			runWorkspaceReturns({
+				...harness,
+				results: [
+					{
+						coverageManifest: MANIFEST,
+						coverageSettings: coverageSettingsStub(),
+						displayName: "@halcyon/foo",
+						pkg: "@halcyon/foo",
+						result: makeExecuteResult({
+							coverageData: { "out/foo.luau": { s: { "1": 3 } } },
+						}),
+					},
+				],
+			});
 
-			const result = await runWorkspaceModeAsync(
-				makeCli({ packages: "@halcyon/foo", workspace: true }),
-				undefined,
-				undefined,
+			const result = await runWorkspaceModeAsync({
+				cli: makeCli({ packages: "@halcyon/foo", workspace: true }),
 				dependencies,
-			);
+			});
 
 			expect(result.coveragePackages).toHaveLength(1);
 		});
@@ -1405,37 +1420,40 @@ describe(runWorkspaceModeAsync, () => {
 			expect.assertions(3);
 
 			const harness = setupHappyPath();
-			runWorkspaceReturns(harness, [
-				{
-					coverageManifest: MANIFEST,
-					coverageSettings: {
-						coverageDirectory: "/ws/packages/foo/coverage",
-						coverageReporters: ["text"],
-						coverageThreshold: { statements: 90 },
-						rootDir: "/ws/packages/foo",
+			runWorkspaceReturns({
+				...harness,
+				results: [
+					{
+						coverageManifest: MANIFEST,
+						coverageSettings: {
+							coverageDirectory: "/ws/packages/foo/coverage",
+							coverageReporters: ["text"],
+							coverageThreshold: { statements: 90 },
+							rootDir: "/ws/packages/foo",
+						},
+						displayName: "@halcyon/foo",
+						pkg: "@halcyon/foo",
+						result: makeExecuteResult({
+							coverageData: { "out/foo.luau": { s: { "1": 3 } } },
+						}),
 					},
-					displayName: "@halcyon/foo",
-					pkg: "@halcyon/foo",
-					result: makeExecuteResult({
-						coverageData: { "out/foo.luau": { s: { "1": 3 } } },
-					}),
-				},
-				// No declared threshold — the gate entry must omit it, so
-				// nothing gates the package.
-				{
-					coverageManifest: MANIFEST,
-					coverageSettings: {
-						coverageDirectory: "/ws/packages/bar/coverage",
-						coverageReporters: ["lcov"],
-						rootDir: "/ws/packages/bar",
+					// No declared threshold — the gate entry must omit it, so
+					// nothing gates the package.
+					{
+						coverageManifest: MANIFEST,
+						coverageSettings: {
+							coverageDirectory: "/ws/packages/bar/coverage",
+							coverageReporters: ["lcov"],
+							rootDir: "/ws/packages/bar",
+						},
+						displayName: "@halcyon/bar",
+						pkg: "@halcyon/bar",
+						result: makeExecuteResult({
+							coverageData: { "out/bar.luau": { s: { "1": 1 } } },
+						}),
 					},
-					displayName: "@halcyon/bar",
-					pkg: "@halcyon/bar",
-					result: makeExecuteResult({
-						coverageData: { "out/bar.luau": { s: { "1": 1 } } },
-					}),
-				},
-			]);
+				],
+			});
 
 			const fooUniverse = { files: {} };
 			const barUniverse = { files: {} };
@@ -1444,12 +1462,10 @@ describe(runWorkspaceModeAsync, () => {
 				{ pkg: "@halcyon/bar", universe: barUniverse },
 			]);
 
-			const result = await runWorkspaceModeAsync(
-				makeCli({ collectCoverage: true, packages: "@halcyon/foo", workspace: true }),
-				undefined,
-				undefined,
-				harness.dependencies,
-			);
+			const result = await runWorkspaceModeAsync({
+				cli: makeCli({ collectCoverage: true, packages: "@halcyon/foo", workspace: true }),
+				dependencies: harness.dependencies,
+			});
 
 			expect(result.coveragePackages).toStrictEqual([
 				{
@@ -1474,20 +1490,21 @@ describe(runWorkspaceModeAsync, () => {
 			expect.assertions(1);
 
 			const harness = setupHappyPath();
-			runWorkspaceReturns(harness, [
-				{
-					displayName: "@halcyon/foo",
-					pkg: "@halcyon/foo",
-					result: makeExecuteResult(),
-				},
-			]);
+			runWorkspaceReturns({
+				...harness,
+				results: [
+					{
+						displayName: "@halcyon/foo",
+						pkg: "@halcyon/foo",
+						result: makeExecuteResult(),
+					},
+				],
+			});
 
-			const result = await runWorkspaceModeAsync(
-				makeCli({ packages: "@halcyon/foo", workspace: true }),
-				undefined,
-				undefined,
-				harness.dependencies,
-			);
+			const result = await runWorkspaceModeAsync({
+				cli: makeCli({ packages: "@halcyon/foo", workspace: true }),
+				dependencies: harness.dependencies,
+			});
 
 			expect(result.coveragePackages).toBeUndefined();
 		});
@@ -1499,12 +1516,10 @@ describe(runWorkspaceModeAsync, () => {
 
 			const harness = setupHappyPath();
 
-			const result = await runWorkspaceModeAsync(
-				makeCli({ packages: "@halcyon/foo", workspace: true }),
-				undefined,
-				undefined,
-				harness.dependencies,
-			);
+			const result = await runWorkspaceModeAsync({
+				cli: makeCli({ packages: "@halcyon/foo", workspace: true }),
+				dependencies: harness.dependencies,
+			});
 
 			expect(result).toStrictEqual({
 				coverageMs: 0,
@@ -1532,12 +1547,10 @@ describe(runWorkspaceModeAsync, () => {
 			stagingMs: 567,
 		});
 
-		const result = await runWorkspaceModeAsync(
-			makeCli({ packages: "@halcyon/foo", workspace: true }),
-			undefined,
-			undefined,
-			harness.dependencies,
-		);
+		const result = await runWorkspaceModeAsync({
+			cli: makeCli({ packages: "@halcyon/foo", workspace: true }),
+			dependencies: harness.dependencies,
+		});
 
 		expect(result.coverageMs).toBe(1234);
 		expect(result.stagingMs).toBe(567);
@@ -1549,14 +1562,15 @@ describe("workspace report options", () => {
 		expect.assertions(1);
 
 		const harness = setupHappyPath();
-		runWorkspaceReturns(harness, [{ displayName: "a", pkg: "a", result: makeExecuteResult() }]);
+		runWorkspaceReturns({
+			...harness,
+			results: [{ displayName: "a", pkg: "a", result: makeExecuteResult() }],
+		});
 
-		const result = await runWorkspaceModeAsync(
-			makeCli({ packages: "a", verbose: true, workspace: true }),
-			undefined,
-			undefined,
-			harness.dependencies,
-		);
+		const result = await runWorkspaceModeAsync({
+			cli: makeCli({ packages: "a", verbose: true, workspace: true }),
+			dependencies: harness.dependencies,
+		});
 
 		expect(result.reportOptions).toStrictEqual({
 			color: true,
@@ -1571,14 +1585,15 @@ describe("workspace report options", () => {
 		expect.assertions(1);
 
 		const harness = setupHappyPath();
-		runWorkspaceReturns(harness, [{ displayName: "a", pkg: "a", result: makeExecuteResult() }]);
+		runWorkspaceReturns({
+			...harness,
+			results: [{ displayName: "a", pkg: "a", result: makeExecuteResult() }],
+		});
 
-		const result = await runWorkspaceModeAsync(
-			makeCli({ packages: "a", workspace: true }),
-			undefined,
-			undefined,
-			harness.dependencies,
-		);
+		const result = await runWorkspaceModeAsync({
+			cli: makeCli({ packages: "a", workspace: true }),
+			dependencies: harness.dependencies,
+		});
 
 		// `cli.verbose` is optional, so the report carries a real boolean
 		// rather than the undefined the flag parser leaves behind.

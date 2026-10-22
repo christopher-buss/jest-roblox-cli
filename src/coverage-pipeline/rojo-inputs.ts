@@ -208,10 +208,14 @@ async function digestFilesAsync({
 	const lines: Array<string> = [];
 	// Unordered on purpose: the sort below is what makes the digest stable,
 	// so the reads are free to settle in whatever order the disk answers in.
-	await mapWithLimitAsync([...files], HASH_CONCURRENCY, async (file) => {
-		const relativePath = toKey(path.relative(rootDirectory, file));
-		const hash = file === project.key ? project.hash : await digests.hashOfAsync(file);
-		lines.push(`${relativePath}\0${hash}`);
+	await mapWithLimitAsync({
+		func: async (file) => {
+			const relativePath = toKey(path.relative(rootDirectory, file));
+			const hash = file === project.key ? project.hash : await digests.hashOfAsync(file);
+			lines.push(`${relativePath}\0${hash}`);
+		},
+		items: [...files],
+		limit: HASH_CONCURRENCY,
 	});
 
 	lines.sort();

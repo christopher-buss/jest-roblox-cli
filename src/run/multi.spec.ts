@@ -286,7 +286,7 @@ function setupDefaults(configOverrides: Partial<ResolvedConfig> = {}) {
 		}),
 	]);
 	mocks.createSetupResolver.mockReturnValue((input) => input);
-	mocks.execFile.mockImplementation((_file, args, _options, callback) => {
+	mocks.execFile.mockImplementation((...[, args, , callback]) => {
 		const outputPath = String(args[3]);
 		volume.mkdirSync(path.dirname(outputPath), { recursive: true });
 		volume.writeFileSync(outputPath, "RBXL");
@@ -891,9 +891,9 @@ describe(runMultiProjectAsync, () => {
 		const clock = movableClockCollector(1_000);
 		const slowFileSystem: FileSystem = {
 			...fileSystem,
-			writeFileSync: (file, data, options) => {
+			writeFileSync: (...args) => {
 				clock.advance(40);
-				fileSystem.writeFileSync(file, data, options);
+				fileSystem.writeFileSync(...args);
 			},
 		};
 
@@ -924,7 +924,7 @@ describe(runMultiProjectAsync, () => {
 		const clock = movableClockCollector(0);
 		let wallMs = 1_000;
 		vi.spyOn(Date, "now").mockImplementation(() => wallMs);
-		mocks.execFile.mockImplementation((_file, args, _options, callback) => {
+		mocks.execFile.mockImplementation((...[, args, , callback]) => {
 			clock.advance(250);
 			wallMs += 900;
 			const outputPath = String(args[3]);

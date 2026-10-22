@@ -148,7 +148,7 @@ describe("agent-mode output ordering", () => {
 		});
 		vi.spyOn(process.stderr, "write").mockReturnValue(true);
 
-		await outputMultiResultAsync(makeConfig(), makeWorkspaceResult());
+		await outputMultiResultAsync({ result: makeWorkspaceResult(), rootConfig: makeConfig() });
 
 		expect(stripVTControlCharacters(chunks.join(""))).toMatchInlineSnapshot(`
 			"

@@ -90,6 +90,13 @@ const EMPTY_RESULT = {
 	stagingMs: 0,
 } as const satisfies WorkspaceRunResult;
 
+export interface RunWorkspaceModeOptions {
+	cli: CliOptions;
+	dependencies?: undefined | WorkspaceModeDependencies;
+	timing?: TimingCollector | undefined;
+	workspace?: undefined | WorkspaceConfig;
+}
+
 interface ResolvedPackages {
 	error?: { exitCode: 2; message: string };
 	noAffected?: true | undefined;
@@ -148,12 +155,12 @@ interface EnumerationRoot {
 	workspaceRoot: string;
 }
 
-export async function runWorkspaceModeAsync(
-	cli: CliOptions,
-	workspace?: WorkspaceConfig,
-	timing?: TimingCollector,
-	dependencies?: WorkspaceModeDependencies,
-): Promise<WorkspaceRunResult> {
+export async function runWorkspaceModeAsync({
+	cli,
+	dependencies,
+	timing,
+	workspace,
+}: RunWorkspaceModeOptions): Promise<WorkspaceRunResult> {
 	const settled = { ...NODE_DEPENDENCIES, ...dependencies };
 
 	const basicValidation = validateBasicWorkspaceFlags(cli);
@@ -161,7 +168,7 @@ export async function runWorkspaceModeAsync(
 		return bail(basicValidation.exitCode, basicValidation.message);
 	}
 
-	const resolved = resolvePackages(cli, settled, workspace);
+	const resolved = resolvePackages({ cli, dependencies: settled, workspace });
 	if (resolved.error !== undefined) {
 		return bail(resolved.error.exitCode, resolved.error.message);
 	}
@@ -187,11 +194,15 @@ function bail(validationExitCode: 2, validationMessage?: string): WorkspaceRunRe
 }
 
 // A typecheck-only run dispatches nothing, so it has no backend to name.
-function resolveRunBackend(
-	cli: CliOptions,
-	runOptions: WorkspaceRunOptions,
-	isStudioInstalled: StudioInstalledCheck,
-): WorkspaceRunOptions {
+function resolveRunBackend({
+	cli,
+	isStudioInstalled,
+	runOptions,
+}: {
+	cli: CliOptions;
+	isStudioInstalled: StudioInstalledCheck;
+	runOptions: WorkspaceRunOptions;
+}): WorkspaceRunOptions {
 	if (cli.typecheckOnly === true) {
 		return runOptions;
 	}
@@ -232,11 +243,11 @@ async function resolveWorkspaceOptionsAsync({
 				};
 			}),
 		);
-		const runOptions = resolveRunBackend(
+		const runOptions = resolveRunBackend({
 			cli,
-			buildWorkspaceRunOptions({ cli, perPackageConfigs, workspaceRoot }),
 			isStudioInstalled,
-		);
+			runOptions: buildWorkspaceRunOptions({ cli, perPackageConfigs, workspaceRoot }),
+		});
 
 		return { runOptions };
 	} catch (err) {
@@ -248,11 +259,15 @@ async function resolveWorkspaceOptionsAsync({
 // Credential resolution is the only failing step here, so the whole Open Cloud
 // branch is a try/catch that converts a missing/invalid secret into the
 // validation error the caller bails on.
-function resolveOpenCloudBackendFor(
-	cli: CliOptions,
-	runOptions: WorkspaceRunOptions,
-	openCloudBackend: typeof createOpenCloudBackend,
-): WorkspaceBackendResolution {
+function resolveOpenCloudBackendFor({
+	cli,
+	openCloudBackend,
+	runOptions,
+}: {
+	cli: CliOptions;
+	openCloudBackend: typeof createOpenCloudBackend;
+	runOptions: WorkspaceRunOptions;
+}): WorkspaceBackendResolution {
 	try {
 		const credentials = buildWorkspaceCredentials(cli, runOptions);
 		const backend = openCloudBackend(credentials);
@@ -281,11 +296,15 @@ function resolveOpenCloudBackendFor(
 // the attached `studio` backend runs the workspace against a developer's open
 // Studio (debug/introspection). Both bypass the credential path entirely; only
 // open-cloud resolves them.
-function resolveWorkspaceBackend(
-	cli: CliOptions,
-	runOptions: WorkspaceRunOptions,
-	dependencies: ResolvedDependencies,
-): WorkspaceBackendResolution {
+function resolveWorkspaceBackend({
+	cli,
+	dependencies,
+	runOptions,
+}: {
+	cli: CliOptions;
+	dependencies: ResolvedDependencies;
+	runOptions: WorkspaceRunOptions;
+}): WorkspaceBackendResolution {
 	if (cli.typecheckOnly === true) {
 		return {};
 	}
@@ -306,7 +325,11 @@ function resolveWorkspaceBackend(
 		return { backend: dependencies.studioBackend({ port: runOptions.port }) };
 	}
 
-	return resolveOpenCloudBackendFor(cli, runOptions, dependencies.openCloudBackend);
+	return resolveOpenCloudBackendFor({
+		cli,
+		openCloudBackend: dependencies.openCloudBackend,
+		runOptions,
+	});
 }
 
 function aggregatePerPackageCoverage(
@@ -410,11 +433,15 @@ function resolvedSinkPaths(
 // root the formatters report paths against, and `verbose` straight off the CLI
 // (it is a flag, never a per-package config value — the run header and the
 // streaming sink read it the same way).
-function resolveReportOptions(
-	cli: CliOptions,
-	runOptions: WorkspaceRunOptions,
-	workspaceRoot: string,
-): WorkspaceReportOptions {
+function resolveReportOptions({
+	cli,
+	runOptions,
+	workspaceRoot,
+}: {
+	cli: CliOptions;
+	runOptions: WorkspaceRunOptions;
+	workspaceRoot: string;
+}): WorkspaceReportOptions {
 	return {
 		color: runOptions.color,
 		formatters: runOptions.formatters,
@@ -477,7 +504,7 @@ function buildWorkspaceResult({
 		merged: {},
 		mode: "workspace",
 		projectResults,
-		reportOptions: resolveReportOptions(cli, runOptions, workspaceRoot),
+		reportOptions: resolveReportOptions({ cli, runOptions, workspaceRoot }),
 		stagingMs: stagingMs ?? 0,
 		typecheckResult,
 		...resolvedSinkPaths(runOptions),
@@ -584,7 +611,7 @@ async function executeWorkspaceRunAsync(
 	input: ExecuteWorkspaceRunOptions,
 ): Promise<WorkspaceRunResult> {
 	const { cli, dependencies, runOptions, timing, workspaceRoot } = input;
-	const resolution = resolveWorkspaceBackend(cli, runOptions, dependencies);
+	const resolution = resolveWorkspaceBackend({ cli, dependencies, runOptions });
 	if (resolution.error !== undefined) {
 		return bail(resolution.error.exitCode, resolution.error.message);
 	}
@@ -686,18 +713,24 @@ function emptyWorkspaceMessage(patterns: Array<string> | undefined): string {
 	);
 }
 
-function resolvePackages(
-	cli: CliOptions,
-	{ childProcess, fileSystem }: ResolvedDependencies,
-	workspace?: WorkspaceConfig,
-): ResolvedPackages {
+function resolvePackages({
+	cli,
+	dependencies: { childProcess, fileSystem },
+	workspace,
+}: {
+	cli: CliOptions;
+	dependencies: ResolvedDependencies;
+	workspace: undefined | WorkspaceConfig;
+}): ResolvedPackages {
 	try {
 		const { exclude, patterns, workspaceRoot } = resolveEnumerationRoot(fileSystem, workspace);
-		const packageInfos = resolveWorkspacePackages(cli, workspaceRoot, {
+		const packageInfos = resolveWorkspacePackages({
 			childProcess,
+			cli,
 			exclude,
 			fileSystem,
 			patterns,
+			workspaceRoot,
 		});
 
 		if (packageInfos.length === 0) {

@@ -7,11 +7,17 @@
  * Results come back in the order of `items`, not the order they settled, so a
  * digest taken over them is stable.
  */
-export async function mapWithLimitAsync<T, R>(
-	items: ReadonlyArray<T>,
-	limit: number,
-	func: (item: T, index: number) => Promise<R>,
-): Promise<Array<R>> {
+export interface MapWithLimitOptions<T, R> {
+	readonly func: (item: T, index: number) => Promise<R>;
+	readonly items: ReadonlyArray<T>;
+	readonly limit: number;
+}
+
+export async function mapWithLimitAsync<T, R>({
+	func,
+	items,
+	limit,
+}: MapWithLimitOptions<T, R>): Promise<Array<R>> {
 	const results: Array<R> = [];
 	let next = 0;
 

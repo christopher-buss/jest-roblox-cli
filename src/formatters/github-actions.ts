@@ -28,6 +28,12 @@ export interface GitHubActionsFormatterOptions {
 	jobSummary?: Partial<JobSummaryOptions> | undefined;
 }
 
+export interface ResolveGitHubActionsOptions {
+	environment?: Record<string, string | undefined>;
+	sourceMapper: SourceMapper | undefined;
+	userOptions: GitHubActionsFormatterOptions;
+}
+
 interface JobSummaryOptions {
 	/**
 	 * Whether to generate the summary.
@@ -128,11 +134,11 @@ export function collectAnnotations(
 
 	for (const file of result.testResults) {
 		if (hasExecError(file)) {
-			collectExecErrorAnnotation(annotations, file, options);
+			annotations.push(collectExecErrorAnnotation({ file, options }));
 			continue;
 		}
 
-		collectTestFailureAnnotations(annotations, file, options);
+		annotations.push(...collectTestFailureAnnotations({ file, options }));
 	}
 
 	return annotations;
@@ -177,11 +183,11 @@ export function formatJobSummary(result: JestResult, options: GitHubActionsOptio
 	return lines.join("\n");
 }
 
-export function resolveGitHubActionsOptions(
-	userOptions: GitHubActionsFormatterOptions,
-	sourceMapper: SourceMapper | undefined,
-	environment: Record<string, string | undefined> = process.env,
-): GitHubActionsOptions {
+export function resolveGitHubActionsOptions({
+	environment = process.env,
+	sourceMapper,
+	userOptions,
+}: ResolveGitHubActionsOptions): GitHubActionsOptions {
 	const workspacePath =
 		userOptions.jobSummary?.fileLinks?.workspacePath ?? environment["GITHUB_WORKSPACE"];
 	return {
@@ -204,55 +210,66 @@ function makeRelative(filePath: string, workspace: PosixRoot | undefined): strin
 	return relativeToRoot(workspace, normalizeWindowsPath(filePath)) ?? filePath;
 }
 
-function collectExecErrorAnnotation(
-	annotations: Array<GitHubAnnotation>,
-	file: ExecErrorTestFileResult,
-	options: GitHubActionsOptions,
-): void {
-	annotations.push({
+function collectExecErrorAnnotation({
+	file,
+	options,
+}: {
+	file: ExecErrorTestFileResult;
+	options: GitHubActionsOptions;
+}): GitHubAnnotation {
+	return {
 		file: makeRelative(file.testFilePath, options.workspace),
 		message: file.failureMessage,
 		title: execErrorTitle(file),
-	});
+	};
 }
 
-function collectTestFailureAnnotations(
-	annotations: Array<GitHubAnnotation>,
-	file: JestResult["testResults"][number],
-	options: GitHubActionsOptions,
-): void {
+function locateFailure(
+	message: string,
+	sourceMapper: SourceMapper | undefined,
+): undefined | { column: number | undefined; file: string; line: number | undefined } {
+	if (message === "" || sourceMapper === undefined) {
+		return undefined;
+	}
+
+	const [location] = sourceMapper.mapFailureWithLocations(message).locations;
+	if (location?.tsPath !== undefined) {
+		return { column: location.tsColumn, file: location.tsPath, line: location.tsLine };
+	}
+
+	if (location !== undefined) {
+		return { column: undefined, file: location.luauPath, line: location.luauLine };
+	}
+
+	return undefined;
+}
+
+function collectTestFailureAnnotations({
+	file,
+	options,
+}: {
+	file: JestResult["testResults"][number];
+	options: GitHubActionsOptions;
+}): Array<GitHubAnnotation> {
+	const annotations: Array<GitHubAnnotation> = [];
 	for (const test of file.testResults) {
 		if (test.status !== "failed") {
 			continue;
 		}
 
 		const firstFailure = test.failureMessages[0] ?? "";
-		let annotationFile = file.testFilePath;
-		let line: number | undefined;
-		let column: number | undefined;
-
-		if (firstFailure !== "" && options.sourceMapper !== undefined) {
-			const mapped = options.sourceMapper.mapFailureWithLocations(firstFailure);
-			const location = mapped.locations[0];
-
-			if (location?.tsPath !== undefined) {
-				annotationFile = location.tsPath;
-				line = location.tsLine;
-				column = location.tsColumn;
-			} else if (location !== undefined) {
-				annotationFile = location.luauPath;
-				line = location.luauLine;
-			}
-		}
+		const located = locateFailure(firstFailure, options.sourceMapper);
 
 		annotations.push({
-			col: column,
-			file: makeRelative(annotationFile, options.workspace),
-			line,
+			col: located?.column,
+			file: makeRelative(located?.file ?? file.testFilePath, options.workspace),
+			line: located?.line,
 			message: firstFailure,
 			title: test.fullName,
 		});
 	}
+
+	return annotations;
 }
 
 function collectFileFailures(
@@ -274,7 +291,15 @@ function collectFileFailures(
 	return failures;
 }
 
-function noun(count: number, singular: string, plural: string): string {
+function noun({
+	count,
+	plural,
+	singular,
+}: {
+	count: number;
+	plural: string;
+	singular: string;
+}): string {
 	return count === 1 ? singular : plural;
 }
 
@@ -291,11 +316,15 @@ function renderFileCounts(result: JestResult): Array<string> {
 	const fileInfo: Array<string> = [];
 
 	if (failedFiles > 0) {
-		fileInfo.push(`❌ **${String(failedFiles)} ${noun(failedFiles, "failure", "failures")}**`);
+		fileInfo.push(
+			`❌ **${String(failedFiles)} ${noun({ count: failedFiles, plural: "failures", singular: "failure" })}**`,
+		);
 	}
 
 	if (passedFiles > 0) {
-		fileInfo.push(`✅ **${String(passedFiles)} ${noun(passedFiles, "pass", "passes")}**`);
+		fileInfo.push(
+			`✅ **${String(passedFiles)} ${noun({ count: passedFiles, plural: "passes", singular: "pass" })}**`,
+		);
 	}
 
 	fileInfo.push(`${String(failedFiles + passedFiles)} total`);
@@ -307,13 +336,13 @@ function renderTestCounts(result: JestResult): Array<string> {
 
 	if (result.numFailedTests > 0) {
 		testInfo.push(
-			`❌ **${String(result.numFailedTests)} ${noun(result.numFailedTests, "failure", "failures")}**`,
+			`❌ **${String(result.numFailedTests)} ${noun({ count: result.numFailedTests, plural: "failures", singular: "failure" })}**`,
 		);
 	}
 
 	if (result.numPassedTests > 0) {
 		testInfo.push(
-			`✅ **${String(result.numPassedTests)} ${noun(result.numPassedTests, "pass", "passes")}**`,
+			`✅ **${String(result.numPassedTests)} ${noun({ count: result.numPassedTests, plural: "passes", singular: "pass" })}**`,
 		);
 	}
 
@@ -330,13 +359,13 @@ function renderOtherCounts(result: JestResult): Array<string> {
 
 	if (result.numPendingTests > 0) {
 		otherInfo.push(
-			`${String(result.numPendingTests)} ${noun(result.numPendingTests, "skip", "skips")}`,
+			`${String(result.numPendingTests)} ${noun({ count: result.numPendingTests, plural: "skips", singular: "skip" })}`,
 		);
 	}
 
 	if (result.numTodoTests !== undefined && result.numTodoTests > 0) {
 		otherInfo.push(
-			`${String(result.numTodoTests)} ${noun(result.numTodoTests, "todo", "todos")}`,
+			`${String(result.numTodoTests)} ${noun({ count: result.numTodoTests, plural: "todos", singular: "todo" })}`,
 		);
 	}
 

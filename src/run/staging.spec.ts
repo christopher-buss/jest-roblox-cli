@@ -52,12 +52,17 @@ function makeSeams(): RunSeams {
 	};
 }
 
-async function stageAsync(
-	rootConfig: ResolvedConfig,
-	seams: RunSeams,
-	fileSystem: FileSystem,
-	backendKind: BackendKind = "open-cloud",
-) {
+async function stageAsync({
+	backendKind = "open-cloud",
+	fileSystem,
+	rootConfig,
+	seams,
+}: {
+	backendKind?: BackendKind;
+	fileSystem: FileSystem;
+	rootConfig: ResolvedConfig;
+	seams: RunSeams;
+}) {
 	return stageRunAsync({
 		backendKind,
 		fileSystem,
@@ -85,7 +90,7 @@ describe(stageRunAsync, () => {
 		// the oracle along with the value under test.
 		const before = structuredClone(rootConfig);
 
-		const staged = await stageAsync(rootConfig, makeSeams(), fileSystem);
+		const staged = await stageAsync({ fileSystem, rootConfig, seams: makeSeams() });
 
 		expect(before.placeFile).not.toBe(COVERAGE_PLACE);
 		expect(rootConfig).toStrictEqual(before);
@@ -103,7 +108,7 @@ describe(stageRunAsync, () => {
 		const rootConfig = makeConfig();
 		const before = structuredClone(rootConfig);
 
-		const staged = await stageAsync(rootConfig, seams, fileSystem);
+		const staged = await stageAsync({ fileSystem, rootConfig, seams });
 
 		expect(staged.effectiveConfig).toStrictEqual(before);
 		expect(seams.prepareCoverage).not.toHaveBeenCalled();
@@ -115,8 +120,13 @@ describe(stageRunAsync, () => {
 		const { fileSystem } = createMemoryFileSystem();
 		const seams = makeSeams();
 
-		await stageAsync(makeConfig({ collectCoverage: true }), seams, fileSystem);
-		await stageAsync(makeConfig({ collectCoverage: true }), seams, fileSystem, "studio-cli");
+		await stageAsync({ fileSystem, rootConfig: makeConfig({ collectCoverage: true }), seams });
+		await stageAsync({
+			backendKind: "studio-cli",
+			fileSystem,
+			rootConfig: makeConfig({ collectCoverage: true }),
+			seams,
+		});
 
 		const [baked, unbaked] = vi.mocked(seams.prepareCoverage).mock.calls;
 
@@ -130,7 +140,7 @@ describe(stageRunAsync, () => {
 		const { fileSystem } = createMemoryFileSystem();
 		const seams = makeSeams();
 
-		await stageAsync(makeConfig({ collectCoverage: true }), seams, fileSystem);
+		await stageAsync({ fileSystem, rootConfig: makeConfig({ collectCoverage: true }), seams });
 
 		expect(vi.mocked(seams.prepareCoverage).mock.calls[0]![1]!.childProcess).toBe(
 			seams.childProcess,

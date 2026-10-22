@@ -21,6 +21,21 @@ export interface TestRowCounts {
 	total: number;
 }
 
+export interface TestSummaryOptions {
+	bail?: BailSummary | undefined;
+	result: JestResult;
+	snapshotWriteFailures?: number | undefined;
+	styles?: Styles | undefined;
+	timing: TimingResult;
+	typeErrors?: number | undefined;
+}
+
+export interface FormatLogHintsOptions {
+	options: FormatOptions;
+	snapshot?: SnapshotSummary | undefined;
+	styles: Styles;
+}
+
 export function formatRunHeader(
 	options: Pick<FormatOptions, "collectCoverage" | "color" | "rootDir" | "version">,
 	styles?: Styles,
@@ -60,30 +75,32 @@ export function formatTypeErrorsLine(typeErrors: number, styles: Styles): string
 }
 
 /** The trailing block of totals: snapshots, files, tests, timings. */
-export function formatTestSummary(
-	result: JestResult,
-	timing: TimingResult,
-	styles?: Styles,
-	options?: {
-		bail?: BailSummary | undefined;
-		snapshotWriteFailures?: number | undefined;
-		typeErrors?: number | undefined;
-	},
-): string {
+export function formatTestSummary({
+	bail,
+	result,
+	snapshotWriteFailures = 0,
+	styles,
+	timing,
+	typeErrors,
+}: TestSummaryOptions): string {
 	const st = styles ?? createStyles(true);
 	const lines: Array<string> = [
-		...collectSnapshotLines(result.snapshot, options?.snapshotWriteFailures ?? 0, st),
+		...collectSnapshotLines({
+			snapshot: result.snapshot,
+			styles: st,
+			writeFailures: snapshotWriteFailures,
+		}),
 		formatTestFilesLine(countFileBuckets(result), st),
 		formatTestsLine(countTestBuckets(result), st),
 	];
 
 	// Type Errors line (only shown when typecheck was enabled)
-	if (options?.typeErrors !== undefined) {
-		lines.push(formatTypeErrorsLine(options.typeErrors, st));
+	if (typeErrors !== undefined) {
+		lines.push(formatTypeErrorsLine(typeErrors, st));
 	}
 
-	if (options?.bail !== undefined) {
-		lines.push(formatBailLine(options.bail, st));
+	if (bail !== undefined) {
+		lines.push(formatBailLine(bail, st));
 	}
 
 	lines.push(formatStartAtLine(timing.startTime, st), formatDurationLine(timing, st));
@@ -91,11 +108,7 @@ export function formatTestSummary(
 	return lines.join("\n");
 }
 
-export function formatLogHints(
-	options: FormatOptions,
-	styles: Styles,
-	snapshot?: SnapshotSummary,
-): string {
+export function formatLogHints({ options, snapshot, styles }: FormatLogHintsOptions): string {
 	const lines: Array<string> = [];
 
 	if (snapshot !== undefined && snapshot.unmatched > 0) {
@@ -125,11 +138,15 @@ function formatSnapshotWriteFailureLine(failures: number, styles: Styles): strin
 	return `${label}  ${failed}`;
 }
 
-function collectSnapshotLines(
-	snapshot: SnapshotSummary | undefined,
-	writeFailures: number,
-	styles: Styles,
-): Array<string> {
+function collectSnapshotLines({
+	snapshot,
+	styles,
+	writeFailures,
+}: {
+	snapshot: SnapshotSummary | undefined;
+	styles: Styles;
+	writeFailures: number;
+}): Array<string> {
 	const lines: Array<string> = [];
 
 	const writeFailureLine = formatSnapshotWriteFailureLine(writeFailures, styles);

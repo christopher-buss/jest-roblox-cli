@@ -129,7 +129,7 @@ export function printMultiResults(context: MultiOutputContext): void {
 	printMultiProjectOutput(context);
 
 	if (typecheckResult !== undefined && !usesDefaultFormatter(config)) {
-		writeTypecheckReport(config, typecheckResult, renderer);
+		writeTypecheckReport({ config, renderer, typecheckResult });
 	}
 }
 
@@ -176,11 +176,15 @@ function typecheckReportColor(config: ResolvedConfig): boolean {
 	return config.color && !usesAgentFormatter(config.formatters, config.verbose);
 }
 
-function writeTypecheckReport(
-	config: ResolvedConfig,
-	typecheckResult: JestResult,
-	renderer: ResultRenderer,
-): void {
+function writeTypecheckReport({
+	config,
+	renderer,
+	typecheckResult,
+}: {
+	config: ResolvedConfig;
+	renderer: ResultRenderer;
+	typecheckResult: JestResult;
+}): void {
 	const report = renderer.formatTypecheckReport(typecheckResult, {
 		// The agent formatter builds the summary rows into its own block, so
 		// only the failure detail is still missing here.
@@ -214,16 +218,20 @@ function printCombinedOutput(
 				typeErrorCount: typecheckResult.numFailedTests,
 			}),
 		);
-		writeTypecheckReport(config, typecheckResult, renderer);
+		writeTypecheckReport({ config, renderer, typecheckResult });
 		return;
 	}
 
 	printOutput(
-		renderer.formatResult(mergedResult, timing, {
-			...toFormatOptions(config, VERSION),
-			snapshotWriteFailures: runtimeResult.snapshotWriteFailures,
-			sourceMapper: runtimeResult.sourceMapper,
-			typeErrors: typecheckResult.numFailedTests,
+		renderer.formatResult({
+			options: {
+				...toFormatOptions(config, VERSION),
+				snapshotWriteFailures: runtimeResult.snapshotWriteFailures,
+				sourceMapper: runtimeResult.sourceMapper,
+				typeErrors: typecheckResult.numFailedTests,
+			},
+			result: mergedResult,
+			timing,
 		}),
 	);
 }
@@ -318,12 +326,16 @@ function printMultiProjectOutput(context: MultiOutputContext): void {
 	}
 
 	printOutput(
-		renderer.formatMultiProjectResult(toProjectEntries(projectResults), timing, {
-			...toFormatOptions(config, VERSION),
-			bail: context.bail,
-			snapshotWriteFailures: merged.snapshotWriteFailures,
-			sourceMapper: merged.sourceMapper,
-			typeErrors: typecheckResult?.numFailedTests,
+		renderer.formatMultiProjectResult({
+			options: {
+				...toFormatOptions(config, VERSION),
+				bail: context.bail,
+				snapshotWriteFailures: merged.snapshotWriteFailures,
+				sourceMapper: merged.sourceMapper,
+				typeErrors: typecheckResult?.numFailedTests,
+			},
+			projects: toProjectEntries(projectResults),
+			timing,
 		}),
 	);
 }

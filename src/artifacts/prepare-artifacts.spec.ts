@@ -392,7 +392,7 @@ describe(prepareArtifactsAsync, () => {
 
 		await prepareArtifactsAsync(makeConfig(), harness);
 
-		const merged = vi.mocked(harness.dispatch.runResolvedProjects).mock.calls[0]![1];
+		const merged = vi.mocked(harness.dispatch.runResolvedProjects).mock.calls[0]![0].rootConfig;
 
 		expect(merged.collectPerTestCoverage).toBeTrue();
 	});
@@ -404,7 +404,7 @@ describe(prepareArtifactsAsync, () => {
 
 		await prepareArtifactsAsync(makeConfig({ collectCoverage: false }), harness);
 
-		const merged = vi.mocked(harness.dispatch.runResolvedProjects).mock.calls[0]![1];
+		const merged = vi.mocked(harness.dispatch.runResolvedProjects).mock.calls[0]![0].rootConfig;
 
 		expect(merged.collectCoverage).toBeTrue();
 	});

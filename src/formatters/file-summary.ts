@@ -18,22 +18,31 @@ export interface ProjectStats {
 	totalTests: number;
 }
 
+export interface FormatFileSummaryOptions {
+	file: TestFileResult;
+	options: FormatOptions;
+	styles: Styles;
+}
+
+interface FormatFailedFileSummaryOptions {
+	displayPath: string;
+	file: TestFileResult;
+	styles: Styles;
+	testCount: number;
+}
+
 /** The one-or-more lines that report a single test file's outcome. */
-export function formatFileSummary(
-	file: TestFileResult,
-	options: FormatOptions,
-	styles: Styles,
-): string {
+export function formatFileSummary({ file, options, styles }: FormatFileSummaryOptions): string {
 	const displayPath = resolveDisplayPath(file.testFilePath, options.sourceMapper);
 	const formattedPath = formatFilePath(displayPath, styles);
 	const testCount = file.numPassingTests + file.numFailingTests + file.numPendingTests;
 
 	if (file.numFailingTests > 0) {
-		return formatFailedFileSummary(file, testCount, styles, displayPath).join("\n");
+		return formatFailedFileSummary({ displayPath, file, styles, testCount }).join("\n");
 	}
 
 	if (hasExecError(file)) {
-		return formatExecErrorFileSummary(file, formattedPath, styles);
+		return formatExecErrorFileSummary({ file, formattedPath, styles });
 	}
 
 	if (file.numPassingTests === 0 && file.numPendingTests > 0) {
@@ -137,11 +146,15 @@ function formatTestInGroup(testCase: TestCaseResult, styles: Styles): string {
 	return styles.status.pending(`     ${symbol} ${testCase.title}`);
 }
 
-function formatDescribeGroup(
-	describeName: string,
-	tests: Array<TestCaseResult>,
-	styles: Styles,
-): Array<string> {
+function formatDescribeGroup({
+	describeName,
+	styles,
+	tests,
+}: {
+	describeName: string;
+	styles: Styles;
+	tests: Array<TestCaseResult>;
+}): Array<string> {
 	const groupTestCount = tests.length;
 	const groupDurationStr = formatGroupDuration(tests, styles);
 	const failedCount = tests.filter((testCase) => testCase.status === "failed").length;
@@ -165,12 +178,12 @@ function formatDescribeGroup(
 	];
 }
 
-function formatFailedFileSummary(
-	file: TestFileResult,
-	testCount: number,
-	styles: Styles,
-	displayPath: string,
-): Array<string> {
+function formatFailedFileSummary({
+	displayPath,
+	file,
+	styles,
+	testCount,
+}: FormatFailedFileSummaryOptions): Array<string> {
 	const failedMeta = styles.summary.failed(`${file.numFailingTests} failed`);
 	const metaPrefix = styles.dim(`(${testCount} tests | `);
 	const metaSuffix = styles.dim(")");
@@ -181,17 +194,21 @@ function formatFailedFileSummary(
 
 	const groups = groupByDescribe(file.testResults);
 	for (const [describeName, tests] of groups) {
-		lines.push(...formatDescribeGroup(describeName, tests, styles));
+		lines.push(...formatDescribeGroup({ describeName, styles, tests }));
 	}
 
 	return lines;
 }
 
-function formatExecErrorFileSummary(
-	file: TestFileResult,
-	formattedPath: string,
-	styles: Styles,
-): string {
+function formatExecErrorFileSummary({
+	file,
+	formattedPath,
+	styles,
+}: {
+	file: TestFileResult;
+	formattedPath: string;
+	styles: Styles;
+}): string {
 	// A clock rather than a cross: the file line is the first thing read, and a
 	// run that ran out of time is acted on differently from one that threw.
 	const symbol = file.timedOut === true ? styles.status.pending("⏱") : styles.status.fail("✗");

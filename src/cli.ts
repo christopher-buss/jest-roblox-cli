@@ -604,11 +604,15 @@ function printError(err: unknown): void {
 	}
 }
 
-async function dispatchResultAsync(
-	config: ResolvedConfig,
-	result: MultiRunResult | WorkspaceRunResult,
-	{ fileSystem, outputMultiResult }: ResolvedCliDependencies,
-): Promise<number> {
+async function dispatchResultAsync({
+	config,
+	dependencies: { fileSystem, outputMultiResult },
+	result,
+}: {
+	config: ResolvedConfig;
+	dependencies: ResolvedCliDependencies;
+	result: MultiRunResult | WorkspaceRunResult;
+}): Promise<number> {
 	if (result.validationExitCode !== undefined) {
 		if (result.validationMessage !== undefined) {
 			process.stderr.write(result.validationMessage);
@@ -621,7 +625,7 @@ async function dispatchResultAsync(
 		return 0;
 	}
 
-	return outputMultiResult(config, result, { fileSystem });
+	return outputMultiResult({ dependencies: { fileSystem }, result, rootConfig: config });
 }
 
 /**
@@ -630,17 +634,24 @@ async function dispatchResultAsync(
  * open. Settled in a `finally`, so that block still names the step it died
  * inside rather than freezing on a spinner.
  */
-async function runReportedAsync(
-	cli: CliOptions,
-	config: ResolvedConfig,
-	dependencies: ResolvedCliDependencies,
-): Promise<number> {
+async function runReportedAsync({
+	cli,
+	config,
+	dependencies,
+}: {
+	cli: CliOptions;
+	config: ResolvedConfig;
+	dependencies: ResolvedCliDependencies;
+}): Promise<number> {
 	const progress = createStdoutRunProgress();
 	try {
-		const result = await dependencies.runJestRoblox(cli, config, progress, {
+		const result = await dependencies.runJestRoblox({
+			cli,
+			config,
 			fileSystem: dependencies.fileSystem,
+			progress,
 		});
-		return await dispatchResultAsync(config, result, dependencies);
+		return await dispatchResultAsync({ config, dependencies, result });
 	} finally {
 		progress.finish();
 	}
@@ -680,7 +691,7 @@ async function runInnerAsync(
 	// held, the stage block included.
 	return withRunLogAsync(
 		{ config, fileSystem, streams: { stderr: process.stderr, stdout: process.stdout } },
-		async () => runReportedAsync(cli, config, dependencies),
+		async () => runReportedAsync({ cli, config, dependencies }),
 	);
 }
 

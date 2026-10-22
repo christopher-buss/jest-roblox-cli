@@ -131,8 +131,10 @@ async function resolveProjectsAsync(
 	}
 
 	return [
-		dispatch.buildImplicitProject(config, rojoTree, {
+		dispatch.buildImplicitProject({
+			config,
 			fileSystem,
+			rojoTree,
 			tsconfigReader: seams.tsconfigReader,
 		}),
 	];

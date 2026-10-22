@@ -175,9 +175,11 @@ describe(buildCoveragePlaceAsync, () => {
 			await buildCoveragePlaceAsync(makeConfig({ projects }), harness);
 
 			expect(harness.dispatch.buildImplicitProject).toHaveBeenCalledExactlyOnceWith(
-				expect.objectContaining({ rootDir: ROOT_DIR }),
-				{ $className: "DataModel" },
-				expect.objectContaining({ fileSystem: harness.fileSystem }),
+				expect.objectContaining({
+					config: expect.objectContaining({ rootDir: ROOT_DIR }),
+					fileSystem: harness.fileSystem,
+					rojoTree: { $className: "DataModel" },
+				}),
 			);
 			expect(harness.seams.resolveAllProjects).not.toHaveBeenCalled();
 		},

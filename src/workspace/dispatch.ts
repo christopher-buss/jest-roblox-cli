@@ -171,18 +171,18 @@ export function buildWorkspaceJobs({
 	tsconfigReader,
 }: WorkspaceJobsInput): Array<WorkspaceJob> {
 	return pending.map((entry) => {
-		const job = buildProjectJob(
-			{
+		const job = buildProjectJob({
+			cache: tsconfigCache,
+			fileSystem,
+			project: {
 				config: { ...entry.projectConfig, placeFile },
 				displayColor: entry.project.displayColor,
 				displayName: entry.project.displayName,
 				pkg: entry.pkg,
 				testFiles: entry.testFiles,
 			},
-			tsconfigCache,
-			fileSystem,
 			tsconfigReader,
-		);
+		});
 
 		return { ...job, pkg: entry.pkg };
 	});

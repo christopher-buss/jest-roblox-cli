@@ -23,6 +23,13 @@ export interface SnapshotWriteCounts {
 	written: number;
 }
 
+export interface WriteSnapshotsOptions {
+	config: ResolvedConfig;
+	fileSystem?: FileSystem | undefined;
+	snapshotWrites: SnapshotWrites;
+	tsconfigMappings: ReadonlyArray<TsconfigMapping>;
+}
+
 type SnapshotPathResolver = ReturnType<typeof createSnapshotPathResolver>;
 
 /**
@@ -54,25 +61,25 @@ export function findRojoProject(
  * malformed, or unresolvable rojo project all mean "no snapshot can land", and
  * every one of those counts the whole batch as failed.
  */
-export function writeSnapshots(
-	snapshotWrites: SnapshotWrites,
-	config: ResolvedConfig,
-	tsconfigMappings: ReadonlyArray<TsconfigMapping>,
-	fileSystem: FileSystem = nodeFileSystem,
-): SnapshotWriteCounts {
+export function writeSnapshots({
+	config,
+	fileSystem = nodeFileSystem,
+	snapshotWrites,
+	tsconfigMappings,
+}: WriteSnapshotsOptions): SnapshotWriteCounts {
 	const attempted = Object.keys(snapshotWrites).length;
 
-	const resolver = createSnapshotResolver(fileSystem, config, tsconfigMappings);
+	const resolver = createSnapshotResolver({ config, fileSystem, tsconfigMappings });
 	if (resolver === undefined) {
 		return { attempted, failed: attempted, written: 0 };
 	}
 
-	const { failed, written } = writeResolvedSnapshots(
-		fileSystem,
-		snapshotWrites,
+	const { failed, written } = writeResolvedSnapshots({
 		config,
+		fileSystem,
 		resolver,
-	);
+		snapshotWrites,
+	});
 
 	logSnapshotWriteSummary({ attempted, failed, silent: config.silent, written });
 
@@ -143,11 +150,15 @@ function readRojoProject(fileSystem: FileSystem, rojoProjectPath: string): RojoP
 	return rojoResult;
 }
 
-function createSnapshotResolver(
-	fileSystem: FileSystem,
-	config: ResolvedConfig,
-	tsconfigMappings: ReadonlyArray<TsconfigMapping>,
-): SnapshotPathResolver | undefined {
+function createSnapshotResolver({
+	config,
+	fileSystem,
+	tsconfigMappings,
+}: {
+	config: ResolvedConfig;
+	fileSystem: FileSystem;
+	tsconfigMappings: ReadonlyArray<TsconfigMapping>;
+}): SnapshotPathResolver | undefined {
 	const rojoProjectPath = resolveRojoProjectPath(fileSystem, config);
 	if (rojoProjectPath === undefined) {
 		return undefined;
@@ -174,11 +185,13 @@ function createSnapshotResolver(
 	}
 }
 
-function writeSnapshotFile(
-	{ config, fileSystem, resolver }: SnapshotDestination,
-	virtualPath: string,
-	content: string,
-): boolean {
+function writeSnapshotFile({
+	config,
+	content,
+	fileSystem,
+	resolver,
+	virtualPath,
+}: SnapshotDestination & { content: string; virtualPath: string }): boolean {
 	const resolved = resolver.resolve(virtualPath);
 	if (resolved === undefined) {
 		process.stderr.write(`Warning: Cannot resolve snapshot path: ${virtualPath}\n`);
@@ -193,7 +206,7 @@ function writeSnapshotFile(
 		// Also write to out dir so rojo picks it up without recompile
 		const { filePath, mapping } = resolved;
 		if (mapping !== undefined) {
-			const outPath = replacePrefix(filePath, mapping.rootDir, mapping.outDir);
+			const outPath = replacePrefix({ filePath, from: mapping.rootDir, to: mapping.outDir });
 			const absoluteOutPath = path.resolve(config.rootDir, outPath);
 			fileSystem.mkdirSync(path.dirname(absoluteOutPath), { recursive: true });
 			fileSystem.writeFileSync(absoluteOutPath, content);
@@ -206,17 +219,18 @@ function writeSnapshotFile(
 	}
 }
 
-function writeResolvedSnapshots(
-	fileSystem: FileSystem,
-	snapshotWrites: SnapshotWrites,
-	config: ResolvedConfig,
-	resolver: SnapshotPathResolver,
-): Pick<SnapshotWriteCounts, "failed" | "written"> {
+function writeResolvedSnapshots({
+	snapshotWrites,
+	...destination
+}: SnapshotDestination & { snapshotWrites: SnapshotWrites }): Pick<
+	SnapshotWriteCounts,
+	"failed" | "written"
+> {
 	let written = 0;
 	let failed = 0;
 
 	for (const [virtualPath, content] of Object.entries(snapshotWrites)) {
-		if (writeSnapshotFile({ config, fileSystem, resolver }, virtualPath, content)) {
+		if (writeSnapshotFile({ ...destination, content, virtualPath })) {
 			written++;
 		} else {
 			failed++;

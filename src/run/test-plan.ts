@@ -205,7 +205,11 @@ function selectProjectFiles({
 	typecheck,
 }: ProjectSelectionInput): ProjectSelection {
 	const discoveryConfig = buildDiscoveryConfig(project, typecheck);
-	const discovered = discoverTestFiles(discoveryConfig, projectCliFiles, fileSystem);
+	const discovered = discoverTestFiles({
+		cliFiles: projectCliFiles,
+		config: discoveryConfig,
+		fileSystem,
+	});
 	const classified = classifyTestFiles(discovered.files, typecheck);
 
 	// `exclude` globs only match the relative paths glob-discovery returns;
@@ -241,11 +245,15 @@ function selectProjectFiles({
 // Same per-mount FS filter as the synthesizer's stubMounts loop: drop mounts
 // where a user-authored `jest.config.luau` already exists. The runtime injector
 // mustn't parent a duplicate `jest.config` over a Rojo-synced user file.
-function collectRuntimeInjectionPaths(
-	project: ResolvedProjectConfig,
-	rootDirectory: string,
-	fileSystem: FileSystem,
-): Array<string> {
+function collectRuntimeInjectionPaths({
+	fileSystem,
+	project,
+	rootDirectory,
+}: {
+	fileSystem: FileSystem;
+	project: ResolvedProjectConfig;
+	rootDirectory: string;
+}): Array<string> {
 	const runtimeInjectionPaths: Array<string> = [];
 	for (const mount of project.rojoMounts) {
 		const sourceMount = path.resolve(rootDirectory, mount.fsPath);
@@ -288,11 +296,11 @@ function toPlannedProject({
 			displayColor: project.displayColor,
 			displayName: project.displayName,
 			runtimeFiles: selection.runtimeFiles,
-			runtimeInjectionPaths: collectRuntimeInjectionPaths(
-				project,
-				rootConfig.rootDir,
+			runtimeInjectionPaths: collectRuntimeInjectionPaths({
 				fileSystem,
-			),
+				project,
+				rootDirectory: rootConfig.rootDir,
+			}),
 		};
 	}
 
@@ -343,12 +351,11 @@ function collectPendingJobs(input: DiscoveryInput): Pick<TestPlan, "jobs" | "typ
 	// resolves its tsconfigs from the same run root.
 	const planInput: ProjectPlanInput = {
 		...input,
-		tsconfigMappings: resolveAllTsconfigMappings(
-			input.rootConfig.rootDir,
-			undefined,
-			input.fileSystem,
-			input.seams.tsconfigReader,
-		),
+		tsconfigMappings: resolveAllTsconfigMappings({
+			fileSystem: input.fileSystem,
+			projectRoot: input.rootConfig.rootDir,
+			tsconfigReader: input.seams.tsconfigReader,
+		}),
 	};
 
 	for (const project of input.projects) {

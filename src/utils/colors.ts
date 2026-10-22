@@ -86,7 +86,7 @@ function convertHljsToAnsi(html: string): string {
 		previous = result;
 		result = result.replace(
 			/<span class="([^"]+)">([^<]*)<\/span>/g,
-			(_, cssClasses, content) => {
+			(...[, cssClasses, content]: Array<number | string>) => {
 				// Multi-class spans (e.g., "hljs-title function_") use first
 				// class
 				const primaryClass = String(cssClasses).split(" ", 1).join();

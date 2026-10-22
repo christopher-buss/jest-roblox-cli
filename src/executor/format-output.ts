@@ -39,7 +39,7 @@ export function formatExecuteOutput(options: FormatOutputOptions): string {
 		return formatJson(result);
 	}
 
-	return formatResult(result, timing, buildResultOptions(options, paths));
+	return formatResult({ options: buildResultOptions(options, paths), result, timing });
 }
 
 function resolveOutputPaths(config: ResolvedConfig): ResolvedOutputPaths {

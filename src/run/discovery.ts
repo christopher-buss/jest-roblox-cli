@@ -18,6 +18,12 @@ export interface ClassifiedTestFiles {
 	typeTestFiles: Array<string>;
 }
 
+export interface DiscoverTestFilesOptions {
+	cliFiles?: Array<string> | undefined;
+	config: ResolvedConfig;
+	fileSystem?: FileSystem | undefined;
+}
+
 interface TestFileDiscovery {
 	files: Array<string>;
 	totalFiles: number;
@@ -45,11 +51,11 @@ export function filterByTestPathPattern(
 	return files.filter((file) => pathPattern.test(file));
 }
 
-export function discoverTestFiles(
-	config: ResolvedConfig,
-	cliFiles?: Array<string>,
-	fileSystem: FileSystem = nodeFileSystem,
-): TestFileDiscovery {
+export function discoverTestFiles({
+	cliFiles,
+	config,
+	fileSystem = nodeFileSystem,
+}: DiscoverTestFilesOptions): TestFileDiscovery {
 	if (cliFiles && cliFiles.length > 0) {
 		const files = cliFiles.map((file) => path.resolve(config.rootDir, file));
 		return { files, totalFiles: files.length };
