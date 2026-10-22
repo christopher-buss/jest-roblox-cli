@@ -307,6 +307,14 @@ describe(configSchema, () => {
 			).not.toBeInstanceOf(type.errors);
 		});
 
+		it("should accept a pluginsDirectory string", () => {
+			expect.assertions(1);
+
+			expect(
+				configSchema({ pluginsDirectory: "/Users/dev/Library/Roblox/Plugins" }),
+			).not.toBeInstanceOf(type.errors);
+		});
+
 		it("should accept valid jest passthrough keys under test:", () => {
 			expect.assertions(1);
 
@@ -812,6 +820,21 @@ describe(configSchema, () => {
 
 			expect(result.summary).toMatchInlineSnapshot('"bakcend must be removed"');
 		});
+
+		it.for([String.raw`Roblox\Plugins`, "~/Plugins"])(
+			"should reject a relative pluginsDirectory %s",
+			(pluginsDirectory) => {
+				expect.assertions(1);
+
+				const result = configSchema({ pluginsDirectory });
+
+				assert(result instanceof type.errors);
+
+				expect(result.summary).toBe(
+					`pluginsDirectory must be an absolute path (was "${pluginsDirectory}")`,
+				);
+			},
+		);
 
 		it("should produce readable error for nested validation", () => {
 			expect.assertions(1);

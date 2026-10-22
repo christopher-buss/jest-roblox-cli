@@ -236,10 +236,55 @@ describe(discoverUserDirectories, () => {
 		});
 	});
 
+	it("should normalize a configured plugins folder on Windows", () => {
+		expect.assertions(1);
+
+		expect(
+			discoverUserDirectories({
+				environment: WIN_ENV,
+				platform: "win32",
+				pluginsDirectory: String.raw`d:\Studio\Plugins`,
+			}),
+		).toStrictEqual({
+			plugins: "D:/Studio/Plugins",
+			state: "C:/Users/dev/AppData/Local/jest-roblox",
+		});
+	});
+
+	it("should prefer the pluginsDirectory setting over JEST_ROBLOX_PLUGINS_DIR", () => {
+		expect.assertions(1);
+
+		expect(
+			discoverUserDirectories({
+				environment: { JEST_ROBLOX_PLUGINS_DIR: "/from/env" },
+				homeDirectory: "/Users/dev",
+				platform: "darwin",
+				pluginsDirectory: "/from/config",
+			})!.plugins,
+		).toBe("/from/config");
+	});
+
+	it.for([
+		{ environment: { JEST_ROBLOX_PLUGINS_DIR: "~/Plugins" }, platform: "darwin" },
+		{
+			environment: { ...WIN_ENV, JEST_ROBLOX_PLUGINS_DIR: String.raw`Roblox\Plugins` },
+			platform: "win32",
+		},
+		{ environment: { JEST_ROBLOX_PLUGINS_DIR: "Roblox/Plugins" }, platform: "linux" },
+	] as const)("should reject a relative JEST_ROBLOX_PLUGINS_DIR on $platform", (input) => {
+		expect.assertions(1);
+
+		expect(() => discoverUserDirectories(input)).toThrowWithMessage(
+			Error,
+			/^JEST_ROBLOX_PLUGINS_DIR must be an absolute path \(was "/,
+		);
+	});
+
 	it.for([
 		{ environment: {}, platform: "win32" },
 		{ environment: { LOCALAPPDATA: "" }, platform: "win32" },
 		{ environment: WIN_ENV, platform: "linux" },
+		{ environment: { JEST_ROBLOX_PLUGINS_DIR: "/plugins" }, platform: "linux" },
 	] as const)("should find no folders on $platform without a known location", (input) => {
 		expect.assertions(1);
 

@@ -8,27 +8,28 @@ Config file: `jest.config.*`, in any format c12 loads (`.ts`, `.js`, `.mjs`,
 
 Root fields control the CLI/runner. Jest passthrough fields live under `test:`.
 
-| Field                  | Purpose                                                                                   | Default                          |
-| ---------------------- | ----------------------------------------------------------------------------------------- | -------------------------------- |
-| `backend`              | `"auto"`, `"studio-cli"`, `"open-cloud"`, or `"studio"`                                   | `"auto"`                         |
-| `placeFile`            | Path to `.rbxl` file                                                                      | `"./game.rbxl"`                  |
-| `jestPath`             | DataModel path to the Jest module (e.g. `"ReplicatedStorage/Packages/Jest"`)              | auto-detect in ReplicatedStorage |
-| `timeout`              | Max execution time (ms)                                                                   | `300000`                         |
-| `sourceMap`            | Map Luau traces → source                                                                  | `true`                           |
-| `port`                 | WebSocket port for the attached `studio` backend                                          | `3001`                           |
-| `studioPath`           | Roblox Studio executable for `studio-cli` (also `JEST_ROBLOX_STUDIO_PATH`)                | auto-discovered                  |
-| `parallel`             | Concurrent Open Cloud sessions, or `"auto"` (= `min(jobs, 3)`)                            | one session                      |
-| `rojoProject`          | Path to Rojo project file                                                                 | auto-detected                    |
-| `formatters`           | Output formatters (`"default"`, `"agent"`, `"json"`, `"github-actions"`)                  | `["default"]`                    |
-| `gameOutput`           | Write game print/warn/error to a file: a path, or `true` for `game-output.log`.           | —                                |
-| `outputFile`           | Write the Jest result JSON: a path, or `true` for `jest-output.log`.                      | —                                |
-| `workspace.exclude`    | Globs naming package directories an enumerated `--workspace` run must skip                | —                                |
-| `workspace.gameOutput` | `true` to emit per-package game output under `.jest-roblox/output/` (`--workspace` only)  | —                                |
-| `workspace.outputFile` | `true` to emit per-package result files under `.jest-roblox/output/` (`--workspace` only) | —                                |
-| `coverageCache`        | Reuse incrementally-instrumented coverage shadow dir between runs                         | `true`                           |
-| `uploadCache`          | Skip the place upload when the place file's bytes are unchanged                           | `true`                           |
-| `luauRoots`            | Compiled Luau directories to instrument                                                   | auto from tsconfig `outDir`      |
-| `bootProbeTimeout`     | How long the Open Cloud boot probe may take to prove a place version starts (ms)          | `90000`                          |
+| Field                  | Purpose                                                                                                | Default                          |
+| ---------------------- | ------------------------------------------------------------------------------------------------------ | -------------------------------- |
+| `backend`              | `"auto"`, `"studio-cli"`, `"open-cloud"`, or `"studio"`                                                | `"auto"`                         |
+| `placeFile`            | Path to `.rbxl` file                                                                                   | `"./game.rbxl"`                  |
+| `jestPath`             | DataModel path to the Jest module (e.g. `"ReplicatedStorage/Packages/Jest"`)                           | auto-detect in ReplicatedStorage |
+| `timeout`              | Max execution time (ms)                                                                                | `300000`                         |
+| `sourceMap`            | Map Luau traces → source                                                                               | `true`                           |
+| `port`                 | WebSocket port for the attached `studio` backend                                                       | `3001`                           |
+| `studioPath`           | Roblox Studio executable for `studio-cli` (also `JEST_ROBLOX_STUDIO_PATH`)                             | auto-discovered                  |
+| `pluginsDirectory`     | Absolute path of the Studio plugins folder `studio-cli` installs into (also `JEST_ROBLOX_PLUGINS_DIR`) | per-OS Studio plugins folder     |
+| `parallel`             | Concurrent Open Cloud sessions, or `"auto"` (= `min(jobs, 3)`)                                         | one session                      |
+| `rojoProject`          | Path to Rojo project file                                                                              | auto-detected                    |
+| `formatters`           | Output formatters (`"default"`, `"agent"`, `"json"`, `"github-actions"`)                               | `["default"]`                    |
+| `gameOutput`           | Write game print/warn/error to a file: a path, or `true` for `game-output.log`.                        | —                                |
+| `outputFile`           | Write the Jest result JSON: a path, or `true` for `jest-output.log`.                                   | —                                |
+| `workspace.exclude`    | Globs naming package directories an enumerated `--workspace` run must skip                             | —                                |
+| `workspace.gameOutput` | `true` to emit per-package game output under `.jest-roblox/output/` (`--workspace` only)               | —                                |
+| `workspace.outputFile` | `true` to emit per-package result files under `.jest-roblox/output/` (`--workspace` only)              | —                                |
+| `coverageCache`        | Reuse incrementally-instrumented coverage shadow dir between runs                                      | `true`                           |
+| `uploadCache`          | Skip the place upload when the place file's bytes are unchanged                                        | `true`                           |
+| `luauRoots`            | Compiled Luau directories to instrument                                                                | auto from tsconfig `outDir`      |
+| `bootProbeTimeout`     | How long the Open Cloud boot probe may take to prove a place version starts (ms)                       | `90000`                          |
 
 ## Test Fields
 

@@ -32,6 +32,8 @@ Studio windows already open stay untouched.
   eat the test budget. The launch has its own window, raised with
   `JEST_ROBLOX_STUDIO_BOOT_TIMEOUT` (ms).
 - `--headed` shows the Studio window to watch a hang. CLI-only.
+- When Studio loads local plugins from a folder other than the per-OS default,
+  set `pluginsDirectory` or `JEST_ROBLOX_PLUGINS_DIR` to its absolute path.
 - A CI machine with Studio installed would pick this backend; pass
   `--backend open-cloud` to keep CI remote.
 

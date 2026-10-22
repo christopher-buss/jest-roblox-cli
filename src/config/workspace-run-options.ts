@@ -31,6 +31,7 @@ interface ResolvedOptionalFields {
 	outputFile: string | undefined;
 	parallel: "auto" | number | undefined;
 	placeId: string | undefined;
+	pluginsDirectory: string | undefined;
 	studioPath: string | undefined;
 	universeId: string | undefined;
 }
@@ -106,6 +107,10 @@ const OPTIONAL_FIELD_SPECS = {
  * override them, so a disagreement can only be settled in the configs.
  */
 const CONSENSUS_ONLY_SPECS = {
+	pluginsDirectory: {
+		name: "pluginsDirectory",
+		readConfig: (entry) => entry.pluginsDirectory,
+	},
 	workspaceGameOutput: {
 		name: "workspace.gameOutput",
 		readConfig: (entry) => entry.workspace?.gameOutput,
@@ -243,6 +248,10 @@ function resolveOptionalFields(
 		),
 		parallel: resolveOptionalField(cli, perPackageConfigs, OPTIONAL_FIELD_SPECS.parallel),
 		placeId: resolveOptionalField(cli, perPackageConfigs, OPTIONAL_FIELD_SPECS.placeId),
+		pluginsDirectory: computeConsensus(
+			perPackageConfigs,
+			CONSENSUS_ONLY_SPECS.pluginsDirectory,
+		),
 		studioPath: resolveOptionalField(cli, perPackageConfigs, OPTIONAL_FIELD_SPECS.studioPath),
 		universeId: resolveOptionalField(cli, perPackageConfigs, OPTIONAL_FIELD_SPECS.universeId),
 	};

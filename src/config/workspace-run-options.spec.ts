@@ -24,6 +24,7 @@ describe(buildWorkspaceRunOptions, () => {
 		["parallel", { parallel: 1 }, { parallel: 2 }],
 		["placeId", { placeId: "1" }, { placeId: "2" }],
 		["studioPath", { studioPath: "a.exe" }, { studioPath: "b.exe" }],
+		["pluginsDirectory", { pluginsDirectory: "/a" }, { pluginsDirectory: "/b" }],
 		["universeId", { universeId: "1" }, { universeId: "2" }],
 		[
 			"workspace.gameOutput",
@@ -443,6 +444,33 @@ describe(buildWorkspaceRunOptions, () => {
 			});
 
 			expect(result.studioPath).toBeUndefined();
+		});
+	});
+
+	describe("pluginsDirectory resolution", () => {
+		it("should propagate per-package pluginsDirectory when all agree", () => {
+			expect.assertions(1);
+
+			const result = buildWorkspaceRunOptions({
+				cli: {},
+				perPackageConfigs: [
+					{ name: "alpha", config: { pluginsDirectory: "/plugins" } },
+					{ name: "beta", config: { pluginsDirectory: "/plugins" } },
+				],
+			});
+
+			expect(result.pluginsDirectory).toBe("/plugins");
+		});
+
+		it("should leave pluginsDirectory out when no one declares it", () => {
+			expect.assertions(1);
+
+			const result = buildWorkspaceRunOptions({
+				cli: {},
+				perPackageConfigs: [{ name: "alpha", config: {} }],
+			});
+
+			expect(result).not.toHaveProperty("pluginsDirectory");
 		});
 	});
 

@@ -294,6 +294,7 @@ function resolveWorkspaceBackend(
 				// `headed` is CLI-only — read straight from `cli`, not the
 				// consensus-resolved run options.
 				headed: cli.headed,
+				pluginsDirectory: runOptions.pluginsDirectory,
 				studioPath: runOptions.studioPath,
 			}),
 		};

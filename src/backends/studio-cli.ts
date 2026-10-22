@@ -37,7 +37,7 @@ import {
 	type RunPayload,
 	type RunPayloadRequest,
 } from "./plugin-payload.ts";
-import type { ManagedPluginInstall } from "./runner-plugin.ts";
+import type { ManagedPluginInstall, RunnerPluginInstallOptions } from "./runner-plugin.ts";
 import { installRunnerPluginAsync } from "./runner-plugin.ts";
 import { configuredStudioPath, discoverStudioPath } from "./studio-discovery.ts";
 import { nodeWebSocketServerFactory } from "./web-socket-server-factory.ts";
@@ -289,6 +289,7 @@ export interface StudioCliOptions {
 		| undefined;
 	/** Process launcher seam; defaults to the real {@link spawnStudio}. */
 	launch?: StudioCliLauncher | undefined;
+	pluginsDirectory?: string | undefined;
 	/** Explicit Studio executable path (override from config / CLI / env). */
 	studioPath?: string | undefined;
 	/** Run timeout in milliseconds. Defaults to 300000. */
@@ -450,12 +451,10 @@ export class StudioCliBackend implements Backend {
 		this.headed = options.headed ?? false;
 		this.installPluginAsync =
 			options.installPluginAsync ??
-			(async (workDirectory) => {
-				return installRunnerPluginAsync({
-					childProcess: this.childProcess,
-					fileSystem,
-					workDirectory,
-				});
+			installPluginInto({
+				childProcess: this.childProcess,
+				fileSystem,
+				pluginsDirectory: options.pluginsDirectory,
 			});
 		this.launch = options.launch ?? spawnStudio;
 		this.studioPath = options.studioPath;
@@ -668,6 +667,12 @@ function resolveBootTimeout(): number {
 	}
 
 	return parsed;
+}
+
+function installPluginInto(
+	install: Except<RunnerPluginInstallOptions, "workDirectory">,
+): (workDirectory: string) => Promise<ManagedPluginInstall | undefined> {
+	return async (workDirectory) => installRunnerPluginAsync({ ...install, workDirectory });
 }
 
 /**

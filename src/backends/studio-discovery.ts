@@ -1,9 +1,11 @@
 // cspell:ignore LOCALAPPDATA mtimes
+import { type } from "arktype";
 import type { Dirent } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import process from "node:process";
 
+import { absolutePathSchema } from "../config/schema.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import { nodeFileSystem } from "../utils/file-system.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
@@ -30,6 +32,7 @@ export interface StudioDiscoveryOptions {
 }
 
 const STUDIO_PATH_ENV = "JEST_ROBLOX_STUDIO_PATH";
+const PLUGINS_DIRECTORY_ENV = "JEST_ROBLOX_PLUGINS_DIR";
 
 const WINDOWS_STUDIO_EXECUTABLE = "RobloxStudioBeta.exe";
 const MACOS_STUDIO_EXECUTABLES = [
@@ -48,6 +51,7 @@ export interface UserDirectoryOptions {
 	homeDirectory?: string | undefined;
 	/** Defaults to `process.platform`. */
 	platform?: NodeJS.Platform | undefined;
+	pluginsDirectory?: string | undefined;
 }
 
 export interface UserDirectories {
@@ -65,8 +69,7 @@ export function configuredStudioPath(
 	studioPath: string | undefined,
 	environment: NodeJS.ProcessEnv = process.env,
 ): string | undefined {
-	const fromEnvironment = environment[STUDIO_PATH_ENV];
-	return studioPath ?? (fromEnvironment === "" ? undefined : fromEnvironment);
+	return studioPath ?? fromEnvironment(environment, STUDIO_PATH_ENV);
 }
 
 /**
@@ -119,23 +122,23 @@ export function discoverUserDirectories({
 	environment = process.env,
 	homeDirectory = os.homedir(),
 	platform = process.platform,
+	pluginsDirectory,
 }: UserDirectoryOptions = {}): undefined | UserDirectories {
-	const localAppData = environment["LOCALAPPDATA"];
-	if (platform === "win32" && localAppData !== undefined && localAppData !== "") {
-		return {
-			plugins: normalizeWindowsPath(path.join(localAppData, "Roblox", "Plugins")),
-			state: normalizeWindowsPath(path.join(localAppData, "jest-roblox")),
-		};
+	const configured = pluginsDirectory ?? environmentPluginsDirectory(environment);
+	const defaults = defaultUserDirectories({ environment, homeDirectory, platform });
+	if (defaults === undefined || configured === undefined) {
+		return defaults;
 	}
 
-	if (platform === "darwin") {
-		return {
-			plugins: path.posix.join(homeDirectory, "Documents", "Roblox", "Plugins"),
-			state: path.posix.join(homeDirectory, "Library", "Caches", "jest-roblox"),
-		};
-	}
+	return {
+		...defaults,
+		plugins: platform === "win32" ? normalizeWindowsPath(configured) : configured,
+	};
+}
 
-	return undefined;
+function fromEnvironment(environment: NodeJS.ProcessEnv, name: string): string | undefined {
+	const value = environment[name];
+	return value === "" ? undefined : value;
 }
 
 function notFound(): Error {
@@ -203,4 +206,45 @@ function discoverMacOs(fileSystem: FileSystem): string {
 	}
 
 	return executable;
+}
+
+function environmentPluginsDirectory(environment: NodeJS.ProcessEnv): string | undefined {
+	const value = fromEnvironment(environment, PLUGINS_DIRECTORY_ENV);
+	if (value === undefined) {
+		return undefined;
+	}
+
+	const result = absolutePathSchema(value);
+	if (result instanceof type.errors) {
+		throw new Error(`${PLUGINS_DIRECTORY_ENV} ${result.summary}`);
+	}
+
+	return result;
+}
+
+function defaultUserDirectories({
+	environment,
+	homeDirectory,
+	platform,
+}: {
+	environment: NodeJS.ProcessEnv;
+	homeDirectory: string;
+	platform: NodeJS.Platform;
+}): undefined | UserDirectories {
+	const localAppData = environment["LOCALAPPDATA"];
+	if (platform === "win32" && localAppData !== undefined && localAppData !== "") {
+		return {
+			plugins: normalizeWindowsPath(path.join(localAppData, "Roblox", "Plugins")),
+			state: normalizeWindowsPath(path.join(localAppData, "jest-roblox")),
+		};
+	}
+
+	if (platform === "darwin") {
+		return {
+			plugins: path.posix.join(homeDirectory, "Documents", "Roblox", "Plugins"),
+			state: path.posix.join(homeDirectory, "Library", "Caches", "jest-roblox"),
+		};
+	}
+
+	return undefined;
 }

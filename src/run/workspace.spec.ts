@@ -481,6 +481,27 @@ describe(runWorkspaceModeAsync, () => {
 			);
 		});
 
+		it("should forward the resolved pluginsDirectory to the studio-cli backend", async () => {
+			expect.assertions(1);
+
+			const harness = setupHappyPath();
+			harness.loadPackageConfig.mockResolvedValue({ pluginsDirectory: "/plugins" });
+			runWorkspaceReturns(harness, [
+				{ displayName: "a", pkg: "a", result: makeExecuteResult() },
+			]);
+
+			await runWorkspaceModeAsync(
+				makeCli({ backend: "studio-cli", packages: "a", workspace: true }),
+				undefined,
+				undefined,
+				harness.dependencies,
+			);
+
+			expect(harness.studioCliBackend).toHaveBeenCalledWith(
+				expect.objectContaining({ pluginsDirectory: "/plugins" }),
+			);
+		});
+
 		it("should forward cli.headed to the studio-cli backend", async () => {
 			expect.assertions(1);
 

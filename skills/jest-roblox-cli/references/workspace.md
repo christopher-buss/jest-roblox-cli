@@ -59,9 +59,9 @@ this source.
 The workspace-root config is not a source of truth for package behavior.
 
 - **Run options** (`backend`, `color`, `formatters`, `gameOutput`, `outputFile`,
-  `parallel`, `placeId`, `port`, `silent`, `studioPath`, `universeId`,
-  `workspace.*`) resolve as CLI flag > unanimous per-package value
-  > default. Packages that disagree fail the run.
+  `parallel`, `placeId`, `pluginsDirectory`, `port`, `silent`, `studioPath`,
+  `universeId`, `workspace.*`) resolve as CLI flag > unanimous per-package
+  value > default. Packages that disagree fail the run.
 - **Everything else** (`placeFile`, `timeout`, `jestPath`, `luauRoots`, `test:`
   fields, …) is read from each package's own config or the shared config it
   extends.

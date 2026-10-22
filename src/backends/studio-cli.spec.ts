@@ -106,6 +106,14 @@ function useResultDeadlineTimers(): void {
 	});
 }
 
+function stubPlatform(platform: NodeJS.Platform): void {
+	const original = Object.getOwnPropertyDescriptor(nodeProcess, "platform")!;
+	Object.defineProperty(nodeProcess, "platform", { value: platform });
+	onTestFinished(() => {
+		Object.defineProperty(nodeProcess, "platform", original);
+	});
+}
+
 function makeFakeProcess(): FakeProcess {
 	const errors = new EventEmitter();
 	return {
@@ -1535,11 +1543,7 @@ describe(StudioCliBackend, () => {
 
 		const { fileSystem } = createMemoryFileSystem();
 		vi.stubEnv("LOCALAPPDATA", "/local");
-		const platform = Object.getOwnPropertyDescriptor(nodeProcess, "platform")!;
-		Object.defineProperty(nodeProcess, "platform", { value: "win32" });
-		onTestFinished(() => {
-			Object.defineProperty(nodeProcess, "platform", platform);
-		});
+		stubPlatform("win32");
 		let bootstrap = "";
 		const execFile = vi.fn<RojoExec>((_file, args, _options, done) => {
 			fileSystem.writeFileSync(args[3]!, "rbxm-bytes");
@@ -1564,6 +1568,33 @@ describe(StudioCliBackend, () => {
 		expect(bootstrap).toContain(
 			`"pluginKey":"${pluginFile!.slice("JestRobloxRunner.cli-".length, -".rbxm".length)}"`,
 		);
+	});
+
+	it("should install the managed plugin into the configured plugins folder by default", async () => {
+		expect.assertions(1);
+
+		const { fileSystem } = createMemoryFileSystem();
+		vi.stubEnv("LOCALAPPDATA", "/local");
+		stubPlatform("win32");
+		const execFile = vi.fn<RojoExec>((_file, args, _options, done) => {
+			fileSystem.writeFileSync(args[3]!, "rbxm-bytes");
+			done(null, "", "");
+		});
+		const backend = new StudioCliBackend({
+			buildPlaceAsync: fakeBuildPlace(),
+			childProcess: fromAny({ execFile }),
+			discover: () => "C:/Studio/RobloxStudioBeta.exe",
+			fileSystem,
+			launch: replyWith(fileSystem, {}).launch,
+			pluginsDirectory: "D:/Studio/Plugins",
+			webSocketServerFactory,
+		});
+
+		await backend.runTestsAsync(singleJob);
+
+		expect(fileSystem.readdirSync("D:/Studio/Plugins")).toStrictEqual([
+			expect.stringMatching(/^JestRobloxRunner\.cli-.+\.rbxm$/),
+		]);
 	});
 
 	it("should fall back to JEST_ROBLOX_STUDIO_PATH when no override is given", async () => {

@@ -5,6 +5,7 @@ import * as path from "node:path";
 import process from "node:process";
 import type { Except } from "type-fest";
 
+import { isAbsolutePath, normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import type { TypecheckConfig } from "./resolve-typecheck-config.ts";
 
 export type Backend = "auto" | "open-cloud" | "studio" | "studio-cli";
@@ -420,6 +421,8 @@ export interface Config {
 	placeFile?: string;
 	/** Open Cloud place id to publish/run against. */
 	placeId?: string;
+	/** Absolute Studio plugins folder path; also `JEST_ROBLOX_PLUGINS_DIR`. */
+	pluginsDirectory?: string;
 	/** WebSocket port for the Studio backend. Default `3001`. */
 	port?: number;
 	/**
@@ -584,6 +587,7 @@ export interface WorkspaceRunOptions {
 	outputFile?: string;
 	parallel?: "auto" | number;
 	placeId?: string;
+	pluginsDirectory?: string;
 	port: number;
 	silent: boolean;
 	/**
@@ -878,6 +882,14 @@ const formatterEntrySchema = type("string").or(type(["string", type("object")]))
 
 const projectEntrySchema = type("string").or(inlineProjectSchema);
 
+export const absolutePathSchema: Type<string> = type("string").narrow((value, ctx) => {
+	if (isAbsolutePath(normalizeWindowsPath(value))) {
+		return true;
+	}
+
+	return ctx.reject({ actual: `"${value}"`, expected: "an absolute path" });
+});
+
 const globalTestConfigSchema = type({
 	"+": "reject",
 	...sharedTestDefinition,
@@ -937,6 +949,7 @@ export const configSchema: Type<Config> = type({
 	"parallel?": type("'auto'").or("number.integer >= 1"),
 	"placeFile?": "string",
 	"placeId?": "string",
+	"pluginsDirectory?": absolutePathSchema,
 	"port?": "number",
 	"rojoProject?": "string",
 	"rootDir?": "string",
@@ -1008,6 +1021,7 @@ export const ROOT_CLI_KEYS_LIST: ReadonlyArray<RootCliKey> = [
 	"parallel",
 	"placeFile",
 	"placeId",
+	"pluginsDirectory",
 	"port",
 	"rojoProject",
 	"rootDir",

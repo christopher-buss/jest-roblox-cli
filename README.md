@@ -168,22 +168,23 @@ presents output, not how any individual package runs. In `--workspace` mode they
 resolve as: CLI flag > unanimous per-package declaration > default. Mixed
 per-package declarations error loudly.
 
-| Field                  | What it does                                                                                                                                                                 | Default       |
-| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- |
-| `backend`              | `"auto"`, `"open-cloud"`, `"studio"`, or `"studio-cli"`                                                                                                                      | `"auto"`      |
-| `color`                | Use ANSI colors in console output                                                                                                                                            | `true`        |
-| `formatters`           | Output formatters (`"default"`, `"agent"`, `"json"`, `"github-actions"`)                                                                                                     | `["default"]` |
-| `gameOutput`           | Write Game Output to a file — a path, or `true` for `game-output.log` under the root. In `--workspace` mode this is one grouped aggregate file across every package          | —             |
-| `outputFile`           | Write the Jest result JSON — a path, or `true` for `jest-output.log` under the root. In `--workspace` mode this is the single merged result across every package             | —             |
-| `workspace.exclude`    | Globs (workspace-root-relative) naming package directories an enumerated run must skip; `--packages` overrides it                                                            | —             |
-| `workspace.gameOutput` | `true` to also emit per-package Game Output files under `.jest-roblox/output/` (`--workspace` only)                                                                          | —             |
-| `workspace.outputFile` | `true` to also emit per-package result files under `.jest-roblox/output/` (`--workspace` only)                                                                               | —             |
-| `parallel`             | Concurrent Open Cloud sessions, or `"auto"` (= `min(jobs, 3)`). Each session costs one task create against Roblox's create limit. studio-cli ignores it and runs one session | one session   |
-| `placeId`              | Open Cloud place ID                                                                                                                                                          | —             |
-| `port`                 | WebSocket port for Studio backend                                                                                                                                            | `3001`        |
-| `silent`               | Suppress console output                                                                                                                                                      | `false`       |
-| `studioPath`           | Roblox Studio executable for the `studio-cli` backend (auto-detected if unset; also `--studioPath` / `JEST_ROBLOX_STUDIO_PATH`)                                              | —             |
-| `universeId`           | Open Cloud universe ID                                                                                                                                                       | —             |
+| Field                  | What it does                                                                                                                                                                 | Default                      |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------- |
+| `backend`              | `"auto"`, `"open-cloud"`, `"studio"`, or `"studio-cli"`                                                                                                                      | `"auto"`                     |
+| `color`                | Use ANSI colors in console output                                                                                                                                            | `true`                       |
+| `formatters`           | Output formatters (`"default"`, `"agent"`, `"json"`, `"github-actions"`)                                                                                                     | `["default"]`                |
+| `gameOutput`           | Write Game Output to a file — a path, or `true` for `game-output.log` under the root. In `--workspace` mode this is one grouped aggregate file across every package          | —                            |
+| `outputFile`           | Write the Jest result JSON — a path, or `true` for `jest-output.log` under the root. In `--workspace` mode this is the single merged result across every package             | —                            |
+| `workspace.exclude`    | Globs (workspace-root-relative) naming package directories an enumerated run must skip; `--packages` overrides it                                                            | —                            |
+| `workspace.gameOutput` | `true` to also emit per-package Game Output files under `.jest-roblox/output/` (`--workspace` only)                                                                          | —                            |
+| `workspace.outputFile` | `true` to also emit per-package result files under `.jest-roblox/output/` (`--workspace` only)                                                                               | —                            |
+| `parallel`             | Concurrent Open Cloud sessions, or `"auto"` (= `min(jobs, 3)`). Each session costs one task create against Roblox's create limit. studio-cli ignores it and runs one session | one session                  |
+| `placeId`              | Open Cloud place ID                                                                                                                                                          | —                            |
+| `pluginsDirectory`     | Absolute path of the folder Studio loads local plugins from, where `studio-cli` installs its runner plugin (also `JEST_ROBLOX_PLUGINS_DIR`)                                  | per-OS Studio plugins folder |
+| `port`                 | WebSocket port for Studio backend                                                                                                                                            | `3001`                       |
+| `silent`               | Suppress console output                                                                                                                                                      | `false`                      |
+| `studioPath`           | Roblox Studio executable for the `studio-cli` backend (auto-detected if unset; also `--studioPath` / `JEST_ROBLOX_STUDIO_PATH`)                                              | —                            |
+| `universeId`           | Open Cloud universe ID                                                                                                                                                       | —                            |
 
 #### Per-package fields
 
@@ -610,6 +611,12 @@ once they have gone unused for a day, and never touches a plugin you installed
 yourself. Each run asks for its own plugin by name, so any other copy in the
 folder stands down; a copy that predates the key check can still answer first,
 and the error then names the files to remove.
+
+The plugins folder is `%LOCALAPPDATA%\Roblox\Plugins` on Windows and
+`~/Documents/Roblox/Plugins` on macOS. If Studio loads local plugins from a
+different folder, set `pluginsDirectory` (config key) or
+`JEST_ROBLOX_PLUGINS_DIR` to its absolute path; the config key wins. The CLI
+then installs its plugin there and sweeps only that folder.
 
 `auto` selects it whenever Studio is installed. Studio is auto-discovered
 per-OS; override the executable with `studioPath` (config key), `--studioPath`,

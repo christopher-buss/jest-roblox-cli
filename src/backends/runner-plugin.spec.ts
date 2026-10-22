@@ -394,4 +394,61 @@ describe(installRunnerPluginAsync, () => {
 			fileSystem.existsSync(`${usageDirectory}/JestRobloxRunner.cli-${install!.key}.rbxm`),
 		).toBeTrue();
 	});
+
+	it.for([
+		{ environment: {}, pluginsDirectory: "/custom/Plugins", source: "pluginsDirectory" },
+		{
+			environment: { JEST_ROBLOX_PLUGINS_DIR: "/custom/Plugins" },
+			pluginsDirectory: undefined,
+			source: "JEST_ROBLOX_PLUGINS_DIR",
+		},
+	])("should install into and sweep the folder $source names", async (discovery) => {
+		expect.assertions(2);
+
+		const idlePlugin = "/custom/Plugins/JestRobloxRunner.cli-1.0.0-aaaaaaaa.rbxm";
+		const { fileSystem } = createMemoryFileSystem({ [idlePlugin]: "" });
+		fileSystem.utimesSync(
+			idlePlugin,
+			new Date(NOW - 25 * HOUR_MS),
+			new Date(NOW - 25 * HOUR_MS),
+		);
+		const { childProcess } = rojoChildProcess(fileSystem);
+
+		const install = await installRunnerPluginAsync({
+			childProcess,
+			environment: discovery.environment,
+			fileSystem,
+			homeDirectory: "/Users/dev",
+			platform: "darwin",
+			pluginsDirectory: discovery.pluginsDirectory,
+			workDirectory: "/repo/.jest-roblox/studio-cli",
+		});
+
+		expect(fileSystem.readdirSync("/custom/Plugins")).toStrictEqual([
+			`JestRobloxRunner.cli-${install!.key}.rbxm`,
+		]);
+		expect(fileSystem.existsSync("/Users/dev/Documents/Roblox/Plugins")).toBeFalse();
+	});
+
+	it("should keep the per-OS plugins folder over an empty JEST_ROBLOX_PLUGINS_DIR", async () => {
+		expect.assertions(1);
+
+		const { fileSystem } = createMemoryFileSystem();
+		const { childProcess } = rojoChildProcess(fileSystem);
+
+		const install = await installRunnerPluginAsync({
+			childProcess,
+			environment: { JEST_ROBLOX_PLUGINS_DIR: "" },
+			fileSystem,
+			homeDirectory: "/Users/dev",
+			platform: "darwin",
+			workDirectory: "/repo/.jest-roblox/studio-cli",
+		});
+
+		expect(
+			fileSystem.existsSync(
+				`/Users/dev/Documents/Roblox/Plugins/JestRobloxRunner.cli-${install!.key}.rbxm`,
+			),
+		).toBeTrue();
+	});
 });

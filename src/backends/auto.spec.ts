@@ -24,6 +24,23 @@ function makeCli(overrides: Partial<CliOptions> = {}): CliOptions {
 	return overrides;
 }
 
+function makeTemporaryDirectory(): string {
+	const directory = fs.mkdtempSync(path.join(os.tmpdir(), "jest-roblox-auto-"));
+	onTestFinished(() => {
+		fs.rmSync(directory, { force: true, recursive: true });
+	});
+
+	return directory;
+}
+
+function stubPlatform(platform: NodeJS.Platform): void {
+	const original = Object.getOwnPropertyDescriptor(process, "platform")!;
+	Object.defineProperty(process, "platform", { value: platform });
+	onTestFinished(() => {
+		Object.defineProperty(process, "platform", original);
+	});
+}
+
 function stubNoCredentials(): void {
 	vi.stubEnv("ROBLOX_OPEN_CLOUD_API_KEY", undefined);
 	vi.stubEnv("ROBLOX_UNIVERSE_ID", undefined);
@@ -224,10 +241,7 @@ describe(resolveBackendAsync, () => {
 	it("should forward the configured Studio path to the studio-cli backend", async () => {
 		expect.assertions(1);
 
-		const rootDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "jest-roblox-auto-"));
-		onTestFinished(() => {
-			fs.rmSync(rootDirectory, { force: true, recursive: true });
-		});
+		const rootDirectory = makeTemporaryDirectory();
 		const configuredPath = path.join(rootDirectory, "configured-studio.exe");
 		vi.stubEnv("JEST_ROBLOX_STUDIO_PATH", path.join(rootDirectory, "environment-studio.exe"));
 
@@ -247,6 +261,41 @@ describe(resolveBackendAsync, () => {
 		).rejects.toThrowWithMessage(
 			Error,
 			`Roblox Studio not found at studioPath override: ${configuredPath}`,
+		);
+	});
+
+	it("should skip the relative env plugins folder when the config key reaches studio-cli", async () => {
+		expect.assertions(2);
+
+		const rootDirectory = makeTemporaryDirectory();
+		const studioPath = path.join(rootDirectory, "RobloxStudioBeta.exe");
+		fs.writeFileSync(studioPath, "");
+		stubPlatform("darwin");
+		vi.stubEnv("JEST_ROBLOX_PLUGINS_DIR", "environment-plugins");
+		vi.stubEnv("PATH", "");
+
+		async function runAsync(pluginsDirectory: string | undefined): Promise<void> {
+			const config = makeConfig({
+				backend: "studio-cli",
+				collectCoverage: true,
+				placeFile: path.join(rootDirectory, "place.rbxl"),
+				pluginsDirectory,
+				rootDir: rootDirectory,
+				studioPath,
+			});
+			const backend = await resolveBackendAsync(makeCli(), config);
+			await backend.runTestsAsync({
+				jobs: [{ config, displayName: "project", testFiles: ["test.spec.ts"] }],
+			});
+		}
+
+		await expect(runAsync(undefined)).rejects.toThrowWithMessage(
+			Error,
+			/^JEST_ROBLOX_PLUGINS_DIR must be an absolute path/,
+		);
+		await expect(runAsync(path.join(rootDirectory, "Plugins"))).rejects.toThrowWithMessage(
+			Error,
+			"rojo was not found on PATH",
 		);
 	});
 
