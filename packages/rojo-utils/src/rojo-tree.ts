@@ -113,6 +113,12 @@ export function rebaseTreePaths(
 			continue;
 		}
 
+		if (key === "$path" && isOptionalPath(value)) {
+			const mountPath = resolveNativeMountPath(fromDirectory, value.optional);
+			result[key] = { optional: relative(toDirectory, mountPath).replaceAll("\\", "/") };
+			continue;
+		}
+
 		if (key.startsWith("$") || !isRojoTreeNode(value)) {
 			result[key] = value;
 			continue;
@@ -254,6 +260,14 @@ function resolveRootRelativePath(
 	return relative(originalRoot, mountPath).replaceAll("\\", "/");
 }
 
+function resolveOptionalPath(
+	currentDirectory: string,
+	value: { optional: string },
+	originalRoot: string,
+): { optional: string } {
+	return { optional: resolveRootRelativePath(currentDirectory, value.optional, originalRoot) };
+}
+
 function resolveTree(
 	node: RojoTreeNode,
 	currentDirectory: string,
@@ -281,12 +295,13 @@ function resolveTree(
 			continue;
 		}
 
-		if (key.startsWith("$") || !isRojoTreeNode(value)) {
+		if (key === "$path" && isOptionalPath(value)) {
+			resolved[key] = resolveOptionalPath(currentDirectory, value, originalRoot);
+		} else if (key.startsWith("$") || !isRojoTreeNode(value)) {
 			resolved[key] = value;
-			continue;
+		} else {
+			resolved[key] = resolveTree(value, currentDirectory, originalRoot, context);
 		}
-
-		resolved[key] = resolveTree(value, currentDirectory, originalRoot, context);
 	}
 
 	return resolved;

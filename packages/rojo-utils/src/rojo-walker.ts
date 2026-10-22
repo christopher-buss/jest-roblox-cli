@@ -10,6 +10,7 @@ import {
 	ROJO_DEFAULT_NAME,
 	ROJO_MODULE_EXTS,
 } from "./rojo-file-paths.ts";
+import { unwrapPath } from "./types.ts";
 
 export type RojoTree = RojoTreeMembers & RojoTreeMetadata;
 
@@ -112,13 +113,9 @@ class RojoWalker {
 			this.rbxPath.push(name);
 		}
 
-		if (tree.$path !== undefined) {
-			this.parsePath(
-				path.resolve(
-					basePath,
-					typeof tree.$path === "string" ? tree.$path : tree.$path.optional,
-				),
-			);
+		const treePath = unwrapPath(tree.$path);
+		if (treePath !== undefined) {
+			this.parsePath(path.resolve(basePath, treePath));
 		}
 
 		if (tree.$className === "DataModel") {

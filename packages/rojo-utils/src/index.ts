@@ -27,5 +27,5 @@ export {
 export type { ResolvedNestedProjectSources } from "./rojo-tree.ts";
 export type { RojoTree } from "./rojo-walker.ts";
 export { findInTree, matchNodePath } from "./tree-mapper.ts";
-export { isOptionalPath, isRojoTreeNode } from "./types.ts";
+export { isOptionalPath, isRojoTreeNode, unwrapPath } from "./types.ts";
 export type { LoadedRojoProject, RojoProject, RojoTreeNode } from "./types.ts";

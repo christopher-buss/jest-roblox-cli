@@ -4,12 +4,24 @@ import { findInTree, matchNodePath } from "./tree-mapper.ts";
 import type { RojoTreeNode } from "./types.ts";
 
 describe(matchNodePath, () => {
-	it("should return undefined when $path is not a string", () => {
+	it("should match an optional $path exactly", () => {
 		expect.assertions(1);
 
-		const node: RojoTreeNode = { $path: { optional: "maybe" } };
+		const node = { $path: { optional: "out/client" } } satisfies RojoTreeNode;
 
-		expect(matchNodePath(node, "out/client", "ReplicatedStorage/client")).toBeUndefined();
+		expect(matchNodePath(node, "out/client", "ReplicatedStorage/client")).toBe(
+			"ReplicatedStorage/client",
+		);
+	});
+
+	it("should match a target under an optional $path", () => {
+		expect.assertions(1);
+
+		const node = { $path: { optional: "out/client" } } satisfies RojoTreeNode;
+
+		expect(matchNodePath(node, "out/client/ui", "ReplicatedStorage/client")).toBe(
+			"ReplicatedStorage/client/ui",
+		);
 	});
 
 	it("should return DataModel path on exact match", () => {
@@ -78,6 +90,16 @@ const simpleRojoTree: RojoTreeNode = {
 };
 
 describe(findInTree, () => {
+	it("should find an optional $path entry", () => {
+		expect.assertions(1);
+
+		const tree = {
+			ReplicatedStorage: { tests: { $path: { optional: "src/tests" } } },
+		} satisfies RojoTreeNode;
+
+		expect(findInTree(tree, "src/tests", "")).toBe("ReplicatedStorage/tests");
+	});
+
 	it("should find exact $path match", () => {
 		expect.assertions(1);
 

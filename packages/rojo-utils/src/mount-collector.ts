@@ -1,5 +1,5 @@
 import type { RojoTreeNode } from "./types.ts";
-import { isRojoTreeNode } from "./types.ts";
+import { isRojoTreeNode, unwrapPath } from "./types.ts";
 
 export type PathKind = "directory" | "file" | "missing";
 
@@ -34,8 +34,8 @@ function addDirectoryMount(
 	classify: PathClassifier,
 	result: Array<Mount>,
 ): void {
-	const rawPath = node.$path;
-	if (typeof rawPath !== "string") {
+	const rawPath = unwrapPath(node.$path);
+	if (rawPath === undefined) {
 		return;
 	}
 

@@ -38,3 +38,11 @@ export function isRojoTreeNode(value: unknown): value is RojoTreeNode {
 export function isOptionalPath(value: RojoTreeNode[string]): value is { optional: string } {
 	return isRojoTreeNode(value) && typeof value["optional"] === "string";
 }
+
+export function unwrapPath(value: RojoTreeNode[string]): string | undefined {
+	if (typeof value === "string") {
+		return value;
+	}
+
+	return isOptionalPath(value) ? value.optional : undefined;
+}

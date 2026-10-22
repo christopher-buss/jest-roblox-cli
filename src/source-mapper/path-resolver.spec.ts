@@ -47,6 +47,20 @@ describe(createPathResolver, () => {
 		});
 	});
 
+	it("should resolve a stack frame under an optional mount", () => {
+		expect.assertions(1);
+
+		const { fileSystem } = createMemoryFileSystem();
+		const resolver = createPathResolver(
+			{ name: "test", tree: { Shared: { $path: { optional: "out/shared" } } } },
+			{ fileSystem },
+		);
+
+		expect(resolver.resolve("Shared.wallet")).toStrictEqual({
+			filePath: "out/shared/wallet.luau",
+		});
+	});
+
 	it("should resolve through the deepest mount when its parent is also mounted", () => {
 		expect.assertions(1);
 

@@ -137,7 +137,7 @@ describe(collectMounts, () => {
 		expect(classify).not.toHaveBeenCalled();
 	});
 
-	it("should skip $path entries with non-string values", () => {
+	it("should collect an optional directory $path entry", () => {
 		expect.assertions(1);
 
 		const tree = {
@@ -147,7 +147,9 @@ describe(collectMounts, () => {
 			},
 		} satisfies RojoTreeNode;
 
-		expect(collectMounts(tree, "", allDirectories)).toStrictEqual([]);
+		expect(collectMounts(tree, "", allDirectories)).toStrictEqual([
+			{ dataModelPath: "ReplicatedStorage/optional", fsPath: "out/maybe" },
+		]);
 	});
 
 	it("should skip keys that start with $", () => {

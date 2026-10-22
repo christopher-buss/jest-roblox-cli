@@ -30,6 +30,18 @@ describe(createSnapshotPathResolver, () => {
 		});
 	});
 
+	it("should resolve a snapshot under an optional mount", () => {
+		expect.assertions(1);
+
+		const resolver = createSnapshotPathResolver({
+			rojoProject: { name: "test", tree: { Shared: { $path: { optional: "out/shared" } } } },
+		});
+
+		expect(resolver.resolve("Shared/__snapshots__/a.snap.luau")).toStrictEqual({
+			filePath: "out/shared/__snapshots__/a.snap.luau",
+		});
+	});
+
 	it("should resolve virtual path to filesystem path", () => {
 		expect.assertions(1);
 

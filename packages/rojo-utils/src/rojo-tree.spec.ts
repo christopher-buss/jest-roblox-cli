@@ -340,6 +340,30 @@ describe(resolveNestedProjects, () => {
 		expect(result).toStrictEqual(tree);
 	});
 
+	it("should rebase an optional $path inside a nested project", () => {
+		expect.assertions(1);
+
+		const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "rojo-tree-test-"));
+		fs.mkdirSync(path.join(temporaryDirectory, "pkg"));
+		fs.writeFileSync(
+			path.join(temporaryDirectory, "pkg", "default.project.json"),
+			JSON.stringify({ name: "Pkg", tree: { $path: { optional: "src" } } }),
+		);
+
+		const tree = {
+			$className: "DataModel",
+			ReplicatedStorage: { Pkg: { $path: "pkg/default.project.json" } },
+		} satisfies RojoTreeNode;
+
+		const result = resolveNestedProjects(tree, temporaryDirectory);
+		fs.rmSync(temporaryDirectory, { force: true, recursive: true });
+
+		expect(result).toStrictEqual({
+			$className: "DataModel",
+			ReplicatedStorage: { Pkg: { $path: { optional: "pkg/src" } } },
+		});
+	});
+
 	it("should allow the same project file referenced from different branches", () => {
 		expect.assertions(1);
 
@@ -888,17 +912,20 @@ describe(rebaseTreePaths, () => {
 		});
 	});
 
-	it("should leave non-string $path values unchanged", () => {
+	it("should rebase an optional $path and keep its wrapper", () => {
 		expect.assertions(1);
 
 		const base = path.resolve("repo", "pkg");
-		const tree: RojoTreeNode = {
+		const tree = {
 			$className: "DataModel",
-			Workspace: { $path: { optional: "maybe" } },
-		};
+			Workspace: { $path: { optional: "../maybe" } },
+		} satisfies RojoTreeNode;
 
 		const result = rebaseTreePaths(tree, path.join(base, "test"), base);
 
-		expect(result).toStrictEqual(tree);
+		expect(result).toStrictEqual({
+			$className: "DataModel",
+			Workspace: { $path: { optional: "maybe" } },
+		});
 	});
 });

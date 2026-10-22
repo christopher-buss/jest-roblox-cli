@@ -787,6 +787,28 @@ describe(resolveProjectConfig, () => {
 		);
 	});
 
+	it("should map an include root under an optional $path", () => {
+		expect.assertions(1);
+
+		const tree = {
+			$className: "DataModel",
+			ReplicatedStorage: {
+				tests: { $path: { optional: "src/tests" } },
+			},
+		} satisfies RojoTreeNode;
+
+		const project = makeProject({
+			displayName: "optional",
+			include: ["src/tests/**/*.spec.luau"],
+		});
+
+		const result = resolveProjectConfig(project, rootConfig, tree, allDirectories);
+
+		expect(result.rojoMounts).toStrictEqual([
+			{ dataModelPath: "ReplicatedStorage/tests", fsPath: "src/tests" },
+		]);
+	});
+
 	it("should skip file-valued $path entries during auto-expand", () => {
 		expect.assertions(1);
 

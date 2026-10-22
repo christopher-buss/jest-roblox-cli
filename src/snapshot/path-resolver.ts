@@ -1,4 +1,4 @@
-import { isRojoTreeNode } from "@isentinel/rojo-utils";
+import { isRojoTreeNode, unwrapPath } from "@isentinel/rojo-utils";
 
 import type { RojoProject, RojoTreeNode } from "../types/rojo.ts";
 import type { TsconfigMapping } from "../types/tsconfig.ts";
@@ -65,8 +65,9 @@ function buildMappings(tree: RojoTreeNode, prefix: string): Array<[string, strin
 
 		const dataModelPath = prefix ? `${prefix}/${key}` : key;
 
-		if (typeof value.$path === "string") {
-			mappings.push([dataModelPath, value.$path]);
+		const mountPath = unwrapPath(value.$path);
+		if (mountPath !== undefined) {
+			mappings.push([dataModelPath, mountPath]);
 		}
 
 		mappings.push(...buildMappings(value, dataModelPath));

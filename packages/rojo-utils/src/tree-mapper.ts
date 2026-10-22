@@ -1,5 +1,5 @@
 import type { RojoTreeNode } from "./types.ts";
-import { isRojoTreeNode } from "./types.ts";
+import { isRojoTreeNode, unwrapPath } from "./types.ts";
 
 const TRAILING_SLASH = /\/$/;
 
@@ -8,8 +8,8 @@ export function matchNodePath(
 	targetPath: string,
 	childDataModelPath: string,
 ): string | undefined {
-	const nodePath = childNode.$path;
-	if (typeof nodePath !== "string") {
+	const nodePath = unwrapPath(childNode.$path);
+	if (nodePath === undefined) {
 		return undefined;
 	}
 
