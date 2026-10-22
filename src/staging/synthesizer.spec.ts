@@ -3772,6 +3772,110 @@ describe(synthesize, () => {
 			);
 		});
 
+		it("should not error when projects share one leaf and stub", () => {
+			expect.assertions(1);
+
+			const { fileSystem } = createMemoryFileSystem({
+				[FOO_PROJECT]: projectJson({
+					name: "foo-test",
+					tree: {
+						$className: "DataModel",
+						ReplicatedStorage: { $className: "ReplicatedStorage", $path: "out-test" },
+					},
+				}),
+			});
+			const mount = {
+				absStubPath: path.join(FOO_DIR, ".jest-roblox/jest.config.luau"),
+				dataModelPath: "ReplicatedStorage",
+			};
+
+			const result = synthesize({
+				fileSystem,
+				packages: [
+					{
+						packageDirectory: FOO_DIR,
+						rojoProjectPath: FOO_PROJECT,
+						stubMounts: [mount, { ...mount }, { ...mount }],
+					},
+				],
+				wrap: false,
+			});
+
+			expect(
+				descend(parseFixture(result).tree, "ReplicatedStorage", "jest.config")!.$path,
+			).toContain(".jest-roblox/jest.config.luau");
+		});
+
+		it("should error when two stub mounts share a leaf but point at different stubs", () => {
+			expect.assertions(1);
+
+			const { fileSystem } = createMemoryFileSystem({
+				[FOO_PROJECT]: projectJson({
+					name: "foo-test",
+					tree: {
+						$className: "DataModel",
+						ReplicatedStorage: { $className: "ReplicatedStorage", $path: "out-test" },
+					},
+				}),
+			});
+
+			expect(() => {
+				return synthesize({
+					fileSystem,
+					packages: [
+						{
+							packageDirectory: FOO_DIR,
+							rojoProjectPath: FOO_PROJECT,
+							stubMounts: [
+								{
+									absStubPath: path.join(FOO_DIR, ".jest-roblox/a.luau"),
+									dataModelPath: "ReplicatedStorage",
+								},
+								{
+									absStubPath: path.join(FOO_DIR, ".jest-roblox/b.luau"),
+									dataModelPath: "ReplicatedStorage",
+								},
+							],
+						},
+					],
+					wrap: false,
+				});
+			}).toThrowWithMessage(ConfigError, /would overwrite an existing "jest\.config" child/);
+		});
+
+		it("should not error when wrapped packages share one leaf and stub", () => {
+			expect.assertions(1);
+
+			const { fileSystem } = createMemoryFileSystem({
+				[FOO_PROJECT]: projectJson({
+					name: "foo-test",
+					tree: {
+						$className: "DataModel",
+						ReplicatedStorage: { $className: "ReplicatedStorage", $path: "out-test" },
+					},
+				}),
+			});
+			const mount = {
+				absStubPath: path.join(FOO_DIR, ".jest-roblox/jest.config.luau"),
+				dataModelPath: "ReplicatedStorage",
+			};
+
+			expect(() => {
+				return synthesize({
+					fileSystem,
+					packages: [
+						{
+							name: "@halcyon/foo",
+							packageDirectory: FOO_DIR,
+							rojoProjectPath: FOO_PROJECT,
+							stubMounts: [mount, { ...mount }, { ...mount }],
+						},
+					],
+					wrap: true,
+				});
+			}).not.toThrow();
+		});
+
 		// Preservation contract: arbitrary unknown top-level keys (future
 		// Rojo schema additions, user custom fields) must survive
 		// `synthesize(wrap: false)` byte-for-byte, including when

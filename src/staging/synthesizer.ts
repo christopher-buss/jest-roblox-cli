@@ -478,7 +478,7 @@ function assertNoSourceCollision(
 
 	for (const candidate of COLLIDING_SOURCE_FILES) {
 		// `fileSystem.existsSync` needs the OS-native path; only the rojo $path
-		// injection further down needs POSIX normalization.
+		// injection in injectStubMounts needs POSIX normalization.
 		const sourceFile = path.join(leafPath, candidate);
 		if (fileSystem.existsSync(sourceFile)) {
 			throw new ConfigError(
@@ -497,8 +497,14 @@ function injectStubMounts(
 		return;
 	}
 
+	const injected = new Map<RojoTreeNode, string>();
 	for (const mount of stubMounts) {
 		const leaf = walkToLeaf(fileSystem, root, mount.dataModelPath);
+		const stubPath = normalizeWindowsPath(mount.absStubPath);
+		if (injected.get(leaf) === stubPath) {
+			continue;
+		}
+
 		assertNoSourceCollision(fileSystem, leaf, mount.dataModelPath);
 		// Structural collision: the user's project tree already declares a
 		// `jest.config` named-child at this leaf (e.g. they mounted a
@@ -511,9 +517,8 @@ function injectStubMounts(
 			);
 		}
 
-		leaf[STUB_INJECTION_KEY] = {
-			$path: normalizeWindowsPath(mount.absStubPath),
-		};
+		leaf[STUB_INJECTION_KEY] = { $path: stubPath };
+		injected.set(leaf, stubPath);
 	}
 }
 
