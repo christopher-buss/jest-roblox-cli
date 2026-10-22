@@ -1,5 +1,6 @@
 import { type } from "arktype";
 import type buffer from "node:buffer";
+import type { ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { once } from "node:events";
 import * as path from "node:path";
@@ -97,6 +98,8 @@ const GRACEFUL_SHUTDOWN_CAP_MS = 15_000;
  * long enough to be negligible.
  */
 const LOCK_POLL_INTERVAL_MS = 50;
+
+const SIGTERM_GRACE_MS = 5000;
 
 /** Splits Studio's log on either line ending — it writes CRLF on Windows. */
 const LOG_LINE_SPLIT_PATTERN = /\r?\n/u;
@@ -228,8 +231,9 @@ const runFrameSchema = startedMessageSchema
  */
 export interface StudioCliProcess {
 	/**
-	 * Terminate Studio immediately (`TerminateProcess`), skipping graceful
-	 * shutdown. Used on every hung/error/timeout path.
+	 * Terminate Studio now, skipping graceful shutdown: SIGTERM, then SIGKILL
+	 * if it is still alive after a short grace. Used on every
+	 * hung/error/timeout path.
 	 */
 	kill: () => void;
 	/**
@@ -1237,6 +1241,22 @@ function startGracefulTeardown(
 }
 
 /**
+ * Studio in `--task RunScript` mode ignores SIGTERM on macOS, and a live child
+ * holds node's event loop open, so the CLI would never exit.
+ */
+function terminateStudio(child: ChildProcess): void {
+	const escalation = setTimeout(() => {
+		child.kill("SIGKILL");
+		child.unref();
+	}, SIGTERM_GRACE_MS);
+	escalation.unref();
+	child.once("exit", () => {
+		clearTimeout(escalation);
+	});
+	child.kill("SIGTERM");
+}
+
+/**
  * Real launcher: clear a stale `<place>.lock` (a previously killed Studio
  * can't remove its own, and a back-to-back run would otherwise open the place
  * onto it and crash), then spawn Studio and return the handle the host kills.
@@ -1261,7 +1281,7 @@ function spawnStudio(request: StudioCliLaunchRequest): StudioCliProcess {
 
 	return {
 		kill: () => {
-			child.kill();
+			terminateStudio(child);
 		},
 		killOnLockRelease: (graceCapMs) => {
 			// Studio holds `<place>.lock` from open until `ClosePlace` releases
@@ -1277,7 +1297,7 @@ function spawnStudio(request: StudioCliLaunchRequest): StudioCliProcess {
 				}
 
 				clearInterval(timer);
-				child.kill();
+				terminateStudio(child);
 			}, LOCK_POLL_INTERVAL_MS);
 		},
 		onError: (listener) => {

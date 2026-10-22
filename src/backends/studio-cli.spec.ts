@@ -16,6 +16,7 @@ import {
 	mockWebSocketServerFactory as webSocketServerFactory,
 } from "../../test/mocks/mock-web-socket-server.ts";
 import { MockWebSocket } from "../../test/mocks/mock-web-socket.ts";
+import { runAsync } from "../cli.ts";
 import { DEFAULT_CONFIG } from "../config/schema.ts";
 import type { ResolvedConfig } from "../config/schema.ts";
 import type { BuildManifestArtifact } from "../coverage-pipeline/build-manifest.ts";
@@ -1995,13 +1996,29 @@ describe(StudioCliBackend, () => {
 	describe("default launcher (spawnStudio)", () => {
 		// The real spawnStudio clears a stale lock, spawns Studio, and returns a
 		// handle the host can kill; the result arrives over the (mock) server.
-		// The fake child is an EventEmitter with a `kill` spy and `error` event.
 		class FakeChild extends EventEmitter {
-			public readonly kill = vi.fn<ChildProcess["kill"]>();
+			private readonly ignoredSignals: ReadonlyArray<NodeJS.Signals>;
+
+			public readonly kill = vi.fn<ChildProcess["kill"]>((signal) => {
+				const isIgnored = this.ignoredSignals.some((ignored) => ignored === signal);
+				if (!isIgnored) {
+					this.emit("exit", null, signal);
+				}
+
+				return true;
+			});
+			public readonly unref = vi.fn<ChildProcess["unref"]>();
+
+			constructor(ignoredSignals: ReadonlyArray<NodeJS.Signals>) {
+				super();
+				this.ignoredSignals = ignoredSignals;
+			}
 		}
 
-		function stubSpawn() {
-			const child = new FakeChild();
+		function stubSpawn({
+			ignoredSignals = [],
+		}: { ignoredSignals?: Array<NodeJS.Signals> } = {}) {
+			const child = new FakeChild(ignoredSignals);
 			let capturedArgs: Array<string> = [];
 			let capturedFile = "";
 			let capturedOptions: { stdio?: string; windowsHide?: boolean } = {};
@@ -2097,11 +2114,13 @@ describe(StudioCliBackend, () => {
 			throw new Error("the backend never created a result server");
 		}
 
-		// Fake setInterval/Date only (not the microtask queue the result reply
-		// rides on), so the background lock-poll is fully under timer control
-		// while the canned frame still lands normally.
+		// Fake timers only (not the microtask queue the result reply rides on),
+		// so the background lock-poll is fully under timer control while the
+		// canned frame still lands normally.
 		function useLockPollTimers(): void {
-			vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
+			vi.useFakeTimers({
+				toFake: ["setInterval", "clearInterval", "setTimeout", "clearTimeout", "Date"],
+			});
 			onTestFinished(() => {
 				vi.useRealTimers();
 			});
@@ -2204,7 +2223,81 @@ describe(StudioCliBackend, () => {
 			assert(caught instanceof Error);
 
 			expect(caught.message).toMatch(/within 40ms and was terminated/);
-			expect(child.kill).toHaveBeenCalledExactlyOnceWith();
+			expect(child.kill).toHaveBeenCalledExactlyOnceWith("SIGTERM");
+		});
+
+		it("should SIGKILL a timed-out Studio that ignores SIGTERM once the grace period passes", async () => {
+			expect.assertions(2);
+
+			const { fileSystem } = createMemoryFileSystem();
+
+			useResultDeadlineTimers();
+
+			const { args, child, childProcess } = stubSpawn({ ignoredSignals: ["SIGTERM"] });
+			const settled = backendWithDefaultLaunch(fileSystem, childProcess, { bootTimeout: 40 })
+				.runTestsAsync(singleJob)
+				.catch((err: unknown) => err);
+			await settledSpawnAsync(() => args().length > 0);
+			await vi.advanceTimersByTimeAsync(40);
+			await settled;
+			await vi.advanceTimersByTimeAsync(4999);
+
+			expect(child.kill.mock.calls).toStrictEqual([["SIGTERM"]]);
+
+			await vi.advanceTimersByTimeAsync(1);
+
+			expect(child.kill.mock.calls).toStrictEqual([["SIGTERM"], ["SIGKILL"]]);
+		});
+
+		it("should not hold the event loop open while the SIGKILL grace period runs", async () => {
+			expect.assertions(1);
+
+			const { fileSystem } = createMemoryFileSystem();
+
+			const setTimeoutSpy = vi.spyOn(globalThis, "setTimeout");
+
+			const { childProcess } = stubSpawn({ ignoredSignals: ["SIGTERM"] });
+			await backendWithDefaultLaunch(fileSystem, childProcess, { bootTimeout: 40 })
+				.runTestsAsync(singleJob)
+				.catch((err: unknown) => err);
+			const graceIndex = setTimeoutSpy.mock.calls.findIndex(([, delay]) => delay === 5000);
+			const graceTimer: NodeJS.Timeout = fromAny(
+				setTimeoutSpy.mock.results[graceIndex]!.value,
+			);
+			onTestFinished(() => {
+				clearTimeout(graceTimer);
+			});
+
+			expect(graceTimer.hasRef()).toBeFalse();
+		});
+
+		it("should exit with a failure code after a timeout when Studio survives SIGKILL too", async () => {
+			expect.assertions(4);
+
+			const { fileSystem } = createMemoryFileSystem();
+
+			useResultDeadlineTimers();
+			vi.spyOn(nodeProcess.stderr, "write").mockReturnValue(true);
+			const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+
+			const { args, child, childProcess } = stubSpawn({
+				ignoredSignals: ["SIGTERM", "SIGKILL"],
+			});
+			const backend = backendWithDefaultLaunch(fileSystem, childProcess, { bootTimeout: 40 });
+			const exitCode = runAsync([], {
+				fileSystem,
+				loadConfig: async () => singleJob.jobs[0]!.config,
+				runJestRoblox: fromAny(async () => backend.runTestsAsync(singleJob)),
+			});
+			await settledSpawnAsync(() => args().length > 0);
+			await vi.advanceTimersByTimeAsync(5040);
+
+			await expect(exitCode).resolves.toBe(2);
+			expect(consoleError).toHaveBeenCalledWith(
+				expect.stringMatching(/within 40ms and was terminated/),
+			);
+			expect(child.kill.mock.calls).toStrictEqual([["SIGTERM"], ["SIGKILL"]]);
+			expect(child.unref).toHaveBeenCalledExactlyOnceWith();
 		});
 
 		describe("graceful kill on lock release", () => {
@@ -2235,7 +2328,30 @@ describe(StudioCliBackend, () => {
 				fileSystem.rmSync(lockPath);
 				await vi.advanceTimersByTimeAsync(1000);
 
-				expect(child.kill).toHaveBeenCalledExactlyOnceWith();
+				expect(child.kill).toHaveBeenCalledExactlyOnceWith("SIGTERM");
+			});
+
+			it("should SIGKILL a Studio that ignores SIGTERM after the lock releases", async () => {
+				expect.assertions(2);
+
+				const { fileSystem } = createMemoryFileSystem();
+
+				useLockPollTimers();
+
+				const { args, child, childProcess } = stubSpawn({ ignoredSignals: ["SIGTERM"] });
+				const previousServer = getLastCreatedServer();
+				const promise = backendWithDefaultLaunch(fileSystem, childProcess).runTestsAsync(
+					singleJob,
+				);
+				await replyOverServerAsync(fileSystem, args, previousServer);
+				await promise;
+				await vi.advanceTimersByTimeAsync(5000);
+
+				expect(child.kill.mock.calls).toStrictEqual([["SIGTERM"]]);
+
+				await vi.advanceTimersByTimeAsync(50);
+
+				expect(child.kill.mock.calls).toStrictEqual([["SIGTERM"], ["SIGKILL"]]);
 			});
 
 			it("should hard-kill after the grace cap when the lock is never released", async () => {
@@ -2262,7 +2378,7 @@ describe(StudioCliBackend, () => {
 
 				await vi.advanceTimersByTimeAsync(1000);
 
-				expect(child.kill).toHaveBeenCalledExactlyOnceWith();
+				expect(child.kill).toHaveBeenCalledExactlyOnceWith("SIGTERM");
 			});
 		});
 	});
