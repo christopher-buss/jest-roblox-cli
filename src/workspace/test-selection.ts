@@ -229,16 +229,7 @@ function applyEmptyPackagePolicy({
 		passByPackage.set(ctx.info.name, ctx.pkgConfig.passWithNoTests);
 	}
 
-	const entriesByPackage = new Map<string, Array<PendingEntry>>();
-	for (const entry of allEntries) {
-		let group = entriesByPackage.get(entry.pkg);
-		if (group === undefined) {
-			group = [];
-			entriesByPackage.set(entry.pkg, group);
-		}
-
-		group.push(entry);
-	}
+	const entriesByPackage = Map.groupBy(allEntries, (entry) => entry.pkg);
 
 	const emptyPackageErrors: Array<string> = [];
 	const pending: Array<PendingEntry> = [];
