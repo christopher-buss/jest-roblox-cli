@@ -23,12 +23,17 @@ export type ParsedManifest<T> =
  * `missing`; any other IO error propagates rather than masquerading as
  * malformed JSON.
  */
-export function parseVersionedManifest<T>(
-	filePath: string,
-	schema: type<T>,
-	expectedVersion: number,
-	fileSystem: FileSystem = nodeFileSystem,
-): ParsedManifest<distill.Out<T>> {
+export function parseVersionedManifest<T>({
+	expectedVersion,
+	filePath,
+	fileSystem = nodeFileSystem,
+	schema,
+}: {
+	expectedVersion: number;
+	filePath: string;
+	fileSystem?: FileSystem;
+	schema: type<T>;
+}): ParsedManifest<distill.Out<T>> {
 	let contents: string;
 	try {
 		contents = fileSystem.readFileSync(filePath, "utf-8");

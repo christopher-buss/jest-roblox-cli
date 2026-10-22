@@ -63,7 +63,7 @@ export function createFrameMapper(
 			".luau",
 		);
 
-		return { luauPath, source: mapToSource(context, luauPath, frame) };
+		return { luauPath, source: mapToSource({ ...context, frame, luauPath }) };
 	};
 }
 
@@ -101,12 +101,17 @@ export function createLineMapper(
 	};
 }
 
-function mapToSource(
-	{ fileSystem, v3Mapper }: FrameMapperContext,
-	luauPath: string,
-	frame: StackFrame,
-): MappedSource | undefined {
-	const v3Result = v3Mapper.mapFromSourceMap(luauPath, frame.line, frame.column);
+function mapToSource({
+	fileSystem,
+	frame,
+	luauPath,
+	v3Mapper,
+}: FrameMapperContext & { frame: StackFrame; luauPath: string }): MappedSource | undefined {
+	const v3Result = v3Mapper.mapFromSourceMap({
+		column: frame.column,
+		line: frame.line,
+		luauPath,
+	});
 	// oxlint-disable-next-line typescript/prefer-optional-chain -- explicit checks needed for type narrowing
 	if (v3Result === undefined || v3Result.source === null || v3Result.line === null) {
 		return undefined;

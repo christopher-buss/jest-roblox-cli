@@ -50,6 +50,12 @@ interface StreamingOptions {
 	ttlSeconds?: number;
 }
 
+interface WorkStealingOptions extends ScriptOptions {
+	inputs: ReadonlyArray<MaterializerInput>;
+	invisibilityWindowSeconds: number;
+	queueId: string;
+}
+
 interface EntryPayload {
 	config: JestArgv;
 	pkg: string;
@@ -102,17 +108,12 @@ export function generateMaterializerScript(
  * immediately after the package's `Jest.runCLI` returns, so the CLI can
  * stream output without waiting for the whole task envelope.
  */
-export function generateWorkStealingScript(
-	inputs: ReadonlyArray<MaterializerInput>,
-	queueId: string,
-	invisibilityWindowSeconds: number,
-	options: ScriptOptions = {},
-): string {
+export function generateWorkStealingScript(options: WorkStealingOptions): string {
 	const payload: WorkStealingPayload = {
 		...bailFields(options),
-		entries: buildEntries(inputs),
-		invisibilityWindowSeconds,
-		queueId,
+		entries: buildEntries(options.inputs),
+		invisibilityWindowSeconds: options.invisibilityWindowSeconds,
+		queueId: options.queueId,
 		queueTtlSeconds: options.queueTtlSeconds,
 		resultBudgetBytes: options.resultBudgetBytes,
 		...streamingFields(options.streaming),

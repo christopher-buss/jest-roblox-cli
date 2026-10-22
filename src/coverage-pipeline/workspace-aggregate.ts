@@ -61,7 +61,7 @@ export function aggregateWorkspaceCoverage(
 			continue;
 		}
 
-		const mapped = mapCoverage(entry.coverageData, entry.manifest);
+		const mapped = mapCoverage({ coverageData: entry.coverageData, manifest: entry.manifest });
 		perPackage.push({
 			pkg: entry.pkg,
 			universe: filterCoverageUniverse(mapped, {

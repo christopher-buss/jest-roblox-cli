@@ -33,7 +33,7 @@ describe(writeCoverageMap, () => {
 
 		const map = exampleCoverageMap();
 
-		writeCoverageMap("/coverage/out/init.cov-map.json", map, fileSystem);
+		writeCoverageMap({ filePath: "/coverage/out/init.cov-map.json", fileSystem, map });
 
 		expect(
 			expectOk(readCoverageMap("/coverage/out/init.cov-map.json", fileSystem)),
@@ -69,7 +69,7 @@ describe(writeCoverageMap, () => {
 			},
 		};
 
-		writeCoverageMap("/coverage/out/x.cov-map.json", map, fileSystem);
+		writeCoverageMap({ filePath: "/coverage/out/x.cov-map.json", fileSystem, map });
 
 		expect(expectOk(readCoverageMap("/coverage/out/x.cov-map.json", fileSystem))).toStrictEqual(
 			map,
@@ -81,7 +81,11 @@ describe(writeCoverageMap, () => {
 
 		const { fileSystem, volume } = createMemoryFileSystem();
 
-		writeCoverageMap("/deep/nested/out/x.cov-map.json", exampleCoverageMap(), fileSystem);
+		writeCoverageMap({
+			filePath: "/deep/nested/out/x.cov-map.json",
+			fileSystem,
+			map: exampleCoverageMap(),
+		});
 
 		expect(volume.existsSync("/deep/nested/out/x.cov-map.json")).toBeTrue();
 	});
@@ -101,7 +105,11 @@ describe(writeCoverageMap, () => {
 		});
 		const readSpy = vi.spyOn(fileSystem, "readdirSync");
 
-		writeCoverageMap("/coverage/out/init.cov-map.json", exampleCoverageMap(), fileSystem);
+		writeCoverageMap({
+			filePath: "/coverage/out/init.cov-map.json",
+			fileSystem,
+			map: exampleCoverageMap(),
+		});
 
 		expect(readSpy).not.toHaveBeenCalled();
 		expect(volume.existsSync("/coverage/out/init.cov-map.json.tmp.4242.a1b2c3d4")).toBeTrue();

@@ -143,7 +143,7 @@ export function instrument(options: InstrumentOptions): CoverageManifest {
 		version: MANIFEST_VERSION,
 	};
 
-	writeManifest(manifestPath, manifest, fileSystem);
+	writeManifest({ filePath: manifestPath, fileSystem, manifest });
 
 	return manifest;
 }
@@ -153,11 +153,15 @@ export function instrument(options: InstrumentOptions): CoverageManifest {
  * it. The cache holds every level it is given, so each directory costs one
  * `stat` per run rather than one per file written under it.
  */
-function ensureShadowDirectory(
-	fileSystem: FileSystem,
-	directory: string,
-	createdDirectories: Set<string>,
-): void {
+function ensureShadowDirectory({
+	createdDirectories,
+	directory,
+	fileSystem,
+}: {
+	createdDirectories: Set<string>;
+	directory: string;
+	fileSystem: FileSystem;
+}): void {
 	if (createdDirectories.has(directory)) {
 		return;
 	}
@@ -185,21 +189,26 @@ function ensureShadowDirectory(
  * twin every run regardless: both writers want the path, and clearing here
  * would trade a loud failure for a shadow that thrashes silently.
  */
-function prepareTwinPath(
-	fileSystem: FileSystem,
-	relativePath: string,
-	shadowFilePath: string,
-	{ createdDirectories, shadowDir }: ShadowPathContext,
-): void {
+function prepareTwinPath({
+	createdDirectories,
+	fileSystem,
+	relativePath,
+	shadowDir,
+	shadowFilePath,
+}: ShadowPathContext & {
+	fileSystem: FileSystem;
+	relativePath: string;
+	shadowFilePath: string;
+}): void {
 	let directory = shadowDir;
-	ensureShadowDirectory(fileSystem, directory, createdDirectories);
+	ensureShadowDirectory({ createdDirectories, directory, fileSystem });
 
 	const parent = path.dirname(relativePath);
 	if (parent !== ".") {
 		// The discovery walk keys every path with "/", whatever the platform.
 		for (const segment of parent.split("/")) {
 			directory = path.join(directory, segment);
-			ensureShadowDirectory(fileSystem, directory, createdDirectories);
+			ensureShadowDirectory({ createdDirectories, directory, fileSystem });
 		}
 	}
 
@@ -221,13 +230,13 @@ function publishTwin(
 	// rename it adds per covered file roughly triples the cost of the write it
 	// protects. The atomic cov-map below covers the kill window that leaves.
 	// Re-measure the `write-shadow` span under `TIMING` first.
-	prepareTwinPath(fileSystem, relativePath, shadowFilePath, { createdDirectories, shadowDir });
+	prepareTwinPath({ createdDirectories, fileSystem, relativePath, shadowDir, shadowFilePath });
 	fileSystem.writeFileSync(shadowFilePath, instrumentedSource);
 	// Same directory as the twin, already made above — but `atomicWrite` under
 	// here remakes it per file. Deduping that too would mean a second opt-out on
 	// a helper the package's publishers share, for microseconds; the one
 	// `writeCoverageMap` already takes buys more than that.
-	writeCoverageMap(coverageMapOutputPath, coverageMap, fileSystem);
+	writeCoverageMap({ filePath: coverageMapOutputPath, fileSystem, map: coverageMap });
 }
 
 /** Parse one file and collect its coverage sites, or fail naming the file. */
@@ -264,7 +273,7 @@ function buildCollectorResult(
 	return {
 		...collectorResult,
 		instrumentedSource: timing.profile("probe-insert", () => {
-			return insertProbes(source, collectorResult, fileKey);
+			return insertProbes({ fileKey, result: collectorResult, source });
 		}),
 	};
 }

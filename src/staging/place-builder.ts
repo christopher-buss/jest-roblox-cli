@@ -389,11 +389,11 @@ async function stageAndBuildAsync({
 	await buildWithRojoAsync(projectFile, placeFile, childProcess);
 	const hash = await hashFileAsync(placeFile, fileSystem);
 	if (plan !== undefined) {
-		writePlaceReuseRecord(
-			plan.cacheFile,
-			{ inputsKey: plan.inputsKey, placeHash: hash },
+		writePlaceReuseRecord({
+			cacheFile: plan.cacheFile,
 			fileSystem,
-		);
+			record: { inputsKey: plan.inputsKey, placeHash: hash },
+		});
 	}
 
 	return { hash, path: placeFile };

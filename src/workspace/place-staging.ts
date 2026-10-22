@@ -192,7 +192,7 @@ async function buildWorkspacePlaceAsync({
 	// failed rojo build, so a per-package Build Manifest never points at a place
 	// that isn't on disk. Every coverage package records the one shared
 	// instrumented place as its coverage place.
-	emitWorkspaceBuildManifests(coverage, coveragePlace, fileSystem);
+	emitWorkspaceBuildManifests({ coveragePlace, entries: coverage, fileSystem });
 
 	return { codeBundle: coveragePlace.codeBundle, elapsedMs };
 }

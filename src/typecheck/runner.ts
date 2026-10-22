@@ -148,19 +148,24 @@ export function createLocationsIndexMap(source: string): Map<string, number> {
 	return map;
 }
 
-export function mapErrorsToTests(
-	errors: RawErrorsMap,
-	files: Map<string, FileInfo>,
-	startTime: number,
+export function mapErrorsToTests({
+	errors,
+	files,
 	ignoreSourceErrors = false,
-): JestResult {
+	startTime,
+}: {
+	errors: RawErrorsMap;
+	files: Map<string, FileInfo>;
+	ignoreSourceErrors?: boolean | undefined;
+	startTime: number;
+}): JestResult {
 	const testResults: Array<TestFileResult> = [];
 	let numberFailed = 0;
 	let numberPassed = 0;
 
 	for (const [filePath, fileInfo] of files) {
 		const fileErrors = errors.get(filePath) ?? [];
-		const fileResult = buildFileResult(filePath, fileInfo, fileErrors);
+		const fileResult = buildFileResult({ errors: fileErrors, fileInfo, filePath });
 		testResults.push(fileResult);
 		numberFailed += fileResult.numFailingTests;
 		numberPassed += fileResult.numPassingTests;
@@ -184,11 +189,15 @@ export function mapErrorsToTests(
 	};
 }
 
-export function isCompositeProject(
-	rootDirectory: string,
-	tsconfig?: string,
-	fileSystem: FileSystem = nodeFileSystem,
-): boolean {
+export function isCompositeProject({
+	fileSystem = nodeFileSystem,
+	rootDirectory,
+	tsconfig,
+}: {
+	fileSystem?: FileSystem;
+	rootDirectory: string;
+	tsconfig?: string | undefined;
+}): boolean {
 	const tsconfigPath =
 		tsconfig !== undefined
 			? path.resolve(rootDirectory, tsconfig)
@@ -233,7 +242,12 @@ export async function runTypecheckAsync(options: TypecheckOptions): Promise<Jest
 		resolvedErrors.set(key, errorList);
 	}
 
-	return mapErrorsToTests(resolvedErrors, files, startTime, options.ignoreSourceErrors);
+	return mapErrorsToTests({
+		errors: resolvedErrors,
+		files,
+		ignoreSourceErrors: options.ignoreSourceErrors,
+		startTime,
+	});
 }
 
 function buildSourceResult(filePath: string, errors: Array<TscErrorInfo>): TestFileResult {
@@ -281,11 +295,15 @@ function collectSourceResults(
 // test) or outside every one of them (a file-level failure). `sortedDefinitions`
 // is descending by `start`, so the first containing definition found is the
 // innermost.
-function partitionErrors(
-	errors: Array<TscErrorInfo>,
-	indexMap: Map<string, number>,
-	sortedDefinitions: Array<TestDefinition>,
-): PartitionedErrors {
+function partitionErrors({
+	errors,
+	indexMap,
+	sortedDefinitions,
+}: {
+	errors: Array<TscErrorInfo>;
+	indexMap: Map<string, number>;
+	sortedDefinitions: Array<TestDefinition>;
+}): PartitionedErrors {
 	const errorsByTest = new Map<string, Array<string>>();
 	const fileErrors: Array<string> = [];
 
@@ -340,16 +358,20 @@ function buildTestCases(
 	return testCases;
 }
 
-function buildFileResult(
-	filePath: string,
-	fileInfo: FileInfo,
-	errors: Array<TscErrorInfo>,
-): TestFileResult {
+function buildFileResult({
+	errors,
+	fileInfo,
+	filePath,
+}: {
+	errors: Array<TscErrorInfo>;
+	fileInfo: FileInfo;
+	filePath: string;
+}): TestFileResult {
 	const indexMap = createLocationsIndexMap(fileInfo.source);
 	const testDefinitions = fileInfo.definitions.filter((definition) => definition.type === "test");
 	const sortedDefinitions = testDefinitions.toSorted((a, b) => b.start - a.start);
 
-	const partitioned = partitionErrors(errors, indexMap, sortedDefinitions);
+	const partitioned = partitionErrors({ errors, indexMap, sortedDefinitions });
 	const testCases = buildTestCases(testDefinitions, partitioned);
 	const numberFailing = testCases.filter((testCase) => testCase.status === "failed").length;
 
@@ -537,6 +559,7 @@ function executeTsgo({
 		process.execPath,
 		[tsgoScript, ...args],
 		{ cwd, encoding: "utf-8", timeout: runTimeout, windowsHide: true },
+		// eslint-disable-next-line better-max-params/better-max-params -- Node fixes the execFile callback signature.
 		(error, stdout, stderr) => {
 			settleTsgoResult({ error, finish, reject, resolve, runTimeout, stderr, stdout });
 		},
@@ -563,7 +586,11 @@ function executeTsgo({
 // deadline) bounds the compile.
 async function spawnTsgoAsync(options: TypecheckOptions): Promise<string> {
 	const { childProcess = nodeChildProcessRunner, fileSystem = nodeFileSystem } = options;
-	const isComposite = isCompositeProject(options.rootDir, options.tsconfig, fileSystem);
+	const isComposite = isCompositeProject({
+		fileSystem,
+		rootDirectory: options.rootDir,
+		tsconfig: options.tsconfig,
+	});
 	const args = buildTsgoArgs(options, isComposite);
 	const tsgoScript = resolveTsgoScript(options.resolveModule ?? defaultResolveModule, fileSystem);
 	const spawnTimeout = options.spawnTimeout ?? DEFAULT_SPAWN_TIMEOUT;

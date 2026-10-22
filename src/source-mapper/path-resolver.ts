@@ -36,7 +36,7 @@ export function createPathResolver(
 	{ fileSystem = nodeFileSystem, mappings }: PathResolverConfig = {},
 ): PathResolver {
 	const rojoMappings = new Map<string, string>();
-	collectRojoMappings(rojoProject.tree, "", rojoMappings);
+	collectRojoMappings({ into: rojoMappings, prefix: "", tree: rojoProject.tree });
 
 	const tsconfigMappings = mappings ?? [];
 	const sortedRojoMappings = [...rojoMappings].sort(([a], [b]) => b.length - a.length);
@@ -72,7 +72,15 @@ function mapTypeScriptPath(filePath: string, mapping: TsconfigMapping): string {
 	return luauInitToIndex(`${mapped}.ts`);
 }
 
-function collectRojoMappings(tree: RojoTreeNode, prefix: string, into: Map<string, string>): void {
+function collectRojoMappings({
+	into,
+	prefix,
+	tree,
+}: {
+	into: Map<string, string>;
+	prefix: string;
+	tree: RojoTreeNode;
+}): void {
 	for (const [key, value] of Object.entries(tree)) {
 		if (!isRojoTreeNode(value) || key.startsWith("$")) {
 			continue;
@@ -85,7 +93,7 @@ function collectRojoMappings(tree: RojoTreeNode, prefix: string, into: Map<strin
 			into.set(dataModelPath, mountPath);
 		}
 
-		collectRojoMappings(value, dataModelPath, into);
+		collectRojoMappings({ into, prefix: dataModelPath, tree: value });
 	}
 }
 

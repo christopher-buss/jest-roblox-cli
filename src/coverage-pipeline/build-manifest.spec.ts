@@ -93,7 +93,7 @@ describe(writeBuildManifest, () => {
 		seedArtifacts(volume);
 
 		const manifest = exampleManifest();
-		writeBuildManifest(MANIFEST_PATH, manifest, fileSystem);
+		writeBuildManifest({ filePath: MANIFEST_PATH, fileSystem, manifest });
 
 		expect(expectOk(readBuildManifest(MANIFEST_PATH, { fileSystem }))).toStrictEqual(manifest);
 		expect(volume.readFileSync(MANIFEST_PATH, "utf8")).toStartWith('{\n\t"buildId"');
@@ -106,7 +106,11 @@ describe(writeBuildManifest, () => {
 
 		seedArtifacts(volume);
 
-		writeBuildManifest("/nested/dir/build-manifest.json", exampleManifest(), fileSystem);
+		writeBuildManifest({
+			filePath: "/nested/dir/build-manifest.json",
+			fileSystem,
+			manifest: exampleManifest(),
+		});
 
 		expect(volume.existsSync("/nested/dir/build-manifest.json")).toBeTrue();
 	});
@@ -120,7 +124,7 @@ describe(emitBuildManifest, () => {
 
 		seedArtifacts(volume);
 
-		emitBuildManifest(MANIFEST_PATH, exampleArtifacts(), { fileSystem });
+		emitBuildManifest({ artifacts: exampleArtifacts(), filePath: MANIFEST_PATH, fileSystem });
 
 		const manifest = expectOk(readBuildManifest(MANIFEST_PATH, { fileSystem }));
 
@@ -135,8 +139,10 @@ describe(emitBuildManifest, () => {
 
 		seedArtifacts(volume);
 
-		emitBuildManifest(MANIFEST_PATH, exampleArtifacts(), {
+		emitBuildManifest({
+			artifacts: exampleArtifacts(),
 			cleanPlace: { hash: hashBuffer(Buffer.from(CLEAN_PLACE_CONTENT)), path: CLEAN_PLACE },
+			filePath: MANIFEST_PATH,
 			fileSystem,
 		});
 
@@ -159,11 +165,11 @@ describe(emitBuildManifest, () => {
 			setupFilesAfterEnv: [],
 			testMatch: ["**/*.spec"],
 		};
-		emitBuildManifest(
-			MANIFEST_PATH,
-			{ ...exampleArtifacts(), projects: [project] },
-			{ fileSystem },
-		);
+		emitBuildManifest({
+			artifacts: { ...exampleArtifacts(), projects: [project] },
+			filePath: MANIFEST_PATH,
+			fileSystem,
+		});
 
 		expect(expectOk(readBuildManifest(MANIFEST_PATH, { fileSystem })).projects).toStrictEqual([
 			project,

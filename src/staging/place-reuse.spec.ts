@@ -262,11 +262,11 @@ describe(readPlaceReuseRecord, () => {
 
 		volume.mkdirSync(ROOT, { recursive: true });
 
-		writePlaceReuseRecord(
-			"/cache/place.json",
-			{ inputsKey: "key", placeHash: "hash" },
+		writePlaceReuseRecord({
+			cacheFile: "/cache/place.json",
 			fileSystem,
-		);
+			record: { inputsKey: "key", placeHash: "hash" },
+		});
 
 		expect(readPlaceReuseRecord("/cache/place.json", fileSystem)).toStrictEqual({
 			inputsKey: "key",

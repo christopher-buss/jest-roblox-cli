@@ -70,6 +70,7 @@ interface Harness extends MemoryFileSystem {
 
 function seed(files: Record<string, string>, bytes: string = PLACE_BYTES): Harness {
 	const memory = createMemoryFileSystem(files);
+	// eslint-disable-next-line better-max-params/better-max-params -- fakes the Node execFile signature.
 	const execFile = vi.fn<RojoExec>((_file, args, _options, callback) => {
 		const outputPath = args[3];
 		memory.volume.writeFileSync(String(outputPath), bytes);

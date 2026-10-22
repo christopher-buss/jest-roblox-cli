@@ -277,7 +277,7 @@ export function prepareWorkspaceCoverage(
 		return prepareForPackage({
 			descriptor,
 			fileSystem,
-			ignore: resolvePackageIgnore(descriptor, defaultMatcher, defaultCopyMatcher),
+			ignore: resolvePackageIgnore({ defaultCopyMatcher, defaultMatcher, descriptor }),
 			instrumenter,
 			timing,
 			workspaceRoot,
@@ -293,27 +293,31 @@ export function prepareWorkspaceCoverage(
  * a later slice to populate, and no Clean Place is emitted from the workspace
  * path (it records `coveragePlace` only).
  */
-export function emitWorkspaceBuildManifests(
-	entries: Array<WorkspacePackageCoverage>,
-	coveragePlace: BuildManifestArtifact,
-	fileSystem: FileSystem = nodeFileSystem,
-): void {
+export function emitWorkspaceBuildManifests({
+	coveragePlace,
+	entries,
+	fileSystem = nodeFileSystem,
+}: {
+	coveragePlace: BuildManifestArtifact;
+	entries: Array<WorkspacePackageCoverage>;
+	fileSystem?: FileSystem;
+}): void {
 	for (const entry of entries) {
 		// The Build Manifest is the Coverage Manifest's sibling — same directory.
 		const buildManifestPath = normalizeWindowsPath(
 			path.join(path.dirname(entry.manifestPath), BUILD_MANIFEST_FILE),
 		);
-		emitBuildManifest(
-			buildManifestPath,
-			{
+		emitBuildManifest({
+			artifacts: {
 				buildId: entry.manifest.buildId,
 				coveragePlace,
 				files: toBuildManifestFiles(entry.manifest.files),
 				generatedAt: entry.manifest.generatedAt,
 				projects: [],
 			},
-			{ fileSystem },
-		);
+			filePath: buildManifestPath,
+			fileSystem,
+		});
 	}
 }
 
@@ -394,11 +398,15 @@ function resolvePackageAnchor(descriptor: WorkspacePackageDescriptor): string {
  * raw per-package value), and adding one here would probe against a universe
  * the package's own report never applies.
  */
-function resolvePackageUniverse(
-	descriptor: WorkspacePackageDescriptor,
-	ignore: PackageIgnore,
-	fileSystem: FileSystem,
-): InstrumentUniverse | undefined {
+function resolvePackageUniverse({
+	descriptor,
+	fileSystem,
+	ignore,
+}: {
+	descriptor: WorkspacePackageDescriptor;
+	fileSystem: FileSystem;
+	ignore: PackageIgnore;
+}): InstrumentUniverse | undefined {
 	return createInstrumentUniverse(
 		{
 			ignore: ignore.patterns,
@@ -475,12 +483,17 @@ function isRbxtsIncludeRoot(fileSystem: FileSystem, directoryPath: string): bool
  * `containsLuauFiles` scan so include dirs short-circuit out before the deep
  * walk.
  */
-function isInstrumentableRoot(
-	fileSystem: FileSystem,
-	absolutePath: string,
-	relativePath: string,
-	matchesIgnored: (filePath: string) => boolean,
-): boolean {
+function isInstrumentableRoot({
+	absolutePath,
+	fileSystem,
+	matchesIgnored,
+	relativePath,
+}: {
+	absolutePath: string;
+	fileSystem: FileSystem;
+	matchesIgnored: (filePath: string) => boolean;
+	relativePath: string;
+}): boolean {
 	if (matchesIgnored(relativePath)) {
 		return false;
 	}
@@ -552,7 +565,14 @@ function discoverFromLuauRoots(
 			continue;
 		}
 
-		if (!isInstrumentableRoot(fileSystem, absolute, relative, matchesIgnored)) {
+		if (
+			!isInstrumentableRoot({
+				absolutePath: absolute,
+				fileSystem,
+				matchesIgnored,
+				relativePath: relative,
+			})
+		) {
 			continue;
 		}
 
@@ -591,7 +611,14 @@ function discoverFromRojoWalk({
 		}
 
 		const absolute = path.resolve(descriptor.packageDirectory, relative);
-		if (!isInstrumentableRoot(fileSystem, absolute, relative, matchesIgnored)) {
+		if (
+			!isInstrumentableRoot({
+				absolutePath: absolute,
+				fileSystem,
+				matchesIgnored,
+				relativePath: relative,
+			})
+		) {
 			continue;
 		}
 
@@ -861,7 +888,7 @@ function prepareForPackage(options: PreparePackageOptions): WorkspacePackageCove
 	const { descriptor, fileSystem, ignore, workspaceRoot } = options;
 	const { manifestPath, packageShadowRoot } = resolvePackagePaths(descriptor.name, workspaceRoot);
 
-	const universe = resolvePackageUniverse(descriptor, ignore, fileSystem);
+	const universe = resolvePackageUniverse({ descriptor, fileSystem, ignore });
 	const instrumented = instrumentPackage({
 		...options,
 		manifestPath,
@@ -892,11 +919,15 @@ function createIgnoreMatcher(patterns: Array<string>): (filePath: string) => boo
 	return picomatch(patterns, { contains: true });
 }
 
-function resolvePackageIgnore(
-	descriptor: WorkspacePackageDescriptor,
-	defaultMatcher: (filePath: string) => boolean,
-	defaultCopyMatcher: CopyIgnoreMatcher,
-): PackageIgnore {
+function resolvePackageIgnore({
+	defaultCopyMatcher,
+	defaultMatcher,
+	descriptor,
+}: {
+	defaultCopyMatcher: CopyIgnoreMatcher;
+	defaultMatcher: (filePath: string) => boolean;
+	descriptor: WorkspacePackageDescriptor;
+}): PackageIgnore {
 	const copyPatterns =
 		descriptor.coverageCopyIgnorePatterns ?? DEFAULT_CONFIG.coverageCopyIgnorePatterns;
 	return {

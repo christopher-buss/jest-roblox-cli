@@ -28,7 +28,10 @@ function universeFor(fileSystem: FileSystem, filter: CoverageUniverseFilter): In
 	return universe;
 }
 
-function writeSourceMap(volume: MemoryVolume, luauPath: string, contents: string): void {
+function writeSourceMap(
+	volume: MemoryVolume,
+	{ contents, luauPath }: { contents: string; luauPath: string },
+): void {
 	volume.mkdirSync(path.posix.dirname(luauPath), { recursive: true });
 	volume.writeFileSync(luauPath, "return nil\n");
 	volume.writeFileSync(`${luauPath}.map`, contents);
@@ -43,8 +46,7 @@ function writeSourceMap(volume: MemoryVolume, luauPath: string, contents: string
  */
 function writeCompiled(
 	volume: MemoryVolume,
-	luauRelative: string,
-	sources?: Array<string>,
+	{ luauRelative, sources }: { luauRelative: string; sources?: Array<string> | undefined },
 ): string {
 	const luauPath = under(luauRelative);
 	if (sources === undefined) {
@@ -53,7 +55,10 @@ function writeCompiled(
 		return luauPath;
 	}
 
-	writeSourceMap(volume, luauPath, JSON.stringify({ mappings: "", sources, version: 3 }));
+	writeSourceMap(volume, {
+		contents: JSON.stringify({ mappings: "", sources, version: 3 }),
+		luauPath,
+	});
 	return luauPath;
 }
 
@@ -79,9 +84,10 @@ describe(createInstrumentUniverse, () => {
 
 		const { fileSystem, volume } = createMemoryFileSystem();
 
-		const luauPath = writeCompiled(volume, "out/ecs/systems/move.luau", [
-			under("src/ecs/systems/move.ts"),
-		]);
+		const luauPath = writeCompiled(volume, {
+			luauRelative: "out/ecs/systems/move.luau",
+			sources: [under("src/ecs/systems/move.ts")],
+		});
 
 		expect(
 			universeFor(fileSystem, { include: ["src/ecs/**/*.ts"] }).includes(luauPath),
@@ -93,7 +99,10 @@ describe(createInstrumentUniverse, () => {
 
 		const { fileSystem, volume } = createMemoryFileSystem();
 
-		const luauPath = writeCompiled(volume, "out/ui/button.luau", [under("src/ui/button.ts")]);
+		const luauPath = writeCompiled(volume, {
+			luauRelative: "out/ui/button.luau",
+			sources: [under("src/ui/button.ts")],
+		});
 
 		expect(
 			universeFor(fileSystem, { include: ["src/ecs/**/*.ts"] }).includes(luauPath),
@@ -105,9 +114,10 @@ describe(createInstrumentUniverse, () => {
 
 		const { fileSystem, volume } = createMemoryFileSystem();
 
-		const luauPath = writeCompiled(volume, "out/ecs/components/health.luau", [
-			under("src/ecs/components/health.ts"),
-		]);
+		const luauPath = writeCompiled(volume, {
+			luauRelative: "out/ecs/components/health.luau",
+			sources: [under("src/ecs/components/health.ts")],
+		});
 		const universe = universeFor(fileSystem, {
 			include: ["src/ecs/**/*.ts", "!src/ecs/components/**"],
 		});
@@ -120,7 +130,10 @@ describe(createInstrumentUniverse, () => {
 
 		const { fileSystem, volume } = createMemoryFileSystem();
 
-		const luauPath = writeCompiled(volume, "out/ecs/index.luau", [under("src/ecs/index.ts")]);
+		const luauPath = writeCompiled(volume, {
+			luauRelative: "out/ecs/index.luau",
+			sources: [under("src/ecs/index.ts")],
+		});
 		const universe = universeFor(fileSystem, {
 			ignore: ["index.ts"],
 			include: ["src/ecs/**/*.ts"],
@@ -134,9 +147,10 @@ describe(createInstrumentUniverse, () => {
 
 		const { fileSystem, volume } = createMemoryFileSystem();
 
-		const luauPath = writeCompiled(volume, "out/ecs/systems/move.luau", [
-			"../../../src/ecs/systems/move.ts",
-		]);
+		const luauPath = writeCompiled(volume, {
+			luauRelative: "out/ecs/systems/move.luau",
+			sources: ["../../../src/ecs/systems/move.ts"],
+		});
 
 		expect(
 			universeFor(fileSystem, { include: ["src/ecs/**/*.ts"] }).includes(luauPath),
@@ -148,10 +162,10 @@ describe(createInstrumentUniverse, () => {
 
 		const { fileSystem, volume } = createMemoryFileSystem();
 
-		const luauPath = writeCompiled(volume, "out/bundle.luau", [
-			under("src/ui/button.ts"),
-			under("src/ecs/systems/move.ts"),
-		]);
+		const luauPath = writeCompiled(volume, {
+			luauRelative: "out/bundle.luau",
+			sources: [under("src/ui/button.ts"), under("src/ecs/systems/move.ts")],
+		});
 
 		expect(
 			universeFor(fileSystem, { include: ["src/ecs/**/*.ts"] }).includes(luauPath),
@@ -162,18 +176,22 @@ describe(createInstrumentUniverse, () => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
-		const luauPath = writeCompiled(volume, "out/ecs/systems/move.luau", [
-			under("src/ecs/systems/move.ts"),
-		]);
+		const luauPath = writeCompiled(volume, {
+			luauRelative: "out/ecs/systems/move.luau",
+			sources: [under("src/ecs/systems/move.ts")],
+		});
 		const universe = universeFor(fileSystem, { include: ["src/ecs/**/*.ts"] });
 
 		expect(universe.includes(luauPath)).toBeTrue();
 
-		writeSourceMap(
-			volume,
+		writeSourceMap(volume, {
+			contents: JSON.stringify({
+				mappings: "",
+				sources: [under("src/ui/button.ts")],
+				version: 3,
+			}),
 			luauPath,
-			JSON.stringify({ mappings: "", sources: [under("src/ui/button.ts")], version: 3 }),
-		);
+		});
 
 		expect(universe.includes(luauPath)).toBeTrue();
 	});
@@ -183,8 +201,8 @@ describe(createInstrumentUniverse, () => {
 
 		const { fileSystem, volume } = createMemoryFileSystem();
 
-		const covered = writeCompiled(volume, "src/ecs/systems/move.luau");
-		const uncovered = writeCompiled(volume, "src/ui/button.luau");
+		const covered = writeCompiled(volume, { luauRelative: "src/ecs/systems/move.luau" });
+		const uncovered = writeCompiled(volume, { luauRelative: "src/ui/button.luau" });
 		const universe = universeFor(fileSystem, { include: ["src/ecs/**/*.luau"] });
 
 		// A hand-written Luau project has no source map, and the mapper keys
@@ -199,7 +217,7 @@ describe(createInstrumentUniverse, () => {
 		const { fileSystem, volume } = createMemoryFileSystem();
 
 		const luauPath = under("out/ecs/systems/move.luau");
-		writeSourceMap(volume, luauPath, "{ not json");
+		writeSourceMap(volume, { contents: "{ not json", luauPath });
 
 		expect(
 			universeFor(fileSystem, { include: ["src/ecs/**/*.ts"] }).includes(luauPath),
@@ -212,7 +230,7 @@ describe(createInstrumentUniverse, () => {
 		const { fileSystem, volume } = createMemoryFileSystem();
 
 		const luauPath = under("out/ecs/systems/move.luau");
-		writeSourceMap(volume, luauPath, "[]");
+		writeSourceMap(volume, { contents: "[]", luauPath });
 
 		expect(
 			universeFor(fileSystem, { include: ["src/ecs/**/*.ts"] }).includes(luauPath),
@@ -227,13 +245,18 @@ describe(createInstrumentUniverse, () => {
 		const missing = under("out/ecs/a.luau");
 		const empty = under("out/ecs/b.luau");
 		const nonString = under("out/ecs/c.luau");
-		writeSourceMap(volume, missing, JSON.stringify({ mappings: "", version: 3 }));
-		writeSourceMap(volume, empty, JSON.stringify({ mappings: "", sources: [], version: 3 }));
-		writeSourceMap(
-			volume,
-			nonString,
-			JSON.stringify({ mappings: "", sources: [7], version: 3 }),
-		);
+		writeSourceMap(volume, {
+			contents: JSON.stringify({ mappings: "", version: 3 }),
+			luauPath: missing,
+		});
+		writeSourceMap(volume, {
+			contents: JSON.stringify({ mappings: "", sources: [], version: 3 }),
+			luauPath: empty,
+		});
+		writeSourceMap(volume, {
+			contents: JSON.stringify({ mappings: "", sources: [7], version: 3 }),
+			luauPath: nonString,
+		});
 		const universe = universeFor(fileSystem, { include: ["src/ecs/**/*.ts"] });
 
 		expect(universe.includes(missing)).toBeTrue();
@@ -265,15 +288,14 @@ describe(createInstrumentUniverse, () => {
 		const { fileSystem, volume } = createMemoryFileSystem();
 
 		const luauPath = path.posix.join(PACKAGE_ROOT, "out/ecs/move.luau");
-		writeSourceMap(
-			volume,
-			luauPath,
-			JSON.stringify({
+		writeSourceMap(volume, {
+			contents: JSON.stringify({
 				mappings: "",
 				sources: [path.posix.join(PACKAGE_ROOT, "src/ecs/move.ts")],
 				version: 3,
 			}),
-		);
+			luauPath,
+		});
 
 		// The package's config writes `src/**/*.ts` for its own sources, and
 		// the package sits nowhere near the invocation directory.

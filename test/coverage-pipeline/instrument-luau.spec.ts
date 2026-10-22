@@ -19,7 +19,7 @@ function instrumentFixture(fixtureName: string, fileKey: string) {
 	assert(parsed.ok, `Fixture ${fixtureName} has no parsed AST block`);
 
 	const result = collectCoverage(parsed.root, source);
-	const instrumentedSource = insertProbes(source, result, fileKey);
+	const instrumentedSource = insertProbes({ fileKey, result, source });
 	const covMap = buildCoverageMap(result);
 
 	return { covMap, instrumentedSource, result, source };

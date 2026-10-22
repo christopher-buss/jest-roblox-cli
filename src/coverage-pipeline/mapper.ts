@@ -61,7 +61,9 @@ export interface GeneratedPosition {
 export type PositionResolver = (position: GeneratedPosition) => OriginalPosition;
 
 export interface CoverageMappingOptions {
+	coverageData: RawCoverageData;
 	fileSystem?: FileSystem;
+	manifest: CoverageManifest;
 	traceMapFactory?: TraceMapFactory;
 }
 
@@ -166,14 +168,12 @@ export class CoverageMapMalformedError extends Error {
 	}
 }
 
-export function mapCoverageToTypeScript(
-	coverageData: RawCoverageData,
-	manifest: CoverageManifest,
-	{
-		fileSystem = nodeFileSystem,
-		traceMapFactory = traceMappingFactory,
-	}: CoverageMappingOptions = {},
-): MappedCoverageResult {
+export function mapCoverageToTypeScript({
+	coverageData,
+	fileSystem = nodeFileSystem,
+	manifest,
+	traceMapFactory = traceMappingFactory,
+}: CoverageMappingOptions): MappedCoverageResult {
 	const pendingStatements = new Map<string, FileStatements>();
 	const pendingFunctions = new Map<string, Array<PendingFunction>>();
 	const pendingBranches = new Map<string, Array<PendingBranch>>();
@@ -185,28 +185,31 @@ export function mapCoverageToTypeScript(
 	for (const [fileKey, record] of Object.entries(manifest.files)) {
 		const fileCoverage = coverageData[fileKey] ?? { s: {} };
 
-		const resources = loadFileResources(fileSystem, traceMapFactory, record);
+		const resources = loadFileResources({ fileSystem, record, traceMapFactory });
 		if (resources === undefined) {
 			continue;
 		}
 
 		if (resources.resolvePosition === undefined) {
-			passthroughFileStatements(resources, fileCoverage, pendingStatements);
-			passthroughFileFunctions(resources, fileCoverage, pendingFunctions);
-			passthroughFileBranches(resources, fileCoverage, pendingBranches);
+			passthroughFileStatements({ fileCoverage, pending: pendingStatements, resources });
+			passthroughFileFunctions({ fileCoverage, pendingFunctions, resources });
+			passthroughFileBranches({ fileCoverage, pendingBranches, resources });
 		} else {
-			const mapped = {
-				coverageMap: resources.coverageMap,
-				resolvePosition: resources.resolvePosition,
-				sourceMapDirectory: resources.sourceMapDirectory,
+			const file = {
+				fileCoverage,
+				resources: {
+					coverageMap: resources.coverageMap,
+					resolvePosition: resources.resolvePosition,
+					sourceMapDirectory: resources.sourceMapDirectory,
+				},
 			};
-			const resolvedTsPaths = mapFileStatements(mapped, fileCoverage, pendingStatements);
-			mapFileFunctions(mapped, fileCoverage, pendingFunctions, resolvedTsPaths);
-			mapFileBranches(mapped, fileCoverage, pendingBranches);
+			const resolvedTsPaths = mapFileStatements({ ...file, pending: pendingStatements });
+			mapFileFunctions({ ...file, pendingFunctions, resolvedTsPaths });
+			mapFileBranches({ ...file, pendingBranches });
 		}
 	}
 
-	return buildResult(pendingStatements, pendingFunctions, pendingBranches);
+	return buildResult({ pending: pendingStatements, pendingBranches, pendingFunctions });
 }
 
 function traceMappingFactory(rawSourceMap: string): PositionResolver {
@@ -217,11 +220,15 @@ function traceMappingFactory(rawSourceMap: string): PositionResolver {
 // --- Luau column → Istanbul column conversion ---
 // Luau columns are 1-based; Istanbul expects 0-based.
 
-function loadFileResources(
-	fileSystem: FileSystem,
-	traceMapFactory: TraceMapFactory,
-	record: CoverageManifest["files"][string],
-): FileResources | undefined {
+function loadFileResources({
+	fileSystem,
+	record,
+	traceMapFactory,
+}: {
+	fileSystem: FileSystem;
+	record: CoverageManifest["files"][string];
+	traceMapFactory: TraceMapFactory;
+}): FileResources | undefined {
 	const result = readCoverageMap(record.coverageMapPath, fileSystem);
 	// File missing → silent skip (stale cache, will be regenerated).
 	// File present-but-unreadable → throw, so callers don't compute reports
@@ -258,7 +265,15 @@ function toIstanbulColumn(luauColumn: number): number {
 	return Math.max(0, luauColumn - 1);
 }
 
-function getOrCreate<K, V>(map: Map<K, V>, key: K, create: () => V): V {
+function getOrCreate<K, V>({
+	key,
+	create,
+	map,
+}: {
+	create: () => NoInfer<V>;
+	key: K;
+	map: Map<K, V>;
+}): V {
 	let value = map.get(key);
 	if (value === undefined) {
 		value = create();
@@ -270,15 +285,23 @@ function getOrCreate<K, V>(map: Map<K, V>, key: K, create: () => V): V {
 
 /** Get the list entries under `key` accumulate into, creating it on demand. */
 function pendingListFor<K, T>(pending: Map<K, Array<T>>, key: K): Array<T> {
-	return getOrCreate(pending, key, () => []);
+	return getOrCreate({ key, create: () => [], map: pending });
 }
 
-function passthroughFileStatements(
-	resources: FileResources,
-	fileCoverage: RawCoverageData[string],
-	pending: Map<string, FileStatements>,
-): void {
-	const fileStatements = getOrCreate(pending, resources.sourceKey, () => new Map());
+function passthroughFileStatements({
+	fileCoverage,
+	pending,
+	resources,
+}: {
+	fileCoverage: RawCoverageData[string];
+	pending: Map<string, FileStatements>;
+	resources: FileResources;
+}): void {
+	const fileStatements = getOrCreate({
+		key: resources.sourceKey,
+		create: (): FileStatements => new Map(),
+		map: pending,
+	});
 
 	for (const [statementId, span] of Object.entries(resources.coverageMap.statementMap)) {
 		const statement: PendingStatement = {
@@ -290,11 +313,15 @@ function passthroughFileStatements(
 	}
 }
 
-function passthroughFileFunctions(
-	resources: FileResources,
-	fileCoverage: RawCoverageData[string],
-	pendingFunctions: Map<string, Array<PendingFunction>>,
-): void {
+function passthroughFileFunctions({
+	fileCoverage,
+	pendingFunctions,
+	resources,
+}: {
+	fileCoverage: RawCoverageData[string];
+	pendingFunctions: Map<string, Array<PendingFunction>>;
+	resources: FileResources;
+}): void {
 	if (resources.coverageMap.functionMap === undefined) {
 		return;
 	}
@@ -355,11 +382,15 @@ function pushPendingBranch({
 
 // --- Source-mapped helpers (roblox-ts → TypeScript) ---
 
-function passthroughFileBranches(
-	resources: FileResources,
-	fileCoverage: RawCoverageData[string],
-	pendingBranches: Map<string, Array<PendingBranch>>,
-): void {
+function passthroughFileBranches({
+	fileCoverage,
+	pendingBranches,
+	resources,
+}: {
+	fileCoverage: RawCoverageData[string];
+	pendingBranches: Map<string, Array<PendingBranch>>;
+	resources: FileResources;
+}): void {
 	if (resources.coverageMap.branchMap === undefined) {
 		return;
 	}
@@ -389,11 +420,15 @@ function passthroughFileBranches(
  * Joining with the map directory normalizes these to cwd-relative paths.
  * Paths that are already cwd-relative (no `..` prefix) pass through unchanged.
  */
-function mapStatement(
-	resolvePosition: PositionResolver,
-	span: { end: { column: number; line: number }; start: { column: number; line: number } },
-	sourceMapDirectory: string,
-): MappedSpan | undefined {
+function mapStatement({
+	resolvePosition,
+	sourceMapDirectory,
+	span,
+}: {
+	resolvePosition: PositionResolver;
+	sourceMapDirectory: string;
+	span: { end: { column: number; line: number }; start: { column: number; line: number } };
+}): MappedSpan | undefined {
 	// Luau columns are 1-based, source maps expect 0-based
 	const mappedStart = resolvePosition({
 		column: Math.max(0, span.start.column - 1),
@@ -483,7 +518,11 @@ function addOrCoalesce({ hitCount, pending, span }: AddOrCoalesceOptions): void 
 	const { end, start } = span;
 	// Partitioned by tsPath, so equal positions in different source files
 	// cannot collide.
-	const fileStatements = getOrCreate(pending, start.source, () => new Map());
+	const fileStatements = getOrCreate({
+		key: start.source,
+		create: (): FileStatements => new Map(),
+		map: pending,
+	});
 	const sameLine = pendingListFor(fileStatements, start.line);
 	const existing = findCoalescenceTarget(sameLine, span);
 
@@ -505,17 +544,25 @@ function addOrCoalesce({ hitCount, pending, span }: AddOrCoalesceOptions): void 
 	}
 }
 
-function mapFileStatements(
-	resources: SourceMapped,
-	fileCoverage: RawCoverageData[string],
-	pending: Map<string, FileStatements>,
-): Set<string> {
+function mapFileStatements({
+	fileCoverage,
+	pending,
+	resources,
+}: {
+	fileCoverage: RawCoverageData[string];
+	pending: Map<string, FileStatements>;
+	resources: SourceMapped;
+}): Set<string> {
 	const resolvedTsPaths = new Set<string>();
 
 	for (const [statementId, span] of Object.entries(resources.coverageMap.statementMap)) {
 		const hitCount = fileCoverage.s[statementId] ?? 0;
 
-		const mapped = mapStatement(resources.resolvePosition, span, resources.sourceMapDirectory);
+		const mapped = mapStatement({
+			resolvePosition: resources.resolvePosition,
+			sourceMapDirectory: resources.sourceMapDirectory,
+			span,
+		});
 		if (mapped === undefined) {
 			continue;
 		}
@@ -533,12 +580,17 @@ function mapFileStatements(
  * % Funcs (typically uncovered). Picks the first resolved path; roblox-ts emits
  * one .luau per .ts file so multi-source is not expected in practice.
  */
-function addUnmappedFunction(
-	pendingFunctions: Map<string, Array<PendingFunction>>,
-	resolvedTsPaths: Set<string>,
-	name: string,
-	hitCount: number,
-): void {
+function addUnmappedFunction({
+	name,
+	hitCount,
+	pendingFunctions,
+	resolvedTsPaths,
+}: {
+	hitCount: number;
+	name: string;
+	pendingFunctions: Map<string, Array<PendingFunction>>;
+	resolvedTsPaths: Set<string>;
+}): void {
 	const fallbackPath = resolvedTsPaths.values().next().value;
 	if (fallbackPath === undefined) {
 		return;
@@ -556,12 +608,17 @@ function addUnmappedFunction(
 	});
 }
 
-function mapFileFunctions(
-	resources: SourceMapped,
-	fileCoverage: RawCoverageData[string],
-	pendingFunctions: Map<string, Array<PendingFunction>>,
-	resolvedTsPaths: Set<string>,
-): void {
+function mapFileFunctions({
+	fileCoverage,
+	pendingFunctions,
+	resolvedTsPaths,
+	resources,
+}: {
+	fileCoverage: RawCoverageData[string];
+	pendingFunctions: Map<string, Array<PendingFunction>>;
+	resolvedTsPaths: Set<string>;
+	resources: SourceMapped;
+}): void {
 	if (resources.coverageMap.functionMap === undefined) {
 		return;
 	}
@@ -569,14 +626,14 @@ function mapFileFunctions(
 	for (const [functionId, entry] of Object.entries(resources.coverageMap.functionMap)) {
 		const hitCount = fileCoverage.f?.[functionId] ?? 0;
 
-		const mapped = mapStatement(
-			resources.resolvePosition,
-			entry.location,
-			resources.sourceMapDirectory,
-		);
+		const mapped = mapStatement({
+			resolvePosition: resources.resolvePosition,
+			sourceMapDirectory: resources.sourceMapDirectory,
+			span: entry.location,
+		});
 
 		if (mapped === undefined) {
-			addUnmappedFunction(pendingFunctions, resolvedTsPaths, entry.name, hitCount);
+			addUnmappedFunction({ name: entry.name, hitCount, pendingFunctions, resolvedTsPaths });
 			continue;
 		}
 
@@ -591,16 +648,20 @@ function mapFileFunctions(
 	}
 }
 
-function mapBranchArmLocations(
-	resolvePosition: PositionResolver,
-	locations: ReadonlyArray<SourceLocation>,
-	sourceMapDirectory: string,
-): MappedArmLocations | undefined {
+function mapBranchArmLocations({
+	locations,
+	resolvePosition,
+	sourceMapDirectory,
+}: {
+	locations: ReadonlyArray<SourceLocation>;
+	resolvePosition: PositionResolver;
+	sourceMapDirectory: string;
+}): MappedArmLocations | undefined {
 	const mappedLocations: MappedArmLocations["locations"] = [];
 	let tsPath: string | undefined;
 
 	for (const location of locations) {
-		const mapped = mapStatement(resolvePosition, location, sourceMapDirectory);
+		const mapped = mapStatement({ resolvePosition, sourceMapDirectory, span: location });
 		if (mapped === undefined) {
 			return undefined;
 		}
@@ -639,11 +700,15 @@ function hasCollapsedPhantomArm(locations: MappedArmLocations["locations"]): boo
 	});
 }
 
-function mapFileBranches(
-	resources: SourceMapped,
-	fileCoverage: RawCoverageData[string],
-	pendingBranches: Map<string, Array<PendingBranch>>,
-): void {
+function mapFileBranches({
+	fileCoverage,
+	pendingBranches,
+	resources,
+}: {
+	fileCoverage: RawCoverageData[string];
+	pendingBranches: Map<string, Array<PendingBranch>>;
+	resources: SourceMapped;
+}): void {
 	if (resources.coverageMap.branchMap === undefined) {
 		return;
 	}
@@ -651,11 +716,11 @@ function mapFileBranches(
 	for (const [branchId, entry] of Object.entries(resources.coverageMap.branchMap)) {
 		const armHitCounts = fileCoverage.b?.[branchId] ?? [];
 
-		const result = mapBranchArmLocations(
-			resources.resolvePosition,
-			entry.locations,
-			resources.sourceMapDirectory,
-		);
+		const result = mapBranchArmLocations({
+			locations: entry.locations,
+			resolvePosition: resources.resolvePosition,
+			sourceMapDirectory: resources.sourceMapDirectory,
+		});
 		if (result === undefined) {
 			continue;
 		}
@@ -737,11 +802,15 @@ function populateBranches(
 	}
 }
 
-function buildResult(
-	pending: Map<string, FileStatements>,
-	pendingFunctions: Map<string, Array<PendingFunction>>,
-	pendingBranches: Map<string, Array<PendingBranch>>,
-): MappedCoverageResult {
+function buildResult({
+	pending,
+	pendingBranches,
+	pendingFunctions,
+}: {
+	pending: Map<string, FileStatements>;
+	pendingBranches: Map<string, Array<PendingBranch>>;
+	pendingFunctions: Map<string, Array<PendingFunction>>;
+}): MappedCoverageResult {
 	const files: Record<string, MappedFileCoverage> = {};
 
 	// Collect all TS paths from statements, functions, and branches

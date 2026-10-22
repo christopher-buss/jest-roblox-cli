@@ -99,7 +99,7 @@ export function narrowRootToUniverse(
 		return [...WHOLE_MOUNT];
 	}
 
-	const { carried, hasIgnoredPaths } = carriedFiles(fileSystem, luauRoot, isCopyIgnored);
+	const { carried, hasIgnoredPaths } = carriedFiles({ fileSystem, isCopyIgnored, luauRoot });
 	const probed = carried.filter((relativePath) => {
 		return (
 			isInstrumentableFile(path.posix.basename(relativePath)) &&
@@ -165,16 +165,21 @@ export function narrowLuauRoots(
  * holds them either way — which is exactly why the walk has to say it saw them.
  * Nothing downstream can tell a mount the list emptied from one that was empty.
  */
-function carriedFiles(
-	fileSystem: FileSystem,
-	luauRoot: PosixRoot,
-	isCopyIgnored: CopyIgnoreMatcher,
-): CarriedFiles {
+function carriedFiles({
+	fileSystem,
+	isCopyIgnored,
+	luauRoot,
+}: {
+	fileSystem: FileSystem;
+	isCopyIgnored: CopyIgnoreMatcher;
+	luauRoot: PosixRoot;
+}): CarriedFiles {
 	const carried: Array<string> = [];
 	let hasIgnoredPaths = false;
-	walkLuauDirectory(
-		luauRoot,
-		{
+	walkLuauDirectory({
+		directory: luauRoot,
+		fileSystem,
+		filter: {
 			accept: () => true,
 			skip: (relativePath) => {
 				if (!isCopyIgnored(relativePath)) {
@@ -185,9 +190,8 @@ function carriedFiles(
 				return true;
 			},
 		},
-		carried,
-		fileSystem,
-	);
+		results: carried,
+	});
 	return { carried, hasIgnoredPaths };
 }
 

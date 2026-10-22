@@ -153,9 +153,19 @@ describe(syncOneFile, () => {
 			"/source.luau": "return 'current'\n",
 			"/target.luau": "return 'stale'\n",
 		});
-		const previousRecord = syncOneFile("/source.luau", "/previous.luau", undefined, fileSystem);
+		const previousRecord = syncOneFile({
+			fileSystem,
+			previousRecord: undefined,
+			shadowPath: "/previous.luau",
+			sourcePath: "/source.luau",
+		});
 
-		const record = syncOneFile("/source.luau", "/target.luau", previousRecord, fileSystem);
+		const record = syncOneFile({
+			fileSystem,
+			previousRecord,
+			shadowPath: "/target.luau",
+			sourcePath: "/source.luau",
+		});
 
 		expect(record.shadowPath).toBe("/target.luau");
 		expect(volume.readFileSync("/target.luau", "utf8")).toBe("return 'current'\n");

@@ -125,7 +125,7 @@ describe("coverage pipeline (mapper -> istanbul json reporter)", { timeout: 30_0
 		const manifest = buildManifest(files, fixtureOut, shadowDirectory);
 		const coverageData = buildSyntheticCoverage(files);
 
-		const mapped = mapCoverageToTypeScript(coverageData, manifest);
+		const mapped = mapCoverageToTypeScript({ coverageData, manifest });
 
 		generateReports({
 			coverageDirectory: reportDirectory,

@@ -38,8 +38,8 @@ function manifestStub(): CoverageManifest {
 }
 
 function renamingMapper(toTsPath: (stem: string) => string): CoverageMapper {
-	return (coverage) => {
-		const tsPath = toTsPath(Object.keys(coverage)[0]!.replace(/\.luau$/, ""));
+	return ({ coverageData }) => {
+		const tsPath = toTsPath(Object.keys(coverageData)[0]!.replace(/\.luau$/, ""));
 		return { files: { [tsPath]: { ...fileStub(tsPath), s: { "0": 1 } } } };
 	};
 }
@@ -75,8 +75,14 @@ describe(aggregateWorkspaceCoverage, () => {
 		);
 
 		expect(mapped).toHaveBeenCalledTimes(2);
-		expect(mapped).toHaveBeenNthCalledWith(1, fooCoverage, fooManifest);
-		expect(mapped).toHaveBeenNthCalledWith(2, barCoverage, barManifest);
+		expect(mapped).toHaveBeenNthCalledWith(1, {
+			coverageData: fooCoverage,
+			manifest: fooManifest,
+		});
+		expect(mapped).toHaveBeenNthCalledWith(2, {
+			coverageData: barCoverage,
+			manifest: barManifest,
+		});
 	});
 
 	it("should keep each package's mapped files on its own universe", () => {

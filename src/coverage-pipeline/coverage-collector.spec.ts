@@ -6,12 +6,17 @@ import { luauParser } from "../luau/parser.ts";
 import type { CollectorResult } from "./coverage-collector.ts";
 import { collectCoverage } from "./coverage-collector.ts";
 
-function span(
-	beginLine: number,
-	beginColumn: number,
-	endLine: number,
-	endColumn: number,
-): LuauSpan {
+function span({
+	beginColumn,
+	beginLine,
+	endColumn,
+	endLine,
+}: {
+	beginColumn: number;
+	beginLine: number;
+	endColumn: number;
+	endLine: number;
+}): LuauSpan {
 	return { beginColumn, beginLine, endColumn, endLine };
 }
 
@@ -44,11 +49,11 @@ describe(collectCoverage, () => {
 			expect(result.statements).toHaveLength(2);
 			expect(result.statements[0]).toStrictEqual({
 				index: 1,
-				location: span(1, 1, 1, 12),
+				location: span({ beginColumn: 1, beginLine: 1, endColumn: 12, endLine: 1 }),
 			});
 			expect(result.statements[1]).toStrictEqual({
 				index: 2,
-				location: span(2, 1, 2, 9),
+				location: span({ beginColumn: 1, beginLine: 2, endColumn: 9, endLine: 2 }),
 			});
 		});
 
@@ -74,7 +79,7 @@ describe(collectCoverage, () => {
 				bodyFirstColumn: 2,
 				bodyFirstLine: 2,
 				index: 1,
-				location: span(1, 1, 3, 4),
+				location: span({ beginColumn: 1, beginLine: 1, endColumn: 4, endLine: 3 }),
 			});
 		});
 
@@ -206,12 +211,12 @@ describe(collectCoverage, () => {
 			expect(result.wrapProbes[0]).toStrictEqual({
 				armIndex: 1,
 				branchIndex: 1,
-				exprLocation: span(1, 21, 1, 22),
+				exprLocation: span({ beginColumn: 21, beginLine: 1, endColumn: 22, endLine: 1 }),
 			});
 			expect(result.wrapProbes[1]).toStrictEqual({
 				armIndex: 2,
 				branchIndex: 1,
-				exprLocation: span(1, 28, 1, 29),
+				exprLocation: span({ beginColumn: 28, beginLine: 1, endColumn: 29, endLine: 1 }),
 			});
 		});
 
@@ -240,12 +245,30 @@ describe(collectCoverage, () => {
 			expect(result.branches[0]!.branchType).toBe("binary-expr");
 			expect(result.branches[0]!.arms).toHaveLength(2);
 			expect(result.branches[0]!.arms.map((arm) => arm.location)).toStrictEqual([
-				span(1, 11, 1, 12),
-				span(1, 17, 1, 18),
+				span({ beginColumn: 11, beginLine: 1, endColumn: 12, endLine: 1 }),
+				span({ beginColumn: 17, beginLine: 1, endColumn: 18, endLine: 1 }),
 			]);
 			expect(result.wrapProbes).toStrictEqual([
-				{ armIndex: 1, branchIndex: 1, exprLocation: span(1, 11, 1, 12) },
-				{ armIndex: 2, branchIndex: 1, exprLocation: span(1, 17, 1, 18) },
+				{
+					armIndex: 1,
+					branchIndex: 1,
+					exprLocation: span({
+						beginColumn: 11,
+						beginLine: 1,
+						endColumn: 12,
+						endLine: 1,
+					}),
+				},
+				{
+					armIndex: 2,
+					branchIndex: 1,
+					exprLocation: span({
+						beginColumn: 17,
+						beginLine: 1,
+						endColumn: 18,
+						endLine: 1,
+					}),
+				},
 			]);
 		});
 
@@ -277,12 +300,12 @@ describe(collectCoverage, () => {
 
 			expect(result.branches.map((branch) => branch.index)).toStrictEqual([1, 2]);
 			expect(result.branches[0]!.arms.map((arm) => arm.location)).toStrictEqual([
-				span(1, 11, 1, 18),
-				span(1, 23, 1, 24),
+				span({ beginColumn: 11, beginLine: 1, endColumn: 18, endLine: 1 }),
+				span({ beginColumn: 23, beginLine: 1, endColumn: 24, endLine: 1 }),
 			]);
 			expect(result.branches[1]!.arms.map((arm) => arm.location)).toStrictEqual([
-				span(1, 11, 1, 12),
-				span(1, 17, 1, 18),
+				span({ beginColumn: 11, beginLine: 1, endColumn: 12, endLine: 1 }),
+				span({ beginColumn: 17, beginLine: 1, endColumn: 18, endLine: 1 }),
 			]);
 		});
 	});

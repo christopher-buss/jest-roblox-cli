@@ -194,11 +194,15 @@ function toDataModelPath(testFilePath: string): string {
 	return testFilePath.replace(LEADING_SLASH, "").replaceAll("/", ".");
 }
 
-function collectLocation(
-	locations: Array<MappedLocation>,
-	frame: StackFrame,
-	{ luauPath, source }: MappedFrame,
-): void {
+function collectLocation({
+	frame,
+	locations,
+	mapped: { luauPath, source },
+}: {
+	frame: StackFrame;
+	locations: Array<MappedLocation>;
+	mapped: MappedFrame;
+}): void {
 	if (source === undefined) {
 		// Only push the first Luau-only frame as a location — subsequent frames
 		// are internal stack trace (Jest, Promise) and would produce noisy
@@ -243,7 +247,7 @@ function rewriteFrames(
 		// Windows path would otherwise be read as a replacement pattern.
 		mappedMessage = mappedMessage.replace(original, () => replacement);
 
-		collectLocation(locations, frame, mapped);
+		collectLocation({ frame, locations, mapped });
 	}
 
 	return { locations, message: mappedMessage };

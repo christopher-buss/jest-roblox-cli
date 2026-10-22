@@ -39,11 +39,15 @@ const coverageMapSchema = type({
  * declines to spend microseconds. A stray left here belongs to a tree the next
  * instrumentation run rebuilds.
  */
-export function writeCoverageMap(
-	filePath: string,
-	map: CoverageMap,
-	fileSystem: FileSystem = nodeFileSystem,
-): void {
+export function writeCoverageMap({
+	filePath,
+	fileSystem = nodeFileSystem,
+	map,
+}: {
+	filePath: string;
+	fileSystem?: FileSystem;
+	map: CoverageMap;
+}): void {
 	atomicWrite({
 		contents: JSON.stringify(map, undefined, "\t"),
 		fileSystem,

@@ -187,11 +187,15 @@ export const manifestSchema: type<CoverageManifest> = type({
 	"version": type.unit(MANIFEST_VERSION),
 }).as<CoverageManifest>();
 
-export function writeManifest(
-	filePath: string,
-	manifest: CoverageManifest,
-	fileSystem: FileSystem = nodeFileSystem,
-): void {
+export function writeManifest({
+	filePath,
+	fileSystem = nodeFileSystem,
+	manifest,
+}: {
+	filePath: string;
+	fileSystem?: FileSystem;
+	manifest: CoverageManifest;
+}): void {
 	atomicWrite({
 		contents: JSON.stringify(manifest, undefined, "\t"),
 		fileSystem,
@@ -203,5 +207,10 @@ export function readManifest(
 	filePath: string,
 	fileSystem: FileSystem = nodeFileSystem,
 ): ReadManifestResult {
-	return parseVersionedManifest(filePath, manifestSchema, MANIFEST_VERSION, fileSystem);
+	return parseVersionedManifest({
+		expectedVersion: MANIFEST_VERSION,
+		filePath,
+		fileSystem,
+		schema: manifestSchema,
+	});
 }

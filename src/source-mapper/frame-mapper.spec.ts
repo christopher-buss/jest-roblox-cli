@@ -75,11 +75,11 @@ describe(createFrameMapper, () => {
 		});
 
 		expect(resolve).toHaveBeenCalledExactlyOnceWith("ReplicatedStorage.example");
-		expect(context.v3Mapper.mapFromSourceMap).toHaveBeenCalledExactlyOnceWith(
-			"out/example.luau",
-			12,
-			7,
-		);
+		expect(context.v3Mapper.mapFromSourceMap).toHaveBeenCalledExactlyOnceWith({
+			column: 7,
+			line: 12,
+			luauPath: "out/example.luau",
+		});
 		expect(result).toStrictEqual({
 			luauPath: "out/example.luau",
 			source: {

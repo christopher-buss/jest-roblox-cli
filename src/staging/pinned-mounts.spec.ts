@@ -71,6 +71,7 @@ function serviceModelXml(rootClass: string): string {
 
 function seed(files: Record<string, string> = {}): Harness {
 	const memory = seedVolume(files);
+	// eslint-disable-next-line better-max-params/better-max-params -- fakes the Node execFile signature.
 	const execFile = vi.fn<RojoExec>((_file, args, _options, callback) => {
 		const outputPath = args[3];
 		memory.volume.writeFileSync(String(outputPath), serviceModelXml("StarterPlayerScripts"));
@@ -85,8 +86,10 @@ function seed(files: Record<string, string> = {}): Harness {
  */
 function directoryMount(
 	service: string,
-	directory: string,
-	globIgnorePaths?: Array<string>,
+	{
+		directory,
+		globIgnorePaths,
+	}: { directory: string; globIgnorePaths?: Array<string> | undefined },
 ): string {
 	return stagedProject(
 		{ pkg: { $className: "Folder", [service]: { $className: "Folder", $path: directory } } },
@@ -223,7 +226,7 @@ describe(demotePinnedMountsAsync, () => {
 
 		const project = await demoteAsync(
 			rojo,
-			directoryMount("StarterPlayer", path.join(ASSETS, "StarterPlayer")),
+			directoryMount("StarterPlayer", { directory: path.join(ASSETS, "StarterPlayer") }),
 		);
 
 		// The auto-mount stays, less the one entry the stand-in replaces.
@@ -247,7 +250,7 @@ describe(demotePinnedMountsAsync, () => {
 
 			const project = await demoteAsync(
 				rojo,
-				directoryMount("StarterPlayer", path.join(ASSETS, "StarterPlayer")),
+				directoryMount("StarterPlayer", { directory: path.join(ASSETS, "StarterPlayer") }),
 			);
 
 			expect(mountOf(project, "pkg", "StarterPlayer", "StarterPlayerScripts")).toContain(
@@ -381,9 +384,10 @@ describe(demotePinnedMountsAsync, () => {
 		const rojo = seed({
 			[path.join(ASSETS, "Workspace/Terrain.rbxmx")]: serviceModelXml("Terrain"),
 		});
-		const projectJson = directoryMount("Workspace", path.join(ASSETS, "Workspace"), [
-			"**/Terrain.rbxmx",
-		]);
+		const projectJson = directoryMount("Workspace", {
+			directory: path.join(ASSETS, "Workspace"),
+			globIgnorePaths: ["**/Terrain.rbxmx"],
+		});
 
 		await expect(runAsync(rojo, projectJson)).resolves.toBe(projectJson);
 	});
@@ -433,7 +437,10 @@ describe(demotePinnedMountsAsync, () => {
 
 		const project = await demoteAsync(
 			rojo,
-			directoryMount("Workspace", path.join(ASSETS, "Workspace"), ["**/lobby/Terrain.rbxmx"]),
+			directoryMount("Workspace", {
+				directory: path.join(ASSETS, "Workspace"),
+				globIgnorePaths: ["**/lobby/Terrain.rbxmx"],
+			}),
 		);
 
 		expect(mountOf(project, "pkg", "Workspace", "Terrain")).toContain("pinned-shadow");
@@ -445,7 +452,10 @@ describe(demotePinnedMountsAsync, () => {
 		const rojo = seed({
 			[path.join(ASSETS, "Workspace/.generated/Terrain.rbxmx")]: serviceModelXml("Terrain"),
 		});
-		const projectJson = directoryMount("Workspace", path.join(ASSETS, "Workspace"), ["**/*"]);
+		const projectJson = directoryMount("Workspace", {
+			directory: path.join(ASSETS, "Workspace"),
+			globIgnorePaths: ["**/*"],
+		});
 
 		await expect(runAsync(rojo, projectJson)).resolves.toBe(projectJson);
 	});
@@ -465,7 +475,10 @@ describe(demotePinnedMountsAsync, () => {
 			.replaceAll("\\", "/");
 
 		await expect(
-			runAsync(rojo, directoryMount("Workspace", path.join(ASSETS, "Workspace"))),
+			runAsync(
+				rojo,
+				directoryMount("Workspace", { directory: path.join(ASSETS, "Workspace") }),
+			),
 		).rejects.toThrow(
 			new ConfigError(
 				`"${buried}" declares Terrain, which the engine parents only under one service, but it is nested inside the mount at "${mountRoot}" rather than sitting directly in it. ` +
@@ -484,7 +497,7 @@ describe(demotePinnedMountsAsync, () => {
 
 		const project = await demoteAsync(
 			rojo,
-			directoryMount("Workspace", path.join(ASSETS, "Workspace")),
+			directoryMount("Workspace", { directory: path.join(ASSETS, "Workspace") }),
 		);
 
 		expect(mountOf(project, "pkg", "Workspace", "Terrain")).toContain("pinned-shadow");
@@ -497,7 +510,9 @@ describe(demotePinnedMountsAsync, () => {
 			[path.join(ASSETS, "Workspace/maps/config.model.json")]: '{"ClassName":"Model"}',
 			[path.join(ASSETS, "Workspace/maps/init.luau")]: "return {}",
 		});
-		const projectJson = directoryMount("Workspace", path.join(ASSETS, "Workspace"));
+		const projectJson = directoryMount("Workspace", {
+			directory: path.join(ASSETS, "Workspace"),
+		});
 
 		await expect(runAsync(rojo, projectJson)).resolves.toBe(projectJson);
 	});
@@ -509,7 +524,7 @@ describe(demotePinnedMountsAsync, () => {
 			[path.join(ASSETS, "src/Child/init.meta.json/value.luau")]: "return 1",
 		});
 		const readFile = vi.spyOn(rojo.fileSystem, "readFileSync");
-		const projectJson = directoryMount("Workspace", path.join(ASSETS, "src"));
+		const projectJson = directoryMount("Workspace", { directory: path.join(ASSETS, "src") });
 
 		await expect(runAsync(rojo, projectJson)).resolves.toBe(projectJson);
 		expect(readFile).not.toHaveBeenCalled();
@@ -529,7 +544,9 @@ describe(demotePinnedMountsAsync, () => {
 				[path.join(ASSETS, value)]: "return 1",
 			});
 			const readFile = vi.spyOn(rojo.fileSystem, "readFileSync");
-			const projectJson = directoryMount("Workspace", path.join(ASSETS, "src"));
+			const projectJson = directoryMount("Workspace", {
+				directory: path.join(ASSETS, "src"),
+			});
 
 			await expect(runAsync(rojo, projectJson)).resolves.toBe(projectJson);
 			expect(readFile).toHaveBeenCalledTimes(reads);
@@ -600,7 +617,7 @@ describe(demotePinnedMountsAsync, () => {
 
 			const project = await demoteAsync(
 				rojo,
-				directoryMount("StarterPlayer", path.join(ASSETS, "StarterPlayer")),
+				directoryMount("StarterPlayer", { directory: path.join(ASSETS, "StarterPlayer") }),
 			);
 
 			expect(staged(project, "pkg", "StarterPlayer", instanceName)).toBeDefined();

@@ -26,7 +26,9 @@ describe(createV3Mapper, () => {
 
 		const { fileSystem } = createMemoryFileSystem();
 
-		expect(createV3Mapper(fileSystem).mapFromSourceMap("output.luau", 1)).toBeUndefined();
+		expect(
+			createV3Mapper(fileSystem).mapFromSourceMap({ line: 1, luauPath: "output.luau" }),
+		).toBeUndefined();
 	});
 
 	it("should return the mapped position from a valid V3 sourcemap", () => {
@@ -34,7 +36,10 @@ describe(createV3Mapper, () => {
 
 		const { fileSystem } = createMemoryFileSystem({ "/output.luau.map": TWO_LINE_MAP });
 
-		const result = createV3Mapper(fileSystem).mapFromSourceMap("/output.luau", 1);
+		const result = createV3Mapper(fileSystem).mapFromSourceMap({
+			line: 1,
+			luauPath: "/output.luau",
+		});
 
 		expect(result).toBeDefined();
 		expect(result!.source).toBe("../src/input.ts");
@@ -46,7 +51,9 @@ describe(createV3Mapper, () => {
 
 		const { fileSystem } = createMemoryFileSystem({ "/output.luau.map": ONE_LINE_MAP });
 
-		expect(createV3Mapper(fileSystem).mapFromSourceMap("/output.luau", 99)).toBeUndefined();
+		expect(
+			createV3Mapper(fileSystem).mapFromSourceMap({ line: 99, luauPath: "/output.luau" }),
+		).toBeUndefined();
 	});
 
 	it("should parse a sourcemap once however many lookups it answers", () => {
@@ -57,8 +64,8 @@ describe(createV3Mapper, () => {
 		const exists = vi.spyOn(fileSystem, "existsSync");
 		const mapper = createV3Mapper(fileSystem);
 
-		mapper.mapFromSourceMap("/cached.luau", 1);
-		mapper.mapFromSourceMap("/cached.luau", 1);
+		mapper.mapFromSourceMap({ line: 1, luauPath: "/cached.luau" });
+		mapper.mapFromSourceMap({ line: 1, luauPath: "/cached.luau" });
 
 		expect(readFile).toHaveBeenCalledExactlyOnceWith("/cached.luau.map", "utf-8");
 		expect(exists).toHaveBeenCalledExactlyOnceWith("/cached.luau.map");
@@ -70,10 +77,10 @@ describe(createV3Mapper, () => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({ "/cached.luau.map": ONE_LINE_MAP });
-		createV3Mapper(fileSystem).mapFromSourceMap("/cached.luau", 1);
+		createV3Mapper(fileSystem).mapFromSourceMap({ line: 1, luauPath: "/cached.luau" });
 		const readFile = vi.spyOn(fileSystem, "readFileSync");
 
-		createV3Mapper(fileSystem).mapFromSourceMap("/cached.luau", 1);
+		createV3Mapper(fileSystem).mapFromSourceMap({ line: 1, luauPath: "/cached.luau" });
 
 		expect(readFile).toHaveBeenCalledExactlyOnceWith("/cached.luau.map", "utf-8");
 	});
@@ -132,7 +139,9 @@ describe(createV3Mapper, () => {
 		});
 		const mapper = createV3Mapper(fileSystem);
 
-		expect(mapper.mapFromSourceMap("/output.luau", 1, 0)).toBeUndefined();
+		expect(
+			mapper.mapFromSourceMap({ column: 0, line: 1, luauPath: "/output.luau" }),
+		).toBeUndefined();
 		expect(mapper.mapLineStart("/output.luau", 1)).toMatchObject({
 			line: 1,
 			source: "../src/input.ts",

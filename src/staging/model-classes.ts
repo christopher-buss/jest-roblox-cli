@@ -103,11 +103,15 @@ function readJsonClasses(fileSystem: FileSystem, filePath: string): Array<string
 	);
 }
 
-function readChunkHeader(
-	fileSystem: FileSystem,
-	handle: number,
-	offset: number,
-): ChunkHeader | undefined {
+function readChunkHeader({
+	fileSystem,
+	handle,
+	offset,
+}: {
+	fileSystem: FileSystem;
+	handle: number;
+	offset: number;
+}): ChunkHeader | undefined {
 	const header = Buffer.alloc(CHUNK_HEADER_BYTES);
 	if (fileSystem.readSync(handle, header, 0, CHUNK_HEADER_BYTES, offset) < CHUNK_HEADER_BYTES) {
 		return undefined;
@@ -241,7 +245,7 @@ function readInstanceChunks(fileSystem: FileSystem, handle: number): Array<strin
 	let hasClassTable = false;
 
 	for (;;) {
-		const header = readChunkHeader(fileSystem, handle, offset);
+		const header = readChunkHeader({ fileSystem, handle, offset });
 		if (header === undefined) {
 			return classes;
 		}

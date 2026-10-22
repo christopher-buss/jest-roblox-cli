@@ -307,23 +307,19 @@ function buildStealingScript({
 	prepared: PreparedWorkStealing;
 	streaming: BuildStreamingResult | undefined;
 }): string {
-	return generateWorkStealingScript(
+	return generateWorkStealingScript({
+		bail,
 		inputs,
-		prepared.queueId,
-		prepared.invisibilityWindowSeconds,
-		{
-			bail,
-			// Its own map rather than a reserved key in the results map: the
-			// CLI polls that one and would have to decode past the signal, and
-			// a bail without a streaming consumer would publish per-package
-			// summaries nobody drains just to keep the channel open.
-			...(bail ? { bailMapId: generateUuid() } : {}),
-			queueTtlSeconds: prepared.ttlSeconds,
-			...(streaming === undefined
-				? {}
-				: { streaming: { sortedMapId: streaming.sortedMapId } }),
-		},
-	);
+		invisibilityWindowSeconds: prepared.invisibilityWindowSeconds,
+		queueId: prepared.queueId,
+		// Its own map rather than a reserved key in the results map: the
+		// CLI polls that one and would have to decode past the signal, and
+		// a bail without a streaming consumer would publish per-package
+		// summaries nobody drains just to keep the channel open.
+		...(bail ? { bailMapId: generateUuid() } : {}),
+		queueTtlSeconds: prepared.ttlSeconds,
+		...(streaming === undefined ? {} : { streaming: { sortedMapId: streaming.sortedMapId } }),
+	});
 }
 
 async function prepareStealingDispatchAsync({

@@ -53,6 +53,11 @@ export interface ArtifactBundle {
 	projects: Array<BuildManifestProject>;
 }
 
+interface ProduceArtifactsOptions extends Required<RunEntryOptions> {
+	config: ResolvedConfig;
+	timing: TimingCollector;
+}
+
 /**
  * The sole producer of a Clean Place. Builds the Coverage-Instrumented Place
  * and runs the instrumented suite once (via the shared single/multi core),
@@ -71,7 +76,7 @@ export async function prepareArtifactsAsync(
 ): Promise<ArtifactBundle> {
 	const timing = createTimingCollector();
 	try {
-		return await produceArtifactsAsync(config, timing, { dispatch, fileSystem, seams });
+		return await produceArtifactsAsync({ config, dispatch, fileSystem, seams, timing });
 	} finally {
 		timing.flushTimingReport();
 	}
@@ -115,16 +120,24 @@ function requireCoverageManifest(manifestPath: string, fileSystem: FileSystem): 
  * produced no attribution is a no-op — the file records the instrument step
  * wrote stay as published.
  */
-function writeManifestAttribution(
-	manifest: CoverageManifest,
-	attribution: AttributionResult | undefined,
-	fileSystem: FileSystem,
-): void {
+function writeManifestAttribution({
+	attribution,
+	fileSystem,
+	manifest,
+}: {
+	attribution: AttributionResult | undefined;
+	fileSystem: FileSystem;
+	manifest: CoverageManifest;
+}): void {
 	if (attribution === undefined) {
 		return;
 	}
 
-	writeManifest(COVERAGE_MANIFEST_PATH, applyAttribution(manifest, attribution), fileSystem);
+	writeManifest({
+		filePath: COVERAGE_MANIFEST_PATH,
+		fileSystem,
+		manifest: applyAttribution(manifest, attribution),
+	});
 }
 
 async function resolveCleanStubMountsAsync(
@@ -156,11 +169,15 @@ async function resolveCleanStubMountsAsync(
  * carries the same `jest.config` stub mounts the coverage run already wrote to
  * the cache, so the Clean Place is runnable.
  */
-async function buildCleanPlaceAsync(
-	config: ResolvedConfig,
-	contentId: string,
-	entry: Required<RunEntryOptions>,
-): Promise<BuildManifestArtifact> {
+async function buildCleanPlaceAsync({
+	config,
+	contentId,
+	entry,
+}: {
+	config: ResolvedConfig;
+	contentId: string;
+	entry: Required<RunEntryOptions>;
+}): Promise<BuildManifestArtifact> {
 	const { fileSystem, seams } = entry;
 	const descriptor: UnwrappedPackageDescriptor = {
 		packageDirectory: path.resolve(config.rootDir),
@@ -179,11 +196,11 @@ async function buildCleanPlaceAsync(
 	});
 }
 
-async function produceArtifactsAsync(
-	config: ResolvedConfig,
-	timing: TimingCollector,
-	entry: Required<RunEntryOptions>,
-): Promise<ArtifactBundle> {
+async function produceArtifactsAsync({
+	config,
+	timing,
+	...entry
+}: ProduceArtifactsOptions): Promise<ArtifactBundle> {
 	const { fileSystem } = entry;
 	const cli: CliOptions = {};
 	const merged = mergeCliWithConfig(cli, {
@@ -192,26 +209,28 @@ async function produceArtifactsAsync(
 		collectPerTestCoverage: true,
 	});
 	const result = await runSingleOrMultiAsync(cli, merged, timing, entry);
-	const coverageArtifacts = requireCoverageArtifacts(result.coverageArtifacts);
+	const artifacts = requireCoverageArtifacts(result.coverageArtifacts);
 	const coverageManifest = requireCoverageManifest(COVERAGE_MANIFEST_PATH, fileSystem);
-	const cleanPlace = await buildCleanPlaceAsync(
-		merged,
-		computePlaceContentId(coverageManifest),
+	const cleanPlace = await buildCleanPlaceAsync({
+		config: merged,
+		contentId: computePlaceContentId(coverageManifest),
 		entry,
-	);
+	});
 
 	// One atomic write that knows both places — never write-then-patch.
-	emitBuildManifest(COVERAGE_BUILD_MANIFEST_PATH, coverageArtifacts, { cleanPlace, fileSystem });
+	const filePath = COVERAGE_BUILD_MANIFEST_PATH;
+	emitBuildManifest({ artifacts, cleanPlace, filePath, fileSystem });
 
-	writeManifestAttribution(coverageManifest, result.merged.attribution, fileSystem);
+	const { attribution } = result.merged;
+	writeManifestAttribution({ attribution, fileSystem, manifest: coverageManifest });
 
 	return {
-		buildId: coverageArtifacts.buildId,
+		buildId: artifacts.buildId,
 		buildManifestPath: COVERAGE_BUILD_MANIFEST_PATH,
 		cleanPlace,
 		coverageData: result.merged.coverageData,
 		coverageManifestPath: COVERAGE_MANIFEST_PATH,
-		coveragePlace: coverageArtifacts.coveragePlace,
-		projects: coverageArtifacts.projects,
+		coveragePlace: artifacts.coveragePlace,
+		projects: artifacts.projects,
 	};
 }

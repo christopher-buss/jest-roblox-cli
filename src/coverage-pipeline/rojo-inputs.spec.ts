@@ -29,8 +29,10 @@ function writeProject(tree: JSONObject): MemoryFileSystem {
 
 async function hashOfAsync(
 	fileSystem: FileSystem,
-	luauRoots: Array<string> = [],
-	projectJson?: string,
+	{
+		luauRoots = [],
+		projectJson,
+	}: { luauRoots?: Array<string>; projectJson?: string | undefined } = {},
 ): Promise<string> {
 	return computeRojoInputsHashAsync({
 		digestCacheFile: DIGEST_CACHE,
@@ -161,12 +163,14 @@ describe(computeRojoInputsHashAsync, () => {
 			tree: { $className: "DataModel", Inc: { $path: "include" } },
 		});
 
-		const first = await hashOfAsync(fileSystem, [], held);
+		const first = await hashOfAsync(fileSystem, { luauRoots: [], projectJson: held });
 
 		expect(first).toMatch(/^[a-f0-9]{64}$/);
 		// Same tree, different bytes: the text is the input, not what it parses
 		// to, so a whitespace-only edit still moves the digest.
-		await expect(hashOfAsync(fileSystem, [], `${held} `)).resolves.not.toBe(first);
+		await expect(
+			hashOfAsync(fileSystem, { luauRoots: [], projectJson: `${held} ` }),
+		).resolves.not.toBe(first);
 	});
 
 	it("should return a sha256 digest", async () => {
@@ -338,14 +342,14 @@ describe(computeRojoInputsHashAsync, () => {
 		volume.writeFileSync("/project/out/nested/b.luau", "local b = 1");
 		volume.mkdirSync("/project/include", { recursive: true });
 		volume.writeFileSync("/project/include/x.lua", "-- x");
-		const before = await hashOfAsync(fileSystem, ["out"]);
+		const before = await hashOfAsync(fileSystem, { luauRoots: ["out"] });
 
 		volume.writeFileSync("/project/out/a.luau", "local a = 2");
 		volume.writeFileSync("/project/out/nested/b.luau", "local b = 2");
-		const afterLuauRootEdits = await hashOfAsync(fileSystem, ["out"]);
+		const afterLuauRootEdits = await hashOfAsync(fileSystem, { luauRoots: ["out"] });
 
 		volume.writeFileSync("/project/include/x.lua", "-- changed");
-		const afterIncludeEdit = await hashOfAsync(fileSystem, ["out"]);
+		const afterIncludeEdit = await hashOfAsync(fileSystem, { luauRoots: ["out"] });
 
 		expect(afterLuauRootEdits).toBe(before);
 		expect(afterIncludeEdit).not.toBe(before);
@@ -511,16 +515,20 @@ describe(computeRojoInputsHashAsync, () => {
 		volume.mkdirSync("/project/out/client", { recursive: true });
 		volume.writeFileSync("/project/out/modules/ecs/world.luau", "-- v1");
 		volume.writeFileSync("/project/out/client/button.luau", "-- v1");
-		const before = await hashOfAsync(fileSystem, ["out/modules/ecs"]);
+		const before = await hashOfAsync(fileSystem, { luauRoots: ["out/modules/ecs"] });
 
 		// The shadow diff content-hashes the root itself, so re-reading it here
 		// would double the work the narrowing exists to avoid.
 		volume.writeFileSync("/project/out/modules/ecs/world.luau", "-- v2");
 
-		await expect(hashOfAsync(fileSystem, ["out/modules/ecs"])).resolves.toBe(before);
+		await expect(hashOfAsync(fileSystem, { luauRoots: ["out/modules/ecs"] })).resolves.toBe(
+			before,
+		);
 
 		volume.writeFileSync("/project/out/client/button.luau", "-- v2");
 
-		await expect(hashOfAsync(fileSystem, ["out/modules/ecs"])).resolves.not.toBe(before);
+		await expect(hashOfAsync(fileSystem, { luauRoots: ["out/modules/ecs"] })).resolves.not.toBe(
+			before,
+		);
 	});
 });

@@ -47,19 +47,20 @@ const SHARED_PLACE: BuildManifestArtifact = { hash: "place-hash", path: "synthes
 
 interface SeedOptions {
 	luauRoots?: Array<string>;
+	packageDirectory: string;
 	rojoTree?: object;
 }
 
 function seedPackage(
 	volume: MemoryVolume,
-	packageDirectory: string,
 	{
 		luauRoots = ["out"],
+		packageDirectory,
 		rojoTree = {
 			$className: "DataModel",
 			ReplicatedStorage: { Pkg: { $path: "out" } },
 		},
-	}: SeedOptions = {},
+	}: SeedOptions,
 ): void {
 	volume.fromJSON({
 		[path.join(packageDirectory, "test.project.json")]: JSON.stringify({
@@ -119,7 +120,7 @@ describe(prepareWorkspaceCoverage, () => {
 			expect.assertions(2);
 
 			const { fileSystem, volume } = createMemoryFileSystem();
-			seedPackage(volume, FOO_DIR);
+			seedPackage(volume, { packageDirectory: FOO_DIR });
 			volume.mkdirSync(path.join(FOO_DIR, "out/ui"), { recursive: true });
 			volume.writeFileSync(path.join(FOO_DIR, "out/ui/button.luau"), "local y = 2");
 			const instrumenter = createInstrumenter();
@@ -150,8 +151,9 @@ describe(prepareWorkspaceCoverage, () => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
-		seedPackage(volume, FOO_DIR, {
+		seedPackage(volume, {
 			luauRoots: ["out", "vendor"],
+			packageDirectory: FOO_DIR,
 			rojoTree: {
 				$className: "DataModel",
 				ReplicatedStorage: { Pkg: { $path: "out" }, Vendor: { $path: "vendor" } },
@@ -182,7 +184,7 @@ describe(prepareWorkspaceCoverage, () => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
-		seedPackage(volume, FOO_DIR);
+		seedPackage(volume, { packageDirectory: FOO_DIR });
 		const instrumenter = createInstrumenter();
 
 		const result = prepareWorkspaceCoverage({
@@ -206,7 +208,7 @@ describe(prepareWorkspaceCoverage, () => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
-		seedPackage(volume, FOO_DIR);
+		seedPackage(volume, { packageDirectory: FOO_DIR });
 		const instrumenter = createInstrumenter();
 
 		const result = prepareWorkspaceCoverage({
@@ -237,7 +239,7 @@ describe(prepareWorkspaceCoverage, () => {
 		expect.assertions(3);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
-		seedPackage(volume, FOO_DIR);
+		seedPackage(volume, { packageDirectory: FOO_DIR });
 		const instrumenter = createInstrumenter();
 
 		const result = prepareWorkspaceCoverage({
@@ -267,8 +269,9 @@ describe(prepareWorkspaceCoverage, () => {
 		expect.assertions(3);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
-		seedPackage(volume, FOO_DIR, {
+		seedPackage(volume, {
 			luauRoots: ["out/client", "out/server"],
+			packageDirectory: FOO_DIR,
 			rojoTree: {
 				$className: "DataModel",
 				ReplicatedStorage: { Client: { $path: "out/client" } },
@@ -302,8 +305,8 @@ describe(prepareWorkspaceCoverage, () => {
 		expect.assertions(4);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
-		seedPackage(volume, FOO_DIR);
-		seedPackage(volume, BAR_DIR);
+		seedPackage(volume, { packageDirectory: FOO_DIR });
+		seedPackage(volume, { packageDirectory: BAR_DIR });
 		const instrumenter = createInstrumenter();
 
 		const result = prepareWorkspaceCoverage({
@@ -339,7 +342,7 @@ describe(prepareWorkspaceCoverage, () => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
-		seedPackage(volume, FOO_DIR);
+		seedPackage(volume, { packageDirectory: FOO_DIR });
 		const instrumenter = createInstrumenter();
 
 		const [result] = prepareWorkspaceCoverage({
@@ -516,7 +519,7 @@ describe(prepareWorkspaceCoverage, () => {
 			version: MANIFEST_VERSION,
 		};
 
-		seedPackage(volume, FOO_DIR);
+		seedPackage(volume, { packageDirectory: FOO_DIR });
 		volume.fromJSON({
 			[path.join(
 				WORKSPACE_ROOT,
@@ -621,7 +624,7 @@ describe(prepareWorkspaceCoverage, () => {
 		const { fileSystem, volume } = createMemoryFileSystem();
 		const stderrSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
 
-		seedPackage(volume, FOO_DIR);
+		seedPackage(volume, { packageDirectory: FOO_DIR });
 		const manifestDirectory = path.join(
 			WORKSPACE_ROOT,
 			".jest-roblox/workspace/@halcyon-foo/coverage",
@@ -974,8 +977,9 @@ describe(prepareWorkspaceCoverage, () => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
-		seedPackage(volume, FOO_DIR, {
+		seedPackage(volume, {
 			luauRoots: ["node_modules"],
+			packageDirectory: FOO_DIR,
 			rojoTree: {
 				$className: "DataModel",
 				ReplicatedStorage: { Vendor: { $path: "node_modules" } },
@@ -1252,7 +1256,7 @@ describe(prepareWorkspaceCoverage, () => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
-		seedPackage(volume, FOO_DIR);
+		seedPackage(volume, { packageDirectory: FOO_DIR });
 		const instrumenter = createInstrumenter();
 
 		prepareWorkspaceCoverage({
@@ -1273,7 +1277,7 @@ describe(prepareWorkspaceCoverage, () => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
-		seedPackage(volume, FOO_DIR, { luauRoots: ["unmounted"] });
+		seedPackage(volume, { luauRoots: ["unmounted"], packageDirectory: FOO_DIR });
 		const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
 		const instrumenter = createInstrumenter();
 
@@ -1377,8 +1381,9 @@ describe(prepareWorkspaceCoverage, () => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
-		seedPackage(volume, FOO_DIR, {
+		seedPackage(volume, {
 			luauRoots: ["out/generated"],
+			packageDirectory: FOO_DIR,
 			rojoTree: {
 				$className: "DataModel",
 				ReplicatedStorage: { Generated: { $path: "out/generated" } },
@@ -2392,7 +2397,7 @@ describe(prepareWorkspaceCoverage, () => {
 				version: MANIFEST_VERSION,
 			};
 
-			seedPackage(volume, FOO_DIR);
+			seedPackage(volume, { packageDirectory: FOO_DIR });
 			volume.fromJSON({
 				[path.join(packageShadow, "coverage-manifest.json")]:
 					JSON.stringify(previousManifest),
@@ -2469,7 +2474,7 @@ describe(emitWorkspaceBuildManifests, () => {
 		expect.assertions(4);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
-		seedPackage(volume, FOO_DIR);
+		seedPackage(volume, { packageDirectory: FOO_DIR });
 		const instrumenter = createInstrumenter();
 
 		const entries = prepareWorkspaceCoverage({
@@ -2481,7 +2486,7 @@ describe(emitWorkspaceBuildManifests, () => {
 			workspaceRoot: WORKSPACE_ROOT,
 		});
 
-		emitWorkspaceBuildManifests(entries, SHARED_PLACE, fileSystem);
+		emitWorkspaceBuildManifests({ coveragePlace: SHARED_PLACE, entries, fileSystem });
 
 		const buildManifestPath = path.join(
 			WORKSPACE_ROOT,
@@ -2503,8 +2508,8 @@ describe(emitWorkspaceBuildManifests, () => {
 		expect.assertions(5);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
-		seedPackage(volume, FOO_DIR);
-		seedPackage(volume, BAR_DIR);
+		seedPackage(volume, { packageDirectory: FOO_DIR });
+		seedPackage(volume, { packageDirectory: BAR_DIR });
 		const instrumenter = createInstrumenter();
 
 		const entries = prepareWorkspaceCoverage({
@@ -2517,7 +2522,7 @@ describe(emitWorkspaceBuildManifests, () => {
 			workspaceRoot: WORKSPACE_ROOT,
 		});
 
-		emitWorkspaceBuildManifests(entries, SHARED_PLACE, fileSystem);
+		emitWorkspaceBuildManifests({ coveragePlace: SHARED_PLACE, entries, fileSystem });
 
 		const foo = readPackageBuildManifest(volume, "@halcyon-foo");
 		const bar = readPackageBuildManifest(volume, "@halcyon-bar");
@@ -2535,7 +2540,7 @@ describe(emitWorkspaceBuildManifests, () => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
-		seedPackage(volume, FOO_DIR);
+		seedPackage(volume, { packageDirectory: FOO_DIR });
 		const instrumenter = createInstrumenter();
 
 		const entries = prepareWorkspaceCoverage({
@@ -2547,7 +2552,7 @@ describe(emitWorkspaceBuildManifests, () => {
 			workspaceRoot: WORKSPACE_ROOT,
 		});
 
-		emitWorkspaceBuildManifests(entries, SHARED_PLACE, fileSystem);
+		emitWorkspaceBuildManifests({ coveragePlace: SHARED_PLACE, entries, fileSystem });
 
 		const manifest = readPackageBuildManifest(volume, "@halcyon-foo");
 		const expectedKey = `${path.join(FOO_DIR, "out").replaceAll("\\", "/")}/init.luau`;

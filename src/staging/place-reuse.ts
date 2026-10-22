@@ -128,11 +128,15 @@ export function readPlaceReuseRecord(
 	}
 }
 
-export function writePlaceReuseRecord(
-	cacheFile: string,
-	record: PlaceReuseRecord,
-	fileSystem: FileSystem = nodeFileSystem,
-): void {
+export function writePlaceReuseRecord({
+	cacheFile,
+	fileSystem = nodeFileSystem,
+	record,
+}: {
+	cacheFile: string;
+	fileSystem?: FileSystem;
+	record: PlaceReuseRecord;
+}): void {
 	// Atomic, like the manifests it sits beside: a torn record read back as a
 	// key match would hand out a place that was never built.
 	atomicWrite({ contents: JSON.stringify(record), fileSystem, targetPath: cacheFile });

@@ -93,7 +93,7 @@ function buildCoverageResult(coverage?: RawCoverageData) {
 	});
 	const manifest = buildManifest(files, fixtureOut, shadowDirectory);
 	const coverageData = coverage ?? buildSyntheticCoverage(files);
-	return mapCoverageToTypeScript(coverageData, manifest);
+	return mapCoverageToTypeScript({ coverageData, manifest });
 }
 
 describe("coverage mapping pipeline (roblox-ts)", { timeout: 30_000 }, () => {

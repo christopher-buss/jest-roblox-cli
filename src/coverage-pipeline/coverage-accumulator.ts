@@ -132,7 +132,15 @@ class CoverageAccumulator {
 		}
 	}
 
-	public addFunction(name: string, location: LuauSpan, { column, line }: SourcePosition): void {
+	public addFunction({
+		name,
+		location,
+		start: { column, line },
+	}: {
+		location: LuauSpan;
+		name: string;
+		start: SourcePosition;
+	}): void {
 		this.functions.push({
 			name,
 			bodyFirstColumn: column,

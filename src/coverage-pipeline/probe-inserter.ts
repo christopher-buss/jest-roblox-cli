@@ -28,7 +28,15 @@ interface ProbeInfo {
 const KIND_RANK = { close: 2, open: 0, point: 1 } satisfies Record<ProbeKind, number>;
 const TRAILING_WHITESPACE = /\s$/;
 
-export function insertProbes(source: string, result: CollectorResult, fileKey: string): string {
+export function insertProbes({
+	fileKey,
+	result,
+	source,
+}: {
+	fileKey: string;
+	result: CollectorResult;
+	source: string;
+}): string {
 	const lines = splitLines(source);
 	const probes = collectProbes(result);
 

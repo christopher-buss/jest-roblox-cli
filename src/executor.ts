@@ -416,7 +416,7 @@ function collectProjectArtifacts(
 	// Built before the result's paths are rewritten: the resolver joins the
 	// per-test entries to Jest's own test cases on the DataModel path both
 	// report.
-	const resolveTestSource = createTestSourceResolver(result, sourceMapper, fileSystem);
+	const resolveTestSource = createTestSourceResolver({ fileSystem, result, sourceMapper });
 	resolveTestFilePaths(result, sourceMapper);
 
 	// Harvest whenever per-test coverage was collected, even if no test credited
@@ -426,7 +426,11 @@ function collectProjectArtifacts(
 		config.collectPerTestCoverage === true && coverageData !== undefined;
 	const attribution =
 		perTestCoverage !== undefined || shouldHarvestStatic
-			? harvestAttribution(perTestCoverage ?? [], coverageData ?? {}, resolveTestSource)
+			? harvestAttribution({
+					cumulative: coverageData ?? {},
+					entries: perTestCoverage ?? [],
+					resolveTestSource,
+				})
 			: undefined;
 
 	return { attribution, sourceMapper, writeCounts };

@@ -61,11 +61,11 @@ describe(createTestSourceResolver, () => {
 
 		volume.writeFileSync("/src/m.spec.ts", SOURCE);
 
-		const resolve = createTestSourceResolver(
-			jestResult("ReplicatedStorage/m.spec", [testCase("b", 6), testCase("a", 3)]),
-			mapperFor("/src/m.spec.ts"),
+		const resolve = createTestSourceResolver({
 			fileSystem,
-		);
+			result: jestResult("ReplicatedStorage/m.spec", [testCase("b", 6), testCase("a", 3)]),
+			sourceMapper: mapperFor("/src/m.spec.ts"),
+		});
 
 		expect(resolve("ReplicatedStorage/m.spec", "a").testSourceHash).toBe(
 			hashString("it('a', () => {\n});\n"),
@@ -84,11 +84,11 @@ describe(createTestSourceResolver, () => {
 
 		volume.writeFileSync("/src/m.spec.ts", "a\nb");
 
-		const resolve = createTestSourceResolver(
-			jestResult("ReplicatedStorage/m.spec", [testCase("a", 1)]),
-			mapperFor("/src/m.spec.ts"),
+		const resolve = createTestSourceResolver({
 			fileSystem,
-		);
+			result: jestResult("ReplicatedStorage/m.spec", [testCase("a", 1)]),
+			sourceMapper: mapperFor("/src/m.spec.ts"),
+		});
 
 		expect(resolve("ReplicatedStorage/m.spec", "a").testSourceHash).toBe(hashString("a\nb"));
 	});
@@ -103,11 +103,11 @@ describe(createTestSourceResolver, () => {
 		volume.writeFileSync("/src/m.spec.ts", SOURCE);
 
 		// Luau lines 10 and 13 map to TypeScript lines 3 and 6.
-		const resolve = createTestSourceResolver(
-			jestResult("ReplicatedStorage/m.spec", [testCase("a", 10), testCase("b", 13)]),
-			mapperFor("/src/m.spec.ts", -7),
+		const resolve = createTestSourceResolver({
 			fileSystem,
-		);
+			result: jestResult("ReplicatedStorage/m.spec", [testCase("a", 10), testCase("b", 13)]),
+			sourceMapper: mapperFor("/src/m.spec.ts", -7),
+		});
 
 		expect(resolve("ReplicatedStorage/m.spec", "a")).toStrictEqual({
 			location: { column: 0, line: 3 },
@@ -131,11 +131,11 @@ describe(createTestSourceResolver, () => {
 			mapTestFileLine: (_testFilePath: string, luauLine: number) => luauLine,
 			resolveTestFilePath: (testFilePath: string) => diskPaths.get(testFilePath),
 		};
-		const resolve = createTestSourceResolver(
-			jestResult("/src/m.spec.ts", [testCase("a", 3)]),
-			mapper,
+		const resolve = createTestSourceResolver({
 			fileSystem,
-		);
+			result: jestResult("/src/m.spec.ts", [testCase("a", 3)]),
+			sourceMapper: mapper,
+		});
 
 		expect(resolve("ReplicatedStorage/m.spec", "a").location).toStrictEqual({
 			column: 0,
@@ -152,15 +152,15 @@ describe(createTestSourceResolver, () => {
 
 		volume.writeFileSync("/src/m.spec.ts", SOURCE);
 
-		const resolve = createTestSourceResolver(
-			jestResult("ReplicatedStorage/m.spec", [
+		const resolve = createTestSourceResolver({
+			fileSystem,
+			result: jestResult("ReplicatedStorage/m.spec", [
 				testCase("row true", 3),
 				testCase("row false", 3),
 				testCase("b", 6),
 			]),
-			mapperFor("/src/m.spec.ts"),
-			fileSystem,
-		);
+			sourceMapper: mapperFor("/src/m.spec.ts"),
+		});
 
 		expect(resolve("ReplicatedStorage/m.spec", "row false").testSourceHash).toBe(
 			resolve("ReplicatedStorage/m.spec", "row true").testSourceHash,
@@ -174,7 +174,11 @@ describe(createTestSourceResolver, () => {
 		volume.mkdirSync("/src", { recursive: true });
 		volume.writeFileSync("/src/m.spec.ts", SOURCE);
 		const result = jestResult("ReplicatedStorage/m.spec", [testCase("a", 3)]);
-		const resolve = createTestSourceResolver(result, mapperFor("/src/m.spec.ts"), fileSystem);
+		const resolve = createTestSourceResolver({
+			fileSystem,
+			result,
+			sourceMapper: mapperFor("/src/m.spec.ts"),
+		});
 
 		const first = resolve("ReplicatedStorage/m.spec", "a");
 
@@ -195,11 +199,14 @@ describe(createTestSourceResolver, () => {
 
 		volume.writeFileSync("/src/m.spec.ts", SOURCE);
 
-		const resolve = createTestSourceResolver(
-			jestResult("ReplicatedStorage/m.spec", [testCase("a", 3)]),
-			{ mapTestFileLine: () => {}, resolveTestFilePath: () => "/src/m.spec.ts" },
+		const resolve = createTestSourceResolver({
 			fileSystem,
-		);
+			result: jestResult("ReplicatedStorage/m.spec", [testCase("a", 3)]),
+			sourceMapper: {
+				mapTestFileLine: () => {},
+				resolveTestFilePath: () => "/src/m.spec.ts",
+			},
+		});
 
 		expect(resolve("ReplicatedStorage/m.spec", "a")).toStrictEqual({
 			testFileSourceHash: hashFile("/src/m.spec.ts", fileSystem),
@@ -215,11 +222,11 @@ describe(createTestSourceResolver, () => {
 
 		volume.writeFileSync("/src/m.spec.ts", SOURCE);
 
-		const resolve = createTestSourceResolver(
-			jestResult("ReplicatedStorage/m.spec", [testCase("a")]),
-			mapperFor("/src/m.spec.ts"),
+		const resolve = createTestSourceResolver({
 			fileSystem,
-		);
+			result: jestResult("ReplicatedStorage/m.spec", [testCase("a")]),
+			sourceMapper: mapperFor("/src/m.spec.ts"),
+		});
 
 		expect(resolve("ReplicatedStorage/m.spec", "a")).toStrictEqual({
 			testFileSourceHash: hashFile("/src/m.spec.ts", fileSystem),
@@ -241,11 +248,11 @@ describe(createTestSourceResolver, () => {
 			mapTestFileLine: (_testFilePath: string, luauLine: number) => luauLine,
 			resolveTestFilePath: (testFilePath: string) => diskPaths.get(testFilePath),
 		};
-		const resolve = createTestSourceResolver(
-			jestResult("ReplicatedStorage/other.spec", [testCase("a", 1)]),
-			mapper,
+		const resolve = createTestSourceResolver({
 			fileSystem,
-		);
+			result: jestResult("ReplicatedStorage/other.spec", [testCase("a", 1)]),
+			sourceMapper: mapper,
+		});
 
 		expect(resolve("ReplicatedStorage/m.spec", "a")).toStrictEqual({
 			testFileSourceHash: hashFile("/src/m.spec.ts", fileSystem),
@@ -257,11 +264,11 @@ describe(createTestSourceResolver, () => {
 
 		const { fileSystem } = createMemoryFileSystem();
 
-		const resolve = createTestSourceResolver(
-			jestResult("ReplicatedStorage/m.spec", [testCase("a", 3)]),
-			mapperFor("/src/missing.spec.ts"),
+		const resolve = createTestSourceResolver({
 			fileSystem,
-		);
+			result: jestResult("ReplicatedStorage/m.spec", [testCase("a", 3)]),
+			sourceMapper: mapperFor("/src/missing.spec.ts"),
+		});
 
 		expect(resolve("ReplicatedStorage/m.spec", "a")).toStrictEqual({ testFileSourceHash: "" });
 	});
@@ -271,11 +278,11 @@ describe(createTestSourceResolver, () => {
 
 		const { fileSystem } = createMemoryFileSystem();
 
-		const resolve = createTestSourceResolver(
-			jestResult("ReplicatedStorage/m.spec", [testCase("a", 3)]),
-			undefined,
+		const resolve = createTestSourceResolver({
 			fileSystem,
-		);
+			result: jestResult("ReplicatedStorage/m.spec", [testCase("a", 3)]),
+			sourceMapper: undefined,
+		});
 
 		expect(resolve("ReplicatedStorage/m.spec", "a")).toStrictEqual({ testFileSourceHash: "" });
 	});

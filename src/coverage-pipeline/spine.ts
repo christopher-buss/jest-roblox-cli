@@ -351,12 +351,12 @@ function mirrorOneLevel({
 		}
 
 		const previousRecord = previousNonInstrumented?.[sourcePath];
-		const record = syncOneFile(
-			sourcePath,
-			`${spineDirectory}/${entry.name}`,
-			previousRecord,
+		const record = syncOneFile({
 			fileSystem,
-		);
+			previousRecord,
+			shadowPath: `${spineDirectory}/${entry.name}`,
+			sourcePath,
+		});
 		files[sourcePath] = record;
 		mirrored.add(entry.name);
 		hasChanged ||= record !== previousRecord;

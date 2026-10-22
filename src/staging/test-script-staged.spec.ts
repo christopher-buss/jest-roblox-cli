@@ -173,8 +173,8 @@ describe(generateWorkStealingScript, () => {
 	it("should embed queueId and invisibilityWindowSeconds alongside the entries", () => {
 		expect.assertions(3);
 
-		const script = generateWorkStealingScript(
-			[
+		const script = generateWorkStealingScript({
+			inputs: [
 				{
 					config: DEFAULT_CONFIG,
 					pkg: "@halcyon/foo",
@@ -182,9 +182,9 @@ describe(generateWorkStealingScript, () => {
 					testFiles: ["src/foo.spec.ts"],
 				},
 			],
-			"queue-uuid-1",
-			90,
-		);
+			invisibilityWindowSeconds: 90,
+			queueId: "queue-uuid-1",
+		});
 
 		expect(script).toContain('"queueId":"queue-uuid-1"');
 		expect(script).toContain('"invisibilityWindowSeconds":90');
@@ -201,13 +201,20 @@ describe(generateWorkStealingScript, () => {
 			{ config: DEFAULT_CONFIG, pkg: "@halcyon/foo", project: "core", testFiles: [] },
 		];
 
-		const script = generateWorkStealingScript(inputs, "queue-uuid-1", 90, {
+		const script = generateWorkStealingScript({
+			inputs,
+			invisibilityWindowSeconds: 90,
+			queueId: "queue-uuid-1",
 			queueTtlSeconds: 120,
 		});
 
-		expect(generateWorkStealingScript(inputs, "queue-uuid-1", 90)).not.toContain(
-			'"queueTtlSeconds":',
-		);
+		expect(
+			generateWorkStealingScript({
+				inputs,
+				invisibilityWindowSeconds: 90,
+				queueId: "queue-uuid-1",
+			}),
+		).not.toContain('"queueTtlSeconds":');
 		expect(script).toContain('"queueTtlSeconds":120');
 	});
 
@@ -222,25 +229,34 @@ describe(generateWorkStealingScript, () => {
 
 		// Matched in its encoded form: the bundled materializer source names
 		// the field too, so a bare substring would always be present.
-		expect(generateWorkStealingScript(inputs, "queue-uuid-3", 90)).not.toContain(
-			'"resultBudgetBytes":',
-		);
 		expect(
-			generateWorkStealingScript(inputs, "queue-uuid-3", 90, { resultBudgetBytes: 2048 }),
+			generateWorkStealingScript({
+				inputs,
+				invisibilityWindowSeconds: 90,
+				queueId: "queue-uuid-3",
+			}),
+		).not.toContain('"resultBudgetBytes":');
+		expect(
+			generateWorkStealingScript({
+				inputs,
+				invisibilityWindowSeconds: 90,
+				queueId: "queue-uuid-3",
+				resultBudgetBytes: 2048,
+			}),
 		).toContain('"resultBudgetBytes":2048');
 	});
 
 	it("should preserve entries in input order", () => {
 		expect.assertions(1);
 
-		const script = generateWorkStealingScript(
-			[
+		const script = generateWorkStealingScript({
+			inputs: [
 				{ config: DEFAULT_CONFIG, pkg: "@halcyon/foo", project: "alpha", testFiles: [] },
 				{ config: DEFAULT_CONFIG, pkg: "@halcyon/bar", project: "beta", testFiles: [] },
 			],
-			"queue-uuid-2",
-			60,
-		);
+			invisibilityWindowSeconds: 60,
+			queueId: "queue-uuid-2",
+		});
 
 		expect(script.indexOf('"pkg":"@halcyon/foo"')).toBeLessThan(
 			script.indexOf('"pkg":"@halcyon/bar"'),
@@ -251,23 +267,27 @@ describe(generateWorkStealingScript, () => {
 		expect.assertions(1);
 
 		expect(() => {
-			return generateWorkStealingScript(
-				[{ config: DEFAULT_CONFIG, pkg: "@halcyon/foo", project: "core", testFiles: [] }],
-				"queue]==]bad",
-				60,
-			);
+			return generateWorkStealingScript({
+				inputs: [
+					{ config: DEFAULT_CONFIG, pkg: "@halcyon/foo", project: "core", testFiles: [] },
+				],
+				invisibilityWindowSeconds: 60,
+				queueId: "queue]==]bad",
+			});
 		}).toThrow(/]==]/);
 	});
 
 	it("should embed sortedMapId and streamingTtlSeconds when streaming is configured", () => {
 		expect.assertions(2);
 
-		const script = generateWorkStealingScript(
-			[{ config: DEFAULT_CONFIG, pkg: "@halcyon/foo", project: "core", testFiles: [] }],
-			"queue-uuid-1",
-			90,
-			{ streaming: { sortedMapId: "stream-uuid", ttlSeconds: 300 } },
-		);
+		const script = generateWorkStealingScript({
+			inputs: [
+				{ config: DEFAULT_CONFIG, pkg: "@halcyon/foo", project: "core", testFiles: [] },
+			],
+			invisibilityWindowSeconds: 90,
+			queueId: "queue-uuid-1",
+			streaming: { sortedMapId: "stream-uuid", ttlSeconds: 300 },
+		});
 
 		expect(script).toContain('"sortedMapId":"stream-uuid"');
 		expect(script).toContain('"streamingTtlSeconds":300');
@@ -276,11 +296,13 @@ describe(generateWorkStealingScript, () => {
 	it("should omit streaming payload fields when streaming is not configured", () => {
 		expect.assertions(2);
 
-		const script = generateWorkStealingScript(
-			[{ config: DEFAULT_CONFIG, pkg: "@halcyon/foo", project: "core", testFiles: [] }],
-			"queue-uuid-1",
-			90,
-		);
+		const script = generateWorkStealingScript({
+			inputs: [
+				{ config: DEFAULT_CONFIG, pkg: "@halcyon/foo", project: "core", testFiles: [] },
+			],
+			invisibilityWindowSeconds: 90,
+			queueId: "queue-uuid-1",
+		});
 
 		// The Luau template always references `sortedMapId` in its type
 		// declaration; assert the JSON payload does not embed a value for it.
@@ -317,12 +339,14 @@ describe("bail payload", () => {
 	it("should embed bail in the work-stealing payload when requested", () => {
 		expect.assertions(1);
 
-		const script = generateWorkStealingScript(
-			[{ config: DEFAULT_CONFIG, pkg: "@halcyon/foo", project: "core", testFiles: [] }],
-			"queue-uuid-1",
-			90,
-			{ bail: true },
-		);
+		const script = generateWorkStealingScript({
+			bail: true,
+			inputs: [
+				{ config: DEFAULT_CONFIG, pkg: "@halcyon/foo", project: "core", testFiles: [] },
+			],
+			invisibilityWindowSeconds: 90,
+			queueId: "queue-uuid-1",
+		});
 
 		expect(script).toContain('"bail":true');
 	});
@@ -330,12 +354,15 @@ describe("bail payload", () => {
 	it("should embed the bail signal map when one is given", () => {
 		expect.assertions(1);
 
-		const script = generateWorkStealingScript(
-			[{ config: DEFAULT_CONFIG, pkg: "@halcyon/foo", project: "core", testFiles: [] }],
-			"queue-uuid-1",
-			90,
-			{ bail: true, bailMapId: "bail-uuid" },
-		);
+		const script = generateWorkStealingScript({
+			bail: true,
+			bailMapId: "bail-uuid",
+			inputs: [
+				{ config: DEFAULT_CONFIG, pkg: "@halcyon/foo", project: "core", testFiles: [] },
+			],
+			invisibilityWindowSeconds: 90,
+			queueId: "queue-uuid-1",
+		});
 
 		expect(script).toContain('"bailMapId":"bail-uuid"');
 	});

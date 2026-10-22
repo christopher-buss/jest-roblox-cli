@@ -192,7 +192,7 @@ function resolveSingleUnit(
 			coveragePathIgnorePatterns: config.coveragePathIgnorePatterns,
 			coverageThreshold: config.coverageThreshold,
 			reporters: config.coverageReporters,
-			universe: pipeline.mapCoverageToTypeScript(coverageData, manifest),
+			universe: pipeline.mapCoverageToTypeScript({ coverageData, manifest }),
 		},
 	];
 }
@@ -211,12 +211,12 @@ function enforceUnitThreshold(
 		return true;
 	}
 
-	const result = checkUnitThresholds(
-		unit.universe,
-		unit.coverageThreshold,
-		unit.collectCoverageFrom,
-		unit.coveragePathIgnorePatterns,
-	);
+	const result = checkUnitThresholds({
+		collectCoverageFrom: unit.collectCoverageFrom,
+		coveragePathIgnorePatterns: unit.coveragePathIgnorePatterns,
+		mapped: unit.universe,
+		thresholds: unit.coverageThreshold,
+	});
 	if (result.passed) {
 		return true;
 	}

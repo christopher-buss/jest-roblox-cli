@@ -219,7 +219,7 @@ export function synthesize(input: SynthesizeInput): string {
 	const globs: Array<DeclaredGlobs> = [];
 
 	for (const descriptor of input.packages) {
-		stagePackage({ fileSystem, stage }, descriptor, hoists, globs);
+		stagePackage({ descriptor, fileSystem, globs, hoists, stage });
 	}
 
 	const tree: RojoTreeNode = {
@@ -331,11 +331,15 @@ function resolveDollarPath(absoluteTarget: string, options: AbsolutizeOptions): 
 	return redirectPathToShadow(absoluteTarget, options.coverageRoots) ?? absoluteTarget;
 }
 
-function absolutizePaths(
-	node: RojoTreeNode,
-	treeBase: string,
-	options: AbsolutizeOptions,
-): RojoTreeNode {
+function absolutizePaths({
+	node,
+	options,
+	treeBase,
+}: {
+	node: RojoTreeNode;
+	options: AbsolutizeOptions;
+	treeBase: string;
+}): RojoTreeNode {
 	const result: RojoTreeNode = {};
 	let mountTarget: string | undefined;
 	for (const [key, value] of Object.entries(node)) {
@@ -352,7 +356,7 @@ function absolutizePaths(
 		}
 
 		if (!key.startsWith("$") && isTreeNode(value)) {
-			result[key] = absolutizePaths(value, treeBase, options);
+			result[key] = absolutizePaths({ node: value, options, treeBase });
 			continue;
 		}
 
@@ -361,29 +365,46 @@ function absolutizePaths(
 
 	// After the loop, so a name the project declares for itself wins over the
 	// sibling node the demote would otherwise invent for the same directory.
-	return mountTarget === undefined ? result : demoteToSpine(result, mountTarget, options);
+	return mountTarget === undefined
+		? result
+		: demoteToSpine({ absoluteTarget: mountTarget, node: result, options });
 }
 
 /** Both the wrap and no-wrap paths absolutize a package's tree through here. */
-function absolutizePackagePaths(
-	fileSystem: FileSystem,
-	node: RojoTreeNode,
-	descriptor: UnwrappedPackageDescriptor,
-): RojoTreeNode {
+function absolutizePackagePaths({
+	descriptor,
+	fileSystem,
+	node,
+}: {
+	descriptor: UnwrappedPackageDescriptor;
+	fileSystem: FileSystem;
+	node: RojoTreeNode;
+}): RojoTreeNode {
 	// Before the walk, while every `$path` still reads as the project wrote it.
 	warnUnreachableCoverageRoots(descriptor, node);
-	return absolutizePaths(node, path.dirname(descriptor.rojoProjectPath), {
-		coverageRoots: resolveCoverageRoots(descriptor.packageDirectory, descriptor.coverageRoots),
-		fileSystem,
-		spine: resolveSpine(descriptor),
+	return absolutizePaths({
+		node,
+		options: {
+			coverageRoots: resolveCoverageRoots(
+				descriptor.packageDirectory,
+				descriptor.coverageRoots,
+			),
+			fileSystem,
+			spine: resolveSpine(descriptor),
+		},
+		treeBase: path.dirname(descriptor.rojoProjectPath),
 	});
 }
 
-function demoteAutoMountToExplicit(
-	fileSystem: FileSystem,
-	parent: RojoTreeNode,
-	parentPath: string,
-): void {
+function demoteAutoMountToExplicit({
+	fileSystem,
+	parent,
+	parentPath,
+}: {
+	fileSystem: FileSystem;
+	parent: RojoTreeNode;
+	parentPath: string;
+}): void {
 	const entries = fileSystem.readdirSync(parentPath, { withFileTypes: true });
 	for (const entry of entries) {
 		if (entry.name.startsWith("$")) {
@@ -411,11 +432,15 @@ function demoteAutoMountToExplicit(
 	parent.$className ??= "Folder";
 }
 
-function virtualizePathChild(
-	fileSystem: FileSystem,
-	parent: RojoTreeNode,
-	segment: string,
-): RojoTreeNode | undefined {
+function virtualizePathChild({
+	fileSystem,
+	parent,
+	segment,
+}: {
+	fileSystem: FileSystem;
+	parent: RojoTreeNode;
+	segment: string;
+}): RojoTreeNode | undefined {
 	const parentPath = parent.$path;
 	if (typeof parentPath !== "string") {
 		return undefined;
@@ -436,22 +461,26 @@ function virtualizePathChild(
 	// `$path`. The result is the same set of Instances rojo would have built
 	// from the auto-mount, but each child is now reachable by the synthesizer
 	// for stub injection.
-	demoteAutoMountToExplicit(fileSystem, parent, parentPath);
+	demoteAutoMountToExplicit({ fileSystem, parent, parentPath });
 
 	const child = parent[segment];
 	return isTreeNode(child) ? child : undefined;
 }
 
-function walkToLeaf(
-	fileSystem: FileSystem,
-	root: RojoTreeNode,
-	dataModelPath: string,
-): RojoTreeNode {
+function walkToLeaf({
+	dataModelPath,
+	fileSystem,
+	root,
+}: {
+	dataModelPath: string;
+	fileSystem: FileSystem;
+	root: RojoTreeNode;
+}): RojoTreeNode {
 	let cursor = root;
 	for (const segment of dataModelPath.split("/")) {
 		let next = cursor[segment];
 		if (!isTreeNode(next)) {
-			next = virtualizePathChild(fileSystem, cursor, segment);
+			next = virtualizePathChild({ fileSystem, parent: cursor, segment });
 		}
 
 		if (!isTreeNode(next)) {
@@ -466,11 +495,15 @@ function walkToLeaf(
 	return cursor;
 }
 
-function assertNoSourceCollision(
-	fileSystem: FileSystem,
-	leaf: RojoTreeNode,
-	dataModelPath: string,
-): void {
+function assertNoSourceCollision({
+	dataModelPath,
+	fileSystem,
+	leaf,
+}: {
+	dataModelPath: string;
+	fileSystem: FileSystem;
+	leaf: RojoTreeNode;
+}): void {
 	const leafPath = leaf.$path;
 	if (typeof leafPath !== "string") {
 		return;
@@ -488,24 +521,28 @@ function assertNoSourceCollision(
 	}
 }
 
-function injectStubMounts(
-	fileSystem: FileSystem,
-	root: RojoTreeNode,
-	stubMounts: Array<StubMount> | undefined,
-): void {
+function injectStubMounts({
+	fileSystem,
+	root,
+	stubMounts,
+}: {
+	fileSystem: FileSystem;
+	root: RojoTreeNode;
+	stubMounts: Array<StubMount> | undefined;
+}): void {
 	if (!stubMounts) {
 		return;
 	}
 
 	const injected = new Map<RojoTreeNode, string>();
 	for (const mount of stubMounts) {
-		const leaf = walkToLeaf(fileSystem, root, mount.dataModelPath);
+		const leaf = walkToLeaf({ dataModelPath: mount.dataModelPath, fileSystem, root });
 		const stubPath = normalizeWindowsPath(mount.absStubPath);
 		if (injected.get(leaf) === stubPath) {
 			continue;
 		}
 
-		assertNoSourceCollision(fileSystem, leaf, mount.dataModelPath);
+		assertNoSourceCollision({ dataModelPath: mount.dataModelPath, fileSystem, leaf });
 		// Structural collision: the user's project tree already declares a
 		// `jest.config` named-child at this leaf (e.g. they mounted a
 		// config explicitly via `$path`). Refusing to overwrite catches
@@ -532,11 +569,15 @@ function isProperties(value: RojoTreeNode[string]): value is JSONObject {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function recordHoistedProperties(
-	hoisted: Array<HoistedService>,
-	segments: Array<HoistedServiceSegment>,
-	value: RojoTreeNode[string],
-): void {
+function recordHoistedProperties({
+	hoisted,
+	segments,
+	value,
+}: {
+	hoisted: Array<HoistedService>;
+	segments: Array<HoistedServiceSegment>;
+	value: RojoTreeNode[string];
+}): void {
 	if (!isProperties(value) || Object.keys(value).length === 0) {
 		return;
 	}
@@ -563,7 +604,7 @@ function transformToFolder(node: RojoTreeNode, hoisted: Array<HoistedService>): 
 			// its properties are dropped as before rather than moved onto a
 			// Folder where rojo would reject them.
 			if (isPlace) {
-				recordHoistedProperties(hoisted, [], value);
+				recordHoistedProperties({ hoisted, segments: [], value });
 			}
 
 			continue;
@@ -599,17 +640,22 @@ function markRunContextScripts(root: RojoTreeNode, raw: JSONObject): void {
 	root["$attributes"] = { ...attributes, JestRunContextScripts: true };
 }
 
-function stagePackage(
-	{ fileSystem, stage }: StagingTarget,
-	descriptor: PackageDescriptor,
-	hoists: Array<PackageHoist>,
-	globs: Array<DeclaredGlobs>,
-): void {
+function stagePackage({
+	descriptor,
+	fileSystem,
+	globs,
+	hoists,
+	stage,
+}: StagingTarget & {
+	descriptor: PackageDescriptor;
+	globs: Array<DeclaredGlobs>;
+	hoists: Array<PackageHoist>;
+}): void {
 	const project = loadRojoProject(descriptor.rojoProjectPath, fileSystem);
 	const services: Array<HoistedService> = [];
 	const folder = transformToFolder(project.tree, services);
-	const root = absolutizePackagePaths(fileSystem, folder, descriptor);
-	injectStubMounts(fileSystem, root, descriptor.stubMounts);
+	const root = absolutizePackagePaths({ descriptor, fileSystem, node: folder });
+	injectStubMounts({ fileSystem, root, stubMounts: descriptor.stubMounts });
 	markRunContextScripts(root, project.raw);
 	stage[descriptor.name] = root;
 	hoists.push({ packageName: descriptor.name, services });
@@ -742,11 +788,11 @@ function synthesizeNoWrap({
 	// oxlint-disable-next-line typescript/no-non-null-assertion -- length-1 invariant
 	const descriptor = packages[0]!;
 	const project = loadRojoProject(descriptor.rojoProjectPath, fileSystem);
-	const tree = absolutizePackagePaths(fileSystem, project.tree, descriptor);
+	const tree = absolutizePackagePaths({ descriptor, fileSystem, node: project.tree });
 
 	// Inject in no-wrap mode too so single-package callers (multi-project +
 	// open-cloud) share the same `$path` named-child mounting workspace uses.
-	injectStubMounts(fileSystem, tree, descriptor.stubMounts);
+	injectStubMounts({ fileSystem, root: tree, stubMounts: descriptor.stubMounts });
 
 	if (loadStringEnabled) {
 		enableLoadString(tree);
@@ -765,11 +811,15 @@ function propertyLabel(nodePath: ReadonlyArray<string>, property: string): strin
 	return [...(nodePath.length > 0 ? nodePath : ["DataModel"]), property].join(".");
 }
 
-function formatPropertyConflict(
-	label: string,
-	owner: { packageName: string; value: unknown },
-	rival: { packageName: string; value: unknown },
-): string {
+function formatPropertyConflict({
+	label,
+	owner,
+	rival,
+}: {
+	label: string;
+	owner: { packageName: string; value: unknown };
+	rival: { packageName: string; value: unknown };
+}): string {
 	return [
 		`workspace packages disagree on \`${label}\`.`,
 		"",
@@ -782,12 +832,17 @@ function formatPropertyConflict(
 	].join("\n");
 }
 
-function mergeServiceProperties(
-	target: HoistedService,
-	service: HoistedService,
-	packageName: string,
-	owners: Map<string, { packageName: string; value: JSONValue }>,
-): void {
+function mergeServiceProperties({
+	owners,
+	packageName,
+	service,
+	target,
+}: {
+	owners: Map<string, { packageName: string; value: JSONValue }>;
+	packageName: string;
+	service: HoistedService;
+	target: HoistedService;
+}): void {
 	const pathNames = service.segments.map((segment) => segment.name);
 	const pathKey = pathNames.join("/");
 
@@ -796,9 +851,13 @@ function mergeServiceProperties(
 		const owner = owners.get(ownerKey);
 		if (owner !== undefined && !isSameValue(owner.value, value)) {
 			throw new ConfigError(
-				formatPropertyConflict(propertyLabel(pathNames, property), owner, {
-					packageName,
-					value,
+				formatPropertyConflict({
+					label: propertyLabel(pathNames, property),
+					owner,
+					rival: {
+						packageName,
+						value,
+					},
 				}),
 			);
 		}
@@ -830,7 +889,7 @@ function mergeHoistedServices(hoists: ReadonlyArray<PackageHoist>): Array<Hoiste
 				merged.set(pathKey, target);
 			}
 
-			mergeServiceProperties(target, service, packageName, owners);
+			mergeServiceProperties({ owners, packageName, service, target });
 		}
 	}
 
@@ -868,11 +927,11 @@ function applyHoistedServices(tree: RojoTreeNode, hoisted: ReadonlyArray<Hoisted
 function spineChildNode(absoluteTarget: string, options: AbsolutizeOptions): RojoTreeNode {
 	// `demoteToSpine` hands a node it does not demote straight back, so the
 	// fallback is the node it is given rather than a second lookup here.
-	return demoteToSpine(
-		{ $path: resolveDollarPath(absoluteTarget, options) },
+	return demoteToSpine({
 		absoluteTarget,
+		node: { $path: resolveDollarPath(absoluteTarget, options) },
 		options,
-	);
+	});
 }
 
 /**
@@ -886,11 +945,15 @@ function spineChildNode(absoluteTarget: string, options: AbsolutizeOptions): Roj
  * A name the project already declares is left alone: it is the author's node,
  * and rojo would build both.
  */
-function demoteToSpine(
-	node: RojoTreeNode,
-	absoluteTarget: string,
-	options: AbsolutizeOptions,
-): RojoTreeNode {
+function demoteToSpine({
+	absoluteTarget,
+	node,
+	options,
+}: {
+	absoluteTarget: string;
+	node: RojoTreeNode;
+	options: AbsolutizeOptions;
+}): RojoTreeNode {
 	const spineDirectory = options.spine?.get(absoluteTarget);
 	if (spineDirectory === undefined) {
 		return node;
@@ -922,7 +985,7 @@ function transformNodeValue({
 		return value;
 	}
 
-	return transformChild(value, nodePath, isService, hoisted);
+	return transformChild({ hoisted, isService, node: value, nodePath });
 }
 
 /**
@@ -949,12 +1012,14 @@ function hoistedServicePath(
 	return [...parents, { name: leafName, serviceClass: declaredClass ?? leafName }];
 }
 
-function transformChild(
-	node: RojoTreeNode,
-	nodePath: Array<string>,
-	isService: boolean,
-	hoisted: Array<HoistedService>,
-): RojoTreeNode {
+function transformChild({
+	hoisted,
+	isService,
+	node,
+	nodePath,
+}: Pick<TransformEntry, "hoisted" | "isService" | "nodePath"> & {
+	node: RojoTreeNode;
+}): RojoTreeNode {
 	const declaredClass = typeof node.$className === "string" ? node.$className : undefined;
 	const isDemoted =
 		isService || (declaredClass !== undefined && PINNED_PARENT_CLASSES.has(declaredClass));
@@ -972,7 +1037,8 @@ function transformChild(
 		}
 
 		if (key === "$properties" && isDemoted) {
-			recordHoistedProperties(hoisted, hoistedServicePath(nodePath, declaredClass), value);
+			const segments = hoistedServicePath(nodePath, declaredClass);
+			recordHoistedProperties({ hoisted, segments, value });
 			continue;
 		}
 

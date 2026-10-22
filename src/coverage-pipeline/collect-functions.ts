@@ -32,7 +32,7 @@ export function createFunctionCollector(accumulator: CoverageAccumulator): Parti
 			}
 
 			const first = getBodyFirstStatement(node.body);
-			accumulator.addFunction("(anonymous)", node.location, first);
+			accumulator.addFunction({ name: "(anonymous)", location: node.location, start: first });
 
 			return true;
 		},
@@ -40,7 +40,11 @@ export function createFunctionCollector(accumulator: CoverageAccumulator): Parti
 		visitStatFunction(node: AstStatFunction): boolean {
 			const first = getBodyFirstStatement(node.func.body);
 			namedFunctions.add(node.func);
-			accumulator.addFunction(extractFunctionName(node), node.location, first);
+			accumulator.addFunction({
+				name: extractFunctionName(node),
+				location: node.location,
+				start: first,
+			});
 
 			return true;
 		},
@@ -48,7 +52,8 @@ export function createFunctionCollector(accumulator: CoverageAccumulator): Parti
 		visitStatLocalFunction(node: AstStatLocalFunction): boolean {
 			const first = getBodyFirstStatement(node.func.body);
 			namedFunctions.add(node.func);
-			accumulator.addFunction(node.name.name, node.location, first);
+			const { name } = node.name;
+			accumulator.addFunction({ name, location: node.location, start: first });
 
 			return true;
 		},

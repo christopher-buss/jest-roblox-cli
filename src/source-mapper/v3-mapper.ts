@@ -15,11 +15,11 @@ export interface V3Mapper {
 	/** The source text the map embeds for `source`, if it embeds any. */
 	getSourceContent: (luauPath: string, source: string) => null | string | undefined;
 	/** The original position of a generated line and column. */
-	mapFromSourceMap: (
-		luauPath: string,
-		luauLine: number,
-		luauColumn?: number,
-	) => MappedPosition | undefined;
+	mapFromSourceMap: (position: {
+		column?: number | undefined;
+		line: number;
+		luauPath: string;
+	}) => MappedPosition | undefined;
 	/**
 	 * The original position of the first mapping on a generated line, for a
 	 * frame that carries no column. Biased upward: the default bias answers a
@@ -44,13 +44,13 @@ export function createV3Mapper(fileSystem: FileSystem = nodeFileSystem): V3Mappe
 			const traced = getTraceMap(luauPath);
 			return traced === undefined ? undefined : sourceContentFor(traced, source);
 		},
-		mapFromSourceMap(luauPath, luauLine, luauColumn = 0) {
+		mapFromSourceMap({ column = 0, line, luauPath }) {
 			const traced = getTraceMap(luauPath);
 			if (traced === undefined) {
 				return;
 			}
 
-			const result = originalPositionFor(traced, { column: luauColumn, line: luauLine });
+			const result = originalPositionFor(traced, { column, line });
 			return result.line === null ? undefined : result;
 		},
 		mapLineStart(luauPath, luauLine) {

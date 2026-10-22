@@ -58,13 +58,27 @@ describe("probe-inserter", () => {
 		it("should leave a file with no coverage sites verbatim", () => {
 			expect.assertions(3);
 
-			expect(insertProbes("--!strict\n", emptyResult(), "test.luau")).toBe("--!strict\n");
-			expect(insertProbes("--!strict\n--!native\n", emptyResult(), "test.luau")).toBe(
-				"--!strict\n--!native\n",
-			);
-			expect(insertProbes("-- one\n-- two\n", emptyResult(), "test.luau")).toBe(
-				"-- one\n-- two",
-			);
+			expect(
+				insertProbes({
+					fileKey: "test.luau",
+					result: emptyResult(),
+					source: "--!strict\n",
+				}),
+			).toBe("--!strict\n");
+			expect(
+				insertProbes({
+					fileKey: "test.luau",
+					result: emptyResult(),
+					source: "--!strict\n--!native\n",
+				}),
+			).toBe("--!strict\n--!native\n");
+			expect(
+				insertProbes({
+					fileKey: "test.luau",
+					result: emptyResult(),
+					source: "-- one\n-- two\n",
+				}),
+			).toBe("-- one\n-- two");
 		});
 
 		it("should declare the function bucket for a file whose only sites are functions", () => {
@@ -83,7 +97,11 @@ describe("probe-inserter", () => {
 				],
 			};
 
-			const result = insertProbes("local function f()\nend", collector, "test.luau");
+			const result = insertProbes({
+				fileKey: "test.luau",
+				result: collector,
+				source: "local function f()\nend",
+			});
 
 			expect(result).toContain("local __cov_f =");
 			expect(result).toContain("for __i = 1, 1 do if __cov_f");
@@ -107,7 +125,11 @@ describe("probe-inserter", () => {
 				],
 			};
 
-			const result = insertProbes("local x = a or b", collector, "test.luau");
+			const result = insertProbes({
+				fileKey: "test.luau",
+				result: collector,
+				source: "local x = a or b",
+			});
 
 			expect(result).toContain("local __cov_b =");
 			expect(result).not.toContain("__cov_s[__i]");
@@ -134,7 +156,7 @@ describe("probe-inserter", () => {
 				}),
 			};
 
-			const result = insertProbes(source, collector, "test.luau");
+			const result = insertProbes({ fileKey: "test.luau", result: collector, source });
 
 			const lines = result.split("\n");
 
@@ -156,7 +178,7 @@ describe("probe-inserter", () => {
 				],
 			};
 
-			const result = insertProbes(source, collector, "test.luau");
+			const result = insertProbes({ fileKey: "test.luau", result: collector, source });
 
 			expect(result).toContain("_G.__jest_roblox_cov");
 			expect(result).toContain('__cov_file_key = "test.luau"');
@@ -204,7 +226,11 @@ describe("probe-inserter", () => {
 				],
 			};
 
-			const result = insertProbes(source, collector, 'path\\to"\n\r\0file.luau');
+			const result = insertProbes({
+				fileKey: 'path\\to"\n\r\0file.luau',
+				result: collector,
+				source,
+			});
 
 			expect(result).toStartWith("--!strict\n");
 			expect(result).toMatchSnapshot();
@@ -214,7 +240,11 @@ describe("probe-inserter", () => {
 			expect.assertions(2);
 
 			const directives = "--!strict\n--!native\n--!optimize 2\n";
-			const result = insertProbes(`${directives}local x = 1`, emptyResult(), "test.luau");
+			const result = insertProbes({
+				fileKey: "test.luau",
+				result: emptyResult(),
+				source: `${directives}local x = 1`,
+			});
 
 			expect(result).toStartWith(directives);
 			// Below the preamble a directive no longer opens the file, so
@@ -228,7 +258,11 @@ describe("probe-inserter", () => {
 			// Luau reads `--!Native` as a hot comment and ignores it, so the
 			// `--!native` behind it still opens the file and still counts.
 			const directives = "--!strict\n--!Native\n--!native\n";
-			const result = insertProbes(`${directives}local x = 1`, emptyResult(), "test.luau");
+			const result = insertProbes({
+				fileKey: "test.luau",
+				result: emptyResult(),
+				source: `${directives}local x = 1`,
+			});
 
 			expect(result).toStartWith(directives);
 		});
@@ -237,7 +271,11 @@ describe("probe-inserter", () => {
 			expect.assertions(1);
 
 			const header = "--!strict\n\n--!native\n";
-			const result = insertProbes(`${header}local x = 1`, emptyResult(), "test.luau");
+			const result = insertProbes({
+				fileKey: "test.luau",
+				result: emptyResult(),
+				source: `${header}local x = 1`,
+			});
 
 			expect(result).toStartWith(header);
 		});
@@ -249,10 +287,18 @@ describe("probe-inserter", () => {
 			const blockCommented = "--!strict\n--[[ why\nnative ]]\n--!native\n";
 
 			expect(
-				insertProbes(`${lineCommented}local x = 1`, emptyResult(), "test.luau"),
+				insertProbes({
+					fileKey: "test.luau",
+					result: emptyResult(),
+					source: `${lineCommented}local x = 1`,
+				}),
 			).toStartWith(lineCommented);
 			expect(
-				insertProbes(`${blockCommented}local x = 1`, emptyResult(), "test.luau"),
+				insertProbes({
+					fileKey: "test.luau",
+					result: emptyResult(),
+					source: `${blockCommented}local x = 1`,
+				}),
 			).toStartWith(blockCommented);
 		});
 
@@ -260,7 +306,11 @@ describe("probe-inserter", () => {
 			expect.assertions(1);
 
 			const header = "--!strict\n\t--!native\n";
-			const result = insertProbes(`${header}local x = 1`, emptyResult(), "test.luau");
+			const result = insertProbes({
+				fileKey: "test.luau",
+				result: emptyResult(),
+				source: `${header}local x = 1`,
+			});
 
 			expect(result).toStartWith(header);
 		});
@@ -280,7 +330,11 @@ describe("probe-inserter", () => {
 
 			// Luau ends the comment at the `\r` and calls what follows code, so
 			// hoisting the whole line would put `__cov_s[1]` above its own table.
-			const result = insertProbes("--!strict\rlocal x = 1", collector, "test.luau");
+			const result = insertProbes({
+				fileKey: "test.luau",
+				result: collector,
+				source: "--!strict\rlocal x = 1",
+			});
 
 			expect(result).toStartWith("if _G.__jest_roblox_cov");
 		});
@@ -288,9 +342,13 @@ describe("probe-inserter", () => {
 		it("should only treat a leading mode directive as a directive", () => {
 			expect.assertions(1);
 
-			expect(insertProbes("local x = '--!strict'", emptyResult(), "test.luau")).toEndWith(
-				"local x = '--!strict'",
-			);
+			expect(
+				insertProbes({
+					fileKey: "test.luau",
+					result: emptyResult(),
+					source: "local x = '--!strict'",
+				}),
+			).toEndWith("local x = '--!strict'");
 		});
 
 		it("should insert statement probes before each statement", () => {
@@ -311,7 +369,7 @@ describe("probe-inserter", () => {
 				],
 			};
 
-			const result = insertProbes(source, collector, "test.luau");
+			const result = insertProbes({ fileKey: "test.luau", result: collector, source });
 
 			expect(result).toContain("__cov_s[1] += 1; local x = 1");
 			expect(result).toContain("__cov_s[2] += 1; print(x)");
@@ -345,7 +403,7 @@ describe("probe-inserter", () => {
 				],
 			};
 
-			const result = insertProbes(source, collector, "test.luau");
+			const result = insertProbes({ fileKey: "test.luau", result: collector, source });
 
 			expect(result).toContain("__cov_f[1] += 1;");
 			expect(result).toContain("__cov_f");
@@ -401,7 +459,7 @@ describe("probe-inserter", () => {
 				],
 			};
 
-			const result = insertProbes(source, collector, "test.luau");
+			const result = insertProbes({ fileKey: "test.luau", result: collector, source });
 
 			expect(result).toContain("__cov_b[1][1] += 1;");
 			expect(result).toContain("__cov_b[1][2] += 1;");
@@ -458,7 +516,7 @@ describe("probe-inserter", () => {
 				],
 			};
 
-			const result = insertProbes(source, collector, "test.luau");
+			const result = insertProbes({ fileKey: "test.luau", result: collector, source });
 
 			expect(result).toContain("else __cov_b[1][2] += 1 end");
 		});
@@ -477,7 +535,7 @@ describe("probe-inserter", () => {
 				],
 			};
 
-			const result = insertProbes(source, collector, "test.luau");
+			const result = insertProbes({ fileKey: "test.luau", result: collector, source });
 
 			expect(result).toMatch(/^--!strict\n/);
 			expect(result).toContain("__cov_s[1] += 1; local x = 1");
@@ -497,7 +555,11 @@ describe("probe-inserter", () => {
 				],
 			};
 
-			const result = insertProbes(source, collector, 'path\\to\\"file".luau');
+			const result = insertProbes({
+				fileKey: 'path\\to\\"file".luau',
+				result: collector,
+				source,
+			});
 
 			expect(result).toContain('__cov_file_key = "path\\\\to\\\\\\"file\\".luau"');
 		});
@@ -525,7 +587,7 @@ describe("probe-inserter", () => {
 				],
 			};
 
-			const result = insertProbes(source, collector, "test.luau");
+			const result = insertProbes({ fileKey: "test.luau", result: collector, source });
 
 			expect(result).toContain("__cov_f[1] += 1;");
 		});
@@ -553,7 +615,7 @@ describe("probe-inserter", () => {
 				],
 			};
 
-			const result = insertProbes(source, collector, "test.luau");
+			const result = insertProbes({ fileKey: "test.luau", result: collector, source });
 
 			expect(result).not.toContain("__cov_f[1] += 1");
 		});
@@ -614,7 +676,7 @@ describe("probe-inserter", () => {
 				],
 			};
 
-			const result = insertProbes(source, collector, "test.luau");
+			const result = insertProbes({ fileKey: "test.luau", result: collector, source });
 
 			expect(result).toContain("__cov_br(1, 1, 1)");
 			expect(result).toContain("__cov_br(1, 2, 2)");
@@ -691,7 +753,7 @@ describe("probe-inserter", () => {
 				],
 			};
 
-			const result = insertProbes(source, collector, "test.luau");
+			const result = insertProbes({ fileKey: "test.luau", result: collector, source });
 
 			expect(result).toContain("__cov_br(1, 1, 1)");
 			expect(result).toContain("__cov_br(1, 2, 2)");
@@ -742,7 +804,7 @@ describe("probe-inserter", () => {
 				],
 			};
 
-			const result = insertProbes(source, collector, "test.luau");
+			const result = insertProbes({ fileKey: "test.luau", result: collector, source });
 
 			expect(result).toContain(
 				"__cov_br(1, 1, __cov_br(2, 1, a) and __cov_br(2, 2, b)) and __cov_br(1, 2, c)",
@@ -812,7 +874,7 @@ describe("probe-inserter", () => {
 				],
 			};
 
-			const result = insertProbes(source, collector, "test.luau");
+			const result = insertProbes({ fileKey: "test.luau", result: collector, source });
 
 			// The outer open stays outside the inner open on line 1.
 			expect(result).toContain("local v = __cov_br(1, 1, __cov_br(2, 1, a)");
@@ -845,7 +907,7 @@ describe("probe-inserter", () => {
 				wrapProbes: [wrap({ armIndex: 1, beginColumn: 11, branchIndex: 1, endColumn: 12 })],
 			};
 
-			const result = insertProbes(source, collector, "test.luau");
+			const result = insertProbes({ fileKey: "test.luau", result: collector, source });
 
 			expect(result.indexOf("__cov_s[1]")).toBeLessThan(result.indexOf("__cov_br(1, 1,"));
 		});
@@ -864,7 +926,7 @@ describe("probe-inserter", () => {
 				],
 			};
 
-			const result = insertProbes(source, collector, "test.luau");
+			const result = insertProbes({ fileKey: "test.luau", result: collector, source });
 
 			expect(result).not.toContain("__cov_br");
 		});
@@ -901,7 +963,7 @@ describe("probe-inserter", () => {
 				],
 			};
 
-			const result = insertProbes(source, collector, "test.luau");
+			const result = insertProbes({ fileKey: "test.luau", result: collector, source });
 
 			expect(result).toContain("if x then __cov_b[1][1] += 1;");
 		});
@@ -924,7 +986,7 @@ describe("probe-inserter", () => {
 				],
 			};
 
-			const result = insertProbes(source, collector, "test.luau");
+			const result = insertProbes({ fileKey: "test.luau", result: collector, source });
 
 			expect(result).toEndWith("__cov_s[1] += 1; local x = 1\n__cov_s[2] += 1; print(x)");
 		});

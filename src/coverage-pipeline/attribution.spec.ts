@@ -46,23 +46,23 @@ describe(harvestAttribution, () => {
 	it("should record a test's location and range hash when its source resolves to them", () => {
 		expect.assertions(1);
 
-		const result = harvestAttribution(
-			[
+		const result = harvestAttribution({
+			cumulative: {},
+			entries: [
 				{
 					delta: { "out/m.luau": { s: [1] } },
 					testCaseId: "adds",
 					testFilePath: "out/m.spec.luau",
 				},
 			],
-			{},
-			() => {
+			resolveTestSource: () => {
 				return {
 					location: { column: 0, line: 12 },
 					testFileSourceHash: "hash-a",
 					testSourceHash: "range-a",
 				};
 			},
-		);
+		});
 
 		expect(result.tests).toStrictEqual([
 			{
@@ -79,17 +79,17 @@ describe(harvestAttribution, () => {
 	it("should attribute a covered statement to the single test that hit it", () => {
 		expect.assertions(2);
 
-		const result = harvestAttribution(
-			[
+		const result = harvestAttribution({
+			cumulative: {},
+			entries: [
 				{
 					delta: { "out/m.luau": { s: [1] } },
 					testCaseId: "adds",
 					testFilePath: "out/m.spec.luau",
 				},
 			],
-			{},
-			() => ({ testFileSourceHash: "hash-a" }),
-		);
+			resolveTestSource: () => ({ testFileSourceHash: "hash-a" }),
+		});
 
 		expect(result.tests).toStrictEqual([
 			{
@@ -107,17 +107,17 @@ describe(harvestAttribution, () => {
 	it("should attribute every statement a multi-statement test covered", () => {
 		expect.assertions(1);
 
-		const result = harvestAttribution(
-			[
+		const result = harvestAttribution({
+			cumulative: {},
+			entries: [
 				{
 					delta: { "out/m.luau": { s: [1, 3] } },
 					testCaseId: "adds",
 					testFilePath: "out/m.spec.luau",
 				},
 			],
-			{},
-			() => ({ testFileSourceHash: "hash-a" }),
-		);
+			resolveTestSource: () => ({ testFileSourceHash: "hash-a" }),
+		});
 
 		expect(result.coveringTestIds).toStrictEqual({
 			"out/m.luau": {
@@ -130,8 +130,9 @@ describe(harvestAttribution, () => {
 	it("should list both tests that overlap on one statement", () => {
 		expect.assertions(2);
 
-		const result = harvestAttribution(
-			[
+		const result = harvestAttribution({
+			cumulative: {},
+			entries: [
 				{
 					delta: { "out/m.luau": { s: [1] } },
 					testCaseId: "adds",
@@ -143,9 +144,8 @@ describe(harvestAttribution, () => {
 					testFilePath: "out/m.spec.luau",
 				},
 			],
-			{},
-			() => ({ testFileSourceHash: "hash-a" }),
-		);
+			resolveTestSource: () => ({ testFileSourceHash: "hash-a" }),
+		});
 
 		expect(result.tests).toHaveLength(2);
 		expect(result.coveringTestIds).toStrictEqual({
@@ -159,8 +159,9 @@ describe(harvestAttribution, () => {
 	it("should drop a test that covered no statements", () => {
 		expect.assertions(2);
 
-		const result = harvestAttribution(
-			[
+		const result = harvestAttribution({
+			cumulative: {},
+			entries: [
 				{ delta: {}, testCaseId: "covers nothing", testFilePath: "out/m.spec.luau" },
 				{
 					delta: { "out/m.luau": { s: [] } },
@@ -168,9 +169,8 @@ describe(harvestAttribution, () => {
 					testFilePath: "out/m.spec.luau",
 				},
 			],
-			{},
-			() => ({ testFileSourceHash: "hash-a" }),
-		);
+			resolveTestSource: () => ({ testFileSourceHash: "hash-a" }),
+		});
 
 		expect(result.tests).toStrictEqual([]);
 		expect(result.coveringTestIds).toStrictEqual({});
@@ -181,17 +181,17 @@ describe(harvestAttribution, () => {
 
 		// The runner diffs on failure too, so a test that threw after covering
 		// statement 1 (but before reaching 2 and 3) still attributes statement 1.
-		const result = harvestAttribution(
-			[
+		const result = harvestAttribution({
+			cumulative: {},
+			entries: [
 				{
 					delta: { "out/m.luau": { s: [1] } },
 					testCaseId: "throws after the first assertion",
 					testFilePath: "out/m.spec.luau",
 				},
 			],
-			{},
-			() => ({ testFileSourceHash: "hash-a" }),
-		);
+			resolveTestSource: () => ({ testFileSourceHash: "hash-a" }),
+		});
 
 		expect(result.tests).toHaveLength(1);
 		expect(result.coveringTestIds["out/m.luau"]).toStrictEqual({
@@ -204,17 +204,17 @@ describe(harvestAttribution, () => {
 
 		// Cumulative: statements 0, 1, 2 were all hit during the run. The test
 		// credited only statement 2 to a window, so 0 and 1 ran at module load.
-		const result = harvestAttribution(
-			[
+		const result = harvestAttribution({
+			cumulative: { "out/m.luau": { s: { "0": 1, "1": 1, "2": 1 } } },
+			entries: [
 				{
 					delta: { "out/m.luau": { s: [2] } },
 					testCaseId: "adds",
 					testFilePath: "out/m.spec.luau",
 				},
 			],
-			{ "out/m.luau": { s: { "0": 1, "1": 1, "2": 1 } } },
-			() => ({ testFileSourceHash: "hash-a" }),
-		);
+			resolveTestSource: () => ({ testFileSourceHash: "hash-a" }),
+		});
 
 		expect(result.staticStatementIds).toStrictEqual({ "out/m.luau": ["0", "1"] });
 	});
@@ -224,10 +224,14 @@ describe(harvestAttribution, () => {
 
 		// No per-test deltas, so nothing is credited; statement 1 was never hit
 		// (count 0) and stays out of the static set.
-		const result = harvestAttribution([], { "out/m.luau": { s: { "0": 1, "1": 0 } } }, () => {
-			return {
-				testFileSourceHash: "hash-a",
-			};
+		const result = harvestAttribution({
+			cumulative: { "out/m.luau": { s: { "0": 1, "1": 0 } } },
+			entries: [],
+			resolveTestSource: () => {
+				return {
+					testFileSourceHash: "hash-a",
+				};
+			},
 		});
 
 		expect(result.staticStatementIds).toStrictEqual({ "out/m.luau": ["0"] });
@@ -236,17 +240,17 @@ describe(harvestAttribution, () => {
 	it("should produce no static entry for a file whose every hit is credited", () => {
 		expect.assertions(1);
 
-		const result = harvestAttribution(
-			[
+		const result = harvestAttribution({
+			cumulative: { "out/m.luau": { s: { "1": 1 } } },
+			entries: [
 				{
 					delta: { "out/m.luau": { s: [1] } },
 					testCaseId: "adds",
 					testFilePath: "out/m.spec.luau",
 				},
 			],
-			{ "out/m.luau": { s: { "1": 1 } } },
-			() => ({ testFileSourceHash: "hash-a" }),
-		);
+			resolveTestSource: () => ({ testFileSourceHash: "hash-a" }),
+		});
 
 		expect(result.staticStatementIds).toStrictEqual({});
 	});
@@ -254,17 +258,17 @@ describe(harvestAttribution, () => {
 	it("should record an empty source hash when the test file cannot be resolved", () => {
 		expect.assertions(1);
 
-		const result = harvestAttribution(
-			[
+		const result = harvestAttribution({
+			cumulative: {},
+			entries: [
 				{
 					delta: { "out/m.luau": { s: [1] } },
 					testCaseId: "adds",
 					testFilePath: "out/m.spec.luau",
 				},
 			],
-			{},
-			() => ({ testFileSourceHash: "" }),
-		);
+			resolveTestSource: () => ({ testFileSourceHash: "" }),
+		});
 
 		expect(result.tests[0]!.testFileSourceHash).toBe("");
 	});

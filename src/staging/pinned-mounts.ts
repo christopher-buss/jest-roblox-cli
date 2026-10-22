@@ -346,11 +346,15 @@ function entryPathOf(directory: string, entryName: string): string {
  * Whether a directory's own `init.meta.json` gives the instance rojo mounts for
  * it a class the engine pins.
  */
-function declaresPinnedClass(
-	fileSystem: FileSystem,
-	directory: string,
-	entries: ReadonlyArray<Dirent>,
-): boolean {
+function declaresPinnedClass({
+	directory,
+	entries,
+	fileSystem,
+}: {
+	directory: string;
+	entries: ReadonlyArray<Dirent>;
+	fileSystem: FileSystem;
+}): boolean {
 	const meta = entries.find((child) => child.name === META_JSON_FILE);
 	if (meta === undefined || meta.isDirectory()) {
 		return false;
@@ -444,7 +448,7 @@ function collectDirectoryEntry({
 	// file by opening it would miss for nearly every directory in the tree, and
 	// a failed open plus a thrown Error is the expensive way to ask.
 	const entries = walk.fileSystem.readdirSync(entryPath, { withFileTypes: true });
-	if (declaresPinnedClass(walk.fileSystem, entryPath, entries)) {
+	if (declaresPinnedClass({ directory: entryPath, entries, fileSystem: walk.fileSystem })) {
 		return { childName: mountedName(entry.name), source: entryPath, target };
 	}
 
@@ -485,7 +489,7 @@ function collectMountEntries({
 	// The mount's own `init.meta.json` classes the instance rojo builds for the
 	// whole mount, so a pinned one makes the mount itself the offender — the
 	// node already names it, and no child stands in.
-	if (declaresPinnedClass(walk.fileSystem, mountPath, entries)) {
+	if (declaresPinnedClass({ directory: mountPath, entries, fileSystem: walk.fileSystem })) {
 		walk.pinned.push({ childName: undefined, source: mountPath, target });
 		return;
 	}

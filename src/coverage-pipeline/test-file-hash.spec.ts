@@ -19,11 +19,11 @@ describe(resolveTestFileHash, () => {
 		volume.writeFileSync("/src/m.spec.ts", "describe('m', () => {})");
 
 		expect(
-			resolveTestFileHash(
-				mapperResolving("/src/m.spec.ts"),
-				"ReplicatedStorage/m.spec",
+			resolveTestFileHash({
 				fileSystem,
-			),
+				sourceMapper: mapperResolving("/src/m.spec.ts"),
+				testFilePath: "ReplicatedStorage/m.spec",
+			}),
 		).toBe(hashFile("/src/m.spec.ts", fileSystem));
 	});
 
@@ -33,11 +33,11 @@ describe(resolveTestFileHash, () => {
 		const { fileSystem } = createMemoryFileSystem();
 
 		expect(
-			resolveTestFileHash(
-				mapperResolving("/src/missing.spec.ts"),
-				"ReplicatedStorage/missing.spec",
+			resolveTestFileHash({
 				fileSystem,
-			),
+				sourceMapper: mapperResolving("/src/missing.spec.ts"),
+				testFilePath: "ReplicatedStorage/missing.spec",
+			}),
 		).toBeUndefined();
 	});
 
@@ -47,7 +47,11 @@ describe(resolveTestFileHash, () => {
 		const { fileSystem } = createMemoryFileSystem();
 
 		expect(
-			resolveTestFileHash(mapperResolving(undefined), "ReplicatedStorage/x.spec", fileSystem),
+			resolveTestFileHash({
+				fileSystem,
+				sourceMapper: mapperResolving(undefined),
+				testFilePath: "ReplicatedStorage/x.spec",
+			}),
 		).toBeUndefined();
 	});
 
@@ -57,7 +61,11 @@ describe(resolveTestFileHash, () => {
 		const { fileSystem } = createMemoryFileSystem();
 
 		expect(
-			resolveTestFileHash(undefined, "ReplicatedStorage/x.spec", fileSystem),
+			resolveTestFileHash({
+				fileSystem,
+				sourceMapper: undefined,
+				testFilePath: "ReplicatedStorage/x.spec",
+			}),
 		).toBeUndefined();
 	});
 });

@@ -92,7 +92,7 @@ export async function buildCoveragePlaceAsync(
 	// the reuse path leaves the prior (still-valid) build manifest in place, and
 	// `prepareCoverage`'s reuse gate already re-validated it against disk.
 	if (artifacts.rebuilt) {
-		emitBuildManifest(COVERAGE_BUILD_MANIFEST_PATH, artifacts, { fileSystem });
+		emitBuildManifest({ artifacts, filePath: COVERAGE_BUILD_MANIFEST_PATH, fileSystem });
 	}
 
 	return {

@@ -1145,7 +1145,10 @@ describe(checkThresholds, () => {
 				"src/shared/player.ts": createMappedFile(),
 			});
 
-			const thresholdResult = checkThresholds(result, { statements: 50 });
+			const thresholdResult = checkThresholds({
+				mapped: result,
+				thresholds: { statements: 50 },
+			});
 
 			expect(thresholdResult.passed).toBeTrue();
 		});
@@ -1159,7 +1162,10 @@ describe(checkThresholds, () => {
 				"src/shared/player.ts": createMappedFile(),
 			});
 
-			const thresholdResult = checkThresholds(result, { statements: 80 });
+			const thresholdResult = checkThresholds({
+				mapped: result,
+				thresholds: { statements: 80 },
+			});
 
 			expect(thresholdResult.passed).toBeFalse();
 		});
@@ -1173,10 +1179,13 @@ describe(checkThresholds, () => {
 				"src/shared/player.ts": createMappedFile(),
 			});
 
-			const thresholdResult = checkThresholds(result, {
-				functions: 100,
-				lines: 90,
-				statements: 80,
+			const thresholdResult = checkThresholds({
+				mapped: result,
+				thresholds: {
+					functions: 100,
+					lines: 90,
+					statements: 80,
+				},
 			});
 
 			expect(thresholdResult.failures).toContainEqual(
@@ -1222,10 +1231,11 @@ describe(checkThresholds, () => {
 				"src/shared/player.ts": untestedFile("src/shared/player.ts"),
 			});
 
-			const thresholdResult = checkThresholds(result, { statements: 100 }, [
-				"src/**/*.ts",
-				"!**/*.spec.ts",
-			]);
+			const thresholdResult = checkThresholds({
+				collectCoverageFrom: ["src/**/*.ts", "!**/*.spec.ts"],
+				mapped: result,
+				thresholds: { statements: 100 },
+			});
 
 			expect(thresholdResult.passed).toBeFalse();
 		});
@@ -1240,10 +1250,11 @@ describe(checkThresholds, () => {
 				"src/shared/player.ts": coveredFile("src/shared/player.ts"),
 			});
 
-			const thresholdResult = checkThresholds(result, { statements: 100 }, [
-				"src/**/*.ts",
-				"!**/*.spec.ts",
-			]);
+			const thresholdResult = checkThresholds({
+				collectCoverageFrom: ["src/**/*.ts", "!**/*.spec.ts"],
+				mapped: result,
+				thresholds: { statements: 100 },
+			});
 
 			expect(thresholdResult.passed).toBeTrue();
 		});
@@ -1258,11 +1269,14 @@ describe(checkThresholds, () => {
 			// With no files, the summary will have 0 totals.
 			const emptyResult = createResult({});
 
-			const thresholdResult = checkThresholds(emptyResult, {
-				branches: 80,
-				functions: 80,
-				lines: 80,
-				statements: 80,
+			const thresholdResult = checkThresholds({
+				mapped: emptyResult,
+				thresholds: {
+					branches: 80,
+					functions: 80,
+					lines: 80,
+					statements: 80,
+				},
 			});
 
 			// Empty coverage map: 0 total for all metrics. Istanbul reports
@@ -1281,7 +1295,10 @@ describe(checkThresholds, () => {
 			// unexpected, checkThresholds handles it gracefully.
 			const result = createResult({});
 
-			const thresholdResult = checkThresholds(result, { statements: 80 });
+			const thresholdResult = checkThresholds({
+				mapped: result,
+				thresholds: { statements: 80 },
+			});
 
 			expect(thresholdResult.passed).toBeTrue();
 			expect(thresholdResult.failures).toBeEmpty();

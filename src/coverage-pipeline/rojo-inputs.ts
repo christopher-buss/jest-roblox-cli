@@ -107,11 +107,15 @@ export async function computeRojoInputsHashAsync({
 		files.add(toKey(projectFile));
 	}
 
-	await walkMountedInputsAsync(tree, projectDirectory, {
-		files,
-		fileSystem,
-		luauRootKeys: luauRoots.map((root) => toKey(path.join(rootDirectory, root))),
-		visitedDirectories: new Set<string>(),
+	await walkMountedInputsAsync({
+		projectDirectory,
+		tree,
+		walk: {
+			files,
+			fileSystem,
+			luauRootKeys: luauRoots.map((root) => toKey(path.join(rootDirectory, root))),
+			visitedDirectories: new Set<string>(),
+		},
 	});
 
 	const hash = await digestFilesAsync({ digests, files, project, rootDirectory });
@@ -146,11 +150,15 @@ function toKey(filePath: string): string {
 }
 
 /** Every file the tree's `$path` mounts reach, added to the walk's file set. */
-async function walkMountedInputsAsync(
-	tree: RojoTreeNode,
-	projectDirectory: string,
-	walk: InputWalk,
-): Promise<void> {
+async function walkMountedInputsAsync({
+	projectDirectory,
+	tree,
+	walk,
+}: {
+	projectDirectory: string;
+	tree: RojoTreeNode;
+	walk: InputWalk;
+}): Promise<void> {
 	const mounts: Array<string> = [];
 	collectPaths(tree, mounts);
 	// Deduped: one `$path` can appear at several places in the tree, and each

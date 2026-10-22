@@ -22,11 +22,15 @@ export interface AttributionResult {
  * and its location and range hash when the run reported where it is — an
  * injected seam so the harvester stays pure and fs-free.
  */
-export function harvestAttribution(
-	entries: ReadonlyArray<PerTestCoverageEntry>,
-	cumulative: RawCoverageData,
-	resolveTestSource: TestSourceResolver,
-): AttributionResult {
+export function harvestAttribution({
+	cumulative,
+	entries,
+	resolveTestSource,
+}: {
+	cumulative: RawCoverageData;
+	entries: ReadonlyArray<PerTestCoverageEntry>;
+	resolveTestSource: TestSourceResolver;
+}): AttributionResult {
 	const tests: Array<TestRecord> = [];
 	const coveringTestIds: AttributionResult["coveringTestIds"] = {};
 
@@ -123,11 +127,11 @@ export function mergeAttribution(a: AttributionResult, b: AttributionResult): At
 		}
 	}
 
-	const staticStatementIds = mergeStatic(
-		a.staticStatementIds,
-		b.staticStatementIds,
+	const staticStatementIds = mergeStatic({
+		a: a.staticStatementIds,
+		b: b.staticStatementIds,
 		coveringTestIds,
-	);
+	});
 
 	return { coveringTestIds, staticStatementIds, tests: [...a.tests, ...b.tests] };
 }
@@ -169,11 +173,15 @@ function clearAttribution(record: InstrumentedFileRecord): InstrumentedFileRecor
 	return cleared;
 }
 
-function mergeStatic(
-	a: AttributionResult["staticStatementIds"],
-	b: AttributionResult["staticStatementIds"],
-	coveringTestIds: AttributionResult["coveringTestIds"],
-): AttributionResult["staticStatementIds"] {
+function mergeStatic({
+	a,
+	b,
+	coveringTestIds,
+}: {
+	a: AttributionResult["staticStatementIds"];
+	b: AttributionResult["staticStatementIds"];
+	coveringTestIds: AttributionResult["coveringTestIds"];
+}): AttributionResult["staticStatementIds"] {
 	const merged: AttributionResult["staticStatementIds"] = {};
 	const fileKeys = new Set([...Object.keys(a), ...Object.keys(b)]);
 	for (const fileKey of fileKeys) {

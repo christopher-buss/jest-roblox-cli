@@ -18,7 +18,10 @@ function emptyResult(): CollectorResult {
 }
 
 /** A span within one line — every source under test here is one statement. */
-function span(line: number, beginColumn: number, endColumn: number): LuauSpan {
+function span(
+	line: number,
+	{ beginColumn, endColumn }: { beginColumn: number; endColumn: number },
+): LuauSpan {
 	return { beginColumn, beginLine: line, endColumn, endLine: line };
 }
 
@@ -35,7 +38,7 @@ describe("utf16-columns", () => {
 		it("should leave the columns of an ASCII source alone", () => {
 			expect.assertions(1);
 
-			const result = statementResult(span(1, 1, 12));
+			const result = statementResult(span(1, { beginColumn: 1, endColumn: 12 }));
 			const converted = toUtf16Columns(result, "local x = 1\n");
 
 			expect(converted).toBe(result);
@@ -49,7 +52,10 @@ describe("utf16-columns", () => {
 			expect.assertions(2);
 
 			const source = 'local a = "\u{221E}" 1\n';
-			const converted = toUtf16Columns(statementResult(span(1, 11, 15)), source);
+			const converted = toUtf16Columns(
+				statementResult(span(1, { beginColumn: 11, endColumn: 15 })),
+				source,
+			);
 			const { location } = converted.statements[0]!;
 
 			expect(location.beginColumn).toBe(11);
@@ -63,7 +69,11 @@ describe("utf16-columns", () => {
 			const converted = toUtf16Columns(
 				{
 					...branchResult(
-						{ bodyFirstColumn: 36, bodyFirstLine: 1, location: span(1, 29, 34) },
+						{
+							bodyFirstColumn: 36,
+							bodyFirstLine: 1,
+							location: span(1, { beginColumn: 29, endColumn: 34 }),
+						},
 						"if",
 					),
 					functions: [
@@ -72,7 +82,7 @@ describe("utf16-columns", () => {
 							bodyFirstColumn: 22,
 							bodyFirstLine: 1,
 							index: 1,
-							location: span(1, 11, 41),
+							location: span(1, { beginColumn: 11, endColumn: 41 }),
 						},
 					],
 				},
@@ -91,7 +101,11 @@ describe("utf16-columns", () => {
 
 			const converted = toUtf16Columns(
 				branchResult(
-					{ bodyFirstColumn: 0, bodyFirstLine: 0, location: span(1, 11, 15) },
+					{
+						bodyFirstColumn: 0,
+						bodyFirstLine: 0,
+						location: span(1, { beginColumn: 11, endColumn: 15 }),
+					},
 					"binary-expr",
 				),
 				'local a = "\u{221E}"\n',
@@ -110,7 +124,13 @@ describe("utf16-columns", () => {
 					implicitElseProbes: [
 						{ armIndex: 2, branchIndex: 1, endColumn: 25, endLine: 1 },
 					],
-					wrapProbes: [{ armIndex: 1, branchIndex: 1, exprLocation: span(1, 18, 23) }],
+					wrapProbes: [
+						{
+							armIndex: 1,
+							branchIndex: 1,
+							exprLocation: span(1, { beginColumn: 18, endColumn: 23 }),
+						},
+					],
 				},
 				source,
 			);

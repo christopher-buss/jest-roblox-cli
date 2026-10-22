@@ -60,7 +60,7 @@ describe(writeManifest, () => {
 
 		const manifest = exampleManifest();
 
-		writeManifest("/coverage/manifest.json", manifest, fileSystem);
+		writeManifest({ filePath: "/coverage/manifest.json", fileSystem, manifest });
 
 		expect(expectOk(readManifest("/coverage/manifest.json", fileSystem))).toStrictEqual(
 			manifest,
@@ -104,7 +104,7 @@ describe(writeManifest, () => {
 			],
 		});
 
-		writeManifest("/coverage/manifest.json", manifest, fileSystem);
+		writeManifest({ filePath: "/coverage/manifest.json", fileSystem, manifest });
 
 		expect(expectOk(readManifest("/coverage/manifest.json", fileSystem))).toStrictEqual(
 			manifest,
@@ -131,7 +131,7 @@ describe(writeManifest, () => {
 			},
 		});
 
-		writeManifest("/coverage/manifest.json", manifest, fileSystem);
+		writeManifest({ filePath: "/coverage/manifest.json", fileSystem, manifest });
 
 		expect(expectOk(readManifest("/coverage/manifest.json", fileSystem))).toStrictEqual(
 			manifest,
@@ -143,7 +143,11 @@ describe(writeManifest, () => {
 
 		const { fileSystem, volume } = createMemoryFileSystem();
 
-		writeManifest("/nested/dir/coverage/manifest.json", exampleManifest(), fileSystem);
+		writeManifest({
+			filePath: "/nested/dir/coverage/manifest.json",
+			fileSystem,
+			manifest: exampleManifest(),
+		});
 
 		expect(volume.existsSync("/nested/dir/coverage/manifest.json")).toBeTrue();
 	});

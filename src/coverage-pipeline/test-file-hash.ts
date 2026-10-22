@@ -9,11 +9,15 @@ import { hashFile } from "../utils/hash.ts";
  * undefined when there is no mapper, the path doesn't resolve, or the file is
  * absent — the harvester records an empty hash in that case.
  */
-export function resolveTestFileHash(
-	sourceMapper: Pick<SourceMapper, "resolveTestFilePath"> | undefined,
-	testFilePath: string,
-	fileSystem: FileSystem = nodeFileSystem,
-): string | undefined {
+export function resolveTestFileHash({
+	fileSystem = nodeFileSystem,
+	sourceMapper,
+	testFilePath,
+}: {
+	fileSystem?: FileSystem;
+	sourceMapper: Pick<SourceMapper, "resolveTestFilePath"> | undefined;
+	testFilePath: string;
+}): string | undefined {
 	const diskPath = sourceMapper?.resolveTestFilePath(testFilePath);
 	return diskPath !== undefined && fileSystem.existsSync(diskPath)
 		? hashFile(diskPath, fileSystem)

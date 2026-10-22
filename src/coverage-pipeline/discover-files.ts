@@ -111,13 +111,18 @@ export function isSkippedDirectory(name: string): boolean {
  * Every name it reports is built from the entry names it descended through, so
  * how the caller spelled the root never reaches the answer.
  */
-export function walkLuauDirectory(
-	directory: string,
-	filter: WalkFilter,
-	results: Array<string>,
-	fileSystem: FileSystem = nodeFileSystem,
-): void {
-	walkFrom({ fileSystem, filter, results }, directory, "");
+export function walkLuauDirectory({
+	directory,
+	fileSystem = nodeFileSystem,
+	filter,
+	results,
+}: {
+	directory: string;
+	fileSystem?: FileSystem;
+	filter: WalkFilter;
+	results: Array<string>;
+}): void {
+	walkFrom({ directory, fileSystem, filter, relativePrefix: "", results });
 }
 
 /**
@@ -138,12 +143,12 @@ export function discoverRootFiles(
 	{ fileSystem = nodeFileSystem, isCopyIgnored, universe }: DiscoverRootFilesOptions = {},
 ): RootFiles {
 	const discovered: Array<string> = [];
-	walkLuauDirectory(
-		luauRoot,
-		{ accept: isInstrumentableFile, skip: isCopyIgnored },
-		discovered,
+	walkLuauDirectory({
+		directory: luauRoot,
 		fileSystem,
-	);
+		filter: { accept: isInstrumentableFile, skip: isCopyIgnored },
+		results: discovered,
+	});
 
 	if (universe === undefined) {
 		return { excluded: new Set(), instrumentable: new Set(discovered) };
@@ -159,11 +164,17 @@ export function discoverRootFiles(
 	return { excluded, instrumentable };
 }
 
-function walkFrom(
-	walk: { fileSystem: FileSystem; filter: WalkFilter; results: Array<string> },
-	directory: string,
-	relativePrefix: string,
-): void {
+function walkFrom({
+	directory,
+	relativePrefix,
+	...walk
+}: {
+	directory: string;
+	fileSystem: FileSystem;
+	filter: WalkFilter;
+	relativePrefix: string;
+	results: Array<string>;
+}): void {
 	const { fileSystem, filter, results } = walk;
 	const entries = fileSystem.readdirSync(directory, { withFileTypes: true });
 	for (const entry of entries) {
@@ -178,7 +189,11 @@ function walkFrom(
 			}
 
 			filter.onDirectory?.(relative);
-			walkFrom(walk, `${directory}/${entry.name}`, `${relative}/`);
+			walkFrom({
+				...walk,
+				directory: `${directory}/${entry.name}`,
+				relativePrefix: `${relative}/`,
+			});
 		} else if (filter.accept(entry.name)) {
 			results.push(relative);
 		}

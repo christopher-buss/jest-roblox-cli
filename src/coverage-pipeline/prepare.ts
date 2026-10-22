@@ -285,6 +285,13 @@ interface BakeCoveragePlaceOptions {
 	instrumented: InstrumentedCoverage;
 }
 
+interface CoverageInputSources {
+	config: ResolvedConfig;
+	coverageInclude: Array<string> | undefined;
+	fileSystem: FileSystem;
+	tsconfigReader: TsconfigReader;
+}
+
 /** Project the coverage result down to the record an entry point emits. */
 export function toCoverageArtifacts(
 	result: PrepareCoverageResult,
@@ -310,11 +317,12 @@ export function toCoverageArtifacts(
  * `resolveRojoMounts` states the mounts in it. A root probed in any other
  * frame, the cwd included, is one the rest of the run cannot find.
  */
-export function collectLuauRootsFromRojo(
-	{ project, rojoDirectory }: RojoProjectInFrame,
-	config: ResolvedConfig,
-	fileSystem: FileSystem = nodeFileSystem,
-): Array<string> {
+export function collectLuauRootsFromRojo({
+	config,
+	fileSystem = nodeFileSystem,
+	project,
+	rojoDirectory,
+}: RojoProjectInFrame & { config: ResolvedConfig; fileSystem?: FileSystem }): Array<string> {
 	const paths: Array<string> = [];
 	collectPaths(project.tree, paths);
 
@@ -378,13 +386,22 @@ export function findRojoProject(
 	);
 }
 
-export function resolveLuauRoots(
-	config: ResolvedConfig,
-	fileSystem: FileSystem = nodeFileSystem,
-	tsconfigReader: TsconfigReader = nodeTsconfigReader,
-): Array<PosixRoot> {
+export function resolveLuauRoots({
+	config,
+	fileSystem = nodeFileSystem,
+	tsconfigReader = nodeTsconfigReader,
+}: {
+	config: ResolvedConfig;
+	fileSystem?: FileSystem;
+	tsconfigReader?: TsconfigReader;
+}): Array<PosixRoot> {
 	return resolveLuauRootsWithRojo(
-		readRojoContext(config, tryFindRojoProject(config, fileSystem), fileSystem, tsconfigReader),
+		readRojoContext({
+			config,
+			fileSystem,
+			rojoProjectPath: tryFindRojoProject(config, fileSystem),
+			tsconfigReader,
+		}),
 	);
 }
 
@@ -407,12 +424,12 @@ export function tryResolveLuauRoots({
 	fileSystem?: FileSystem;
 	tsconfigReader?: TsconfigReader | undefined;
 }): Array<PosixRoot> {
-	const context = readRojoContext(
+	const context = readRojoContext({
 		config,
-		tryFindRojoProject(config, fileSystem),
 		fileSystem,
+		rojoProjectPath: tryFindRojoProject(config, fileSystem),
 		tsconfigReader,
-	);
+	});
 	return dedupeRoots(findRawLuauRoots(context) ?? []);
 }
 
@@ -432,12 +449,12 @@ export async function prepareCoverageAsync(
 	const { elapsedMs: instrumentMs, value: instrumented } = await timing.profileTimedAsync(
 		"instrumentSources",
 		async () => {
-			const inputs = await resolveCoverageInputsAsync(
+			const inputs = await resolveCoverageInputsAsync({
 				config,
 				coverageInclude,
 				fileSystem,
 				tsconfigReader,
-			);
+			});
 			const isIncremental = decideIncremental(config, inputs);
 			const pass = { instrumenter, isBakeOwned: bake?.isBakeOwned, isIncremental };
 			return { inputs, isIncremental, shadow: prepareShadowRoots(inputs, pass) };
@@ -485,16 +502,20 @@ function tryFindRojoProject(config: ResolvedConfig, fileSystem: FileSystem): str
  * `undefined` when no project file was found or it mounted nothing
  * instrumentable, so the caller falls through to the tsconfig `outDir`.
  */
-function detectRootsFromRojo(
-	loaded: RojoProjectInFrame | undefined,
-	config: ResolvedConfig,
-	fileSystem: FileSystem,
-): Array<string> | undefined {
+function detectRootsFromRojo({
+	config,
+	fileSystem,
+	loaded,
+}: {
+	config: ResolvedConfig;
+	fileSystem: FileSystem;
+	loaded: RojoProjectInFrame | undefined;
+}): Array<string> | undefined {
 	if (loaded === undefined) {
 		return undefined;
 	}
 
-	const roots = collectLuauRootsFromRojo(loaded, config, fileSystem);
+	const roots = collectLuauRootsFromRojo({ ...loaded, config, fileSystem });
 	return roots.length > 0 ? roots : undefined;
 }
 
@@ -523,7 +544,7 @@ function findRawLuauRoots({
 		throw failure;
 	}
 
-	const rojoRoots = detectRootsFromRojo(loaded, config, fileSystem);
+	const rojoRoots = detectRootsFromRojo({ config, fileSystem, loaded });
 	if (rojoRoots !== undefined) {
 		return rojoRoots;
 	}
@@ -625,12 +646,17 @@ function readNoRojoProject(): RojoProjectRead {
 /**
  * {@link loadResolvedRojoProject}, read once and the failure held for later.
  */
-function readRojoContext(
-	config: ResolvedConfig,
-	rojoProjectPath: string | undefined,
-	fileSystem: FileSystem,
-	tsconfigReader: TsconfigReader,
-): RojoContext {
+function readRojoContext({
+	config,
+	fileSystem,
+	rojoProjectPath,
+	tsconfigReader,
+}: {
+	config: ResolvedConfig;
+	fileSystem: FileSystem;
+	rojoProjectPath: string | undefined;
+	tsconfigReader: TsconfigReader;
+}): RojoContext {
 	// No project file at all: the caller falls through to tsconfig's outDir,
 	// and there are no mounts to judge a demote against.
 	const read =
@@ -678,11 +704,15 @@ function hasCoverageChanges(
 	);
 }
 
-function priorPlaceIsReusable(
-	fileSystem: FileSystem,
-	placeFilePath: string,
-	buildManifestPath: string,
-): PriorPlaceReuse {
+function priorPlaceIsReusable({
+	buildManifestPath,
+	fileSystem,
+	placeFilePath,
+}: {
+	buildManifestPath: string;
+	fileSystem: FileSystem;
+	placeFilePath: string;
+}): PriorPlaceReuse {
 	if (!fileSystem.existsSync(placeFilePath)) {
 		return { reusable: false };
 	}
@@ -715,11 +745,16 @@ function priorPlaceIsReusable(
  * `undefined` so the caller does a full rebuild rather than publishing a
  * manifest that points at a stale or absent `.rbxl`.
  */
-async function reuseCoverageResultAsync(
-	{ buildManifestPath, fileSystem, previousManifest }: CoverageInputs,
-	files: Record<string, BuildManifestFileRecord>,
-	hasChanges: boolean,
-): Promise<BakedCoveragePlace | undefined> {
+async function reuseCoverageResultAsync({
+	buildManifestPath,
+	files,
+	fileSystem,
+	hasChanges,
+	previousManifest,
+}: CoverageInputs & {
+	files: Record<string, BuildManifestFileRecord>;
+	hasChanges: boolean;
+}): Promise<BakedCoveragePlace | undefined> {
 	if (hasChanges || previousManifest?.placeFilePath === undefined) {
 		return undefined;
 	}
@@ -730,7 +765,7 @@ async function reuseCoverageResultAsync(
 		return undefined;
 	}
 
-	const reuse = priorPlaceIsReusable(fileSystem, placeFilePath, buildManifestPath);
+	const reuse = priorPlaceIsReusable({ buildManifestPath, fileSystem, placeFilePath });
 	if (!reuse.reusable) {
 		return undefined;
 	}
@@ -844,7 +879,7 @@ function buildAndWriteManifest({
 		version: MANIFEST_VERSION,
 	};
 
-	writeManifest(manifestPath, manifest, fileSystem);
+	writeManifest({ filePath: manifestPath, fileSystem, manifest });
 
 	return manifest;
 }
@@ -942,7 +977,7 @@ async function bakeCoveragePlaceAsync({
 		shadow,
 	});
 	const files = toBuildManifestFiles(shadow.files);
-	const reused = await reuseCoverageResultAsync(inputs, files, hasChanges);
+	const reused = await reuseCoverageResultAsync({ ...inputs, files, hasChanges });
 	// The bundle is written either way: the reused place never held this run's
 	// code, and the gate above only proved the harness itself is still current.
 	if (reused !== undefined) {
@@ -969,12 +1004,17 @@ async function bakeCoveragePlaceAsync({
  * to hash would also fail the rebuild's own parse) rather than hard-failing a
  * working run.
  */
-async function resolveRojoInputsHashAsync(
-	config: ResolvedConfig,
-	rojoProjectPath: string,
-	luauRoots: Array<string>,
-	fileSystem: FileSystem,
-): Promise<string | undefined> {
+async function resolveRojoInputsHashAsync({
+	config,
+	fileSystem,
+	luauRoots,
+	rojoProjectPath,
+}: {
+	config: ResolvedConfig;
+	fileSystem: FileSystem;
+	luauRoots: Array<string>;
+	rojoProjectPath: string;
+}): Promise<string | undefined> {
 	return tryComputeRojoInputsHashAsync({
 		digestCacheFile: path.join(config.rootDir, INPUT_DIGEST_PATH),
 		fileSystem,
@@ -1022,11 +1062,15 @@ function loadCoverageManifest(
  * would match none of them. Only workspace mode, whose candidates are absolute
  * under a package, has an anchor worth preferring.
  */
-function resolveUniverse(
-	config: ResolvedConfig,
-	coverageInclude: Array<string> | undefined,
-	fileSystem: FileSystem,
-): InstrumentUniverse | undefined {
+function resolveUniverse({
+	config,
+	coverageInclude,
+	fileSystem,
+}: {
+	config: ResolvedConfig;
+	coverageInclude: Array<string> | undefined;
+	fileSystem: FileSystem;
+}): InstrumentUniverse | undefined {
 	return createInstrumentUniverse(
 		{
 			ignore: config.coveragePathIgnorePatterns,
@@ -1098,7 +1142,7 @@ function narrowConfiguredRoots({
 }): ReturnType<typeof narrowLuauRoots> {
 	// One read: the root auto-detect and the mount set the demote is judged
 	// against both come from the same tree, nested projects included.
-	const rojo = readRojoContext(config, rojoProjectPath, fileSystem, tsconfigReader);
+	const rojo = readRojoContext({ config, fileSystem, rojoProjectPath, tsconfigReader });
 	const mounts = resolveLuauRootsWithRojo(rojo);
 
 	validateRelativeRoots(mounts);
@@ -1118,26 +1162,26 @@ function narrowConfiguredRoots({
  * Resolve the rojo project, the luau roots, the non-luauRoot inputs hash and
  * the prior manifest — everything the rest of the run reads but never mutates.
  */
-async function resolveCoverageInputsAsync(
-	config: ResolvedConfig,
-	coverageInclude: Array<string> | undefined,
-	fileSystem: FileSystem,
-	tsconfigReader: TsconfigReader,
-): Promise<CoverageInputs> {
+async function resolveCoverageInputsAsync({
+	config,
+	coverageInclude,
+	fileSystem,
+	tsconfigReader,
+}: CoverageInputSources): Promise<CoverageInputs> {
 	const rojoProjectPath = findRojoProject(config, fileSystem);
 	const isCopyIgnored = createCopyIgnoreMatcher(config.coverageCopyIgnorePatterns);
-	const universe = resolveUniverse(config, coverageInclude, fileSystem);
-	const narrowed = narrowConfiguredRoots({
+	const universe = resolveUniverse({ config, coverageInclude, fileSystem });
+	const rootSources = {
 		config,
 		fileSystem,
 		isCopyIgnored,
 		rojoProjectPath,
 		tsconfigReader,
 		universe,
-	});
+	};
+	const narrowed = narrowConfiguredRoots(rootSources);
 	const luauRoots = narrowed.flatMap((entry) => entry.roots);
-	const hash = await resolveRojoInputsHashAsync(config, rojoProjectPath, luauRoots, fileSystem);
-	const manifestPath = path.join(SHADOW_DIR, COVERAGE_MANIFEST);
+	const hash = await resolveRojoInputsHashAsync({ ...rootSources, luauRoots });
 
 	return {
 		buildManifestPath: path.join(SHADOW_DIR, BUILD_MANIFEST_FILE),
@@ -1145,9 +1189,9 @@ async function resolveCoverageInputsAsync(
 		fileSystem,
 		isCopyIgnored,
 		luauRoots,
-		manifestPath,
+		manifestPath: COVERAGE_MANIFEST_PATH,
 		narrowed,
-		previousManifest: loadCoverageManifest(fileSystem, manifestPath),
+		previousManifest: loadCoverageManifest(fileSystem, COVERAGE_MANIFEST_PATH),
 		rojoInputsHash: hash,
 		rojoProjectPath,
 		universe,

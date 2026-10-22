@@ -141,6 +141,7 @@ function seed(
 	}
 
 	const memory = createMemoryFileSystem(files);
+	// eslint-disable-next-line better-max-params/better-max-params -- fakes the Node execFile signature.
 	const execFile = vi.fn<RojoExec>((_file, args, _options, callback) => {
 		memory.volume.writeFileSync(String(args[3]), PLACE_BYTES);
 		callback(null, "", "");

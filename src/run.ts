@@ -131,7 +131,9 @@ export async function runJestRobloxAsync(
 		// builds a Clean Place, so it records `coveragePlace` only. The reuse
 		// path leaves the prior (still-valid) manifest untouched.
 		if (result.coverageArtifacts?.rebuilt === true) {
-			emitBuildManifest(COVERAGE_BUILD_MANIFEST_PATH, result.coverageArtifacts, {
+			emitBuildManifest({
+				artifacts: result.coverageArtifacts,
+				filePath: COVERAGE_BUILD_MANIFEST_PATH,
 				fileSystem,
 			});
 		}

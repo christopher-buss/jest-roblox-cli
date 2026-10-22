@@ -103,12 +103,17 @@ export function generateReports(options: CoverageReportOptions): void {
 	});
 }
 
-export function checkThresholds(
-	mapped: MappedCoverageResult,
-	thresholds: { branches?: number; functions?: number; lines?: number; statements?: number },
-	collectCoverageFrom?: Array<string>,
-	coveragePathIgnorePatterns?: Array<string>,
-): ThresholdResult {
+export function checkThresholds({
+	collectCoverageFrom,
+	coveragePathIgnorePatterns,
+	mapped,
+	thresholds,
+}: {
+	collectCoverageFrom?: Array<string> | undefined;
+	coveragePathIgnorePatterns?: Array<string> | undefined;
+	mapped: MappedCoverageResult;
+	thresholds: { branches?: number; functions?: number; lines?: number; statements?: number };
+}): ThresholdResult {
 	const filtered = filterCoverageUniverse(mapped, {
 		ignore: coveragePathIgnorePatterns,
 		include: collectCoverageFrom,

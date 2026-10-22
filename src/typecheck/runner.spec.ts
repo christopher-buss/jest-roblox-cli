@@ -50,7 +50,7 @@ describe(mapErrorsToTests, () => {
 			],
 		]);
 
-		const result = mapErrorsToTests(errors, files, Date.now());
+		const result = mapErrorsToTests({ errors, files, startTime: Date.now() });
 
 		expect(result.success).toBeTrue();
 		expect(result.testResults[0]!.testResults[0]!.status).toBe("passed");
@@ -84,7 +84,7 @@ describe(mapErrorsToTests, () => {
 			["/test.ts", { definitions, source }],
 		]);
 
-		const result = mapErrorsToTests(errors, files, 123);
+		const result = mapErrorsToTests({ errors, files, startTime: 123 });
 
 		expect(result.success).toBeFalse();
 		expect(result.testResults[0]!.testResults[0]!.status).toBe("failed");
@@ -118,7 +118,7 @@ describe(mapErrorsToTests, () => {
 			["/test.ts", { definitions, source }],
 		]);
 
-		const result = mapErrorsToTests(errors, files, 123);
+		const result = mapErrorsToTests({ errors, files, startTime: 123 });
 
 		expect(result.success).toBeFalse();
 		expect(result.numFailedTests).toBePositive();
@@ -150,7 +150,7 @@ describe(mapErrorsToTests, () => {
 			["/test.ts", { definitions, source }],
 		]);
 
-		const result = mapErrorsToTests(errors, files, 123);
+		const result = mapErrorsToTests({ errors, files, startTime: 123 });
 
 		const test = result.testResults[0]!.testResults.find((tc) => tc.title === "should pass");
 
@@ -190,7 +190,7 @@ describe(mapErrorsToTests, () => {
 			["/test.ts", { definitions, source }],
 		]);
 
-		const result = mapErrorsToTests(errors, files, Date.now());
+		const result = mapErrorsToTests({ errors, files, startTime: Date.now() });
 
 		expect(result.testResults[0]!.testResults[0]!.failureMessages).toHaveLength(2);
 	});
@@ -234,7 +234,7 @@ describe(mapErrorsToTests, () => {
 			],
 		]);
 
-		const result = mapErrorsToTests(errors, files, 123);
+		const result = mapErrorsToTests({ errors, files, startTime: 123 });
 
 		// The result crosses the Jest reporter boundary. Pin its complete shape
 		// alongside the aggregate counts below.
@@ -274,7 +274,12 @@ describe(mapErrorsToTests, () => {
 			],
 		]);
 
-		const result = mapErrorsToTests(errors, files, 123, false);
+		const result = mapErrorsToTests({
+			errors,
+			files,
+			ignoreSourceErrors: false,
+			startTime: 123,
+		});
 
 		const sourceResult = result.testResults.find(
 			(file) => file.testFilePath === "src/source.ts",
@@ -316,7 +321,12 @@ describe(mapErrorsToTests, () => {
 			],
 		]);
 
-		const result = mapErrorsToTests(errors, files, 123, true);
+		const result = mapErrorsToTests({
+			errors,
+			files,
+			ignoreSourceErrors: true,
+			startTime: 123,
+		});
 
 		expect(result.success).toBeTrue();
 		expect(result.numFailedTests).toBe(0);
@@ -343,7 +353,7 @@ describe(mapErrorsToTests, () => {
 			],
 		]);
 
-		const result = mapErrorsToTests(errors, files, Date.now());
+		const result = mapErrorsToTests({ errors, files, startTime: Date.now() });
 
 		expect(result.numTotalTests).toBe(2);
 		expect(result.numPassedTests).toBe(2);
@@ -382,7 +392,7 @@ describe(mapErrorsToTests, () => {
 			],
 		]);
 
-		const result = mapErrorsToTests(errors, files, Date.now());
+		const result = mapErrorsToTests({ errors, files, startTime: Date.now() });
 
 		expect(result.numFailedTests).toBe(1);
 	});
@@ -432,7 +442,7 @@ describe(mapErrorsToTests, () => {
 			],
 		]);
 
-		const result = mapErrorsToTests(errors, files, 123);
+		const result = mapErrorsToTests({ errors, files, startTime: 123 });
 
 		expect(result.testResults[0]!.testResults).toStrictEqual([
 			{
@@ -481,7 +491,7 @@ describe(isCompositeProject, () => {
 
 		const fileSystem = readingText(JSON.stringify({ compilerOptions: { composite: true } }));
 
-		expect(isCompositeProject("/project", undefined, fileSystem)).toBeTrue();
+		expect(isCompositeProject({ fileSystem, rootDirectory: "/project" })).toBeTrue();
 	});
 
 	it("should return false when composite is absent", () => {
@@ -489,7 +499,7 @@ describe(isCompositeProject, () => {
 
 		const fileSystem = readingText(JSON.stringify({ compilerOptions: { strict: true } }));
 
-		expect(isCompositeProject("/project", undefined, fileSystem)).toBeFalse();
+		expect(isCompositeProject({ fileSystem, rootDirectory: "/project" })).toBeFalse();
 	});
 
 	it("should return false when compilerOptions is absent", () => {
@@ -497,7 +507,7 @@ describe(isCompositeProject, () => {
 
 		const fileSystem = readingText(JSON.stringify({ include: ["src"] }));
 
-		expect(isCompositeProject("/project", undefined, fileSystem)).toBeFalse();
+		expect(isCompositeProject({ fileSystem, rootDirectory: "/project" })).toBeFalse();
 	});
 
 	it("should return false when compilerOptions is null", () => {
@@ -505,7 +515,7 @@ describe(isCompositeProject, () => {
 
 		const fileSystem = readingText('{ "compilerOptions": null }');
 
-		expect(isCompositeProject("/project", undefined, fileSystem)).toBeFalse();
+		expect(isCompositeProject({ fileSystem, rootDirectory: "/project" })).toBeFalse();
 	});
 
 	it("should return false when compilerOptions is an array", () => {
@@ -513,7 +523,7 @@ describe(isCompositeProject, () => {
 
 		const fileSystem = readingText('{ "compilerOptions": [] }');
 
-		expect(isCompositeProject("/project", undefined, fileSystem)).toBeFalse();
+		expect(isCompositeProject({ fileSystem, rootDirectory: "/project" })).toBeFalse();
 	});
 
 	it("should return false when tsconfig does not exist", () => {
@@ -521,7 +531,7 @@ describe(isCompositeProject, () => {
 
 		const fileSystem = throwingOnRead(new Error("ENOENT"));
 
-		expect(isCompositeProject("/project", undefined, fileSystem)).toBeFalse();
+		expect(isCompositeProject({ fileSystem, rootDirectory: "/project" })).toBeFalse();
 	});
 
 	it("should return false on malformed JSON", () => {
@@ -529,7 +539,7 @@ describe(isCompositeProject, () => {
 
 		const fileSystem = readingText("not json{{{");
 
-		expect(isCompositeProject("/project", undefined, fileSystem)).toBeFalse();
+		expect(isCompositeProject({ fileSystem, rootDirectory: "/project" })).toBeFalse();
 	});
 
 	it("should detect composite in tsconfig with comments", () => {
@@ -539,7 +549,7 @@ describe(isCompositeProject, () => {
 			'// this is a comment\n{ "compilerOptions": { "composite": true } }',
 		);
 
-		expect(isCompositeProject("/project", undefined, fileSystem)).toBeTrue();
+		expect(isCompositeProject({ fileSystem, rootDirectory: "/project" })).toBeTrue();
 	});
 
 	it("should detect composite in tsconfig with trailing commas", () => {
@@ -547,7 +557,7 @@ describe(isCompositeProject, () => {
 
 		const fileSystem = readingText('{ "compilerOptions": { "composite": true, }, }');
 
-		expect(isCompositeProject("/project", undefined, fileSystem)).toBeTrue();
+		expect(isCompositeProject({ fileSystem, rootDirectory: "/project" })).toBeTrue();
 	});
 
 	it("should warn when custom tsconfig cannot be read", () => {
@@ -557,7 +567,11 @@ describe(isCompositeProject, () => {
 
 		const fileSystem = throwingOnRead(new Error("ENOENT"));
 
-		const isComposite = isCompositeProject("/project", "tsconfig.build.json", fileSystem);
+		const isComposite = isCompositeProject({
+			fileSystem,
+			rootDirectory: "/project",
+			tsconfig: "tsconfig.build.json",
+		});
 
 		expect(isComposite).toBeFalse();
 		expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining("tsconfig.build.json"));
@@ -570,7 +584,11 @@ describe(isCompositeProject, () => {
 
 		const fileSystem = throwingOnRead("raw string error");
 
-		const isComposite = isCompositeProject("/project", "tsconfig.build.json", fileSystem);
+		const isComposite = isCompositeProject({
+			fileSystem,
+			rootDirectory: "/project",
+			tsconfig: "tsconfig.build.json",
+		});
 
 		expect(isComposite).toBeFalse();
 		expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining("raw string error"));
@@ -583,7 +601,7 @@ describe(isCompositeProject, () => {
 
 		const fileSystem = throwingOnRead(new Error("ENOENT"));
 
-		const isComposite = isCompositeProject("/project", undefined, fileSystem);
+		const isComposite = isCompositeProject({ fileSystem, rootDirectory: "/project" });
 
 		expect(isComposite).toBeFalse();
 		expect(stderrSpy).not.toHaveBeenCalled();
@@ -595,7 +613,11 @@ describe(isCompositeProject, () => {
 		const fileSystem = readingText(JSON.stringify({ compilerOptions: { composite: true } }));
 		const readFile = vi.spyOn(fileSystem, "readFileSync");
 
-		isCompositeProject("/project", "tsconfig.build.json", fileSystem);
+		isCompositeProject({
+			fileSystem,
+			rootDirectory: "/project",
+			tsconfig: "tsconfig.build.json",
+		});
 
 		expect(readFile).toHaveBeenCalledWith(
 			path.resolve("/project", "tsconfig.build.json"),
@@ -641,10 +663,12 @@ describe(runTypecheckAsync, () => {
 		const child: childProcess.ChildProcess = fromAny({ kill, once });
 		const execFileStub: typeof childProcess.execFile = fromAny(
 			(
-				_file: string,
-				commandArguments: Array<string>,
-				options: { timeout?: number },
-				callback: TsgoCallback,
+				...[, commandArguments, options, callback]: [
+					string,
+					Array<string>,
+					{ timeout?: number },
+					TsgoCallback,
+				]
 			) => {
 				invocations.push({ arguments: commandArguments, options });
 				respond(callback);

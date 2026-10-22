@@ -63,12 +63,12 @@ export function deriveProjectMounts(
 export function buildImplicitProject(
 	config: ResolvedConfig,
 	rojoTree: RojoTreeNode | undefined,
-	{ fileSystem, tsconfigReader }: ImplicitProjectSeams,
+	seams: ImplicitProjectSeams,
 ): ResolvedProjectConfig {
 	const mounts =
 		rojoTree === undefined
 			? []
-			: deriveProjectMounts(resolveLuauRoots(config, fileSystem, tsconfigReader), rojoTree);
+			: deriveProjectMounts(resolveLuauRoots({ ...seams, config }), rojoTree);
 	if (rojoTree !== undefined && mounts.length === 0) {
 		throw new ConfigError(
 			"No test projects could be derived: none of the resolved luauRoots map to a $path mount in your Rojo project.",

@@ -1989,12 +1989,10 @@ describe("per-package threshold gates via outputMultiResult", () => {
 
 		// One call only: the pooled merged-universe check is replaced by the
 		// per-package gates.
-		expect(pipeline.checkThresholds).toHaveBeenCalledExactlyOnceWith(
-			fooUniverse,
-			{ lines: 70 },
-			undefined,
-			undefined,
-		);
+		expect(pipeline.checkThresholds).toHaveBeenCalledExactlyOnceWith({
+			mapped: fooUniverse,
+			thresholds: { lines: 70 },
+		});
 		expect(code).toBe(0);
 	});
 
@@ -2018,12 +2016,10 @@ describe("per-package threshold gates via outputMultiResult", () => {
 			dependencies,
 		);
 
-		expect(pipeline.checkThresholds).toHaveBeenCalledWith(
-			fooUniverse,
-			{ statements: 70 },
-			undefined,
-			undefined,
-		);
+		expect(pipeline.checkThresholds).toHaveBeenCalledWith({
+			mapped: fooUniverse,
+			thresholds: { statements: 70 },
+		});
 	});
 
 	it("should not gate a package that declared no threshold", async () => {
