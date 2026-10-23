@@ -19,7 +19,7 @@ import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 
-const LUAU_TAG = "0.740";
+const LUAU_TAG = "0.743";
 const EMSDK_VERSION = "6.0.8";
 
 const EMCC_VERSION = /^emcc \D*(\d+\.\d+\.\d+)/;
@@ -96,9 +96,8 @@ const COMPILER_INSTRUMENTATION = [
 			"        RegScope rs(this);\n        recordFrameStart(func->location);\n\n        bool self",
 	},
 	{
-		needle: "        localStack.push_back(local);\n",
-		replacement:
-			"        localStack.push_back(local);\n        recordPeakLocals(localStack.size());\n",
+		needle: "            activeLocals++;\n",
+		replacement: "            activeLocals++;\n        recordPeakLocals(activeLocals);\n",
 	},
 	{
 		needle: "        bytecode.endFunction(uint8_t(stackSize), uint8_t(upvals.size()), protoflags, costModel);",
@@ -169,9 +168,9 @@ function insertBefore(source: string, anchor: string, insertion: string): string
 	return `${source.slice(0, index)}${insertion}${source.slice(index)}`;
 }
 
-// Luau 0.740 has no AstExprInstantiate encoder override, so its generic visitor
 /**
- * Concatenates that node's children into invalid JSON.
+ * The pinned Luau has no AstExprInstantiate encoder override, so its generic
+ * visitor concatenates that node's children into invalid JSON.
  * @returns The patched encoder source file path.
  * @param luauSource - The pinned upstream Luau source checkout.
  * @param temporaryRoot - The build directory receiving the patched encoder.

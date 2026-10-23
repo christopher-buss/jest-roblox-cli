@@ -1,6 +1,6 @@
 # @isentinel/luau-ast
 
-Parse, inspect, edit, print and compile Luau in Node. The official Luau 0.740
+Parse, inspect, edit, print and compile Luau in Node. The official Luau 0.743
 parser and compiler run in separate embedded WebAssembly modules. Parsing needs
 no subprocess, network connection or runtime asset lookup. The package is ESM.
 
@@ -129,7 +129,7 @@ in-process parser and compiler.
 ## Rebuilding the embedded modules
 
 Normal builds use the committed modules. Rebuilding them requires `git`, the
-pinned Emscripten 6.0.8 `em++` (or `EMXX`) and Luau tag 0.740:
+pinned Emscripten 6.0.8 `em++` (or `EMXX`) and Luau tag 0.743:
 
 ```sh
 node wasm/build-wasm.ts

@@ -10,6 +10,20 @@ function constantLocals(localCount: number): Array<string> {
 	);
 }
 
+function inputLocals(localCount: number): Array<string> {
+	return Array.from(
+		{ length: localCount },
+		(_unused, localIndex) => `local value${String(localIndex)} = input()`,
+	);
+}
+
+function keepAlive(localCount: number): Array<string> {
+	return Array.from(
+		{ length: localCount },
+		(_unused, localIndex) => `value${String(localIndex)} = nil`,
+	);
+}
+
 describe("compile", () => {
 	it("should report statistics for the main function frame", () => {
 		expect.assertions(1);
@@ -76,19 +90,37 @@ describe("compile", () => {
 		const compiler = loadLuauCompiler();
 
 		const source = [
-			...constantLocals(100),
+			...inputLocals(100),
 			"do",
-			...constantLocals(60),
+			...inputLocals(60),
+			...keepAlive(60),
 			"end",
 			"do",
-			...constantLocals(70),
+			...inputLocals(70),
+			...keepAlive(70),
 			"end",
+			...keepAlive(100),
 		].join("\n");
 		const result = compiler.compile(source, { debugLevel: 2, optimizationLevel: 1 });
 
 		assert(result.ok);
 
 		expect(result.frames.at(-1)!.peakLocals).toBe(170);
+	});
+
+	it("should free the slot of a local after its last use", () => {
+		expect.assertions(1);
+
+		const compiler = loadLuauCompiler();
+
+		const source = Array.from({ length: 300 }, (_unused, localIndex) => {
+			return `local value${String(localIndex)} = input()\nprint(value${String(localIndex)})`;
+		}).join("\n");
+		const result = compiler.compile(source, { debugLevel: 2, optimizationLevel: 1 });
+
+		assert(result.ok);
+
+		expect(result.frames.at(-1)!.peakLocals).toBe(1);
 	});
 
 	it("should count a loop variable toward the 200-local limit", () => {
@@ -98,11 +130,23 @@ describe("compile", () => {
 
 		const options = { debugLevel: 2, optimizationLevel: 1 } satisfies LuauCompileOptions;
 		const fitting = compiler.compile(
-			[...constantLocals(199), "for index = 1, 1 do", "\tprint(index)", "end"].join("\n"),
+			[
+				...inputLocals(199),
+				"for index = 1, 1 do",
+				"\tprint(index)",
+				"end",
+				...keepAlive(199),
+			].join("\n"),
 			options,
 		);
 		const overflowing = compiler.compile(
-			[...constantLocals(200), "for index = 1, 1 do", "\tprint(index)", "end"].join("\n"),
+			[
+				...inputLocals(200),
+				"for index = 1, 1 do",
+				"\tprint(index)",
+				"end",
+				...keepAlive(200),
+			].join("\n"),
 			options,
 		);
 
@@ -113,7 +157,7 @@ describe("compile", () => {
 		expect(overflowing.error.localName).toBe("index");
 	});
 
-	it("should retain constants at debug level 2 and elide them at debug level 1", () => {
+	it("should elide constant locals at debug levels 1 and 2", () => {
 		expect.assertions(2);
 
 		const compiler = loadLuauCompiler();
@@ -122,10 +166,10 @@ describe("compile", () => {
 		const debugTwo = compiler.compile(source, { debugLevel: 2, optimizationLevel: 1 });
 		const debugOne = compiler.compile(source, { debugLevel: 1, optimizationLevel: 1 });
 
-		assert(!debugTwo.ok);
+		assert(debugTwo.ok);
 		assert(debugOne.ok);
 
-		expect(debugTwo.error.localName).toBe("value200");
+		expect(debugTwo.frames.at(-1)!.peakLocals).toBe(0);
 		expect(debugOne.frames.at(-1)!.peakLocals).toBe(0);
 	});
 
@@ -134,18 +178,24 @@ describe("compile", () => {
 
 		const compiler = loadLuauCompiler();
 
-		const localDeclarations = constantLocals(200);
+		const localDeclarations = inputLocals(200);
 		const argumentNames = Array.from(
 			{ length: 55 },
 			(_unused, argumentIndex) => `value${String(argumentIndex)}`,
 		);
 		const options = { debugLevel: 2, optimizationLevel: 1 } satisfies LuauCompileOptions;
 		const fitting = compiler.compile(
-			[...localDeclarations, `call(${argumentNames.slice(0, 54).join(", ")})`].join("\n"),
+			[
+				...localDeclarations,
+				`call(${argumentNames.slice(0, 54).join(", ")})`,
+				...keepAlive(200),
+			].join("\n"),
 			options,
 		);
 		const overflowing = compiler.compile(
-			[...localDeclarations, `call(${argumentNames.join(", ")})`].join("\n"),
+			[...localDeclarations, `call(${argumentNames.join(", ")})`, ...keepAlive(200)].join(
+				"\n",
+			),
 			options,
 		);
 
@@ -179,7 +229,7 @@ describe("compile", () => {
 			),
 		];
 		const source = [
-			...constantLocals(150),
+			...inputLocals(150),
 			"local function outer()",
 			...innerLocals,
 			"\treturn function()",
@@ -192,9 +242,9 @@ describe("compile", () => {
 		assert(!result.ok);
 
 		expect(result.error.message).toBe(
-			"Out of upvalue registers when trying to allocate value149: exceeded limit 200",
+			"Out of upvalue registers when trying to allocate inner50: exceeded limit 200",
 		);
-		expect(result.error.localName).toBe("value149");
+		expect(result.error.localName).toBe("inner50");
 	});
 
 	it("should preserve a compile error's message, location, and local name", () => {
@@ -202,7 +252,9 @@ describe("compile", () => {
 
 		const compiler = loadLuauCompiler();
 
-		const source = [...constantLocals(200), "local overflowing = input()"].join("\n");
+		const source = [...inputLocals(200), "local overflowing = input()", ...keepAlive(200)].join(
+			"\n",
+		);
 		const result = compiler.compile(source, { debugLevel: 2, optimizationLevel: 1 });
 
 		assert(!result.ok);
