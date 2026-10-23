@@ -4,14 +4,12 @@ import type { ResolvedTypecheckConfig } from "../config/resolve-typecheck-config
 import type { ResolvedConfig } from "../config/schema.ts";
 import type { createSetupResolver } from "../config/setup-resolver.ts";
 import { createRojoResolverCache } from "../config/setup-resolver.ts";
+import { TYPE_TEST_PATTERN } from "../typecheck/type-test-pattern.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import { nodeFileSystem } from "../utils/file-system.ts";
 import { createGlobCache, globSync } from "../utils/glob.ts";
 
 const DEFAULT_ROJO_PROJECT = "default.project.json";
-
-// oxlint-disable-next-line typescript/no-inferrable-types -- isolatedDeclarations requires explicit annotation
-export const TYPE_TEST_PATTERN: RegExp = /\.(test-d|spec-d)\.ts$/;
 
 export interface ClassifiedTestFiles {
 	runtimeFiles: Array<string>;

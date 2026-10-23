@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { parseTscOutput } from "./parse.ts";
-import type { TscErrorInfo } from "./types.ts";
+import type { TypeTestDiagnostic } from "./types.ts";
 
 describe(parseTscOutput, () => {
 	it("should preserve exact paths, positions, codes, messages, and continuations", () => {
@@ -19,11 +19,11 @@ describe(parseTscOutput, () => {
 				"src/(feature)/a.ts",
 				[
 					{
+						code: "TS1234",
 						column: 4,
-						errorCode: 1234,
-						errorMessage: "First message.\n  Continuation detail.",
 						filePath: "src/(feature)/a.ts",
 						line: 3,
+						message: "First message.\n  Continuation detail.",
 					},
 				],
 			],
@@ -31,11 +31,11 @@ describe(parseTscOutput, () => {
 				"src/b.ts",
 				[
 					{
+						code: "TS5678",
 						column: 20,
-						errorCode: 5678,
-						errorMessage: "Second message.",
 						filePath: "src/b.ts",
 						line: 10,
+						message: "Second message.",
 					},
 				],
 			],
@@ -52,11 +52,11 @@ describe(parseTscOutput, () => {
 				"src/a.ts",
 				[
 					{
+						code: "TS1000",
 						column: 2,
-						errorCode: 1000,
-						errorMessage: "First.\n  Continued.",
 						filePath: "src/a.ts",
 						line: 1,
+						message: "First.\n  Continued.",
 					},
 				],
 			],
@@ -87,12 +87,12 @@ describe(parseTscOutput, () => {
 
 		expect(errors).toHaveLength(1);
 		expect(errors![0]).toStrictEqual({
+			code: "TS2322",
 			column: 5,
-			errorCode: 2322,
-			errorMessage: "Type 'string' is not assignable to type 'number'.",
 			filePath: "src/index.ts",
 			line: 10,
-		} satisfies TscErrorInfo);
+			message: "Type 'string' is not assignable to type 'number'.",
+		} satisfies TypeTestDiagnostic);
 	});
 
 	it("should group multiple errors for the same file", () => {
@@ -134,7 +134,7 @@ describe(parseTscOutput, () => {
 		const errors = result.get("src/index.ts");
 
 		expect(errors).toHaveLength(1);
-		expect(errors![0]!.errorMessage).toContain("has no call signatures");
+		expect(errors![0]!.message).toContain("has no call signatures");
 	});
 
 	it("should return empty map for empty output", () => {
@@ -179,11 +179,11 @@ describe(parseTscOutput, () => {
 				"a",
 				[
 					{
+						code: "TS1000",
 						column: 2,
-						errorCode: 1000,
-						errorMessage: "Message.",
 						filePath: "a",
 						line: 1,
+						message: "Message.",
 					},
 				],
 			],
@@ -198,11 +198,11 @@ describe(parseTscOutput, () => {
 				"src/a.ts",
 				[
 					{
+						code: "TS1000",
 						column: 2,
-						errorCode: 1000,
-						errorMessage: "Message.",
 						filePath: "src/a.ts",
 						line: 1,
+						message: "Message.",
 					},
 				],
 			],

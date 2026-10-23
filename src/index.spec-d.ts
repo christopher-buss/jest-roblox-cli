@@ -26,8 +26,8 @@ import type {
 	TestDefinition,
 	TestFileResult,
 	TestStatus,
-	TscErrorInfo,
 	TypecheckOptions,
+	TypeTestDiagnostic,
 } from "./index.ts";
 import {
 	buildJestArgv,
@@ -267,10 +267,10 @@ describe("type exports", () => {
 		expectTypeOf<TestDefinition>().toHaveProperty("type");
 	});
 
-	it("should export TscErrorInfo with required fields", () => {
-		expectTypeOf<TscErrorInfo>().toHaveProperty("filePath");
-		expectTypeOf<TscErrorInfo>().toHaveProperty("line");
-		expectTypeOf<TscErrorInfo>().toHaveProperty("errorMessage");
+	it("should export TypeTestDiagnostic with required fields", () => {
+		expectTypeOf<TypeTestDiagnostic>().toHaveProperty("filePath");
+		expectTypeOf<TypeTestDiagnostic>().toHaveProperty("line");
+		expectTypeOf<TypeTestDiagnostic>().toHaveProperty("message");
 	});
 
 	it("should export CliOptions with optional fields", () => {

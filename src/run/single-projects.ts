@@ -10,11 +10,11 @@ import type { TypecheckConfig } from "../config/resolve-typecheck-config.ts";
 import type { ResolvedConfig } from "../config/schema.ts";
 import { resolveLuauRoots } from "../coverage-pipeline/prepare.ts";
 import type { TsconfigReader } from "../executor/tsconfig-mappings.ts";
+import { TYPE_TEST_PATTERN } from "../typecheck/type-test-pattern.ts";
 import type { RojoTreeNode } from "../types/rojo.ts";
 import { stripTsExtension } from "../utils/extensions.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import type { PosixRoot } from "../utils/normalize-windows-path.ts";
-import { TYPE_TEST_PATTERN } from "./discovery.ts";
 
 export interface ImplicitProjectSeams {
 	fileSystem: FileSystem;

@@ -84,7 +84,7 @@ export type { JestArgv } from "./test-script.ts";
 
 export { runTypecheckAsync } from "./typecheck/runner.ts";
 export type { TypecheckOptions } from "./typecheck/runner.ts";
-export type { TestDefinition, TscErrorInfo } from "./typecheck/types.ts";
+export type { TestDefinition, TypeTestDiagnostic } from "./typecheck/types.ts";
 export type { GameOutputEntry } from "./types/game-output.ts";
 export type {
 	JestResult,

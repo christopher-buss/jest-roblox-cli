@@ -5,12 +5,7 @@ import { createMemoryFileSystem } from "../../test/mocks/memory-file-system.ts";
 import type { ResolvedConfig } from "../config/schema.ts";
 import { DEFAULT_CONFIG } from "../config/schema.ts";
 import type { createSetupResolver } from "../config/setup-resolver.ts";
-import {
-	classifyTestFiles,
-	discoverTestFiles,
-	resolveAllSetupFilePaths,
-	TYPE_TEST_PATTERN,
-} from "./discovery.ts";
+import { classifyTestFiles, discoverTestFiles, resolveAllSetupFilePaths } from "./discovery.ts";
 
 function makeResolverFactory(rewrite: (input: string) => string = (input) => input) {
 	return vi.fn<typeof createSetupResolver>(() => rewrite);
@@ -33,20 +28,6 @@ function makeConfig(overrides: Partial<ResolvedConfig> = {}): ResolvedConfig {
 		...overrides,
 	};
 }
-
-describe("tYPE_TEST_PATTERN", () => {
-	it.for([
-		["foo.test-d.ts", true],
-		["foo.spec-d.ts", true],
-		["foo.test.ts", false],
-		["foo.spec.ts", false],
-		["foo.spec-d.tsx", false],
-	] as const)("should match %s = %s", ([file, expected]) => {
-		expect.assertions(1);
-
-		expect(TYPE_TEST_PATTERN.test(file)).toBe(expected);
-	});
-});
 
 describe(discoverTestFiles, () => {
 	it("should return CLI files resolved against rootDir when provided", () => {

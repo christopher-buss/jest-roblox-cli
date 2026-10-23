@@ -66,11 +66,11 @@ describe(mapErrorsToTests, () => {
 				"/test.ts",
 				[
 					{
+						code: "TS2322",
 						column: 5,
-						errorCode: 2322,
-						errorMessage: "Type mismatch",
 						filePath: "/test.ts",
 						line: 3,
+						message: "Type mismatch",
 					},
 				],
 			],
@@ -101,11 +101,11 @@ describe(mapErrorsToTests, () => {
 				"/test.ts",
 				[
 					{
+						code: "TS2322",
 						column: 7,
-						errorCode: 2322,
-						errorMessage: "Type mismatch",
 						filePath: "/test.ts",
 						line: 1,
+						message: "Type mismatch",
 					},
 				],
 			],
@@ -134,11 +134,11 @@ describe(mapErrorsToTests, () => {
 				"/test.ts",
 				[
 					{
+						code: "TS2322",
 						column: 7,
-						errorCode: 2322,
-						errorMessage: "Type mismatch",
 						filePath: "/test.ts",
 						line: 2,
+						message: "Type mismatch",
 					},
 				],
 			],
@@ -166,18 +166,18 @@ describe(mapErrorsToTests, () => {
 				"/test.ts",
 				[
 					{
+						code: "TS2322",
 						column: 3,
-						errorCode: 2322,
-						errorMessage: "Error one",
 						filePath: "/test.ts",
 						line: 2,
+						message: "Error one",
 					},
 					{
+						code: "TS2322",
 						column: 3,
-						errorCode: 2322,
-						errorMessage: "Error two",
 						filePath: "/test.ts",
 						line: 3,
+						message: "Error two",
 					},
 				],
 			],
@@ -203,11 +203,11 @@ describe(mapErrorsToTests, () => {
 				"/fail.ts",
 				[
 					{
+						code: "TS2322",
 						column: 1,
-						errorCode: 2322,
-						errorMessage: "Error",
 						filePath: "/fail.ts",
 						line: 1,
+						message: "Error",
 					},
 				],
 			],
@@ -253,11 +253,11 @@ describe(mapErrorsToTests, () => {
 				"src/source.ts",
 				[
 					{
+						code: "TS2322",
 						column: 7,
-						errorCode: 2322,
-						errorMessage: "Type 'string' is not assignable to type 'number'.",
 						filePath: "src/source.ts",
 						line: 1,
+						message: "Type 'string' is not assignable to type 'number'.",
 					},
 				],
 			],
@@ -300,11 +300,11 @@ describe(mapErrorsToTests, () => {
 				"src/source.ts",
 				[
 					{
+						code: "TS2322",
 						column: 7,
-						errorCode: 2322,
-						errorMessage: "Type 'string' is not assignable to type 'number'.",
 						filePath: "src/source.ts",
 						line: 1,
+						message: "Type 'string' is not assignable to type 'number'.",
 					},
 				],
 			],
@@ -370,11 +370,11 @@ describe(mapErrorsToTests, () => {
 				"/test.ts",
 				[
 					{
+						code: "TS2322",
 						column: 1,
-						errorCode: 2322,
-						errorMessage: "Out of bounds",
 						filePath: "/test.ts",
 						line: 999,
+						message: "Out of bounds",
 					},
 				],
 			],
@@ -408,11 +408,11 @@ describe(mapErrorsToTests, () => {
 				"src/nested.spec.ts",
 				[
 					{
+						code: "TS2322",
 						column: badIndex + 1,
-						errorCode: 2322,
-						errorMessage: "Nested mismatch",
 						filePath: "src/nested.spec.ts",
 						line: 1,
+						message: "Nested mismatch",
 					},
 				],
 			],
@@ -1419,5 +1419,74 @@ describe(runTypecheckAsync, () => {
 		});
 
 		expect(result.success).toBeTrue();
+	});
+
+	it.for(["a.spec-d.ts", "a.test-d.ts"])(
+		"should check %s with tsgo and report its diagnostic",
+		async (fileName) => {
+			expect.assertions(2);
+
+			const resolvedFile = path.resolve("src", fileName);
+			const { childProcess } = stubTsgo((callback) => {
+				callback(exitWith(2), `${fileName}(1,7): error TS2345: Bad argument.`, "");
+			});
+			const fileSystem = readingFiles(
+				JSON.stringify({ compilerOptions: {} }),
+				'const x: number = "bad";',
+			);
+
+			const result = await runTypecheckAsync({
+				childProcess,
+				files: [path.join("src", fileName)],
+				fileSystem,
+				rootDir: path.dirname(resolvedFile),
+			});
+
+			expect(result.success).toBeFalse();
+			expect(result.testResults[0]!.testResults[0]!.failureMessages[0]).toContain(
+				"TS2345: Bad argument.",
+			);
+		},
+	);
+
+	it("should check a file no checker claims with tsgo", async () => {
+		expect.assertions(2);
+
+		const { childProcess, invocations } = stubTsgo((callback) => {
+			callback(null, "", "");
+		});
+		const fileSystem = readingFiles(
+			JSON.stringify({ compilerOptions: {} }),
+			'it("passes", () => {});',
+		);
+
+		const result = await runTypecheckAsync({
+			childProcess,
+			files: ["/project/src/a.spec.ts"],
+			fileSystem,
+			rootDir: "/project",
+		});
+
+		expect(invocations).toHaveLength(1);
+		expect(result.testResults[0]!.testFilePath).toBe("src/a.spec.ts");
+	});
+
+	it("should run tsgo once when given no files", async () => {
+		expect.assertions(2);
+
+		const { childProcess, invocations } = stubTsgo((callback) => {
+			callback(exitWith(2), "src/source.ts(1,7): error TS2322: Bad source.", "");
+		});
+		const fileSystem = readingFiles(JSON.stringify({ compilerOptions: {} }), "");
+
+		const result = await runTypecheckAsync({
+			childProcess,
+			files: [],
+			fileSystem,
+			rootDir: "/project",
+		});
+
+		expect(invocations).toHaveLength(1);
+		expect(result.testResults[0]!.testResults[0]!.title).toBe("<source type error>");
 	});
 });

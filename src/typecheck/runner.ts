@@ -14,7 +14,8 @@ import { nodeFileSystem } from "../utils/file-system.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import { collectTestDefinitions } from "./collect.ts";
 import { parseTscOutput } from "./parse.ts";
-import type { RawErrorsMap, TestDefinition, TscErrorInfo } from "./types.ts";
+import { TYPE_TEST_PATTERN } from "./type-test-pattern.ts";
+import type { RawErrorsMap, TestDefinition, TypeTestDiagnostic } from "./types.ts";
 
 /**
  * Milliseconds to wait for tsgo to launch (the child `spawn` event) before the
@@ -106,6 +107,19 @@ interface PartitionedErrors {
 	fileErrors: Array<string>;
 }
 
+interface TypeChecker {
+	collect: (source: string) => Array<TestDefinition>;
+	parse: (output: string) => RawErrorsMap;
+	pattern: RegExp;
+	spawn: (options: TypecheckOptions) => Promise<string>;
+}
+
+interface CheckerRun {
+	checker: TypeChecker;
+	checkerFiles: Array<string>;
+	output: string;
+}
+
 interface ExecuteTsgoOptions {
 	args: Array<string>;
 	childProcess: ChildProcessRunner;
@@ -189,6 +203,38 @@ export function mapErrorsToTests({
 	};
 }
 
+export async function runTypecheckAsync(options: TypecheckOptions): Promise<JestResult> {
+	const { fileSystem = nodeFileSystem } = options;
+	const startTime = Date.now();
+
+	const outputs = await runCheckersAsync(options);
+
+	const files = new Map<string, FileInfo>();
+	const resolvedErrors: RawErrorsMap = new Map();
+	for (const { checker, checkerFiles, output } of outputs) {
+		for (const filePath of checkerFiles) {
+			const source = fileSystem.readFileSync(filePath, "utf-8");
+			const definitions = checker.collect(source);
+			const resolvedPath = path.resolve(filePath);
+			const key = normalizeWindowsPath(path.relative(options.rootDir, resolvedPath));
+			files.set(key, { definitions, source });
+		}
+
+		for (const [errorPath, errorList] of checker.parse(output)) {
+			const resolved = path.resolve(options.rootDir, errorPath);
+			const key = normalizeWindowsPath(path.relative(options.rootDir, resolved));
+			resolvedErrors.set(key, errorList);
+		}
+	}
+
+	return mapErrorsToTests({
+		errors: resolvedErrors,
+		files,
+		ignoreSourceErrors: options.ignoreSourceErrors,
+		startTime,
+	});
+}
+
 export function isCompositeProject({
 	fileSystem = nodeFileSystem,
 	rootDirectory,
@@ -220,40 +266,8 @@ export function isCompositeProject({
 	}
 }
 
-export async function runTypecheckAsync(options: TypecheckOptions): Promise<JestResult> {
-	const { fileSystem = nodeFileSystem } = options;
-	const startTime = Date.now();
-	const tsgoOutput = await spawnTsgoAsync(options);
-	const errors = parseTscOutput(tsgoOutput);
-
-	const files = new Map<string, FileInfo>();
-	for (const filePath of options.files) {
-		const source = fileSystem.readFileSync(filePath, "utf-8");
-		const definitions = collectTestDefinitions(source);
-		const resolvedPath = path.resolve(filePath);
-		const key = normalizeWindowsPath(path.relative(options.rootDir, resolvedPath));
-		files.set(key, { definitions, source });
-	}
-
-	const resolvedErrors: RawErrorsMap = new Map();
-	for (const [errorPath, errorList] of errors) {
-		const resolved = path.resolve(options.rootDir, errorPath);
-		const key = normalizeWindowsPath(path.relative(options.rootDir, resolved));
-		resolvedErrors.set(key, errorList);
-	}
-
-	return mapErrorsToTests({
-		errors: resolvedErrors,
-		files,
-		ignoreSourceErrors: options.ignoreSourceErrors,
-		startTime,
-	});
-}
-
-function buildSourceResult(filePath: string, errors: Array<TscErrorInfo>): TestFileResult {
-	const failureMessages = errors.map(
-		(error) => `TS${String(error.errorCode)}: ${error.errorMessage}`,
-	);
+function buildSourceResult(filePath: string, errors: Array<TypeTestDiagnostic>): TestFileResult {
+	const failureMessages = errors.map((error) => `${error.code}: ${error.message}`);
 
 	return {
 		numFailingTests: 1,
@@ -300,7 +314,7 @@ function partitionErrors({
 	indexMap,
 	sortedDefinitions,
 }: {
-	errors: Array<TscErrorInfo>;
+	errors: Array<TypeTestDiagnostic>;
 	indexMap: Map<string, number>;
 	sortedDefinitions: Array<TestDefinition>;
 }): PartitionedErrors {
@@ -314,7 +328,7 @@ function partitionErrors({
 				? sortedDefinitions.find((td) => td.start <= charIndex && td.end >= charIndex)
 				: undefined;
 
-		const message = `TS${String(error.errorCode)}: ${error.errorMessage}`;
+		const message = `${error.code}: ${error.message}`;
 
 		if (definition) {
 			const existing = errorsByTest.get(definition.name) ?? [];
@@ -363,7 +377,7 @@ function buildFileResult({
 	fileInfo,
 	filePath,
 }: {
-	errors: Array<TscErrorInfo>;
+	errors: Array<TypeTestDiagnostic>;
 	fileInfo: FileInfo;
 	filePath: string;
 }): TestFileResult {
@@ -382,6 +396,26 @@ function buildFileResult({
 		testFilePath: filePath,
 		testResults: testCases,
 	};
+}
+
+function selectTypeChecker(filePath: string): TypeChecker {
+	return TYPE_CHECKERS.find(({ pattern }) => pattern.test(filePath)) ?? FALLBACK_CHECKER;
+}
+
+async function runCheckersAsync(options: TypecheckOptions): Promise<Array<CheckerRun>> {
+	const filesByChecker: Map<TypeChecker, Array<string>> = options.files.length > 0
+		? Map.groupBy(options.files, selectTypeChecker)
+		: new Map([[FALLBACK_CHECKER, []]]);
+
+	return Promise.all(
+		Array.from(filesByChecker, async ([checker, checkerFiles]) => {
+			return {
+				checker,
+				checkerFiles,
+				output: await checker.spawn({ ...options, files: checkerFiles }),
+			};
+		}),
+	);
 }
 
 /** CJS resolution off this module — the only thing here that needs it. */
@@ -609,3 +643,12 @@ async function spawnTsgoAsync(options: TypecheckOptions): Promise<string> {
 		});
 	});
 }
+
+const FALLBACK_CHECKER: TypeChecker = {
+	collect: collectTestDefinitions,
+	parse: parseTscOutput,
+	pattern: TYPE_TEST_PATTERN,
+	spawn: spawnTsgoAsync,
+};
+
+const TYPE_CHECKERS: ReadonlyArray<TypeChecker> = [FALLBACK_CHECKER];

@@ -1,12 +1,12 @@
-export interface TscErrorInfo {
+export interface TypeTestDiagnostic {
+	code: string;
 	column: number;
-	errorCode: number;
-	errorMessage: string;
 	filePath: string;
 	line: number;
+	message: string;
 }
 
-export type RawErrorsMap = Map<string, Array<TscErrorInfo>>;
+export type RawErrorsMap = Map<string, Array<TypeTestDiagnostic>>;
 
 export interface TestDefinition {
 	name: string;

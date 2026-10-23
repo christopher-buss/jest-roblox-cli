@@ -1,7 +1,7 @@
-import type { RawErrorsMap, TscErrorInfo } from "./types.ts";
+import type { RawErrorsMap, TypeTestDiagnostic } from "./types.ts";
 
 const LINE_SPLIT = /\r?\n/;
-const TSC_ERROR_DETAIL = /^: error TS(?<errorCode>\d+): (?<errorMessage>[\s\S]*)$/;
+const TSC_ERROR_DETAIL = /^: error TS(?<code>\d+): (?<message>[\s\S]*)$/;
 
 interface TscPosition {
 	column: number;
@@ -9,13 +9,13 @@ interface TscPosition {
 }
 
 interface TscErrorDetail {
-	errorCode: number;
-	errorMessage: string;
+	code: string;
+	message: string;
 }
 
 export function parseTscOutput(stdout: string): RawErrorsMap {
 	const map: RawErrorsMap = new Map();
-	let previousError: TscErrorInfo | undefined;
+	let previousError: TypeTestDiagnostic | undefined;
 
 	for (const line of stdout.split(LINE_SPLIT)) {
 		if (line === "") {
@@ -24,7 +24,7 @@ export function parseTscOutput(stdout: string): RawErrorsMap {
 
 		if (line[0] === " ") {
 			if (previousError !== undefined) {
-				previousError.errorMessage += `\n${line}`;
+				previousError.message += `\n${line}`;
 			}
 
 			continue;
@@ -59,16 +59,16 @@ function parsePosition(rest: string, closeParenIndex: number): TscPosition | und
 
 function parseTscErrorDetail(afterParen: string): TscErrorDetail | undefined {
 	const groups = TSC_ERROR_DETAIL.exec(afterParen)?.groups;
-	const errorCodeString = groups?.["errorCode"];
-	const errorMessage = groups?.["errorMessage"];
-	if (errorMessage === undefined) {
+	const code = groups?.["code"];
+	const message = groups?.["message"];
+	if (code === undefined || message === undefined) {
 		return undefined;
 	}
 
-	return { errorCode: Number(errorCodeString), errorMessage: errorMessage.trim() };
+	return { code: `TS${code}`, message: message.trim() };
 }
 
-function parseTscErrorLine(line: string): TscErrorInfo | undefined {
+function parseTscErrorLine(line: string): TypeTestDiagnostic | undefined {
 	const parenIndex = line.lastIndexOf("(", line.indexOf("): error TS"));
 	const filePath = line.slice(0, parenIndex);
 	const rest = line.slice(parenIndex);
@@ -84,10 +84,10 @@ function parseTscErrorLine(line: string): TscErrorInfo | undefined {
 	}
 
 	return {
+		code: detail.code,
 		column: position.column,
-		errorCode: detail.errorCode,
-		errorMessage: detail.errorMessage,
 		filePath,
 		line: position.line,
+		message: detail.message,
 	};
 }
