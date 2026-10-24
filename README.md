@@ -336,6 +336,10 @@ Put these under `test: { ... }`.
 | `collectCoverageFrom`        | Globs for files to include in coverage   | —                                             |
 | `coverageCopyIgnorePatterns` | Files to leave out of the coverage place | `**/*.d.ts`, `**/*.d.ts.map`, `**/*.luau.map` |
 
+To leave out part of a file, put `-- cov ignore next` (`// cov ignore next` in
+TypeScript) above a statement, or `cov ignore if` / `cov ignore else` above an
+`if`. See the coverage reference in the skill for the full rules.
+
 <!-- prettier-ignore -->
 > [!NOTE]
 > Coverage uses vitest `all` / Istanbul semantics: every instrumented

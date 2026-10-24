@@ -19,7 +19,7 @@ import { MANIFEST_VERSION, writeManifest } from "./manifest.ts";
 import { insertProbes } from "./probe-inserter.ts";
 import { clearDirectoryAtFilePath, createShadowDirectory } from "./shadow-entry.ts";
 
-export const INSTRUMENTER_VERSION = 5;
+export const INSTRUMENTER_VERSION = 6;
 
 const LUAU_EXTENSION = /\.luau?$/;
 
@@ -254,7 +254,7 @@ function collectFileCoverage({
 		throw new Error(`Failed to parse ${relativePath}: ${parsed.errors.join("; ")}`);
 	}
 
-	return timing.profile("collect-coverage", () => collectCoverage(parsed.root, source));
+	return timing.profile("collect-coverage", () => collectCoverage(parsed, source));
 }
 
 /**

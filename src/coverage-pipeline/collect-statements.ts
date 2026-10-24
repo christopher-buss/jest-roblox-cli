@@ -2,6 +2,7 @@ import type { AstStatBlock } from "@isentinel/luau-ast/ast";
 import type { LuauVisitor } from "@isentinel/luau-ast/visit";
 
 import type { CoverageAccumulator } from "./coverage-accumulator.ts";
+import type { CoverageIgnores } from "./coverage-ignore.ts";
 
 // A nested AstStatBlock in a body list is a `do ... end` statement — block
 // nodes reached through if/while/for/function fields never appear here.
@@ -23,11 +24,17 @@ const INSTRUMENTABLE_STATEMENT_TYPES: ReadonlySet<string> = new Set([
 	"AstStatWhile",
 ]);
 
-export function createStatementCollector(accumulator: CoverageAccumulator): Partial<LuauVisitor> {
+export function createStatementCollector(
+	accumulator: CoverageAccumulator,
+	ignores: CoverageIgnores,
+): Partial<LuauVisitor> {
 	return {
 		visitStatBlock(block: AstStatBlock): boolean {
 			for (const statement of block.body) {
-				if (!INSTRUMENTABLE_STATEMENT_TYPES.has(statement.type)) {
+				if (
+					!INSTRUMENTABLE_STATEMENT_TYPES.has(statement.type) ||
+					ignores.covers(statement.location)
+				) {
 					continue;
 				}
 

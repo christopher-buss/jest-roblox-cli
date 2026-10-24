@@ -18,7 +18,7 @@ function instrumentFixture(fixtureName: string, fileKey: string) {
 	const parsed = luauParser.parse(source);
 	assert(parsed.ok, `Fixture ${fixtureName} has no parsed AST block`);
 
-	const result = collectCoverage(parsed.root, source);
+	const result = collectCoverage(parsed, source);
 	const instrumentedSource = insertProbes({ fileKey, result, source });
 	const covMap = buildCoverageMap(result);
 
@@ -231,6 +231,49 @@ describe("instrumentation pipeline (integration)", () => {
 			expect(Object.values(covMap.branchMap!)).toHaveLength(1);
 			// then arm + implicit else arm
 			expect(covMap.branchMap!["1"]!.locations).toHaveLength(2);
+		});
+	});
+
+	describe("when instrumenting a file with ignore directives", () => {
+		it("should leave the ignored sites out of the cov-map", () => {
+			expect.assertions(3);
+
+			const { covMap } = instrumentFixture(
+				"ignore-directives.luau",
+				"ignore-directives.luau",
+			);
+
+			expect(Object.values(covMap.functionMap!).map((entry) => entry.name)).toStrictEqual([
+				"check",
+			]);
+			expect(
+				Object.values(covMap.branchMap!).map((entry) => entry.locations.length),
+			).toStrictEqual([1, 2]);
+			expect(
+				Object.values(covMap.statementMap)
+					.map((entry) => entry.start.line)
+					.toSorted((left, right) => left - right),
+			).toStrictEqual([1, 3, 7, 8, 10, 14, 22]);
+		});
+
+		it("should count the kept arms at runtime", () => {
+			expect.assertions(2);
+
+			const fileKey = "ignore-directives.luau";
+			const { instrumentedSource } = instrumentFixture(fileKey, fileKey);
+			const driver = [
+				"",
+				`local __b = _G.__jest_roblox_cov["${fileKey}"].b`,
+				'print(#__b[1] .. ":" .. __b[1][1] .. "," .. #__b[2] .. ":" .. __b[2][1] .. "," .. __b[2][2])',
+				"",
+			].join("\n");
+
+			const lines = runLuau(instrumentedSource + driver)
+				.trim()
+				.split(/\r?\n/u);
+
+			expect(lines.slice(0, 2)).toStrictEqual(["big", "2"]);
+			expect(lines[2]).toBe("1:1,2:1,0");
 		});
 	});
 

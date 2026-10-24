@@ -10,6 +10,7 @@ import assert from "node:assert";
 
 import { getBodyFirstStatement } from "./collect-functions.ts";
 import type { CoverageAccumulator, StatementBranchArm } from "./coverage-accumulator.ts";
+import type { CoverageIgnores } from "./coverage-ignore.ts";
 
 /** One statement-if chain flattened: every then-block plus the final else. */
 interface StatIfChain {
@@ -17,7 +18,10 @@ interface StatIfChain {
 	elseBlock: AstStatBlock | undefined;
 }
 
-export function createBranchCollector(accumulator: CoverageAccumulator): Partial<LuauVisitor> {
+export function createBranchCollector(
+	accumulator: CoverageAccumulator,
+	ignores: CoverageIgnores,
+): Partial<LuauVisitor> {
 	// The parser nests `elseif` chains — the else side of an if node is
 	// another if node. Each chain is one multi-arm branch (Istanbul's model),
 	// so members folded into their head's arms must not also count alone when
@@ -26,17 +30,23 @@ export function createBranchCollector(accumulator: CoverageAccumulator): Partial
 	const chainedStatIfs = new Set<AstStatIf>();
 
 	return {
-		visitExprBinary: (node) => collectBinaryBranch(node, accumulator),
+		visitExprBinary: (node) => {
+			if (!ignores.covers(node.location)) {
+				collectBinaryBranch(node, accumulator);
+			}
+
+			return true;
+		},
 		visitExprIfElse: (node) => {
-			if (!chainedExprIfs.has(node)) {
+			if (!chainedExprIfs.has(node) && !ignores.covers(node.location)) {
 				collectExprIfBranch(node, { accumulator, chainedExprIfs });
 			}
 
 			return true;
 		},
 		visitStatIf: (node) => {
-			if (!chainedStatIfs.has(node)) {
-				collectStatIfBranch(node, { accumulator, chainedStatIfs });
+			if (!chainedStatIfs.has(node) && !ignores.covers(node.location)) {
+				collectStatIfBranch(node, { accumulator, chainedStatIfs, ignores });
 			}
 
 			return true;
@@ -44,12 +54,12 @@ export function createBranchCollector(accumulator: CoverageAccumulator): Partial
 	};
 }
 
-function collectBinaryBranch(node: AstExprBinary, accumulator: CoverageAccumulator): boolean {
+function collectBinaryBranch(node: AstExprBinary, accumulator: CoverageAccumulator): void {
 	// Only `and`/`or` short-circuit, so only they are branches — every other
 	// binary operator (arithmetic, comparison, concat) just keeps traversing
 	// into its operands.
 	if (node.op !== "And" && node.op !== "Or") {
-		return true;
+		return;
 	}
 
 	// Wrap both operands so the value flows through `__cov_br` unchanged
@@ -58,8 +68,6 @@ function collectBinaryBranch(node: AstExprBinary, accumulator: CoverageAccumulat
 	// records that without altering evaluation. Two arms: lhs, rhs
 	// (Istanbul's binary-expr model).
 	accumulator.addExpressionBranch("binary-expr", [node.left.location, node.right.location]);
-
-	return true;
 }
 
 function collectExprIfBranch(
@@ -92,12 +100,17 @@ function flattenStatIfChain(node: AstStatIf, chainedStatIfs: Set<AstStatIf>): St
 
 function collectStatIfBranch(
 	node: AstStatIf,
-	context: { accumulator: CoverageAccumulator; chainedStatIfs: Set<AstStatIf> },
+	context: {
+		accumulator: CoverageAccumulator;
+		chainedStatIfs: Set<AstStatIf>;
+		ignores: CoverageIgnores;
+	},
 ): void {
 	const { blocks, elseBlock } = flattenStatIfChain(node, context.chainedStatIfs);
-	const arms: Array<StatementBranchArm> = blocks.map((block) => {
-		return { bodyFirst: getBodyFirstStatement(block), location: block.location };
-	});
+	const armBlocks = elseBlock === undefined ? blocks : [...blocks, elseBlock];
+	const arms: Array<StatementBranchArm> = armBlocks
+		.filter((block) => !context.ignores.covers(block.location))
+		.map((block) => ({ bodyFirst: getBodyFirstStatement(block), location: block.location }));
 
 	// A block with no statements — empty, or holding only comments — is still
 	// an `else`. Reading it as absent sends this branch down the synthetic path
@@ -105,9 +118,10 @@ function collectStatIfBranch(
 	// and Luau rejects the second. `getBodyFirstStatement` falls back to the
 	// block's own begin position, just past the `else` keyword, so the arm
 	// counter lands inside the block that is already there.
-	if (elseBlock !== undefined) {
-		arms.push({ bodyFirst: getBodyFirstStatement(elseBlock), location: elseBlock.location });
-		context.accumulator.addStatementBranch(arms);
+	if (elseBlock !== undefined || context.ignores.dropsImplicitElse(node)) {
+		if (arms.length > 0) {
+			context.accumulator.addStatementBranch(arms);
+		}
 
 		return;
 	}

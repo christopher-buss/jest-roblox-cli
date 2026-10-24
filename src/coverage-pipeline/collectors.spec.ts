@@ -16,6 +16,12 @@ import { createBranchCollector } from "./collect-branches.ts";
 import { createFunctionCollector, getBodyFirstStatement } from "./collect-functions.ts";
 import { createStatementCollector } from "./collect-statements.ts";
 import { createCoverageAccumulator } from "./coverage-accumulator.ts";
+import type { CoverageIgnores } from "./coverage-ignore.ts";
+
+const NO_IGNORES = {
+	covers: () => false,
+	dropsImplicitElse: () => false,
+} satisfies CoverageIgnores;
 
 function span(line: number): LuauSpan {
 	return { beginColumn: 1, beginLine: line, endColumn: 5, endLine: line };
@@ -30,7 +36,7 @@ describe(createStatementCollector, () => {
 		expect.assertions(2);
 
 		const accumulator = createCoverageAccumulator();
-		const collector = createStatementCollector(accumulator);
+		const collector = createStatementCollector(accumulator, NO_IGNORES);
 		const types = [
 			"AstStatAssign",
 			"AstStatBlock",
@@ -67,7 +73,7 @@ describe(createFunctionCollector, () => {
 		expect.assertions(2);
 
 		const accumulator = createCoverageAccumulator();
-		const collector = createFunctionCollector(accumulator);
+		const collector = createFunctionCollector(accumulator, NO_IGNORES);
 		const namedExpression = fromAny<AstExprFunction, unknown>({
 			body: block(11, [{ location: span(12), type: "AstStatReturn" }]),
 			location: span(10),
@@ -145,7 +151,7 @@ describe(createBranchCollector, () => {
 		expect.assertions(2);
 
 		const accumulator = createCoverageAccumulator();
-		const collector = createBranchCollector(accumulator);
+		const collector = createBranchCollector(accumulator, NO_IGNORES);
 		const binary = fromAny<AstExprBinary, unknown>({
 			left: { location: span(1) },
 			op: "And",

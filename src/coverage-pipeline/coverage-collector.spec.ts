@@ -24,7 +24,7 @@ function span({
 function collect(source: string): CollectorResult {
 	const parsed = luauParser.parse(source);
 	assert(parsed.ok);
-	return collectCoverage(parsed.root, source);
+	return collectCoverage(parsed, source);
 }
 
 describe(collectCoverage, () => {
@@ -307,6 +307,145 @@ describe(collectCoverage, () => {
 				span({ beginColumn: 11, beginLine: 1, endColumn: 12, endLine: 1 }),
 				span({ beginColumn: 17, beginLine: 1, endColumn: 18, endLine: 1 }),
 			]);
+		});
+	});
+
+	describe("ignore directives", () => {
+		it("should drop the next statement and every site inside it", () => {
+			expect.assertions(3);
+
+			const result = collect(
+				[
+					"-- cov ignore next",
+					"local function f()",
+					"\tif a and b then",
+					"\t\tg()",
+					"\tend",
+					"end",
+					"local y = 1",
+				].join("\n"),
+			);
+
+			expect(result.statements).toStrictEqual([
+				{
+					index: 1,
+					location: span({ beginColumn: 1, beginLine: 7, endColumn: 12, endLine: 7 }),
+				},
+			]);
+			expect(result.functions).toBeEmpty();
+			expect(result.branches).toBeEmpty();
+		});
+
+		it("should drop a function statement and keep the next one", () => {
+			expect.assertions(1);
+
+			const result = collect(
+				["-- cov ignore next", "function Obj.a()", "end", "function Obj.b()", "end"].join(
+					"\n",
+				),
+			);
+
+			expect(result.functions.map((func) => func.name)).toStrictEqual(["Obj.b"]);
+		});
+
+		it("should keep indices contiguous around a dropped statement", () => {
+			expect.assertions(1);
+
+			const result = collect(
+				["local a = 1", "-- cov ignore next", "local b = 2", "local c = 3"].join("\n"),
+			);
+
+			expect(result.statements).toStrictEqual([
+				{
+					index: 1,
+					location: span({ beginColumn: 1, beginLine: 1, endColumn: 12, endLine: 1 }),
+				},
+				{
+					index: 2,
+					location: span({ beginColumn: 1, beginLine: 4, endColumn: 12, endLine: 4 }),
+				},
+			]);
+		});
+
+		it("should drop a function expression the directive precedes", () => {
+			expect.assertions(2);
+
+			const result = collect("f(--[[ cov ignore next ]] function()\n\treturn 1\nend)");
+
+			expect(result.functions).toBeEmpty();
+			expect(result.statements).toStrictEqual([
+				{
+					index: 1,
+					location: span({ beginColumn: 1, beginLine: 1, endColumn: 5, endLine: 3 }),
+				},
+			]);
+		});
+
+		it("should drop the then arm and its body with ignore if", () => {
+			expect.assertions(3);
+
+			const result = collect(
+				["-- cov ignore if", "if not x then", '\terror("x")', "end"].join("\n"),
+			);
+
+			expect(result.statements).toStrictEqual([
+				{
+					index: 1,
+					location: span({ beginColumn: 1, beginLine: 2, endColumn: 4, endLine: 4 }),
+				},
+			]);
+			expect(result.branches[0]!.arms).toStrictEqual([
+				{
+					bodyFirstColumn: 0,
+					bodyFirstLine: 0,
+					location: span({ beginColumn: 1, beginLine: 2, endColumn: 1, endLine: 2 }),
+				},
+			]);
+			expect(result.implicitElseProbes).toStrictEqual([
+				{ armIndex: 1, branchIndex: 1, endColumn: 1, endLine: 4 },
+			]);
+		});
+
+		it("should drop the else arm and its body with ignore else", () => {
+			expect.assertions(2);
+
+			const result = collect(
+				[
+					"-- cov ignore else",
+					"if a then",
+					"\tf()",
+					"elseif b then",
+					"\tg()",
+					"else",
+					"\th()",
+					"end",
+				].join("\n"),
+			);
+
+			expect(
+				result.statements.map((statement) => statement.location.beginLine),
+			).toStrictEqual([2, 3, 5]);
+			expect(result.branches[0]!.arms.map((arm) => arm.bodyFirstLine)).toStrictEqual([3, 5]);
+		});
+
+		it("should drop the implicit else arm with ignore else", () => {
+			expect.assertions(2);
+
+			const result = collect(["-- cov ignore else", "if a then", "\tf()", "end"].join("\n"));
+
+			expect(result.branches[0]!.arms.map((arm) => arm.bodyFirstLine)).toStrictEqual([3]);
+			expect(result.implicitElseProbes).toBeEmpty();
+		});
+
+		it("should drop the whole branch when ignore if and ignore else both apply", () => {
+			expect.assertions(2);
+
+			const result = collect(
+				["-- cov ignore if", "-- cov ignore else", "if a then", "\tf()", "end"].join("\n"),
+			);
+
+			expect(result.branches).toBeEmpty();
+			expect(result.statements).toHaveLength(1);
 		});
 	});
 });

@@ -467,7 +467,7 @@ describe(instrument, () => {
 
 			const result = callInstrumentWithDefaults(fileSystem);
 
-			expect(result.instrumenterVersion).toBe(5);
+			expect(result.instrumenterVersion).toBe(6);
 		});
 
 		it("should emit manifest file records with correct metadata", () => {
