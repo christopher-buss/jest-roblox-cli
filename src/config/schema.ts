@@ -396,6 +396,14 @@ export interface Config {
 	 */
 	gameOutput?: string | true;
 	/**
+	 * Run the `"studio-cli"` Studio hidden: on a hidden desktop on Windows,
+	 * launched without focus and kept hidden on macOS. Defaults to `true` on
+	 * Windows and macOS; `false` opts out. Elsewhere the default does nothing
+	 * and `true` is ignored with a warning. `--headed` overrides it. Also
+	 * settable via `--hiddenDesktop` / `--no-hiddenDesktop`.
+	 */
+	hiddenDesktop?: boolean;
+	/**
 	 * DataModel path to the Jest module the runner requires (e.g.
 	 * `"ReplicatedStorage/Packages/Jest"`). Defaults to auto-detection in
 	 * ReplicatedStorage.
@@ -583,6 +591,7 @@ export interface WorkspaceRunOptions {
 	formatters: Array<FormatterEntry>;
 	/** Absolute path for the Aggregated Game Output file; undefined = off. */
 	gameOutput?: string;
+	hiddenDesktop?: boolean;
 	/** Absolute path for the aggregated result file; undefined = off. */
 	outputFile?: string;
 	parallel?: "auto" | number;
@@ -737,6 +746,7 @@ export interface CliOptions {
 	 */
 	headed?: boolean | undefined;
 	help?: boolean | undefined;
+	hiddenDesktop?: boolean | undefined;
 	outputFile?: string | undefined;
 	packages?: string | undefined;
 	parallel?: "auto" | number | undefined;
@@ -945,6 +955,7 @@ export const configSchema: Type<Config> = type({
 	"extends?": type("string").or(type("string[]")),
 	"formatters?": formatterEntrySchema.array(),
 	"gameOutput?": type("string").or("true"),
+	"hiddenDesktop?": "boolean",
 	"jestPath?": "string",
 	"luauRoots?": "string[]",
 	"outputFile?": type("string").or("true"),
@@ -1017,6 +1028,7 @@ export const ROOT_CLI_KEYS_LIST: ReadonlyArray<RootCliKey> = [
 	"extends",
 	"formatters",
 	"gameOutput",
+	"hiddenDesktop",
 	"jestPath",
 	"luauRoots",
 	"outputFile",

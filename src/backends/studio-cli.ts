@@ -25,6 +25,7 @@ import { nodeFileSystem } from "../utils/file-system.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import { decodeEnvelope } from "./envelope.ts";
 import { DEFAULT_BOOT_WATCH_MS } from "./execution-recovery.ts";
+import { launchOnHiddenDesktop } from "./hidden-desktop.ts";
 import {
 	type Backend,
 	type BackendOptions,
@@ -32,6 +33,7 @@ import {
 	isWorkspaceRun,
 	type ProjectJob,
 } from "./interface.ts";
+import { findAppBundle, launchHiddenOnMacos } from "./macos-hidden.ts";
 import {
 	buildRunPayload,
 	pairPluginEntries,
@@ -41,6 +43,7 @@ import {
 import type { ManagedPluginInstall, RunnerPluginInstallOptions } from "./runner-plugin.ts";
 import { installRunnerPluginAsync } from "./runner-plugin.ts";
 import { configuredStudioPath, discoverStudioPath } from "./studio-discovery.ts";
+import { clearStaleLock, watchLockRelease } from "./studio-lock.ts";
 import { nodeWebSocketServerFactory } from "./web-socket-server-factory.ts";
 import type { WebSocketServerFactory } from "./web-socket-server-factory.ts";
 
@@ -91,15 +94,10 @@ const SOCKET_LINGER_SECONDS = 30;
  */
 const GRACEFUL_SHUTDOWN_CAP_MS = 15_000;
 
-/**
- * How often the real launcher polls `<place>.lock` while waiting for Studio's
- * graceful `ClosePlace` to release it. Short enough to kill within a frame of
- * the release (the win is skipping the ~30s telemetry drain that follows),
- * long enough to be negligible.
- */
-const LOCK_POLL_INTERVAL_MS = 50;
-
 const SIGTERM_GRACE_MS = 5000;
+
+const UNBUNDLED_WARNING =
+	"Warning: Studio is not inside an .app bundle, so it cannot launch hidden.\n";
 
 /** Splits Studio's log on either line ending — it writes CRLF on Windows. */
 const LOG_LINE_SPLIT_PATTERN = /\r?\n/u;
@@ -253,6 +251,30 @@ export interface StudioCliProcess {
 	onError: (listener: (error: Error) => void) => void;
 }
 
+export interface StudioCliLaunchRequest {
+	/** Full Studio CLI argument vector (already absolute paths). */
+	args: Array<string>;
+	/** What launches Studio. Defaults to the real launcher. */
+	childProcess: ChildProcessRunner;
+	/** Where the lock file is watched. Defaults to the real filesystem. */
+	fileSystem: FileSystem;
+	/**
+	 * Show the Studio window during the run (`--headed`) instead of the
+	 * default hidden window. Maps to `windowsHide: !headed` in {@link
+	 * spawnStudio}.
+	 */
+	headed: boolean;
+	hiddenDesktop: boolean;
+	/**
+	 * Absolute path of the place Studio opens. Used only to clear a stale
+	 * `<place>.lock` a previously killed Studio could not remove itself.
+	 */
+	placeFile: string;
+	platform: NodeJS.Platform;
+	/** Absolute path to the Studio executable. */
+	studioPath: string;
+}
+
 /** Spawns Studio and returns the handle the host kills. */
 export type StudioCliLauncher = (request: StudioCliLaunchRequest) => StudioCliProcess;
 
@@ -284,6 +306,7 @@ export interface StudioCliOptions {
 	 * read from config. Defaults to false (hidden window).
 	 */
 	headed?: boolean | undefined;
+	hiddenDesktop?: boolean | undefined;
 	/**
 	 * Puts the Managed Plugin in the Studio plugins folder before launch, given
 	 * the run's scratch directory. Resolves undefined where none was installed.
@@ -293,34 +316,13 @@ export interface StudioCliOptions {
 		| undefined;
 	/** Process launcher seam; defaults to the real {@link spawnStudio}. */
 	launch?: StudioCliLauncher | undefined;
+	platform?: NodeJS.Platform | undefined;
 	pluginsDirectory?: string | undefined;
 	/** Explicit Studio executable path (override from config / CLI / env). */
 	studioPath?: string | undefined;
 	/** Run timeout in milliseconds. Defaults to 300000. */
 	timeout?: number | undefined;
 	webSocketServerFactory?: undefined | WebSocketServerFactory;
-}
-
-interface StudioCliLaunchRequest {
-	/** Full Studio CLI argument vector (already absolute paths). */
-	args: Array<string>;
-	/** What launches Studio. Defaults to the real launcher. */
-	childProcess?: ChildProcessRunner;
-	/** Where the lock file is watched. Defaults to the real filesystem. */
-	fileSystem?: FileSystem;
-	/**
-	 * Show the Studio window during the run (`--headed`) instead of the
-	 * default hidden window. Maps to `windowsHide: !headed` in {@link
-	 * spawnStudio}.
-	 */
-	headed: boolean;
-	/**
-	 * Absolute path of the place Studio opens. Used only to clear a stale
-	 * `<place>.lock` a previously killed Studio could not remove itself.
-	 */
-	placeFile: string;
-	/** Absolute path to the Studio executable. */
-	studioPath: string;
 }
 
 /** The place a run opens, plus where its scratch files are written. */
@@ -426,10 +428,12 @@ export class StudioCliBackend implements Backend {
 	private readonly fileSystem: FileSystem;
 	private readonly gracefulShutdownTimeout: number;
 	private readonly headed: boolean;
+	private readonly hiddenDesktop: boolean;
 	private readonly installPluginAsync: (
 		workDirectory: string,
 	) => Promise<ManagedPluginInstall | undefined>;
 	private readonly launch: StudioCliLauncher;
+	private readonly platform: NodeJS.Platform;
 	private readonly studioPath: string | undefined;
 	private readonly timeout: number;
 	private readonly webSocketServerFactory: WebSocketServerFactory;
@@ -453,6 +457,8 @@ export class StudioCliBackend implements Backend {
 		this.fileSystem = fileSystem;
 		this.gracefulShutdownTimeout = options.gracefulShutdownTimeout ?? GRACEFUL_SHUTDOWN_CAP_MS;
 		this.headed = options.headed ?? false;
+		this.platform = options.platform ?? process.platform;
+		this.hiddenDesktop = resolveHiddenDesktop({ ...options, platform: this.platform });
 		this.installPluginAsync =
 			options.installPluginAsync ??
 			installPluginInto({
@@ -460,7 +466,7 @@ export class StudioCliBackend implements Backend {
 				fileSystem,
 				pluginsDirectory: options.pluginsDirectory,
 			});
-		this.launch = options.launch ?? spawnStudio;
+		this.launch = options.launch ?? launchStudioProcess;
 		this.studioPath = options.studioPath;
 		this.timeout = options.timeout ?? DEFAULT_STUDIO_CLI_TIMEOUT;
 		this.webSocketServerFactory = options.webSocketServerFactory ?? nodeWebSocketServerFactory;
@@ -606,7 +612,9 @@ export class StudioCliBackend implements Backend {
 			childProcess: this.childProcess,
 			fileSystem: this.fileSystem,
 			headed: this.headed,
+			hiddenDesktop: this.hiddenDesktop,
 			placeFile,
+			platform: this.platform,
 			studioPath,
 		});
 	}
@@ -1214,6 +1222,28 @@ async function waitForResultAsync({
 	});
 }
 
+function resolveHiddenDesktop({
+	headed = false,
+	hiddenDesktop,
+	platform,
+}: Pick<StudioCliOptions, "headed" | "hiddenDesktop"> & {
+	readonly platform: NodeJS.Platform;
+}): boolean {
+	if (headed || hiddenDesktop === false) {
+		return false;
+	}
+
+	if (platform === "win32" || platform === "darwin") {
+		return true;
+	}
+
+	if (hiddenDesktop === true) {
+		process.stderr.write("Warning: hiddenDesktop is Windows and macOS only; ignoring it.\n");
+	}
+
+	return false;
+}
+
 /**
  * Terminate any live bootstrap socket and close the result server so a
  * lingering connection can't keep node's event loop running past the CLI's
@@ -1296,9 +1326,8 @@ function terminateStudio(child: ChildProcess): void {
  * `stdout` pipe could backpressure-stall a chatty Studio.
  */
 function spawnStudio(request: StudioCliLaunchRequest): StudioCliProcess {
-	const { childProcess = nodeChildProcessRunner, fileSystem = nodeFileSystem } = request;
-	const lockFile = `${request.placeFile}.lock`;
-	fileSystem.rmSync(lockFile, { force: true });
+	const { childProcess, fileSystem } = request;
+	const lockFile = clearStaleLock(fileSystem, request.placeFile);
 
 	// headed mode intentionally shows the Studio window; `!request.headed` is
 	// the deliberate lever, not an accidental terminal popup.
@@ -1312,24 +1341,35 @@ function spawnStudio(request: StudioCliLaunchRequest): StudioCliProcess {
 			terminateStudio(child);
 		},
 		killOnLockRelease: (graceCapMs) => {
-			// Studio holds `<place>.lock` from open until `ClosePlace` releases
-			// it — which happens only after `--quitAfterExecution` ran the
-			// edit-mode `BindToClose` handlers. Poll for the release and kill the
-			// instant it's gone; the cap is a backstop for a long-yielding
-			// handler.
-			const deadline = Date.now() + graceCapMs;
-			const timer = setInterval(() => {
-				const isHeld = fileSystem.existsSync(lockFile) && Date.now() < deadline;
-				if (isHeld) {
-					return;
-				}
-
-				clearInterval(timer);
-				terminateStudio(child);
-			}, LOCK_POLL_INTERVAL_MS);
+			watchLockRelease({
+				fileSystem,
+				graceCapMs,
+				lockFile,
+				terminate: () => {
+					terminateStudio(child);
+				},
+			});
 		},
 		onError: (listener) => {
 			child.on("error", listener);
 		},
 	};
+}
+
+function launchStudioProcess(request: StudioCliLaunchRequest): StudioCliProcess {
+	if (!request.hiddenDesktop) {
+		return spawnStudio(request);
+	}
+
+	if (request.platform === "win32") {
+		return launchOnHiddenDesktop(request);
+	}
+
+	const bundle = findAppBundle(request.studioPath);
+	if (bundle === undefined) {
+		process.stderr.write(UNBUNDLED_WARNING);
+		return spawnStudio(request);
+	}
+
+	return launchHiddenOnMacos(request, bundle);
 }

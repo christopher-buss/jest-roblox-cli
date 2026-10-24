@@ -2,6 +2,9 @@ version: "0.2"
 language: en
 
 words:
+  - IMAGENAME
+  - NSURL
+  - NSUTF
   - absolutize
   - absolutized
   - absolutizes
@@ -56,6 +59,7 @@ words:
   - newproxy
   - normalised
   - ocale
+  - osascript
   - oxlint
   - pcall
   - pnpmfile
@@ -75,6 +79,7 @@ words:
   - setmetatable
   - statfunction
   - statlocalfunction
+  - taskkill
   - thenBlock
   - thenExpr
   - thenbody

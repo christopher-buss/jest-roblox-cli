@@ -286,6 +286,25 @@ function resolveOpenCloudBackendFor({
 	}
 }
 
+function studioCliBackendFor({
+	cli,
+	dependencies,
+	runOptions,
+}: {
+	cli: CliOptions;
+	dependencies: ResolvedDependencies;
+	runOptions: WorkspaceRunOptions;
+}): Backend {
+	return dependencies.studioCliBackend({
+		// `headed` is CLI-only — read straight from `cli`, not the
+		// consensus-resolved run options.
+		headed: cli.headed,
+		hiddenDesktop: runOptions.hiddenDesktop,
+		pluginsDirectory: runOptions.pluginsDirectory,
+		studioPath: runOptions.studioPath,
+	});
+}
+
 // Resolves the backend for a workspace run, plus work-stealing credentials when
 // it's Open Cloud. `--typecheckOnly` is pure-local tsgo — the runner
 // short-circuits before any dispatch — so it needs no backend at all: skip
@@ -310,15 +329,7 @@ function resolveWorkspaceBackend({
 	}
 
 	if (runOptions.backend === "studio-cli") {
-		return {
-			backend: dependencies.studioCliBackend({
-				// `headed` is CLI-only — read straight from `cli`, not the
-				// consensus-resolved run options.
-				headed: cli.headed,
-				pluginsDirectory: runOptions.pluginsDirectory,
-				studioPath: runOptions.studioPath,
-			}),
-		};
+		return { backend: studioCliBackendFor({ cli, dependencies, runOptions }) };
 	}
 
 	if (runOptions.backend === "studio") {

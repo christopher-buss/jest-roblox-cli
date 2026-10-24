@@ -24,6 +24,7 @@ describe(buildWorkspaceRunOptions, () => {
 		["parallel", { parallel: 1 }, { parallel: 2 }],
 		["placeId", { placeId: "1" }, { placeId: "2" }],
 		["studioPath", { studioPath: "a.exe" }, { studioPath: "b.exe" }],
+		["hiddenDesktop", { hiddenDesktop: true }, { hiddenDesktop: false }],
 		["pluginsDirectory", { pluginsDirectory: "/a" }, { pluginsDirectory: "/b" }],
 		["universeId", { universeId: "1" }, { universeId: "2" }],
 		[
@@ -417,6 +418,96 @@ describe(buildWorkspaceRunOptions, () => {
 			expect(result.placeId).toBe("p");
 			expect(result.universeId).toBe("u");
 			expect(result.parallel).toBe(4);
+		});
+	});
+
+	describe("hiddenDesktop resolution", () => {
+		it("should let the CLI override per-package hiddenDesktop", () => {
+			expect.assertions(1);
+
+			const result = buildWorkspaceRunOptions({
+				cli: { hiddenDesktop: true },
+				perPackageConfigs: [{ name: "alpha", config: { hiddenDesktop: false } }],
+			});
+
+			expect(result.hiddenDesktop).toBeTrue();
+		});
+
+		it("should leave hiddenDesktop to the platform default when no package sets it", () => {
+			expect.assertions(1);
+
+			const result = buildWorkspaceRunOptions({
+				cli: {},
+				perPackageConfigs: [
+					{ name: "alpha", config: {} },
+					{ name: "beta", config: {} },
+				],
+			});
+
+			expect(result.hiddenDesktop).toBeUndefined();
+		});
+
+		it("should reject a hiddenDesktop opt-out only some packages declare", () => {
+			expect.assertions(1);
+
+			expect(() => {
+				return buildWorkspaceRunOptions({
+					cli: {},
+					perPackageConfigs: [
+						{ name: "alpha", config: { hiddenDesktop: false } },
+						{ name: "beta", config: {} },
+					],
+					platform: "win32",
+				});
+			}).toThrow(WorkspaceConsensusError);
+		});
+
+		it.for(["win32", "darwin"] as const)(
+			"should accept hiddenDesktop true beside an unset package on %s",
+			(platform) => {
+				expect.assertions(1);
+
+				const result = buildWorkspaceRunOptions({
+					cli: {},
+					perPackageConfigs: [
+						{ name: "alpha", config: { hiddenDesktop: true } },
+						{ name: "beta", config: {} },
+					],
+					platform,
+				});
+
+				expect(result.hiddenDesktop).toBeTrue();
+			},
+		);
+
+		it("should accept hiddenDesktop false beside an unset package on linux", () => {
+			expect.assertions(1);
+
+			const result = buildWorkspaceRunOptions({
+				cli: {},
+				perPackageConfigs: [
+					{ name: "alpha", config: { hiddenDesktop: false } },
+					{ name: "beta", config: {} },
+				],
+				platform: "linux",
+			});
+
+			expect(result.hiddenDesktop).toBeFalse();
+		});
+
+		it("should reject hiddenDesktop true beside an unset package on linux", () => {
+			expect.assertions(1);
+
+			expect(() => {
+				return buildWorkspaceRunOptions({
+					cli: {},
+					perPackageConfigs: [
+						{ name: "alpha", config: { hiddenDesktop: true } },
+						{ name: "beta", config: {} },
+					],
+					platform: "linux",
+				});
+			}).toThrow(WorkspaceConsensusError);
 		});
 	});
 

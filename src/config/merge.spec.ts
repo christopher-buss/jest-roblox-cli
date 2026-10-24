@@ -6,12 +6,19 @@ import { DEFAULT_CONFIG } from "./schema.ts";
 
 describe(mergeCliWithConfig, () => {
 	it("should preserve explicit falsy CLI overrides", () => {
-		expect.assertions(4);
+		expect.assertions(5);
 
 		const result = mergeCliWithConfig(
-			{ outputFile: "", studioPath: "", testNamePattern: "", updateSnapshot: false },
+			{
+				hiddenDesktop: false,
+				outputFile: "",
+				studioPath: "",
+				testNamePattern: "",
+				updateSnapshot: false,
+			},
 			{
 				...DEFAULT_CONFIG,
+				hiddenDesktop: true,
 				outputFile: "results.json",
 				studioPath: "Studio.exe",
 				testNamePattern: "configured",
@@ -19,6 +26,7 @@ describe(mergeCliWithConfig, () => {
 			},
 		);
 
+		expect(result.hiddenDesktop).toBeFalse();
 		expect(result.outputFile).toBe("");
 		expect(result.studioPath).toBe("");
 		expect(result.testNamePattern).toBe("");
@@ -56,6 +64,14 @@ describe(mergeCliWithConfig, () => {
 			testNamePattern: "cli-pattern",
 			updateSnapshot: true,
 		});
+	});
+
+	it("should keep the config hiddenDesktop when the CLI leaves it unset", () => {
+		expect.assertions(1);
+
+		expect(
+			mergeCliWithConfig({}, { ...DEFAULT_CONFIG, hiddenDesktop: true }).hiddenDesktop,
+		).toBeTrue();
 	});
 
 	it("should keep explicit formatters over the environment-detected defaults", () => {

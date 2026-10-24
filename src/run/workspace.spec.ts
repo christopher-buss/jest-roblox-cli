@@ -412,6 +412,7 @@ describe(runWorkspaceModeAsync, () => {
 
 			expect(harness.studioCliBackend).toHaveBeenCalledExactlyOnceWith({
 				headed: undefined,
+				hiddenDesktop: undefined,
 				studioPath: undefined,
 			});
 			expect(harness.openCloudBackend).not.toHaveBeenCalled();
@@ -430,6 +431,7 @@ describe(runWorkspaceModeAsync, () => {
 			expect(result.validationExitCode).toBeUndefined();
 			expect(harness.studioCliBackend).toHaveBeenCalledExactlyOnceWith({
 				headed: undefined,
+				hiddenDesktop: undefined,
 				studioPath: undefined,
 			});
 		});
@@ -450,6 +452,7 @@ describe(runWorkspaceModeAsync, () => {
 
 			expect(harness.studioCliBackend).toHaveBeenCalledExactlyOnceWith({
 				headed: undefined,
+				hiddenDesktop: undefined,
 				studioPath: undefined,
 			});
 			expect(harness.openCloudBackend).not.toHaveBeenCalled();

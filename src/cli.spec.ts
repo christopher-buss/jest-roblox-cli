@@ -379,6 +379,19 @@ describe(parseArgs, () => {
 		expect(parseArgs([]).headed).toBeUndefined();
 	});
 
+	it("should parse --hiddenDesktop", () => {
+		expect.assertions(2);
+
+		expect(parseArgs(["--hiddenDesktop"]).hiddenDesktop).toBeTrue();
+		expect(parseArgs([]).hiddenDesktop).toBeUndefined();
+	});
+
+	it("should parse --no-hiddenDesktop as false", () => {
+		expect.assertions(1);
+
+		expect(parseArgs(["--no-hiddenDesktop"]).hiddenDesktop).toBeFalse();
+	});
+
 	it("should leave backend undefined when not passed", () => {
 		expect.assertions(1);
 

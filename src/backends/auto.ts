@@ -145,6 +145,7 @@ function createBackend({
 		// `headed` is CLI-only — read straight from `cli`, never from `config`.
 		return createStudioCliBackend({
 			headed: cli.headed,
+			hiddenDesktop: config.hiddenDesktop,
 			pluginsDirectory: config.pluginsDirectory,
 			studioPath: config.studioPath,
 			timeout: config.timeout,

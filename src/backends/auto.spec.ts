@@ -268,6 +268,20 @@ describe(resolveBackendAsync, () => {
 		expect(backend).toBeInstanceOf(StudioCliBackend);
 	});
 
+	it("should forward the configured hiddenDesktop to the studio-cli backend", async () => {
+		expect.assertions(1);
+
+		stubPlatform("linux");
+		const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+		const config = makeConfig({ backend: "studio-cli", hiddenDesktop: true });
+
+		await resolveBackendAsync({ cli: makeCli(), config });
+
+		expect(stderr).toHaveBeenCalledWith(
+			"Warning: hiddenDesktop is Windows and macOS only; ignoring it.\n",
+		);
+	});
+
 	it("should forward the configured Studio path to the studio-cli backend", async () => {
 		expect.assertions(1);
 

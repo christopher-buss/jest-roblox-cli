@@ -47,6 +47,9 @@ Options:
                                     backend (auto-detected if not set)
   --headed                          Show the Studio window during the run
                                     (studio-cli backend only; default: hidden)
+  --no-hiddenDesktop                Let Studio open on the user's desktop
+                                    (studio-cli backend; default: hidden on
+                                    Windows and macOS)
   --config <path>                   Path to config file
   --testPathPattern <regex>         Filter test files by path pattern
   -t, --testNamePattern <regex>     Filter tests by name pattern
@@ -142,9 +145,11 @@ const CLI_OPTION_SPEC = {
 	"gameOutput": { type: "string" },
 	"headed": { type: "boolean" },
 	"help": { default: false, type: "boolean" },
+	"hiddenDesktop": { type: "boolean" },
 	"no-color": { type: "boolean" },
 	"no-coverage": { type: "boolean" },
 	"no-coverage-cache": { type: "boolean" },
+	"no-hiddenDesktop": { type: "boolean" },
 	"no-show-luau": { type: "boolean" },
 	"no-upload-cache": { type: "boolean" },
 	"outputFile": { type: "string" },
@@ -332,12 +337,21 @@ function toBackendOptions(
 	values: ParsedCliValues,
 ): Pick<
 	CliOptions,
-	"apiKey" | "backend" | "headed" | "placeId" | "port" | "studioPath" | "timeout" | "universeId"
+	| "apiKey"
+	| "backend"
+	| "headed"
+	| "hiddenDesktop"
+	| "placeId"
+	| "port"
+	| "studioPath"
+	| "timeout"
+	| "universeId"
 > {
 	return {
 		apiKey: values.apiKey,
 		backend: validateBackend(values.backend),
 		headed: values.headed,
+		hiddenDesktop: values["no-hiddenDesktop"] === true ? false : values.hiddenDesktop,
 		placeId: values.placeId,
 		port: values.port !== undefined ? Number.parseInt(values.port, 10) : undefined,
 		studioPath: values.studioPath,

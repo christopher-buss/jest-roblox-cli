@@ -181,6 +181,7 @@ per-package declarations error loudly.
 | `workspace.outputFile` | `true` to also emit per-package result files under `.jest-roblox/output/` (`--workspace` only)                                                                               | —                            |
 | `parallel`             | Concurrent Open Cloud sessions, or `"auto"` (= `min(jobs, 3)`). Each session costs one task create against Roblox's create limit. studio-cli ignores it and runs one session | one session                  |
 | `placeId`              | Open Cloud place ID                                                                                                                                                          | —                            |
+| `hiddenDesktop`        | Run `studio-cli` Studio hidden so its windows and dialogs never reach yours (Windows, macOS; `--no-hiddenDesktop` opts out)                                                  | `true`                       |
 | `pluginsDirectory`     | Absolute path of the folder Studio loads local plugins from, where `studio-cli` installs its runner plugin (also `JEST_ROBLOX_PLUGINS_DIR`)                                  | per-OS Studio plugins folder |
 | `port`                 | WebSocket port for Studio backend                                                                                                                                            | `3001`                       |
 | `silent`               | Suppress console output                                                                                                                                                      | `false`                      |
@@ -642,6 +643,17 @@ hidden one — useful for watching a slow run or a hang (Studio still self-quits
 when tests finish, so a fast run just flashes). It is a per-run debugging flag,
 CLI-only and inert on every other backend.
 
+Studio runs hidden by default on Windows and macOS (`hiddenDesktop`). On Windows
+it runs on a separate, invisible desktop: no window or dialog reaches your
+desktop or takes focus. A dialog that waits for input stays invisible; the
+graceful-shutdown cap kills Studio if one blocks the close. On macOS Studio
+opens without taking focus and is hidden as soon as it shows itself; its windows
+can appear behind the front app for a moment while it loads. Clicking it shows
+it. Set `hiddenDesktop: false` (or pass `--no-hiddenDesktop`) to opt out.
+`--headed` overrides it for one run, showing the window of a run that hangs.
+Elsewhere the default does nothing, and an explicit `hiddenDesktop: true` is
+ignored with a warning.
+
 Once the result lands, Studio is shut down gracefully: it is allowed to close
 the place — running any edit-mode plugin `BindToClose` handlers and freeing the
 place lock — and is then killed the instant the lock releases, skipping Studio's
@@ -950,6 +962,7 @@ project) under `.jest-roblox/output/`.
 | `--port <n>`                     | WebSocket port for Studio                                                                                                                                       |
 | `--studioPath <path>`            | Roblox Studio executable for `studio-cli` (auto-detected if unset)                                                                                              |
 | `--headed`                       | Show the Studio window during the run (`studio-cli` only; default: hidden)                                                                                      |
+| `--no-hiddenDesktop`             | Let Studio open on your desktop (`studio-cli` only; default: hidden on Windows and macOS)                                                                       |
 | `--config <path>`                | Path to config file                                                                                                                                             |
 | `--testPathPattern <regex>`      | Filter test files by path                                                                                                                                       |
 | `-t, --testNamePattern <regex>`  | Filter tests by name                                                                                                                                            |

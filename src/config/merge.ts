@@ -17,6 +17,7 @@ export function mergeCliWithConfig(cli: CliOptions, config: ResolvedConfig): Res
 		experimentalVmParallel: cli.experimentalVmParallel,
 		formatters: resolveFormatters(cli, config),
 		gameOutput: cli.gameOutput ?? config.gameOutput,
+		hiddenDesktop: cli.hiddenDesktop ?? config.hiddenDesktop,
 		outputFile: cli.outputFile ?? config.outputFile,
 		parallel: cli.parallel ?? config.parallel,
 		passWithNoTests: cli.passWithNoTests ?? config.passWithNoTests,

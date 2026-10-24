@@ -30,7 +30,7 @@ import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import type { BackendOptions, ProjectJob } from "./interface.ts";
 import type { ManagedPluginInstall } from "./runner-plugin.ts";
 import { createStudioCliBackend, StudioCliBackend } from "./studio-cli.ts";
-import type { StudioCliLauncher, StudioCliProcess } from "./studio-cli.ts";
+import type { StudioCliLauncher, StudioCliLaunchRequest, StudioCliProcess } from "./studio-cli.ts";
 import type { WebSocketServerFactory } from "./web-socket-server-factory.ts";
 
 /**
@@ -1234,6 +1234,94 @@ describe(StudioCliBackend, () => {
 		expect(wasHeadedRequested).toBeTrue();
 	});
 
+	it.for([
+		["win32", undefined, true],
+		["darwin", undefined, true],
+		["linux", undefined, false],
+		["win32", true, true],
+		["darwin", true, true],
+		["win32", false, false],
+		["darwin", false, false],
+	] as const)(
+		"should resolve hiddenDesktop on %s from %j to %j",
+		async ([platform, hiddenDesktop, expected]) => {
+			expect.assertions(3);
+
+			const { fileSystem } = createMemoryFileSystem();
+			const stderr = vi.spyOn(nodeProcess.stderr, "write").mockReturnValue(true);
+
+			let launchRequest: Partial<StudioCliLaunchRequest> = {};
+			const { launch } = replyWith({
+				fileSystem,
+				onLaunch: (request) => {
+					launchRequest = request;
+				},
+				reply: {},
+			});
+
+			await makeBackend({
+				extra: { hiddenDesktop, platform },
+				fileSystem,
+				launch,
+			}).runTestsAsync(singleJob);
+
+			expect(launchRequest.hiddenDesktop).toBe(expected);
+			expect(launchRequest.platform).toBe(platform);
+			expect(stderr).not.toHaveBeenCalledWith(expect.stringContaining("hiddenDesktop"));
+		},
+	);
+
+	it("should ignore an explicit hiddenDesktop with a warning on Linux", async () => {
+		expect.assertions(2);
+
+		const { fileSystem } = createMemoryFileSystem();
+		const stderr = vi.spyOn(nodeProcess.stderr, "write").mockReturnValue(true);
+
+		let wasHiddenDesktopRequested: boolean | undefined;
+		const { launch } = replyWith({
+			fileSystem,
+			onLaunch: (request) => {
+				wasHiddenDesktopRequested = request.hiddenDesktop;
+			},
+			reply: {},
+		});
+
+		await makeBackend({
+			extra: { hiddenDesktop: true, platform: "linux" },
+			fileSystem,
+			launch,
+		}).runTestsAsync(singleJob);
+
+		expect(wasHiddenDesktopRequested).toBeFalse();
+		expect(stderr).toHaveBeenCalledWith(
+			"Warning: hiddenDesktop is Windows and macOS only; ignoring it.\n",
+		);
+	});
+
+	it("should let headed win over hiddenDesktop", async () => {
+		expect.assertions(2);
+
+		const { fileSystem } = createMemoryFileSystem();
+
+		let launchRequest = { headed: false, hiddenDesktop: true };
+		const { launch } = replyWith({
+			fileSystem,
+			onLaunch: (request) => {
+				launchRequest = { headed: request.headed, hiddenDesktop: request.hiddenDesktop };
+			},
+			reply: {},
+		});
+
+		await makeBackend({
+			extra: { headed: true, hiddenDesktop: true, platform: "win32" },
+			fileSystem,
+			launch,
+		}).runTestsAsync(singleJob);
+
+		expect(launchRequest.headed).toBeTrue();
+		expect(launchRequest.hiddenDesktop).toBeFalse();
+	});
+
 	it("should default headed to false in the launch request", async () => {
 		expect.assertions(1);
 
@@ -2177,13 +2265,21 @@ describe(StudioCliBackend, () => {
 			const child = new FakeChild(ignoredSignals);
 			let capturedArgs: Array<string> = [];
 			let capturedFile = "";
-			let capturedOptions: { stdio?: string; windowsHide?: boolean } = {};
+			let capturedOptions: {
+				env?: Record<string, string | undefined>;
+				stdio?: string;
+				windowsHide?: boolean;
+			} = {};
 			const childProcess: ChildProcessRunner = fromAny({
 				spawn: (
 					...[file, args, options]: [
 						string,
 						Array<string>,
-						{ stdio?: string; windowsHide?: boolean },
+						{
+							env?: Record<string, string | undefined>;
+							stdio?: string;
+							windowsHide?: boolean;
+						},
 					]
 				) => {
 					capturedFile = file;
@@ -2215,6 +2311,7 @@ describe(StudioCliBackend, () => {
 				discover: () => "C:/Studio/RobloxStudioBeta.exe",
 				fileSystem,
 				installPluginAsync: installed(),
+				platform: "linux",
 				webSocketServerFactory,
 				...extra,
 			});
@@ -2335,6 +2432,117 @@ describe(StudioCliBackend, () => {
 			await promise;
 
 			expect(request().options.windowsHide).toBeFalse();
+		});
+
+		it("should launch through the hidden desktop helper when asked", async () => {
+			expect.assertions(1);
+
+			const { fileSystem } = createMemoryFileSystem();
+
+			useLockPollTimers();
+
+			const { childProcess, request } = stubSpawn();
+			const previousServer = getLastCreatedServer();
+			const promise = backendWithDefaultLaunch({
+				childProcess,
+				extra: { hiddenDesktop: true, platform: "win32" },
+				fileSystem,
+			}).runTestsAsync(singleJob);
+			await replyOverServerAsync({
+				args: () => {
+					const commandLine =
+						request().options.env!["JEST_ROBLOX_HIDDEN_DESKTOP_COMMAND_LINE"]!;
+					return [
+						"--runScriptFile",
+						/--runScriptFile "?([^"]+?)"?(?: |$)/u.exec(commandLine)![1]!,
+					];
+				},
+				fileSystem,
+				previous: previousServer,
+			});
+			await promise;
+
+			expect(request().file).toBe("powershell.exe");
+		});
+
+		it("should spawn Studio directly on Windows when hiddenDesktop is off", async () => {
+			expect.assertions(1);
+
+			const { fileSystem } = createMemoryFileSystem();
+
+			useLockPollTimers();
+
+			const { args, childProcess, request } = stubSpawn();
+			const previousServer = getLastCreatedServer();
+			const promise = backendWithDefaultLaunch({
+				childProcess,
+				extra: { hiddenDesktop: false, platform: "win32" },
+				fileSystem,
+			}).runTestsAsync(singleJob);
+			await replyOverServerAsync({ args, fileSystem, previous: previousServer });
+			await promise;
+
+			expect(request().file).toBe("C:/Studio/RobloxStudioBeta.exe");
+		});
+
+		it("should launch a bundled macOS Studio through the JXA helper", async () => {
+			expect.assertions(2);
+
+			const { fileSystem } = createMemoryFileSystem();
+
+			useLockPollTimers();
+
+			const { childProcess, request } = stubSpawn();
+			const previousServer = getLastCreatedServer();
+			const promise = backendWithDefaultLaunch({
+				childProcess,
+				extra: {
+					discover: () => {
+						return "/Applications/RobloxStudio.app/Contents/MacOS/RobloxStudioBeta";
+					},
+					platform: "darwin",
+				},
+				fileSystem,
+			}).runTestsAsync(singleJob);
+			await replyOverServerAsync({
+				args: () => {
+					return type("string[]").assert(
+						JSON.parse(request().options.env!["JEST_ROBLOX_MACOS_ARGS"]!),
+					);
+				},
+				fileSystem,
+				previous: previousServer,
+			});
+			await promise;
+
+			expect(request().file).toBe("osascript");
+			expect(request().options.env!["JEST_ROBLOX_MACOS_BUNDLE"]).toBe(
+				"/Applications/RobloxStudio.app",
+			);
+		});
+
+		it("should spawn an unbundled macOS Studio directly with a warning", async () => {
+			expect.assertions(2);
+
+			const { fileSystem } = createMemoryFileSystem();
+			const stderr = vi.spyOn(nodeProcess.stderr, "write").mockReturnValue(true);
+
+			useLockPollTimers();
+
+			const { args, childProcess, request } = stubSpawn();
+			const previousServer = getLastCreatedServer();
+			const promise = backendWithDefaultLaunch({
+				childProcess,
+				extra: { platform: "darwin" },
+				fileSystem,
+			}).runTestsAsync(singleJob);
+			await replyOverServerAsync({ args, fileSystem, previous: previousServer });
+			await promise;
+
+			expect(request().file).toBe("C:/Studio/RobloxStudioBeta.exe");
+			expect(stderr).toHaveBeenCalledWith(
+				"Warning: Studio is not inside an .app bundle, so it cannot launch hidden.\n",
+			);
 		});
 
 		it("should clear a stale place lock a killed Studio left behind before launching", async () => {

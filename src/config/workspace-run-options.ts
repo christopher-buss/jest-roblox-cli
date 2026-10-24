@@ -22,6 +22,7 @@ import {
 interface BuildWorkspaceRunOptionsInput {
 	cli: CliOptions;
 	perPackageConfigs: ReadonlyArray<PackageConfigEntry>;
+	platform?: NodeJS.Platform;
 	/** Base directory for resolving the Aggregated Game Output path. */
 	workspaceRoot?: string;
 }
@@ -29,6 +30,7 @@ interface BuildWorkspaceRunOptionsInput {
 interface ResolvedOptionalFields {
 	formatters: Array<FormatterEntry>;
 	gameOutput: string | undefined;
+	hiddenDesktop: boolean | undefined;
 	outputFile: string | undefined;
 	parallel: "auto" | number | undefined;
 	placeId: string | undefined;
@@ -142,12 +144,16 @@ const CONVERGENCE_GUARD_SPECS = [
 export function buildWorkspaceRunOptions({
 	cli,
 	perPackageConfigs,
+	platform = process.platform,
 	workspaceRoot = process.cwd(),
 }: BuildWorkspaceRunOptionsInput): WorkspaceRunOptions {
 	return {
 		...resolveDefaultedFields({ cli, perPackageConfigs }),
 		...resolveConsensusOnlyFields(perPackageConfigs),
-		...pickBy(resolveOptionalFields({ cli, perPackageConfigs, workspaceRoot }), isDefined),
+		...pickBy(
+			resolveOptionalFields({ cli, perPackageConfigs, platform, workspaceRoot }),
+			isDefined,
+		),
 	};
 }
 
@@ -185,6 +191,22 @@ function resolveConsensusOnlyFields(
 	return {
 		workspaceGameOutput: isWorkspaceGameOutputEnabled,
 		workspaceOutputFile: isWorkspaceOutputFileEnabled,
+	};
+}
+
+function hiddenDesktopSpec({
+	perPackageConfigs,
+	platform,
+}: {
+	readonly perPackageConfigs: ReadonlyArray<PackageConfigEntry>;
+	readonly platform: NodeJS.Platform;
+}): OptionalFieldSpec<boolean> {
+	const isAnySet = perPackageConfigs.some(({ config }) => config.hiddenDesktop !== undefined);
+	const isHiddenByDefault = platform === "win32" || platform === "darwin";
+	return {
+		name: "hiddenDesktop",
+		readCli: (entry) => entry.hiddenDesktop,
+		readConfig: (entry) => (isAnySet ? (entry.hiddenDesktop ?? isHiddenByDefault) : undefined),
 	};
 }
 
@@ -234,9 +256,13 @@ function resolveAggregateArtifactPath({
 // than to nothing. The two aggregate sinks resolve to a path on the way out;
 // the rest pass through untouched.
 function resolveOptionalFields({
+	platform,
 	workspaceRoot,
 	...sources
-}: FieldSources & { readonly workspaceRoot: string }): ResolvedOptionalFields {
+}: FieldSources & {
+	readonly platform: NodeJS.Platform;
+	readonly workspaceRoot: string;
+}): ResolvedOptionalFields {
 	const { cli, perPackageConfigs } = sources;
 	return {
 		formatters: resolveFormatters(cli, perPackageConfigs),
@@ -244,6 +270,10 @@ function resolveOptionalFields({
 			defaultName: "game-output.log",
 			value: resolveOptionalField({ ...sources, spec: OPTIONAL_FIELD_SPECS.gameOutput }),
 			workspaceRoot,
+		}),
+		hiddenDesktop: resolveOptionalField({
+			...sources,
+			spec: hiddenDesktopSpec({ perPackageConfigs, platform }),
 		}),
 		outputFile: resolveAggregateArtifactPath({
 			defaultName: "jest-output.log",
