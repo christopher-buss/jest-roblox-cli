@@ -94,7 +94,9 @@ type function Same(actual, expected)
 			if not pb then
 				return false
 			end
-			if not optEq(pa.read, b:readproperty(key)) or not optEq(pa.write, b:writeproperty(key)) then
+			if
+				not optEq(pa.read, b:readproperty(key)) or not optEq(pa.write, b:writeproperty(key))
+			then
 				return false
 			end
 		end
@@ -109,7 +111,13 @@ type function Same(actual, expected)
 			if ia ~= nil or ib ~= nil then
 				return false
 			end
-		elseif not (eq(ia.index, ib.index) and optEq(ia.readresult, ib.readresult) and optEq(ia.writeresult, ib.writeresult)) then
+		elseif
+			not (
+				eq(ia.index, ib.index)
+				and optEq(ia.readresult, ib.readresult)
+				and optEq(ia.writeresult, ib.writeresult)
+			)
+		then
 			return false
 		end
 		return optEq(a:metatable(), b:metatable())
@@ -123,7 +131,8 @@ type function Same(actual, expected)
 		for i = 1, #ga do
 			table.insert(assumed, { ga[i], gb[i] })
 		end
-		return packEq(withoutAnyTail(a:parameters()), withoutAnyTail(b:parameters())) and packEq(a:returns(), b:returns())
+		return packEq(withoutAnyTail(a:parameters()), withoutAnyTail(b:parameters()))
+			and packEq(a:returns(), b:returns())
 	end
 
 	eq = function(a: any, b: any): boolean

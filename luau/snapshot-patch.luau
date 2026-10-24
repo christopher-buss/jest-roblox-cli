@@ -59,7 +59,8 @@ function module.patch(jestModule: ModuleScript, snapshotWrites: { [string]: stri
 	local ok, err = pcall(function()
 		local getDataModelServiceChild = robloxSharedInstance:FindFirstChild("getDataModelService")
 
-		local jestRuntimeModule = InstanceResolver.findSiblingPackage(jestModule, "JestRuntime", "jest-runtime")
+		local jestRuntimeModule =
+			InstanceResolver.findSiblingPackage(jestModule, "JestRuntime", "jest-runtime")
 		if not jestRuntimeModule then
 			warn("Could not find JestRuntime; snapshot interception unavailable")
 			return
@@ -70,7 +71,11 @@ function module.patch(jestModule: ModuleScript, snapshotWrites: { [string]: stri
 
 		Runtime.requireInternalModule = function(self: any, from: any, to: any, ...): any
 			local target = if to ~= nil then to else from
-			if getDataModelServiceChild and typeof(target) == "Instance" and target == getDataModelServiceChild then
+			if
+				getDataModelServiceChild
+				and typeof(target) == "Instance"
+				and target == getDataModelServiceChild
+			then
 				return mockGetDataModelService
 			end
 

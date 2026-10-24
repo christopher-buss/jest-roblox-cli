@@ -32,20 +32,25 @@ function module.getJest(config: { jestPath: string? }): ModuleScript
 
 	local jestInstance = ReplicatedStorage:FindFirstChild("Jest", true)
 	assert(jestInstance, "Failed to find Jest instance in ReplicatedStorage")
-	assert(jestInstance:IsA("ModuleScript"), "Jest instance in ReplicatedStorage is not a ModuleScript")
+	assert(
+		jestInstance:IsA("ModuleScript"),
+		"Jest instance in ReplicatedStorage is not a ModuleScript"
+	)
 	return jestInstance
 end
 
 function module.findRobloxShared(jestModule: ModuleScript): Instance?
 	local parent = jestModule.Parent
 	if parent then
-		local found = parent:FindFirstChild("RobloxShared") or parent:FindFirstChild("jest-roblox-shared")
+		local found = parent:FindFirstChild("RobloxShared")
+			or parent:FindFirstChild("jest-roblox-shared")
 		if found then
 			return found
 		end
 
 		if parent.Parent then
-			found = parent.Parent:FindFirstChild("RobloxShared") or parent.Parent:FindFirstChild("jest-roblox-shared")
+			found = parent.Parent:FindFirstChild("RobloxShared")
+				or parent.Parent:FindFirstChild("jest-roblox-shared")
 			if found then
 				return found
 			end

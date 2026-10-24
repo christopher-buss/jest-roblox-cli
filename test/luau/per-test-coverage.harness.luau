@@ -74,7 +74,10 @@ local function testRecordsCoverage()
 	dispatch({ name = "test_done" })
 
 	check(#records == 1, "T1: one record produced")
-	check(records[1].testFilePath == "ReplicatedStorage/Foo/bar.spec", "T1: service-rooted file path")
+	check(
+		records[1].testFilePath == "ReplicatedStorage/Foo/bar.spec",
+		"T1: service-rooted file path"
+	)
 	check(records[1].testCaseId == "Foo > adds", "T1: full test name")
 	check(contains(records[1].delta["out/m.luau"].s, 1), "T1: statement 1 attributed")
 end
@@ -259,10 +262,7 @@ local function testInstallsInEveryTestFile()
 	check(#records == 4, "T5: a record per case across both files, got " .. #records)
 	check(records[1].testCaseId == "a adds", "T5: the first file's first case")
 	check(records[4].testCaseId == "b subtracts", "T5: the second file's last case")
-	check(
-		records[1].testFilePath == "ReplicatedStorage/a.spec",
-		"T5: records carry their own file"
-	)
+	check(records[1].testFilePath == "ReplicatedStorage/a.spec", "T5: records carry their own file")
 	check(records[3].testFilePath == "ReplicatedStorage/b.spec", "T5: and the second file's")
 	check(contains(records[3].delta["out/b1.luau"].s, 1), "T5: the case's own delta")
 	check(first.handlerCount() == 1, "T5: one handler on the first file's list")
@@ -327,10 +327,7 @@ local function testProjectsOfOnePackageKeepSeparateAccumulators()
 		#firstInstallation.records == 1,
 		"T8: the finished project's records survive the next, got " .. #firstInstallation.records
 	)
-	check(
-		firstInstallation.records[1].testCaseId == "e adds",
-		"T8: and stay the ones it returned"
-	)
+	check(firstInstallation.records[1].testCaseId == "e adds", "T8: and stay the ones it returned")
 	check(#secondInstallation.records == 1, "T8: the second project records its own case")
 	check(secondInstallation.records[1].testCaseId == "f adds", "T8: from its own test file")
 	check(secondInstallation.failure == nil, "T8: the second project's install took")

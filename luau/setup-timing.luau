@@ -32,7 +32,8 @@ function module.patch(
 		return nil
 	end
 
-	local jestRuntimeModule = InstanceResolver.findSiblingPackage(jestModule, "JestRuntime", "jest-runtime")
+	local jestRuntimeModule =
+		InstanceResolver.findSiblingPackage(jestModule, "JestRuntime", "jest-runtime")
 	if not jestRuntimeModule then
 		warn("Could not find JestRuntime; setup timing unavailable")
 		return nil

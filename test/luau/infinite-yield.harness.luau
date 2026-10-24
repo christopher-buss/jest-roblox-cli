@@ -408,7 +408,7 @@ local function testAbandonNoteIsAppended()
 	local asked = 0
 	local function note()
 		asked += 1
-		return "Last test seen: \"spins\" in ReplicatedStorage/wedge.spec (running for 52.3s)"
+		return 'Last test seen: "spins" in ReplicatedStorage/wedge.spec (running for 52.3s)'
 	end
 
 	local warned = guardInThread(parkForever, { abandonNote = note })
@@ -451,10 +451,7 @@ local function testUselessNoteLeavesTheAbortAlone()
 		timeoutMs = 60_000,
 	})
 	elapse()
-	check(
-		empty.value == TIMED_OUT_60S,
-		"T19: an empty note adds no punctuation of its own"
-	)
+	check(empty.value == TIMED_OUT_60S, "T19: an empty note adds no punctuation of its own")
 end
 
 testReturnedValueIsPassedThrough()

@@ -86,7 +86,12 @@ function module.create(runtimeStubMounts: { { string } }): (Hooks, () -> ())
 			-- Jest sets rootDir on the required table in place, so a shared table
 			-- would pin every mount to the first mount's rootDir.
 			mountConfigs[mountIndex] = table.clone(cfg)
-			stub.Source = string.format('return _G["%s"].configs[%d][%d]', sessionKey, configIndex, mountIndex)
+			stub.Source = string.format(
+				'return _G["%s"].configs[%d][%d]',
+				sessionKey,
+				configIndex,
+				mountIndex
+			)
 			stub.Parent = leaf
 			-- Record immediately after parenting so a subsequent mount's
 			-- failure does not strand this one.

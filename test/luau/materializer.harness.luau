@@ -690,7 +690,11 @@ end
 -- A package whose only mount is a marker for the pooled entry. `rbxts_include`
 -- is what the real one is: the dependency tree every package mounts.
 local function stagePooledPackage(pkgName: string, runContextScripts: boolean)
-	return newMarker("rbxts_include", POOL_KEY, stagePackage(pkgName, { runContextScripts = runContextScripts }))
+	return newMarker(
+		"rbxts_include",
+		POOL_KEY,
+		stagePackage(pkgName, { runContextScripts = runContextScripts })
+	)
 end
 
 -- T11: a marker resolves to a clone of the pooled entry carrying the marker's
@@ -1142,7 +1146,10 @@ end
 local function testStagedEffectReplacesStudioDefault()
 	local studioBloom = addStudioLightingDefaults()
 
-	setParent(newInstance("BloomEffect", "Bloom"), stagePackage("studioLit", { service = "Lighting" }))
+	setParent(
+		newInstance("BloomEffect", "Bloom"),
+		stagePackage("studioLit", { service = "Lighting" })
+	)
 
 	Materializer.materialize("studioLit")
 
