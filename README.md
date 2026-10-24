@@ -104,6 +104,17 @@ jest-roblox
 > per-project overrides (a distinct `displayName`, `setupFiles`, `include`,
 > etc.) or a tighter project layout than the luau roots imply.
 
+### Luau packages without a Rojo project
+
+A package with no `.project.json`, no `rojoProject` setting and no
+`tsconfig.json` gets a Rojo project built from its file layout, written to
+`.jest-roblox-layout.project.json` on each run (add it to `.gitignore`). Each
+top-level directory except `node_modules` and dot-directories mounts under
+`ReplicatedStorage/<package directory>`, so a relative string require such as
+`require("../src")` resolves the same in the place as on disk. Jest comes from
+the nearest `node_modules/@rbxts-js.project.json` above the package, mounted at
+`ReplicatedStorage/node_modules/@rbxts-js`.
+
 ## Usage
 
 ```bash

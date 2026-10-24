@@ -8,6 +8,7 @@ import color from "tinyrainbow";
 import packageJson from "../package.json" with { type: "json" };
 import type { ParallelOption } from "./backends/interface.ts";
 import { ConfigError } from "./config/errors.ts";
+import { resolveLayoutProject } from "./config/layout-project.ts";
 import { loadConfig, type PackageConfigLoader } from "./config/loader.ts";
 import { mergeCliWithConfig } from "./config/merge.ts";
 import type { Backend, CliOptions, CoverageReporter, ResolvedConfig } from "./config/schema.ts";
@@ -693,7 +694,9 @@ async function runInnerAsync(
 		cwd: cli.workspaceRoot,
 		fileSystem,
 	});
-	const config = mergeCliWithConfig(cli, loadedConfig);
+	const merged = mergeCliWithConfig(cli, loadedConfig);
+	const config =
+		cli.workspace === true ? merged : resolveLayoutProject({ config: merged, fileSystem });
 
 	// The log wraps the whole invocation because it holds what the terminal
 	// held, the stage block included.

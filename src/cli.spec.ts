@@ -12,6 +12,7 @@ import type { CliDependencies } from "./cli.ts";
 import { main, parseArgs, REPEATABLE_FLAGS, runAsync } from "./cli.ts";
 import { defaultFormatters } from "./config/default-formatters.ts";
 import { ConfigError } from "./config/errors.ts";
+import { LAYOUT_PROJECT_FILE } from "./config/layout-project.ts";
 import { DEFAULT_CONFIG, type ResolvedConfig } from "./config/schema.ts";
 import type { ExecuteResult } from "./executor.ts";
 import { LuauScriptError } from "./reporter/parser.ts";
@@ -108,7 +109,7 @@ function setupOutputSpies(): OutputSpies {
 }
 
 function setupDefaults(configOverrides: Partial<ResolvedConfig> = {}) {
-	const { fileSystem } = createMemoryFileSystem();
+	const { fileSystem } = createMemoryFileSystem({ "/test/default.project.json": "{}" });
 	const loadConfig = vi
 		.fn<NonNullable<CliDependencies["loadConfig"]>>()
 		.mockResolvedValue(makeConfig(configOverrides));
@@ -1766,6 +1767,34 @@ describe("runInner orchestration", () => {
 		const [{ config }] = cli.runJestRoblox.mock.calls[0]!;
 
 		expect(config.collectCoverage).toBeFalse();
+	});
+
+	it("should give a Luau-only package a project built from its layout", async () => {
+		expect.assertions(1);
+
+		setupOutputSpies();
+		const cli = setupDefaults();
+		cli.fileSystem.rmSync("/test/default.project.json");
+
+		await runAsync([], cli.dependencies);
+
+		const [{ config }] = cli.runJestRoblox.mock.calls[0]!;
+
+		expect(config.rojoProject).toBe(`/test/${LAYOUT_PROJECT_FILE}`);
+	});
+
+	it("should leave a workspace run to each package's own project", async () => {
+		expect.assertions(1);
+
+		setupOutputSpies();
+		const cli = setupDefaults();
+		cli.fileSystem.rmSync("/test/default.project.json");
+
+		await runAsync(["--workspace"], cli.dependencies);
+
+		const [{ config }] = cli.runJestRoblox.mock.calls[0]!;
+
+		expect(config.rojoProject).toBeUndefined();
 	});
 
 	it("should pass explicit --formatters through merge into config", async () => {
