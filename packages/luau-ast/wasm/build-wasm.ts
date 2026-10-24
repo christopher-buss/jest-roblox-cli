@@ -19,7 +19,7 @@ import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 
-const LUAU_TAG = "0.743";
+const LUAU_TAG = "0.744";
 const EMSDK_VERSION = "6.0.8";
 
 const EMCC_VERSION = /^emcc \D*(\d+\.\d+\.\d+)/;
