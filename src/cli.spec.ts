@@ -1,6 +1,7 @@
 import { ApiError, NetworkError, PermissionError, RateLimitError } from "@bedrock-rbx/ocale";
 import { TaskQuotaError, TaskStallError } from "@isentinel/roblox-runner";
 
+import * as path from "node:path";
 import process from "node:process";
 import { stripVTControlCharacters } from "node:util";
 import type { MockInstance } from "vitest";
@@ -1780,7 +1781,7 @@ describe("runInner orchestration", () => {
 
 		const [{ config }] = cli.runJestRoblox.mock.calls[0]!;
 
-		expect(config.rojoProject).toBe(`/test/${LAYOUT_PROJECT_FILE}`);
+		expect(config.rojoProject).toBe(path.join("/test", LAYOUT_PROJECT_FILE));
 	});
 
 	it("should leave a workspace run to each package's own project", async () => {

@@ -1,3 +1,4 @@
+import * as path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { createMemoryFileSystem } from "../../test/mocks/memory-file-system.ts";
@@ -36,7 +37,7 @@ describe(resolveLayoutProject, () => {
 
 		const config = resolveLayoutProject({ config: packageConfig(), fileSystem });
 
-		expect(config.rojoProject).toBe(LAYOUT_PATH);
+		expect(config.rojoProject).toBe(path.join("/repo/pkg", LAYOUT_PROJECT_FILE));
 		expect(readLayout(volume)).toStrictEqual({
 			name: "pkg",
 			tree: {
