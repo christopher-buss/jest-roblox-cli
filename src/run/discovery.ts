@@ -4,7 +4,7 @@ import type { ResolvedTypecheckConfig } from "../config/resolve-typecheck-config
 import type { ResolvedConfig } from "../config/schema.ts";
 import type { createSetupResolver } from "../config/setup-resolver.ts";
 import { createRojoResolverCache } from "../config/setup-resolver.ts";
-import { TYPE_TEST_PATTERN } from "../typecheck/type-test-pattern.ts";
+import { isTypeTestFile } from "../typecheck/type-test-pattern.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import { nodeFileSystem } from "../utils/file-system.ts";
 import { createGlobCache, globSync } from "../utils/glob.ts";
@@ -87,12 +87,8 @@ export function classifyTestFiles(
 	files: Array<string>,
 	typecheck: ResolvedTypecheckConfig,
 ): ClassifiedTestFiles {
-	const typeTestFiles = typecheck.enabled
-		? files.filter((file) => TYPE_TEST_PATTERN.test(file))
-		: [];
-	const runtimeFiles = typecheck.only
-		? []
-		: files.filter((file) => !TYPE_TEST_PATTERN.test(file));
+	const typeTestFiles = typecheck.enabled ? files.filter(isTypeTestFile) : [];
+	const runtimeFiles = typecheck.only ? [] : files.filter((file) => !isTypeTestFile(file));
 	return { runtimeFiles, typeTestFiles };
 }
 

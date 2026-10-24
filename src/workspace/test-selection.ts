@@ -257,7 +257,7 @@ function applyEmptyPackagePolicy({
 // Per-(package, project) Type Test discovery, mirroring multi's
 // `collectPendingJobs`: derive the `-d` include from the project's Runtime
 // `include` (unless an explicit `test.typecheck.include` is set), glob it
-// against the package directory, classify by `TYPE_TEST_PATTERN`, then subtract
+// against the package directory, classify by `isTypeTestFile`, then subtract
 // `test.typecheck.exclude`. Returns absolute paths so `runTypecheck` reads them
 // cwd-independently (workspace mode runs from any directory) while still keying
 // each file result package-relative against `rootDir = packageDirectory`.

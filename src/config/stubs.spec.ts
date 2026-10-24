@@ -77,6 +77,7 @@ describe(serializeToLuau, () => {
 				'\ttestEnvironment = "custom",',
 				'\ttestMatch = { "**/*.spec", "**/*.test" },',
 				"\ttestTimeout = 5000,",
+				'\ttestPathIgnorePatterns = { "\\\\.(spec|test)-d$" },',
 				"}",
 				"",
 			].join("\n"),
@@ -113,6 +114,24 @@ describe(serializeToLuau, () => {
 		);
 
 		expect(result).toContain('\ttestMatch = { "**/*.spec", "**/*.test", "**/*.spec" },');
+	});
+
+	it("should drop Type Test patterns from the stub testMatch", () => {
+		expect.assertions(1);
+
+		const result = serializeToLuau(
+			minimalConfig({ testMatch: ["**/*.spec.luau", "**/*.spec-d.luau", "**/*.test-d.ts"] }),
+		);
+
+		expect(result).toContain('\ttestMatch = { "**/*.spec" },');
+	});
+
+	it("should ignore Type Test modules on top of the configured ignore patterns", () => {
+		expect.assertions(1);
+
+		const result = serializeToLuau(minimalConfig({ testPathIgnorePatterns: ["/out/"] }));
+
+		expect(result).toContain('\ttestPathIgnorePatterns = { "/out/", "\\\\.(spec|test)-d$" },');
 	});
 
 	it("should preserve TypeScript extensions outside testMatch", () => {

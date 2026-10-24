@@ -9,39 +9,13 @@ import type {
 
 import { parseSync, Visitor } from "oxc-parser";
 
-import type { TestDefinition } from "./types.ts";
+import type { RawTestDefinition, TestDefinition } from "./types.ts";
 
 const TEST_FUNCTIONS = new Set(["it", "test"]);
 const SUITE_FUNCTIONS = new Set(["describe", "suite"]);
 const ALL_FUNCTIONS = new Set([...SUITE_FUNCTIONS, ...TEST_FUNCTIONS]);
 
-interface RawDefinition {
-	name: string;
-	end: number;
-	start: number;
-	type: "suite" | "test";
-}
-
-export function collectTestDefinitions(source: string): Array<TestDefinition> {
-	const result = parseSync("test.ts", source);
-	const raw: Array<RawDefinition> = [];
-
-	const visitor = new Visitor({
-		CallExpression(node) {
-			const definition = extractDefinition(node, source);
-			if (definition) {
-				raw.push(definition);
-			}
-		},
-	});
-
-	visitor.visit(result.program);
-
-	// The visitor enters calls in source order, before their nested calls.
-	return buildAncestorChain(raw);
-}
-
-function buildAncestorChain(sorted: Array<RawDefinition>): Array<TestDefinition> {
+export function buildAncestorChain(sorted: Array<RawTestDefinition>): Array<TestDefinition> {
 	const result: Array<TestDefinition> = [];
 	const suiteStack: Array<{ end: number; name: string }> = [];
 
@@ -65,6 +39,25 @@ function buildAncestorChain(sorted: Array<RawDefinition>): Array<TestDefinition>
 	}
 
 	return result;
+}
+
+export function collectTestDefinitions(source: string): Array<TestDefinition> {
+	const result = parseSync("test.ts", source);
+	const raw: Array<RawTestDefinition> = [];
+
+	const visitor = new Visitor({
+		CallExpression(node) {
+			const definition = extractDefinition(node, source);
+			if (definition) {
+				raw.push(definition);
+			}
+		},
+	});
+
+	visitor.visit(result.program);
+
+	// The visitor enters calls in source order, before their nested calls.
+	return buildAncestorChain(raw);
 }
 
 function isStringLiteral(node: Expression): node is StringLiteral {
@@ -116,7 +109,7 @@ function getCalleeName(callee: Expression): string | undefined {
 	return undefined;
 }
 
-function extractDefinition(node: CallExpression, source: string): RawDefinition | undefined {
+function extractDefinition(node: CallExpression, source: string): RawTestDefinition | undefined {
 	const name = getCalleeName(node.callee);
 	if (name === undefined || !ALL_FUNCTIONS.has(name)) {
 		return undefined;

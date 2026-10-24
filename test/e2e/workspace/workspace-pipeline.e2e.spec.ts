@@ -274,6 +274,8 @@ describe("workspace bare enumeration", () => {
 					'\t\t\t"packages/bar",',
 					'\t\t\t"packages/empty-tests",',
 					'\t\t\t"packages/foo",',
+					'\t\t\t"packages/luau-typed",',
+					'\t\t\t"packages/luau-typed-broken",',
 					'\t\t\t"packages/typed",',
 					'\t\t\t"packages/typed-broken",',
 					'\t\t\t"packages/vendored-mount",',

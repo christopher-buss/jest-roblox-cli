@@ -3,8 +3,9 @@
  */
 export interface TypecheckConfig {
 	/**
-	 * Enable Type Tests (`*.spec-d.ts`/`*.test-d.ts`). This is the only gate —
-	 * setting other typecheck fields does not auto-enable. Default `false`.
+	 * Enable Type Tests (`*.spec-d.{ts,luau}`/`*.test-d.{ts,luau}`). This is
+	 * the only gate — setting other typecheck fields does not auto-enable.
+	 * Default `false`.
 	 */
 	enabled?: boolean | undefined;
 	/** Globs excluded from Type Test discovery. */

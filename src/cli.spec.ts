@@ -1522,18 +1522,17 @@ describe("runInner orchestration", () => {
 		expect(cli.loadConfig).not.toHaveBeenCalled();
 	});
 
-	it("should throw a ConfigError when SEA mode is paired with --typecheck", async () => {
-		expect.assertions(2);
+	it("should load config for --typecheck in SEA mode", async () => {
+		expect.assertions(1);
 
-		const spies = setupOutputSpies();
+		setupOutputSpies();
 		const cli = setupDefaults();
 
 		vi.stubEnv("JEST_ROBLOX_SEA", "true");
 
-		const code = await runAsync(["--typecheck"], cli.dependencies);
+		await runAsync(["--typecheck", "--formatters", "default"], cli.dependencies);
 
-		expect(code).toBe(2);
-		expect(spies.stderr).toHaveBeenCalledWith(expect.stringContaining("standalone binary"));
+		expect(cli.loadConfig).toHaveBeenCalledOnce();
 	});
 
 	it("should allow typechecking outside SEA mode", async () => {

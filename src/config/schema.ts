@@ -689,6 +689,8 @@ export const DEFAULT_CONFIG: ResolvedConfig = {
 		"**/*.test.tsx",
 		"**/*.spec-d.ts",
 		"**/*.test-d.ts",
+		"**/*.spec-d.luau",
+		"**/*.test-d.luau",
 		"**/*.spec.lua",
 		"**/*.spec.luau",
 		"**/*.test.lua",

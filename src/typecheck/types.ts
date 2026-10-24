@@ -8,10 +8,18 @@ export interface TypeTestDiagnostic {
 
 export type RawErrorsMap = Map<string, Array<TypeTestDiagnostic>>;
 
-export interface TestDefinition {
+export interface RawTestDefinition {
 	name: string;
-	ancestorNames: Array<string>;
 	end: number;
 	start: number;
 	type: "suite" | "test";
+}
+
+export interface TestDefinition extends RawTestDefinition {
+	ancestorNames: Array<string>;
+}
+
+export interface CollectedFile {
+	definitions: Array<TestDefinition>;
+	problems: Array<Pick<TypeTestDiagnostic, "code" | "message">>;
 }

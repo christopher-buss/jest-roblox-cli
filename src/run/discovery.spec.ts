@@ -144,6 +144,17 @@ describe(classifyTestFiles, () => {
 		});
 	});
 
+	it("should classify luau type test files as type tests", () => {
+		expect.assertions(1);
+
+		const luauFiles = ["a.spec.luau", "b.spec-d.luau", "c.test-d.luau"];
+
+		expect(classifyTestFiles(luauFiles, { enabled: true, only: false })).toStrictEqual({
+			runtimeFiles: ["a.spec.luau"],
+			typeTestFiles: ["b.spec-d.luau", "c.test-d.luau"],
+		});
+	});
+
 	it("should return no runtime files when typecheckOnly is set", () => {
 		expect.assertions(1);
 

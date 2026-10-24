@@ -18,6 +18,17 @@ import {
 } from "./runner.ts";
 import type { RawErrorsMap, TestDefinition } from "./types.ts";
 
+const LUAU_SPEC = path.resolve("/project/src/a.spec-d.luau");
+const LUAU_SOURCE = [
+	"--!strict",
+	'describe("suite", function()',
+	'\tit("passes", function() end)',
+	'\tit("fails", function()',
+	'\t\tlocal _s = "ü"; local _n: number = "x"',
+	"\tend)",
+	"end)",
+].join("\n");
+
 const TSC_7_MANIFEST = JSON.stringify({ bin: { tsc: "./bin/tsc" }, version: "7.0.2" });
 
 describe(createLocationsIndexMap, () => {
@@ -38,14 +49,17 @@ describe(mapErrorsToTests, () => {
 		expect.assertions(2);
 
 		const errors: RawErrorsMap = new Map();
-		const files = new Map<string, { definitions: Array<TestDefinition>; source: string }>([
+		const files = new Map<
+			string,
+			{ definitions: Array<TestDefinition>; locations: Map<string, number> }
+		>([
 			[
 				"/test.ts",
 				{
 					definitions: [
 						{ name: "should pass", ancestorNames: [], end: 27, start: 0, type: "test" },
 					],
-					source: 'it("should pass", () => {});',
+					locations: createLocationsIndexMap('it("should pass", () => {});'),
 				},
 			],
 		]);
@@ -80,9 +94,10 @@ describe(mapErrorsToTests, () => {
 			{ name: "suite", ancestorNames: [], end: source.length - 1, start: 0, type: "suite" },
 			{ name: "should fail", ancestorNames: ["suite"], end: 64, start: 26, type: "test" },
 		];
-		const files = new Map<string, { definitions: Array<TestDefinition>; source: string }>([
-			["/test.ts", { definitions, source }],
-		]);
+		const files = new Map<
+			string,
+			{ definitions: Array<TestDefinition>; locations: Map<string, number> }
+		>([["/test.ts", { definitions, locations: createLocationsIndexMap(source) }]]);
 
 		const result = mapErrorsToTests({ errors, files, startTime: 123 });
 
@@ -114,9 +129,10 @@ describe(mapErrorsToTests, () => {
 		const definitions: Array<TestDefinition> = [
 			{ name: "should pass", ancestorNames: [], end: 52, start: 25, type: "test" },
 		];
-		const files = new Map<string, { definitions: Array<TestDefinition>; source: string }>([
-			["/test.ts", { definitions, source }],
-		]);
+		const files = new Map<
+			string,
+			{ definitions: Array<TestDefinition>; locations: Map<string, number> }
+		>([["/test.ts", { definitions, locations: createLocationsIndexMap(source) }]]);
 
 		const result = mapErrorsToTests({ errors, files, startTime: 123 });
 
@@ -146,9 +162,10 @@ describe(mapErrorsToTests, () => {
 		const definitions: Array<TestDefinition> = [
 			{ name: "should pass", ancestorNames: [], end: 27, start: 0, type: "test" },
 		];
-		const files = new Map<string, { definitions: Array<TestDefinition>; source: string }>([
-			["/test.ts", { definitions, source }],
-		]);
+		const files = new Map<
+			string,
+			{ definitions: Array<TestDefinition>; locations: Map<string, number> }
+		>([["/test.ts", { definitions, locations: createLocationsIndexMap(source) }]]);
 
 		const result = mapErrorsToTests({ errors, files, startTime: 123 });
 
@@ -186,9 +203,10 @@ describe(mapErrorsToTests, () => {
 		const definitions: Array<TestDefinition> = [
 			{ name: "should fail", ancestorNames: [], end: 39, start: 0, type: "test" },
 		];
-		const files = new Map<string, { definitions: Array<TestDefinition>; source: string }>([
-			["/test.ts", { definitions, source }],
-		]);
+		const files = new Map<
+			string,
+			{ definitions: Array<TestDefinition>; locations: Map<string, number> }
+		>([["/test.ts", { definitions, locations: createLocationsIndexMap(source) }]]);
 
 		const result = mapErrorsToTests({ errors, files, startTime: Date.now() });
 
@@ -213,14 +231,17 @@ describe(mapErrorsToTests, () => {
 			],
 		]);
 
-		const files = new Map<string, { definitions: Array<TestDefinition>; source: string }>([
+		const files = new Map<
+			string,
+			{ definitions: Array<TestDefinition>; locations: Map<string, number> }
+		>([
 			[
 				"/fail.ts",
 				{
 					definitions: [
 						{ name: "should fail", ancestorNames: [], end: 27, start: 0, type: "test" },
 					],
-					source: 'it("should fail", () => {});',
+					locations: createLocationsIndexMap('it("should fail", () => {});'),
 				},
 			],
 			[
@@ -229,7 +250,7 @@ describe(mapErrorsToTests, () => {
 					definitions: [
 						{ name: "should pass", ancestorNames: [], end: 27, start: 0, type: "test" },
 					],
-					source: 'it("should pass", () => {});',
+					locations: createLocationsIndexMap('it("should pass", () => {});'),
 				},
 			],
 		]);
@@ -262,14 +283,17 @@ describe(mapErrorsToTests, () => {
 				],
 			],
 		]);
-		const files = new Map<string, { definitions: Array<TestDefinition>; source: string }>([
+		const files = new Map<
+			string,
+			{ definitions: Array<TestDefinition>; locations: Map<string, number> }
+		>([
 			[
 				"src/test.test-d.ts",
 				{
 					definitions: [
 						{ name: "should pass", ancestorNames: [], end: 27, start: 0, type: "test" },
 					],
-					source: 'it("should pass", () => {});',
+					locations: createLocationsIndexMap('it("should pass", () => {});'),
 				},
 			],
 		]);
@@ -309,14 +333,17 @@ describe(mapErrorsToTests, () => {
 				],
 			],
 		]);
-		const files = new Map<string, { definitions: Array<TestDefinition>; source: string }>([
+		const files = new Map<
+			string,
+			{ definitions: Array<TestDefinition>; locations: Map<string, number> }
+		>([
 			[
 				"src/test.test-d.ts",
 				{
 					definitions: [
 						{ name: "should pass", ancestorNames: [], end: 27, start: 0, type: "test" },
 					],
-					source: 'it("should pass", () => {});',
+					locations: createLocationsIndexMap('it("should pass", () => {});'),
 				},
 			],
 		]);
@@ -340,7 +367,10 @@ describe(mapErrorsToTests, () => {
 		expect.assertions(4);
 
 		const errors: RawErrorsMap = new Map();
-		const files = new Map<string, { definitions: Array<TestDefinition>; source: string }>([
+		const files = new Map<
+			string,
+			{ definitions: Array<TestDefinition>; locations: Map<string, number> }
+		>([
 			[
 				"/test.ts",
 				{
@@ -348,7 +378,9 @@ describe(mapErrorsToTests, () => {
 						{ name: "should a", ancestorNames: [], end: 23, start: 0, type: "test" },
 						{ name: "should b", ancestorNames: [], end: 48, start: 25, type: "test" },
 					],
-					source: 'it("should a", () => {});\nit("should b", () => {});',
+					locations: createLocationsIndexMap(
+						'it("should a", () => {});\nit("should b", () => {});',
+					),
 				},
 			],
 		]);
@@ -380,14 +412,17 @@ describe(mapErrorsToTests, () => {
 			],
 		]);
 
-		const files = new Map<string, { definitions: Array<TestDefinition>; source: string }>([
+		const files = new Map<
+			string,
+			{ definitions: Array<TestDefinition>; locations: Map<string, number> }
+		>([
 			[
 				"/test.ts",
 				{
 					definitions: [
 						{ name: "should pass", ancestorNames: [], end: 27, start: 0, type: "test" },
 					],
-					source,
+					locations: createLocationsIndexMap(source),
 				},
 			],
 		]);
@@ -417,7 +452,10 @@ describe(mapErrorsToTests, () => {
 				],
 			],
 		]);
-		const files = new Map<string, { definitions: Array<TestDefinition>; source: string }>([
+		const files = new Map<
+			string,
+			{ definitions: Array<TestDefinition>; locations: Map<string, number> }
+		>([
 			[
 				"src/nested.spec.ts",
 				{
@@ -437,7 +475,7 @@ describe(mapErrorsToTests, () => {
 							type: "test",
 						},
 					],
-					source,
+					locations: createLocationsIndexMap(source),
 				},
 			],
 		]);
@@ -1488,5 +1526,181 @@ describe(runTypecheckAsync, () => {
 
 		expect(invocations).toHaveLength(1);
 		expect(result.testResults[0]!.testResults[0]!.title).toBe("<source type error>");
+	});
+});
+
+describe("runTypecheckAsync with Luau Type Tests", () => {
+	type Callback = (error: Error | null, stdout: string, stderr: string) => void;
+
+	function exitOne(): Error {
+		return Object.assign(new Error("exit 1"), { code: 1 });
+	}
+
+	function runnerByCommand(outputs: { luau: string; node?: string }) {
+		const commands: Array<string> = [];
+		const child: childProcess.ChildProcess = fromAny({
+			kill: vi.fn<() => void>(),
+			once: vi.fn<() => void>(),
+		});
+		const execFile: typeof childProcess.execFile = fromAny(
+			(...[command, args, , callback]: [string, Array<string>, object, Callback]) => {
+				commands.push([command, ...args].join(" "));
+				const output = command === process.execPath ? outputs.node : outputs.luau;
+				callback(
+					output === undefined || output === "" ? null : exitOne(),
+					output ?? "",
+					"",
+				);
+				return child;
+			},
+		);
+		const runner: ChildProcessRunner = fromAny({ execFile });
+		return { childProcess: runner, commands };
+	}
+
+	function luauFiles(files: Record<string, string>): FileSystem {
+		return fromAny({
+			readFileSync: (filePath: string) => {
+				if (filePath.endsWith("package.json")) {
+					return TSC_7_MANIFEST;
+				}
+
+				return files[filePath] ?? "{}";
+			},
+		});
+	}
+
+	it("should attribute a lute diagnostic in byte columns to its it", async () => {
+		expect.assertions(3);
+
+		const { childProcess, commands } = runnerByCommand({
+			luau: `${LUAU_SPEC}:5:38-40: (W0) TypeError: Expected this to be 'number', but got 'string'\n`,
+		});
+
+		const result = await runTypecheckAsync({
+			childProcess,
+			files: [LUAU_SPEC],
+			fileSystem: luauFiles({ [LUAU_SPEC]: LUAU_SOURCE }),
+			rootDir: "/project",
+		});
+
+		const cases = result.testResults[0]!.testResults;
+
+		expect(commands).toHaveLength(1);
+		expect(cases.map(({ status, title }) => [title, status])).toStrictEqual([
+			["passes", "passed"],
+			["fails", "failed"],
+		]);
+		expect(cases[1]!.failureMessages).toStrictEqual([
+			"TypeError: Expected this to be 'number', but got 'string'",
+		]);
+	});
+
+	it("should check luau-only type tests in the standalone binary", async () => {
+		expect.assertions(2);
+
+		vi.stubEnv("JEST_ROBLOX_SEA", "true");
+		const { childProcess, commands } = runnerByCommand({ luau: "" });
+
+		const result = await runTypecheckAsync({
+			childProcess,
+			files: [LUAU_SPEC],
+			fileSystem: luauFiles({ [LUAU_SPEC]: LUAU_SOURCE }),
+			rootDir: "/project",
+		});
+
+		expect(commands).toHaveLength(1);
+		expect(result.success).toBeTrue();
+	});
+
+	it("should reject typescript type tests in the standalone binary", async () => {
+		expect.assertions(2);
+
+		vi.stubEnv("JEST_ROBLOX_SEA", "true");
+		const { childProcess, commands } = runnerByCommand({ luau: "" });
+
+		const error: unknown = await runTypecheckAsync({
+			childProcess,
+			files: [LUAU_SPEC, "/project/src/test.spec-d.ts"],
+			fileSystem: luauFiles({ [LUAU_SPEC]: LUAU_SOURCE }),
+			rootDir: "/project",
+		}).catch((err: unknown) => err);
+
+		expect(commands).toBeEmpty();
+		expect(error).toStrictEqual(
+			new ConfigError(
+				"--typecheck is not available in the standalone binary. Install via npm instead.",
+			),
+		);
+	});
+
+	it("should fail the file when the spec lacks --!strict", async () => {
+		expect.assertions(2);
+
+		const { childProcess } = runnerByCommand({ luau: "" });
+
+		const result = await runTypecheckAsync({
+			childProcess,
+			files: [LUAU_SPEC],
+			fileSystem: luauFiles({
+				[LUAU_SPEC]: LUAU_SOURCE.replace("--!strict", "--!nonstrict"),
+			}),
+			rootDir: "/project",
+		});
+
+		const [fileCase] = result.testResults[0]!.testResults;
+
+		expect(fileCase!.title).toBe("<file-level type error>");
+		expect(fileCase!.failureMessages[0]).toContain("--!strict");
+	});
+
+	it("should replace lute diagnostics with the parser message when the spec does not parse", async () => {
+		expect.assertions(1);
+
+		const { childProcess } = runnerByCommand({
+			luau: `${LUAU_SPEC}:2:1-3: (W0) SyntaxError: Expected identifier\n`,
+		});
+
+		const result = await runTypecheckAsync({
+			childProcess,
+			files: [LUAU_SPEC],
+			fileSystem: luauFiles({ [LUAU_SPEC]: "--!strict\nlocal x = " }),
+			rootDir: "/project",
+		});
+
+		expect(result.testResults[0]!.testResults[0]!.failureMessages).toStrictEqual([
+			expect.stringMatching(/^SyntaxError: /),
+		]);
+	});
+
+	it("should merge diagnostics two checkers report against the same file", async () => {
+		expect.assertions(2);
+
+		const tsSpec = path.resolve("/project/src/b.spec-d.ts");
+		const shared = path.resolve("/project/src/shared.luau");
+		const { childProcess, commands } = runnerByCommand({
+			luau: `${shared}:1:1-2: (W0) TypeError: From lute\n`,
+			node: "src/shared.luau(1,1): error TS1000: From tsgo.",
+		});
+
+		const result = await runTypecheckAsync({
+			childProcess,
+			files: [LUAU_SPEC, tsSpec],
+			fileSystem: luauFiles({
+				[LUAU_SPEC]: LUAU_SOURCE,
+				[tsSpec]: 'it("passes", () => {});',
+			}),
+			rootDir: "/project",
+		});
+
+		const sourceResult = result.testResults.find(
+			({ testFilePath }) => testFilePath === "src/shared.luau",
+		);
+
+		expect(commands).toHaveLength(2);
+		expect(sourceResult!.testResults[0]!.failureMessages).toStrictEqual([
+			"TypeError: From lute",
+			"TS1000: From tsgo.",
+		]);
 	});
 });

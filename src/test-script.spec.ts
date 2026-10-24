@@ -43,6 +43,35 @@ describe(buildJestArgv, () => {
 		expect(argv.testMatch).toStrictEqual(["**/*.spec.ts.backup", "**/*.spec"]);
 	});
 
+	it("should drop Type Test patterns from the Roblox testMatch", () => {
+		expect.assertions(1);
+
+		const argv = buildJestArgv(
+			createOptions({
+				config: {
+					testMatch: [
+						"**/*.spec.ts",
+						"**/*.spec-d.ts",
+						"**/*.test-d.luau",
+						"**/*.test.luau",
+					],
+				},
+			}),
+		);
+
+		expect(argv.testMatch).toStrictEqual(["**/*.spec", "**/*.test"]);
+	});
+
+	it("should ignore Type Test modules on top of the configured ignore patterns", () => {
+		expect.assertions(1);
+
+		const argv = buildJestArgv(
+			createOptions({ config: { testPathIgnorePatterns: ["/node_modules/"] } }),
+		);
+
+		expect(argv.testPathIgnorePatterns).toStrictEqual(["/node_modules/", "\\.(spec|test)-d$"]);
+	});
+
 	it("should pass through bail when set", () => {
 		expect.assertions(1);
 

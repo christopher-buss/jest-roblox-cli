@@ -67,4 +67,43 @@ describe("workspace --typecheckOnly e2e", () => {
 		expect(paths.some((filePath) => filePath.includes("@e2e/typed/"))).toBeTrue();
 		expect(paths.some((filePath) => filePath.includes("@e2e/typed-broken/"))).toBeTrue();
 	});
+
+	it("should stamp each luau package's type tests with its identity and fail on the broken one", async () => {
+		expect.assertions(4);
+
+		const sandbox = createFixtureSandbox(WORKSPACE_FIXTURE);
+		const outputFile = path.join(sandbox, "luau-result.json");
+
+		const result = await runCliAsync(
+			[
+				"--workspace",
+				"--packages=@e2e/luau-typed,@e2e/luau-typed-broken",
+				"--typecheckOnly",
+				"--outputFile",
+				outputFile,
+			],
+			{ cwd: sandbox },
+		);
+
+		expect(result.exitCode).toBe(1);
+		expect(result.stdout + result.stderr).toContain("rejects a string field");
+
+		const paths = readMergedTestFilePaths(outputFile);
+
+		expect(paths.some((filePath) => filePath.includes("@e2e/luau-typed/"))).toBeTrue();
+		expect(paths.some((filePath) => filePath.includes("@e2e/luau-typed-broken/"))).toBeTrue();
+	});
+
+	it("should exit 0 when a luau package's type tests pass", async () => {
+		expect.assertions(1);
+
+		const sandbox = createFixtureSandbox(WORKSPACE_FIXTURE);
+
+		const result = await runCliAsync(
+			["--workspace", "--packages=@e2e/luau-typed", "--typecheckOnly"],
+			{ cwd: sandbox },
+		);
+
+		expect(result.exitCode).toBe(0);
+	});
 });

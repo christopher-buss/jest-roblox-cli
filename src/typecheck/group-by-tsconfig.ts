@@ -1,6 +1,7 @@
 import { performance } from "node:perf_hooks";
 
 import type { JestResult } from "../types/jest-result.ts";
+import { isLuauTypeTestFile } from "./type-test-pattern.ts";
 
 /**
  * One project's Type Test files plus the effective `(tsconfig, cwd)` they are
@@ -31,11 +32,12 @@ interface GroupAccumulator {
 }
 
 /**
- * Groups Type Test entries by their effective `(tsconfig, cwd)` and runs one
- * tsgo pass per distinct group via `run`, then merges the per-group results
- * into one. Projects sharing a `(tsconfig, cwd)` collapse to a single pass;
- * projects with distinct tsconfigs are each checked against their own. Groups
- * run concurrently. Returns undefined when no entry carries any files.
+ * Groups Type Test entries by their effective `(tsconfig, cwd)` (Luau files
+ * by `cwd` alone) and runs one checker pass per distinct group via `run`, then
+ * merges the per-group results into one. Projects sharing a group collapse to
+ * a single pass; projects with distinct tsconfigs are each checked against
+ * their own. Groups run concurrently. Returns undefined when no entry carries
+ * any files.
  */
 export async function groupTypecheckByTsconfig(
 	entries: ReadonlyArray<TypecheckGroupEntry>,
@@ -81,27 +83,23 @@ export async function runTypecheckPassAsync(
 	return { elapsedMs: performance.now() - start, result };
 }
 
-// Collapses entries sharing a `(cwd, tsconfig)` pair into one accumulator each,
-// in first-seen order. Entries carrying no files are dropped.
+// Collapses files sharing a Typecheck Group into one accumulator each, in
+// first-seen order: `(cwd, tsconfig)` for TypeScript, `cwd` alone for Luau.
 function collectGroups(entries: ReadonlyArray<TypecheckGroupEntry>): Array<GroupAccumulator> {
 	const groups = new Map<string, GroupAccumulator>();
 	for (const entry of entries) {
-		if (entry.files.length === 0) {
-			continue;
-		}
-
-		// JSON-encode the `(cwd, tsconfig)` pair so distinct pairs never collide
-		// into one key (a plain delimiter could, e.g. for paths with the
-		// delimiter char).
-		const key = JSON.stringify([entry.cwd, entry.tsconfig ?? null]);
-		let group = groups.get(key);
-		if (group === undefined) {
-			group = { cwd: entry.cwd, files: new Set(), tsconfig: entry.tsconfig };
-
-			groups.set(key, group);
-		}
-
 		for (const file of entry.files) {
+			const tsconfig = isLuauTypeTestFile(file) ? undefined : entry.tsconfig;
+			// JSON-encode the key so distinct groups never collide (a plain
+			// delimiter could, e.g. for paths with the delimiter char).
+			const key = JSON.stringify([isLuauTypeTestFile(file), entry.cwd, tsconfig ?? null]);
+			let group = groups.get(key);
+			if (group === undefined) {
+				group = { cwd: entry.cwd, files: new Set(), tsconfig };
+
+				groups.set(key, group);
+			}
+
 			group.files.add(file);
 		}
 	}

@@ -68,7 +68,8 @@ rokit add christopher-buss/jest-roblox-cli
 
 Limitations vs the npm package:
 
-- `--typecheck` and `--typecheckOnly` are not available
+- TypeScript Type Tests (`.spec-d.ts`) are not available; Luau Type Tests
+  (`.spec-d.luau`) run when `lute` is on your `PATH`
 - `.ts` config files are not supported (use `.json`, `.js`, or `.mjs`)
 - External tools (rojo) must still be on your `PATH`
 
@@ -1016,7 +1017,48 @@ Default `testMatch` patterns (configurable):
 
 - TypeScript: `*.spec.ts`, `*.test.ts`, `*.spec.tsx`, `*.test.tsx`
 - Luau: `*.spec.lua`, `*.test.lua`, `*.spec.luau`, `*.test.luau`
-- Type tests: `*.spec-d.ts`, `*.test-d.ts`
+- Type tests: `*.spec-d.ts`, `*.test-d.ts`, `*.spec-d.luau`, `*.test-d.luau`
+
+Type Tests only run on the host. They never run in Roblox: the Roblox-side Jest
+config leaves them out of `testMatch` and ignores any `*.spec-d` or `*.test-d`
+module that a broader pattern of yours would match.
+
+### Luau Type Tests
+
+Luau Type Tests are `*.spec-d.luau` or `*.test-d.luau` files beside your runtime
+`*.spec.luau` / `*.test.luau` specs. They are checked on the host by
+`lute check`, so `lute` must be on `PATH`; no place is built for them. Enable
+them like TypeScript Type Tests, with `test.typecheck.enabled`, `--typecheck`,
+or `--typecheckOnly` (which skips Runtime Tests and makes no Roblox call). The
+include globs derive from the runtime ones (`.spec.luau` → `.spec-d.luau`)
+unless `test.typecheck.include` is set.
+
+Each file must start with `--!strict`. A file without it fails as a whole,
+because non-strict Luau reports no type errors. Projects that share a root
+directory are checked by one `lute` process; `tsconfig` does not apply.
+
+A `-- @expect-error` line comment asserts that the next statement fails type
+checking:
+
+```luau
+it("rejects a string field", function()
+	-- @expect-error
+	local _p: Point = {
+		x = 1,
+		y = "two",
+	}
+end)
+```
+
+- The directive targets the first statement that starts on a later line, over
+  that statement's whole span, so an error reported on a field inside a
+  multi-line literal still matches.
+- Every type error that starts inside the target is expected and does not fail
+  the test.
+- A directive that matches no error fails with `unused @expect-error`, in the
+  `it` that contains it or at file level.
+- It checks that an error exists, not what the error says.
+- Only comments count: `@expect-error` inside a string is ignored.
 
 ## Contributing
 

@@ -10,7 +10,7 @@ import type { TypecheckConfig } from "../config/resolve-typecheck-config.ts";
 import type { ResolvedConfig } from "../config/schema.ts";
 import { resolveLuauRoots } from "../coverage-pipeline/prepare.ts";
 import type { TsconfigReader } from "../executor/tsconfig-mappings.ts";
-import { TYPE_TEST_PATTERN } from "../typecheck/type-test-pattern.ts";
+import { isTypeTestFile } from "../typecheck/type-test-pattern.ts";
 import type { RojoTreeNode } from "../types/rojo.ts";
 import { stripTsExtension } from "../utils/extensions.ts";
 import type { FileSystem } from "../utils/file-system.ts";
@@ -87,7 +87,7 @@ export function buildImplicitProject({
 	// `include` entry — a `-d` glob has no `.spec`/`.test` source extension and
 	// would throw, crashing a `--coverage` run. Mirrors `resolveProjectConfig`,
 	// which never folds `-d` globs into a project's `include`.
-	const runtimeGlobs = config.testMatch.filter((glob) => !matchesTypeTestGlob(glob));
+	const runtimeGlobs = config.testMatch.filter((glob) => !isTypeTestFile(glob));
 
 	const singleMount = mounts.length === 1 ? mounts[0] : undefined;
 	const displayColor =
@@ -106,10 +106,6 @@ export function buildImplicitProject({
 	};
 }
 
-function matchesTypeTestGlob(glob: string): boolean {
-	return TYPE_TEST_PATTERN.test(glob);
-}
-
 /**
  * Seed the implicit project's `typecheck.include` from the `-d` globs the root
  * `testMatch` already carries. `include` strips them (see above) and the multi
@@ -119,7 +115,7 @@ function matchesTypeTestGlob(glob: string): boolean {
  * `deriveTypecheckInclude` still runs off the runtime globs.
  */
 function resolveImplicitTypecheck(config: ResolvedConfig): TypecheckConfig | undefined {
-	const include = config.typecheck?.include ?? config.testMatch.filter(matchesTypeTestGlob);
+	const include = config.typecheck?.include ?? config.testMatch.filter(isTypeTestFile);
 	if (include.length === 0) {
 		return config.typecheck;
 	}

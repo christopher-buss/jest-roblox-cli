@@ -4,7 +4,7 @@ exports[`StudioCliBackend > should write a bootstrap that drives ExecuteRunModeA
 "local HttpService = game:GetService("HttpService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local StudioTestService = game:GetService("StudioTestService")
-local payload = HttpService:JSONDecode([=[{"pluginKey":"1.2.3-abcdef01","protocolVersion":10,"test":true,"config":{"configs":[{"testMatch":["**/*.spec","**/*.spec","**/*.test","**/*.test","**/*.spec-d","**/*.test-d","**/*.spec","**/*.spec","**/*.test","**/*.test"],"passWithNoTests":false,"silent":false,"testPathIgnorePatterns":["/node_modules/","/dist/","/out/"],"verbose":false,"testNamePattern":"alpha-pattern","runnerTimeoutMs":60000,"reporters":[]}]},"runtimeStubMounts":[[]]}]=])
+local payload = HttpService:JSONDecode([=[{"pluginKey":"1.2.3-abcdef01","protocolVersion":10,"test":true,"config":{"configs":[{"testMatch":["**/*.spec","**/*.spec","**/*.test","**/*.test","**/*.spec","**/*.spec","**/*.test","**/*.test"],"testPathIgnorePatterns":["/node_modules/","/dist/","/out/","\\\\.(spec|test)-d$"],"passWithNoTests":false,"silent":false,"verbose":false,"testNamePattern":"alpha-pattern","runnerTimeoutMs":60000,"reporters":[]}]},"runtimeStubMounts":[[]]}]=])
 local URL = "ws://localhost:<port>"
 local REQUEST_ID = [=[<request-id>]=]
 local sideChannelSet, sideChannelError = pcall(function()

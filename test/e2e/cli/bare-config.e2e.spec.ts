@@ -31,7 +31,7 @@ describe("bare no-projects config", () => {
 	it.skipIf(!rojoOnPath())(
 		"should synthesize a project from the rojo tree and give it a generated stub",
 		async () => {
-			expect.assertions(8);
+			expect.assertions(11);
 
 			const sandbox = createFixtureSandbox(LUAU_FIXTURE_PATH);
 			// The stub the runner requires, at the synthesized project's mount.
@@ -46,6 +46,8 @@ describe("bare no-projects config", () => {
 			// `createFixtureSandbox` filters it out; this is the check that says
 			// so, and it fails loudly if the filter ever stops working.
 			expect(fs.existsSync(cacheStubPath), "sandbox starts with no stub").toBeFalse();
+
+			fs.writeFileSync(path.join(sandbox, "src/typed.spec-d.luau"), "--!strict\n");
 
 			const server = await startFakeOpenCloudServerAsync([
 				{ jestOutput: buildPassingJestOutput() },
@@ -84,6 +86,16 @@ describe("bare no-projects config", () => {
 			// Guards against a short-circuit: without this, a run that discovered
 			// nothing and exited 0 would satisfy the assertions above.
 			expect(server.uploadCount, "place was built and dispatched").toBe(1);
+
+			const dispatched = server.requests.map((request) => request.script).join("\n");
+
+			expect(dispatched, "type tests stay out of the roblox testMatch").not.toInclude(
+				"*.spec-d",
+			);
+			expect(dispatched, "type test modules are ignored in roblox").toInclude(
+				"(spec|test)-d$",
+			);
+			expect(stub, "stub ignores type test modules").toInclude("(spec|test)-d$");
 		},
 		RUN_TIMEOUT_MS + 5000,
 	);

@@ -90,7 +90,7 @@ Options:
   --setupFilesAfterEnv <path>       Post-env setup script, a package specifier or
                                     relative path (repeatable)
   --no-show-luau                    Hide Luau code in failure output
-  --typecheck                       Enable type testing (*.test-d.ts, *.spec-d.ts)
+  --typecheck                       Enable type testing (*.spec-d.*, *.test-d.*)
   --typecheckOnly                   Run only type tests, skip runtime tests
   --typecheckTsconfig <path>        tsconfig for type testing
   --apiKey <key>                    Roblox Open Cloud API key
@@ -671,12 +671,6 @@ async function runInnerAsync(
 	if (cli.version === true) {
 		console.log(VERSION);
 		return 0;
-	}
-
-	if (process.env["JEST_ROBLOX_SEA"] === "true" && cli.typecheck === true) {
-		throw new ConfigError(
-			"--typecheck is not available in the standalone binary. Install via npm instead.",
-		);
 	}
 
 	const { fileSystem } = dependencies;

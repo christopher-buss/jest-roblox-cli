@@ -164,6 +164,61 @@ describe(groupTypecheckByTsconfig, () => {
 		expect(result!.startTime).toBe(20);
 	});
 
+	it("should group luau files by cwd alone across distinct tsconfigs", async () => {
+		expect.assertions(1);
+
+		const run = vi.fn<RunTypecheckGroup>(async () => makeResult());
+
+		await groupTypecheckByTsconfig(
+			[
+				{ cwd: "/r", files: ["a.spec-d.luau"], tsconfig: "a.json" },
+				{ cwd: "/r", files: ["b.spec-d.luau"], tsconfig: "b.json" },
+			],
+			run,
+		);
+
+		expect(run).toHaveBeenCalledExactlyOnceWith({
+			cwd: "/r",
+			files: ["a.spec-d.luau", "b.spec-d.luau"],
+			tsconfig: undefined,
+		});
+	});
+
+	it("should run luau and typescript files of one entry as separate groups", async () => {
+		expect.assertions(3);
+
+		const run = vi.fn<RunTypecheckGroup>(async () => makeResult());
+
+		await groupTypecheckByTsconfig(
+			[{ cwd: "/r", files: ["a.spec-d.ts", "b.spec-d.luau"], tsconfig: "a.json" }],
+			run,
+		);
+
+		expect(run).toHaveBeenCalledTimes(2);
+		expect(run).toHaveBeenCalledWith({ cwd: "/r", files: ["a.spec-d.ts"], tsconfig: "a.json" });
+		expect(run).toHaveBeenCalledWith({
+			cwd: "/r",
+			files: ["b.spec-d.luau"],
+			tsconfig: undefined,
+		});
+	});
+
+	it("should run separate luau groups under different roots", async () => {
+		expect.assertions(1);
+
+		const run = vi.fn<RunTypecheckGroup>(async () => makeResult());
+
+		await groupTypecheckByTsconfig(
+			[
+				{ cwd: "/a", files: ["a.spec-d.luau"] },
+				{ cwd: "/b", files: ["b.spec-d.luau"] },
+			],
+			run,
+		);
+
+		expect(run).toHaveBeenCalledTimes(2);
+	});
+
 	it("should return undefined when no entries are given", async () => {
 		expect.assertions(2);
 

@@ -1,6 +1,5 @@
 import { type } from "arktype";
 import { parseJSONC } from "confbox";
-import type { ChildProcess, ExecFileException } from "node:child_process";
 import { createRequire } from "node:module";
 import * as path from "node:path";
 import process from "node:process";
@@ -13,24 +12,14 @@ import type { FileSystem } from "../utils/file-system.ts";
 import { nodeFileSystem } from "../utils/file-system.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import { collectTestDefinitions } from "./collect.ts";
+import { spawnLuauCheckAsync } from "./luau-check.ts";
+import { collectLuauTestDefinitions, createByteLocationsIndexMap } from "./luau-collect.ts";
+import { applyLuauExpectErrors } from "./luau-expect-error.ts";
+import { parseLuauOutput } from "./luau-parse.ts";
 import { parseTscOutput } from "./parse.ts";
-import { TYPE_TEST_PATTERN } from "./type-test-pattern.ts";
-import type { RawErrorsMap, TestDefinition, TypeTestDiagnostic } from "./types.ts";
-
-/**
- * Milliseconds to wait for tsgo to launch (the child `spawn` event) before the
- * pass fails. Bounds only process startup, so a slow *compile* never trips it;
- * the compile itself is governed by {@link TypecheckOptions.timeout}.
- */
-const DEFAULT_SPAWN_TIMEOUT = 10_000;
-
-/**
- * Milliseconds the tsgo compile may run before it is killed and the pass
- * throws. Mirrors the run-level `timeout` default (`config.timeout`); callers
- * pass the resolved run timeout so a wedged compile dies on the same deadline
- * as the Roblox run instead of a tight typecheck-only number.
- */
-const DEFAULT_RUN_TIMEOUT = 300_000;
+import { DEFAULT_RUN_TIMEOUT, DEFAULT_SPAWN_TIMEOUT, spawnCheckerAsync } from "./spawn-checker.ts";
+import { LUAU_TYPE_TEST_PATTERN, TS_TYPE_TEST_PATTERN } from "./type-test-pattern.ts";
+import type { CollectedFile, RawErrorsMap, TestDefinition, TypeTestDiagnostic } from "./types.ts";
 
 const MISSING_TSGO_MESSAGE =
 	"Type tests need TypeScript 7 ('typescript' 7+, or '@typescript/native' " +
@@ -98,7 +87,7 @@ export type RunTypecheck = typeof runTypecheckAsync;
 
 interface FileInfo {
 	definitions: Array<TestDefinition>;
-	source: string;
+	locations: Map<string, number>;
 }
 
 /** tsc errors split by whether they fall inside a discovered Type Test. */
@@ -107,59 +96,21 @@ interface PartitionedErrors {
 	fileErrors: Array<string>;
 }
 
+type CheckerSpawnOptions = TypecheckOptions & { childProcess: ChildProcessRunner };
+
 interface TypeChecker {
-	collect: (source: string) => Array<TestDefinition>;
+	collect: (source: string) => CollectedFile;
+	filter: typeof applyLuauExpectErrors;
+	locate: (source: string) => Map<string, number>;
 	parse: (output: string) => RawErrorsMap;
 	pattern: RegExp;
-	spawn: (options: TypecheckOptions) => Promise<string>;
+	spawn: (options: CheckerSpawnOptions) => Promise<string>;
 }
 
 interface CheckerRun {
 	checker: TypeChecker;
 	checkerFiles: Array<string>;
 	output: string;
-}
-
-interface ExecuteTsgoOptions {
-	args: Array<string>;
-	childProcess: ChildProcessRunner;
-	cwd: string;
-	reject: (reason: Error) => void;
-	resolve: (value: string) => void;
-	runTimeout: number;
-	spawnTimeout: number;
-	tsgoScript: string;
-}
-
-interface SettleTsgoOptions {
-	error: ExecFileException | null;
-	finish: (action: () => void) => void;
-	reject: (reason: Error) => void;
-	resolve: (value: string) => void;
-	runTimeout: number;
-	stderr: string;
-	stdout: string;
-}
-
-export function createLocationsIndexMap(source: string): Map<string, number> {
-	const map = new Map<string, number>();
-	let index = 0;
-	let line = 1;
-	let column = 1;
-
-	for (const char of source) {
-		map.set(`${String(line)}:${String(column)}`, index);
-		index++;
-
-		if (char === "\n") {
-			line++;
-			column = 1;
-		} else {
-			column++;
-		}
-	}
-
-	return map;
 }
 
 export function mapErrorsToTests({
@@ -211,20 +162,8 @@ export async function runTypecheckAsync(options: TypecheckOptions): Promise<Jest
 
 	const files = new Map<string, FileInfo>();
 	const resolvedErrors: RawErrorsMap = new Map();
-	for (const { checker, checkerFiles, output } of outputs) {
-		for (const filePath of checkerFiles) {
-			const source = fileSystem.readFileSync(filePath, "utf-8");
-			const definitions = checker.collect(source);
-			const resolvedPath = path.resolve(filePath);
-			const key = normalizeWindowsPath(path.relative(options.rootDir, resolvedPath));
-			files.set(key, { definitions, source });
-		}
-
-		for (const [errorPath, errorList] of checker.parse(output)) {
-			const resolved = path.resolve(options.rootDir, errorPath);
-			const key = normalizeWindowsPath(path.relative(options.rootDir, resolved));
-			resolvedErrors.set(key, errorList);
-		}
+	for (const run of outputs) {
+		appendErrors(resolvedErrors, collectCheckerRun({ files, fileSystem, options, run }));
 	}
 
 	return mapErrorsToTests({
@@ -233,6 +172,27 @@ export async function runTypecheckAsync(options: TypecheckOptions): Promise<Jest
 		ignoreSourceErrors: options.ignoreSourceErrors,
 		startTime,
 	});
+}
+
+export function createLocationsIndexMap(source: string): Map<string, number> {
+	const map = new Map<string, number>();
+	let index = 0;
+	let line = 1;
+	let column = 1;
+
+	for (const char of source) {
+		map.set(`${String(line)}:${String(column)}`, index);
+		index++;
+
+		if (char === "\n") {
+			line++;
+			column = 1;
+		} else {
+			column++;
+		}
+	}
+
+	return map;
 }
 
 export function isCompositeProject({
@@ -381,11 +341,14 @@ function buildFileResult({
 	fileInfo: FileInfo;
 	filePath: string;
 }): TestFileResult {
-	const indexMap = createLocationsIndexMap(fileInfo.source);
 	const testDefinitions = fileInfo.definitions.filter((definition) => definition.type === "test");
 	const sortedDefinitions = testDefinitions.toSorted((a, b) => b.start - a.start);
 
-	const partitioned = partitionErrors({ errors, indexMap, sortedDefinitions });
+	const partitioned = partitionErrors({
+		errors,
+		indexMap: fileInfo.locations,
+		sortedDefinitions,
+	});
 	const testCases = buildTestCases(testDefinitions, partitioned);
 	const numberFailing = testCases.filter((testCase) => testCase.status === "failed").length;
 
@@ -398,21 +361,98 @@ function buildFileResult({
 	};
 }
 
+function appendErrors(errors: RawErrorsMap, additions: RawErrorsMap): void {
+	for (const [key, errorList] of additions) {
+		errors.set(key, [...(errors.get(key) ?? []), ...errorList]);
+	}
+}
+
+function relativeKey(rootDirectory: string, filePath: string): string {
+	return normalizeWindowsPath(
+		path.relative(rootDirectory, path.resolve(rootDirectory, filePath)),
+	);
+}
+
+function resolveFileErrors({
+	checker,
+	problems,
+	...file
+}: Parameters<TypeChecker["filter"]>[0] & {
+	checker: TypeChecker;
+	problems: CollectedFile["problems"];
+}): Array<TypeTestDiagnostic> {
+	if (problems.length === 0) {
+		return checker.filter(file);
+	}
+
+	return problems.map((problem) => {
+		return { ...problem, column: 0, filePath: file.filePath, line: 0 };
+	});
+}
+
+function collectCheckerRun({
+	files,
+	fileSystem,
+	options,
+	run: { checker, checkerFiles, output },
+}: {
+	files: Map<string, FileInfo>;
+	fileSystem: FileSystem;
+	options: TypecheckOptions;
+	run: CheckerRun;
+}): RawErrorsMap {
+	const checkerErrors: RawErrorsMap = new Map();
+	for (const [errorPath, errorList] of checker.parse(output)) {
+		appendErrors(
+			checkerErrors,
+			new Map([[relativeKey(options.rootDir, errorPath), errorList]]),
+		);
+	}
+
+	for (const filePath of checkerFiles) {
+		const source = fileSystem.readFileSync(filePath, "utf-8");
+		const { definitions, problems } = checker.collect(source);
+		const key = normalizeWindowsPath(path.relative(options.rootDir, path.resolve(filePath)));
+		files.set(key, { definitions, locations: checker.locate(source) });
+		const diagnostics = resolveFileErrors({
+			checker,
+			diagnostics: checkerErrors.get(key) ?? [],
+			filePath: key,
+			problems,
+			source,
+		});
+		if (diagnostics.length > 0) {
+			checkerErrors.set(key, diagnostics);
+		} else {
+			checkerErrors.delete(key);
+		}
+	}
+
+	return checkerErrors;
+}
+
 function selectTypeChecker(filePath: string): TypeChecker {
 	return TYPE_CHECKERS.find(({ pattern }) => pattern.test(filePath)) ?? FALLBACK_CHECKER;
 }
 
 async function runCheckersAsync(options: TypecheckOptions): Promise<Array<CheckerRun>> {
+	const childProcess = options.childProcess ?? nodeChildProcessRunner;
 	const filesByChecker: Map<TypeChecker, Array<string>> = options.files.length > 0
 		? Map.groupBy(options.files, selectTypeChecker)
 		: new Map([[FALLBACK_CHECKER, []]]);
+
+	if (process.env["JEST_ROBLOX_SEA"] === "true" && filesByChecker.has(FALLBACK_CHECKER)) {
+		throw new ConfigError(
+			"--typecheck is not available in the standalone binary. Install via npm instead.",
+		);
+	}
 
 	return Promise.all(
 		Array.from(filesByChecker, async ([checker, checkerFiles]) => {
 			return {
 				checker,
 				checkerFiles,
-				output: await checker.spawn({ ...options, files: checkerFiles }),
+				output: await checker.spawn({ ...options, childProcess, files: checkerFiles }),
 			};
 		}),
 	);
@@ -492,134 +532,14 @@ function buildTsgoArgs(options: TypecheckOptions, isComposite: boolean): Array<s
 	return args;
 }
 
-// Classifies the `execFile` outcome onto the promise. Split out of the callback
-// so neither this nor `executeTsgo` carries the whole spawn lifecycle.
-function settleTsgoResult({
-	error,
-	finish,
-	reject,
-	resolve,
-	runTimeout,
-	stderr,
-	stdout,
-}: SettleTsgoOptions): void {
-	if (error === null) {
-		finish(() => {
-			resolve(stdout);
-		});
-		return;
-	}
-
-	// `execFile`'s `timeout` (the run-level deadline) is the only kill it
-	// causes, so `killed` is timeout-specific here: maxBuffer overflow surfaces
-	// as a distinct `code` (ERR_CHILD_PROCESS_STDIO_MAXBUFFER) with `killed`
-	// unset. (The launch-timer kill settles the promise first, so its later
-	// `killed` callback is a no-op.) Fail loud rather than let truncated/empty
-	// output read as zero type errors.
-	if (error.killed === true) {
-		const message = `tsgo typecheck timed out after ${String(runTimeout)}ms (timeout)`;
-		finish(() => {
-			reject(new Error(message));
-		});
-		return;
-	}
-
-	// tsgo exits non-zero (numeric `code`) when diagnostics exist; the captured
-	// output carries them. A non-numeric code means the process never ran (e.g.
-	// ENOENT) — rethrow so a real spawn failure isn't masked as a clean pass.
-	if (typeof error.code === "number") {
-		finish(() => {
-			resolve(stdout !== "" ? stdout : stderr);
-		});
-		return;
-	}
-
-	finish(() => {
-		reject(new Error(error.message, { cause: error }));
-	});
-}
-
-// Kills the child if it never reports a `spawn` event, then rejects.
-function armLaunchTimer({
-	child,
-	finish,
-	reject,
-	spawnTimeout,
-}: {
-	child: ChildProcess;
-	finish: (action: () => void) => void;
-	reject: (reason: Error) => void;
-	spawnTimeout: number;
-}): ReturnType<typeof setTimeout> {
-	const message = `tsgo spawn timed out after ${String(spawnTimeout)}ms (spawnTimeout)`;
-	return setTimeout(() => {
-		child.kill();
-		finish(() => {
-			reject(new Error(message));
-		});
-	}, spawnTimeout);
-}
-
-// Launches tsgo and wires both settle paths (the `execFile` callback and the
-// launch timer) into the caller's promise.
-function executeTsgo({
-	args,
-	childProcess,
-	cwd,
-	reject,
-	resolve,
-	runTimeout,
-	spawnTimeout,
-	tsgoScript,
-}: ExecuteTsgoOptions): void {
-	let launchTimer: ReturnType<typeof setTimeout> | undefined;
-	// The Promise settles once; this flag prevents arming a launch timer after
-	// a synchronous completion. A holder object, not
-	// a bare `let settled = false`: typescript-eslint's
-	// `no-unnecessary-condition` narrows a bare boolean to literal `false` at
-	// the `!state.settled` arming guard below (the closure that flips it has not
-	// run there) and flags it as always-true; an object property infers as
-	// `boolean`.
-	const state = { settled: false };
-
-	function finish(action: () => void): void {
-		state.settled = true;
-		clearTimeout(launchTimer);
-
-		action();
-	}
-
-	const child = childProcess.execFile(
-		process.execPath,
-		[tsgoScript, ...args],
-		{ cwd, encoding: "utf-8", timeout: runTimeout, windowsHide: true },
-		// eslint-disable-next-line better-max-params/better-max-params -- Node fixes the execFile callback signature.
-		(error, stdout, stderr) => {
-			settleTsgoResult({ error, finish, reject, resolve, runTimeout, stderr, stdout });
-		},
-	);
-
-	// Bound only the launch: cleared the instant tsgo reports it spawned, so a
-	// slow compile is governed by `runTimeout` above, not this. `spawn` fires at
-	// most once, so `once` is the right primitive. Arming is skipped below when
-	// the (synchronous-in-test) callback already settled.
-	child.once("spawn", () => {
-		clearTimeout(launchTimer);
-	});
-
-	if (!state.settled) {
-		launchTimer = armLaunchTimer({ child, finish, reject, spawnTimeout });
-	}
-}
-
 // Async so the CPU-bound tsgo subprocess overlaps the network-bound Roblox run
 // (the host event loop stays free to drive the Open Cloud upload/poll while
 // tsgo compiles). Two distinct guards keep the awaited pass from hanging: a
 // launch timer (`spawnTimeout`, cleared on the child `spawn` event) bounds
 // startup, and `execFile`'s own `timeout` (`options.timeout`, the run-level
 // deadline) bounds the compile.
-async function spawnTsgoAsync(options: TypecheckOptions): Promise<string> {
-	const { childProcess = nodeChildProcessRunner, fileSystem = nodeFileSystem } = options;
+async function spawnTsgoAsync(options: CheckerSpawnOptions): Promise<string> {
+	const { childProcess, fileSystem = nodeFileSystem } = options;
 	const isComposite = isCompositeProject({
 		fileSystem,
 		rootDirectory: options.rootDir,
@@ -630,25 +550,43 @@ async function spawnTsgoAsync(options: TypecheckOptions): Promise<string> {
 	const spawnTimeout = options.spawnTimeout ?? DEFAULT_SPAWN_TIMEOUT;
 	const runTimeout = options.timeout ?? DEFAULT_RUN_TIMEOUT;
 
-	return new Promise<string>((resolve, reject) => {
-		executeTsgo({
-			args,
-			childProcess,
-			cwd: options.rootDir,
-			reject,
-			resolve,
-			runTimeout,
-			spawnTimeout,
-			tsgoScript,
-		});
+	return spawnCheckerAsync({
+		args: [tsgoScript, ...args],
+		childProcess,
+		command: process.execPath,
+		cwd: options.rootDir,
+		label: "tsgo",
+		runTimeout,
+		spawnTimeout,
+	});
+}
+
+async function spawnLuauAsync(options: CheckerSpawnOptions): Promise<string> {
+	return spawnLuauCheckAsync({
+		childProcess: options.childProcess,
+		files: options.files,
+		rootDir: options.rootDir,
+		runTimeout: options.timeout ?? DEFAULT_RUN_TIMEOUT,
+		spawnTimeout: options.spawnTimeout ?? DEFAULT_SPAWN_TIMEOUT,
 	});
 }
 
 const FALLBACK_CHECKER: TypeChecker = {
-	collect: collectTestDefinitions,
+	collect: (source) => ({ definitions: collectTestDefinitions(source), problems: [] }),
+	filter: ({ diagnostics }) => diagnostics,
+	locate: createLocationsIndexMap,
 	parse: parseTscOutput,
-	pattern: TYPE_TEST_PATTERN,
+	pattern: TS_TYPE_TEST_PATTERN,
 	spawn: spawnTsgoAsync,
 };
 
-const TYPE_CHECKERS: ReadonlyArray<TypeChecker> = [FALLBACK_CHECKER];
+const LUAU_CHECKER: TypeChecker = {
+	collect: collectLuauTestDefinitions,
+	filter: applyLuauExpectErrors,
+	locate: createByteLocationsIndexMap,
+	parse: parseLuauOutput,
+	pattern: LUAU_TYPE_TEST_PATTERN,
+	spawn: spawnLuauAsync,
+};
+
+const TYPE_CHECKERS: ReadonlyArray<TypeChecker> = [LUAU_CHECKER, FALLBACK_CHECKER];

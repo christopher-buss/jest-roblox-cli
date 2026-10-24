@@ -1,0 +1,10 @@
+{
+	"name": "luau-typed-broken-test",
+	"tree": {
+		"$className": "DataModel",
+		"ReplicatedStorage": {
+			"$className": "ReplicatedStorage",
+			"Pkg": { "$path": "src" }
+		}
+	}
+}

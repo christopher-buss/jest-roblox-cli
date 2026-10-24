@@ -2,7 +2,10 @@ import { Buffer } from "node:buffer";
 import path from "node:path";
 
 import type { ShadowBake, ShadowLayout } from "../coverage-pipeline/spine.ts";
-import { stripTsExtension } from "../utils/extensions.ts";
+import {
+	toRobloxTestMatch,
+	toRobloxTestPathIgnorePatterns,
+} from "../typecheck/type-test-pattern.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import { nodeFileSystem } from "../utils/file-system.ts";
 import { isString } from "../utils/is-string.ts";
@@ -98,7 +101,11 @@ type StubConfig = Partial<UndefinedTolerant<ProjectTestConfig>>;
 export function serializeToLuau(config: StubConfig): string {
 	let output = `${HEADER}return {\n`;
 
-	for (const [key, value] of Object.entries(config)) {
+	const robloxConfig = {
+		...config,
+		testPathIgnorePatterns: toRobloxTestPathIgnorePatterns(config.testPathIgnorePatterns),
+	};
+	for (const [key, value] of Object.entries(robloxConfig)) {
 		if (SKIP_FIELDS.has(key)) {
 			continue;
 		}
@@ -107,13 +114,11 @@ export function serializeToLuau(config: StubConfig): string {
 			continue;
 		}
 
-		let serialized: string;
-		if (key === "testMatch" && Array.isArray(value)) {
-			const stripped = value.filter(isString).map((pattern) => stripTsExtension(pattern));
-			serialized = serializeLuauValue(stripped);
-		} else {
-			serialized = serializeLuauValue(value);
-		}
+		const serialized = serializeLuauValue(
+			key === "testMatch" && Array.isArray(value)
+				? toRobloxTestMatch(value.filter(isString))
+				: value,
+		);
 
 		output += `\t${key} = ${serialized},\n`;
 	}
