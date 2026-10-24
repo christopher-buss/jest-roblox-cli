@@ -1060,6 +1060,73 @@ end)
 - It checks that an error exists, not what the error says.
 - Only comments count: `@expect-error` inside a string is ignored.
 
+#### Type assertions
+
+The package ships a Luau module for type assertions. Alias it in your `.luaurc`:
+
+```json
+{
+	"languageMode": "strict",
+	"aliases": {
+		"jest": "node_modules/@isentinel/jest-roblox/lib"
+	}
+}
+```
+
+The alias path is relative to the `.luaurc`. Then require it as
+`@jest/typecheck`:
+
+```luau
+--!strict
+local t = require("@jest/typecheck")
+
+type GamePass = { name: string, price: number? }
+
+local function getPass(): GamePass
+	return { name = "VIP" }
+end
+
+t.describe("GamePass", function()
+	t.it("has a name and an optional price", function()
+		t.expectType<<GamePass>>():toEqualType<<{ name: string, price: number? }>>()
+	end)
+
+	t.it("is what getPass returns", function()
+		t.expectTypeOf(getPass()):toEqualType<<GamePass>>()
+	end)
+end)
+```
+
+- `describe` and `it` do nothing at runtime; they name the tests.
+- `expectType<<T>>()` takes a type; `expectTypeOf(value)` takes the type of a
+  value.
+- `:toEqualType<<U>>()` and `:toEqualTypeOf(value)` assert the types are equal.
+
+Equality is structural: union and intersection order, property order and
+parameter names do not matter, `boolean` equals `true | false`, and generic
+functions match when their generics differ only in name. Read-only and
+read-write properties differ, as do `any` and `unknown`. Luau gives every
+function expression a `...any` parameter tail; equality ignores it.
+
+A failed assertion reports both types:
+
+```text
+Expected: { x: number, y: string }
+Received: { x: number, y: number }
+```
+
+A multi-line type literal inside `<<...>>()` is a Luau syntax error. Declare an
+alias first:
+
+```luau
+type Expected = {
+	name: string,
+	price: number?,
+}
+
+t.expectType<<GamePass>>():toEqualType<<Expected>>()
+```
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md).
