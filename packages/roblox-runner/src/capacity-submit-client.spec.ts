@@ -2,9 +2,12 @@ import { ApiError, RateLimitError } from "@bedrock-rbx/ocale";
 import type { HttpRequest } from "@bedrock-rbx/ocale";
 import { createFakeHttpClient } from "@bedrock-rbx/ocale/testing";
 
-import { assert, describe, expect, it, vi } from "vitest";
+import { assert, describe, expect, it, onTestFinished, vi } from "vitest";
 
-import { type CapacityProgress, createCapacitySubmitClient } from "./capacity-submit-client.ts";
+import {
+	type CapacitySubmitClientOptions,
+	createCapacitySubmitClient,
+} from "./capacity-submit-client.ts";
 
 const PREFIX =
 	"universes/123/places/456/versions/1/luau-execution-sessions/11111111-1111-4111-8111-111111111111/tasks/";
@@ -94,7 +97,9 @@ describe(createCapacitySubmitClient, () => {
 		http.mockResponse({ body: { state: "COMPLETE" }, status: 200 });
 		http.mockError(capacityError([first, second, first]));
 		http.mockResponse({ body: { state: "COMPLETE" }, status: 200 });
-		const progress = new Array<CapacityProgress>();
+		const progress = new Array<
+			Parameters<NonNullable<CapacitySubmitClientOptions["onCapacityProgress"]>>[0]
+		>();
 		const client = createCapacitySubmitClient(http, {
 			onCapacityProgress: (value) => {
 				progress.push(value);
@@ -111,9 +116,9 @@ describe(createCapacitySubmitClient, () => {
 		expect(blockerProgress).toHaveLength(2);
 		expect(blockerProgress[0]!.fingerprint).toBe(blockerProgress[1]!.fingerprint);
 		expect(progress.map(({ fingerprint }) => fingerprint)).toStrictEqual([
-			blockerProgress[0]!.fingerprint,
+			`blockers:/cloud/v2/${first}?view=BASIC\n/cloud/v2/${second}?view=BASIC`,
 			`terminal:/cloud/v2/${first}?view=BASIC`,
-			blockerProgress[1]!.fingerprint,
+			`blockers:/cloud/v2/${first}?view=BASIC\n/cloud/v2/${second}?view=BASIC`,
 			`terminal:/cloud/v2/${first}?view=BASIC`,
 		]);
 	});
@@ -208,31 +213,28 @@ describe(createCapacitySubmitClient, () => {
 					});
 				},
 			);
-			vi.useFakeTimers();
-			try {
-				const http = createFakeHttpClient();
-				http.mockError(capacityError([taskRef(1)]));
-				http.mockResponse({ body: { state: "PROCESSING" }, status: 200 });
-				http.mockResponse({ body: { state: "COMPLETE" }, status: 200 });
-				const send = http.request.bind(http);
-				vi.spyOn(http, "request")
-					.mockImplementationOnce(send)
-					.mockImplementationOnce(async (request, config) => {
-						await simulateReadAsync();
-						return send(request, config);
-					});
-				const submitted = createCapacitySubmitClient(http, {
-					onAdmissionWait,
-					placeId: "456",
-					universeId: "123",
-					waitAsync,
-				}).request({ method: "POST", url: SUBMIT_URL }, CONFIG);
-				await vi.runAllTimersAsync();
+			useClock();
 
-				await expect(submitted).resolves.toMatchObject({ success: false });
-			} finally {
-				vi.useRealTimers();
-			}
+			const http = createFakeHttpClient();
+			http.mockError(capacityError([taskRef(1)]));
+			http.mockResponse({ body: { state: "PROCESSING" }, status: 200 });
+			http.mockResponse({ body: { state: "COMPLETE" }, status: 200 });
+			const send = http.request.bind(http);
+			vi.spyOn(http, "request")
+				.mockImplementationOnce(send)
+				.mockImplementationOnce(async (request, config) => {
+					await simulateReadAsync();
+					return send(request, config);
+				});
+			const submitted = createCapacitySubmitClient(http, {
+				onAdmissionWait,
+				placeId: "456",
+				universeId: "123",
+				waitAsync,
+			}).request({ method: "POST", url: SUBMIT_URL }, CONFIG);
+			await vi.runAllTimersAsync();
+
+			await expect(submitted).resolves.toMatchObject({ success: false });
 
 			expect(onAdmissionWait.mock.calls.map(([milliseconds]) => milliseconds)).toStrictEqual(
 				expected,
@@ -259,14 +261,7 @@ describe(createCapacitySubmitClient, () => {
 				controller.abort(failure);
 				return result;
 			});
-		const onAdmissionWait = vi.fn<(milliseconds: number) => void>();
-		const waitAsync = vi.fn<(ms: number, signal: AbortSignal | undefined) => Promise<void>>();
-		const client = createCapacitySubmitClient(http, {
-			onAdmissionWait,
-			placeId: "456",
-			universeId: "123",
-			waitAsync,
-		});
+		const { client, onAdmissionWait, waitAsync } = makeObservedClient(http);
 
 		await expect(
 			client.request(
@@ -335,28 +330,22 @@ describe(createCapacitySubmitClient, () => {
 		expect.assertions(3);
 
 		const controller = new AbortController();
-		vi.useFakeTimers();
-		try {
-			const http = createFakeHttpClient();
-			http.mockError(capacityError([taskRef(1)]));
-			http.mockResponse({ body: { state: "PROCESSING" }, status: 200 });
-			const submitted = createCapacitySubmitClient(http, {
-				placeId: "456",
-				universeId: "123",
-			}).request(
-				{ method: "POST", url: SUBMIT_URL },
-				{ ...CONFIG, signal: controller.signal },
-			);
-			const settled = submitted.catch((err: unknown) => err);
-			await vi.advanceTimersByTimeAsync(0);
-			controller.abort(new Error("cancelled"));
-			await vi.runAllTimersAsync();
+		useClock();
 
-			await expect(settled).resolves.toMatchObject({ message: "The operation was aborted" });
-			expect(http.requests).toHaveLength(2);
-		} finally {
-			vi.useRealTimers();
-		}
+		const http = createFakeHttpClient();
+		http.mockError(capacityError([taskRef(1)]));
+		http.mockResponse({ body: { state: "PROCESSING" }, status: 200 });
+		const submitted = createCapacitySubmitClient(http, {
+			placeId: "456",
+			universeId: "123",
+		}).request({ method: "POST", url: SUBMIT_URL }, { ...CONFIG, signal: controller.signal });
+		const settled = submitted.catch((err: unknown) => err);
+		await vi.advanceTimersByTimeAsync(0);
+		controller.abort(new Error("cancelled"));
+		await vi.runAllTimersAsync();
+
+		await expect(settled).resolves.toMatchObject({ message: "The operation was aborted" });
+		expect(http.requests).toHaveLength(2);
 
 		expect(controller.signal.aborted).toBeTrue();
 	});
@@ -365,27 +354,24 @@ describe(createCapacitySubmitClient, () => {
 		expect.assertions(2);
 
 		let requestCount = 0;
-		vi.useFakeTimers();
-		try {
-			const http = createFakeHttpClient();
-			http.mockError(capacityError([taskRef(1)]));
-			for (let cycle = 0; cycle < 12; cycle += 1) {
-				http.mockResponse({ body: { state: "PROCESSING" }, status: 200 });
-			}
+		useClock();
 
-			const submitted = createCapacitySubmitClient(http, {
-				placeId: "456",
-				universeId: "123",
-			}).request({ method: "POST", url: SUBMIT_URL }, CONFIG);
-			const settled = submitted.catch((err: unknown) => err);
-			await vi.advanceTimersByTimeAsync(60_000);
-
-			await expect(settled).resolves.toMatchObject({ success: false });
-
-			requestCount = http.requests.length;
-		} finally {
-			vi.useRealTimers();
+		const http = createFakeHttpClient();
+		http.mockError(capacityError([taskRef(1)]));
+		for (let cycle = 0; cycle < 12; cycle += 1) {
+			http.mockResponse({ body: { state: "PROCESSING" }, status: 200 });
 		}
+
+		const submitted = createCapacitySubmitClient(http, {
+			placeId: "456",
+			universeId: "123",
+		}).request({ method: "POST", url: SUBMIT_URL }, CONFIG);
+		const settled = submitted.catch((err: unknown) => err);
+		await vi.advanceTimersByTimeAsync(60_000);
+
+		await expect(settled).resolves.toMatchObject({ success: false });
+
+		requestCount = http.requests.length;
 
 		expect(requestCount).toBe(2);
 	});
@@ -460,14 +446,7 @@ describe(createCapacitySubmitClient, () => {
 		http.mockError(new ApiError("denied", { statusCode: 403 }));
 		http.mockError(capacityError([taskRef(2)]));
 		http.mockResponse({ body: { state: "UNKNOWN" }, status: 200 });
-		const onAdmissionWait = vi.fn<(milliseconds: number) => void>();
-		const waitAsync = vi.fn<(ms: number, signal: AbortSignal | undefined) => Promise<void>>();
-		const client = createCapacitySubmitClient(http, {
-			onAdmissionWait,
-			placeId: "456",
-			universeId: "123",
-			waitAsync,
-		});
+		const { client, onAdmissionWait, waitAsync } = makeObservedClient(http);
 
 		await expect(
 			client.request({ method: "POST", url: SUBMIT_URL }, CONFIG),
@@ -477,5 +456,103 @@ describe(createCapacitySubmitClient, () => {
 		).resolves.toMatchObject({ success: false });
 		expect(onAdmissionWait).not.toHaveBeenCalled();
 		expect(waitAsync).not.toHaveBeenCalled();
+	});
+});
+
+function makeObservedClient(http: Parameters<typeof createCapacitySubmitClient>[0]) {
+	const onAdmissionWait = vi.fn<(milliseconds: number) => void>();
+	const waitAsync = vi.fn<(ms: number, signal: AbortSignal | undefined) => Promise<void>>();
+	const client = createCapacitySubmitClient(http, {
+		onAdmissionWait,
+		placeId: "456",
+		universeId: "123",
+		waitAsync,
+	});
+	return { client, onAdmissionWait, waitAsync };
+}
+
+describe("capacity routing", () => {
+	it.for<{ method: HttpRequest["method"]; url: string }>([
+		{ method: "GET", url: SUBMIT_URL },
+		{ method: "POST", url: "/unrelated" },
+	])("should preserve capacity-shaped refusals on unrelated routes: %j", async (request) => {
+		expect.assertions(2);
+
+		const http = createFakeHttpClient();
+		const error = capacityError([taskRef(1)]);
+		http.mockError(error);
+		const { client, waitAsync } = makeObservedClient(http);
+
+		await expect(client.request(request, CONFIG)).resolves.toStrictEqual({
+			err: error,
+			success: false,
+		});
+		expect(waitAsync).not.toHaveBeenCalled();
+	});
+});
+
+function useClock(): void {
+	vi.useFakeTimers();
+	onTestFinished(() => {
+		vi.useRealTimers();
+	});
+}
+
+describe("bounded blocker observations", () => {
+	it("should observe only the final ten validated blocker paths", async () => {
+		expect.assertions(2);
+
+		const http = createFakeHttpClient();
+		const refs = Array.from({ length: 12 }, (_, index) => taskRef(index));
+		http.mockError(capacityError(refs));
+		http.mockResponse({ body: { state: "COMPLETE" }, status: 200 });
+		const onCapacityProgress =
+			vi.fn<NonNullable<CapacitySubmitClientOptions["onCapacityProgress"]>>();
+		const client = createCapacitySubmitClient(http, {
+			onCapacityProgress,
+			placeId: "456",
+			universeId: "123",
+		});
+		await client.request({ method: "POST", url: SUBMIT_URL }, CONFIG);
+
+		expect(http.requests[1]!.request.url).toBe(`/cloud/v2/${refs[2]}?view=BASIC`);
+		expect(onCapacityProgress.mock.calls[0]![0].fingerprint).toBe(
+			`blockers:${refs
+				.slice(2)
+				.map((ref) => `/cloud/v2/${ref}?view=BASIC`)
+				.join("\n")}`,
+		);
+	});
+
+	it("should abort capacity waits with their own diagnostic reason", async () => {
+		expect.assertions(2);
+
+		useClock();
+		const http = createFakeHttpClient();
+		http.mockError(capacityError([taskRef(1)]));
+		http.mockResponse({ body: { state: "PROCESSING" }, status: 200 });
+		const waitAsync = vi.fn<(ms: number, signal: AbortSignal | undefined) => Promise<void>>(
+			async (_ms, signal) => {
+				return new Promise((_resolve, reject) => {
+					signal!.addEventListener(
+						"abort",
+						() => {
+							reject(new Error("capacity wait cancelled", { cause: signal!.reason }));
+						},
+						{ once: true },
+					);
+				});
+			},
+		);
+		const client = createCapacitySubmitClient(http, {
+			placeId: "456",
+			universeId: "123",
+			waitAsync,
+		});
+		const submitted = client.request({ method: "POST", url: SUBMIT_URL }, CONFIG);
+		await vi.advanceTimersByTimeAsync(60_000);
+
+		await expect(submitted).resolves.toMatchObject({ success: false });
+		expect(waitAsync.mock.calls[0]![1]!.reason).toBe("capacity wait expired");
 	});
 });

@@ -1,13 +1,10 @@
 import type { HttpClient } from "@bedrock-rbx/ocale";
 
+import type { OpenCloudConnection } from "./client-options.ts";
 import { createFetchHttpClient, DEFAULT_BASE_URL } from "./open-cloud-fetch.ts";
 
-export interface FlushMemoryStoreOptions {
-	readonly apiKey: string;
-	readonly baseUrl?: string | undefined;
-	readonly httpClient?: HttpClient;
-	readonly universeId: string;
-}
+/** Universe-wide destructive flush authorization and transport. */
+export type FlushMemoryStoreOptions = OpenCloudConnection;
 
 /**
  * Issue the **universe-wide** `memory-store:flush` — it destroys every queue,
@@ -17,6 +14,8 @@ export interface FlushMemoryStoreOptions {
  * has no flush operation, so this goes through the raw {@link HttpClient}
  * seam. Throws on any failure: the caller opted into a destructive
  * precondition, so a flush that did not happen must not go unnoticed.
+ * @param options - Universe identity, authorization and transport for the flush.
+ * @rejects When the flush request fails or the server refuses it.
  */
 export async function flushMemoryStoreAsync(options: FlushMemoryStoreOptions): Promise<void> {
 	const httpClient = options.httpClient ?? createFetchHttpClient();

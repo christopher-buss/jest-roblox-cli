@@ -13,7 +13,6 @@ async function requestAsync(body?: { topic: string }) {
 	);
 }
 
-/** Stubs `fetch` with a 200 and hands back the mock the case asserts on. */
 function stubOkFetch() {
 	const fetchMock = vi
 		.fn<typeof fetch>()

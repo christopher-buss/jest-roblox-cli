@@ -1,32 +1,54 @@
-import type { HttpClient, SleepFunc } from "@bedrock-rbx/ocale";
 import type { StorageClient } from "@bedrock-rbx/ocale/storage";
 
-import {
-	createWorkQueueStorage,
-	dequeueOrEmptyAsync,
-	msToSecondsCeil,
-} from "./work-queue-shared.ts";
+import type { PacedConnection } from "./client-options.ts";
+import { createStorageClient } from "./client-options.ts";
+import { dequeueOrEmptyAsync, msToSecondsCeil } from "./work-queue-shared.ts";
 
-export interface WorkQueueReaderOptions<T> {
-	readonly apiKey: string;
-	readonly baseUrl?: string | undefined;
+/**
+ * Queue transport and consumer decoding policy.
+ *
+ * @template T
+ */
+export interface WorkQueueReaderOptions<T> extends PacedConnection {
+	/**
+	 * Parse each SDK JSON value into the consumer domain type.
+	 */
 	readonly decode: (value: JSONValue) => T;
-	readonly httpClient?: HttpClient;
+	/**
+	 * Run-owned queue shared with the Luau workers.
+	 */
 	readonly queueId: string;
-	readonly sleep?: SleepFunc;
-	readonly universeId: string;
 }
 
+/**
+ * Decoded claim with its own acknowledgement operation.
+ *
+ * @template T
+ */
 export interface ClaimedBatch<T> {
+	/**
+	 * Acknowledge this claim; empty claims perform no discard.
+	 */
 	readonly commit: () => Promise<void>;
+	/**
+	 * Decoded values from this claim, in queue order.
+	 */
 	readonly items: ReadonlyArray<T>;
 }
 
+/**
+ * Claims work without interpreting empty queues as errors.
+ *
+ * @template T
+ */
 export interface WorkQueueReader<T> {
 	/**
 	 * Claim up to `count` items, holding them invisible to other consumers for
 	 * `invisibilityMs`. A queue with nothing visible is not an error: it yields
 	 * an empty batch, so a consumer can poll one until work arrives.
+	 * @param count - Maximum number of items to claim.
+	 * @param invisibilityMs - Claim invisibility window in milliseconds.
+	 * @returns Decoded claimed items and their acknowledgement handle.
 	 */
 	claimAsync(count: number, invisibilityMs: number): Promise<ClaimedBatch<T>>;
 }
@@ -40,7 +62,7 @@ class OpenCloudWorkQueueReader<T> implements WorkQueueReader<T> {
 	constructor(options: WorkQueueReaderOptions<T>) {
 		this.decode = options.decode;
 		this.queueId = options.queueId;
-		this.storage = createWorkQueueStorage(options);
+		this.storage = createStorageClient(options);
 		this.universeId = options.universeId;
 	}
 
@@ -67,6 +89,8 @@ class OpenCloudWorkQueueReader<T> implements WorkQueueReader<T> {
 	/**
 	 * Discard the claim, so the items never resurface. An empty read yields no
 	 * `readId` and so has nothing to discard.
+	 * @param readId - Opaque receipt, absent for an empty claim.
+	 * @rejects When the discard request fails or the server refuses it.
 	 */
 	private async commitBatchAsync(readId: string | undefined): Promise<void> {
 		if (readId === undefined) {
@@ -84,6 +108,12 @@ class OpenCloudWorkQueueReader<T> implements WorkQueueReader<T> {
 	}
 }
 
+/**
+ * Bind transport and decoding to one work queue.
+ * @param options - Queue identity, transport and payload decoder.
+ * @returns Queue reader bound to the supplied transport and decoder.
+ * @template T
+ */
 export function createWorkQueueReader<T>(options: WorkQueueReaderOptions<T>): WorkQueueReader<T> {
 	return new OpenCloudWorkQueueReader(options);
 }

@@ -8,8 +8,13 @@ export class TaskSubmitError extends Error {
 
 	public override name = "TaskSubmitError";
 
+	/**
+	 * Retain a submission failure and its original cause.
+	 * @param cause - Original transport failure.
+	 * @param message - Specific diagnostic text, otherwise the original message.
+	 */
 	constructor(cause: OpenCloudError, message?: string) {
-		super(message ?? cause.message, { cause });
+		super(message ?? cause.message);
 		this.cause = cause;
 	}
 }

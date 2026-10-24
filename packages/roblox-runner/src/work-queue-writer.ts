@@ -1,34 +1,69 @@
-import type { HttpClient, SleepFunc } from "@bedrock-rbx/ocale";
 import type { EnqueueQueueItemParameters, StorageClient } from "@bedrock-rbx/ocale/storage";
 
+import type { PacedConnection } from "./client-options.ts";
+import { createStorageClient } from "./client-options.ts";
 import type { QueueData } from "./work-queue-shared.ts";
-import { createWorkQueueStorage, msToSecondsCeil } from "./work-queue-shared.ts";
+import { msToSecondsCeil } from "./work-queue-shared.ts";
 
-export interface WorkQueueWriterOptions<T> {
-	readonly apiKey: string;
-	readonly baseUrl?: string | undefined;
+/**
+ * Queue transport and producer encoding policy.
+ *
+ * @template T
+ */
+export interface WorkQueueWriterOptions<T> extends PacedConnection {
+	/**
+	 * Convert domain work into the MemoryStore JSON payload.
+	 */
 	readonly encode: (item: T) => QueueData;
-	readonly httpClient?: HttpClient;
+	/**
+	 * Run-owned queue shared with the Luau workers.
+	 */
 	readonly queueId: string;
-	readonly sleep?: SleepFunc;
-	readonly universeId: string;
 }
 
-export interface JsonWorkQueueWriterOptions {
-	readonly apiKey: string;
-	readonly baseUrl?: string | undefined;
-	readonly httpClient?: HttpClient;
+/**
+ * Queue transport for work already compatible with JSON.
+ */
+export interface JsonWorkQueueWriterOptions extends PacedConnection {
+	/**
+	 * Run-owned queue shared with the Luau workers.
+	 */
 	readonly queueId: string;
-	readonly sleep?: SleepFunc;
-	readonly universeId: string;
 }
 
+/**
+ * Produces work without holding consumer claims.
+ *
+ * @template T
+ */
 export interface WorkQueueWriter<T> {
-	enqueueAsync(items: ReadonlyArray<T>, options?: { readonly ttlMs?: number }): Promise<void>;
+	/**
+	 * Publish items in order with an optional server-rounded lifetime.
+	 *
+	 * @param items - Domain values to enqueue in order.
+	 * @param options - Optional payload lifetime and queue priority.
+	 */
+	enqueueAsync(
+		items: ReadonlyArray<T>,
+		options?: {
+			/**
+			 * Item lifetime in milliseconds, rounded upward to server seconds.
+			 */
+			readonly ttlMs?: number;
+		},
+	): Promise<void>;
 }
 
-/** Host-side queue control used by protocols that settle worker receipts. */
+/**
+ * Host-side queue control used by protocols that settle worker receipts.
+ * @template T
+ */
 export interface WorkQueueHost<T> extends WorkQueueWriter<T> {
+	/**
+	 * Discard a worker claim using its opaque receipt.
+	 *
+	 * @param receipt - Opaque worker claim receipt.
+	 */
 	acknowledgeAsync(receipt: string): Promise<void>;
 }
 
@@ -51,7 +86,7 @@ class OpenCloudWorkQueueWriter<T> implements WorkQueueHost<T> {
 	constructor(options: WorkQueueWriterOptions<T>) {
 		this.encode = options.encode;
 		this.queueId = options.queueId;
-		this.storage = createWorkQueueStorage(options);
+		this.storage = createStorageClient(options);
 		this.universeId = options.universeId;
 	}
 
@@ -89,16 +124,34 @@ class OpenCloudWorkQueueWriter<T> implements WorkQueueHost<T> {
 	}
 }
 
+/**
+ * Create a producer for values already compatible with JSON.
+ * @param options - Queue identity, transport and JSON payload lifetime.
+ * @returns Queue writer retaining JSON payloads without a custom encoder.
+ * @template T
+ */
 export function createJsonWorkQueueWriter<T>(
 	options: JsonWorkQueueWriterOptions,
 ): WorkQueueWriter<NonNullJsonCompatible<T>> {
 	return new OpenCloudWorkQueueWriter({ ...options, encode: (item) => item });
 }
 
+/**
+ * Create a producer that can acknowledge opaque worker receipts.
+ * @param options - Queue identity, transport and payload encoder.
+ * @returns Queue producer with opaque worker-receipt acknowledgement.
+ * @template T
+ */
 export function createWorkQueueHost<T>(options: WorkQueueWriterOptions<T>): WorkQueueHost<T> {
 	return new OpenCloudWorkQueueWriter(options);
 }
 
+/**
+ * Create a producer using the supplied encoder.
+ * @param options - Queue identity, transport and payload encoder.
+ * @returns Queue writer using the supplied encoder.
+ * @template T
+ */
 export function createWorkQueueWriter<T>(options: WorkQueueWriterOptions<T>): WorkQueueWriter<T> {
 	return new OpenCloudWorkQueueWriter(options);
 }

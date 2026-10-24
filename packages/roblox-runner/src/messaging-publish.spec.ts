@@ -77,47 +77,86 @@ describe("messaging publish", () => {
 		await expect(publishAsync(http)).rejects.not.toThrow(/universe-messaging-service/);
 	});
 
-	it.for([401, 403])(
-		"should name the missing api-key scope when the publish is refused with %i",
-		async (statusCode) => {
+	describe("complete publish diagnostics", () => {
+		it.for([401, 403])(
+			"should name the missing api-key scope when the publish is refused with %i",
+			async (statusCode) => {
+				expect.assertions(1);
+
+				const http = createFakeHttpClient();
+				http.mockApiError({ message: "Refused", statusCode });
+
+				await expect(publishAsync(http)).rejects.toThrow(
+					/universe-messaging-service:publish/,
+				);
+			},
+		);
+
+		it("should reach Open Cloud over the real transport when no client is injected", async () => {
+			expect.assertions(1);
+
+			const fetchMock = vi
+				.fn<typeof fetch>()
+				.mockResolvedValue(fromAny(new Response("{}", { status: 200 })));
+			vi.stubGlobal("fetch", fetchMock);
+
+			await publishMessageAsync({
+				apiKey: "test-key",
+				message: "cancel",
+				topic: "run-1-cancel",
+				universeId: "123",
+			});
+
+			expect(fetchMock.mock.calls[0]![0]).toBe(
+				"https://apis.roblox.com/cloud/v2/universes/123:publishMessage",
+			);
+		});
+
+		it("should name no scope on a failure that carries no status at all", async () => {
+			expect.assertions(2);
+
+			const http = createFakeHttpClient();
+			http.mockNetworkError({ message: "socket hang up" });
+
+			await expect(publishAsync(http)).rejects.toThrow(/socket hang up/);
+			await expect(publishAsync(http)).rejects.not.toThrow(/universe-messaging-service/);
+		});
+	});
+
+	it.for([
+		{ message: "Invalid payload", statusCode: 400, suffix: "" },
+		{
+			message: "No key",
+			statusCode: 401,
+			suffix: " — the API key needs the universe-messaging-service:publish permission",
+		},
+		{
+			message: "Refused",
+			statusCode: 403,
+			suffix: " — the API key needs the universe-messaging-service:publish permission",
+		},
+	])(
+		"should retain complete publish diagnostics: %j",
+		async ({ message, statusCode, suffix }) => {
 			expect.assertions(1);
 
 			const http = createFakeHttpClient();
-			http.mockApiError({ message: "Refused", statusCode });
+			http.mockApiError({ message, statusCode });
 
-			await expect(publishAsync(http)).rejects.toThrow(/universe-messaging-service:publish/);
+			await expect(publishAsync(http)).rejects.toMatchObject({
+				message: `Failed to publish to topic run-1-cancel on universe 123: ${message}${suffix}`,
+			});
 		},
 	);
 
-	it("should reach Open Cloud over the real transport when no client is injected", async () => {
+	it("should report transport failure without adding a permission hint", async () => {
 		expect.assertions(1);
 
-		const fetchMock = vi
-			.fn<typeof fetch>()
-			.mockResolvedValue(fromAny(new Response("{}", { status: 200 })));
-		vi.stubGlobal("fetch", fetchMock);
-
-		await publishMessageAsync({
-			apiKey: "test-key",
-			message: "cancel",
-			topic: "run-1-cancel",
-			universeId: "123",
-		});
-
-		expect(fetchMock.mock.calls[0]![0]).toBe(
-			"https://apis.roblox.com/cloud/v2/universes/123:publishMessage",
-		);
-	});
-
-	it("should name no scope on a failure that carries no status at all", async () => {
-		expect.assertions(2);
-
 		const http = createFakeHttpClient();
-		http.mockNetworkError({ message: "socket hang up" });
+		http.mockNetworkError({ message: "socket lost" });
 
-		// A dropped connection never reached the permission check, so the key is
-		// not what the reader should go and look at.
-		await expect(publishAsync(http)).rejects.toThrow(/socket hang up/);
-		await expect(publishAsync(http)).rejects.not.toThrow(/universe-messaging-service/);
+		await expect(publishAsync(http)).rejects.toMatchObject({
+			message: "Failed to publish to topic run-1-cancel on universe 123: socket lost",
+		});
 	});
 });

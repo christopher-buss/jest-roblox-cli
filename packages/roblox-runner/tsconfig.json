@@ -1,5 +1,12 @@
 {
 	"extends": "@isentinel/tsconfig/typescript",
+	"compilerOptions": {
+		"lib": ["es2025", "esnext"],
+		"customConditions": ["source"],
+		"paths": {
+			"jest-extended": ["../../types/jest-extended.d.ts"]
+		}
+	},
 	"references": [
 		{
 			"path": "./tsconfig.lib.json"

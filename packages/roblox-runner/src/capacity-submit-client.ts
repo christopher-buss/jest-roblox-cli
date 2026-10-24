@@ -4,6 +4,8 @@ import { RateLimitError } from "@bedrock-rbx/ocale";
 import { type } from "arktype";
 import { setTimeout as delay } from "node:timers/promises";
 
+import type { RunnerCredentials } from "./runner-types.ts";
+
 const CAPACITY_POLL_MS = 5_000;
 const CAPACITY_WAIT_MS = 60_000;
 const MAX_BLOCKING_TASKS = 10;
@@ -12,17 +14,40 @@ const capacityDetailsSchema = type({ code: "'RESOURCE_EXHAUSTED'", message: "str
 const taskStateSchema = type({ state: "'CANCELLED'|'COMPLETE'|'FAILED'|'PROCESSING'|'QUEUED'" });
 const UUID = "[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}";
 
-export interface CapacityProgress {
-	readonly fingerprint: string;
-	readonly signal: AbortSignal | undefined;
+/**
+ * Transport admission policy for one universe and place.
+ */
+export interface CapacitySubmitClientOptions extends Pick<
+	RunnerCredentials,
+	"placeId" | "universeId"
+> {
+	/**
+	 * Credit a validated quota wait against capacity allowance.
+	 */
+	readonly onAdmissionWait?: (milliseconds: number) => void;
+	/**
+	 * Renew inactivity only when the observed blocker set changes.
+	 */
+	readonly onCapacityProgress?: (progress: CapacityProgress) => void;
+	/**
+	 * Inject the capacity poll delay, respecting its abort signal.
+	 */
+	readonly waitAsync?: WaitAsync;
 }
 
-export interface CapacitySubmitClientOptions {
-	readonly onAdmissionWait?: (milliseconds: number) => void;
-	readonly onCapacityProgress?: (progress: CapacityProgress) => void;
-	readonly placeId: string;
-	readonly universeId: string;
-	readonly waitAsync?: WaitAsync;
+/**
+ * Validated progress that can renew submission inactivity.
+ */
+interface CapacityProgress {
+	/**
+	 * Identifies capacity progress so repeated observations grant no extra
+	 * time.
+	 */
+	readonly fingerprint: string;
+	/**
+	 * Abort observation and local waits without cancelling accepted tasks.
+	 */
+	readonly signal: AbortSignal | undefined;
 }
 
 type WaitAsync = (ms: number, signal: AbortSignal | undefined) => Promise<void>;
@@ -31,6 +56,9 @@ type WaitAsync = (ms: number, signal: AbortSignal | undefined) => Promise<void>;
  * Delays a rejected task create until one of the tasks occupying the place
  * reaches a terminal state. The rejected create is safe to retry; task reads
  * remain on the undecorated transport and cannot recursively enter this wait.
+ * @param httpClient - Transport used for the SDK request.
+ * @param options - Place identity, capacity observers and injectable wait.
+ * @returns Transport that waits for validated capacity evidence before returning a refusal.
  */
 export function createCapacitySubmitClient(
 	httpClient: HttpClient,
@@ -79,10 +107,6 @@ function quotaWaitMs(
 	return Number.isFinite(milliseconds) && milliseconds > 0 ? milliseconds : undefined;
 }
 
-function escapeRegExp(value: string): string {
-	return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
-}
-
 function blockingTaskUrls({
 	options,
 	request,
@@ -109,8 +133,8 @@ function blockingTaskUrls({
 		return undefined;
 	}
 
-	const escapedUniverse = escapeRegExp(options.universeId);
-	const escapedPlace = escapeRegExp(options.placeId);
+	const escapedUniverse = RegExp.escape(options.universeId);
+	const escapedPlace = RegExp.escape(options.placeId);
 	const taskPath = new RegExp(
 		`universes/${escapedUniverse}/places/${escapedPlace}/versions/[1-9][0-9]*/luau-execution-sessions/${UUID}/tasks/${UUID}`,
 		"giu",
@@ -176,16 +200,13 @@ async function waitOnceAsync({
 	milliseconds: number;
 	signal: AbortSignal;
 	waitAsync: WaitAsync;
-}): Promise<boolean> {
+}): Promise<void> {
 	try {
 		await waitAsync(milliseconds, signal);
-		return false;
 	} catch (err) {
-		if (isAborted(deadline)) {
-			return true;
+		if (!isAborted(deadline)) {
+			throw err;
 		}
-
-		throw err;
 	}
 }
 
@@ -238,9 +259,7 @@ async function waitForCapacityAsync({
 			}
 
 			options.onAdmissionWait?.(milliseconds);
-			if (await waitOnceAsync({ deadline, milliseconds, signal, waitAsync })) {
-				return;
-			}
+			await waitOnceAsync({ deadline, milliseconds, signal, waitAsync });
 		}
 	} finally {
 		clearTimeout(deadlineTimer);

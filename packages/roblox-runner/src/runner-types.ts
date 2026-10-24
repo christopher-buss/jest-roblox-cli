@@ -1,10 +1,22 @@
-export interface RunnerCredentials {
-	apiKey: string;
-	placeId: string;
-	universeId: string;
+import type { OpenCloudConnection } from "./client-options.ts";
+
+/**
+ * Credentials bind all operations to one universe and place.
+ */
+export interface RunnerCredentials extends Pick<OpenCloudConnection, "apiKey" | "universeId"> {
+	/**
+	 * Place resource ID within the selected universe.
+	 */
+	readonly placeId: string;
 }
 
+/**
+ * Place upload input and publication choice.
+ */
 export interface UploadPlaceOptions {
+	/**
+	 * Binary or XML place file; XML is selected by the .rbxlx extension.
+	 */
 	placeFilePath: string;
 	/**
 	 * Publish as the live version instead of a Saved draft. Open Cloud Luau
@@ -18,11 +30,23 @@ export interface UploadPlaceOptions {
 	publish?: boolean;
 }
 
+/**
+ * Accepted place version and host upload duration.
+ */
 export interface UploadPlaceResult {
+	/**
+	 * Host elapsed upload time in milliseconds.
+	 */
 	uploadMs: number;
+	/**
+	 * Version returned by the place upload, suitable for a pinned submission.
+	 */
 	versionNumber: number;
 }
 
+/**
+ * Bytes to upload through a presigned binary-input slot.
+ */
 export interface UploadBinaryInputOptions {
 	/**
 	 * The bytes the task will read back as a `buffer` from its first argument.
@@ -30,6 +54,9 @@ export interface UploadBinaryInputOptions {
 	payload: Uint8Array;
 }
 
+/**
+ * Accepted binary-input path and host upload duration.
+ */
 export interface UploadBinaryInputResult {
 	/**
 	 * Resource path of the input, as `binaryInputs.create` named it. Pass it
@@ -40,6 +67,9 @@ export interface UploadBinaryInputResult {
 	uploadMs: number;
 }
 
+/**
+ * Execution identity, source and independent host observation budgets.
+ */
 export interface ExecuteScriptOptions {
 	/**
 	 * Resource path an uploader returned (see {@link BinaryInputUploader}),
@@ -94,6 +124,9 @@ export interface ExecuteScriptOptions {
 	 * caller resolves ambiguous creates at a higher layer.
 	 */
 	retrySubmitTransportErrors?: boolean;
+	/**
+	 * Luau source executed in the selected place.
+	 */
 	script: string;
 	/**
 	 * Wall-clock cap on the submit, in milliseconds, covering every rate-limit
@@ -118,26 +151,63 @@ export interface ExecuteScriptOptions {
 	 * Omitted keeps `submitBudget` as the complete submission bound.
 	 */
 	submitCapacityBudget?: number;
+	/**
+	 * Requested execution timeout in milliseconds; the host clamps it when it
+	 * resolves budgets.
+	 */
 	timeout: number;
 }
 
 /** Authoritative evidence that the task which produced a result has stopped. */
 export interface TerminalTaskEvidence {
+	/**
+	 * Original task reference; recovery never submits another task.
+	 */
 	ref: {
 		sessionId: string | undefined;
 		taskId: string;
 	};
+	/**
+	 * Only COMPLETE constitutes terminal success evidence.
+	 */
 	state: "COMPLETE";
 }
 
+/**
+ * Backend outputs with host timing and optional terminal evidence.
+ */
 export interface ScriptResult {
+	/**
+	 * Host elapsed execution time in milliseconds, including submission.
+	 */
 	durationMs: number;
+	/**
+	 * Each returned JSON value is serialized to one string.
+	 */
 	outputs: Array<string>;
+	/**
+	 * Terminal success evidence retained when the backend supplies it.
+	 */
 	terminalTask?: TerminalTaskEvidence;
 }
 
+/**
+ * Place upload and execution interface shared by remote backends.
+ */
 export interface RemoteRunner {
+	/**
+	 * Submit once and observe until a terminal result or host deadline.
+	 *
+	 * @param options - Script identity, submission policy and independent observation budgets.
+	 * @returns Serialized outputs and total elapsed host execution time.
+	 */
 	executeScriptAsync(options: ExecuteScriptOptions): Promise<ScriptResult>;
+	/**
+	 * Save or publish place bytes and return the accepted version.
+	 *
+	 * @param options - Place file path and save-or-publish selection.
+	 * @returns Accepted place version and elapsed upload time.
+	 */
 	uploadPlaceAsync(options: UploadPlaceOptions): Promise<UploadPlaceResult>;
 }
 
@@ -148,5 +218,10 @@ export interface RemoteRunner {
  * client allocates — is Open Cloud's, not a property of every runner.
  */
 export interface BinaryInputUploader {
+	/**
+	 * Allocate and upload bytes outside the script-source request.
+	 * @param options - Binary input payload.
+	 * @returns Accepted resource path and upload time.
+	 */
 	uploadBinaryInputAsync(options: UploadBinaryInputOptions): Promise<UploadBinaryInputResult>;
 }

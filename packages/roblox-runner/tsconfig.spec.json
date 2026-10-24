@@ -2,19 +2,11 @@
 	"extends": "@isentinel/tsconfig/typescript",
 	"compilerOptions": {
 		"composite": true,
-		"lib": ["esnext"],
+		"lib": ["es2025", "esnext"],
 		"libReplacement": true,
-		// The monorepo swaps jest-extended's own types for the repo-root
-		// replacement in tsconfig.node.json, which every package spec project
-		// inherits. This one extends the shared base directly, so it restates
-		// the swap; without it the `declare module "vitest"` augmentation never
-		// loads and every jest-extended matcher error-types.
-		"paths": {
-			"*": ["${configDir}/*"],
-			"jest-extended": ["../../types/jest-extended.d.ts"]
-		},
-		"emitDeclarationOnly": true,
-		"noEmit": false,
+		"rootDir": "../..",
+		"customConditions": ["source"],
+		"paths": { "jest-extended": ["../../types/jest-extended.d.ts"] },
 		"outDir": "./out-tsc/vitest"
 	},
 	"references": [
@@ -23,6 +15,8 @@
 		}
 	],
 	"include": [
+		"src/**/*.spec.ts",
+		"src/**/*.spec-d.ts",
 		"eslint.config.ts",
 		"oxlint.config.ts",
 		"oxlint.mirror.ts",
@@ -30,9 +24,15 @@
 		"vitest.config.ts",
 		"tsdown.config.ts",
 		"package.json",
-		"src/**/*.spec.ts",
-		"src/**/*.spec-d.ts",
+		"../../types/**/*.d.ts",
 		"test/**/*.ts",
-		"../../types/**/*.d.ts"
+		"stryker.config.ts",
+		"vitest.stryker.config.ts",
+		"dependency-cruiser.config.ts",
+		"../../vitest.shared.ts",
+		"../../vitest.stryker.shared.ts",
+		"../../dependency-cruiser.shared.ts",
+		"../../stryker.shared.config.ts",
+		"src/**/*.d.ts"
 	]
 }

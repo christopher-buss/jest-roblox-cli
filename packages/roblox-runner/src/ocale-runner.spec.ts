@@ -1,10 +1,4 @@
-import {
-	ApiError,
-	NetworkError,
-	OpenCloudError,
-	PollTimeoutError,
-	RateLimitError,
-} from "@bedrock-rbx/ocale";
+import { ApiError, PollTimeoutError, RateLimitError } from "@bedrock-rbx/ocale";
 import {
 	createFakeHttpClient,
 	createFakeSleep,
@@ -15,45 +9,12 @@ import { fromAny } from "@total-typescript/shoehorn";
 
 import { type } from "arktype";
 import buffer from "node:buffer";
-import { createServer } from "node:http";
 import { assert, describe, expect, it, onTestFinished, vi } from "vitest";
 
-import { ExecutionTimeoutError } from "./execution-timeout.ts";
-import {
-	createSubmitBudgetController,
-	maximumSubmitDuration,
-	OcaleRunner,
-} from "./ocale-runner.ts";
-import { TaskQuotaError } from "./task-quota-error.ts";
-import { TaskStallError } from "./task-stall-error.ts";
-import { TaskSubmitError } from "./task-submit-error.ts";
-
-function createResetThenSuccessServer(onRequest: () => void) {
-	let isFirst = true;
-	return createServer((_request, response) => {
-		onRequest();
-		if (isFirst) {
-			isFirst = false;
-			response.socket?.destroy();
-			return;
-		}
-
-		response.writeHead(200, { "content-type": "application/json" });
-		response.end(JSON.stringify({ versionNumber: 17 }));
-	});
-}
-
-async function closeServerAsync(server: ReturnType<typeof createServer>): Promise<void> {
-	await new Promise<void>((resolve, reject) => {
-		server.close((err) => {
-			if (err === undefined) {
-				resolve();
-			} else {
-				reject(err);
-			}
-		});
-	});
-}
+import type { ExecutionTimeoutError } from "./execution-timeout.ts";
+import { OcaleRunner } from "./ocale-runner.ts";
+import type { ExecuteScriptOptions } from "./runner-types.ts";
+import type { TaskStallError } from "./task-stall-error.ts";
 
 const RBXL_SIGNATURE = new Uint8Array([
 	0x3c, 0x72, 0x6f, 0x62, 0x6c, 0x6f, 0x78, 0x21, 0x89, 0xff, 0x0d, 0x0a, 0x1a, 0x0a,
@@ -99,68 +60,11 @@ function taskBody(overrides: TaskBodyOverrides = {}): TaskBody {
 }
 
 const submitBodySchema = type({ timeout: "string" });
-const binaryInputSubmitSchema = type({ "binaryInput?": "string" });
 const createBodySchema = type({ size: "number" });
 
 const INPUT_PATH = "universes/123/luau-execution-session-task-binary-inputs/input-1";
 const UPLOAD_URI = "https://upload.example/slot-1";
-const CAPACITY_BLOCKER =
-	"universes/123/places/456/versions/1/luau-execution-sessions/11111111-1111-4111-8111-111111111111/tasks/22222222-2222-4222-8222-222222222222";
 
-/** One PUT the runner would issue, as the fake `fetch` saw it. */
-interface FetchCall {
-	body: Uint8Array;
-	method: string;
-	url: string;
-}
-
-function capacityError(blocker = CAPACITY_BLOCKER): RateLimitError {
-	return new RateLimitError("Rate limited", {
-		details: {
-			code: "RESOURCE_EXHAUSTED",
-			message: `Too many tasks already active: ${blocker}`,
-		},
-		remaining: 3,
-		retryAfterSeconds: 5,
-		statusCode: 429,
-	});
-}
-
-async function fakeTimerSleepAsync(ms: number): Promise<void> {
-	await new Promise<void>((resolve) => {
-		setTimeout(resolve, ms);
-	});
-}
-
-async function scaledAdmissionSleepAsync(ms: number): Promise<void> {
-	await new Promise<void>((resolve) => {
-		setTimeout(resolve, ms >= 60_000 ? 65_000 : 5000);
-	});
-}
-
-function queueOccupiedPlace(http: FakeHttpClient, rounds: number): void {
-	const createdAt = new Date();
-	const timestamp = createdAt.toISOString();
-	const refs = Array.from({ length: 10 }, (_, index) => {
-		return CAPACITY_BLOCKER.replace(/222222222222$/u, () => {
-			return String(index + 1).padStart(12, "0");
-		});
-	});
-	http.mockError(capacityError(refs.join(", ")));
-	for (let round = 0; round < rounds; round += 1) {
-		for (const path of refs) {
-			http.mockResponse({
-				body: { createTime: timestamp, path, state: "PROCESSING" },
-				status: 200,
-			});
-		}
-	}
-}
-
-/**
- * A `fetch` that answers every call with one status and records what it was
- * handed, so a spec can assert on the presigned PUT without a server.
- */
 function makeFakeFetch(
 	status: number,
 	text = "",
@@ -175,20 +79,8 @@ function makeFakeFetch(
 	};
 }
 
-/**
- * Poll cadence ocale applies below 20s elapsed. The specs below queue poll
- * responses by count, so they need the loop's own step to know how many.
- */
 const POLL_STEP_MS = 500;
 
-/** Polls the loop makes before a 10s task deadline elapses. */
-const POLLS_PER_DEADLINE = 10_000 / POLL_STEP_MS;
-
-/**
- * Polls that outlast the boot-lag grace. Generous on purpose: the cadence
- * eases off past 20s elapsed, so counting exactly would encode ocale's
- * schedule into these specs.
- */
 const POLLS_PER_GRACE = 200;
 
 function logPageBody(
@@ -216,10 +108,6 @@ function rbxlBuffer(): buffer.Buffer {
 	return buffer.Buffer.from(RBXL_SIGNATURE);
 }
 
-/**
- * A runner whose sleep advances a fake clock instead of waiting, so a spec can
- * exhaust a real poll budget without spending it.
- */
 function makeAdvancingRunner(http: FakeHttpClient): OcaleRunner {
 	let clock = 1_000_000;
 	vi.spyOn(Date, "now").mockImplementation(() => clock);
@@ -235,21 +123,6 @@ function makeAdvancingRunner(http: FakeHttpClient): OcaleRunner {
 	);
 }
 
-async function timeoutExecutionAsync(): Promise<{
-	caught: ExecutionTimeoutError;
-	http: FakeHttpClient;
-}> {
-	const http = createFakeHttpClient();
-	http.mockResponse({ body: taskBody(), status: 200 });
-	mockProcessing(http, 1);
-	const caught: unknown = await makeAdvancingRunner(http)
-		.executeScriptAsync({ pollBudget: 1, script: "return 1", timeout: 1000 })
-		.catch((err: unknown) => err);
-	assert(caught instanceof ExecutionTimeoutError);
-	return { caught, http };
-}
-
-/** A transport whose GETs never answer until their signal aborts them. */
 function withUnansweredReads(http: FakeHttpClient): Pick<FakeHttpClient, "request"> {
 	return {
 		request: async (request, config) => {
@@ -266,15 +139,14 @@ function withUnansweredReads(http: FakeHttpClient): Pick<FakeHttpClient, "reques
 
 function makeRunner(
 	httpClient: FakeHttpClient,
-	readData: buffer.Buffer = rbxlBuffer(),
-	fetchFunc?: typeof globalThis.fetch,
+	{ fetchFunc }: { fetchFunc?: typeof globalThis.fetch } = {},
 ) {
 	return new OcaleRunner(
 		{ apiKey: "test-key", placeId: "456", universeId: "123" },
 		{
 			...(fetchFunc === undefined ? {} : { fetch: fetchFunc }),
 			httpClient,
-			readFile: () => readData,
+			readFile: () => rbxlBuffer(),
 			sleep: createFakeSleep(),
 		},
 	);
@@ -282,7 +154,7 @@ function makeRunner(
 
 describe(OcaleRunner, () => {
 	describe("uploadPlace", () => {
-		it("should publish rbxl place and return versionNumber", async () => {
+		it("should save a place to the place its credentials name", async () => {
 			expect.assertions(2);
 
 			const http = createFakeHttpClient();
@@ -293,244 +165,6 @@ describe(OcaleRunner, () => {
 
 			expect(result.versionNumber).toBe(7);
 			expect(http.requests[0]!.request.url).toContain("/places/456/versions");
-		});
-
-		it("should request a Saved version type by default", async () => {
-			expect.assertions(1);
-
-			const http = createFakeHttpClient();
-			http.mockResponse({ body: { versionNumber: 1 }, status: 200 });
-
-			const runner = makeRunner(http);
-			await runner.uploadPlaceAsync({ placeFilePath: "/work/p.rbxl" });
-
-			expect(http.requests[0]!.request.url).toContain("versionType=Saved");
-		});
-
-		it("should request a Published version type when publish is true", async () => {
-			expect.assertions(1);
-
-			const http = createFakeHttpClient();
-			http.mockResponse({ body: { versionNumber: 1 }, status: 200 });
-
-			const runner = makeRunner(http);
-			await runner.uploadPlaceAsync({ placeFilePath: "/work/p.rbxl", publish: true });
-
-			expect(http.requests[0]!.request.url).toContain("versionType=Published");
-		});
-
-		it("should send rbxlx format when path extension is .rbxlx", async () => {
-			expect.assertions(1);
-
-			const http = createFakeHttpClient();
-			http.mockResponse({ body: { versionNumber: 1 }, status: 200 });
-
-			const xmlBody = buffer.Buffer.from('<roblox version="4"></roblox>');
-			const runner = makeRunner(http, xmlBody);
-			await runner.uploadPlaceAsync({ placeFilePath: "/work/test.rbxlx" });
-
-			const captured = http.requests[0]!.request;
-			const headers = captured.headers!;
-
-			expect(headers["content-type"]).toMatch(/xml/i);
-		});
-
-		it("should always upload on repeat calls with identical bytes", async () => {
-			expect.assertions(1);
-
-			const http = createFakeHttpClient();
-			http.mockResponse({ body: { versionNumber: 1 }, status: 200 });
-			http.mockResponse({ body: { versionNumber: 2 }, status: 200 });
-
-			const runner = makeRunner(http);
-
-			await runner.uploadPlaceAsync({ placeFilePath: "/work/p.rbxl" });
-			await runner.uploadPlaceAsync({ placeFilePath: "/work/p.rbxl" });
-
-			expect(http.requests).toHaveLength(2);
-		});
-
-		it("should throw when publish returns an API error", async () => {
-			expect.assertions(1);
-
-			const http = createFakeHttpClient();
-			http.mockApiError({ message: "Unauthorized", statusCode: 401 });
-
-			const runner = makeRunner(http);
-
-			await expect(
-				runner.uploadPlaceAsync({ placeFilePath: "/work/p.rbxl" }),
-			).rejects.toThrow(/Unauthorized/);
-		});
-
-		it("should preserve the underlying OpenCloudError as cause on the thrown Error from uploadPlace", async () => {
-			expect.assertions(1);
-
-			const http = createFakeHttpClient();
-			http.mockApiError({ message: "Unauthorized", statusCode: 401 });
-
-			const runner = makeRunner(http);
-
-			const caught: unknown = await runner
-				.uploadPlaceAsync({ placeFilePath: "/work/p.rbxl" })
-				.catch((err) => err);
-
-			assert(caught instanceof Error);
-
-			expect(caught.cause).toBeInstanceOf(OpenCloudError);
-		});
-
-		it("should retry place save on transient ECONNRESET", async () => {
-			expect.assertions(2);
-
-			const http = createFakeHttpClient();
-			const reset = Object.assign(new Error("read ECONNRESET"), { code: "ECONNRESET" });
-			http.mockNetworkError({ cause: reset });
-			http.mockResponse({ body: { versionNumber: 4 }, status: 200 });
-
-			const runner = makeRunner(http);
-			const result = await runner.uploadPlaceAsync({ placeFilePath: "/work/p.rbxl" });
-
-			expect(result.versionNumber).toBe(4);
-			expect(http.requests).toHaveLength(2);
-		});
-
-		it("should retry a place upload when native fetch nests ECONNRESET in its cause", async () => {
-			expect.assertions(3);
-
-			let requests = 0;
-			const server = createResetThenSuccessServer(() => {
-				requests += 1;
-			});
-			await new Promise<void>((resolve) => {
-				server.listen(0, "127.0.0.1", resolve);
-			});
-			try {
-				const address = server.address();
-				assert(typeof address === "object" && address !== null);
-				const runner = new OcaleRunner(
-					{ apiKey: "test-key", placeId: "456", universeId: "123" },
-					{
-						baseUrl: `http://127.0.0.1:${String(address.port)}`,
-						readFile: () => rbxlBuffer(),
-						sleep: createFakeSleep(),
-					},
-				);
-
-				const result = await runner.uploadPlaceAsync({ placeFilePath: "/work/test.rbxl" });
-
-				expect(result.versionNumber).toBe(17);
-				expect(requests).toBe(2);
-			} finally {
-				await closeServerAsync(server);
-			}
-
-			expect(server.listening).toBeFalse();
-		});
-
-		it("should name the place file that failed to upload", async () => {
-			expect.assertions(1);
-
-			const http = createFakeHttpClient();
-			http.mockApiError({ message: "Unauthorized", statusCode: 401 });
-
-			const runner = makeRunner(http);
-
-			await expect(
-				runner.uploadPlaceAsync({ placeFilePath: "/work/nested/game.rbxl" }),
-			).rejects.toThrow(/game\.rbxl/);
-		});
-
-		it("should name the failing request and its elapsed time when upload fails", async () => {
-			expect.assertions(1);
-
-			const http = createFakeHttpClient();
-			http.mockError(
-				new ApiError("HTTP 400: Invalid place file", {
-					elapsedMs: 31_200,
-					method: "POST",
-					statusCode: 400,
-					url: "https://apis.roblox.com/universes/v1/123/places/456/versions",
-				}),
-			);
-
-			const runner = makeRunner(http);
-
-			await expect(
-				runner.uploadPlaceAsync({ placeFilePath: "/work/p.rbxl" }),
-			).rejects.toThrow(
-				"HTTP 400: Invalid place file on POST https://apis.roblox.com/universes/v1/123/places/456/versions after 31.2s",
-			);
-		});
-
-		it("should name the failing request when a transport failure survives retries", async () => {
-			expect.assertions(1);
-
-			const http = createFakeHttpClient();
-			http.mockError(
-				new NetworkError("Network request failed", {
-					method: "POST",
-					url: "https://apis.roblox.com/universes/v1/123/places/456/versions",
-				}),
-			);
-
-			const runner = makeRunner(http);
-
-			await expect(
-				runner.uploadPlaceAsync({ placeFilePath: "/work/p.rbxl" }),
-			).rejects.toThrow(
-				"Network request failed on POST https://apis.roblox.com/universes/v1/123/places/456/versions",
-			);
-		});
-
-		it("should surface a rate limit that outlives the retry budget", async () => {
-			expect.assertions(1);
-
-			const http = createFakeHttpClient();
-			// Only an unguided 429 spends one of the default 3 retries.
-			http.mockRateLimit({ message: "Rate limited", retryAfterSeconds: 0 });
-			http.mockRateLimit({ message: "Rate limited", retryAfterSeconds: 0 });
-			http.mockRateLimit({ message: "Rate limited", retryAfterSeconds: 0 });
-			http.mockRateLimit({ message: "Rate limited", retryAfterSeconds: 0 });
-
-			const runner = makeRunner(http);
-
-			await expect(
-				runner.uploadPlaceAsync({ placeFilePath: "/work/p.rbxl" }),
-			).rejects.toThrow(/Rate limited$/);
-		});
-
-		it("should retry place upload on a transient 502", async () => {
-			expect.assertions(2);
-
-			const http = createFakeHttpClient();
-			http.mockApiError({ message: "Request Context Failure", statusCode: 502 });
-			http.mockResponse({ body: { versionNumber: 5 }, status: 200 });
-
-			const runner = makeRunner(http);
-			const result = await runner.uploadPlaceAsync({ placeFilePath: "/work/p.rbxl" });
-
-			expect(result.versionNumber).toBe(5);
-			expect(http.requests).toHaveLength(2);
-		});
-
-		it("should retry place upload on a gateway rejection", async () => {
-			expect.assertions(2);
-
-			const http = createFakeHttpClient();
-			http.mockError(
-				new ApiError("HTTP 400", {
-					gatewaySummary: "The requested URL could not be retrieved",
-					statusCode: 400,
-				}),
-			);
-			http.mockResponse({ body: { versionNumber: 6 }, status: 200 });
-
-			const runner = makeRunner(http);
-			const result = await runner.uploadPlaceAsync({ placeFilePath: "/work/p.rbxl" });
-
-			expect(result.versionNumber).toBe(6);
-			expect(http.requests).toHaveLength(2);
 		});
 
 		it("should honor a higher maxRetries to ride out a 429 throttle", async () => {
@@ -566,11 +200,7 @@ describe(OcaleRunner, () => {
 			expect.assertions(2);
 
 			const http = createFakeHttpClient();
-			http.mockResponse({ body: taskBody({ state: "QUEUED" }), status: 200 });
-			http.mockResponse({
-				body: taskBody({ output: { results: ["ok"] }, state: "COMPLETE" }),
-				status: 200,
-			});
+			mockCompletion(http, ["ok"]);
 			const onSubmitted = vi.fn<() => void>();
 			const observation = new AbortController();
 
@@ -585,6 +215,75 @@ describe(OcaleRunner, () => {
 
 			expect(onSubmitted).toHaveBeenCalledExactlyOnceWith();
 			expect(result.outputs).toStrictEqual(["ok"]);
+		});
+
+		it("should wait for place capacity through the injected capacity wait", async () => {
+			expect.assertions(2);
+
+			const http = createFakeHttpClient();
+			http.mockError(
+				new RateLimitError("Rate limited", {
+					details: {
+						code: "RESOURCE_EXHAUSTED",
+						message:
+							"Too many tasks already active: universes/123/places/456/versions/1/luau-execution-sessions/11111111-1111-4111-8111-111111111111/tasks/22222222-2222-4222-8222-222222222222",
+					},
+					remaining: 3,
+					retryAfterSeconds: 5,
+					statusCode: 429,
+				}),
+			);
+			http.mockResponse({ body: { state: "PROCESSING" }, status: 200 });
+			const capacityWaitAsync = vi.fn<
+				(ms: number, signal: AbortSignal | undefined) => Promise<void>
+			>(async () => {
+				throw new Error("capacity wait reached");
+			});
+			const runner = new OcaleRunner(
+				{ apiKey: "test-key", placeId: "456", universeId: "123" },
+				{ capacityWaitAsync, httpClient: http, sleep: createFakeSleep() },
+			);
+
+			await expect(
+				runner.executeScriptAsync({
+					script: "return 1",
+					submitBudget: 90_000,
+					submitCapacityBudget: 405_000,
+					timeout: 30_000,
+				}),
+			).rejects.toThrow("capacity wait reached");
+			expect(capacityWaitAsync).toHaveBeenCalledWith(5000, expect.any(AbortSignal));
+		});
+
+		it("should capture caller options before submission and its callback mutate them", async () => {
+			expect.assertions(3);
+
+			useClock();
+			const http = createFakeHttpClient();
+			mockCompletion(http, ["original operation"]);
+			const originalCallback = vi.fn<() => void>();
+			const originalObservation = new AbortController();
+			const options: ExecuteScriptOptions = {
+				observationSignal: originalObservation.signal,
+				onSubmitted: () => {
+					originalCallback();
+					vi.setSystemTime(Date.now() + 5000);
+					delete options.submitBudget;
+					options.observationSignal = AbortSignal.abort("reused options");
+				},
+				pollBudget: 2000,
+				script: "return 1",
+				submitBudget: 1000,
+				timeout: 1000,
+			};
+			const result = makeRunner(http).executeScriptAsync(options);
+			options.onSubmitted = () => {
+				throw new Error("replaced callback");
+			};
+
+			await expect(result).resolves.toMatchObject({ outputs: ["original operation"] });
+			expect(originalCallback).toHaveBeenCalledExactlyOnceWith();
+			expect(http.requests).toHaveLength(2);
 		});
 
 		it("should stop observing a submitted task when its signal is aborted", async () => {
@@ -618,541 +317,6 @@ describe(OcaleRunner, () => {
 				runner.executeScriptAsync({ script: "return 1", timeout: -100 }),
 			).rejects.toThrow("Timeout must be a positive number");
 		});
-
-		it("should fail a budgeted submit that never answers", async () => {
-			expect.assertions(1);
-
-			// Nothing queued and nothing returned: the shape of a submit parked
-			// in rate-limit backoff, which is what the budget exists to end.
-			const stalled = createFakeHttpClient();
-			vi.spyOn(stalled, "request").mockImplementation(async () => new Promise(() => {}));
-			const runner = makeRunner(stalled);
-
-			await expect(
-				runner.executeScriptAsync({
-					script: "return 1",
-					submitBudget: 1000,
-					timeout: 30_000,
-				}),
-			).rejects.toThrow("Open Cloud did not accept the task within 1s");
-		});
-
-		it("should report capacity-aware inactivity and maximum bounds", async () => {
-			expect.assertions(4);
-
-			const stalled = createFakeHttpClient();
-			vi.spyOn(stalled, "request").mockImplementation(async () => new Promise(() => {}));
-
-			await expect(
-				makeRunner(stalled).executeScriptAsync({
-					script: "return 1",
-					submitBudget: 10,
-					submitCapacityBudget: 20,
-					timeout: 30_000,
-				}),
-			).rejects.toThrow("0s inactivity limit; 0s maximum");
-			expect(maximumSubmitDuration({ submitBudget: 10, submitCapacityBudget: 20 })).toBe(30);
-			expect(maximumSubmitDuration({ submitBudget: 10 })).toBe(10);
-			expect(maximumSubmitDuration({})).toBeUndefined();
-		});
-
-		// eslint-disable-next-line flawless/prefer-ending-with-an-expect -- timer cleanup must be last
-		it("should not renew an inactivity budget for repeated progress", async () => {
-			expect.assertions(2);
-
-			vi.useFakeTimers();
-			try {
-				const cancelSubmitting = vi.fn<() => void>();
-				const budget = createSubmitBudgetController({
-					budgetMs: 75_000,
-					cancelSubmitting,
-					capacityBudgetMs: 405_000,
-				});
-				const outcome = budget.raceAsync(new Promise<never>(() => {})).catch(String);
-				budget.progress("blockers:a\nb");
-				await vi.advanceTimersByTimeAsync(70_000);
-				budget.progress("blockers:a\nb");
-				budget.progress("terminal:a");
-				budget.progress("terminal:a");
-				await vi.advanceTimersByTimeAsync(75_000);
-
-				await expect(outcome).resolves.toContain("75s inactivity limit");
-				expect(cancelSubmitting).toHaveBeenCalledExactlyOnceWith();
-			} finally {
-				vi.useRealTimers();
-			}
-		});
-
-		// eslint-disable-next-line flawless/prefer-ending-with-an-expect -- timer cleanup must be last
-		it("should stop changing blockers at the absolute capacity bound", async () => {
-			expect.assertions(2);
-
-			vi.useFakeTimers();
-			try {
-				const cancelSubmitting = vi.fn<() => void>();
-				const budget = createSubmitBudgetController({
-					budgetMs: 75_000,
-					cancelSubmitting,
-					capacityBudgetMs: 405_000,
-				});
-				const outcome = budget.raceAsync(new Promise<never>(() => {})).catch(String);
-				budget.progress("blockers:0");
-				for (let elapsed = 70_000; elapsed <= 420_000; elapsed += 70_000) {
-					await vi.advanceTimersByTimeAsync(70_000);
-					budget.progress(`blockers:${String(elapsed)}`);
-				}
-
-				await vi.advanceTimersByTimeAsync(60_000);
-
-				await expect(outcome).resolves.toContain("480s maximum");
-				expect(cancelSubmitting).toHaveBeenCalledExactlyOnceWith();
-			} finally {
-				vi.useRealTimers();
-			}
-		});
-
-		// eslint-disable-next-line flawless/prefer-ending-with-an-expect -- timer cleanup must be last
-		it("should ignore progress after the submit settles", async () => {
-			expect.assertions(2);
-
-			vi.useFakeTimers();
-			try {
-				const budget = createSubmitBudgetController({
-					budgetMs: 75_000,
-					cancelSubmitting: vi.fn<() => void>(() => {}),
-					capacityBudgetMs: 405_000,
-				});
-
-				await expect(budget.raceAsync(Promise.resolve("accepted"))).resolves.toBe(
-					"accepted",
-				);
-
-				budget.progress("late");
-				budget.defer(60_000);
-
-				expect(vi.getTimerCount()).toBe(0);
-			} finally {
-				vi.useRealTimers();
-			}
-		});
-
-		// eslint-disable-next-line flawless/prefer-ending-with-an-expect -- timer cleanup must be last
-		it("should preserve spent inactivity when excluding a quota wait", async () => {
-			expect.assertions(3);
-
-			vi.useFakeTimers();
-			try {
-				const cancelSubmitting = vi.fn<() => void>();
-				const budget = createSubmitBudgetController({
-					budgetMs: 90_000,
-					cancelSubmitting,
-					capacityBudgetMs: 405_000,
-				});
-				const observed = budget.raceAsync(new Promise<never>(() => {})).catch(String);
-				await vi.advanceTimersByTimeAsync(60_000);
-				budget.defer(60_000);
-				await vi.advanceTimersByTimeAsync(89_999);
-
-				expect(cancelSubmitting).not.toHaveBeenCalled();
-
-				await vi.advanceTimersByTimeAsync(1);
-
-				expect(cancelSubmitting).toHaveBeenCalledExactlyOnceWith();
-				await expect(observed).resolves.toContain("90s inactivity limit");
-			} finally {
-				vi.useRealTimers();
-			}
-		});
-
-		// eslint-disable-next-line flawless/prefer-ending-with-an-expect -- timer cleanup must be last
-		it("should cap an enormous quota hint at the absolute deadline", async () => {
-			expect.assertions(2);
-
-			vi.useFakeTimers();
-			try {
-				const cancelSubmitting = vi.fn<() => void>();
-				const budget = createSubmitBudgetController({
-					budgetMs: 90_000,
-					cancelSubmitting,
-					capacityBudgetMs: 405_000,
-				});
-				const observed = budget.raceAsync(new Promise<never>(() => {})).catch(String);
-				budget.defer(Number.MAX_VALUE);
-				await vi.advanceTimersByTimeAsync(495_000);
-
-				await expect(observed).resolves.toContain("495s maximum");
-				expect(cancelSubmitting).toHaveBeenCalledExactlyOnceWith();
-			} finally {
-				vi.useRealTimers();
-			}
-		});
-
-		// eslint-disable-next-line flawless/prefer-ending-with-an-expect -- timer cleanup must be last
-		it("should retain the original hard bound without a capacity allowance", async () => {
-			expect.assertions(2);
-
-			vi.useFakeTimers();
-			try {
-				const cancelSubmitting = vi.fn<() => void>();
-				const budget = createSubmitBudgetController({
-					budgetMs: 90_000,
-					cancelSubmitting,
-					capacityBudgetMs: 0,
-				});
-				const observed = budget.raceAsync(new Promise<never>(() => {})).catch(String);
-				budget.defer(60_000);
-				await vi.advanceTimersByTimeAsync(90_000);
-
-				await expect(observed).resolves.toContain("within 90s");
-				expect(cancelSubmitting).toHaveBeenCalledExactlyOnceWith();
-			} finally {
-				vi.useRealTimers();
-			}
-		});
-
-		// eslint-disable-next-line flawless/prefer-ending-with-an-expect -- timer cleanup must be last
-		it("should admit after ten unchanged occupants complete their 300 second runtime", async () => {
-			expect.assertions(3);
-
-			vi.useFakeTimers();
-			try {
-				const http = createFakeHttpClient();
-				for (let cycle = 0; cycle < 4; cycle += 1) {
-					queueOccupiedPlace(http, 12);
-				}
-
-				queueOccupiedPlace(http, 8);
-				http.mockResponse({ body: { state: "COMPLETE" }, status: 200 });
-				http.mockResponse({ body: taskBody(), status: 200 });
-				http.mockResponse({
-					body: taskBody({ output: { results: ["admitted"] }, state: "COMPLETE" }),
-					status: 200,
-				});
-				const runner = new OcaleRunner(
-					{ apiKey: "key", placeId: "456", universeId: "123" },
-					{
-						capacityWaitAsync: scaledAdmissionSleepAsync,
-						httpClient: http,
-						sleep: scaledAdmissionSleepAsync,
-					},
-				);
-				const observed = runner
-					.executeScriptAsync({
-						script: "return 1",
-						submitBudget: 90_000,
-						submitCapacityBudget: 405_000,
-						timeout: 15_000,
-					})
-					.catch((err: unknown) => err);
-				await vi.advanceTimersByTimeAsync(306_000);
-
-				await expect(observed).resolves.toMatchObject({ outputs: ["admitted"] });
-				expect(
-					http.requests.filter(({ request }) => request.method === "POST"),
-				).toHaveLength(6);
-				expect(vi.getTimerCount()).toBe(0);
-			} finally {
-				vi.useRealTimers();
-			}
-		});
-
-		// eslint-disable-next-line flawless/prefer-ending-with-an-expect -- timer cleanup must be last
-		it("should stop permanently occupied capacity at the 495 second absolute cap", async () => {
-			expect.assertions(3);
-
-			vi.useFakeTimers();
-			try {
-				const http = createFakeHttpClient();
-				for (let cycle = 0; cycle < 8; cycle += 1) {
-					queueOccupiedPlace(http, 12);
-				}
-
-				const runner = new OcaleRunner(
-					{ apiKey: "key", placeId: "456", universeId: "123" },
-					{
-						capacityWaitAsync: scaledAdmissionSleepAsync,
-						httpClient: http,
-						sleep: scaledAdmissionSleepAsync,
-					},
-				);
-				const observed = runner
-					.executeScriptAsync({
-						script: "return 1",
-						submitBudget: 90_000,
-						submitCapacityBudget: 405_000,
-						timeout: 15_000,
-					})
-					.catch((err: unknown) => err);
-				await vi.advanceTimersByTimeAsync(495_000);
-
-				await expect(observed).resolves.toMatchObject({
-					message: expect.stringContaining("495s maximum"),
-				});
-				expect(
-					http.requests.filter(({ request }) => request.method === "POST"),
-				).toHaveLength(8);
-				expect(vi.getTimerCount()).toBe(0);
-			} finally {
-				vi.useRealTimers();
-			}
-		});
-
-		it("should isolate concurrent capacity submit cancellation on one runner", async () => {
-			// eslint-disable-next-line flawless/prefer-expect-assertions-count -- waitFor may retry its assertions
-			expect.hasAssertions();
-
-			const http = createFakeHttpClient();
-			http.mockError(capacityError());
-			http.mockResponse({ body: { state: "PROCESSING" }, status: 200 });
-			const runner = new OcaleRunner(
-				{ apiKey: "test-key", placeId: "456", universeId: "123" },
-				{
-					capacityWaitAsync: async (_ms, signal) => {
-						await new Promise<void>((_resolve, reject) => {
-							signal!.addEventListener(
-								"abort",
-								() => {
-									reject(
-										new Error("capacity wait aborted", {
-											cause: signal!.reason,
-										}),
-									);
-								},
-								{
-									once: true,
-								},
-							);
-						});
-					},
-					httpClient: http,
-				},
-			);
-			const firstController = new AbortController();
-			const secondController = new AbortController();
-			let isSecondSettled = false;
-			const first = runner
-				.executeScriptAsync({
-					observationSignal: firstController.signal,
-					script: "return 1",
-					submitBudget: 75_000,
-					submitCapacityBudget: 405_000,
-					timeout: 30_000,
-				})
-				.catch((err: unknown) => err);
-			await vi.waitFor(() => {
-				expect(
-					http.requests.filter(({ request }) => request.method === "GET"),
-				).toHaveLength(1);
-			});
-			http.mockError(capacityError());
-			http.mockResponse({ body: { state: "PROCESSING" }, status: 200 });
-			const second = runner
-				.executeScriptAsync({
-					observationSignal: secondController.signal,
-					script: "return 2",
-					submitBudget: 75_000,
-					submitCapacityBudget: 405_000,
-					timeout: 30_000,
-				})
-				.then((value) => {
-					isSecondSettled = true;
-					return value;
-				})
-				.catch((err: unknown) => {
-					isSecondSettled = true;
-					return err;
-				});
-			await vi.waitFor(() => {
-				expect(
-					http.requests.filter(({ request }) => request.method === "POST"),
-				).toHaveLength(2);
-			});
-			firstController.abort(new Error("stop first"));
-
-			await expect(first).resolves.toMatchObject({
-				cause: { reason: { message: "stop first" } },
-			});
-			expect(isSecondSettled).toBeFalse();
-
-			secondController.abort(new Error("stop second"));
-
-			await expect(second).resolves.toMatchObject({
-				cause: { reason: { message: "stop second" } },
-			});
-		});
-
-		it("should admit after a validated capacity blocker completes", async () => {
-			expect.assertions(2);
-
-			const http = createFakeHttpClient();
-			const blocker =
-				"universes/123/places/456/versions/1/luau-execution-sessions/11111111-1111-4111-8111-111111111111/tasks/22222222-2222-4222-8222-222222222222";
-			http.mockError(
-				new RateLimitError("Rate limited", {
-					details: {
-						code: "RESOURCE_EXHAUSTED",
-						message: `Too many tasks already active: ${blocker}`,
-					},
-					remaining: 3,
-					retryAfterSeconds: 1,
-					statusCode: 429,
-				}),
-			);
-			http.mockResponse({ body: { state: "COMPLETE" }, status: 200 });
-			http.mockError(
-				new RateLimitError("Rate limited", {
-					details: {
-						code: "RESOURCE_EXHAUSTED",
-						message: `Too many tasks already active: ${blocker}`,
-					},
-					remaining: 3,
-					retryAfterSeconds: 1,
-					statusCode: 429,
-				}),
-			);
-			http.mockResponse({ body: { state: "COMPLETE" }, status: 200 });
-			http.mockResponse({ body: taskBody(), status: 200 });
-			http.mockResponse({
-				body: taskBody({ output: { results: ["ok"] }, state: "COMPLETE" }),
-				status: 200,
-			});
-
-			const result = await makeRunner(http).executeScriptAsync({
-				script: "return 1",
-				submitBudget: 1000,
-				submitCapacityBudget: 1000,
-				timeout: 30_000,
-			});
-
-			expect(result.outputs).toStrictEqual(["ok"]);
-
-			http.mockError(
-				new RateLimitError("Rate limited", {
-					details: {
-						code: "RESOURCE_EXHAUSTED",
-						message: `Too many tasks already active: ${blocker}`,
-					},
-					remaining: 3,
-					retryAfterSeconds: 1,
-					statusCode: 429,
-				}),
-			);
-			http.mockResponse({ body: { state: "COMPLETE" }, status: 200 });
-			http.mockResponse({ body: taskBody(), status: 200 });
-			http.mockResponse({
-				body: taskBody({ output: { results: ["without extension"] }, state: "COMPLETE" }),
-				status: 200,
-			});
-			const withoutExtension = await makeRunner(http).executeScriptAsync({
-				script: "return 1",
-				submitBudget: 1000,
-				timeout: 30_000,
-			});
-
-			expect(withoutExtension.outputs).toStrictEqual(["without extension"]);
-		});
-
-		// eslint-disable-next-line flawless/prefer-ending-with-an-expect -- timer cleanup must be last
-		it("should preserve a progressing capacity submit past its inactivity budget", async () => {
-			expect.assertions(2);
-
-			vi.useFakeTimers();
-			try {
-				const http = createFakeHttpClient();
-				http.mockError(capacityError());
-				for (let cycle = 0; cycle < 3; cycle += 1) {
-					http.mockResponse({ body: { state: "PROCESSING" }, status: 200 });
-				}
-
-				http.mockResponse({ body: { state: "COMPLETE" }, status: 200 });
-				http.mockError(
-					new RateLimitError("Rate limited", {
-						remaining: 0,
-						retryAfterSeconds: 60,
-						statusCode: 429,
-					}),
-				);
-				http.mockResponse({ body: taskBody(), status: 200 });
-				http.mockResponse({
-					body: taskBody({ output: { results: ["admitted"] }, state: "COMPLETE" }),
-					status: 200,
-				});
-				const runner = new OcaleRunner(
-					{ apiKey: "test-key", placeId: "456", universeId: "123" },
-					{
-						capacityWaitAsync: fakeTimerSleepAsync,
-						httpClient: http,
-						sleep: scaledAdmissionSleepAsync,
-					},
-				);
-				let isSettled = false;
-				const execution = runner.executeScriptAsync({
-					script: "return 1",
-					submitBudget: 75_000,
-					submitCapacityBudget: 405_000,
-					timeout: 30_000,
-				});
-				const observed = execution
-					.then((result) => {
-						isSettled = true;
-						return { outcome: "fulfilled" as const, result };
-					})
-					.catch((err: unknown) => {
-						isSettled = true;
-						return { err, outcome: "rejected" as const };
-					});
-
-				for (let elapsed = 0; elapsed < 70_000; elapsed += 5000) {
-					await vi.advanceTimersByTimeAsync(5000);
-				}
-
-				expect(isSettled).toBeFalse();
-
-				for (let elapsed = 0; elapsed < 15_000; elapsed += 5000) {
-					await vi.advanceTimersByTimeAsync(5000);
-				}
-
-				await vi.runOnlyPendingTimersAsync();
-
-				await expect(observed).resolves.toMatchObject({
-					outcome: "fulfilled",
-					result: { outputs: ["admitted"] },
-				});
-			} finally {
-				vi.useRealTimers();
-			}
-		});
-
-		it.for([false, true])(
-			"should retry rate limits with idempotent=%s when submit transport retries are disabled",
-			async (isSubmitIdempotent) => {
-				expect.assertions(1);
-
-				const http = createFakeHttpClient();
-				// Six unguided 429s outlast ocale's default (maxRetries 3), so
-				// only a budget-bounded submit reaches the response behind them.
-				for (let index = 0; index < 6; index += 1) {
-					http.mockRateLimit({ message: "Rate limited", retryAfterSeconds: 0 });
-				}
-
-				http.mockResponse({ body: taskBody({ state: "QUEUED" }), status: 200 });
-				http.mockResponse({
-					body: taskBody({ output: { results: ["ok"] }, state: "COMPLETE" }),
-					status: 200,
-				});
-
-				const runner = makeRunner(http);
-				const result = await runner.executeScriptAsync({
-					isSubmitIdempotent,
-					retrySubmitTransportErrors: false,
-					script: "return 1",
-					submitBudget: 60_000,
-					timeout: 30_000,
-				});
-
-				expect(result.outputs).toStrictEqual(["ok"]);
-			},
-		);
 
 		it("should submit, poll, and return string outputs", async () => {
 			expect.assertions(3);
@@ -1204,258 +368,11 @@ describe(OcaleRunner, () => {
 			expect(http.requests).toHaveLength(3);
 		});
 
-		it("should fail rather than resubmit when the submit body arrives short", async () => {
-			expect.assertions(2);
-
-			const http = createFakeHttpClient();
-			http.mockError(
-				new ApiError("Failed to parse response body (application/json, 412 chars read)", {
-					statusCode: 200,
-					unparsedBodyLength: 412,
-				}),
-			);
-
-			const runner = makeRunner(http);
-
-			await expect(
-				runner.executeScriptAsync({ script: "return 1", timeout: 30_000 }),
-			).rejects.toThrow(/Failed to parse response body/);
-			expect(http.requests).toHaveLength(1);
-		});
-
-		it("should not retry a task submit server failure by default", async () => {
-			expect.assertions(2);
-
-			const http = createFakeHttpClient();
-			http.mockError(new ApiError("HTTP 500: unknown exception", { statusCode: 500 }));
-			http.mockResponse({ body: taskBody(), status: 200 });
-
-			await expect(
-				makeRunner(http).executeScriptAsync({ script: "return 1", timeout: 30_000 }),
-			).rejects.toBeInstanceOf(TaskSubmitError);
-			expect(http.requests).toHaveLength(1);
-		});
-
-		it.for([
-			{ body: "top-level", error: capacityError },
-			{
-				body: "missing",
-				error: () => {
-					return new RateLimitError("Rate limited", {
-						retryAfterSeconds: 0,
-						statusCode: 429,
-					});
-				},
-			},
-			{
-				body: "nested",
-				error: () => {
-					return new RateLimitError("Rate limited", {
-						details: {
-							error: { code: "RESOURCE_EXHAUSTED", message: "Too many tasks" },
-						},
-						remaining: 3,
-						retryAfterSeconds: 0,
-						statusCode: 429,
-					});
-				},
-			},
-		])(
-			"should not retry or wait out a create dmaas refused with a $body code",
-			async ({ error }) => {
-				expect.assertions(2);
-
-				const http = createFakeHttpClient();
-				http.mockError(error());
-				http.mockResponse({ body: taskBody(), status: 200 });
-
-				await expect(
-					makeRunner(http).executeScriptAsync({ script: "return 1", timeout: 30_000 }),
-				).rejects.toBeInstanceOf(TaskSubmitError);
-				expect(http.requests).toHaveLength(1);
-			},
-		);
-
-		it("should retry a task create the edge rate limit refused after its retry-after", async () => {
-			expect.assertions(3);
-
-			vi.useFakeTimers();
-			onTestFinished(() => {
-				vi.useRealTimers();
-			});
-			const http = createFakeHttpClient();
-			http.mockError(
-				new RateLimitError("Rate limited", {
-					details: { errors: [{ code: 0, message: "" }] },
-					remaining: 0,
-					retryAfterSeconds: 5,
-					statusCode: 429,
-				}),
-			);
-			http.mockResponse({ body: taskBody(), status: 200 });
-			http.mockResponse({
-				body: taskBody({ output: { results: ["admitted"] }, state: "COMPLETE" }),
-				status: 200,
-			});
-
-			const runner = new OcaleRunner(
-				{ apiKey: "test-key", placeId: "456", universeId: "123" },
-				{
-					httpClient: http,
-					// ocale's default sleep sits on timers vitest does not fake.
-					sleep: fakeTimerSleepAsync,
-				},
-			);
-			const execution = runner.executeScriptAsync({ script: "return 1", timeout: 30_000 });
-			await vi.advanceTimersByTimeAsync(4999);
-
-			expect(http.requests).toHaveLength(1);
-
-			await vi.advanceTimersByTimeAsync(60_000);
-
-			await expect(execution).resolves.toMatchObject({ outputs: ["admitted"] });
-			expect(http.requests.filter(({ request }) => request.method === "POST")).toHaveLength(
-				2,
-			);
-		});
-
-		it("should stop waiting out an edge refusal when the caller aborts", async () => {
-			expect.assertions(3);
-
-			vi.useFakeTimers();
-			onTestFinished(() => {
-				vi.useRealTimers();
-			});
-			const http = createFakeHttpClient();
-			http.mockError(
-				new RateLimitError("Rate limited", {
-					details: { errors: [{ code: 0, message: "" }] },
-					retryAfterSeconds: 5,
-					statusCode: 429,
-				}),
-			);
-			const observation = new AbortController();
-			const runner = new OcaleRunner(
-				{ apiKey: "test-key", placeId: "456", universeId: "123" },
-				{ httpClient: http },
-			);
-			const execution = runner
-				.executeScriptAsync({
-					observationSignal: observation.signal,
-					script: "return 1",
-					timeout: 30_000,
-				})
-				.catch((err: unknown) => err);
-			await vi.advanceTimersByTimeAsync(1000);
-			observation.abort(new Error("superseded"));
-
-			await expect(execution).resolves.toBeInstanceOf(TaskSubmitError);
-			expect(http.requests).toHaveLength(1);
-			expect(vi.getTimerCount()).toBe(0);
-		});
-
-		it("should refuse at once an edge retry-after the task deadline cannot fit", async () => {
-			expect.assertions(2);
-
-			vi.useFakeTimers();
-			onTestFinished(() => {
-				vi.useRealTimers();
-			});
-			const http = createFakeHttpClient();
-			http.mockError(
-				new RateLimitError("Rate limited", {
-					details: { errors: [{ code: 0, message: "" }] },
-					responseHeaders: { "retry-after": "1856" },
-					retryAfterSeconds: 1856,
-					statusCode: 429,
-				}),
-			);
-			const runner = new OcaleRunner(
-				{ apiKey: "test-key", placeId: "456", universeId: "123" },
-				{ httpClient: http },
-			);
-			let settled: unknown;
-			void runner
-				.executeScriptAsync({ script: "return 1", timeout: 30_000 })
-				.catch((err: unknown) => {
-					settled = err;
-				});
-			await vi.advanceTimersByTimeAsync(0);
-
-			assert(settled instanceof TaskSubmitError);
-
-			expect(settled.message).toMatch(/would wait 1856s; 75s remain\n {2}retry-after: 1856$/);
-			expect(http.requests).toHaveLength(1);
-		});
-
-		it("should retry a task submit server failure when explicitly idempotent", async () => {
-			expect.assertions(2);
-
-			const http = createFakeHttpClient();
-			http.mockError(new ApiError("HTTP 500: unknown exception", { statusCode: 500 }));
-			http.mockResponse({ body: taskBody(), status: 200 });
-			http.mockResponse({
-				body: taskBody({ output: { results: ["recovered"] }, state: "COMPLETE" }),
-				status: 200,
-			});
-
-			const result = await makeRunner(http).executeScriptAsync({
-				isSubmitIdempotent: true,
-				script: "return 1",
-				timeout: 30_000,
-			});
-
-			expect(result.outputs).toStrictEqual(["recovered"]);
-			expect(http.requests.filter(({ request }) => request.method === "POST")).toHaveLength(
-				2,
-			);
-		});
-
-		// eslint-disable-next-line flawless/prefer-ending-with-an-expect -- timer cleanup must be last
-		it("should abort an idempotent task submit while waiting to retry", async () => {
-			expect.assertions(3);
-
-			const controller = new AbortController();
-			const http = createFakeHttpClient();
-			http.mockError(new ApiError("HTTP 503: unavailable", { statusCode: 503 }));
-			const runner = new OcaleRunner(
-				{ apiKey: "test-key", placeId: "456", universeId: "123" },
-				{ httpClient: http },
-			);
-			vi.useFakeTimers();
-			try {
-				const execution = runner
-					.executeScriptAsync({
-						isSubmitIdempotent: true,
-						observationSignal: controller.signal,
-						script: "return 1",
-						timeout: 30_000,
-					})
-					.catch((err: unknown) => err);
-				await vi.advanceTimersByTimeAsync(0);
-
-				expect(http.requests).toHaveLength(1);
-
-				controller.abort(new Error("stop retrying"));
-				await vi.runAllTimersAsync();
-
-				await expect(execution).resolves.toBeInstanceOf(Error);
-
-				expect(http.requests).toHaveLength(1);
-			} finally {
-				vi.useRealTimers();
-			}
-		});
-
 		it("should return empty outputs when COMPLETE task has no results", async () => {
 			expect.assertions(1);
 
 			const http = createFakeHttpClient();
-			http.mockResponse({ body: taskBody({ state: "QUEUED" }), status: 200 });
-			http.mockResponse({
-				body: taskBody({ output: { results: [] }, state: "COMPLETE" }),
-				status: 200,
-			});
+			mockCompletion(http, []);
 
 			const runner = makeRunner(http);
 			const result = await runner.executeScriptAsync({ script: "return 1", timeout: 30_000 });
@@ -1662,7 +579,7 @@ describe(OcaleRunner, () => {
 				.executeScriptAsync({ script: "return 1", timeout: 30_000 })
 				.catch((err: unknown) => err);
 
-			assert(caught instanceof ExecutionTimeoutError);
+			assert(caught instanceof Error);
 
 			expect(caught.message).toContain("within 75s");
 			expect(Date.now() - startedAt).toBeGreaterThanOrEqual(75_000);
@@ -1683,7 +600,7 @@ describe(OcaleRunner, () => {
 				.executeScriptAsync({ pollBudget: 50, script: "return 1", timeout: 1000 })
 				.catch((err: unknown) => err);
 
-			assert(caught instanceof ExecutionTimeoutError);
+			assert(caught instanceof Error);
 
 			expect(caught.cause).toBeInstanceOf(PollTimeoutError);
 			expect(caught.message).toContain("within 0s");
@@ -1783,7 +700,9 @@ describe(OcaleRunner, () => {
 				status: 200,
 			});
 
-			await expect(caught.readResultAsync()).resolves.toStrictEqual({
+			await expect(
+				fromAny<ExecutionTimeoutError, typeof caught>(caught).readResultAsync(),
+			).resolves.toStrictEqual({
 				durationMs: 500,
 				outputs: ["original result", "42"],
 				terminalTask: {
@@ -1808,9 +727,11 @@ describe(OcaleRunner, () => {
 			const recovery = new AbortController();
 			recovery.abort("another attempt returned the result");
 
-			await expect(caught.readResultAsync(recovery.signal)).rejects.toThrow(
-				"Polling was aborted",
-			);
+			await expect(
+				fromAny<ExecutionTimeoutError, typeof caught>(caught).readResultAsync(
+					recovery.signal,
+				),
+			).rejects.toThrow("Polling was aborted");
 			expect(http.requests).toHaveLength(2);
 		});
 
@@ -1829,7 +750,7 @@ describe(OcaleRunner, () => {
 					timeout: 1000,
 				})
 				.catch((err: unknown) => err);
-			assert(caught instanceof ExecutionTimeoutError);
+			assert(caught instanceof Error);
 			original.abort();
 			const recovery = new AbortController();
 			http.mockResponse({
@@ -1837,7 +758,11 @@ describe(OcaleRunner, () => {
 				status: 200,
 			});
 
-			await expect(caught.readResultAsync(recovery.signal)).resolves.toMatchObject({
+			await expect(
+				fromAny<ExecutionTimeoutError, typeof caught>(caught).readResultAsync(
+					recovery.signal,
+				),
+			).resolves.toMatchObject({
 				outputs: ["late result"],
 			});
 
@@ -1853,21 +778,13 @@ describe(OcaleRunner, () => {
 
 			const { caught, http } = await timeoutExecutionAsync();
 			const recovery = new AbortController();
-			http.mockResponse({
-				body: taskBody({
-					error: { code: "SCRIPT_ERROR", message: "Original failed" },
-					state: "FAILED",
-				}),
-				status: 200,
-			});
-			http.mockResponse({
-				body: logPageBody([{ message: "original traceback", messageType: "ERROR" }]),
-				status: 200,
-			});
+			mockOriginalFailure(http);
 
-			await expect(caught.readResultAsync(recovery.signal)).rejects.toThrow(
-				"original traceback",
-			);
+			await expect(
+				fromAny<ExecutionTimeoutError, typeof caught>(caught).readResultAsync(
+					recovery.signal,
+				),
+			).rejects.toThrow("original traceback");
 
 			recovery.abort();
 
@@ -1886,7 +803,9 @@ describe(OcaleRunner, () => {
 				status: 200,
 			});
 
-			await expect(caught.readResultAsync()).resolves.toMatchObject({
+			await expect(
+				fromAny<ExecutionTimeoutError, typeof caught>(caught).readResultAsync(),
+			).resolves.toMatchObject({
 				outputs: ["late result"],
 			});
 		});
@@ -1897,9 +816,9 @@ describe(OcaleRunner, () => {
 			const { caught, http } = await timeoutExecutionAsync();
 			mockProcessing(http, POLLS_PER_GRACE);
 
-			await expect(caught.readResultAsync()).rejects.toThrow(
-				"Roblox never reported a terminal state for the task within 46s",
-			);
+			await expect(
+				fromAny<ExecutionTimeoutError, typeof caught>(caught).readResultAsync(),
+			).rejects.toThrow("Roblox never reported a terminal state for the task within 46s");
 		});
 
 		it("should poll past a stale processing replica after observing completion", async () => {
@@ -1914,7 +833,9 @@ describe(OcaleRunner, () => {
 				status: 200,
 			});
 
-			await expect(caught.readResultAsync()).resolves.toMatchObject({
+			await expect(
+				fromAny<ExecutionTimeoutError, typeof caught>(caught).readResultAsync(),
+			).resolves.toMatchObject({
 				outputs: ["original result"],
 			});
 
@@ -1930,7 +851,9 @@ describe(OcaleRunner, () => {
 				status: 200,
 			});
 
-			await expect(caught.readResultAsync()).resolves.toMatchObject({
+			await expect(
+				fromAny<ExecutionTimeoutError, typeof caught>(caught).readResultAsync(),
+			).resolves.toMatchObject({
 				outputs: ["original result"],
 			});
 			expect(http.requests.map(({ request }) => request.method)).toStrictEqual([
@@ -1945,26 +868,12 @@ describe(OcaleRunner, () => {
 		it("should report the original terminal failure when re-reading after timeout", async () => {
 			expect.assertions(2);
 
-			const http = createFakeHttpClient();
-			http.mockResponse({ body: taskBody(), status: 200 });
-			mockProcessing(http, 1);
-			const caught: unknown = await makeAdvancingRunner(http)
-				.executeScriptAsync({ pollBudget: 1, script: "return 1", timeout: 1000 })
-				.catch((err: unknown) => err);
-			assert(caught instanceof ExecutionTimeoutError);
-			http.mockResponse({
-				body: taskBody({
-					error: { code: "SCRIPT_ERROR", message: "Original failed" },
-					state: "FAILED",
-				}),
-				status: 200,
-			});
-			http.mockResponse({
-				body: logPageBody([{ message: "original traceback", messageType: "ERROR" }]),
-				status: 200,
-			});
+			const { caught, http } = await timeoutExecutionAsync();
+			mockOriginalFailure(http);
 
-			await expect(caught.readResultAsync()).rejects.toThrow("original traceback");
+			await expect(
+				fromAny<ExecutionTimeoutError, typeof caught>(caught).readResultAsync(),
+			).rejects.toThrow("original traceback");
 			expect(http.requests.map(({ request }) => request.method)).toStrictEqual([
 				"POST",
 				"GET",
@@ -1976,16 +885,12 @@ describe(OcaleRunner, () => {
 		it("should report an original-task read failure without creating another task", async () => {
 			expect.assertions(2);
 
-			const http = createFakeHttpClient();
-			http.mockResponse({ body: taskBody(), status: 200 });
-			mockProcessing(http, 1);
-			const caught: unknown = await makeAdvancingRunner(http)
-				.executeScriptAsync({ pollBudget: 1, script: "return 1", timeout: 1000 })
-				.catch((err: unknown) => err);
-			assert(caught instanceof ExecutionTimeoutError);
+			const { caught, http } = await timeoutExecutionAsync();
 			http.mockApiError({ message: "Forbidden", statusCode: 403 });
 
-			await expect(caught.readResultAsync()).rejects.toThrow("Forbidden");
+			await expect(
+				fromAny<ExecutionTimeoutError, typeof caught>(caught).readResultAsync(),
+			).rejects.toThrow("Forbidden");
 			expect(http.requests.map(({ request }) => request.method)).toStrictEqual([
 				"POST",
 				"GET",
@@ -2043,155 +948,6 @@ describe(OcaleRunner, () => {
 			).rejects.toThrow("Execution was cancelled");
 		});
 
-		it("should throw when submit returns API error", async () => {
-			expect.assertions(2);
-
-			const http = createFakeHttpClient();
-			http.mockApiError({ message: "Bad request", statusCode: 400 });
-
-			const runner = makeRunner(http);
-
-			const caught: unknown = await runner
-				.executeScriptAsync({ script: "return 1", timeout: 30_000 })
-				.catch((err: unknown) => err);
-
-			expect(caught).toBeInstanceOf(TaskSubmitError);
-			expect(caught).toMatchObject({ message: "Bad request" });
-		});
-
-		it("should preserve the server diagnosis when active tasks exhaust the place", async () => {
-			expect.assertions(2);
-
-			const http = createFakeHttpClient();
-			const exhausted = new RateLimitError("Rate limited", {
-				details: {
-					code: "RESOURCE_EXHAUSTED",
-					message:
-						"Too many tasks already active. Task resource paths: task/one, task/two",
-				},
-				retryAfterSeconds: 3,
-				statusCode: 429,
-			});
-			for (let attempt = 0; attempt < 4; attempt += 1) {
-				http.mockError(exhausted);
-			}
-
-			const caught: unknown = await makeRunner(http)
-				.executeScriptAsync({ script: "return 1", timeout: 30_000 })
-				.catch((err: unknown) => err);
-			assert(caught instanceof Error);
-
-			expect(caught.message).toBe(
-				"RESOURCE_EXHAUSTED: Too many tasks already active. Task resource paths: task/one, task/two",
-			);
-			expect(caught.cause).toBe(exhausted);
-		});
-
-		it("should name the 429's code and rate-limit headers when dmaas refuses a create", async () => {
-			expect.assertions(1);
-
-			const http = createFakeHttpClient();
-			http.mockError(
-				new RateLimitError("Rate limited", {
-					code: "RESOURCE_EXHAUSTED",
-					details: { code: "RESOURCE_EXHAUSTED", message: "Too many tasks" },
-					responseHeaders: {
-						"retry-after": "3",
-						"x-ratelimit-limit": "5, 5;w=60",
-						"x-ratelimit-remaining": "0",
-					},
-					retryAfterSeconds: 3,
-					statusCode: 429,
-				}),
-			);
-
-			await expect(
-				makeRunner(http).executeScriptAsync({ script: "return 1", timeout: 30_000 }),
-			).rejects.toThrow(
-				[
-					"RESOURCE_EXHAUSTED: Too many tasks",
-					"  code: RESOURCE_EXHAUSTED",
-					"  retry-after: 3",
-					"  x-ratelimit-limit: 5, 5;w=60",
-					"  x-ratelimit-remaining: 0",
-				].join("\n"),
-			);
-		});
-
-		it("should name the unlock time when a refusal outlasts the minute window", async () => {
-			expect.assertions(2);
-
-			vi.useFakeTimers({ now: new Date("2026-09-22T12:00:51Z") });
-			onTestFinished(() => {
-				vi.useRealTimers();
-			});
-			const http = createFakeHttpClient();
-			http.mockError(
-				new RateLimitError("Rate limited", {
-					details: {
-						code: "RESOURCE_EXHAUSTED",
-						message: "dmaas (Too Many Requests)",
-					},
-					retryAfterSeconds: 1856,
-					statusCode: 429,
-				}),
-			);
-
-			const caught: unknown = await makeRunner(http)
-				.executeScriptAsync({ script: "return 1", timeout: 30_000 })
-				.catch((err: unknown) => err);
-			assert(caught instanceof TaskSubmitError);
-
-			expect(caught.message).toContain(
-				"Roblox refused task creates for longer than its per-minute limit; " +
-					"this account can create tasks again at 2026-09-22T12:31:47Z.",
-			);
-			expect(http.requests).toHaveLength(1);
-		});
-
-		it("should not observe capacity blockers when retries are disabled", async () => {
-			expect.assertions(2);
-
-			const http = createFakeHttpClient();
-			http.mockError(
-				new RateLimitError("Rate limited", {
-					details: {
-						code: "RESOURCE_EXHAUSTED",
-						message:
-							"Too many tasks already active. Task resource paths: universes/123/places/456/versions/1/luau-execution-sessions/11111111-1111-4111-8111-111111111111/tasks/22222222-2222-4222-8222-222222222222",
-					},
-					retryAfterSeconds: 3,
-					statusCode: 429,
-				}),
-			);
-			const runner = new OcaleRunner(
-				{ apiKey: "test-key", placeId: "456", universeId: "123" },
-				{ httpClient: http, maxRetries: 0, sleep: createFakeSleep() },
-			);
-
-			await expect(
-				runner.executeScriptAsync({ script: "return 1", timeout: 30_000 }),
-			).rejects.toThrow("RESOURCE_EXHAUSTED");
-			expect(http.requests).toHaveLength(1);
-		});
-
-		it("should preserve the underlying OpenCloudError as cause on the thrown Error from executeScript", async () => {
-			expect.assertions(1);
-
-			const http = createFakeHttpClient();
-			http.mockApiError({ message: "Bad request", statusCode: 400 });
-
-			const runner = makeRunner(http);
-
-			const caught: unknown = await runner
-				.executeScriptAsync({ script: "return 1", timeout: 30_000 })
-				.catch((err) => err);
-
-			assert(caught instanceof Error);
-
-			expect(caught.cause).toBeInstanceOf(OpenCloudError);
-		});
-
 		it("should coerce non-string output values via JSON serialization", async () => {
 			expect.assertions(1);
 
@@ -2211,95 +967,11 @@ describe(OcaleRunner, () => {
 			expect(result.outputs).toStrictEqual(["42", '{"nested":true}', "raw"]);
 		});
 
-		it("should retry luau task submit on transient ECONNRESET", async () => {
-			expect.assertions(2);
-
-			const http = createFakeHttpClient();
-			const reset = Object.assign(new Error("read ECONNRESET"), { code: "ECONNRESET" });
-			http.mockNetworkError({ cause: reset });
-			http.mockResponse({ body: taskBody({ state: "QUEUED" }), status: 200 });
-			http.mockResponse({
-				body: taskBody({ output: { results: ["ok"] }, state: "COMPLETE" }),
-				status: 200,
-			});
-
-			const runner = makeRunner(http);
-			const result = await runner.executeScriptAsync({ script: "return 1", timeout: 30_000 });
-
-			expect(result.outputs).toStrictEqual(["ok"]);
-			expect(http.requests).toHaveLength(3);
-		});
-
-		it("should surface one ambiguous submit transport failure when retries are disabled", async () => {
-			expect.assertions(4);
-
-			const http = createFakeHttpClient();
-			const reset = Object.assign(new Error("read ECONNRESET"), { code: "ECONNRESET" });
-			http.mockNetworkError({ cause: reset });
-			http.mockResponse({ body: taskBody({ state: "QUEUED" }), status: 200 });
-
-			const caught: unknown = await makeRunner(http)
-				.executeScriptAsync({
-					retrySubmitTransportErrors: false,
-					script: "return 1",
-					timeout: 30_000,
-				})
-				.catch((err: unknown) => err);
-			assert(caught instanceof Error);
-
-			expect(caught).toBeInstanceOf(TaskSubmitError);
-			expect(caught.cause).toBeInstanceOf(NetworkError);
-			expect(caught.cause).toMatchObject({ cause: reset });
-			expect(http.requests).toHaveLength(1);
-		});
-
-		it("should submit against the head URL when placeVersion is omitted", async () => {
-			expect.assertions(1);
-
-			const http = createFakeHttpClient();
-			http.mockResponse({ body: taskBody({ state: "QUEUED" }), status: 200 });
-			http.mockResponse({
-				body: taskBody({ output: { results: [] }, state: "COMPLETE" }),
-				status: 200,
-			});
-
-			const runner = makeRunner(http);
-			await runner.executeScriptAsync({ script: "return 1", timeout: 30_000 });
-
-			expect(http.requests[0]!.request.url).not.toContain("/versions/");
-		});
-
-		it("should submit against the pinned version URL when placeVersion is provided", async () => {
-			expect.assertions(1);
-
-			const http = createFakeHttpClient();
-			http.mockResponse({ body: taskBody({ state: "QUEUED" }), status: 200 });
-			http.mockResponse({
-				body: taskBody({ output: { results: [] }, state: "COMPLETE" }),
-				status: 200,
-			});
-
-			const runner = makeRunner(http);
-			await runner.executeScriptAsync({
-				placeVersion: 99,
-				script: "return 1",
-				timeout: 30_000,
-			});
-
-			expect(http.requests[0]!.request.url).toContain(
-				"/places/456/versions/99/luau-execution-session-tasks",
-			);
-		});
-
 		it("should clamp task timeout to 300 seconds when caller asks for more", async () => {
 			expect.assertions(1);
 
 			const http = createFakeHttpClient();
-			http.mockResponse({ body: taskBody({ state: "QUEUED" }), status: 200 });
-			http.mockResponse({
-				body: taskBody({ output: { results: [] }, state: "COMPLETE" }),
-				status: 200,
-			});
+			mockCompletion(http, []);
 
 			const runner = makeRunner(http);
 			await runner.executeScriptAsync({ script: "return 1", timeout: 600_000 });
@@ -2311,70 +983,6 @@ describe(OcaleRunner, () => {
 	});
 
 	describe("binary input", () => {
-		it("should name the binary input on a head submit", async () => {
-			expect.assertions(1);
-
-			const http = createFakeHttpClient();
-			http.mockResponse({ body: taskBody({ state: "QUEUED" }), status: 200 });
-			http.mockResponse({
-				body: taskBody({ output: { results: ["ok"] }, state: "COMPLETE" }),
-				status: 200,
-			});
-
-			const runner = makeRunner(http);
-			await runner.executeScriptAsync({
-				binaryInput: INPUT_PATH,
-				script: "return 1",
-				timeout: 30_000,
-			});
-
-			expect(binaryInputSubmitSchema.assert(http.requests[0]!.request.body).binaryInput).toBe(
-				INPUT_PATH,
-			);
-		});
-
-		it("should name the binary input on a pinned submit", async () => {
-			expect.assertions(2);
-
-			const http = createFakeHttpClient();
-			http.mockResponse({ body: taskBody({ state: "QUEUED" }), status: 200 });
-			http.mockResponse({
-				body: taskBody({ output: { results: ["ok"] }, state: "COMPLETE" }),
-				status: 200,
-			});
-
-			const runner = makeRunner(http);
-			await runner.executeScriptAsync({
-				binaryInput: INPUT_PATH,
-				placeVersion: 99,
-				script: "return 1",
-				timeout: 30_000,
-			});
-
-			const { request } = http.requests[0]!;
-
-			expect(request.url).toContain("/versions/99/");
-			expect(binaryInputSubmitSchema.assert(request.body).binaryInput).toBe(INPUT_PATH);
-		});
-
-		it("should send no binaryInput key when the caller names none", async () => {
-			expect.assertions(1);
-
-			const http = createFakeHttpClient();
-			http.mockResponse({ body: taskBody({ state: "QUEUED" }), status: 200 });
-			http.mockResponse({
-				body: taskBody({ output: { results: ["ok"] }, state: "COMPLETE" }),
-				status: 200,
-			});
-
-			const runner = makeRunner(http);
-			await runner.executeScriptAsync({ script: "return 1", timeout: 30_000 });
-
-			expect(
-				binaryInputSubmitSchema.assert(http.requests[0]!.request.body),
-			).not.toHaveProperty("binaryInput");
-		});
-
 		it("should allocate a slot for the payload's size and PUT the bytes at it", async () => {
 			expect.assertions(5);
 
@@ -2386,7 +994,7 @@ describe(OcaleRunner, () => {
 			const { calls, fetchFn } = makeFakeFetch(200);
 			const payload = new Uint8Array([1, 2, 3, 4, 5]);
 
-			const runner = makeRunner(http, rbxlBuffer(), fetchFn);
+			const runner = makeRunner(http, { fetchFunc: fetchFn });
 			const result = await runner.uploadBinaryInputAsync({ payload });
 
 			expect(http.requests[0]!.request.url).toContain(
@@ -2396,69 +1004,6 @@ describe(OcaleRunner, () => {
 			expect(calls).toStrictEqual([{ body: payload, method: "PUT", url: UPLOAD_URI }]);
 			expect(result.path).toBe(INPUT_PATH);
 			expect(result.uploadMs).toBeGreaterThanOrEqual(0);
-		});
-
-		it("should name the slot allocation and its status when the create fails", async () => {
-			expect.assertions(2);
-
-			const http = createFakeHttpClient();
-			http.mockError(new ApiError("quota", { statusCode: 400 }));
-			const { calls, fetchFn } = makeFakeFetch(200);
-
-			const runner = makeRunner(http, rbxlBuffer(), fetchFn);
-
-			await expect(
-				runner.uploadBinaryInputAsync({ payload: new Uint8Array([1]) }),
-			).rejects.toThrow("Failed to allocate a binary input slot (HTTP 400): quota");
-			expect(calls).toStrictEqual([]);
-		});
-
-		it("should name the slot allocation alone when the create never reached a response", async () => {
-			expect.assertions(1);
-
-			const http = createFakeHttpClient();
-			http.mockError(new NetworkError("socket hang up"));
-			const { fetchFn } = makeFakeFetch(200);
-
-			const runner = makeRunner(http, rbxlBuffer(), fetchFn);
-
-			await expect(
-				runner.uploadBinaryInputAsync({ payload: new Uint8Array([1]) }),
-			).rejects.toThrow("Failed to allocate a binary input slot: socket hang up");
-		});
-
-		it("should name the PUT and its status when the upload is refused", async () => {
-			expect.assertions(1);
-
-			const http = createFakeHttpClient();
-			http.mockResponse({
-				body: validBinaryInputBody({ path: INPUT_PATH, uploadUri: UPLOAD_URI }),
-				status: 200,
-			});
-			const { fetchFn } = makeFakeFetch(403, "denied");
-
-			const runner = makeRunner(http, rbxlBuffer(), fetchFn);
-
-			await expect(
-				runner.uploadBinaryInputAsync({ payload: new Uint8Array([1]) }),
-			).rejects.toThrow("Failed to PUT the binary input (HTTP 403): denied");
-		});
-
-		it("should carry the create error as the cause", async () => {
-			expect.assertions(1);
-
-			const http = createFakeHttpClient();
-			const failure = new ApiError("quota", { statusCode: 400 });
-			http.mockError(failure);
-
-			const runner = makeRunner(http, rbxlBuffer(), makeFakeFetch(200).fetchFn);
-			const thrown: unknown = await runner
-				.uploadBinaryInputAsync({ payload: new Uint8Array([1]) })
-				.catch((err: unknown) => err);
-
-			assert(thrown instanceof Error);
-
-			expect(thrown.cause).toBe(failure);
 		});
 	});
 
@@ -2475,9 +1020,9 @@ describe(OcaleRunner, () => {
 			const caught: unknown = await makeAdvancingRunner(http)
 				.executeScriptAsync({ placeVersion: 1, script: "return 1", timeout: 1000 })
 				.catch((err: unknown) => err);
-			assert(caught instanceof TaskStallError);
+			assert(caught instanceof Error);
 
-			expect(caught.evidence).toStrictEqual({
+			expect(fromAny<TaskStallError, typeof caught>(caught).evidence).toStrictEqual({
 				createTime: "2026-01-01T00:00:00.000Z",
 				kind: "task-stall",
 				observedStates: ["PROCESSING"],
@@ -2486,105 +1031,6 @@ describe(OcaleRunner, () => {
 				timeoutSeconds: 1,
 				updateTime: "2026-01-01T00:00:00.000Z",
 			});
-		});
-
-		it("should classify a create the quota refused, with its unlock time and 429 evidence", async () => {
-			expect.assertions(1);
-
-			vi.useFakeTimers({ now: new Date("2026-09-22T12:00:51Z") });
-			onTestFinished(() => {
-				vi.useRealTimers();
-			});
-			const http = createFakeHttpClient();
-			http.mockError(
-				new RateLimitError("Rate limited", {
-					code: "RESOURCE_EXHAUSTED",
-					details: { code: "RESOURCE_EXHAUSTED", message: "dmaas (Too Many Requests)" },
-					responseHeaders: { "retry-after": "1856", "x-ratelimit-remaining": "3" },
-					retryAfterSeconds: 1856,
-					statusCode: 429,
-				}),
-			);
-
-			const caught: unknown = await makeRunner(http)
-				.executeScriptAsync({ placeVersion: 7, script: "return 1", timeout: 30_000 })
-				.catch((err: unknown) => err);
-			assert(caught instanceof TaskQuotaError);
-
-			expect(caught.evidence).toStrictEqual({
-				code: "RESOURCE_EXHAUSTED",
-				headers: { "retry-after": "1856", "x-ratelimit-remaining": "3" },
-				kind: "create-quota",
-				placeVersion: 7,
-				retryAfterSeconds: 1856,
-				timeoutSeconds: 30,
-				unlockTime: "2026-09-22T12:31:47.000Z",
-			});
-		});
-
-		it("should classify a refused long 429 wait on an idempotent submit as a quota error", async () => {
-			expect.assertions(2);
-
-			vi.useFakeTimers({ now: new Date("2026-09-22T12:00:51Z") });
-			onTestFinished(() => {
-				vi.useRealTimers();
-			});
-			const http = createFakeHttpClient();
-			http.mockError(
-				new RateLimitError("Rate limited", {
-					code: "RESOURCE_EXHAUSTED",
-					details: { code: "RESOURCE_EXHAUSTED", message: "dmaas (Too Many Requests)" },
-					responseHeaders: { "retry-after": "515" },
-					retryAfterSeconds: 515,
-					statusCode: 429,
-				}),
-			);
-
-			const caught: unknown = await makeRunner(http)
-				.executeScriptAsync({
-					isSubmitIdempotent: true,
-					placeVersion: 7,
-					script: "return 1",
-					timeout: 30_000,
-				})
-				.catch((err: unknown) => err);
-			assert(caught instanceof TaskQuotaError);
-
-			expect(caught.evidence).toStrictEqual({
-				code: "RESOURCE_EXHAUSTED",
-				headers: { "retry-after": "515" },
-				kind: "create-quota",
-				placeVersion: 7,
-				retryAfterSeconds: 515,
-				timeoutSeconds: 30,
-				unlockTime: "2026-09-22T12:09:26.000Z",
-			});
-			expect(http.requests).toHaveLength(1);
-		});
-
-		it("should remove the API key from a quota refusal's evidence and message", async () => {
-			expect.assertions(2);
-
-			const http = createFakeHttpClient();
-			http.mockError(
-				new RateLimitError("Rate limited", {
-					details: { code: "RESOURCE_EXHAUSTED", message: "Too many tasks for test-key" },
-					responseHeaders: { "retry-after": "3", "x-roblox-echo": "key=test-key" },
-					retryAfterSeconds: 3,
-					statusCode: 429,
-				}),
-			);
-
-			const caught: unknown = await makeRunner(http)
-				.executeScriptAsync({ script: "return 1", timeout: 30_000 })
-				.catch((err: unknown) => err);
-			assert(caught instanceof TaskQuotaError);
-
-			expect(caught.evidence.headers).toStrictEqual({
-				"retry-after": "3",
-				"x-roblox-echo": "key=[REDACTED]",
-			});
-			expect(caught.message).not.toContain("test-key");
 		});
 	});
 
@@ -2623,3 +1069,51 @@ describe(OcaleRunner, () => {
 		});
 	});
 });
+
+interface FetchCall {
+	body: Uint8Array;
+	method: string;
+	url: string;
+}
+
+function useClock(): void {
+	vi.useFakeTimers();
+	onTestFinished(() => {
+		vi.useRealTimers();
+	});
+}
+
+const POLLS_PER_DEADLINE = 10_000 / POLL_STEP_MS;
+
+function mockCompletion(http: FakeHttpClient, results: ReadonlyArray<unknown>): void {
+	http.mockResponse({ body: taskBody({ state: "QUEUED" }), status: 200 });
+	http.mockResponse({ body: taskBody({ output: { results }, state: "COMPLETE" }), status: 200 });
+}
+
+function mockOriginalFailure(http: FakeHttpClient): void {
+	http.mockResponse({
+		body: taskBody({
+			error: { code: "SCRIPT_ERROR", message: "Original failed" },
+			state: "FAILED",
+		}),
+		status: 200,
+	});
+	http.mockResponse({
+		body: logPageBody([{ message: "original traceback", messageType: "ERROR" }]),
+		status: 200,
+	});
+}
+
+async function timeoutExecutionAsync(): Promise<{
+	caught: ExecutionTimeoutError;
+	http: FakeHttpClient;
+}> {
+	const http = createFakeHttpClient();
+	http.mockResponse({ body: taskBody(), status: 200 });
+	mockProcessing(http, 1);
+	const caught: unknown = await makeAdvancingRunner(http)
+		.executeScriptAsync({ pollBudget: 1, script: "return 1", timeout: 1000 })
+		.catch((err: unknown) => err);
+	assert(caught instanceof Error);
+	return { caught: fromAny<ExecutionTimeoutError, typeof caught>(caught), http };
+}

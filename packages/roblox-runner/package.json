@@ -13,6 +13,10 @@
 	"author": "Christopher Buss <christopher.buss@pm.me> (https://github.com/christopher-buss)",
 	"sideEffects": false,
 	"type": "module",
+	"imports": {
+		"#src/*": "./src/*",
+		"#test/*": "./test/*"
+	},
 	"exports": {
 		".": {
 			"source": "./src/index.ts",
@@ -32,7 +36,20 @@
 		"src"
 	],
 	"scripts": {
-		"build": "tsdown"
+		"boundaries": "cd ../.. && dependency-cruiser --config packages/roblox-runner/dependency-cruiser.config.ts --output-type err -- packages/roblox-runner/src packages/roblox-runner/test",
+		"build": "tsdown",
+		"cpd": "pnpm cpd-production && pnpm cpd-spec",
+		"cpd-production": "jscpd --config .jscpd.json --no-tips",
+		"cpd-spec": "jscpd --config .jscpd.spec.json --no-tips",
+		"integration": "vitest run --project integration --coverage.enabled=false",
+		"knip": "pnpm knip-production && cd ../.. && knip --config packages/roblox-runner/knip.json --workspace packages/roblox-runner",
+		"knip-production": "cd ../.. && knip --production --config packages/roblox-runner/knip.json --workspace packages/roblox-runner",
+		"lint": "oxlint && eslint --cache",
+		"mutation": "stryker run stryker.config.ts",
+		"test": "vitest run --project unit --project type --coverage",
+		"test-type": "vitest run --project type",
+		"test-unit": "vitest run --project unit --coverage.enabled=false",
+		"typecheck": "tsc -b"
 	},
 	"dependencies": {
 		"@bedrock-rbx/ocale": "0.3.4",
@@ -41,16 +58,22 @@
 	"devDependencies": {
 		"@isentinel/eslint-config": "6.2.0",
 		"@isentinel/tsconfig": "2.0.0",
+		"@stryker-mutator/core": "10.0.0",
+		"@stryker-mutator/typescript-checker": "10.0.0",
+		"@stryker-mutator/vitest-runner": "10.0.0",
 		"@total-typescript/shoehorn": "0.1.2",
 		"@types/node": "24.12.3",
 		"@typescript/native": "npm:typescript@7.0.2",
 		"@vitest/coverage-v8": "5.0.5",
 		"@vitest/eslint-plugin": "1.6.27",
+		"dependency-cruiser": "18.4.0",
 		"eslint": "10.9.0",
 		"eslint-plugin-jest-extended": "3.0.1",
 		"eslint-plugin-n": "18.3.0",
 		"eslint-plugin-pnpm": "1.8.0",
 		"jest-extended": "7.0.0",
+		"jscpd": "5.4.1",
+		"knip": "6.29.0",
 		"tsdown": "0.23.0",
 		"typescript": "6.0.3",
 		"vitest": "5.0.5"

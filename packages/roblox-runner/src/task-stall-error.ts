@@ -1,15 +1,12 @@
-import type { OpenCloudError, Result } from "@bedrock-rbx/ocale";
+import type { OpenCloudError } from "@bedrock-rbx/ocale";
 import { PollTimeoutError } from "@bedrock-rbx/ocale";
-import type { LuauExecutionTask } from "@bedrock-rbx/ocale/luau-execution";
 
 import { ExecutionTimeoutError } from "./execution-timeout.ts";
 import type { TaskStallEvidence } from "./infrastructure-evidence.ts";
 import { collectStallEvidence } from "./infrastructure-evidence.ts";
 import type { PollContext } from "./poll-diagnosis.ts";
 import { toPollError } from "./poll-diagnosis.ts";
-import type { ScriptResult } from "./types.ts";
-
-type TaskResult = Result<LuauExecutionTask, OpenCloudError>;
+import type { ScriptResult } from "./runner-types.ts";
 
 /**
  * A task that reached its deadline without a terminal state: a Roblox
@@ -20,6 +17,10 @@ export class TaskStallError extends ExecutionTimeoutError {
 
 	public override name = "TaskStallError";
 
+	/**
+	 * Retain an inconclusive task stall and its recovery handle.
+	 * @param options - Original failure, recovery callback and inconclusive task evidence.
+	 */
 	constructor({
 		error,
 		evidence,
@@ -34,16 +35,19 @@ export class TaskStallError extends ExecutionTimeoutError {
 	}
 }
 
+/**
+ * Attach recovery to timeouts while retaining ordinary poll failures.
+ * @param options - Original poll failure, observation context and same-task recovery callback.
+ * @returns Recoverable timeout classification or the original poll failure.
+ */
 export function toExecutionError({
 	context,
 	error,
-	pollAsync,
-	resolveAsync,
+	readResultAsync,
 }: {
 	context: PollContext;
 	error: OpenCloudError;
-	pollAsync: (signal: AbortSignal | undefined) => Promise<TaskResult>;
-	resolveAsync: (result: TaskResult, signal: AbortSignal | undefined) => Promise<ScriptResult>;
+	readResultAsync: (signal?: AbortSignal) => Promise<ScriptResult>;
 }): Error {
 	const described = toPollError(error, context);
 	if (!(error instanceof PollTimeoutError)) {
@@ -53,6 +57,6 @@ export function toExecutionError({
 	return new TaskStallError({
 		error: described,
 		evidence: collectStallEvidence(context, error),
-		readResultAsync: async (signal) => resolveAsync(await pollAsync(signal), signal),
+		readResultAsync,
 	});
 }

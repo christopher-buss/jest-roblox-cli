@@ -12,6 +12,10 @@ export class TaskQuotaError extends TaskSubmitError {
 
 	public override name = "TaskQuotaError";
 
+	/**
+	 * Classify a refused create with redacted quota evidence.
+	 * @param options - Original refusal, message and redacted quota evidence.
+	 */
 	constructor({
 		cause,
 		evidence,

@@ -1,25 +1,38 @@
-import type {
-	HttpClient,
-	OpenCloudClientOptions,
-	OpenCloudError,
-	Result,
-	SleepFunc,
-} from "@bedrock-rbx/ocale";
-import type { ListSortedMapItemsParameters } from "@bedrock-rbx/ocale/storage";
-import { StorageClient } from "@bedrock-rbx/ocale/storage";
+import type { OpenCloudError, Result } from "@bedrock-rbx/ocale";
+import type { ListSortedMapItemsParameters, StorageClient } from "@bedrock-rbx/ocale/storage";
 
-export interface SortedMapInboxOptions<T> {
-	readonly apiKey: string;
-	readonly baseUrl?: string;
+import type { PacedConnection } from "./client-options.ts";
+import { createStorageClient } from "./client-options.ts";
+
+/**
+ * Transport and decoding policy for one run-owned SortedMap.
+ *
+ * @template T
+ */
+export interface SortedMapInboxOptions<T> extends PacedConnection {
+	/**
+	 * Parse each SDK JSON value into the consumer domain type.
+	 */
 	readonly decode: (value: JSONValue) => T;
-	readonly httpClient?: HttpClient;
+	/**
+	 * Run-owned SortedMap to inspect and clear.
+	 */
 	readonly mapId: string;
-	readonly sleep?: SleepFunc;
-	readonly universeId: string;
 }
 
+/**
+ * Decoded value paired with the key the consumer acknowledges.
+ *
+ * @template T
+ */
 export interface SortedMapEntry<T> {
+	/**
+	 * MemoryStore item key used to delete the consumed entry.
+	 */
 	readonly id: string;
+	/**
+	 * Decoded item value, kept with its deletion key.
+	 */
 	readonly value: T;
 }
 
@@ -30,6 +43,7 @@ const PAGE_SIZE = 100;
  * Host side of a MemoryStore SortedMap the Luau tasks write: list every entry
  * with its key, and delete the ones consumed. Injectable (fake `httpClient`)
  * for tests.
+ * @template T
  */
 export class SortedMapInbox<T> {
 	private readonly decode: (value: JSONValue) => T;
@@ -37,26 +51,22 @@ export class SortedMapInbox<T> {
 	private readonly storage: StorageClient;
 	private readonly universeId: string;
 
+	/**
+	 * Bind a run-owned SortedMap to its decoder and transport.
+	 * @param options - SortedMap identity, SDK overrides and payload decoder.
+	 */
 	constructor(options: SortedMapInboxOptions<T>) {
 		this.decode = options.decode;
 		this.mapId = options.mapId;
 		this.universeId = options.universeId;
-		let clientOptions: OpenCloudClientOptions = { apiKey: options.apiKey };
-		if (options.baseUrl !== undefined) {
-			clientOptions = { ...clientOptions, baseUrl: options.baseUrl };
-		}
-
-		if (options.httpClient !== undefined) {
-			clientOptions = { ...clientOptions, httpClient: options.httpClient };
-		}
-
-		if (options.sleep !== undefined) {
-			clientOptions = { ...clientOptions, sleep: options.sleep };
-		}
-
-		this.storage = new StorageClient(clientOptions);
+		this.storage = createStorageClient(options);
 	}
 
+	/**
+	 * Delete one consumed SortedMap item, preserving SDK failures as values.
+	 * @param itemId - Key of the consumed SortedMap item.
+	 * @returns The SDK deletion result, preserving failures for the caller.
+	 */
 	public async deleteAsync(itemId: string): Promise<Result<undefined, OpenCloudError>> {
 		const deleted = await this.storage.sortedMaps.delete({
 			itemId,
@@ -69,6 +79,7 @@ export class SortedMapInbox<T> {
 	/**
 	 * List every entry and decode its value. Pages through the list until the
 	 * server stops returning a continuation token.
+	 * @returns Decoded entries from all pages of the selected SortedMap.
 	 */
 	public async readAllAsync(): Promise<Result<Array<SortedMapEntry<T>>, OpenCloudError>> {
 		const entries: Array<SortedMapEntry<T>> = [];

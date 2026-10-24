@@ -1,20 +1,22 @@
-import type { HttpClient, SleepFunc } from "@bedrock-rbx/ocale";
+import type { SleepFunc } from "@bedrock-rbx/ocale";
 import type { StorageClient } from "@bedrock-rbx/ocale/storage";
 
 import { setTimeout as delay } from "node:timers/promises";
 
-import { createWorkQueueStorage, dequeueOrEmptyAsync } from "./work-queue-shared.ts";
+import type { OpenCloudConnection } from "./client-options.ts";
+import { createStorageClient } from "./client-options.ts";
+import { dequeueOrEmptyAsync } from "./work-queue-shared.ts";
 
-export interface MemoryStoreJanitorOptions {
-	readonly apiKey: string;
-	readonly baseUrl?: string | undefined;
+/**
+ * Run-owned storage and bounded claim-recovery policy.
+ */
+export interface MemoryStoreJanitorOptions extends OpenCloudConnection {
 	/**
 	 * How long an item stays invisible to a dequeue once a consumer claims it,
 	 * in seconds. The reclaim pass outwaits it; the caller owns the figure,
 	 * because it is the same one the consumer claims with.
 	 */
 	readonly claimWindowSeconds: number;
-	readonly httpClient?: HttpClient;
 	/** Receives one line per swallowed failure. Omitted ⇒ silent. */
 	readonly log?: ((message: string) => void) | undefined;
 	/** Every SortedMap the run's tasks write; each key in each is deleted. */
@@ -29,9 +31,11 @@ export interface MemoryStoreJanitorOptions {
 	readonly reclaimBudgetSeconds: number;
 	/** Paces the retry backoff and the reclaim wait (injected for tests). */
 	readonly sleep?: SleepFunc;
-	readonly universeId: string;
 }
 
+/**
+ * Best-effort cleanup after a run has stopped producing work.
+ */
 export interface MemoryStoreJanitor {
 	/**
 	 * Best-effort cleanup of the run's own MemoryStore litter; never rejects.
@@ -87,7 +91,7 @@ class OpenCloudMemoryStoreJanitor implements MemoryStoreJanitor {
 		this.sleep = options.sleep ?? delay;
 		// A caller's sleep reaches both the retry backoff and the reclaim
 		// wait, so one fake clock drives the two timers.
-		this.storage = createWorkQueueStorage(options);
+		this.storage = createStorageClient(options);
 		this.universeId = options.universeId;
 	}
 
@@ -127,6 +131,7 @@ class OpenCloudMemoryStoreJanitor implements MemoryStoreJanitor {
 	/**
 	 * Delete every key the list surfaces. An individual delete failure skips to
 	 * the next key — the survivors self-expire.
+	 * @param mapId - Run-owned SortedMap resource to inspect.
 	 */
 	private async deleteMapKeysAsync(mapId: string): Promise<void> {
 		const itemIds = await this.listMapKeyIdsAsync(mapId);
@@ -165,6 +170,8 @@ class OpenCloudMemoryStoreJanitor implements MemoryStoreJanitor {
 	/**
 	 * Page through one map collecting key ids. A list failure abandons the
 	 * unseen pages (their keys self-expire).
+	 * @param mapId - Run-owned SortedMap resource to inspect.
+	 * @returns Item IDs from the current page, or an empty list on a failed read.
 	 */
 	private async listMapKeyIdsAsync(mapId: string): Promise<Array<string>> {
 		const itemIds: Array<string> = [];
@@ -192,7 +199,10 @@ class OpenCloudMemoryStoreJanitor implements MemoryStoreJanitor {
 		return itemIds;
 	}
 
-	/** One dequeue→discard sweep; `true` while more items may remain. */
+	/**
+	 * Discard one claim without hiding a failed discard behind a new invisibility window.
+	 * @returns Whether another sweep can find work.
+	 */
 	private async sweepQueueOnceAsync(): Promise<boolean> {
 		const read = await dequeueOrEmptyAsync(this.storage, {
 			count: PAGE_SIZE,
@@ -227,6 +237,11 @@ class OpenCloudMemoryStoreJanitor implements MemoryStoreJanitor {
 	}
 }
 
+/**
+ * Bind cleanup to the run-owned queue and maps.
+ * @param options - Run-owned storage identity, timing limits and adapters.
+ * @returns Cleanup handle bound to the run-owned queue and maps.
+ */
 export function createMemoryStoreJanitor(options: MemoryStoreJanitorOptions): MemoryStoreJanitor {
 	return new OpenCloudMemoryStoreJanitor(options);
 }

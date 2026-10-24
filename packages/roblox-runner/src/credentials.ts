@@ -2,11 +2,23 @@ import assert from "node:assert";
 import process from "node:process";
 import type { Except } from "type-fest";
 
-import type { RunnerCredentials } from "./types.ts";
+import type { RunnerCredentials } from "./runner-types.ts";
 
+/**
+ * Explicit credentials and environment precedence for one runner.
+ */
 export interface ResolveCredentialsInput {
+	/**
+	 * Fallback place and universe IDs; API keys never come from defaults.
+	 */
 	defaults?: Tolerant<Except<RunnerCredentials, "apiKey">> | undefined;
+	/**
+	 * Try these prefixed environment variables before their ordinary names.
+	 */
 	envPrefix?: string | undefined;
+	/**
+	 * Explicit values take precedence over environment and defaults.
+	 */
 	overrides?: Tolerant<RunnerCredentials> | undefined;
 }
 
@@ -15,6 +27,7 @@ export interface ResolveCredentialsInput {
  * by value below (`normalize(overrides?.[field])`), so a present-but-undefined
  * key behaves exactly like an absent one — and callers forwarding optional CLI
  * flags would otherwise need a conditional spread per field.
+ * @template T
  */
 type Tolerant<T> = { [K in keyof T]?: T[K] | undefined };
 
@@ -29,12 +42,17 @@ const FIELD_SPECS: ReadonlyArray<FieldSpec> = [
 	{ envSuffix: "PLACE_ID", field: "placeId" },
 ];
 
+/**
+ * Resolve explicit and environment credentials, rejecting missing fields.
+ * @param input - Explicit overrides, environment prefix and fallback IDs.
+ * @returns Complete trimmed credentials from the documented precedence chain.
+ */
 export function resolveCredentials(input?: ResolveCredentialsInput): RunnerCredentials {
 	const overrides = input?.overrides;
 	const defaults = input?.defaults;
 	const environmentPrefix = input?.envPrefix;
 
-	const resolved: Partial<RunnerCredentials> = {};
+	const resolved: Partial<Record<keyof RunnerCredentials, string>> = {};
 	const missing: Array<FieldSpec> = [];
 
 	for (const spec of FIELD_SPECS) {

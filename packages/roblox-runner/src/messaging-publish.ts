@@ -1,17 +1,15 @@
 import type { HttpClient, OpenCloudError } from "@bedrock-rbx/ocale";
 import { ApiError } from "@bedrock-rbx/ocale";
 
+import type { OpenCloudConnection } from "./client-options.ts";
 import { createFetchHttpClient, DEFAULT_BASE_URL } from "./open-cloud-fetch.ts";
 
-export interface PublishMessageOptions {
-	readonly apiKey: string;
-	readonly baseUrl?: string | undefined;
-	readonly httpClient?: HttpClient;
+/** Transport and topic for a message delivered to running tasks. */
+export interface PublishMessageOptions extends OpenCloudConnection {
 	/** Payload delivered verbatim as the subscriber's `message.Data`. */
 	readonly message: string;
 	/** Topic the in-engine `MessagingService:SubscribeAsync` listens on. */
 	readonly topic: string;
-	readonly universeId: string;
 }
 
 /**
@@ -33,6 +31,8 @@ const PUBLISH_SCOPE = "universe-messaging-service:publish";
  * well shrug one off — but that is the caller's call to make. A refused key has
  * to be able to reach a human, and swallowing it here would make a missing
  * scope indistinguishable from a delivered message.
+ * @param options - Universe, topic, message and authorized transport.
+ * @rejects When the publish request fails or the server refuses it.
  */
 export async function publishMessageAsync(options: PublishMessageOptions): Promise<void> {
 	const httpClient = options.httpClient ?? createFetchHttpClient();
@@ -59,6 +59,8 @@ export async function publishMessageAsync(options: PublishMessageOptions): Promi
  * The permission line to add when the key itself was refused, and nothing
  * otherwise. Any other 4xx is a bug in the request, not a missing scope, and
  * pointing at the key would send the reader to the wrong place.
+ * @param err - Failure returned by the transport.
+ * @returns Required permission hint for refused keys, otherwise an empty string.
  */
 function describeScopeHint(err: OpenCloudError): string {
 	if (!(err instanceof ApiError)) {

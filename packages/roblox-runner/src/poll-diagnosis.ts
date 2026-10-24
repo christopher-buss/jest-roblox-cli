@@ -6,18 +6,37 @@ import type { FailedTask, LuauExecutionTaskRef } from "@bedrock-rbx/ocale/luau-e
  * What a poll was given, and where that came from. The default budget is the
  * task deadline plus a boot-lag allowance, and saying so is what stops a
  * timeout reading as "your script was too slow"; an explicit
- * {@link ExecuteScriptOptions.pollBudget} has no such story to tell.
+ * `pollBudget` has no such story to tell.
  */
 export interface PollContext {
+	/**
+	 * A different task booted this version; it does not prove this task
+	 * started.
+	 */
 	readonly bootProven: boolean;
+	/**
+	 * The host added boot allowance rather than using an explicit poll budget.
+	 */
 	readonly hasDefaultBudget: boolean;
+	/**
+	 * Pinned place version; absent when submitting against head.
+	 */
 	readonly placeVersion: number | undefined;
 	/** The whole poll's wall clock, whatever part of it the submit spent. */
 	readonly pollBudgetMs: number;
+	/**
+	 * Fresh observation allowance used when rereading the same task.
+	 */
 	readonly recoveryPollBudgetMs: number;
+	/**
+	 * Original task reference; recovery never submits another task.
+	 */
 	readonly ref: LuauExecutionTaskRef;
 	/** The state the submit answered with. */
 	readonly submittedState: string;
+	/**
+	 * Server execution deadline in seconds, independent of place boot time.
+	 */
 	readonly timeoutSeconds: number;
 }
 
@@ -53,7 +72,12 @@ const TASK_DEADLINE_GRACE_MS = 45_000;
 
 const MAX_TASK_TIMEOUT_SECONDS = 300;
 
-/** The default poll budget outlasts the task deadline and place startup. */
+/**
+ * The default poll budget outlasts the task deadline and place startup.
+ * @param timeout - Execution timeout in milliseconds.
+ * @param pollBudget - Explicit host poll allowance, when supplied.
+ * @returns Server timeout and independent host polling and recovery budgets.
+ */
 export function resolveBudgets(
 	timeout: number,
 	pollBudget: number | undefined,
@@ -95,6 +119,9 @@ export function describeTaskRef(ref: LuauExecutionTaskRef): string {
 
 /**
  * A field of a task ocale typed `unknown`, or `undefined` when it is absent.
+ * @param task - Original task identity and server result.
+ * @param key - Field to read from the observed task.
+ * @returns The requested task field, or undefined when absent.
  */
 export function readTaskField(task: unknown, key: string): unknown {
 	return Reflect.get(Object(task), key);
@@ -133,6 +160,8 @@ export function toPollError(err: OpenCloudError, context: PollContext): Error {
  * per-key create quota and worth a retry, a 401 is the key itself, and a
  * transport failure has no status at all. Written like the PUT's own message
  * so the two halves of one upload read the same way.
+ * @param err - Failure returned by the transport.
+ * @returns HTTP status suffix for API failures, otherwise an empty string.
  */
 export function describeStatus(err: OpenCloudError): string {
 	return err instanceof ApiError ? ` (HTTP ${String(err.statusCode)})` : "";
@@ -212,7 +241,11 @@ export function describeTaskFailure(task: FailedTask, logTail: ReadonlyArray<str
 	return lines.join("\n");
 }
 
-/** How the poll budget was arrived at, or nothing when the caller named it. */
+/**
+ * How the poll budget was arrived at, or nothing when the caller named it.
+ * @param context - Original task identity and observation budgets.
+ * @returns Explanation of the explicit or default observation budget.
+ */
 function describeBudgetOrigin(context: PollContext): string {
 	if (!context.hasDefaultBudget) {
 		return "";
@@ -224,7 +257,11 @@ function describeBudgetOrigin(context: PollContext): string {
 	);
 }
 
-/** A poll timeout establishes neither script startup nor place-load failure. */
+/**
+ * A poll timeout establishes neither script startup nor place-load failure.
+ * @param context - Original task identity and observation budgets.
+ * @returns Possible infrastructure causes qualified by available boot evidence.
+ */
 function describeSuspects(context: PollContext): Array<string> {
 	const evidence = context.bootProven
 		? "  This place version is known to boot; another task ran against it."

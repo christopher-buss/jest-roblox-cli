@@ -1,3 +1,4 @@
+import { StorageClient } from "@bedrock-rbx/ocale/storage";
 import {
 	createFakeHttpClient,
 	type FakeHttpClient,
@@ -7,7 +8,7 @@ import {
 
 import { assert, describe, expect, it } from "vitest";
 
-import { createWorkQueueStorage, dequeueOrEmptyAsync } from "./work-queue-shared.ts";
+import { dequeueOrEmptyAsync } from "./work-queue-shared.ts";
 
 const EMPTY = { items: [], readId: undefined };
 const PARAMETERS = {
@@ -18,7 +19,7 @@ const PARAMETERS = {
 };
 
 async function dequeueAsync(http: FakeHttpClient): ReturnType<typeof dequeueOrEmptyAsync> {
-	return dequeueOrEmptyAsync(createWorkQueueStorage({ apiKey: "test-key", httpClient: http }), {
+	return dequeueOrEmptyAsync(new StorageClient({ apiKey: "test-key", httpClient: http }), {
 		...PARAMETERS,
 	});
 }
@@ -94,7 +95,7 @@ describe(dequeueOrEmptyAsync, () => {
 
 		const http = createFakeHttpClient();
 		http.mockResponse({ body: validDequeueBody({ queueItems: [] }), status: 200 });
-		const storage = createWorkQueueStorage({ apiKey: "test-key", httpClient: http });
+		const storage = new StorageClient({ apiKey: "test-key", httpClient: http });
 
 		const read = await dequeueOrEmptyAsync(storage, {
 			...PARAMETERS,

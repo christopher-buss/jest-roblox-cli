@@ -1,5 +1,10 @@
 import { SortedMapInbox, type SortedMapInboxOptions } from "./sorted-map-inbox.ts";
 
+/**
+ * SortedMap transport and decoding options for progress events.
+ *
+ * @template T
+ */
 export type ProgressMapOptions<T> = SortedMapInboxOptions<T>;
 
 /**
@@ -9,11 +14,16 @@ export type ProgressMapOptions<T> = SortedMapInboxOptions<T>;
  * Node-side aggregator. The map is never written from Node — the Luau tasks own
  * the writes — so this is the read counterpart to the work queue, kept minimal
  * and injectable (fake `httpClient`) for tests.
+ * @template T
  */
 export class ProgressMap<T> {
 	private readonly inbox: SortedMapInbox<T>;
 	private readonly mapId: string;
 
+	/**
+	 * Bind progress reads to the configured SortedMap.
+	 * @param options - SortedMap transport and progress-event decoder.
+	 */
 	constructor(options: ProgressMapOptions<T>) {
 		this.inbox = new SortedMapInbox(options);
 		this.mapId = options.mapId;
@@ -23,6 +33,8 @@ export class ProgressMap<T> {
 	 * List every counter key and decode its value. Pages through the list until
 	 * the server stops returning a continuation token, so a run spreading work
 	 * across more keys than one page holds is still read whole.
+	 * @returns Decoded entries from all pages of the selected SortedMap.
+	 * @rejects When a page cannot be read or an entry cannot be decoded.
 	 */
 	public async readAllAsync(): Promise<Array<T>> {
 		const read = await this.inbox.readAllAsync();

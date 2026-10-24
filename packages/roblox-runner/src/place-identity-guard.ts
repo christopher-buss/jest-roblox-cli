@@ -147,6 +147,10 @@ export function placeIdentityGuardSource({
  * @returns The booted place version, or undefined when this is not a refusal.
  */
 export function readRefusedPlaceVersion(output: string | undefined): number | undefined {
-	const [, booted] = PLACE_MISMATCH_PATTERN.exec(output ?? "") ?? [];
-	return booted === undefined ? undefined : Number(booted);
+	if (output === undefined) {
+		return undefined;
+	}
+
+	const match = PLACE_MISMATCH_PATTERN.exec(output);
+	return match === null ? undefined : Number(match[1]);
 }

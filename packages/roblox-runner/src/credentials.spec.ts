@@ -1,3 +1,5 @@
+import { fromAny } from "@total-typescript/shoehorn";
+
 import { describe, expect, it, vi } from "vitest";
 
 import { resolveCredentials } from "./credentials.ts";
@@ -312,5 +314,36 @@ describe(resolveCredentials, () => {
 
 			expect(() => resolveCredentials()).toThrow(/Missing: apiKey, universeId, placeId/);
 		});
+	});
+});
+
+describe("credential security", () => {
+	it("should refuse API keys smuggled into fallback defaults", () => {
+		expect.assertions(1);
+
+		clearAllEnvironment();
+		const supplied = { apiKey: "must-not-authorize", placeId: "456", universeId: "123" };
+		const defaults = fromAny<
+			NonNullable<Parameters<typeof resolveCredentials>[0]>["defaults"],
+			typeof supplied
+		>(supplied);
+
+		expect(() => resolveCredentials({ defaults })).toThrow(
+			"Open Cloud credentials are required. Missing: apiKey. Set ROBLOX_OPEN_CLOUD_API_KEY.",
+		);
+	});
+});
+
+describe("unprefixed environment", () => {
+	it("should never read an undefined prefix as an environment-variable name", () => {
+		expect.assertions(1);
+
+		clearAllEnvironment();
+		vi.stubEnv("undefinedROBLOX_OPEN_CLOUD_API_KEY", "wrong-prefix");
+		vi.stubEnv("ROBLOX_OPEN_CLOUD_API_KEY", "canonical");
+
+		expect(resolveCredentials({ defaults: { placeId: "456", universeId: "123" } }).apiKey).toBe(
+			"canonical",
+		);
 	});
 });

@@ -1,7 +1,10 @@
 node_modules/
 out/
 out-tsc/
-/coverage/
+coverage/
+.stryker-tmp/
+reports/
+projectStructure.cache.json
 *.tsbuildinfo
 *.rbxl
 !test/e2e/fixtures/live-place/game.rbxl

@@ -3,10 +3,14 @@
 	"compilerOptions": {
 		"composite": true,
 		"tsBuildInfoFile": "dist/tsconfig.lib.tsbuildinfo",
-		"lib": ["esnext"],
+		"lib": ["es2025", "esnext"],
 		"libReplacement": true,
 		"rootDir": "src",
 		"rewriteRelativeImportExtensions": true,
+		"customConditions": ["source"],
+		"paths": {
+			"jest-extended": ["../../types/jest-extended.d.ts"]
+		},
 		"allowJs": false,
 		"noEmit": false,
 		"outDir": "dist",

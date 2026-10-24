@@ -4,10 +4,10 @@ import { standaloneOxlint } from "../../oxlint.shared.ts";
 
 export default defineConfig(
 	standaloneOxlint({
-		name: "packages/shared/roblox-runner",
+		name: "packages/roblox-runner",
 		configDirectory: import.meta.dirname,
 		ignores: ["**/out-tsc/**/*"],
-		jsdoc: false,
+		jsdoc: true,
 		test: {
 			vitest: {
 				extended: true,

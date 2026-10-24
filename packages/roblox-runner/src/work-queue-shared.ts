@@ -1,17 +1,14 @@
-import type {
-	HttpClient,
-	OpenCloudClientOptions,
-	OpenCloudError,
-	Result,
-	SleepFunc,
-} from "@bedrock-rbx/ocale";
+import type { OpenCloudError, Result } from "@bedrock-rbx/ocale";
 import type {
 	DequeueQueueItemsParameters,
 	EnqueueQueueItemParameters,
 	QueueItem,
+	StorageClient,
 } from "@bedrock-rbx/ocale/storage";
-import { StorageClient } from "@bedrock-rbx/ocale/storage";
 
+/**
+ * SDK-supported MemoryStore queue payload.
+ */
 export type QueueData = EnqueueQueueItemParameters["data"];
 
 /**
@@ -20,7 +17,13 @@ export type QueueData = EnqueueQueueItemParameters["data"];
  * claimed, so there is nothing to discard and no reason to sweep again.
  */
 export interface QueueRead {
+	/**
+	 * Decoded values from this claim, in queue order.
+	 */
 	readonly items: ReadonlyArray<QueueItem>;
+	/**
+	 * Opaque claim receipt; absent when nothing was claimed.
+	 */
 	readonly readId: string | undefined;
 }
 
@@ -50,30 +53,6 @@ const EMPTY_READ = {
 	success: true,
 } satisfies Result<QueueRead, never>;
 
-interface WorkQueueStorageOptions {
-	readonly apiKey: string;
-	readonly baseUrl?: string | undefined;
-	readonly httpClient?: HttpClient;
-	readonly sleep?: SleepFunc;
-}
-
-export function createWorkQueueStorage(options: WorkQueueStorageOptions): StorageClient {
-	let clientOptions: OpenCloudClientOptions = { apiKey: options.apiKey };
-	if (options.baseUrl !== undefined) {
-		clientOptions = { ...clientOptions, baseUrl: options.baseUrl };
-	}
-
-	if (options.httpClient !== undefined) {
-		clientOptions = { ...clientOptions, httpClient: options.httpClient };
-	}
-
-	if (options.sleep !== undefined) {
-		clientOptions = { ...clientOptions, sleep: options.sleep };
-	}
-
-	return new StorageClient(clientOptions);
-}
-
 /**
  * Dequeue, reporting the API's empty read as an empty success rather than a
  * failure.
@@ -92,6 +71,9 @@ export function createWorkQueueStorage(options: WorkQueueStorageOptions): Storag
  *
  * The read must be one whose 404 can only mean empty — see
  * {@link BestEffortDequeueParameters}.
+ * @param storage - SDK client that owns the queue request.
+ * @param parameters - Server request parameters for this queue operation.
+ * @returns Claimed items and receipt, or canonical empty-read success.
  */
 export async function dequeueOrEmptyAsync(
 	storage: StorageClient,
@@ -112,6 +94,11 @@ export async function dequeueOrEmptyAsync(
 	return { data: { items: read.data.items, readId: read.data.readId }, success: true };
 }
 
+/**
+ * Round milliseconds upward so the server never shortens the requested window.
+ * @param ms - Milliseconds requested by the caller.
+ * @returns At least one whole second, rounded upward.
+ */
 export function msToSecondsCeil(ms: number): number {
 	return Math.max(1, Math.ceil(ms / 1000));
 }

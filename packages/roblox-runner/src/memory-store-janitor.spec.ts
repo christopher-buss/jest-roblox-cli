@@ -59,11 +59,6 @@ function mockLeftoverSweep(http: FakeHttpClient, readId: string): void {
 	http.mockResponse({ body: {}, status: 200 });
 }
 
-/**
- * An empty read. How the endpoint spells one on the wire is
- * `dequeueOrEmptyAsync`'s business, and its own spec's; the janitor only sees
- * the normalised result.
- */
 function mockEmptyQueue(http: FakeHttpClient): void {
 	http.mockResponse({ body: validDequeueBody({ queueItems: [] }), status: 200 });
 }
@@ -110,9 +105,7 @@ describe("memory store janitor", () => {
 			const http = createFakeHttpClient();
 			mockEmptyQueue(http);
 			mockEmptyProgress(http);
-			const log = vi.fn<(message: string) => void>();
-
-			await makeJanitor(http, { log }).cleanupAsync();
+			const log = await cleanupWithLogAsync(http);
 
 			expect(http.requests).toHaveLength(2);
 			expect(
@@ -136,9 +129,7 @@ describe("memory store janitor", () => {
 				statusCode: 404,
 			});
 			mockEmptyProgress(http);
-			const log = vi.fn<(message: string) => void>();
-
-			await makeJanitor(http, { log }).cleanupAsync();
+			const log = await cleanupWithLogAsync(http);
 
 			expect(log).not.toHaveBeenCalled();
 		});
@@ -174,9 +165,7 @@ describe("memory store janitor", () => {
 			const http = createFakeHttpClient();
 			http.mockApiError({ message: "Forbidden", statusCode: 403 });
 			mockEmptyProgress(http);
-			const log = vi.fn<(message: string) => void>();
-
-			await makeJanitor(http, { log }).cleanupAsync();
+			const log = await cleanupWithLogAsync(http);
 
 			expect(log).toHaveBeenCalledExactlyOnceWith(expect.stringContaining("Forbidden"));
 			expect(http.requests).toHaveLength(2);
@@ -195,9 +184,7 @@ describe("memory store janitor", () => {
 			});
 			http.mockApiError({ message: "Forbidden", statusCode: 403 });
 			mockEmptyProgress(http);
-			const log = vi.fn<(message: string) => void>();
-
-			await makeJanitor(http, { log }).cleanupAsync();
+			const log = await cleanupWithLogAsync(http);
 
 			expect(log).toHaveBeenCalledExactlyOnceWith(expect.stringContaining("Forbidden"));
 			expect(http.requests).toHaveLength(3);
@@ -214,9 +201,7 @@ describe("memory store janitor", () => {
 				mockLeftoverSweep(http, `read-${sweep}`);
 			}
 
-			const log = vi.fn<(message: string) => void>();
-
-			await makeJanitor(http, { log }).cleanupAsync();
+			const log = await cleanupWithLogAsync(http);
 
 			// 50 sweeps × (dequeue + discard), then one progress-list request.
 			expect(http.requests).toHaveLength(101);
@@ -317,9 +302,7 @@ describe("memory store janitor", () => {
 			});
 			http.mockApiError({ message: "Forbidden", statusCode: 403 });
 			http.mockResponse({ body: {}, status: 200 });
-			const log = vi.fn<(message: string) => void>();
-
-			await makeJanitor(http, { log }).cleanupAsync();
+			const log = await cleanupWithLogAsync(http);
 
 			expect(log).toHaveBeenCalledExactlyOnceWith(expect.stringContaining("Forbidden"));
 			expect(http.requests).toHaveLength(4);
@@ -383,7 +366,7 @@ describe("memory store janitor", () => {
 
 			expect(sleep.waits).toStrictEqual([60_000]);
 			expect(log).toHaveBeenCalledExactlyOnceWith(
-				expect.stringContaining("waiting 60s of the 300s claim window"),
+				"memory-store teardown: waiting 60s of the 300s claim window — only items with 60s or less left on their claim resurface; the rest expire with the queue TTL",
 			);
 		});
 
@@ -409,9 +392,7 @@ describe("memory store janitor", () => {
 			const http = createFakeHttpClient();
 			http.mockApiError({ message: "Down", statusCode: 403 });
 			http.mockApiError({ message: "Down", statusCode: 403 });
-			const log = vi.fn<(message: string) => void>();
-
-			await makeJanitor(http, { log }).cleanupAsync();
+			const log = await cleanupWithLogAsync(http);
 
 			expect(log).toHaveBeenCalledTimes(2);
 		});
@@ -439,5 +420,29 @@ describe("memory store janitor", () => {
 
 			await expect(makeJanitor(http).cleanupAsync()).resolves.toBeUndefined();
 		});
+	});
+});
+
+async function cleanupWithLogAsync(http: Parameters<typeof makeJanitor>[0]) {
+	const log = vi.fn<(message: string) => void>();
+	await makeJanitor(http, { log }).cleanupAsync();
+	return log;
+}
+
+describe("reclaim boundary", () => {
+	it("should describe complete reclaim waits when the budget exactly fits the claim window", async () => {
+		expect.assertions(2);
+
+		const http = createFakeHttpClient();
+		mockEmptyQueue(http);
+		mockEmptyProgress(http);
+		const sleep = createFakeSleep();
+		const log = vi.fn<(message: string) => void>();
+		await makeJanitor(http, { claimWindowSeconds: 60, log, sleep }).reclaimClaimedAsync();
+
+		expect(sleep.waits).toStrictEqual([60_000]);
+		expect(log).toHaveBeenCalledExactlyOnceWith(
+			"memory-store teardown: waiting 60s for claimed items to resurface",
+		);
 	});
 });

@@ -14,6 +14,7 @@ export const DEFAULT_BASE_URL = "https://apis.roblox.com";
  * A request carrying no body sends none and declares no content type, so an
  * endpoint that takes no arguments posts nothing rather than an empty JSON
  * document.
+ * @returns HTTP transport using the global fetch.
  */
 export function createFetchHttpClient(): HttpClient {
 	return {
@@ -58,6 +59,9 @@ async function classifyResponseAsync(
  * The fetch call one Open Cloud request describes, keyed by the API key.
  * Serializing here rather than at the caller keeps the transport the only place
  * that knows this wire is JSON.
+ * @param request - SDK request with relative route and optional JSON body.
+ * @param apiKey - Key attached to this HTTP request.
+ * @returns Fetch request method, headers and serialized body.
  */
 function toRequestInit(request: Parameters<HttpClient["request"]>[0], apiKey: string): RequestInit {
 	if (request.body === undefined) {
