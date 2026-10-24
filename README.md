@@ -1101,6 +1101,12 @@ end)
 - `expectType<<T>>()` takes a type; `expectTypeOf(value)` takes the type of a
   value.
 - `:toEqualType<<U>>()` and `:toEqualTypeOf(value)` assert the types are equal.
+- `.never:toEqualType<<U>>()` and `.never:toEqualTypeOf(value)` assert the types
+  differ. The name is `never` because `not` is a Luau keyword, so `.not` is a
+  syntax error.
+- `:toExtend<<U>>()` asserts the subject is assignable to `U`, using Luau's own
+  subtyping and its error message. There is no negated form; put
+  `-- @expect-error` above a `toExtend` that must fail.
 
 Equality is structural: union and intersection order, property order and
 parameter names do not matter, `boolean` equals `true | false`, and generic
@@ -1114,6 +1120,8 @@ A failed assertion reports both types:
 Expected: { x: number, y: string }
 Received: { x: number, y: number }
 ```
+
+A failed `.never` assertion reports `Expected a type other than: <U>`.
 
 A multi-line type literal inside `<<...>>()` is a Luau syntax error. Declare an
 alias first:

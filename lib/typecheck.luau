@@ -169,10 +169,24 @@ export type function Eq(actual, expected)
 	error(`Expected: {tostring(expected)}\nReceived: {tostring(actual)}`)
 end
 
+export type function NotEq(actual, expected)
+	if not Same(actual, expected):value() then
+		return types.singleton(nil)
+	end
+	error(`Expected a type other than: {tostring(expected)}`)
+end
+
+export type NeverMatchers<T> = {
+	toEqualType: <U>(self: NeverMatchers<T>, NotEq<T, U>?) -> (),
+	toEqualTypeOf: <U>(self: NeverMatchers<T>, U, NotEq<T, U>?) -> (),
+}
+
 export type Matchers<T> = {
 	read _subject: T,
+	never: NeverMatchers<T>,
 	toEqualType: <U>(self: Matchers<T>, Eq<T, U>?) -> (),
 	toEqualTypeOf: <U>(self: Matchers<T>, U, Eq<T, U>?) -> (),
+	toExtend: <U>(self: { read _subject: U }) -> (),
 }
 
 local function expectTypeOf<T>(_value: T): Matchers<T>

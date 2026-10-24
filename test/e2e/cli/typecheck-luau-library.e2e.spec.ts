@@ -18,7 +18,7 @@ function createLibrarySandbox(fixture: string): string {
 }
 
 describe("shipped luau library --typecheckOnly e2e", () => {
-	it("should pass every equality case in the fixture suite", async () => {
+	it("should pass every matcher case in the fixture suite", async () => {
 		expect.assertions(2);
 
 		const sandbox = createLibrarySandbox(LIBRARY_FIXTURE);
@@ -26,7 +26,7 @@ describe("shipped luau library --typecheckOnly e2e", () => {
 		const result = await runCliAsync(["--typecheckOnly"], { cwd: sandbox });
 
 		expect(result.exitCode).toBe(0);
-		expect(result.stdout + result.stderr).toContain("94 passed");
+		expect(result.stdout + result.stderr).toContain("113 passed");
 	});
 
 	it("should report a failing equality as expected and received types", async () => {
