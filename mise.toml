@@ -11,8 +11,8 @@ _.path = [
 "github:luau-lang/lute" = "1.0.1-nightly.20261021"
 "github:rojo-rbx/rojo" = "7.7.0"
 "npm:@antfu/ni" = "latest"
-"npm:corepack" = "latest"
 node = "26.5.0"
+pnpm = "12.15.0"
 watchexec = "latest"
 
 [tasks.dev]

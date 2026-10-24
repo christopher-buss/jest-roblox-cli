@@ -65,7 +65,7 @@ describe(spawnLuauCheckAsync, () => {
 		expect(invocation!.args).toStrictEqual([
 			"check",
 			path.resolve("src/a.spec-d.luau"),
-			"/abs/b.spec-d.luau",
+			path.resolve("/abs/b.spec-d.luau"),
 		]);
 		expect(invocation!.command).toMatch(/^lu/);
 		expect(invocation!.options.timeout).toBe(1234);
