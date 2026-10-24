@@ -1,67 +1,34 @@
-import type { GapTally } from "../backends/interface.ts";
-import { hasExecError, type JestResult } from "../types/jest-result.ts";
-
-interface RankedGap {
-	blocked: number;
-	member: string;
-	raises: number;
-}
+import { listBlocked } from "../results/gaps.ts";
+import type { SourceMapper } from "../source-mapper/index.ts";
+import type { JestResult } from "../types/jest-result.ts";
+import { resolveDisplayPath } from "./shared.ts";
 
 const COLLATOR = new Intl.Collator();
-const REGEX_SPECIAL = /[$()*+.?[\\\]^{|}]/g;
 
 /**
- * The end-of-run summary of the members a run does not emulate, largest
- * first by the tests each one blocked. Undefined when the run hit none.
+ * The end-of-run list of Blocked tests, each with the gaps that reached it.
+ * Undefined when no test is Blocked.
  *
- * A test is blocked by a member when its failure names `NotEmulated: member`;
- * a suite that failed to run counts once.
+ * @param result - The run's result, with gaps on its tests and files.
+ * @param sourceMapper - Maps each test file to the path it is shown by.
  */
 export function formatGapSummary(
-	gaps: GapTally | undefined,
 	result: JestResult,
+	sourceMapper?: SourceMapper,
 ): string | undefined {
-	if (gaps === undefined) {
+	const blocked = listBlocked(result);
+	if (blocked.length === 0) {
 		return undefined;
 	}
 
-	const tallies = Object.entries(gaps);
-	if (tallies.length === 0) {
-		return undefined;
-	}
-
-	const failures = collectFailures(result);
-	const ranked: Array<RankedGap> = tallies.map(([member, raises]) => {
-		const pattern = new RegExp(
-			`NotEmulated: ${member.replace(REGEX_SPECIAL, "\\$&")}(?![\\w.])`,
-		);
-		return {
-			blocked: failures.filter((failure) => pattern.test(failure)).length,
-			member,
-			raises,
-		};
+	const lines = blocked.flatMap(({ file, gaps, test }) => {
+		const path = resolveDisplayPath(file.testFilePath, sourceMapper);
+		const members = Object.entries(gaps)
+			.sort(([a], [b]) => COLLATOR.compare(a, b))
+			.map(([member, raises]) => `    ${member}  ${plural(raises, "raise")}`);
+		return [test === undefined ? `  ${path}` : `  ${path} > ${test.fullName}`, ...members];
 	});
-	ranked.sort((a, b) => {
-		return b.blocked - a.blocked || b.raises - a.raises || COLLATOR.compare(a.member, b.member);
-	});
-
-	const width = Math.max(...ranked.map((gap) => gap.member.length));
-	const lines = ranked.map((gap) => {
-		return `  ${gap.member.padEnd(width)}  ${plural(gap.blocked, "test")} blocked, ${plural(gap.raises, "raise")}`;
-	});
-	return [`Not emulated (${ranked.length.toString()}):`, ...lines].join("\n");
-}
-
-function collectFailures(result: JestResult): Array<string> {
-	return result.testResults.flatMap((file) => {
-		if (hasExecError(file)) {
-			return [file.failureMessage];
-		}
-
-		return file.testResults
-			.filter((test) => test.status === "failed")
-			.map((test) => test.failureMessages.join("\n"));
-	});
+	return [`Blocked (${blocked.length.toString()}):`, ...lines].join("\n");
 }
 
 function plural(count: number, noun: string): string {

@@ -2,18 +2,21 @@ import { fromPartial } from "@total-typescript/shoehorn";
 
 import { describe, expect, it } from "vitest";
 
+import type { SourceMapper } from "../source-mapper/index.ts";
 import type { JestResult, TestCaseResult, TestFileResult } from "../types/jest-result.ts";
 import { formatGapSummary } from "./gap-summary.ts";
 
-function testCase(status: TestCaseResult["status"], message = ""): TestCaseResult {
-	return fromPartial<TestCaseResult>({
-		failureMessages: message === "" ? [] : [message],
-		status,
-	});
+function testCase(fullName: string, gaps: Record<string, number> = {}): TestCaseResult {
+	return fromPartial<TestCaseResult>({ fullName, gaps, status: "passed" });
 }
 
 function file(overrides: Partial<TestFileResult>): TestFileResult {
-	return fromPartial<TestFileResult>({ testResults: [], ...overrides });
+	return fromPartial<TestFileResult>({
+		gaps: {},
+		testFilePath: "src/gap.spec.ts",
+		testResults: [],
+		...overrides,
+	});
 }
 
 function result(...testResults: Array<TestFileResult>): JestResult {
@@ -21,36 +24,29 @@ function result(...testResults: Array<TestFileResult>): JestResult {
 }
 
 describe(formatGapSummary, () => {
-	it("should return undefined when the run has no gap tally", () => {
+	it("should return undefined when no test is Blocked", () => {
 		expect.assertions(1);
 
-		expect(formatGapSummary(undefined, result())).toBeUndefined();
+		expect(
+			formatGapSummary(result(file({ testResults: [testCase("clean")] }))),
+		).toBeUndefined();
 	});
 
-	it("should return undefined when the run hit no gap", () => {
-		expect.assertions(1);
-
-		expect(formatGapSummary({}, result())).toBeUndefined();
-	});
-
-	it("should rank members by the tests they blocked, then by raises", () => {
+	it("should name each Blocked test with its gaps, sorted by member", () => {
 		expect.assertions(1);
 
 		const summary = formatGapSummary(
-			{ "BasePart.GetTouchingParts": 1, "Sound.Pitch": 5, "Workspace.Gravity": 2 },
 			result(
 				file({
 					testResults: [
-						testCase("failed", "gap.spec:9: NotEmulated: BasePart.GetTouchingParts"),
 						testCase(
-							"failed",
-							"gap.spec:12: NotEmulated: Workspace.Gravity (no default)",
+							"lute gap touches a part",
+							Object.fromEntries([
+								["Workspace.Gravity", 2],
+								["BasePart.GetTouchingParts", 1],
+							]),
 						),
-						testCase(
-							"failed",
-							"gap.spec:15: NotEmulated: Workspace.Gravity (no default)",
-						),
-						testCase("passed"),
+						testCase("lute gap runs clean"),
 					],
 				}),
 			),
@@ -58,76 +54,51 @@ describe(formatGapSummary, () => {
 
 		expect(summary).toBe(
 			[
-				"Not emulated (3):",
-				"  Workspace.Gravity          2 tests blocked, 2 raises",
-				"  BasePart.GetTouchingParts  1 test blocked, 1 raise",
-				"  Sound.Pitch                0 tests blocked, 5 raises",
+				"Blocked (1):",
+				"  src/gap.spec.ts > lute gap touches a part",
+				"    BasePart.GetTouchingParts  1 raise",
+				"    Workspace.Gravity  2 raises",
 			].join("\n"),
 		);
 	});
 
-	it("should count a suite that failed to run once", () => {
+	it("should block every test of a file with a file-level gap, and name a file with no test", () => {
 		expect.assertions(1);
 
 		const summary = formatGapSummary(
-			{ script: 1 },
-			result(file({ failureMessage: "init.luau:3: NotEmulated: script" })),
-		);
-
-		expect(summary).toBe("Not emulated (1):\n  script  1 test blocked, 1 raise");
-	});
-
-	it("should not count a member whose name only starts with another member", () => {
-		expect.assertions(1);
-
-		const summary = formatGapSummary(
-			{ "Sound.Play": 1, "Sound.PlayOnRemove": 1 },
-			result(file({ testResults: [testCase("failed", "NotEmulated: Sound.PlayOnRemove")] })),
+			result(
+				file({
+					gaps: { require: 1 },
+					testResults: [testCase("first"), testCase("second")],
+				}),
+				file({ gaps: { script: 1 }, testFilePath: "src/broken.spec.ts" }),
+			),
 		);
 
 		expect(summary).toBe(
 			[
-				"Not emulated (2):",
-				"  Sound.PlayOnRemove  1 test blocked, 1 raise",
-				"  Sound.Play          0 tests blocked, 1 raise",
+				"Blocked (3):",
+				"  src/gap.spec.ts > first",
+				"    require  1 raise",
+				"  src/gap.spec.ts > second",
+				"    require  1 raise",
+				"  src/broken.spec.ts",
+				"    script  1 raise",
 			].join("\n"),
 		);
 	});
 
-	it("should rank members that blocked as many tests by raises", () => {
+	it("should show each test file by its display path", () => {
 		expect.assertions(1);
 
-		expect(formatGapSummary({ a: 1, b: 3 }, result())).toBe(
-			"Not emulated (2):\n  b  0 tests blocked, 3 raises\n  a  0 tests blocked, 1 raise",
-		);
-	});
-
-	it("should count only failed tests, reading each failure message apart", () => {
-		expect.assertions(1);
-
+		const sourceMapper = fromPartial<SourceMapper>({
+			resolveDisplayPath: (testFilePath: string) => `shown/${testFilePath}`,
+		});
 		const summary = formatGapSummary(
-			{ "Sound.Pitch": 1 },
-			result(
-				file({
-					testResults: [
-						testCase("passed", "NotEmulated: Sound.Pitch"),
-						fromPartial<TestCaseResult>({
-							failureMessages: ["gap.spec:9: NotEmulated: Sound.Pitch", "afterEach"],
-							status: "failed",
-						}),
-					],
-				}),
-			),
+			result(file({ testResults: [testCase("a", { script: 1 })] })),
+			sourceMapper,
 		);
 
-		expect(summary).toBe("Not emulated (1):\n  Sound.Pitch  1 test blocked, 1 raise");
-	});
-
-	it("should break a tie by member name", () => {
-		expect.assertions(1);
-
-		expect(formatGapSummary({ a: 1, b: 1 }, result())).toBe(
-			"Not emulated (2):\n  a  0 tests blocked, 1 raise\n  b  0 tests blocked, 1 raise",
-		);
+		expect(summary!.split("\n", 2)[1]).toBe("  shown/src/gap.spec.ts > a");
 	});
 });

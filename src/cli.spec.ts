@@ -17,6 +17,7 @@ import { LAYOUT_PROJECT_FILE } from "./config/layout-project.ts";
 import { DEFAULT_CONFIG, type ResolvedConfig } from "./config/schema.ts";
 import type { ExecuteResult } from "./executor.ts";
 import { LuauScriptError } from "./reporter/parser.ts";
+import { MissingGapRecordError } from "./results/gaps.ts";
 import { runLogPath } from "./run-log/run-log.ts";
 import type { MultiRunResult, ProjectResult, WorkspaceRunResult } from "./run/types.ts";
 import type { JestResult } from "./types/jest-result.ts";
@@ -1040,6 +1041,20 @@ describe(runAsync, () => {
 				"    observedStates: QUEUED, PROCESSING",
 			].join("\n"),
 		);
+	});
+
+	it("should return 3 and report a missing gap record as an infrastructure failure", async () => {
+		expect.assertions(3);
+
+		const spies = setupOutputSpies();
+		const cli = setupDefaults();
+		cli.runJestRoblox.mockRejectedValue(new MissingGapRecordError("The run has no gap record"));
+
+		const code = await runAsync([], cli.dependencies);
+
+		expect(code).toBe(3);
+		expect(renderedStderr(spies)).toContain("Missing Gap Record");
+		expect(renderedStderr(spies)).toContain("The run has no gap record");
 	});
 
 	it("should omit evidence fields Roblox did not report", async () => {

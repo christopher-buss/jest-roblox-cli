@@ -3,21 +3,34 @@ import { TaskQuotaError, TaskStallError } from "@isentinel/roblox-runner";
 
 import color from "tinyrainbow";
 
+import { MissingGapRecordError } from "../results/gaps.ts";
 import { formatBanner } from "./banner.ts";
 
 /**
- * The exit code of a run Roblox's infrastructure failed, so a caller can tell
- * it from a test failure (1) or a run error (2) without reading the output.
+ * The exit code of a run its infrastructure failed, so a caller can tell it
+ * from a test failure (1) or a run error (2) without reading the output.
  */
 export const INFRASTRUCTURE_EXIT_CODE = 3;
 
-export type InfrastructureFailure = TaskQuotaError | TaskStallError;
+export type InfrastructureFailure = MissingGapRecordError | TaskQuotaError | TaskStallError;
 
 export function isInfrastructureFailure(err: unknown): err is InfrastructureFailure {
-	return err instanceof TaskStallError || err instanceof TaskQuotaError;
+	return (
+		err instanceof TaskStallError ||
+		err instanceof TaskQuotaError ||
+		err instanceof MissingGapRecordError
+	);
 }
 
 export function formatInfrastructureBanner(err: InfrastructureFailure): string {
+	if (err instanceof MissingGapRecordError) {
+		return formatBanner({
+			body: [color.red(err.message)],
+			level: "error",
+			title: "Missing Gap Record",
+		});
+	}
+
 	const body = [
 		color.red(err.message),
 		`\n  ${color.dim("Evidence:")}`,

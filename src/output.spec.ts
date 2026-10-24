@@ -103,6 +103,31 @@ function makeJestResult(overrides: Partial<JestResult> = {}): JestResult {
 	};
 }
 
+function makeBlockedResult(testFilePath: string, fullName: string): JestResult {
+	return makeJestResult({
+		success: false,
+		testResults: [
+			{
+				gaps: {},
+				numFailingTests: 0,
+				numPassingTests: 1,
+				numPendingTests: 0,
+				testFilePath,
+				testResults: [
+					{
+						ancestorTitles: [],
+						failureMessages: [],
+						fullName,
+						gaps: { script: 1 },
+						status: "passed",
+						title: fullName,
+					},
+				],
+			},
+		],
+	});
+}
+
 function makeFailingResult(): JestResult {
 	return makeJestResult({
 		numFailedTests: 1,
@@ -277,11 +302,15 @@ describe(outputSingleResultAsync, () => {
 		await outputSingleResultAsync({
 			config: makeConfig(),
 			dependencies,
-			result: makeSingleResult({ runtimeResult: makeExecuteResult({ gaps: { script: 1 } }) }),
+			result: makeSingleResult({
+				runtimeResult: makeExecuteResult({
+					result: makeBlockedResult("src/gap.spec.ts", "reaches a gap"),
+				}),
+			}),
 		});
 
 		expect(spies.consoleError).toHaveBeenCalledWith(
-			"Not emulated (1):\n  script  0 tests blocked, 1 raise",
+			"Blocked (1):\n  src/gap.spec.ts > reaches a gap\n    script  1 raise",
 		);
 	});
 
@@ -294,12 +323,14 @@ describe(outputSingleResultAsync, () => {
 		await outputSingleResultAsync({
 			config: makeConfig({ silent: true }),
 			dependencies,
-			result: makeSingleResult({ runtimeResult: makeExecuteResult({ gaps: { script: 1 } }) }),
+			result: makeSingleResult({
+				runtimeResult: makeExecuteResult({
+					result: makeBlockedResult("src/gap.spec.ts", "reaches a gap"),
+				}),
+			}),
 		});
 
-		expect(spies.consoleError).not.toHaveBeenCalledWith(
-			expect.stringContaining("Not emulated"),
-		);
+		expect(spies.consoleError).not.toHaveBeenCalledWith(expect.stringContaining("Blocked"));
 	});
 
 	it("should return 1 when runtime fails", async () => {
@@ -712,15 +743,31 @@ describe(outputMultiResultAsync, () => {
 			dependencies,
 			result: makeMultiResult({
 				projectResults: [
-					{ displayName: "client", result: makeExecuteResult({ gaps: { script: 1 } }) },
-					{ displayName: "server", result: makeExecuteResult({ gaps: { script: 2 } }) },
+					{
+						displayName: "client",
+						result: makeExecuteResult({
+							result: makeBlockedResult("src/client.spec.ts", "a"),
+						}),
+					},
+					{
+						displayName: "server",
+						result: makeExecuteResult({
+							result: makeBlockedResult("src/server.spec.ts", "a"),
+						}),
+					},
 				],
 			}),
 			rootConfig: makeConfig(),
 		});
 
 		expect(spies.consoleError).toHaveBeenCalledWith(
-			"Not emulated (1):\n  script  0 tests blocked, 3 raises",
+			[
+				"Blocked (2):",
+				"  src/client.spec.ts > a",
+				"    script  1 raise",
+				"  src/server.spec.ts > a",
+				"    script  1 raise",
+			].join("\n"),
 		);
 	});
 
@@ -2626,7 +2673,6 @@ describe(mergeProjectResults, () => {
 		expect(mergeProjectResults([first, second])).toStrictEqual({
 			coverageData: undefined,
 			exitCode: 1,
-			gaps: undefined,
 			output: "",
 			result: {
 				numFailedTests: 6,
@@ -2653,16 +2699,25 @@ describe(mergeProjectResults, () => {
 		});
 	});
 
-	it("should sum the gap tallies of the projects that have one", () => {
+	it("should keep the gaps of each named test across projects", () => {
 		expect.assertions(1);
 
 		const merged = mergeProjectResults([
-			makeExecuteResult({ gaps: { "script": 2, "Sound.Pitch": 1 } }),
+			makeExecuteResult({ result: makeBlockedResult("src/client.spec.ts", "a") }),
 			makeExecuteResult(),
-			makeExecuteResult({ gaps: { "Sound.Pitch": 3 } }),
+			makeExecuteResult({ result: makeBlockedResult("src/server.spec.ts", "b") }),
 		]);
 
-		expect(merged.gaps).toStrictEqual({ "script": 2, "Sound.Pitch": 4 });
+		expect(
+			merged.result.testResults.flatMap((file) => {
+				return file.testResults.map((test) => {
+					return [file.testFilePath, test.fullName, test.gaps];
+				});
+			}),
+		).toStrictEqual([
+			["src/client.spec.ts", "a", { script: 1 }],
+			["src/server.spec.ts", "b", { script: 1 }],
+		]);
 	});
 
 	it("should return the single result unchanged", () => {

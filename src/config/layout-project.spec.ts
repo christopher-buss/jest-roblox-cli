@@ -5,7 +5,7 @@ import { createMemoryFileSystem } from "../../test/mocks/memory-file-system.ts";
 import { LAYOUT_PROJECT_FILE, resolveLayoutProject } from "./layout-project.ts";
 import { DEFAULT_CONFIG, type ResolvedConfig } from "./schema.ts";
 
-const LAYOUT_PATH = `/repo/pkg/${LAYOUT_PROJECT_FILE}`;
+const LAYOUT_PATH = path.join("/repo/pkg", LAYOUT_PROJECT_FILE);
 
 function luauPackage(extra: Record<string, string> = {}) {
 	return createMemoryFileSystem(

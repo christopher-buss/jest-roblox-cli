@@ -9,7 +9,6 @@ import type {
 	Backend,
 	BackendResult,
 	BackendTiming,
-	GapTally,
 	ParallelOption,
 	ProjectBackendResult,
 	ProjectJob,
@@ -39,6 +38,7 @@ import {
 } from "./executor/tsconfig-mappings.ts";
 import type { ExecuteResult } from "./executor/types.ts";
 import { LuauScriptError, type SnapshotWrites } from "./reporter/parser.ts";
+import { applyFailureGaps, applyGapRecord } from "./results/gaps.ts";
 import { createSourceMapper, type SourceMapper } from "./source-mapper/index.ts";
 import type { CodeBundleArtifact } from "./staging/place-builder.ts";
 import { NOOP_TIMING_COLLECTOR, type TimingCollector } from "./timing/orchestration-collector.ts";
@@ -246,7 +246,7 @@ export async function runProjectsAsync(options: RunProjectsOptions): Promise<Run
 		return rawResults.map((raw, index) => {
 			// oxlint-disable-next-line typescript/no-non-null-assertion -- length equality asserted above
 			const job = jobs[ranProjectIndices[index]!]!;
-			return withGaps(processOrRecoverEntry({ context, job, raw }), raw.gaps);
+			return processOrRecoverEntry({ context, job, raw });
 		});
 	});
 
@@ -327,10 +327,6 @@ function assertResultParity(resultCount: number, jobCount: number): void {
 			`Backend returned ${resultCount.toString()} results for ${jobCount.toString()} jobs — rawResults must be parallel to jobs`,
 		);
 	}
-}
-
-function withGaps(result: ExecuteResult, gaps: GapTally | undefined): ExecuteResult {
-	return gaps === undefined ? result : { ...result, gaps };
 }
 
 function writeProjectSnapshots({
@@ -553,6 +549,40 @@ function processProjectResult(
 	};
 }
 
+function recoverFromParseFailure({
+	context,
+	error,
+	job,
+	raw,
+}: {
+	context: EntryContext;
+	error: LuauScriptError;
+	job: ProjectJob;
+	raw: RawBackendEntry;
+}): ExecuteResult {
+	const failed = buildExecutionErrorResult({
+		backendTiming: context.backendTiming,
+		config: job.config,
+		deferFormatting: context.deferFormatting,
+		// Off the job rather than off the entry: the entry is what the run
+		// came back with, and a run that came back with nothing still has
+		// the job the host sent.
+		entry: {
+			pkg: job.pkg,
+			project: job.displayName,
+			testFileCount: job.testFiles.length,
+		},
+		error,
+		startTime: context.startTime,
+		version: context.version,
+	});
+	if (raw.gaps !== undefined) {
+		applyFailureGaps(failed.result, raw.gaps);
+	}
+
+	return failed;
+}
+
 function processOrRecoverEntry({
 	context,
 	job,
@@ -579,27 +609,16 @@ function processOrRecoverEntry({
 			gameOutputScope: raw.gameOutputScope,
 			job,
 		});
+		if (raw.gaps !== undefined) {
+			applyGapRecord(projectResult.result, raw.gaps);
+		}
+
 		return processProjectResult(projectResult, { ...context, config: job.config });
 	} catch (err) {
 		if (!(err instanceof LuauScriptError)) {
 			throw err;
 		}
 
-		return buildExecutionErrorResult({
-			backendTiming: context.backendTiming,
-			config: job.config,
-			deferFormatting: context.deferFormatting,
-			// Off the job rather than off the entry: the entry is what the run
-			// came back with, and a run that came back with nothing still has
-			// the job the host sent.
-			entry: {
-				pkg: job.pkg,
-				project: job.displayName,
-				testFileCount: job.testFiles.length,
-			},
-			error: err,
-			startTime: context.startTime,
-			version: context.version,
-		});
+		return recoverFromParseFailure({ context, error: err, job, raw });
 	}
 }

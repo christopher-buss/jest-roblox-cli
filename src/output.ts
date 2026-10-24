@@ -1,7 +1,6 @@
 import assert from "node:assert";
 import process from "node:process";
 
-import type { GapTally } from "./backends/interface.ts";
 import { DEFAULT_CONFIG, type ResolvedConfig } from "./config/schema.ts";
 import { mergeRawCoverage } from "./coverage-pipeline/merge-raw-coverage.ts";
 import type { RawCoverageData } from "./coverage-pipeline/types.ts";
@@ -230,7 +229,6 @@ export function mergeProjectResults(results: Array<ExecuteResult>): ExecuteResul
 	return {
 		coverageData: extras.coverageData,
 		exitCode: totals.success && extras.snapshotWriteFailures === 0 ? 0 : 1,
-		gaps: mergeGaps(results),
 		output: "",
 		result: { ...totals, snapshot: mergeSnapshotSummaries(snapshots) },
 		snapshotWriteFailures:
@@ -269,7 +267,7 @@ function printGapSummary(config: ResolvedConfig, result: ExecuteResult | undefin
 		return;
 	}
 
-	const summary = formatGapSummary(result.gaps, result.result);
+	const summary = formatGapSummary(result.result, result.sourceMapper);
 	if (summary !== undefined && !config.silent) {
 		console.error(summary);
 	}
@@ -509,21 +507,6 @@ async function emitSingleResultAsync({
 		mergedResult,
 		snapshotWriteFailures: runtimeResult?.snapshotWriteFailures,
 	});
-}
-
-function mergeGaps(results: Array<ExecuteResult>): GapTally | undefined {
-	const tallies = results.map((entry) => entry.gaps).filter((gaps) => gaps !== undefined);
-	if (tallies.length === 0) {
-		return undefined;
-	}
-
-	const merged: GapTally = {};
-	const counts = tallies.flatMap((gaps) => Object.entries(gaps));
-	for (const [member, count] of counts) {
-		merged[member] = (merged[member] ?? 0) + count;
-	}
-
-	return merged;
 }
 
 function mergeProjectExtras(results: Array<ExecuteResult>): ProjectExtras {

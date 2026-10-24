@@ -5,6 +5,11 @@ export interface TestCaseResult {
 	duration?: number | undefined;
 	failureMessages: Array<string>;
 	fullName: string;
+	/**
+	 * Gaps this test raised, by `Class.Member`. Set only by a backend that
+	 * reports gaps.
+	 */
+	gaps?: Record<string, number> | undefined;
 	location?: { column: number; line: number };
 	numPassingAsserts?: number | undefined;
 	retryReasons?: Array<string> | undefined;
@@ -14,6 +19,11 @@ export interface TestCaseResult {
 
 export interface TestFileResult {
 	failureMessage?: string | undefined;
+	/**
+	 * Gaps raised in this file outside every test, by `Class.Member`. Each one
+	 * blocks every test in the file.
+	 */
+	gaps?: Record<string, number> | undefined;
 	numFailingTests: number;
 	numPassingTests: number;
 	numPendingTests: number;

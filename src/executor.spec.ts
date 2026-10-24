@@ -3476,16 +3476,30 @@ describe(runProjectsAsync, () => {
 			expect(results[1]!.exitCode).toBe(1);
 		});
 
-		it("should carry each entry's gap tally onto its result, parsed or recovered", async () => {
-			expect.assertions(3);
+		it("should put each entry's gaps on its tests and files, parsed or recovered", async () => {
+			expect.assertions(5);
 
 			const { fileSystem } = memoryFileSystem();
 
 			const passingPayload = buildJestOutputPayload({ result: createPassingResult() });
+			const file = "src/test.spec.ts";
 			const backendResult: BackendResult = {
 				rawResults: [
-					{ entry: { jestOutput: passingPayload }, gaps: { "Sound.Pitch": 1 } },
-					{ entry: { jestOutput: failureEnvelope }, gaps: { script: 2 } },
+					{
+						entry: { jestOutput: passingPayload },
+						gaps: {
+							attributed: [
+								{ file, gaps: {} },
+								{ file, gaps: { "Sound.Pitch": 1 }, test: "Test passes" },
+								{ file, gaps: {}, test: "Test also passes" },
+							],
+							unattributed: {},
+						},
+					},
+					{
+						entry: { jestOutput: failureEnvelope },
+						gaps: { attributed: [], unattributed: { script: 2 } },
+					},
 					{ entry: { jestOutput: passingPayload } },
 				],
 				timing: DEFAULT_TIMING,
@@ -3505,9 +3519,15 @@ describe(runProjectsAsync, () => {
 				version: "0.0.0-test",
 			});
 
-			expect(results[0]!.gaps).toStrictEqual({ "Sound.Pitch": 1 });
-			expect(results[1]!.gaps).toStrictEqual({ script: 2 });
-			expect(results[2]).not.toHaveProperty("gaps");
+			const [blocked, recovered, plain] = results;
+
+			expect(
+				blocked!.result.testResults[0]!.testResults.map((test) => test.gaps),
+			).toStrictEqual([{ "Sound.Pitch": 1 }, {}]);
+			expect(blocked!.exitCode).toBe(1);
+			expect(recovered!.result.testResults[0]!.gaps).toStrictEqual({ script: 2 });
+			expect(plain!.result.testResults[0]).not.toHaveProperty("gaps");
+			expect(plain!.exitCode).toBe(0);
 		});
 
 		it("should use the exec-error result contract on the synthetic failure (failureMessage + empty testResults, counts stay 0)", async () => {

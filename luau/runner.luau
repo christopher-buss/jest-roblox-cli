@@ -166,6 +166,7 @@ function module.run(callingScript: LuaSourceContainer, config: Config): (string,
 			perTest = perTestEnabled,
 		})
 
+
 		local t_jestRunCLI0 = os.clock()
 		local runCLIOk, runCLIValue = pcall(function()
 			-- Held so the watchdog can cancel it: the thread an infinite yield
@@ -174,6 +175,7 @@ function module.run(callingScript: LuaSourceContainer, config: Config): (string,
 			return pending:expect()
 		end)
 		local t_jestRunCLI = os.clock()
+
 
 		local setupSeconds = SetupTiming.getSeconds(setupTimingState)
 		SetupTiming.unpatch(setupTimingState)

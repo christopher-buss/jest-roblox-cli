@@ -1,4 +1,3 @@
-import type { GapTally } from "../backends/interface.ts";
 import type { ResolvedConfig } from "../config/schema.ts";
 import type { AttributionResult } from "../coverage-pipeline/attribution.ts";
 import type { RawCoverageData } from "../coverage-pipeline/types.ts";
@@ -17,7 +16,6 @@ export interface ExecuteResult {
 	 * `LogService` messages carry no project identity.
 	 */
 	gameOutputScope?: "batch" | undefined;
-	gaps?: GapTally | undefined;
 	output: string;
 	result: JestResult;
 	snapshotWriteFailures?: number | undefined;

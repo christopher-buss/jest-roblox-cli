@@ -178,12 +178,22 @@ export interface ProjectBackendResult {
 /** How often a run raised `NotEmulated` for each member, by `Class.Member`. */
 export type GapTally = Record<string, number>;
 
+/**
+ * Every attribution a run set, each with the gaps it raised, keyed by the
+ * DataModel path Jest names its test files by. `unattributed` holds raises
+ * outside every test file.
+ */
+export interface GapRecord {
+	attributed: Array<AttributedGaps>;
+	unattributed: GapTally;
+}
+
 export interface RawBackendEntry {
 	entry: EnvelopeEntry;
 	fallbackGameOutput?: string | undefined;
 	/** Carried from the envelope; see {@link ProjectBackendResult}. */
 	gameOutputScope?: "batch" | undefined;
-	gaps?: GapTally | undefined;
+	gaps?: GapRecord | undefined;
 }
 
 export interface BackendResult {
@@ -205,6 +215,13 @@ export interface Backend {
 	readonly kind: BackendKind;
 	readonly placeInput: PlaceInput;
 	runTestsAsync(options: BackendOptions): Promise<BackendResult>;
+}
+
+/** The gaps raised in one test file, or in one named test of it. */
+interface AttributedGaps {
+	file: string;
+	gaps: GapTally;
+	test?: string | undefined;
 }
 
 /**
