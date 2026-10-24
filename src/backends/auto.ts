@@ -7,7 +7,11 @@ import type { CliOptions, ResolvedConfig } from "../config/schema.ts";
 import type { Backend, BackendKind, ParallelOption } from "./interface.ts";
 import { createOpenCloudBackend } from "./open-cloud.ts";
 import { createStudioCliBackend } from "./studio-cli.ts";
-import { configuredStudioPath, discoverStudioPath } from "./studio-discovery.ts";
+import {
+	configuredStudioPath,
+	discoverStudioPath,
+	isStudioDiscoveryOn,
+} from "./studio-discovery.ts";
 import { createStudioBackend } from "./studio.ts";
 import { VM_HOST_POOL_SIZE } from "./vm-parallel.ts";
 import { nodeWebSocketServerFactory } from "./web-socket-server-factory.ts";
@@ -28,6 +32,7 @@ interface BackendResolutionOptions {
 }
 
 export function isStudioDiscoverable(discover: () => string = discoverStudioPath): boolean {
+	isStudioDiscoveryOn();
 	try {
 		discover();
 		return true;
@@ -54,7 +59,7 @@ export function resolveAutoBackend(
 		return "studio-cli";
 	}
 
-	process.stderr.write("Backend: open-cloud (Studio not installed)\n");
+	process.stderr.write("Backend: open-cloud (Studio not found)\n");
 	return "open-cloud";
 }
 

@@ -1663,6 +1663,7 @@ describe(StudioCliBackend, () => {
 
 		const { fileSystem } = createMemoryFileSystem();
 		vi.stubEnv("LOCALAPPDATA", "/local");
+		vi.stubEnv("JEST_ROBLOX_PLUGINS_DIR", undefined);
 		stubPlatform("win32");
 		let bootstrap = "";
 		const execFile = vi.fn<RojoExec>((...[, args, , done]) => {

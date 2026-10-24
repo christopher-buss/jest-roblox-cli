@@ -1,24 +1,18 @@
 import * as path from "node:path";
-import process from "node:process";
 import { describe, expect, it } from "vitest";
 
-import { createFixtureSandbox, runCliAsync } from "./helpers.ts";
+import {
+	createFixtureSandbox,
+	hostStudioEnvironment,
+	IS_STUDIO_ON_HOST,
+	runCliAsync,
+} from "./helpers.ts";
 
 const WORKSPACE_FIXTURE_PATH = path.resolve(__dirname, "../fixtures/workspace-studio");
 const RUN_TIMEOUT_MS = 180_000;
 
-// studio-cli launches a real Roblox Studio process and drives the Run-mode
-// runner of the Managed Plugin it installs. The Luau runner change (workspace
-// dispatch + protocol-version echo) cannot be unit-tested off-process, so it is
-// verified by this gated end-to-end smoke — the studio-cli analogue of the live
-// OCALE shards. It needs Studio installed and the developer logged in, so
-// it can't run in CI. It stays dormant unless a developer
-// opts in with `JEST_ROBLOX_STUDIO_LIVE=1`; with the gate off, vitest reports it
-// skipped and the file runs on any machine without secrets or Studio.
-const IS_STUDIO_LIVE = process.env["JEST_ROBLOX_STUDIO_LIVE"] === "1";
-
 describe("workspace studio-cli smoke", () => {
-	it.runIf(IS_STUDIO_LIVE)(
+	it.runIf(IS_STUDIO_ON_HOST)(
 		"should run every workspace package in one Studio process under backend studio-cli",
 		async () => {
 			expect.assertions(3);
@@ -35,7 +29,7 @@ describe("workspace studio-cli smoke", () => {
 					"--backend",
 					"studio-cli",
 				],
-				{ cwd: sandbox, timeoutMs: RUN_TIMEOUT_MS },
+				{ cwd: sandbox, env: hostStudioEnvironment(), timeoutMs: RUN_TIMEOUT_MS },
 			);
 
 			expect(result.exitCode, `stderr: ${result.stderr}\nstdout: ${result.stdout}`).toBe(0);

@@ -374,7 +374,7 @@ describe(installRunnerPluginAsync, () => {
 			usageDirectory: "/local/jest-roblox/managed-plugins",
 		},
 		{
-			discovery: { homeDirectory: "/home/me", platform: "darwin" as const },
+			discovery: { environment: {}, homeDirectory: "/home/me", platform: "darwin" as const },
 			usageDirectory: "/home/me/Library/Caches/jest-roblox/managed-plugins",
 		},
 	])("should mark the plugin used in $usageDirectory", async ({ discovery, usageDirectory }) => {

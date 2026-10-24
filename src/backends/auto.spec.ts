@@ -77,6 +77,21 @@ describe(isStudioDiscoverable, () => {
 			}),
 		).toBeFalse();
 	});
+
+	it("should reject an unknown JEST_ROBLOX_STUDIO_DISCOVERY value", () => {
+		expect.assertions(1);
+
+		vi.stubEnv("JEST_ROBLOX_STUDIO_DISCOVERY", "true");
+
+		expect(() => {
+			return isStudioDiscoverable(() => {
+				throw new Error("Roblox Studio not found.");
+			});
+		}).toThrowWithMessage(
+			Error,
+			'JEST_ROBLOX_STUDIO_DISCOVERY must be "on" or "off" (was "true")',
+		);
+	});
 });
 
 describe(resolveAutoBackend, () => {
@@ -146,7 +161,7 @@ describe(resolveAutoBackend, () => {
 
 		expect(stderr.mock.calls).toStrictEqual([
 			["Backend: studio-cli (Studio installed)\n"],
-			["Backend: open-cloud (Studio not installed)\n"],
+			["Backend: open-cloud (Studio not found)\n"],
 		]);
 	});
 });

@@ -172,7 +172,9 @@ describe(discoverStudioPath, () => {
 
 		const { fileSystem } = seed({ [MACOS_EXE]: "binary" });
 
-		expect(discoverStudioPath({ fileSystem, platform: "darwin" })).toBe(MACOS_EXE);
+		expect(discoverStudioPath({ environment: {}, fileSystem, platform: "darwin" })).toBe(
+			MACOS_EXE,
+		);
 	});
 
 	it("should prefer RobloxStudio over RobloxStudioBeta when both exist on macOS", () => {
@@ -180,7 +182,9 @@ describe(discoverStudioPath, () => {
 
 		const { fileSystem } = seed({ [MACOS_BETA_EXE]: "old", [MACOS_EXE]: "binary" });
 
-		expect(discoverStudioPath({ fileSystem, platform: "darwin" })).toBe(MACOS_EXE);
+		expect(discoverStudioPath({ environment: {}, fileSystem, platform: "darwin" })).toBe(
+			MACOS_EXE,
+		);
 	});
 
 	it("should fall back to RobloxStudioBeta when only it exists on macOS", () => {
@@ -188,7 +192,9 @@ describe(discoverStudioPath, () => {
 
 		const { fileSystem } = seed({ [MACOS_BETA_EXE]: "binary" });
 
-		expect(discoverStudioPath({ fileSystem, platform: "darwin" })).toBe(MACOS_BETA_EXE);
+		expect(discoverStudioPath({ environment: {}, fileSystem, platform: "darwin" })).toBe(
+			MACOS_BETA_EXE,
+		);
 	});
 
 	it("should throw a not-found error when Studio is absent on macOS", () => {
@@ -196,8 +202,77 @@ describe(discoverStudioPath, () => {
 
 		const { fileSystem } = seed();
 
-		expect(() => discoverStudioPath({ fileSystem, platform: "darwin" })).toThrow(
-			/Roblox Studio not found/,
+		expect(() => {
+			return discoverStudioPath({ environment: {}, fileSystem, platform: "darwin" });
+		}).toThrow(/Roblox Studio not found/);
+	});
+
+	it.for([
+		{ files: { [versionExe("version-abc")]: "binary" }, platform: "win32" },
+		{ files: { [MACOS_EXE]: "binary" }, platform: "darwin" },
+		{ files: {}, platform: "linux" },
+	] as const)(
+		"should find no Studio on $platform when discovery is off",
+		({ files, platform }) => {
+			expect.assertions(1);
+
+			const { fileSystem } = seed(files);
+
+			expect(() => {
+				return discoverStudioPath({
+					environment: { ...WIN_ENV, JEST_ROBLOX_STUDIO_DISCOVERY: "off" },
+					fileSystem,
+					platform,
+				});
+			}).toThrowWithMessage(
+				Error,
+				/^Roblox Studio discovery is off \(JEST_ROBLOX_STUDIO_DISCOVERY=off\)\. Unset JEST_ROBLOX_STUDIO_DISCOVERY, or set studioPath/,
+			);
+		},
+	);
+
+	it("should keep the override when discovery is off", () => {
+		expect.assertions(1);
+
+		const { fileSystem } = seed({ "C:/custom/RobloxStudioBeta.exe": "binary" });
+
+		expect(
+			discoverStudioPath({
+				environment: { JEST_ROBLOX_STUDIO_DISCOVERY: "off" },
+				fileSystem,
+				override: "C:/custom/RobloxStudioBeta.exe",
+			}),
+		).toBe("C:/custom/RobloxStudioBeta.exe");
+	});
+
+	it.for(["on", ""])("should discover when JEST_ROBLOX_STUDIO_DISCOVERY is %j", (value) => {
+		expect.assertions(1);
+
+		const { fileSystem } = seed({ [MACOS_EXE]: "binary" });
+
+		expect(
+			discoverStudioPath({
+				environment: { JEST_ROBLOX_STUDIO_DISCOVERY: value },
+				fileSystem,
+				platform: "darwin",
+			}),
+		).toBe(MACOS_EXE);
+	});
+
+	it("should reject an unknown JEST_ROBLOX_STUDIO_DISCOVERY value", () => {
+		expect.assertions(1);
+
+		const { fileSystem } = seed({ [MACOS_EXE]: "binary" });
+
+		expect(() => {
+			return discoverStudioPath({
+				environment: { JEST_ROBLOX_STUDIO_DISCOVERY: "false" },
+				fileSystem,
+				platform: "darwin",
+			});
+		}).toThrowWithMessage(
+			Error,
+			'JEST_ROBLOX_STUDIO_DISCOVERY must be "on" or "off" (was "false")',
 		);
 	});
 
@@ -206,7 +281,9 @@ describe(discoverStudioPath, () => {
 
 		const { fileSystem } = createMemoryFileSystem();
 
-		expect(() => discoverStudioPath({ fileSystem, platform: "linux" })).toThrow(
+		expect(() => {
+			return discoverStudioPath({ environment: {}, fileSystem, platform: "linux" });
+		}).toThrow(
 			new Error(
 				'studio-cli backend has no Studio auto-discovery for platform "linux". ' +
 					"Set studioPath to point at your Roblox Studio executable.",
@@ -229,7 +306,11 @@ describe(discoverUserDirectories, () => {
 		expect.assertions(1);
 
 		expect(
-			discoverUserDirectories({ homeDirectory: "/Users/dev", platform: "darwin" }),
+			discoverUserDirectories({
+				environment: {},
+				homeDirectory: "/Users/dev",
+				platform: "darwin",
+			}),
 		).toStrictEqual({
 			plugins: "/Users/dev/Documents/Roblox/Plugins",
 			state: "/Users/dev/Library/Caches/jest-roblox",
@@ -265,7 +346,11 @@ describe(discoverUserDirectories, () => {
 	});
 
 	it.for([
-		{ environment: { JEST_ROBLOX_PLUGINS_DIR: "~/Plugins" }, platform: "darwin" },
+		{
+			environment: { JEST_ROBLOX_PLUGINS_DIR: "~/Plugins" },
+			homeDirectory: "/Users/dev",
+			platform: "darwin",
+		},
 		{
 			environment: { ...WIN_ENV, JEST_ROBLOX_PLUGINS_DIR: String.raw`Roblox\Plugins` },
 			platform: "win32",

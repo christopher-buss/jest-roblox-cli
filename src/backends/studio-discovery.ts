@@ -12,7 +12,8 @@ import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 
 export interface StudioDiscoveryOptions {
 	/**
-	 * Environment to read discovery hints from (Windows `LOCALAPPDATA`).
+	 * Environment to read discovery hints from (Windows `LOCALAPPDATA`,
+	 * `JEST_ROBLOX_STUDIO_DISCOVERY`).
 	 * Defaults to `process.env`; injectable so tests stub it.
 	 */
 	environment?: NodeJS.ProcessEnv | undefined;
@@ -33,6 +34,7 @@ export interface StudioDiscoveryOptions {
 
 const STUDIO_PATH_ENV = "JEST_ROBLOX_STUDIO_PATH";
 const PLUGINS_DIRECTORY_ENV = "JEST_ROBLOX_PLUGINS_DIR";
+const DISCOVERY_ENV = "JEST_ROBLOX_STUDIO_DISCOVERY";
 
 const WINDOWS_STUDIO_EXECUTABLE = "RobloxStudioBeta.exe";
 const MACOS_STUDIO_EXECUTABLES = [
@@ -72,6 +74,19 @@ export function configuredStudioPath(
 	return studioPath ?? fromEnvironment(environment, STUDIO_PATH_ENV);
 }
 
+export function isStudioDiscoveryOn(environment: NodeJS.ProcessEnv = process.env): boolean {
+	const value = fromEnvironment(environment, DISCOVERY_ENV);
+	if (value === undefined || value === "on") {
+		return true;
+	}
+
+	if (value === "off") {
+		return false;
+	}
+
+	throw new Error(`${DISCOVERY_ENV} must be "on" or "off" (was "${value}")`);
+}
+
 /**
  * Resolve the Roblox Studio executable studio-cli should launch. An explicit
  * `override` wins; otherwise probe the known per-OS install locations and pick
@@ -98,6 +113,13 @@ export function discoverStudioPath({
 		// Normalize so the override resolves to the same path form as a
 		// discovered executable (forward slashes, upper-cased drive letter).
 		return normalizeWindowsPath(override);
+	}
+
+	if (!isStudioDiscoveryOn(environment)) {
+		throw new Error(
+			`Roblox Studio discovery is off (${DISCOVERY_ENV}=off). Unset ${DISCOVERY_ENV}, ` +
+				"or set studioPath (config key, --studioPath, or JEST_ROBLOX_STUDIO_PATH).",
+		);
 	}
 
 	if (platform === "win32") {

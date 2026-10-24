@@ -621,8 +621,10 @@ then installs its plugin there and sweeps only that folder.
 
 `auto` selects it whenever Studio is installed. Studio is auto-discovered
 per-OS; override the executable with `studioPath` (config key), `--studioPath`,
-or `JEST_ROBLOX_STUDIO_PATH`. The backend is serial: it ignores `--parallel` and
-runs one session.
+or `JEST_ROBLOX_STUDIO_PATH`. `JEST_ROBLOX_STUDIO_DISCOVERY` takes `on` or
+`off`; unset or empty means `on`, and any other value is an error. With `off`,
+discovery finds no Studio: `auto` then picks Open Cloud unless a Studio path is
+set. The backend is serial: it ignores `--parallel` and runs one session.
 
 `timeout` starts once Studio has opened the place and begun the run, as on Open
 Cloud, so a slow Studio launch does not eat into the test budget. The launch has

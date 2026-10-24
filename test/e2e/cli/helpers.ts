@@ -6,6 +6,7 @@ import path from "node:path";
 import nodeProcess from "node:process";
 import { assert, onTestFinished } from "vitest";
 
+import { isStudioDiscoverable } from "../../../src/backends/auto.ts";
 import type { CodeBundleArtifact } from "../../../src/staging/place-builder.ts";
 import type { JestResult } from "../../../src/types/jest-result.ts";
 import { createSandboxDirectory } from "../sandbox-root.ts";
@@ -60,12 +61,9 @@ const execFailureSchema = type({
 
 // cspell:ignore LOCALAPPDATA MSYSTEM PATHEXT PROGRAMDATA WINDIR
 const ALLOWED_ENV_VARS = [
-	"APPDATA",
 	"CI",
 	"ComSpec",
-	"HOME",
 	"JEST_ROBLOX_OCALE_MAX_RETRIES",
-	"LOCALAPPDATA",
 	"MSYSTEM",
 	"NODE_OPTIONS",
 	"NUMBER_OF_PROCESSORS",
@@ -81,7 +79,6 @@ const ALLOWED_ENV_VARS = [
 	"TEMP",
 	"TERM",
 	"TMP",
-	"USERPROFILE",
 	"WINDIR",
 ] as const;
 
@@ -494,6 +491,29 @@ export function createOpenCloudEnvironment(baseUrl: string): NonNullable<RunCliO
 	};
 }
 
+export const IS_STUDIO_ON_HOST = isStudioDiscoverable();
+
+let hermeticHome: string | undefined;
+
+/** Gate every caller on {@link IS_STUDIO_ON_HOST}. */
+export function hostStudioEnvironment(): Record<string, string | undefined> {
+	return Object.fromEntries(
+		Object.keys(hermeticEnvironment()).map((key) => [key, nodeProcess.env[key]]),
+	);
+}
+
+function hermeticEnvironment(): NodeJS.ProcessEnv {
+	hermeticHome ??= createSandboxDirectory();
+	return {
+		APPDATA: path.join(hermeticHome, "AppData", "Roaming"),
+		HOME: hermeticHome,
+		JEST_ROBLOX_PLUGINS_DIR: path.join(hermeticHome, "Plugins"),
+		JEST_ROBLOX_STUDIO_DISCOVERY: "off",
+		LOCALAPPDATA: path.join(hermeticHome, "AppData", "Local"),
+		USERPROFILE: hermeticHome,
+	};
+}
+
 function buildCliEnvironment(overrides?: Record<string, string | undefined>): NodeJS.ProcessEnv {
 	const environment: NodeJS.ProcessEnv = { FORCE_COLOR: "0", NO_COLOR: "1" };
 
@@ -503,6 +523,8 @@ function buildCliEnvironment(overrides?: Record<string, string | undefined>): No
 			environment[key] = value;
 		}
 	}
+
+	Object.assign(environment, hermeticEnvironment());
 
 	const overrideEntries = Object.entries(overrides ?? {});
 	for (const [key, value] of overrideEntries) {
