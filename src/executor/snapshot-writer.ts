@@ -171,8 +171,7 @@ function createSnapshotResolver({
 
 	try {
 		const resolvedTree = resolveNestedProjects(
-			rojoProject.tree,
-			path.dirname(rojoProjectPath),
+			{ rootDirectory: path.dirname(rojoProjectPath), tree: rojoProject.tree },
 			fileSystem,
 		);
 		return createSnapshotPathResolver({

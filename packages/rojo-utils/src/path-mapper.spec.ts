@@ -1,29 +1,40 @@
 import { describe, expect, it } from "vitest";
 
+import { captureError } from "#test/helpers/unit/errors";
 import { mapFsPathToDataModel, mapFsRootToDataModel } from "./path-mapper.ts";
-import type { RojoTreeNode } from "./types.ts";
+import type { RojoTreeNode } from "./rojo-types.ts";
 
-const simpleRojoTree: RojoTreeNode = {
-	$className: "DataModel",
-	ReplicatedStorage: {
-		client: { $path: "out/client" },
-	},
-	ServerScriptService: {
-		server: { $path: "out/server" },
-	},
-};
+function makeRojoTree(): RojoTreeNode {
+	return {
+		$className: "DataModel",
+		ReplicatedStorage: {
+			client: { $path: "out/client" },
+		},
+		ServerScriptService: {
+			server: { $path: "out/server" },
+		},
+	};
+}
 
 describe(mapFsRootToDataModel, () => {
+	it("should omit the available-path appendix when the tree has no mounts", () => {
+		expect.assertions(1);
+
+		const error = captureError(() => mapFsRootToDataModel("missing", {}));
+
+		expect(error.message).toBe("No Rojo tree mapping found for path: missing");
+	});
+
 	it("should map outDir to DataModel path via Rojo tree", () => {
 		expect.assertions(1);
 
-		expect(mapFsRootToDataModel("out/client", simpleRojoTree)).toBe("ReplicatedStorage/client");
+		expect(mapFsRootToDataModel("out/client", makeRojoTree())).toBe("ReplicatedStorage/client");
 	});
 
 	it("should map server outDir to DataModel path", () => {
 		expect.assertions(1);
 
-		expect(mapFsRootToDataModel("out/server", simpleRojoTree)).toBe(
+		expect(mapFsRootToDataModel("out/server", makeRojoTree())).toBe(
 			"ServerScriptService/server",
 		);
 	});
@@ -48,7 +59,7 @@ describe(mapFsRootToDataModel, () => {
 	it("should handle path nested under a $path entry", () => {
 		expect.assertions(1);
 
-		expect(mapFsRootToDataModel("out/client/ui", simpleRojoTree)).toBe(
+		expect(mapFsRootToDataModel("out/client/ui", makeRojoTree())).toBe(
 			"ReplicatedStorage/client/ui",
 		);
 	});
@@ -56,7 +67,7 @@ describe(mapFsRootToDataModel, () => {
 	it("should throw when no mapping found", () => {
 		expect.assertions(1);
 
-		expect(() => mapFsRootToDataModel("out/unknown", simpleRojoTree)).toThrow(
+		expect(() => mapFsRootToDataModel("out/unknown", makeRojoTree())).toThrow(
 			/No Rojo tree mapping found for path: out\/unknown\n\nAvailable \$path entries: out\/client, out\/server/,
 		);
 	});
@@ -74,7 +85,7 @@ describe(mapFsRootToDataModel, () => {
 	it("should strip trailing slash before lookup", () => {
 		expect.assertions(1);
 
-		expect(mapFsRootToDataModel("out/client/", simpleRojoTree)).toBe(
+		expect(mapFsRootToDataModel("out/client/", makeRojoTree())).toBe(
 			"ReplicatedStorage/client",
 		);
 	});
@@ -94,10 +105,17 @@ describe(mapFsRootToDataModel, () => {
 });
 
 describe(mapFsPathToDataModel, () => {
+	it("should normalize the trailing separator on a root mount", () => {
+		expect.assertions(2);
+
+		expect(mapFsPathToDataModel("out/", { $path: "out/" })).toBe("");
+		expect(mapFsPathToDataModel("out/value.luau", { $path: "out/" })).toBe("value");
+	});
+
 	it("should map a .luau file path to DataModel path", () => {
 		expect.assertions(1);
 
-		expect(mapFsPathToDataModel("out/client/Button.luau", simpleRojoTree)).toBe(
+		expect(mapFsPathToDataModel("out/client/Button.luau", makeRojoTree())).toBe(
 			"ReplicatedStorage/client/Button",
 		);
 	});
@@ -105,7 +123,7 @@ describe(mapFsPathToDataModel, () => {
 	it("should map a .lua file path to DataModel path", () => {
 		expect.assertions(1);
 
-		expect(mapFsPathToDataModel("out/client/Button.lua", simpleRojoTree)).toBe(
+		expect(mapFsPathToDataModel("out/client/Button.lua", makeRojoTree())).toBe(
 			"ReplicatedStorage/client/Button",
 		);
 	});
@@ -113,7 +131,7 @@ describe(mapFsPathToDataModel, () => {
 	it("should handle init.luau by mapping to parent", () => {
 		expect.assertions(1);
 
-		expect(mapFsPathToDataModel("out/client/Button/init.luau", simpleRojoTree)).toBe(
+		expect(mapFsPathToDataModel("out/client/Button/init.luau", makeRojoTree())).toBe(
 			"ReplicatedStorage/client/Button",
 		);
 	});
@@ -121,7 +139,7 @@ describe(mapFsPathToDataModel, () => {
 	it("should handle init.lua by mapping to parent", () => {
 		expect.assertions(1);
 
-		expect(mapFsPathToDataModel("out/client/Button/init.lua", simpleRojoTree)).toBe(
+		expect(mapFsPathToDataModel("out/client/Button/init.lua", makeRojoTree())).toBe(
 			"ReplicatedStorage/client/Button",
 		);
 	});
@@ -129,7 +147,7 @@ describe(mapFsPathToDataModel, () => {
 	it("should normalize backslashes", () => {
 		expect.assertions(1);
 
-		expect(mapFsPathToDataModel("out\\client\\Button.luau", simpleRojoTree)).toBe(
+		expect(mapFsPathToDataModel("out\\client\\Button.luau", makeRojoTree())).toBe(
 			"ReplicatedStorage/client/Button",
 		);
 	});
@@ -137,13 +155,13 @@ describe(mapFsPathToDataModel, () => {
 	it("should return undefined when no mapping found", () => {
 		expect.assertions(1);
 
-		expect(mapFsPathToDataModel("unknown/file.luau", simpleRojoTree)).toBeUndefined();
+		expect(mapFsPathToDataModel("unknown/file.luau", makeRojoTree())).toBeUndefined();
 	});
 
 	it("should handle paths without Luau extension", () => {
 		expect.assertions(1);
 
-		expect(mapFsPathToDataModel("out/client/Button", simpleRojoTree)).toBe(
+		expect(mapFsPathToDataModel("out/client/Button", makeRojoTree())).toBe(
 			"ReplicatedStorage/client/Button",
 		);
 	});
@@ -151,7 +169,7 @@ describe(mapFsPathToDataModel, () => {
 	it("should handle deeply nested paths", () => {
 		expect.assertions(1);
 
-		expect(mapFsPathToDataModel("out/client/components/ui/Button.luau", simpleRojoTree)).toBe(
+		expect(mapFsPathToDataModel("out/client/components/ui/Button.luau", makeRojoTree())).toBe(
 			"ReplicatedStorage/client/components/ui/Button",
 		);
 	});

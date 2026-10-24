@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { PathClassifier, PathKind } from "./mount-collector.ts";
 import { collectMounts, pruneAncestors } from "./mount-collector.ts";
-import type { RojoTreeNode } from "./types.ts";
+import type { RojoTreeNode } from "./rojo-types.ts";
 
 function allDirectories(): PathKind {
 	return "directory";
@@ -17,12 +17,24 @@ function makeClassifier(kinds: Record<string, PathKind>): PathClassifier {
 }
 
 describe(collectMounts, () => {
+	it("should ignore object metadata while traversing child names ending in a dollar", () => {
+		expect.assertions(1);
+
+		const tree = { $properties: { Hidden: { $path: "hidden" } }, Child$: { $path: "visible" } };
+
+		expect(
+			collectMounts({ classify: allDirectories, currentDataModelPath: "", node: tree }),
+		).toStrictEqual([{ dataModelPath: "Child$", fsPath: "visible" }]);
+	});
+
 	it("should return empty array for tree with no $path entries", () => {
 		expect.assertions(1);
 
 		const tree = { $className: "DataModel" } satisfies RojoTreeNode;
 
-		expect(collectMounts(tree, "", allDirectories)).toStrictEqual([]);
+		expect(
+			collectMounts({ classify: allDirectories, currentDataModelPath: "", node: tree }),
+		).toStrictEqual([]);
 	});
 
 	it("should collect a single directory $path entry", () => {
@@ -35,9 +47,9 @@ describe(collectMounts, () => {
 			},
 		} satisfies RojoTreeNode;
 
-		expect(collectMounts(tree, "", allDirectories)).toStrictEqual([
-			{ dataModelPath: "ReplicatedStorage/client", fsPath: "out/client" },
-		]);
+		expect(
+			collectMounts({ classify: allDirectories, currentDataModelPath: "", node: tree }),
+		).toStrictEqual([{ dataModelPath: "ReplicatedStorage/client", fsPath: "out/client" }]);
 	});
 
 	it("should collect multiple $path entries in nested tree", () => {
@@ -54,7 +66,11 @@ describe(collectMounts, () => {
 			},
 		} satisfies RojoTreeNode;
 
-		const result = collectMounts(tree, "", allDirectories);
+		const result = collectMounts({
+			classify: allDirectories,
+			currentDataModelPath: "",
+			node: tree,
+		});
 
 		expect(result).toStrictEqual([
 			{ dataModelPath: "ReplicatedStorage/client", fsPath: "out/client" },
@@ -73,9 +89,9 @@ describe(collectMounts, () => {
 			},
 		} satisfies RojoTreeNode;
 
-		expect(collectMounts(tree, "", allDirectories)).toStrictEqual([
-			{ dataModelPath: "ReplicatedStorage/client", fsPath: "out/client" },
-		]);
+		expect(
+			collectMounts({ classify: allDirectories, currentDataModelPath: "", node: tree }),
+		).toStrictEqual([{ dataModelPath: "ReplicatedStorage/client", fsPath: "out/client" }]);
 	});
 
 	it("should skip file-valued $path entries", () => {
@@ -94,7 +110,7 @@ describe(collectMounts, () => {
 			"out/shared/Constants.luau": "file",
 		});
 
-		expect(collectMounts(tree, "", classify)).toStrictEqual([
+		expect(collectMounts({ classify, currentDataModelPath: "", node: tree })).toStrictEqual([
 			{ dataModelPath: "ReplicatedStorage/shared", fsPath: "out/shared" },
 		]);
 	});
@@ -114,7 +130,7 @@ describe(collectMounts, () => {
 			"out/client": "directory",
 		});
 
-		const result = collectMounts(tree, "", classify);
+		const result = collectMounts({ classify, currentDataModelPath: "", node: tree });
 
 		expect(result).toStrictEqual([
 			{ dataModelPath: "ReplicatedStorage/client", fsPath: "out/client" },
@@ -133,7 +149,7 @@ describe(collectMounts, () => {
 
 		const classify = vi.fn<PathClassifier>();
 
-		expect(collectMounts(tree, "", classify)).toStrictEqual([]);
+		expect(collectMounts({ classify, currentDataModelPath: "", node: tree })).toStrictEqual([]);
 		expect(classify).not.toHaveBeenCalled();
 	});
 
@@ -147,9 +163,9 @@ describe(collectMounts, () => {
 			},
 		} satisfies RojoTreeNode;
 
-		expect(collectMounts(tree, "", allDirectories)).toStrictEqual([
-			{ dataModelPath: "ReplicatedStorage/optional", fsPath: "out/maybe" },
-		]);
+		expect(
+			collectMounts({ classify: allDirectories, currentDataModelPath: "", node: tree }),
+		).toStrictEqual([{ dataModelPath: "ReplicatedStorage/optional", fsPath: "out/maybe" }]);
 	});
 
 	it("should skip keys that start with $", () => {
@@ -160,7 +176,9 @@ describe(collectMounts, () => {
 			$properties: { Name: "Game" },
 		} satisfies RojoTreeNode;
 
-		expect(collectMounts(tree, "", allDirectories)).toStrictEqual([]);
+		expect(
+			collectMounts({ classify: allDirectories, currentDataModelPath: "", node: tree }),
+		).toStrictEqual([]);
 	});
 
 	it("should skip non-object values", () => {
@@ -171,7 +189,9 @@ describe(collectMounts, () => {
 			$ignoreUnknownInstances: true,
 		} satisfies RojoTreeNode;
 
-		expect(collectMounts(tree, "", allDirectories)).toStrictEqual([]);
+		expect(
+			collectMounts({ classify: allDirectories, currentDataModelPath: "", node: tree }),
+		).toStrictEqual([]);
 	});
 
 	it("should walk deeply nested tree structures", () => {
@@ -189,7 +209,9 @@ describe(collectMounts, () => {
 			},
 		} satisfies RojoTreeNode;
 
-		expect(collectMounts(tree, "", allDirectories)).toStrictEqual([
+		expect(
+			collectMounts({ classify: allDirectories, currentDataModelPath: "", node: tree }),
+		).toStrictEqual([
 			{
 				dataModelPath: "ReplicatedStorage/Packages/friends/Client",
 				fsPath: "src/Client",
@@ -208,9 +230,13 @@ describe(collectMounts, () => {
 			lib: { $path: "out/lib" },
 		} satisfies RojoTreeNode;
 
-		expect(collectMounts(subtree, "ReplicatedStorage/shared", allDirectories)).toStrictEqual([
-			{ dataModelPath: "ReplicatedStorage/shared/lib", fsPath: "out/lib" },
-		]);
+		expect(
+			collectMounts({
+				classify: allDirectories,
+				currentDataModelPath: "ReplicatedStorage/shared",
+				node: subtree,
+			}),
+		).toStrictEqual([{ dataModelPath: "ReplicatedStorage/shared/lib", fsPath: "out/lib" }]);
 	});
 });
 

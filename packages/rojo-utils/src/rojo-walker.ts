@@ -1,8 +1,9 @@
 import { type, type Type } from "arktype";
-import type { Dirent } from "node:fs";
-import * as fs from "node:fs";
 import path from "node:path";
 
+import type { DirectoryEntry, FileSystem } from "./file-system.ts";
+import { nodeFileSystem } from "./file-system.ts";
+import { getTreeSchema } from "./project-schema.ts";
 import type { PartitionInfo, RbxPath } from "./rbx-path.ts";
 import {
 	convertToLuau,
@@ -10,8 +11,9 @@ import {
 	ROJO_DEFAULT_NAME,
 	ROJO_MODULE_EXTS,
 } from "./rojo-file-paths.ts";
-import { unwrapPath } from "./types.ts";
+import { unwrapPath } from "./tree-node.ts";
 
+/** Resolver tree metadata and children, including legacy property arrays. */
 export type RojoTree = RojoTreeMembers & RojoTreeMetadata;
 
 /**
@@ -19,11 +21,17 @@ export type RojoTree = RojoTreeMembers & RojoTreeMetadata;
  * collections once the walk returns; the walker keeps no reference.
  */
 export interface RojoWalk {
+	/** Exact file mappings, which take precedence over directory partitions. */
 	filePathToRbxPathMap: Map<string, RbxPath>;
+	/** Whether a DataModel root enables game-container visibility rules. */
 	isGame: boolean;
+	/** Mounts in lookup precedence order; the first containing prefix wins. */
 	partitions: Array<PartitionInfo>;
+	/** Project paths whose changes invalidate the captured walk. */
 	walkedConfigFiles: Set<string>;
+	/** Canonical directories visited while discovering nested projects. */
 	walkedDirectories: Set<string>;
+	/** Recoverable discovery and parse diagnostics, in encounter order. */
 	warnings: Array<string>;
 }
 
@@ -72,6 +80,7 @@ let rojoFileSchema: Type<RojoFile> | undefined;
  */
 class RojoWalker {
 	private readonly filePathToRbxPathMap = new Map<string, RbxPath>();
+	private readonly fileSystem: FileSystem;
 	private readonly partitions = new Array<PartitionInfo>();
 	private readonly rbxPath = new Array<string>();
 	private readonly realpathCache = new Map<string, string>();
@@ -81,8 +90,12 @@ class RojoWalker {
 
 	private isGame = false;
 
+	constructor(fileSystem: FileSystem) {
+		this.fileSystem = fileSystem;
+	}
+
 	public parseConfig(rojoConfigFilePath: string, doNotPush = false): void {
-		if (!fs.existsSync(rojoConfigFilePath)) {
+		if (!this.fileSystem.existsSync(rojoConfigFilePath)) {
 			this.warn(`RojoResolver: Path does not exist "${rojoConfigFilePath}"`);
 			return;
 		}
@@ -92,7 +105,7 @@ class RojoWalker {
 
 		let configJson: JSONValue | undefined;
 		try {
-			configJson = JSON.parse(fs.readFileSync(realPath, "utf8"));
+			configJson = JSON.parse(this.fileSystem.readFileSync(realPath, "utf8"));
 		} catch {
 			// Malformed JSON: leave configJson undefined and fall through so it
 			// is reported as an invalid configuration rather than crashing the
@@ -105,11 +118,24 @@ class RojoWalker {
 			return;
 		}
 
-		this.parseTree(path.dirname(rojoConfigFilePath), config.name, config.tree, doNotPush);
+		this.parseTree({
+			name: doNotPush ? undefined : config.name,
+			basePath: path.dirname(rojoConfigFilePath),
+			tree: config.tree,
+		});
 	}
 
-	public parseTree(basePath: string, name: string, tree: RojoTree, doNotPush = false): void {
-		if (!doNotPush) {
+	public parseTree({
+		name,
+		basePath,
+		tree,
+	}: {
+		basePath: string;
+
+		name?: string | undefined;
+		tree: RojoTree;
+	}): void {
+		if (name !== undefined) {
 			this.rbxPath.push(name);
 		}
 
@@ -126,11 +152,11 @@ class RojoWalker {
 		for (const childName of childNames) {
 			const child = tree[childName];
 			if (isRojoTree(child)) {
-				this.parseTree(basePath, childName, child);
+				this.parseTree({ name: childName, basePath, tree: child });
 			}
 		}
 
-		if (!doNotPush) {
+		if (name !== undefined) {
 			this.rbxPath.pop();
 		}
 	}
@@ -149,7 +175,7 @@ class RojoWalker {
 	private cachedRealpath(targetPath: string): string {
 		let resolved = this.realpathCache.get(targetPath);
 		if (resolved === undefined) {
-			resolved = fs.realpathSync(targetPath);
+			resolved = this.fileSystem.realpathSync(targetPath);
 			this.realpathCache.set(targetPath, resolved);
 		}
 
@@ -158,7 +184,7 @@ class RojoWalker {
 
 	private classifyEntry(
 		directory: string,
-		entry: Dirent,
+		entry: DirectoryEntry,
 	): undefined | { isDirectory: boolean; isFile: boolean } {
 		let isFile = entry.isFile();
 		let isDirectory = entry.isDirectory();
@@ -174,7 +200,7 @@ class RojoWalker {
 		// whole walk.
 		const childPath = path.join(directory, entry.name);
 		try {
-			const stat = fs.statSync(this.cachedRealpath(childPath));
+			const stat = this.fileSystem.statSync(this.cachedRealpath(childPath));
 			isFile = stat.isFile();
 			isDirectory = stat.isDirectory();
 		} catch (err) {
@@ -183,6 +209,25 @@ class RojoWalker {
 		}
 
 		return { isDirectory, isFile };
+	}
+
+	private parseDirectory(luauPath: string, realPath: string): void {
+		const isDirectory =
+			this.fileSystem.existsSync(realPath) &&
+			this.fileSystem.statSync(realPath).isDirectory();
+		if (isDirectory) {
+			this.walkedDirectories.add(realPath);
+		}
+
+		if (isDirectory && this.fileSystem.readdirSync(realPath).includes(ROJO_DEFAULT_NAME)) {
+			this.parseConfig(path.join(luauPath, ROJO_DEFAULT_NAME), true);
+			return;
+		}
+
+		this.partitions.unshift({ fsPath: luauPath, rbxPath: [...this.rbxPath] });
+		if (isDirectory) {
+			this.searchDirectory(luauPath);
+		}
 	}
 
 	private parsePath(itemPath: string): void {
@@ -199,32 +244,18 @@ class RojoWalker {
 			return;
 		}
 
-		const realPath = fs.existsSync(luauPath) ? this.cachedRealpath(luauPath) : luauPath;
+		const realPath = this.fileSystem.existsSync(luauPath)
+			? this.cachedRealpath(luauPath)
+			: luauPath;
 		const extension = path.extname(luauPath);
 		if (ROJO_MODULE_EXTS.has(extension)) {
 			this.filePathToRbxPathMap.set(luauPath, [...this.rbxPath]);
 		} else {
-			const isDirectory = fs.existsSync(realPath) && fs.statSync(realPath).isDirectory();
-			if (isDirectory) {
-				this.walkedDirectories.add(realPath);
-			}
-
-			if (isDirectory && fs.readdirSync(realPath).includes(ROJO_DEFAULT_NAME)) {
-				this.parseConfig(path.join(luauPath, ROJO_DEFAULT_NAME), true);
-			} else {
-				this.partitions.unshift({
-					fsPath: luauPath,
-					rbxPath: [...this.rbxPath],
-				});
-
-				if (isDirectory) {
-					this.searchDirectory(luauPath);
-				}
-			}
+			this.parseDirectory(luauPath, realPath);
 		}
 	}
 
-	private searchChildren(directory: string, directoryEntries: Array<Dirent>): void {
+	private searchChildren(directory: string, directoryEntries: Array<DirectoryEntry>): void {
 		// Two-phase: parse every sibling *.project.json before recursing into
 		// sibling directories. parsePath / parseConfig insert partitions via
 		// unshift, and getRbxPathFromFilePath returns the first match, so
@@ -261,7 +292,7 @@ class RojoWalker {
 		this.walkedDirectories.add(realPath);
 		// readdirSync transparently follows a symlink on the argument; the
 		// result is equivalent to readdirSync(realpathSync(directory)).
-		const directoryEntries = fs.readdirSync(directory, { withFileTypes: true });
+		const directoryEntries = this.fileSystem.readdirSync(directory, { withFileTypes: true });
 
 		if (directoryEntries.some((entry) => entry.name === ROJO_DEFAULT_NAME)) {
 			this.parseConfig(path.join(directory, ROJO_DEFAULT_NAME));
@@ -288,23 +319,30 @@ class RojoWalker {
  * Walk a Rojo project file, following every nested project and `$path` mount it
  * references.
  * @param rojoConfigFilePath - Path to the `*.project.json` file to walk.
+ * @param fileSystem - Host for all reads and directory discovery.
  * @returns Everything the walk discovered.
  */
-export function walkRojoConfig(rojoConfigFilePath: string): RojoWalk {
-	const walker = new RojoWalker();
+export function walkRojoConfig(
+	rojoConfigFilePath: string,
+	fileSystem: FileSystem = nodeFileSystem,
+): RojoWalk {
+	const walker = new RojoWalker(fileSystem);
 	walker.parseConfig(path.resolve(rojoConfigFilePath), true);
 	return walker.result();
 }
 
 /**
  * Walk an in-memory Rojo tree rather than a project file on disk.
- * @param basePath - The directory `$path` values resolve against.
- * @param tree - The tree to walk.
+ * @param options - Tree and directory its mounts are written against.
+ * @param fileSystem - Host for all reads and directory discovery.
  * @returns Everything the walk discovered.
  */
-export function walkRojoTree(basePath: string, tree: RojoTree): RojoWalk {
-	const walker = new RojoWalker();
-	walker.parseTree(basePath, "", tree, true);
+export function walkRojoTree(
+	{ basePath, tree }: { basePath: string; tree: RojoTree },
+	fileSystem: FileSystem = nodeFileSystem,
+): RojoWalk {
+	const walker = new RojoWalker(fileSystem);
+	walker.parseTree({ basePath, tree });
 	return walker.result();
 }
 
@@ -332,18 +370,13 @@ function parseRojoConfig(value: JSONValue | undefined): RojoFile | undefined {
 		// a tree's key space mixes `$`-metadata with child nodes, so arktype
 		// cannot recurse through it without rejecting the `$` keys Rojo adds
 		// that this fork does not model.
-		"tree": type({
-			"$className?": "string",
-			"$ignoreUnknownInstances?": "boolean",
-			"$path?": ["string", "|", { optional: "string" }],
-			"$properties?": "object",
-		}).narrow((tree) => !Array.isArray(tree)),
+		"tree": getTreeSchema(),
 	}).as<RojoFile>();
 
 	const result = rojoFileSchema(value);
 	return result instanceof type.errors ? undefined : result;
 }
 
-function isRojoTree(value: unknown): value is RojoTree {
+function isRojoTree(value: JSONValue | RojoTree[string]): value is RojoTree {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }

@@ -120,6 +120,7 @@
 		"eslint-plugin-pnpm": "1.8.0",
 		"eslint-plugin-project-structure": "3.14.4",
 		"jest-extended": "7.0.0",
+		"jscpd": "5.4.1",
 		"memfs": "4.68.1",
 		"oxlint": "1.87.0",
 		"oxlint-tsgolint": "7.0.2003",

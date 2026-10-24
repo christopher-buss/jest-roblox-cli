@@ -1,6 +1,11 @@
 import * as nodeFs from "node:fs";
 
 /**
+ * Native directory metadata used by the walker without importing a disk host.
+ */
+export type DirectoryEntry = nodeFs.Dirent;
+
+/**
  * The `node:fs` surface this library reads through, named once so a caller can
  * hand it a filesystem of its own.
  *

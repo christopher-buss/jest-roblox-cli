@@ -27,6 +27,7 @@ export const RbxType = {
 	Unknown: 3,
 } as const;
 
+/** Compiler script classification after normalizing legacy Lua extensions. */
 export type RbxType = (typeof RbxType)[keyof typeof RbxType];
 
 const SUB_EXT_TYPE_MAP = new Map<string, RbxType>([
@@ -54,6 +55,7 @@ export const FileRelation = {
 	OutToOut: 0,
 } as const;
 
+/** Import visibility across isolated game containers. */
 export type FileRelation = (typeof FileRelation)[keyof typeof FileRelation];
 
 export const NetworkType = {
@@ -62,24 +64,39 @@ export const NetworkType = {
 	Unknown: 0,
 } as const;
 
+/** The execution side inferred from a DataModel service. */
 export type NetworkType = (typeof NetworkType)[keyof typeof NetworkType];
 
 /** Serializable snapshot of a {@link RojoResolver} for disk caching. */
 export interface RojoResolverState {
+	/** Exact file mappings, which take precedence over directory partitions. */
 	filePathToRbxPathMap: Array<[string, RbxPath]>;
+	/** Whether a DataModel root enables game-container visibility rules. */
 	isGame: boolean;
+	/** Container prefixes used to classify relative import visibility. */
 	isolatedContainers: Array<RbxPath>;
+	/** Mounts in lookup precedence order; the first containing prefix wins. */
 	partitions: Array<PartitionInfo>;
+	/** Project paths whose changes invalidate the captured walk. */
 	walkedConfigFiles: Array<string>;
+	/**
+	 * Canonical directories whose listing changes invalidate the captured
+	 * walk.
+	 */
 	walkedDirs: Array<string>;
+	/** Recoverable discovery and parse diagnostics, in encounter order. */
 	warnings: Array<string>;
 }
 
+/** Project discovery result with nonfatal ambiguity diagnostics. */
 export interface RojoConfigFileResult {
+	/** Selected project file, absent when discovery finds no candidate. */
 	path: string | undefined;
+	/** Recoverable discovery and parse diagnostics, in encounter order. */
 	warnings: Array<string>;
 }
 
+/** Resolves source files and import visibility against a captured Rojo walk. */
 export class RojoResolver {
 	private filePathToRbxPathMap = new Map<string, RbxPath>();
 	private isolatedContainers = [...DEFAULT_ISOLATED_CONTAINERS];
@@ -90,6 +107,12 @@ export class RojoResolver {
 
 	public isGame = false;
 
+	/**
+	 * Prefers the default project file and reports ambiguous alternatives.
+	 * @param projectPath - Project file or directory to inspect.
+	 * @param fileSystem - Host for all reads and directory discovery.
+	 * @returns The selected project path or undefined, together with discovery warnings.
+	 */
 	public static findRojoConfigFilePath(
 		projectPath: string,
 		fileSystem: FileSystem = nodeFileSystem,
@@ -118,8 +141,17 @@ export class RojoResolver {
 		return { path: candidates[0], warnings };
 	}
 
-	public static fromPath(rojoConfigFilePath: string): RojoResolver {
-		return RojoResolver.fromWalk(walkRojoConfig(rojoConfigFilePath));
+	/**
+	 * Captures a filesystem walk for later pure resolver queries.
+	 * @param rojoConfigFilePath - Project file to walk.
+	 * @param fileSystem - Host for all reads and directory discovery.
+	 * @returns A resolver holding the captured walk and its recoverable warnings.
+	 */
+	public static fromPath(
+		rojoConfigFilePath: string,
+		fileSystem: FileSystem = nodeFileSystem,
+	): RojoResolver {
+		return RojoResolver.fromWalk(walkRojoConfig(rojoConfigFilePath, fileSystem));
 	}
 
 	/**
@@ -151,10 +183,25 @@ export class RojoResolver {
 		return resolver;
 	}
 
-	public static fromTree(basePath: string, tree: RojoTree): RojoResolver {
-		return RojoResolver.fromWalk(walkRojoTree(basePath, tree));
+	/**
+	 * Captures an in-memory tree against the supplied filesystem host.
+	 * @param options - Tree and directory its mounts are written against.
+	 * @param fileSystem - Host for all reads and directory discovery.
+	 * @returns A resolver holding mappings discovered below the supplied base directory.
+	 */
+	public static fromTree(
+		{ basePath, tree }: { basePath: string; tree: RojoTree },
+		fileSystem: FileSystem = nodeFileSystem,
+	): RojoResolver {
+		return RojoResolver.fromWalk(walkRojoTree({ basePath, tree }, fileSystem));
 	}
 
+	/**
+	 * Classifies whether two instances share an isolated game container.
+	 * @param fileRbxPath - Importing file instance path.
+	 * @param moduleRbxPath - Imported module instance path.
+	 * @returns The visibility relation between the importing file and imported module.
+	 */
 	public getFileRelation(fileRbxPath: RbxPath, moduleRbxPath: RbxPath): FileRelation {
 		const fileContainer = this.getContainer(this.isolatedContainers, fileRbxPath);
 		const moduleContainer = this.getContainer(this.isolatedContainers, moduleRbxPath);
@@ -178,6 +225,11 @@ export class RojoResolver {
 		return FileRelation.OutToOut;
 	}
 
+	/**
+	 * Infers client or server execution from the containing service.
+	 * @param rbxPath - DataModel instance names from the root.
+	 * @returns The inferred execution side, or Unknown outside recognized game services.
+	 */
 	public getNetworkType(rbxPath: RbxPath): NetworkType {
 		if (this.getContainer(SERVER_CONTAINERS, rbxPath)) {
 			return NetworkType.Server;
@@ -190,10 +242,20 @@ export class RojoResolver {
 		return NetworkType.Unknown;
 	}
 
+	/**
+	 * Returns mounts in the precedence used by file lookup.
+	 *
+	 * @returns Mounts in first-match lookup order.
+	 */
 	public getPartitions(): ReadonlyArray<PartitionInfo> {
 		return this.partitions;
 	}
 
+	/**
+	 * Uses exact file mappings before the first containing directory mount.
+	 * @param filePath - Filesystem path to classify or resolve.
+	 * @returns Instance names from the containing mount, or undefined for an unmapped file.
+	 */
 	public getRbxPathFromFilePath(filePath: string): RbxPath | undefined {
 		const resolved = convertToLuau(path.resolve(filePath));
 
@@ -219,6 +281,11 @@ export class RojoResolver {
 		return undefined;
 	}
 
+	/**
+	 * Normalizes Lua extensions before interpreting Rojo script suffixes.
+	 * @param filePath - Filesystem path to classify or resolve.
+	 * @returns The script kind or Unknown for an unrecognized script-side qualifier.
+	 */
 	public getRbxTypeFromFilePath(filePath: string): RbxType {
 		const resolved = convertToLuau(filePath);
 		const extension = path.extname(resolved);
@@ -254,37 +321,44 @@ export class RojoResolver {
 		};
 	}
 
+	/**
+	 * Returns recoverable diagnostics from project discovery and traversal.
+	 *
+	 * @returns Recoverable diagnostics in traversal order.
+	 */
 	public getWarnings(): ReadonlyArray<string> {
 		return this.warnings;
 	}
 
+	/**
+	 * Tests whether a game instance is inside an isolated container.
+	 * @param rbxPath - DataModel instance names from the root.
+	 * @returns Whether isolation applies to this instance in a game tree.
+	 */
 	public isIsolated(rbxPath: RbxPath): boolean {
 		return this.getContainer(this.isolatedContainers, rbxPath) !== undefined;
 	}
 
+	/**
+	 * Builds named and parent steps after the shared DataModel prefix.
+	 * @param rbxFrom - Starting instance path.
+	 * @param rbxTo - Destination instance path.
+	 * @returns One parent symbol per ascent followed by the destination child names.
+	 */
 	public static relative(rbxFrom: RbxPath, rbxTo: RbxPath): RelativeRbxPath {
-		const maxLength = Math.max(rbxFrom.length, rbxTo.length);
-		let diffIndex = maxLength;
-		for (let index = 0; index < maxLength; index++) {
-			if (rbxFrom[index] !== rbxTo[index]) {
-				diffIndex = index;
+		let common = 0;
+		for (const [index, part] of rbxFrom.entries()) {
+			if (part !== rbxTo[index]) {
 				break;
 			}
+
+			common++;
 		}
 
-		const result = new Array<RbxPathParent | string>();
-		if (diffIndex < rbxFrom.length) {
-			for (let index = 0; index < rbxFrom.length - diffIndex; index++) {
-				result.push(RbxPathParent);
-			}
-		}
-
-		for (let index = diffIndex; index < rbxTo.length; index++) {
-			// oxlint-disable-next-line typescript/no-non-null-assertion -- Loop index
-			result.push(rbxTo[index]!);
-		}
-
-		return result;
+		return [
+			...rbxFrom.slice(common).map((): RbxPathParent => RbxPathParent),
+			...rbxTo.slice(common),
+		];
 	}
 
 	/**
@@ -294,13 +368,23 @@ export class RojoResolver {
 	 * @returns A resolver that maps every file in the package relatively.
 	 */
 	public static synthetic(basePath: string): RojoResolver {
-		return RojoResolver.fromWalk(walkRojoTree(basePath, { $path: basePath }));
+		return RojoResolver.fromTree({ basePath, tree: { $path: basePath } });
 	}
 
+	/**
+	 * Project paths whose changes invalidate the captured walk.
+	 *
+	 * @returns Project paths whose changes invalidate the captured walk.
+	 */
 	public get walkedConfigFiles(): ReadonlySet<string> {
 		return this.walkedConfigFilesInternal;
 	}
 
+	/**
+	 * Canonical directories visited while discovering nested projects.
+	 *
+	 * @returns Canonical directories visited while discovering nested projects.
+	 */
 	public get walkedDirectories(): ReadonlySet<string> {
 		return this.walkedDirectoriesInternal;
 	}
@@ -316,8 +400,8 @@ export class RojoResolver {
 		return resolver;
 	}
 
-	private getContainer(from: Array<RbxPath>, rbxPath?: RbxPath): RbxPath | undefined {
-		if (rbxPath && this.isGame) {
+	private getContainer(from: Array<RbxPath>, rbxPath: RbxPath): RbxPath | undefined {
+		if (this.isGame) {
 			for (const container of from) {
 				if (arrayStartsWith(rbxPath, container)) {
 					return container;

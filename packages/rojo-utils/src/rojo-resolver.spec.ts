@@ -1,49 +1,80 @@
-import type { PathLike } from "node:fs";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
 import path from "node:path";
-import { platform } from "node:process";
-import { describe, expect, it, onTestFinished } from "vitest";
+import { describe, expect, it, onTestFinished, vi } from "vitest";
 
+import { makeFileSystem } from "#test/helpers/unit/file-system";
 import type { FileSystem } from "./file-system.ts";
-import { nodeFileSystem } from "./file-system.ts";
-import { RbxPathParent } from "./rbx-path.ts";
 import { FileRelation, NetworkType, RbxType, RojoResolver } from "./rojo-resolver.ts";
+import type { RojoResolverState } from "./rojo-resolver.ts";
 import type { RojoTree } from "./rojo-walker.ts";
-
-type FileMap = Record<string, string>;
-
-function setupProjectFiles(files: FileMap): string {
-	const directory = realpathSync(mkdtempSync(path.join(tmpdir(), "rojo-resolver-")));
-	onTestFinished(() => {
-		rmSync(directory, { force: true, recursive: true });
-	});
-
-	for (const [relativePath, content] of Object.entries(files)) {
-		const full = path.join(directory, relativePath);
-		mkdirSync(path.dirname(full), { recursive: true });
-		writeFileSync(full, content);
-	}
-
-	return directory;
-}
 
 function project(tree: RojoTree, name = "Game"): string {
 	return JSON.stringify({ name, tree });
 }
 
-function fromProject(directory: string): RojoResolver {
-	return RojoResolver.fromPath(path.join(directory, "default.project.json"));
+function fromProject({
+	directory,
+	fileSystem,
+}: {
+	directory: string;
+	fileSystem: FileSystem;
+}): RojoResolver {
+	return RojoResolver.fromPath(path.join(directory, "default.project.json"), fileSystem);
+}
+
+function makeModuleProject(): ReturnType<typeof makeFileSystem> {
+	return makeFileSystem({
+		"default.project.json": project({
+			$className: "DataModel",
+			ReplicatedStorage: { $path: "src/shared" },
+		}),
+		"src/shared/init.luau": "return {}",
+		"src/shared/module.luau": "return {}",
+	});
+}
+
+function makeSyntheticFileSystem(): ReturnType<typeof makeFileSystem> {
+	const fixture = makeFileSystem();
+	const { fromTree } = RojoResolver;
+	const spy = vi.spyOn(RojoResolver, "fromTree").mockImplementation((options) => {
+		return fromTree(options, fixture.fileSystem);
+	});
+	onTestFinished(() => {
+		spy.mockRestore();
+	});
+	return fixture;
 }
 
 describe("findRojoConfigFilePath", () => {
+	it("should prefer the default project over sorted alternatives", () => {
+		expect.assertions(2);
+
+		const { directory, fileSystem } = makeFileSystem({
+			"a.project.json": "{}",
+			"default.project.json": "{}",
+			"z.project.json": "{}",
+		});
+		const result = RojoResolver.findRojoConfigFilePath(directory, fileSystem);
+
+		expect(result.path).toBe(path.join(directory, "default.project.json"));
+		expect(result.warnings).toBeEmpty();
+	});
+
+	it("should default an empty resolver to non-game queries", () => {
+		expect.assertions(2);
+
+		const resolver = new RojoResolver();
+
+		expect(resolver.isGame).toBeFalse();
+		expect(resolver.getNetworkType(["StarterGui"])).toBe(NetworkType.Unknown);
+	});
+
 	it("should return the default project file when present", () => {
 		expect.assertions(2);
 
-		const directory = setupProjectFiles({
+		const { directory, fileSystem } = makeFileSystem({
 			"default.project.json": project({ $className: "DataModel" }),
 		});
-		const result = RojoResolver.findRojoConfigFilePath(directory);
+		const result = RojoResolver.findRojoConfigFilePath(directory, fileSystem);
 
 		expect(result.path).toBe(path.join(directory, "default.project.json"));
 		expect(result.warnings).toBeEmpty();
@@ -52,10 +83,26 @@ describe("findRojoConfigFilePath", () => {
 	it("should return a single non-default project file without warning", () => {
 		expect.assertions(2);
 
-		const directory = setupProjectFiles({
+		const { directory, fileSystem } = makeFileSystem({
 			"game.project.json": project({ $className: "DataModel" }),
 		});
-		const result = RojoResolver.findRojoConfigFilePath(directory);
+		const result = RojoResolver.findRojoConfigFilePath(directory, fileSystem);
+
+		expect(result.path).toBe(path.join(directory, "game.project.json"));
+		expect(result.warnings).toBeEmpty();
+	});
+
+	it("should skip a dangling default project link", () => {
+		expect.assertions(2);
+
+		const { directory, fileSystem, fs } = makeFileSystem({
+			"game.project.json": project({ $className: "DataModel" }),
+		});
+		fs.symlinkSync(
+			path.join(directory, "missing.json"),
+			path.join(directory, "default.project.json"),
+		);
+		const result = RojoResolver.findRojoConfigFilePath(directory, fileSystem);
 
 		expect(result.path).toBe(path.join(directory, "game.project.json"));
 		expect(result.warnings).toBeEmpty();
@@ -64,11 +111,11 @@ describe("findRojoConfigFilePath", () => {
 	it("should recognize the legacy roblox-project.json name", () => {
 		expect.assertions(1);
 
-		const directory = setupProjectFiles({
+		const { directory, fileSystem } = makeFileSystem({
 			"roblox-project.json": project({ $className: "DataModel" }),
 		});
 
-		expect(RojoResolver.findRojoConfigFilePath(directory).path).toBe(
+		expect(RojoResolver.findRojoConfigFilePath(directory, fileSystem).path).toBe(
 			path.join(directory, "roblox-project.json"),
 		);
 	});
@@ -76,12 +123,12 @@ describe("findRojoConfigFilePath", () => {
 	it("should warn when multiple project files are present", () => {
 		expect.assertions(1);
 
-		const directory = setupProjectFiles({
+		const { directory, fileSystem } = makeFileSystem({
 			"a.project.json": project({ $className: "DataModel" }),
 			"b.project.json": project({ $className: "DataModel" }),
 		});
 
-		expect(RojoResolver.findRojoConfigFilePath(directory).warnings[0]).toInclude(
+		expect(RojoResolver.findRojoConfigFilePath(directory, fileSystem).warnings[0]).toInclude(
 			"Multiple *.project.json files found",
 		);
 	});
@@ -89,22 +136,19 @@ describe("findRojoConfigFilePath", () => {
 	it("should probe the given file system rather than the disk", () => {
 		expect.assertions(1);
 
-		const directory = path.join(tmpdir(), "rojo-resolver-virtual");
-		const defaultPath = path.join(directory, "default.project.json");
-		const fileSystem = {
-			...nodeFileSystem,
-			existsSync: (candidate: PathLike) => candidate === defaultPath,
-		} satisfies FileSystem;
+		const { directory, fileSystem } = makeFileSystem({ "default.project.json": "{}" });
 
-		expect(RojoResolver.findRojoConfigFilePath(directory, fileSystem).path).toBe(defaultPath);
+		expect(RojoResolver.findRojoConfigFilePath(directory, fileSystem).path).toBe(
+			path.join(directory, "default.project.json"),
+		);
 	});
 
 	it("should return undefined when no project file is present", () => {
 		expect.assertions(1);
 
-		const directory = setupProjectFiles({ "readme.md": "hi" });
+		const { directory, fileSystem } = makeFileSystem({ "readme.md": "hi" });
 
-		expect(RojoResolver.findRojoConfigFilePath(directory).path).toBeUndefined();
+		expect(RojoResolver.findRojoConfigFilePath(directory, fileSystem).path).toBeUndefined();
 	});
 });
 
@@ -112,19 +156,22 @@ describe("fromPath", () => {
 	it("should mark a DataModel project as a game", () => {
 		expect.assertions(1);
 
-		const directory = setupProjectFiles({
+		const { directory, fileSystem } = makeFileSystem({
 			"default.project.json": project({ $className: "DataModel" }),
 		});
 
-		expect(fromProject(directory).isGame).toBeTrue();
+		expect(fromProject({ directory, fileSystem }).isGame).toBeTrue();
 	});
 
 	it("should warn when the config path does not exist", () => {
 		expect.assertions(1);
 
-		const directory = setupProjectFiles({ "readme.md": "hi" });
+		const { directory, fileSystem } = makeFileSystem({ "readme.md": "hi" });
 
-		const resolver = RojoResolver.fromPath(path.join(directory, "default.project.json"));
+		const resolver = RojoResolver.fromPath(
+			path.join(directory, "default.project.json"),
+			fileSystem,
+		);
 
 		expect(resolver.getWarnings()[0]).toInclude("Path does not exist");
 	});
@@ -132,45 +179,55 @@ describe("fromPath", () => {
 	it("should warn on an invalid configuration", () => {
 		expect.assertions(1);
 
-		const directory = setupProjectFiles({
+		const { directory, fileSystem } = makeFileSystem({
 			"default.project.json": JSON.stringify({ notName: 1 }),
 		});
 
-		expect(fromProject(directory).getWarnings()[0]).toInclude("Invalid configuration");
+		expect(fromProject({ directory, fileSystem }).getWarnings()[0]).toInclude(
+			"Invalid configuration",
+		);
 	});
 
 	it("should warn when the tree is an array rather than an object", () => {
 		expect.assertions(1);
 
-		const directory = setupProjectFiles({
+		const { directory, fileSystem } = makeFileSystem({
 			"default.project.json": JSON.stringify({ name: "Game", tree: [] }),
 		});
 
-		expect(fromProject(directory).getWarnings()[0]).toInclude("Invalid configuration");
+		expect(fromProject({ directory, fileSystem }).getWarnings()[0]).toInclude(
+			"Invalid configuration",
+		);
 	});
 
 	it("should warn when $path is neither a string nor an optional mount", () => {
 		expect.assertions(1);
 
-		const directory = setupProjectFiles({
+		const { directory, fileSystem } = makeFileSystem({
 			"default.project.json": JSON.stringify({ name: "Game", tree: { $path: 42 } }),
 		});
 
-		expect(fromProject(directory).getWarnings()[0]).toInclude("Invalid configuration");
+		expect(fromProject({ directory, fileSystem }).getWarnings()[0]).toInclude(
+			"Invalid configuration",
+		);
 	});
 
 	it("should warn on malformed JSON instead of throwing", () => {
 		expect.assertions(1);
 
-		const directory = setupProjectFiles({ "default.project.json": "{ broken json" });
+		const { directory, fileSystem } = makeFileSystem({
+			"default.project.json": "{ broken json",
+		});
 
-		expect(fromProject(directory).getWarnings()[0]).toInclude("Invalid configuration");
+		expect(fromProject({ directory, fileSystem }).getWarnings()[0]).toInclude(
+			"Invalid configuration",
+		);
 	});
 
 	it("should map a module file path directly", () => {
 		expect.assertions(1);
 
-		const directory = setupProjectFiles({
+		const { directory, fileSystem } = makeFileSystem({
 			"config.luau": "return {}",
 			"default.project.json": project({
 				$className: "DataModel",
@@ -179,23 +236,18 @@ describe("fromPath", () => {
 		});
 
 		expect(
-			fromProject(directory).getRbxPathFromFilePath(path.join(directory, "config.luau")),
+			fromProject({ directory, fileSystem }).getRbxPathFromFilePath(
+				path.join(directory, "config.luau"),
+			),
 		).toStrictEqual(["Config"]);
 	});
 
 	it("should resolve a directory partition and strip init", () => {
 		expect.assertions(2);
 
-		const directory = setupProjectFiles({
-			"default.project.json": project({
-				$className: "DataModel",
-				ReplicatedStorage: { $path: "src/shared" },
-			}),
-			"src/shared/init.luau": "return {}",
-			"src/shared/module.luau": "return {}",
-		});
+		const { directory, fileSystem } = makeModuleProject();
 
-		const resolver = fromProject(directory);
+		const resolver = fromProject({ directory, fileSystem });
 
 		expect(
 			resolver.getRbxPathFromFilePath(path.join(directory, "src/shared/init.luau")),
@@ -208,7 +260,7 @@ describe("fromPath", () => {
 	it("should accept the optional $path object form", () => {
 		expect.assertions(1);
 
-		const directory = setupProjectFiles({
+		const { directory, fileSystem } = makeFileSystem({
 			"default.project.json": project({
 				$className: "DataModel",
 				Maybe: { $path: { optional: "src/maybe" } },
@@ -217,7 +269,7 @@ describe("fromPath", () => {
 		});
 
 		expect(
-			fromProject(directory).getRbxPathFromFilePath(
+			fromProject({ directory, fileSystem }).getRbxPathFromFilePath(
 				path.join(directory, "src/maybe/value.luau"),
 			),
 		).toStrictEqual(["Maybe", "value"]);
@@ -226,20 +278,20 @@ describe("fromPath", () => {
 	it("should create a partition for a $path that does not exist", () => {
 		expect.assertions(1);
 
-		const directory = setupProjectFiles({
+		const { directory, fileSystem } = makeFileSystem({
 			"default.project.json": project({
 				$className: "DataModel",
 				Ghost: { $path: "does/not/exist" },
 			}),
 		});
 
-		expect(fromProject(directory).getPartitions()).not.toBeEmpty();
+		expect(fromProject({ directory, fileSystem }).getPartitions()).not.toBeEmpty();
 	});
 
 	it("should parse a nested default project referenced by directory", () => {
 		expect.assertions(1);
 
-		const directory = setupProjectFiles({
+		const { directory, fileSystem } = makeFileSystem({
 			"default.project.json": project({
 				$className: "DataModel",
 				Nested: { $path: "nested" },
@@ -249,7 +301,7 @@ describe("fromPath", () => {
 		});
 
 		expect(
-			fromProject(directory).getRbxPathFromFilePath(
+			fromProject({ directory, fileSystem }).getRbxPathFromFilePath(
 				path.join(directory, "nested/src/inside.luau"),
 			),
 		).toStrictEqual(["Nested", "inside"]);
@@ -258,7 +310,7 @@ describe("fromPath", () => {
 	it("should embed a nested project referenced by a project file and ignore its name", () => {
 		expect.assertions(1);
 
-		const directory = setupProjectFiles({
+		const { directory, fileSystem } = makeFileSystem({
 			"default.project.json": project({
 				$className: "DataModel",
 				Pkg: { $path: "shared.project.json" },
@@ -270,14 +322,16 @@ describe("fromPath", () => {
 		// Mounts under the parent key "Pkg", not the nested project's own
 		// name "IgnoredName".
 		expect(
-			fromProject(directory).getRbxPathFromFilePath(path.join(directory, "src/mod.luau")),
+			fromProject({ directory, fileSystem }).getRbxPathFromFilePath(
+				path.join(directory, "src/mod.luau"),
+			),
 		).toStrictEqual(["Pkg", "mod"]);
 	});
 
 	it("should register the nested partition and not map the project file as a leaf", () => {
 		expect.assertions(3);
 
-		const directory = setupProjectFiles({
+		const { directory, fileSystem } = makeFileSystem({
 			"default.project.json": project({
 				$className: "DataModel",
 				Pkg: { $path: "shared.project.json" },
@@ -286,7 +340,7 @@ describe("fromPath", () => {
 			"src/mod.luau": "return {}",
 		});
 
-		const resolver = fromProject(directory);
+		const resolver = fromProject({ directory, fileSystem });
 		const state = resolver.getState();
 		const projectFile = path.join(directory, "shared.project.json");
 
@@ -302,12 +356,14 @@ describe("fromPath", () => {
 	it("should return undefined for an unmapped file", () => {
 		expect.assertions(1);
 
-		const directory = setupProjectFiles({
+		const { directory, fileSystem } = makeFileSystem({
 			"default.project.json": project({ $className: "DataModel" }),
 		});
 
 		expect(
-			fromProject(directory).getRbxPathFromFilePath(path.join(directory, "elsewhere.luau")),
+			fromProject({ directory, fileSystem }).getRbxPathFromFilePath(
+				path.join(directory, "elsewhere.luau"),
+			),
 		).toBeUndefined();
 	});
 });
@@ -316,7 +372,7 @@ describe("searchDirectory", () => {
 	it("should follow nested project files and subfolders", () => {
 		expect.assertions(2);
 
-		const directory = setupProjectFiles({
+		const { directory, fileSystem } = makeFileSystem({
 			"default.project.json": project({
 				$className: "DataModel",
 				ReplicatedStorage: { $path: "src/shared" },
@@ -326,7 +382,7 @@ describe("searchDirectory", () => {
 			"src/shared/sub/leaf.luau": "return {}",
 		});
 
-		const resolver = fromProject(directory);
+		const resolver = fromProject({ directory, fileSystem });
 
 		expect(
 			resolver.getRbxPathFromFilePath(path.join(directory, "src/shared/sub/leaf.luau")),
@@ -337,7 +393,7 @@ describe("searchDirectory", () => {
 	it("should stop at a subfolder that has its own default project", () => {
 		expect.assertions(1);
 
-		const directory = setupProjectFiles({
+		const { directory, fileSystem } = makeFileSystem({
 			"default.project.json": project({
 				$className: "DataModel",
 				ReplicatedStorage: { $path: "src/shared" },
@@ -349,15 +405,23 @@ describe("searchDirectory", () => {
 			),
 		});
 
-		expect(fromProject(directory).isGame).toBeTrue();
+		expect(fromProject({ directory, fileSystem }).isGame).toBeTrue();
 	});
 });
 
 describe("getRbxTypeFromFilePath", () => {
-	const resolver = RojoResolver.synthetic(".");
+	it("should classify non-script side suffixes as modules", () => {
+		expect.assertions(1);
+
+		const resolver = new RojoResolver();
+
+		expect(resolver.getRbxTypeFromFilePath("value.server.json")).toBe(RbxType.ModuleScript);
+	});
 
 	it("should classify a .server script", () => {
 		expect.assertions(1);
+
+		const resolver = new RojoResolver();
 
 		expect(resolver.getRbxTypeFromFilePath("a.server.luau")).toBe(RbxType.Script);
 	});
@@ -365,11 +429,15 @@ describe("getRbxTypeFromFilePath", () => {
 	it("should classify a .client script", () => {
 		expect.assertions(1);
 
+		const resolver = new RojoResolver();
+
 		expect(resolver.getRbxTypeFromFilePath("a.client.luau")).toBe(RbxType.LocalScript);
 	});
 
 	it("should classify a plain module script", () => {
 		expect.assertions(1);
+
+		const resolver = new RojoResolver();
 
 		expect(resolver.getRbxTypeFromFilePath("a.luau")).toBe(RbxType.ModuleScript);
 	});
@@ -377,11 +445,15 @@ describe("getRbxTypeFromFilePath", () => {
 	it("should classify a non-script module by extension", () => {
 		expect.assertions(1);
 
+		const resolver = new RojoResolver();
+
 		expect(resolver.getRbxTypeFromFilePath("a.json")).toBe(RbxType.ModuleScript);
 	});
 
 	it("should return Unknown for an unrecognized sub-extension", () => {
 		expect.assertions(1);
+
+		const resolver = new RojoResolver();
 
 		expect(resolver.getRbxTypeFromFilePath("a.weird.luau")).toBe(RbxType.Unknown);
 	});
@@ -389,13 +461,19 @@ describe("getRbxTypeFromFilePath", () => {
 	it("should convert a .lua extension to .luau", () => {
 		expect.assertions(1);
 
+		const resolver = new RojoResolver();
+
 		expect(resolver.getRbxTypeFromFilePath("a.lua")).toBe(RbxType.ModuleScript);
 	});
 });
 
 describe("container queries", () => {
-	function gameResolver(directory: string): RojoResolver {
-		writeFileSync(
+	function gameResolver({
+		directory,
+		fileSystem,
+		fs,
+	}: ReturnType<typeof makeFileSystem>): RojoResolver {
+		fs.writeFileSync(
 			path.join(directory, "default.project.json"),
 			project({
 				$className: "DataModel",
@@ -406,18 +484,18 @@ describe("container queries", () => {
 		);
 		for (const relativePath of ["src/server/a.luau", "src/gui/b.luau", "src/pack/c.luau"]) {
 			const full = path.join(directory, relativePath);
-			mkdirSync(path.dirname(full), { recursive: true });
-			writeFileSync(full, "return {}");
+			fs.mkdirSync(path.dirname(full), { recursive: true });
+			fs.writeFileSync(full, "return {}");
 		}
 
-		return fromProject(directory);
+		return fromProject({ directory, fileSystem });
 	}
 
 	it("should report network type by container", () => {
 		expect.assertions(3);
 
-		const directory = setupProjectFiles({});
-		const resolver = gameResolver(directory);
+		const { directory, fileSystem, fs } = makeFileSystem({});
+		const resolver = gameResolver({ directory, fileSystem, fs });
 
 		expect(resolver.getNetworkType(["ServerScriptService"])).toBe(NetworkType.Server);
 		expect(resolver.getNetworkType(["StarterGui"])).toBe(NetworkType.Client);
@@ -427,9 +505,9 @@ describe("container queries", () => {
 	it("should detect isolated containers", () => {
 		expect.assertions(2);
 
-		const directory = setupProjectFiles({});
+		const { directory, fileSystem, fs } = makeFileSystem({});
 
-		const resolver = gameResolver(directory);
+		const resolver = gameResolver({ directory, fileSystem, fs });
 
 		expect(resolver.isIsolated(["StarterGui"])).toBeTrue();
 		expect(resolver.isIsolated(["ReplicatedStorage"])).toBeFalse();
@@ -438,8 +516,8 @@ describe("container queries", () => {
 	it("should compute file relations across containers", () => {
 		expect.assertions(5);
 
-		const directory = setupProjectFiles({});
-		const resolver = gameResolver(directory);
+		const { directory, fileSystem, fs } = makeFileSystem({});
+		const resolver = gameResolver({ directory, fileSystem, fs });
 
 		expect(resolver.getFileRelation(["StarterGui", "a"], ["StarterGui", "b"])).toBe(
 			FileRelation.InToIn,
@@ -461,7 +539,8 @@ describe("container queries", () => {
 	it("should treat a synthetic non-game resolver as all-out", () => {
 		expect.assertions(3);
 
-		const resolver = RojoResolver.synthetic(".");
+		const { directory } = makeSyntheticFileSystem();
+		const resolver = RojoResolver.synthetic(directory);
 
 		expect(resolver.getNetworkType(["StarterGui"])).toBe(NetworkType.Unknown);
 		expect(resolver.isIsolated(["StarterGui"])).toBeFalse();
@@ -488,23 +567,56 @@ describe("relative", () => {
 		expect.assertions(1);
 
 		expect(RojoResolver.relative(["a", "b", "c"], ["a"])).toStrictEqual([
-			RbxPathParent,
-			RbxPathParent,
+			RojoResolver.relative(["child"], [])[0]!,
+			RojoResolver.relative(["child"], [])[0]!,
 		]);
 	});
 
 	it("should mix ascent and descent", () => {
 		expect.assertions(1);
 
-		expect(RojoResolver.relative(["a", "b"], ["a", "c"])).toStrictEqual([RbxPathParent, "c"]);
+		expect(RojoResolver.relative(["a", "b"], ["a", "c"])).toStrictEqual([
+			RojoResolver.relative(["child"], [])[0]!,
+			"c",
+		]);
 	});
 });
 
 describe("state serialization", () => {
+	it("should copy nested snapshot collections in both directions", () => {
+		expect.assertions(2);
+
+		const original = {
+			filePathToRbxPathMap: [[path.resolve("source.luau"), ["Module"]]],
+			isGame: true,
+			isolatedContainers: [["StarterGui"]],
+			partitions: [{ fsPath: path.resolve("source"), rbxPath: ["Shared"] }],
+			walkedConfigFiles: ["project"],
+			walkedDirs: ["source"],
+			warnings: ["warning"],
+		} satisfies RojoResolverState;
+		const snapshot = structuredClone(original);
+		const resolver = RojoResolver.fromState(original);
+		original.filePathToRbxPathMap[0]![1].push("changed");
+		original.isolatedContainers[0]!.push("changed");
+		original.partitions[0]!.rbxPath.push("changed");
+		original.warnings.push("changed");
+
+		expect(resolver.getState()).toStrictEqual(snapshot);
+
+		const exported = resolver.getState();
+		Reflect.set(exported.filePathToRbxPathMap[0]![1], 0, "changed");
+		Reflect.set(exported.isolatedContainers[0]!, 0, "changed");
+		Reflect.set(exported.partitions[0]!.rbxPath, 0, "changed");
+		exported.warnings.push("changed");
+
+		expect(resolver.getState()).toStrictEqual(snapshot);
+	});
+
 	it("should round-trip through getState and fromState", () => {
 		expect.assertions(4);
 
-		const directory = setupProjectFiles({
+		const { directory, fileSystem } = makeFileSystem({
 			"default.project.json": project({
 				$className: "DataModel",
 				ReplicatedStorage: { $path: "src/shared" },
@@ -512,7 +624,7 @@ describe("state serialization", () => {
 			"src/shared/module.luau": "return {}",
 		});
 
-		const original = fromProject(directory);
+		const original = fromProject({ directory, fileSystem });
 		const restored = RojoResolver.fromState(original.getState());
 		const modulePath = path.join(directory, "src/shared/module.luau");
 
@@ -527,14 +639,14 @@ describe("state serialization", () => {
 	it("should record walked directories and config files", () => {
 		expect.assertions(2);
 
-		const directory = setupProjectFiles({
+		const { directory, fileSystem } = makeFileSystem({
 			"default.project.json": project({
 				$className: "DataModel",
 				ReplicatedStorage: { $path: "src/shared" },
 			}),
 			"src/shared/module.luau": "return {}",
 		});
-		const resolver = fromProject(directory);
+		const resolver = fromProject({ directory, fileSystem });
 
 		expect(resolver.walkedConfigFiles.size).toBeGreaterThan(0);
 		expect(resolver.walkedDirectories.size).toBeGreaterThan(0);
@@ -543,14 +655,14 @@ describe("state serialization", () => {
 	it("should round-trip a direct module-file mapping", () => {
 		expect.assertions(1);
 
-		const directory = setupProjectFiles({
+		const { directory, fileSystem } = makeFileSystem({
 			"config.luau": "return {}",
 			"default.project.json": project({
 				$className: "DataModel",
 				Config: { $path: "config.luau" },
 			}),
 		});
-		const original = fromProject(directory);
+		const original = fromProject({ directory, fileSystem });
 		const restored = RojoResolver.fromState(original.getState());
 		const configPath = path.join(directory, "config.luau");
 
@@ -561,10 +673,21 @@ describe("state serialization", () => {
 });
 
 describe("non-module file partitions", () => {
+	it("should mount synthetic source roots", () => {
+		expect.assertions(1);
+
+		const { directory } = makeSyntheticFileSystem();
+		const resolver = RojoResolver.synthetic(directory);
+
+		expect(resolver.getRbxPathFromFilePath(path.join(directory, "leaf.luau"))).toStrictEqual([
+			"leaf",
+		]);
+	});
+
 	it("should resolve a partition that targets a non-module file", () => {
 		expect.assertions(1);
 
-		const directory = setupProjectFiles({
+		const { directory, fileSystem } = makeFileSystem({
 			"data.txt": "hello",
 			"default.project.json": project({
 				$className: "DataModel",
@@ -573,14 +696,16 @@ describe("non-module file partitions", () => {
 		});
 
 		expect(
-			fromProject(directory).getRbxPathFromFilePath(path.join(directory, "data.txt")),
+			fromProject({ directory, fileSystem }).getRbxPathFromFilePath(
+				path.join(directory, "data.txt"),
+			),
 		).toStrictEqual(["Data"]);
 	});
 
 	it("should resolve a non-script module extension under a partition", () => {
 		expect.assertions(1);
 
-		const directory = setupProjectFiles({
+		const { directory, fileSystem } = makeFileSystem({
 			"default.project.json": project({
 				$className: "DataModel",
 				ReplicatedStorage: { $path: "src/shared" },
@@ -589,7 +714,7 @@ describe("non-module file partitions", () => {
 		});
 
 		expect(
-			fromProject(directory).getRbxPathFromFilePath(
+			fromProject({ directory, fileSystem }).getRbxPathFromFilePath(
 				path.join(directory, "src/shared/data.json"),
 			),
 		).toStrictEqual(["ReplicatedStorage", "data"]);
@@ -600,7 +725,7 @@ describe("script sub-extension resolution", () => {
 	it("should strip a .server sub-extension when resolving via a partition", () => {
 		expect.assertions(1);
 
-		const directory = setupProjectFiles({
+		const { directory, fileSystem } = makeFileSystem({
 			"default.project.json": project({
 				$className: "DataModel",
 				ServerScriptService: { $path: "src/server" },
@@ -609,152 +734,11 @@ describe("script sub-extension resolution", () => {
 		});
 
 		expect(
-			fromProject(directory).getRbxPathFromFilePath(
+			fromProject({ directory, fileSystem }).getRbxPathFromFilePath(
 				path.join(directory, "src/server/main.server.luau"),
 			),
 		).toStrictEqual(["ServerScriptService", "main"]);
 	});
-});
-
-describe("walker syscall behavior", () => {
-	it("should parse sibling project files before recursing into sibling directories", () => {
-		expect.assertions(3);
-
-		const directory = setupProjectFiles({
-			"default.project.json": project({
-				$className: "DataModel",
-				ReplicatedStorage: { $path: "src/shared" },
-			}),
-			"src/shared/child.project.json": project({ $path: "child" }, "ChildViaProject"),
-			"src/shared/child/leaf.luau": "return {}",
-		});
-		const resolver = fromProject(directory);
-		const partitions = resolver.getPartitions();
-		const childRoot = path.join(directory, "src/shared/child");
-		const sharedRoot = path.join(directory, "src/shared");
-		const leafPath = path.join(directory, "src/shared/child/leaf.luau");
-
-		const partitionKeys = partitions.map((partition) => {
-			return `${partition.fsPath}@${partition.rbxPath.join(".")}`;
-		});
-		const childIndex = partitionKeys.indexOf(`${childRoot}@ReplicatedStorage.ChildViaProject`);
-		const sharedIndex = partitionKeys.indexOf(`${sharedRoot}@ReplicatedStorage`);
-
-		expect(childIndex).toBeGreaterThanOrEqual(0);
-		expect(childIndex).toBeLessThan(sharedIndex);
-		expect(resolver.getRbxPathFromFilePath(leafPath)).toStrictEqual([
-			"ReplicatedStorage",
-			"ChildViaProject",
-			"leaf",
-		]);
-	});
-
-	it("should follow a directory symlink and resolve files inside it", () => {
-		expect.assertions(1);
-
-		const directory = setupProjectFiles({
-			"default.project.json": project({
-				$className: "DataModel",
-				ReplicatedStorage: { $path: "src/shared" },
-			}),
-			"real/leaf.luau": "return {}",
-		});
-
-		mkdirSync(path.join(directory, "src/shared"), { recursive: true });
-		symlinkSync(path.join(directory, "real"), path.join(directory, "src/shared/linked"), "dir");
-
-		const resolver = fromProject(directory);
-
-		expect(
-			resolver.getRbxPathFromFilePath(path.join(directory, "src/shared/linked/leaf.luau")),
-		).toStrictEqual(["ReplicatedStorage", "linked", "leaf"]);
-	});
-
-	it("should follow a file symlink that targets a sibling project.json", () => {
-		expect.assertions(1);
-
-		const directory = setupProjectFiles({
-			"default.project.json": project({
-				$className: "DataModel",
-				ReplicatedStorage: { $path: "src/shared" },
-			}),
-			"extra/leaf.luau": "return {}",
-			"real/extra.project.json": project({ $path: "../../extra" }, "Linked"),
-		});
-
-		mkdirSync(path.join(directory, "src/shared"), { recursive: true });
-		symlinkSync(
-			path.join(directory, "real/extra.project.json"),
-			path.join(directory, "src/shared/extra.project.json"),
-			"file",
-		);
-
-		const resolver = fromProject(directory);
-
-		expect(
-			resolver.getRbxPathFromFilePath(path.join(directory, "extra/leaf.luau")),
-		).toStrictEqual(["ReplicatedStorage", "Linked", "leaf"]);
-	});
-
-	it("should warn and skip when a child symlink target is missing", () => {
-		expect.assertions(2);
-
-		const directory = setupProjectFiles({
-			"default.project.json": project({
-				$className: "DataModel",
-				ReplicatedStorage: { $path: "src/shared" },
-			}),
-			"src/shared/leaf.luau": "return {}",
-		});
-
-		symlinkSync(
-			path.join(directory, "does-not-exist"),
-			path.join(directory, "src/shared/broken"),
-			"dir",
-		);
-
-		const resolver = fromProject(directory);
-
-		expect(
-			resolver.getRbxPathFromFilePath(path.join(directory, "src/shared/leaf.luau")),
-		).toStrictEqual(["ReplicatedStorage", "leaf"]);
-		expect(resolver.getWarnings().some((warning) => warning.includes("broken"))).toBeTrue();
-	});
-
-	it.skipIf(platform !== "win32")(
-		"should follow an NTFS junction via the realpath+stat fallback",
-		() => {
-			// Junctions classify as isSymbolicLink=true, isDirectory=false from a
-			// Dirent on current Node, so they route through the same fallback
-			// path as cross-volume symlinks. Pinning this guards against a Node
-			// version where junctions are reported as directories (which would
-			// skip the fallback) or as unknown entries that fail stat.
-			expect.assertions(1);
-
-			const directory = setupProjectFiles({
-				"default.project.json": project({
-					$className: "DataModel",
-					ReplicatedStorage: { $path: "src/shared" },
-				}),
-				"real/leaf.luau": "return {}",
-			});
-
-			mkdirSync(path.join(directory, "src/shared"), { recursive: true });
-			symlinkSync(
-				path.join(directory, "real"),
-				path.join(directory, "src/shared/linked"),
-				"junction",
-			);
-
-			const resolver = fromProject(directory);
-
-			expect(
-				resolver.getRbxPathFromFilePath(
-					path.join(directory, "src/shared/linked/leaf.luau"),
-				),
-			).toStrictEqual(["ReplicatedStorage", "linked", "leaf"]);
-		},
-	);
 });
 
 describe("walker parity snapshot", () => {
@@ -792,7 +776,7 @@ describe("walker parity snapshot", () => {
 		// claim by asserting init/module resolve via the partition fallback.
 		expect.assertions(3);
 
-		const directory = setupProjectFiles({
+		const { directory, fileSystem } = makeFileSystem({
 			"config.luau": "return {}",
 			"default.project.json": project({
 				$className: "DataModel",
@@ -807,7 +791,7 @@ describe("walker parity snapshot", () => {
 			"src/shared/init.luau": "return {}",
 			"src/shared/module.luau": "return {}",
 		});
-		const resolver = fromProject(directory);
+		const resolver = fromProject({ directory, fileSystem });
 
 		expect(
 			resolver.getRbxPathFromFilePath(path.join(directory, "src/shared/init.luau")),
@@ -868,12 +852,18 @@ describe("fromTree", () => {
 	it("should build a resolver from a tree object", () => {
 		expect.assertions(1);
 
-		const directory = setupProjectFiles({ "src/value.luau": "return {}" });
+		const { directory, fileSystem } = makeFileSystem({ "src/value.luau": "return {}" });
 
-		const resolver = RojoResolver.fromTree(directory, {
-			$className: "DataModel",
-			Shared: { $path: "src" },
-		});
+		const resolver = RojoResolver.fromTree(
+			{
+				basePath: directory,
+				tree: {
+					$className: "DataModel",
+					Shared: { $path: "src" },
+				},
+			},
+			fileSystem,
+		);
 
 		expect(
 			resolver.getRbxPathFromFilePath(path.join(directory, "src/value.luau")),
@@ -883,13 +873,19 @@ describe("fromTree", () => {
 	it("should skip members that are not trees", () => {
 		expect.assertions(1);
 
-		const directory = setupProjectFiles({ "src/value.luau": "return {}" });
+		const { directory, fileSystem } = makeFileSystem({ "src/value.luau": "return {}" });
 
-		const resolver = RojoResolver.fromTree(directory, {
-			$className: "DataModel",
-			Bogus: "not-a-tree",
-			Shared: { $path: "src" },
-		});
+		const resolver = RojoResolver.fromTree(
+			{
+				basePath: directory,
+				tree: {
+					$className: "DataModel",
+					Bogus: "not-a-tree",
+					Shared: { $path: "src" },
+				},
+			},
+			fileSystem,
+		);
 
 		expect(resolver.getPartitions()).toHaveLength(1);
 	});

@@ -27,5 +27,9 @@ export function loadPackageRojoTree({
 }): RojoTreeNode {
 	const rojoDirectory = path.dirname(rojoProjectPath);
 	const project = loadRojoProject(rojoProjectPath, fileSystem);
-	return rebaseTreePaths(project.tree, rojoDirectory, packageDirectory);
+	return rebaseTreePaths({
+		fromDirectory: rojoDirectory,
+		node: project.tree,
+		toDirectory: packageDirectory,
+	});
 }

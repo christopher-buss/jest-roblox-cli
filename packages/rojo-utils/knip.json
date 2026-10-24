@@ -1,0 +1,24 @@
+{
+	"workspaces": {
+		"packages/rojo-utils": {
+			"ignoreDependencies": ["eslint-plugin-pnpm", "oxlint-plugin-oxlint-comments"],
+			"ignoreUnresolved": ["^file:///.*/stryker[.]shared[.]config[.]ts$"],
+			"entry": ["test/setup/vitest-jest-extended.d.ts", "dependency-cruiser.config.ts"],
+			"project": [
+				"**/*.{js,mjs,cjs,jsx,ts,tsx,mts,cts}!",
+				"!test/**!",
+				"!coverage/**!",
+				"!reports/**!",
+				"!dist/**!",
+				"!out/**!",
+				"!out-tsc/**!"
+			],
+			"stryker": {
+				"config": ["stryker.config.ts"]
+			},
+			"vitest": {
+				"config": ["vitest{,.stryker}.config.ts"]
+			}
+		}
+	}
+}

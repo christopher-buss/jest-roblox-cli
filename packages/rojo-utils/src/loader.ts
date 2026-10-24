@@ -3,8 +3,9 @@ import { dirname } from "node:path";
 
 import type { FileSystem } from "./file-system.ts";
 import { nodeFileSystem } from "./file-system.ts";
+import { getTreeSchema } from "./project-schema.ts";
 import { resolveNestedProjects } from "./rojo-tree.ts";
-import type { LoadedRojoProject, RojoProject } from "./types.ts";
+import type { LoadedRojoProject, RojoProject } from "./rojo-types.ts";
 
 let objectSchema: Type<JSONObject> | undefined;
 let fieldsSchema: Type<RojoProject> | undefined;
@@ -15,6 +16,7 @@ let fieldsSchema: Type<RojoProject> | undefined;
  *
  * @param projectPath - The project file to read.
  * @param fileSystem - Where it and its nested projects are read from.
+ * @returns Validated fields, original JSON and expanded mounts; throws on read or parse failure.
  */
 export function loadRojoProject(
 	projectPath: string,
@@ -31,28 +33,11 @@ export function loadRojoProject(
 		name: fields.name,
 		raw,
 		servePort: fields.servePort,
-		tree: resolveNestedProjects(fields.tree, dirname(projectPath), fileSystem),
+		tree: resolveNestedProjects(
+			{ rootDirectory: dirname(projectPath), tree: fields.tree },
+			fileSystem,
+		),
 	};
-}
-
-/**
- * An array sits in arktype's `object` domain, so it satisfies a schema whose
- * keys are all optional. Reject it, and name it "an array" so the reader does
- * not have to work out why their array is not an object.
- *
- * @param value - The candidate object.
- * @param ctx - Arktype's narrow context.
- * @returns True when the value is not an array.
- */
-function rejectArray(
-	value: object,
-	ctx: { reject: (reason: { actual: string; expected: string }) => false },
-): boolean {
-	if (!Array.isArray(value)) {
-		return true;
-	}
-
-	return ctx.reject({ actual: "an array", expected: "an object" });
 }
 
 /**
@@ -72,12 +57,7 @@ function getFieldsSchema(): Type<RojoProject> {
 	fieldsSchema ??= type({
 		"name": "string > 0",
 		"servePort?": "number",
-		"tree": type({
-			"$className?": "string",
-			"$ignoreUnknownInstances?": "boolean",
-			"$path?": ["string", "|", { optional: "string" }],
-			"$properties?": "object",
-		}).narrow(rejectArray),
+		"tree": getTreeSchema(),
 	}).as<RojoProject>();
 
 	return fieldsSchema;
@@ -98,6 +78,26 @@ function orThrow<T>(result: ArkErrors | T, projectPath: string): T {
 	}
 
 	return result;
+}
+
+/**
+ * An array sits in arktype's `object` domain, so it satisfies a schema whose
+ * keys are all optional. Reject it, and name it "an array" so the reader does
+ * not have to work out why their array is not an object.
+ *
+ * @param value - The candidate object.
+ * @param ctx - Arktype's narrow context.
+ * @returns True when the value is not an array.
+ */
+function rejectArray(
+	value: object,
+	ctx: { reject: (reason: { actual: string; expected: string }) => false },
+): boolean {
+	if (!Array.isArray(value)) {
+		return true;
+	}
+
+	return ctx.reject({ actual: "an array", expected: "an object" });
 }
 
 /**

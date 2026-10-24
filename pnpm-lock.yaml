@@ -335,6 +335,9 @@ importers:
       jest-extended:
         specifier: 7.0.0
         version: 7.0.0(typescript@6.0.3)
+      jscpd:
+        specifier: 5.4.1
+        version: 5.4.1
       memfs:
         specifier: 4.68.1
         version: 4.68.1
@@ -496,6 +499,18 @@ importers:
       '@isentinel/tsconfig':
         specifier: 2.0.0
         version: 2.0.0(typescript@6.0.3)
+      '@stryker-mutator/core':
+        specifier: 10.0.0
+        version: 10.0.0(@types/node@24.12.3)
+      '@stryker-mutator/typescript-checker':
+        specifier: 10.0.0
+        version: 10.0.0(@stryker-mutator/core@10.0.0(@types/node@24.12.3))(typescript@6.0.3)
+      '@stryker-mutator/vitest-runner':
+        specifier: 10.0.0
+        version: 10.0.0(patch_hash=48258c37f3bafdfe76cdbc9bad64223a6d7bf00aa7bdb87aeaceb7700a783302)(@stryker-mutator/core@10.0.0(@types/node@24.12.3))(vitest@5.0.5)
+      '@total-typescript/shoehorn':
+        specifier: 0.1.2
+        version: 0.1.2
       '@types/node':
         specifier: 24.12.3
         version: 24.12.3
@@ -523,6 +538,12 @@ importers:
       jest-extended:
         specifier: 7.0.0
         version: 7.0.0(typescript@6.0.3)
+      knip:
+        specifier: 6.29.0
+        version: 6.29.0
+      memfs:
+        specifier: 4.68.1
+        version: 4.68.1
       tsdown:
         specifier: 0.23.0
         version: 0.23.0(@tsdown/exe@0.23.0)(@typescript/native-preview@7.0.0-dev.20260707.2)(oxc-resolver@11.24.2)(publint@0.3.24)(typescript@6.0.3)

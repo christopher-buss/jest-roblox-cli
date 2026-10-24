@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import type { RojoTreeNode } from "./rojo-types.ts";
 import { findInTree, matchNodePath } from "./tree-mapper.ts";
-import type { RojoTreeNode } from "./types.ts";
 
 describe(matchNodePath, () => {
 	it("should match an optional $path exactly", () => {
@@ -9,9 +9,13 @@ describe(matchNodePath, () => {
 
 		const node = { $path: { optional: "out/client" } } satisfies RojoTreeNode;
 
-		expect(matchNodePath(node, "out/client", "ReplicatedStorage/client")).toBe(
-			"ReplicatedStorage/client",
-		);
+		expect(
+			matchNodePath({
+				childDataModelPath: "ReplicatedStorage/client",
+				childNode: node,
+				targetPath: "out/client",
+			}),
+		).toBe("ReplicatedStorage/client");
 	});
 
 	it("should match a target under an optional $path", () => {
@@ -19,9 +23,13 @@ describe(matchNodePath, () => {
 
 		const node = { $path: { optional: "out/client" } } satisfies RojoTreeNode;
 
-		expect(matchNodePath(node, "out/client/ui", "ReplicatedStorage/client")).toBe(
-			"ReplicatedStorage/client/ui",
-		);
+		expect(
+			matchNodePath({
+				childDataModelPath: "ReplicatedStorage/client",
+				childNode: node,
+				targetPath: "out/client/ui",
+			}),
+		).toBe("ReplicatedStorage/client/ui");
 	});
 
 	it("should return DataModel path on exact match", () => {
@@ -29,9 +37,13 @@ describe(matchNodePath, () => {
 
 		const node: RojoTreeNode = { $path: "out/client" };
 
-		expect(matchNodePath(node, "out/client", "ReplicatedStorage/client")).toBe(
-			"ReplicatedStorage/client",
-		);
+		expect(
+			matchNodePath({
+				childDataModelPath: "ReplicatedStorage/client",
+				childNode: node,
+				targetPath: "out/client",
+			}),
+		).toBe("ReplicatedStorage/client");
 	});
 
 	it("should strip trailing slash before matching", () => {
@@ -39,9 +51,13 @@ describe(matchNodePath, () => {
 
 		const node: RojoTreeNode = { $path: "out/client/" };
 
-		expect(matchNodePath(node, "out/client", "ReplicatedStorage/client")).toBe(
-			"ReplicatedStorage/client",
-		);
+		expect(
+			matchNodePath({
+				childDataModelPath: "ReplicatedStorage/client",
+				childNode: node,
+				targetPath: "out/client",
+			}),
+		).toBe("ReplicatedStorage/client");
 	});
 
 	it("should return nested DataModel path when target is under $path", () => {
@@ -49,9 +65,13 @@ describe(matchNodePath, () => {
 
 		const node: RojoTreeNode = { $path: "out/client" };
 
-		expect(matchNodePath(node, "out/client/ui", "ReplicatedStorage/client")).toBe(
-			"ReplicatedStorage/client/ui",
-		);
+		expect(
+			matchNodePath({
+				childDataModelPath: "ReplicatedStorage/client",
+				childNode: node,
+				targetPath: "out/client/ui",
+			}),
+		).toBe("ReplicatedStorage/client/ui");
 	});
 
 	it("should return undefined when paths do not match", () => {
@@ -59,7 +79,13 @@ describe(matchNodePath, () => {
 
 		const node: RojoTreeNode = { $path: "out/server" };
 
-		expect(matchNodePath(node, "out/client", "ServerScriptService/server")).toBeUndefined();
+		expect(
+			matchNodePath({
+				childDataModelPath: "ServerScriptService/server",
+				childNode: node,
+				targetPath: "out/client",
+			}),
+		).toBeUndefined();
 	});
 
 	it("should not match partial directory names", () => {
@@ -67,7 +93,13 @@ describe(matchNodePath, () => {
 
 		const node: RojoTreeNode = { $path: "out/cli" };
 
-		expect(matchNodePath(node, "out/client", "ReplicatedStorage/cli")).toBeUndefined();
+		expect(
+			matchNodePath({
+				childDataModelPath: "ReplicatedStorage/cli",
+				childNode: node,
+				targetPath: "out/client",
+			}),
+		).toBeUndefined();
 	});
 
 	it("should return undefined when node has no $path", () => {
@@ -75,7 +107,13 @@ describe(matchNodePath, () => {
 
 		const node: RojoTreeNode = { $className: "Folder" };
 
-		expect(matchNodePath(node, "out/client", "ReplicatedStorage/folder")).toBeUndefined();
+		expect(
+			matchNodePath({
+				childDataModelPath: "ReplicatedStorage/folder",
+				childNode: node,
+				targetPath: "out/client",
+			}),
+		).toBeUndefined();
 	});
 });
 
@@ -90,6 +128,23 @@ const simpleRojoTree: RojoTreeNode = {
 };
 
 describe(findInTree, () => {
+	it("should skip object metadata but search child names ending in a dollar", () => {
+		expect.assertions(2);
+
+		const tree = { $properties: { Hidden: { $path: "source" } }, Child$: { $path: "source" } };
+
+		expect(findInTree({ currentDataModelPath: "", node: tree, targetPath: "source" })).toBe(
+			"Child$",
+		);
+		expect(
+			findInTree({
+				currentDataModelPath: "",
+				node: { $properties: { Hidden: { $path: "source" } } },
+				targetPath: "source",
+			}),
+		).toBeUndefined();
+	});
+
 	it("should find an optional $path entry", () => {
 		expect.assertions(1);
 
@@ -97,19 +152,33 @@ describe(findInTree, () => {
 			ReplicatedStorage: { tests: { $path: { optional: "src/tests" } } },
 		} satisfies RojoTreeNode;
 
-		expect(findInTree(tree, "src/tests", "")).toBe("ReplicatedStorage/tests");
+		expect(findInTree({ currentDataModelPath: "", node: tree, targetPath: "src/tests" })).toBe(
+			"ReplicatedStorage/tests",
+		);
 	});
 
 	it("should find exact $path match", () => {
 		expect.assertions(1);
 
-		expect(findInTree(simpleRojoTree, "out/client", "")).toBe("ReplicatedStorage/client");
+		expect(
+			findInTree({
+				currentDataModelPath: "",
+				node: simpleRojoTree,
+				targetPath: "out/client",
+			}),
+		).toBe("ReplicatedStorage/client");
 	});
 
 	it("should find nested path under $path entry", () => {
 		expect.assertions(1);
 
-		expect(findInTree(simpleRojoTree, "out/client/ui", "")).toBe("ReplicatedStorage/client/ui");
+		expect(
+			findInTree({
+				currentDataModelPath: "",
+				node: simpleRojoTree,
+				targetPath: "out/client/ui",
+			}),
+		).toBe("ReplicatedStorage/client/ui");
 	});
 
 	it("should find deeply nested tree structures", () => {
@@ -124,13 +193,25 @@ describe(findInTree, () => {
 			},
 		};
 
-		expect(findInTree(nestedTree, "out/shared/lib", "")).toBe("ReplicatedStorage/shared/lib");
+		expect(
+			findInTree({
+				currentDataModelPath: "",
+				node: nestedTree,
+				targetPath: "out/shared/lib",
+			}),
+		).toBe("ReplicatedStorage/shared/lib");
 	});
 
 	it("should return undefined when no match", () => {
 		expect.assertions(1);
 
-		expect(findInTree(simpleRojoTree, "out/unknown", "")).toBeUndefined();
+		expect(
+			findInTree({
+				currentDataModelPath: "",
+				node: simpleRojoTree,
+				targetPath: "out/unknown",
+			}),
+		).toBeUndefined();
 	});
 
 	it("should skip $ prefixed keys", () => {
@@ -141,7 +222,9 @@ describe(findInTree, () => {
 			$properties: { Name: "Game" },
 		};
 
-		expect(findInTree(tree, "out/client", "")).toBeUndefined();
+		expect(
+			findInTree({ currentDataModelPath: "", node: tree, targetPath: "out/client" }),
+		).toBeUndefined();
 	});
 
 	it("should skip non-object values", () => {
@@ -152,7 +235,9 @@ describe(findInTree, () => {
 			$ignoreUnknownInstances: true,
 		};
 
-		expect(findInTree(tree, "out/client", "")).toBeUndefined();
+		expect(
+			findInTree({ currentDataModelPath: "", node: tree, targetPath: "out/client" }),
+		).toBeUndefined();
 	});
 
 	it("should build DataModel path from current path", () => {
@@ -162,8 +247,12 @@ describe(findInTree, () => {
 			lib: { $path: "out/shared/lib" },
 		};
 
-		expect(findInTree(subtree, "out/shared/lib", "ReplicatedStorage/shared")).toBe(
-			"ReplicatedStorage/shared/lib",
-		);
+		expect(
+			findInTree({
+				currentDataModelPath: "ReplicatedStorage/shared",
+				node: subtree,
+				targetPath: "out/shared/lib",
+			}),
+		).toBe("ReplicatedStorage/shared/lib");
 	});
 });

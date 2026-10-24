@@ -1,13 +1,22 @@
-import type { RojoTreeNode } from "./types.ts";
-import { isRojoTreeNode, unwrapPath } from "./types.ts";
+import type { RojoTreeNode } from "./rojo-types.ts";
+import { isRojoTreeNode, unwrapPath } from "./tree-node.ts";
 
 const TRAILING_SLASH = /\/$/;
 
-export function matchNodePath(
-	childNode: RojoTreeNode,
-	targetPath: string,
-	childDataModelPath: string,
-): string | undefined {
+/**
+ * Matches an exact mount or a descendant bounded by a slash.
+ * @param options - Child node, its instance prefix, and the normalized source prefix to match.
+ * @returns The child instance path and unmatched suffix, or undefined on a mount miss.
+ */
+export function matchNodePath({
+	childDataModelPath,
+	childNode,
+	targetPath,
+}: {
+	childDataModelPath: string;
+	childNode: RojoTreeNode;
+	targetPath: string;
+}): string | undefined {
 	const nodePath = unwrapPath(childNode.$path);
 	if (nodePath === undefined) {
 		return undefined;
@@ -26,11 +35,20 @@ export function matchNodePath(
 	return undefined;
 }
 
-export function findInTree(
-	node: RojoTreeNode,
-	targetPath: string,
-	currentDataModelPath: string,
-): string | undefined {
+/**
+ * Returns the first matching child mount in depth-first encounter order.
+ * @param options - Subtree, its accumulated instance prefix, and the normalized source prefix to match.
+ * @returns The first matching instance path, or undefined when every child misses.
+ */
+export function findInTree({
+	currentDataModelPath,
+	node,
+	targetPath,
+}: {
+	currentDataModelPath: string;
+	node: RojoTreeNode;
+	targetPath: string;
+}): string | undefined {
 	for (const [key, value] of Object.entries(node)) {
 		if (key.startsWith("$") || !isRojoTreeNode(value)) {
 			continue;
@@ -40,12 +58,16 @@ export function findInTree(
 		const childDataModelPath =
 			currentDataModelPath === "" ? key : `${currentDataModelPath}/${key}`;
 
-		const pathMatch = matchNodePath(childNode, targetPath, childDataModelPath);
+		const pathMatch = matchNodePath({ childDataModelPath, childNode, targetPath });
 		if (pathMatch !== undefined) {
 			return pathMatch;
 		}
 
-		const found = findInTree(childNode, targetPath, childDataModelPath);
+		const found = findInTree({
+			currentDataModelPath: childDataModelPath,
+			node: childNode,
+			targetPath,
+		});
 		if (found !== undefined) {
 			return found;
 		}

@@ -98,7 +98,11 @@ export function extractStaticRoot(pattern: string): StaticRootPattern {
 export { stripTsExtension } from "../utils/extensions.ts";
 
 export function mapFsRootToDataModel(outDirectory: PosixRoot, rojoTree: RojoTreeNode): string {
-	const result = findInTree(rojoTree, outDirectory, "");
+	const result = findInTree({
+		currentDataModelPath: "",
+		node: rojoTree,
+		targetPath: outDirectory,
+	});
 	if (result === undefined) {
 		const available: Array<string> = [];
 		collectPaths(rojoTree, available);
@@ -459,13 +463,13 @@ function resolveMounts({
 	let collectedMounts: Array<Mount> | undefined;
 	const allMounts: Array<Mount> = [];
 	for (const { root } of roots) {
-		const exact = findInTree(rojoTree, root, "");
+		const exact = findInTree({ currentDataModelPath: "", node: rojoTree, targetPath: root });
 		if (exact !== undefined) {
 			allMounts.push({ dataModelPath: exact, fsPath: root });
 			continue;
 		}
 
-		collectedMounts ??= collectMounts(rojoTree, "", classify);
+		collectedMounts ??= collectMounts({ classify, currentDataModelPath: "", node: rojoTree });
 		const expanded = filterMountsForRoot(collectedMounts, root);
 		if (expanded.length === 0) {
 			throw unmappableRootError({ project, rojoTree, root });

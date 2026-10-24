@@ -1,122 +1,78 @@
-import * as fs from "node:fs";
-import * as os from "node:os";
 import * as path from "node:path";
-import { describe, expect, it, onTestFinished } from "vitest";
+import { describe, expect, it } from "vitest";
 
-import {
-	collectPaths,
-	collectRequiredPaths,
-	rebaseTreePaths,
-	resolveMountPath,
-	resolveNestedProjects,
-	resolveNestedProjectSources,
-} from "./rojo-tree.ts";
-import type { RojoTreeNode } from "./types.ts";
+import { captureError } from "#test/helpers/unit/errors";
+import { makeFileSystem } from "#test/helpers/unit/file-system";
+import { resolveNestedProjects, resolveNestedProjectSources } from "./rojo-tree.ts";
+import type { RojoTreeNode } from "./rojo-types.ts";
 
-function createTemporaryDirectory(): string {
-	const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "rojo-tree-test-"));
-	onTestFinished(() => {
-		fs.rmSync(temporaryDirectory, { force: true, recursive: true });
+function makeNestedDirectoryProject(): ReturnType<typeof makeFileSystem> {
+	return makeFileSystem({
+		"pkg/default.project.json": JSON.stringify({ name: "pkg", tree: { $path: "src" } }),
 	});
-	return temporaryDirectory;
 }
 
-describe(collectPaths, () => {
-	it("should collect all $path strings from a tree", () => {
-		expect.assertions(1);
-
-		const tree: RojoTreeNode = {
-			$className: "DataModel",
-			ReplicatedStorage: {
-				client: { $path: "out/client" },
-			},
-			ServerScriptService: {
-				server: { $path: "out/server" },
-			},
-		};
-
-		const result: Array<string> = [];
-		collectPaths(tree, result);
-
-		expect(result).toStrictEqual(["out/client", "out/server"]);
-	});
-
-	it("should normalize backslashes", () => {
-		expect.assertions(1);
-
-		const tree: RojoTreeNode = {
-			$className: "DataModel",
-			Workspace: { $path: "out\\workspace" },
-		};
-
-		const result: Array<string> = [];
-		collectPaths(tree, result);
-
-		expect(result).toStrictEqual(["out/workspace"]);
-	});
-
-	it("should collect the inner path of an optional $path", () => {
-		expect.assertions(1);
-
-		const tree: RojoTreeNode = {
-			$className: "DataModel",
-			Workspace: { $path: { optional: "maybe\\workspace" } },
-		};
-
-		const result: Array<string> = [];
-		collectPaths(tree, result);
-
-		expect(result).toStrictEqual(["maybe/workspace"]);
-	});
-
-	it("should descend into a child named optional", () => {
-		expect.assertions(1);
-
-		const tree: RojoTreeNode = {
-			$className: "DataModel",
-			Workspace: { optional: { $path: "out/optional" } },
-		};
-
-		const result: Array<string> = [];
-		collectPaths(tree, result);
-
-		expect(result).toStrictEqual(["out/optional"]);
-	});
-
-	it("should return empty for a tree with no $path entries", () => {
-		expect.assertions(1);
-
-		const tree: RojoTreeNode = {
-			$className: "DataModel",
-		};
-
-		const result: Array<string> = [];
-		collectPaths(tree, result);
-
-		expect(result).toStrictEqual([]);
-	});
-});
-
-describe(collectRequiredPaths, () => {
-	it("should skip an optional $path", () => {
-		expect.assertions(1);
-
-		const tree: RojoTreeNode = {
-			$className: "DataModel",
-			ReplicatedStorage: {
-				DevPackages: { $path: { optional: "DevPackages" } },
-				lib: { $path: "out\\lib" },
-			},
-		};
-
-		const result: Array<string> = [];
-		collectRequiredPaths(tree, result);
-
-		expect(result).toStrictEqual(["out/lib"]);
-	});
-});
-
 describe(resolveNestedProjects, () => {
+	it("should preserve metadata while resolving optional-looking child nodes", () => {
+		expect.assertions(1);
+
+		const tree = {
+			$properties: { Hidden: { $path: "missing.project.json" } },
+			Child$: { Leaf: { $path: "inner.project.json" }, optional: "ordinary-field" },
+		};
+		const { directory, fileSystem } = makeFileSystem({
+			"inner.project.json": JSON.stringify({ tree: { $path: "visible" } }),
+		});
+
+		expect(resolveNestedProjects({ rootDirectory: directory, tree }, fileSystem)).toStrictEqual(
+			{
+				$properties: tree.$properties,
+				Child$: { Leaf: { $path: "visible" }, optional: "ordinary-field" },
+			},
+		);
+	});
+
+	it("should preserve read and parse failures on nested project errors", () => {
+		expect.assertions(3);
+
+		const { directory, fileSystem, fs } = makeFileSystem({
+			"array.project.json": JSON.stringify({ tree: [] }),
+			"broken.project.json": "{",
+		});
+
+		expect(() => {
+			return resolveNestedProjects(
+				{ rootDirectory: directory, tree: { $path: "array.project.json" } },
+				fileSystem,
+			);
+		}).toThrow(
+			expect.objectContaining({
+				cause: expect.objectContaining({
+					message: "tree must be an object (was an array)",
+				}),
+			}),
+		);
+
+		const parseError = captureError(() => {
+			return resolveNestedProjects(
+				{ rootDirectory: directory, tree: { $path: "broken.project.json" } },
+				fileSystem,
+			);
+		});
+
+		fs.rmSync(path.join(directory, "array.project.json"));
+
+		const readError = captureError(() => {
+			return resolveNestedProjects(
+				{ rootDirectory: directory, tree: { $path: "array.project.json" } },
+				fileSystem,
+			);
+		});
+
+		expect(parseError.cause).toBeInstanceOf(SyntaxError);
+		expect(readError.cause).toBeInstanceOf(Error);
+	});
+
 	it("should return tree unchanged when no $path references .project.json", () => {
 		expect.assertions(1);
 
@@ -127,9 +83,11 @@ describe(resolveNestedProjects, () => {
 			},
 		};
 
-		const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "rojo-tree-test-"));
-		const result = resolveNestedProjects(tree, temporaryDirectory);
-		fs.rmSync(temporaryDirectory, { force: true, recursive: true });
+		const { directory: temporaryDirectory, fileSystem } = makeFileSystem();
+		const result = resolveNestedProjects(
+			{ rootDirectory: temporaryDirectory, tree },
+			fileSystem,
+		);
 
 		expect(result).toStrictEqual(tree);
 	});
@@ -137,7 +95,7 @@ describe(resolveNestedProjects, () => {
 	it("should resolve $path pointing to a .project.json into its inner tree's $path", () => {
 		expect.assertions(1);
 
-		const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "rojo-tree-test-"));
+		const { directory: temporaryDirectory, fileSystem, fs } = makeFileSystem();
 		fs.writeFileSync(
 			path.join(temporaryDirectory, "default.project.json"),
 			JSON.stringify({ name: "my-pkg", tree: { $path: "src" } }),
@@ -150,8 +108,10 @@ describe(resolveNestedProjects, () => {
 			},
 		};
 
-		const result = resolveNestedProjects(tree, temporaryDirectory);
-		fs.rmSync(temporaryDirectory, { force: true, recursive: true });
+		const result = resolveNestedProjects(
+			{ rootDirectory: temporaryDirectory, tree },
+			fileSystem,
+		);
 
 		expect(result).toStrictEqual({
 			$className: "DataModel",
@@ -164,7 +124,7 @@ describe(resolveNestedProjects, () => {
 	it("should merge children from the nested project's tree into the node", () => {
 		expect.assertions(1);
 
-		const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "rojo-tree-test-"));
+		const { directory: temporaryDirectory, fileSystem, fs } = makeFileSystem();
 		fs.writeFileSync(
 			path.join(temporaryDirectory, "shared.project.json"),
 			JSON.stringify({
@@ -184,8 +144,10 @@ describe(resolveNestedProjects, () => {
 			},
 		};
 
-		const result = resolveNestedProjects(tree, temporaryDirectory);
-		fs.rmSync(temporaryDirectory, { force: true, recursive: true });
+		const result = resolveNestedProjects(
+			{ rootDirectory: temporaryDirectory, tree },
+			fileSystem,
+		);
 
 		expect(result).toStrictEqual({
 			$className: "DataModel",
@@ -202,7 +164,7 @@ describe(resolveNestedProjects, () => {
 	it("should resolve chained project references recursively", () => {
 		expect.assertions(1);
 
-		const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "rojo-tree-test-"));
+		const { directory: temporaryDirectory, fileSystem, fs } = makeFileSystem();
 		fs.writeFileSync(
 			path.join(temporaryDirectory, "default.project.json"),
 			JSON.stringify({ name: "uuid-generator", tree: { $path: "src" } }),
@@ -215,8 +177,10 @@ describe(resolveNestedProjects, () => {
 			},
 		};
 
-		const result = resolveNestedProjects(tree, temporaryDirectory);
-		fs.rmSync(temporaryDirectory, { force: true, recursive: true });
+		const result = resolveNestedProjects(
+			{ rootDirectory: temporaryDirectory, tree },
+			fileSystem,
+		);
 
 		expect(result).toStrictEqual({
 			$className: "DataModel",
@@ -229,7 +193,7 @@ describe(resolveNestedProjects, () => {
 	it("should throw with file path when nested project has malformed JSON", () => {
 		expect.assertions(1);
 
-		const temporaryDirectory = createTemporaryDirectory();
+		const { directory: temporaryDirectory, fileSystem, fs } = makeFileSystem();
 		fs.writeFileSync(path.join(temporaryDirectory, "bad.project.json"), "not valid json {{{");
 
 		const tree: RojoTreeNode = {
@@ -239,13 +203,15 @@ describe(resolveNestedProjects, () => {
 			},
 		};
 
-		expect(() => resolveNestedProjects(tree, temporaryDirectory)).toThrow("bad.project.json");
+		expect(() => {
+			return resolveNestedProjects({ rootDirectory: temporaryDirectory, tree }, fileSystem);
+		}).toThrow("bad.project.json");
 	});
 
 	it("should throw with file path when a nested project has no tree", () => {
 		expect.assertions(1);
 
-		const temporaryDirectory = createTemporaryDirectory();
+		const { directory: temporaryDirectory, fileSystem, fs } = makeFileSystem();
 		fs.writeFileSync(
 			path.join(temporaryDirectory, "treeless.project.json"),
 			'{ "name": "treeless" }',
@@ -258,15 +224,15 @@ describe(resolveNestedProjects, () => {
 			},
 		};
 
-		expect(() => resolveNestedProjects(tree, temporaryDirectory)).toThrow(
-			"Failed to parse nested Rojo project: treeless.project.json",
-		);
+		expect(() => {
+			return resolveNestedProjects({ rootDirectory: temporaryDirectory, tree }, fileSystem);
+		}).toThrow("Failed to parse nested Rojo project: treeless.project.json");
 	});
 
 	it("should throw with file path when a nested project's tree is an array", () => {
 		expect.assertions(1);
 
-		const temporaryDirectory = createTemporaryDirectory();
+		const { directory: temporaryDirectory, fileSystem, fs } = makeFileSystem();
 		fs.writeFileSync(
 			path.join(temporaryDirectory, "array.project.json"),
 			'{ "name": "array", "tree": [] }',
@@ -279,15 +245,15 @@ describe(resolveNestedProjects, () => {
 			},
 		};
 
-		expect(() => resolveNestedProjects(tree, temporaryDirectory)).toThrow(
-			"Failed to parse nested Rojo project: array.project.json",
-		);
+		expect(() => {
+			return resolveNestedProjects({ rootDirectory: temporaryDirectory, tree }, fileSystem);
+		}).toThrow("Failed to parse nested Rojo project: array.project.json");
 	});
 
 	it("should throw when a referenced .project.json does not exist", () => {
 		expect.assertions(1);
 
-		const temporaryDirectory = createTemporaryDirectory();
+		const { directory: temporaryDirectory, fileSystem } = makeFileSystem();
 		const tree: RojoTreeNode = {
 			$className: "DataModel",
 			ReplicatedStorage: {
@@ -295,15 +261,15 @@ describe(resolveNestedProjects, () => {
 			},
 		};
 
-		expect(() => resolveNestedProjects(tree, temporaryDirectory)).toThrow(
-			"Could not read nested Rojo project: nonexistent.project.json",
-		);
+		expect(() => {
+			return resolveNestedProjects({ rootDirectory: temporaryDirectory, tree }, fileSystem);
+		}).toThrow("Could not read nested Rojo project: nonexistent.project.json");
 	});
 
 	it("should throw on circular project references", () => {
 		expect.assertions(1);
 
-		const temporaryDirectory = createTemporaryDirectory();
+		const { directory: temporaryDirectory, fileSystem, fs } = makeFileSystem();
 		fs.writeFileSync(
 			path.join(temporaryDirectory, "a.project.json"),
 			JSON.stringify({ name: "A", tree: { $path: "b.project.json" } }),
@@ -320,9 +286,9 @@ describe(resolveNestedProjects, () => {
 			},
 		};
 
-		expect(() => resolveNestedProjects(tree, temporaryDirectory)).toThrow(
-			"Circular project reference",
-		);
+		expect(() => {
+			return resolveNestedProjects({ rootDirectory: temporaryDirectory, tree }, fileSystem);
+		}).toThrow("Circular project reference");
 	});
 
 	it("should leave non-string $path values unchanged", () => {
@@ -333,9 +299,11 @@ describe(resolveNestedProjects, () => {
 			Workspace: { $path: { optional: "maybe" } },
 		};
 
-		const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "rojo-tree-test-"));
-		const result = resolveNestedProjects(tree, temporaryDirectory);
-		fs.rmSync(temporaryDirectory, { force: true, recursive: true });
+		const { directory: temporaryDirectory, fileSystem } = makeFileSystem();
+		const result = resolveNestedProjects(
+			{ rootDirectory: temporaryDirectory, tree },
+			fileSystem,
+		);
 
 		expect(result).toStrictEqual(tree);
 	});
@@ -343,7 +311,7 @@ describe(resolveNestedProjects, () => {
 	it("should rebase an optional $path inside a nested project", () => {
 		expect.assertions(1);
 
-		const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "rojo-tree-test-"));
+		const { directory: temporaryDirectory, fileSystem, fs } = makeFileSystem();
 		fs.mkdirSync(path.join(temporaryDirectory, "pkg"));
 		fs.writeFileSync(
 			path.join(temporaryDirectory, "pkg", "default.project.json"),
@@ -355,8 +323,10 @@ describe(resolveNestedProjects, () => {
 			ReplicatedStorage: { Pkg: { $path: "pkg/default.project.json" } },
 		} satisfies RojoTreeNode;
 
-		const result = resolveNestedProjects(tree, temporaryDirectory);
-		fs.rmSync(temporaryDirectory, { force: true, recursive: true });
+		const result = resolveNestedProjects(
+			{ rootDirectory: temporaryDirectory, tree },
+			fileSystem,
+		);
 
 		expect(result).toStrictEqual({
 			$className: "DataModel",
@@ -367,7 +337,7 @@ describe(resolveNestedProjects, () => {
 	it("should allow the same project file referenced from different branches", () => {
 		expect.assertions(1);
 
-		const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "rojo-tree-test-"));
+		const { directory: temporaryDirectory, fileSystem, fs } = makeFileSystem();
 		fs.writeFileSync(
 			path.join(temporaryDirectory, "loader.project.json"),
 			JSON.stringify({ name: "Loader", tree: { $path: "src/loader" } }),
@@ -383,8 +353,10 @@ describe(resolveNestedProjects, () => {
 			},
 		};
 
-		const result = resolveNestedProjects(tree, temporaryDirectory);
-		fs.rmSync(temporaryDirectory, { force: true, recursive: true });
+		const result = resolveNestedProjects(
+			{ rootDirectory: temporaryDirectory, tree },
+			fileSystem,
+		);
 
 		expect(result).toStrictEqual({
 			$className: "DataModel",
@@ -400,7 +372,7 @@ describe(resolveNestedProjects, () => {
 	it("should resolve nested project paths relative to the project file's directory", () => {
 		expect.assertions(1);
 
-		const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "rojo-tree-test-"));
+		const { directory: temporaryDirectory, fileSystem, fs } = makeFileSystem();
 		const subdirectory = path.join(temporaryDirectory, "packages", "my-pkg");
 		fs.mkdirSync(subdirectory, { recursive: true });
 		fs.writeFileSync(
@@ -415,8 +387,10 @@ describe(resolveNestedProjects, () => {
 			},
 		};
 
-		const result = resolveNestedProjects(tree, temporaryDirectory);
-		fs.rmSync(temporaryDirectory, { force: true, recursive: true });
+		const result = resolveNestedProjects(
+			{ rootDirectory: temporaryDirectory, tree },
+			fileSystem,
+		);
 
 		expect(result).toStrictEqual({
 			$className: "DataModel",
@@ -429,13 +403,7 @@ describe(resolveNestedProjects, () => {
 	it("should inline a $path directory that contains a default.project.json", () => {
 		expect.assertions(1);
 
-		const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "rojo-tree-test-"));
-		const packageDirectory = path.join(temporaryDirectory, "pkg");
-		fs.mkdirSync(packageDirectory, { recursive: true });
-		fs.writeFileSync(
-			path.join(packageDirectory, "default.project.json"),
-			JSON.stringify({ name: "pkg", tree: { $path: "src" } }),
-		);
+		const { directory: temporaryDirectory, fileSystem } = makeNestedDirectoryProject();
 
 		const tree: RojoTreeNode = {
 			$className: "DataModel",
@@ -444,8 +412,10 @@ describe(resolveNestedProjects, () => {
 			},
 		};
 
-		const result = resolveNestedProjects(tree, temporaryDirectory);
-		fs.rmSync(temporaryDirectory, { force: true, recursive: true });
+		const result = resolveNestedProjects(
+			{ rootDirectory: temporaryDirectory, tree },
+			fileSystem,
+		);
 
 		expect(result).toStrictEqual({
 			$className: "DataModel",
@@ -458,7 +428,7 @@ describe(resolveNestedProjects, () => {
 	it("should follow $path '..' into a parent directory's default.project.json", () => {
 		expect.assertions(1);
 
-		const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "rojo-tree-test-"));
+		const { directory: temporaryDirectory, fileSystem, fs } = makeFileSystem();
 		fs.writeFileSync(
 			path.join(temporaryDirectory, "default.project.json"),
 			JSON.stringify({ name: "rx", tree: { $path: "src" } }),
@@ -473,8 +443,7 @@ describe(resolveNestedProjects, () => {
 			},
 		};
 
-		const result = resolveNestedProjects(tree, testDirectory);
-		fs.rmSync(temporaryDirectory, { force: true, recursive: true });
+		const result = resolveNestedProjects({ rootDirectory: testDirectory, tree }, fileSystem);
 
 		expect(result).toStrictEqual({
 			$className: "DataModel",
@@ -487,7 +456,7 @@ describe(resolveNestedProjects, () => {
 	it("should leave a $path directory without default.project.json unchanged", () => {
 		expect.assertions(1);
 
-		const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "rojo-tree-test-"));
+		const { directory: temporaryDirectory, fileSystem, fs } = makeFileSystem();
 		fs.mkdirSync(path.join(temporaryDirectory, "src"), { recursive: true });
 
 		const tree: RojoTreeNode = {
@@ -497,8 +466,10 @@ describe(resolveNestedProjects, () => {
 			},
 		};
 
-		const result = resolveNestedProjects(tree, temporaryDirectory);
-		fs.rmSync(temporaryDirectory, { force: true, recursive: true });
+		const result = resolveNestedProjects(
+			{ rootDirectory: temporaryDirectory, tree },
+			fileSystem,
+		);
 
 		expect(result).toStrictEqual({
 			$className: "DataModel",
@@ -511,7 +482,7 @@ describe(resolveNestedProjects, () => {
 	it("should leave an absolute $path as written", () => {
 		expect.assertions(1);
 
-		const temporaryDirectory = createTemporaryDirectory();
+		const { directory: temporaryDirectory, fileSystem } = makeFileSystem();
 		const projectDirectory = path.join(temporaryDirectory, "project");
 		const externalDirectory = path.join(temporaryDirectory, "external", "out");
 
@@ -522,7 +493,7 @@ describe(resolveNestedProjects, () => {
 			},
 		};
 
-		const result = resolveNestedProjects(tree, projectDirectory);
+		const result = resolveNestedProjects({ rootDirectory: projectDirectory, tree }, fileSystem);
 
 		expect(result).toStrictEqual({
 			$className: "DataModel",
@@ -545,7 +516,10 @@ describe(resolveNestedProjects, () => {
 			},
 		};
 
-		const result = resolveNestedProjects(tree, path.join(os.tmpdir(), "project"));
+		const result = resolveNestedProjects(
+			{ rootDirectory: path.resolve("project"), tree },
+			makeFileSystem().fileSystem,
+		);
 
 		expect(result).toStrictEqual({
 			$className: "DataModel",
@@ -569,7 +543,10 @@ describe(resolveNestedProjects, () => {
 			},
 		};
 
-		const result = resolveNestedProjects(tree, path.join(os.tmpdir(), "project"));
+		const result = resolveNestedProjects(
+			{ rootDirectory: path.resolve("project"), tree },
+			makeFileSystem().fileSystem,
+		);
 
 		expect(result).toStrictEqual({
 			$className: "DataModel",
@@ -583,7 +560,7 @@ describe(resolveNestedProjects, () => {
 	it("should leave an absolute $path inside a nested project as written", () => {
 		expect.assertions(1);
 
-		const temporaryDirectory = createTemporaryDirectory();
+		const { directory: temporaryDirectory, fileSystem, fs } = makeFileSystem();
 		const packageDirectory = path.join(temporaryDirectory, "packages", "my-pkg");
 		const externalDirectory = path.join(temporaryDirectory, "external", "out");
 		fs.mkdirSync(packageDirectory, { recursive: true });
@@ -606,7 +583,10 @@ describe(resolveNestedProjects, () => {
 			},
 		};
 
-		const result = resolveNestedProjects(tree, temporaryDirectory);
+		const result = resolveNestedProjects(
+			{ rootDirectory: temporaryDirectory, tree },
+			fileSystem,
+		);
 
 		expect(result).toStrictEqual({
 			$className: "DataModel",
@@ -623,14 +603,9 @@ describe(resolveNestedProjects, () => {
 	it("should inline a nested project named by an absolute $path", () => {
 		expect.assertions(1);
 
-		const temporaryDirectory = createTemporaryDirectory();
+		const { directory: temporaryDirectory, fileSystem } = makeNestedDirectoryProject();
 		const projectDirectory = path.join(temporaryDirectory, "project");
 		const packageDirectory = path.join(temporaryDirectory, "pkg");
-		fs.mkdirSync(packageDirectory, { recursive: true });
-		fs.writeFileSync(
-			path.join(packageDirectory, "default.project.json"),
-			JSON.stringify({ name: "pkg", tree: { $path: "src" } }),
-		);
 
 		const tree: RojoTreeNode = {
 			$className: "DataModel",
@@ -639,7 +614,7 @@ describe(resolveNestedProjects, () => {
 			},
 		};
 
-		const result = resolveNestedProjects(tree, projectDirectory);
+		const result = resolveNestedProjects({ rootDirectory: projectDirectory, tree }, fileSystem);
 
 		expect(result).toStrictEqual({
 			$className: "DataModel",
@@ -661,9 +636,11 @@ describe(resolveNestedProjectSources, () => {
 			},
 		};
 
-		const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "rojo-tree-test-"));
-		const result = resolveNestedProjectSources(tree, temporaryDirectory);
-		fs.rmSync(temporaryDirectory, { force: true, recursive: true });
+		const { directory: temporaryDirectory, fileSystem } = makeFileSystem();
+		const result = resolveNestedProjectSources(
+			{ rootDirectory: temporaryDirectory, tree },
+			fileSystem,
+		);
 
 		expect(result.projectFiles).toStrictEqual([]);
 		expect(result.tree).toStrictEqual(tree);
@@ -672,7 +649,7 @@ describe(resolveNestedProjectSources, () => {
 	it("should report the absolute path of each inlined nested project", () => {
 		expect.assertions(2);
 
-		const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "rojo-tree-test-"));
+		const { directory: temporaryDirectory, fileSystem, fs } = makeFileSystem();
 		const projectFile = path.join(temporaryDirectory, "default.project.json");
 		fs.writeFileSync(projectFile, JSON.stringify({ name: "my-pkg", tree: { $path: "src" } }));
 
@@ -683,8 +660,10 @@ describe(resolveNestedProjectSources, () => {
 			},
 		};
 
-		const result = resolveNestedProjectSources(tree, temporaryDirectory);
-		fs.rmSync(temporaryDirectory, { force: true, recursive: true });
+		const result = resolveNestedProjectSources(
+			{ rootDirectory: temporaryDirectory, tree },
+			fileSystem,
+		);
 
 		expect(result.projectFiles).toStrictEqual([projectFile]);
 		expect(result.tree).toStrictEqual({
@@ -698,7 +677,7 @@ describe(resolveNestedProjectSources, () => {
 	it("should report every project file in a chained reference", () => {
 		expect.assertions(1);
 
-		const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "rojo-tree-test-"));
+		const { directory: temporaryDirectory, fileSystem, fs } = makeFileSystem();
 		const outer = path.join(temporaryDirectory, "a.project.json");
 		const inner = path.join(temporaryDirectory, "b.project.json");
 		fs.writeFileSync(outer, JSON.stringify({ name: "A", tree: { $path: "b.project.json" } }));
@@ -711,8 +690,10 @@ describe(resolveNestedProjectSources, () => {
 			},
 		};
 
-		const result = resolveNestedProjectSources(tree, temporaryDirectory);
-		fs.rmSync(temporaryDirectory, { force: true, recursive: true });
+		const result = resolveNestedProjectSources(
+			{ rootDirectory: temporaryDirectory, tree },
+			fileSystem,
+		);
 
 		expect(new Set(result.projectFiles)).toStrictEqual(new Set([inner, outer]));
 	});
@@ -720,7 +701,7 @@ describe(resolveNestedProjectSources, () => {
 	it("should report a project file referenced from two branches once", () => {
 		expect.assertions(1);
 
-		const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "rojo-tree-test-"));
+		const { directory: temporaryDirectory, fileSystem, fs } = makeFileSystem();
 		const projectFile = path.join(temporaryDirectory, "loader.project.json");
 		fs.writeFileSync(
 			projectFile,
@@ -737,8 +718,10 @@ describe(resolveNestedProjectSources, () => {
 			},
 		};
 
-		const result = resolveNestedProjectSources(tree, temporaryDirectory);
-		fs.rmSync(temporaryDirectory, { force: true, recursive: true });
+		const result = resolveNestedProjectSources(
+			{ rootDirectory: temporaryDirectory, tree },
+			fileSystem,
+		);
 
 		expect(result.projectFiles).toStrictEqual([projectFile]);
 	});
@@ -746,7 +729,7 @@ describe(resolveNestedProjectSources, () => {
 	it("should report a directory mount that contains a default.project.json", () => {
 		expect.assertions(2);
 
-		const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "rojo-tree-test-"));
+		const { directory: temporaryDirectory, fileSystem, fs } = makeFileSystem();
 		const packageDirectory = path.join(temporaryDirectory, "pkg");
 		fs.mkdirSync(packageDirectory, { recursive: true });
 		const projectFile = path.join(packageDirectory, "default.project.json");
@@ -759,8 +742,10 @@ describe(resolveNestedProjectSources, () => {
 			},
 		};
 
-		const result = resolveNestedProjectSources(tree, temporaryDirectory);
-		fs.rmSync(temporaryDirectory, { force: true, recursive: true });
+		const result = resolveNestedProjectSources(
+			{ rootDirectory: temporaryDirectory, tree },
+			fileSystem,
+		);
 
 		expect(result.projectFiles).toStrictEqual([projectFile]);
 		expect(result.tree).toStrictEqual({
@@ -768,164 +753,6 @@ describe(resolveNestedProjectSources, () => {
 			ServerScriptService: {
 				pkg: { $path: "pkg/src" },
 			},
-		});
-	});
-});
-
-describe(resolveMountPath, () => {
-	it("should join a relative mount onto the base directory", () => {
-		expect.assertions(1);
-
-		expect(resolveMountPath("/repo/place", "out/client")).toBe("/repo/place/out/client");
-	});
-
-	it("should collapse traversal in a relative mount", () => {
-		expect.assertions(1);
-
-		expect(resolveMountPath("/repo/place", "../shared/out")).toBe("/repo/shared/out");
-	});
-
-	// Against a drive base, so the first row is the case `path.resolve` gets
-	// wrong: it reads a drive-less absolute mount as drive-relative on Windows
-	// and answers with the base's drive, naming a directory that does not exist.
-	it.for([
-		{ expected: "/external/out", mount: "/external/out" },
-		{ expected: "D:/external/out", mount: "D:/external/out" },
-		{ expected: "D:/external/out", mount: "D:\\external\\out" },
-		{ expected: "/external/out", mount: "\\external\\out" },
-	])("should return the absolute mount $mount unjoined", ({ expected, mount }) => {
-		expect.assertions(1);
-
-		expect(resolveMountPath("C:/repo/place", mount)).toBe(expected);
-	});
-
-	it("should return a posix path for a backslash base directory", () => {
-		expect.assertions(1);
-
-		expect(resolveMountPath("D:\\repo\\place", "out/client")).toBe("D:/repo/place/out/client");
-	});
-
-	// `join` keeps a trailing separator where `resolve` ate it. Containment
-	// tests downstream append their own `/`, so a mount ending in one sits
-	// inside nothing and holds nothing.
-	it.for([
-		{ expected: "/repo/place/out", mount: "out/" },
-		{ expected: "/repo/place", mount: "./" },
-		{ expected: "/repo/place/out/client", mount: "out/client/" },
-		{ expected: "/external/out", mount: "/external/out/" },
-		{ expected: "D:/external/out", mount: "D:\\external\\out\\" },
-	])("should drop the trailing separator on $mount", ({ expected, mount }) => {
-		expect.assertions(1);
-
-		expect(resolveMountPath("/repo/place", mount)).toBe(expected);
-	});
-
-	it.for([
-		{ label: "posix", mount: "/" },
-		{ label: "drive", mount: "D:/" },
-	])("should keep a bare $label root whole", ({ mount }) => {
-		expect.assertions(1);
-
-		// Nothing left to name if the separator goes.
-		expect(resolveMountPath("/repo/place", mount)).toBe(mount);
-	});
-
-	it("should leave a mount that contains a root a valid prefix of what it holds", () => {
-		expect.assertions(1);
-
-		// The shape every coverage containment test needs: `${mount}/` has to be
-		// the prefix of a root below it, which a trailing separator would break.
-		const mount = resolveMountPath("/repo/place", "out/");
-		const root = resolveMountPath("/repo/place", "out/client");
-
-		expect(root.startsWith(`${mount}/`)).toBeTrue();
-	});
-});
-
-describe(rebaseTreePaths, () => {
-	it("should re-express $path strings from one base directory to another", () => {
-		expect.assertions(1);
-
-		const packageDirectory = path.resolve("repo", "pkg");
-		const testDirectory = path.join(packageDirectory, "test");
-
-		const tree: RojoTreeNode = {
-			$className: "DataModel",
-			ServerScriptService: {
-				rx: { $path: "../src" },
-			},
-		};
-
-		const result = rebaseTreePaths(tree, testDirectory, packageDirectory);
-
-		expect(result).toStrictEqual({
-			$className: "DataModel",
-			ServerScriptService: {
-				rx: { $path: "src" },
-			},
-		});
-	});
-
-	it("should return $path unchanged when both bases are equal", () => {
-		expect.assertions(1);
-
-		const base = path.resolve("repo", "pkg");
-		const tree: RojoTreeNode = {
-			$className: "DataModel",
-			ReplicatedStorage: {
-				Src: { $path: "src" },
-			},
-		};
-
-		const result = rebaseTreePaths(tree, base, base);
-
-		expect(result).toStrictEqual({
-			$className: "DataModel",
-			ReplicatedStorage: {
-				Src: { $path: "src" },
-			},
-		});
-	});
-
-	it("should rebase every $path in a nested tree", () => {
-		expect.assertions(1);
-
-		const packageDirectory = path.resolve("repo", "pkg");
-		const testDirectory = path.join(packageDirectory, "test");
-
-		const tree: RojoTreeNode = {
-			$className: "DataModel",
-			ReplicatedStorage: {
-				Packages: { $path: "../node_modules" },
-				Src: { $path: "../src" },
-			},
-		};
-
-		const result = rebaseTreePaths(tree, testDirectory, packageDirectory);
-
-		expect(result).toStrictEqual({
-			$className: "DataModel",
-			ReplicatedStorage: {
-				Packages: { $path: "node_modules" },
-				Src: { $path: "src" },
-			},
-		});
-	});
-
-	it("should rebase an optional $path and keep its wrapper", () => {
-		expect.assertions(1);
-
-		const base = path.resolve("repo", "pkg");
-		const tree = {
-			$className: "DataModel",
-			Workspace: { $path: { optional: "../maybe" } },
-		} satisfies RojoTreeNode;
-
-		const result = rebaseTreePaths(tree, path.join(base, "test"), base);
-
-		expect(result).toStrictEqual({
-			$className: "DataModel",
-			Workspace: { $path: { optional: "maybe" } },
 		});
 	});
 });

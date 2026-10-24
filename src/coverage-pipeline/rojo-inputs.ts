@@ -97,8 +97,7 @@ export async function computeRojoInputsHashAsync({
 	const project: ProjectDigest = { key: toKey(rojoProjectPath), hash: hashString(projectText) };
 
 	const { projectFiles, tree } = resolveNestedProjectSources(
-		parseRawTree(rojoProjectPath, projectText),
-		projectDirectory,
+		{ rootDirectory: projectDirectory, tree: parseRawTree(rojoProjectPath, projectText) },
 		fileSystem,
 	);
 

@@ -79,7 +79,10 @@ export function loadRojoTree(
 		throw new Error(`Invalid Rojo project: ${validated.summary}`);
 	}
 
-	return resolveNestedProjects(validated.tree, path.dirname(rojoPath), fileSystem);
+	return resolveNestedProjects(
+		{ rootDirectory: path.dirname(rojoPath), tree: validated.tree },
+		fileSystem,
+	);
 }
 
 /**

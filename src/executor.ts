@@ -377,8 +377,7 @@ function buildSourceMapper({
 		}
 
 		const resolvedTree = resolveNestedProjects(
-			rojoResult.tree,
-			path.dirname(rojoProjectPath),
+			{ rootDirectory: path.dirname(rojoProjectPath), tree: rojoResult.tree },
 			fileSystem,
 		);
 

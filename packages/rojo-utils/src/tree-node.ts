@@ -1,26 +1,4 @@
-export interface RojoTreeNode {
-	$className?: string;
-	$ignoreUnknownInstances?: boolean;
-	$path?: string | { optional: string };
-	$properties?: JSONObject;
-	[key: string]: boolean | JSONObject | RojoTreeNode | string | undefined | { optional: string };
-}
-
-export interface RojoProject {
-	name: string;
-	servePort?: number | undefined;
-	tree: RojoTreeNode;
-}
-
-/**
- * Result of `loadRojoProject` — the validated narrow shape plus the original
- * parsed JSON. Callers that need top-level fields beyond name/servePort/tree
- * (gameId, placeId, globIgnorePaths, etc.) read them from `raw` rather than
- * re-parsing the project file.
- */
-export interface LoadedRojoProject extends RojoProject {
-	raw: JSONObject;
-}
+import type { RojoTreeNode } from "./rojo-types.ts";
 
 /**
  * Narrow an arbitrary tree value to a {@link RojoTreeNode}. Tree walkers reach
@@ -35,10 +13,23 @@ export function isRojoTreeNode(value: unknown): value is RojoTreeNode {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-export function isOptionalPath(value: RojoTreeNode[string]): value is { optional: string } {
+/**
+ * Narrows optional mounts already inside the project tree union.
+ * @param value - Candidate from an existing parsed tree.
+ * @returns Whether the value has a string-valued optional mount.
+ */
+export function isOptionalPath(value: RojoTreeNode[string]): value is {
+	/** A mount that may be absent from the filesystem. */
+	optional: string;
+} {
 	return isRojoTreeNode(value) && typeof value["optional"] === "string";
 }
 
+/**
+ * Preserves empty string mounts and returns undefined for non-mount values.
+ * @param value - Candidate from an existing parsed tree.
+ * @returns The required or optional mount string, including empty strings, or undefined.
+ */
 export function unwrapPath(value: RojoTreeNode[string]): string | undefined {
 	if (typeof value === "string") {
 		return value;

@@ -39,7 +39,11 @@ export function deriveProjectMounts(
 	// `findInTree` does an exact string match, which is why the roots arrive
 	// canonical: "out/shared/" and "./out/shared" find no mount.
 	const mounts = luauRoots.flatMap((fsPath) => {
-		const dataModelPath = findInTree(rojoTree, fsPath, "");
+		const dataModelPath = findInTree({
+			currentDataModelPath: "",
+			node: rojoTree,
+			targetPath: fsPath,
+		});
 		return dataModelPath !== undefined ? [{ dataModelPath, fsPath }] : [];
 	});
 

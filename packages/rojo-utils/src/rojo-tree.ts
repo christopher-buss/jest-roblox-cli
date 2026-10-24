@@ -3,17 +3,16 @@ import { dirname, join, relative } from "node:path";
 
 import type { FileSystem } from "./file-system.ts";
 import { nodeFileSystem } from "./file-system.ts";
-import type { RojoTreeNode } from "./types.ts";
-import { isOptionalPath, isRojoTreeNode } from "./types.ts";
+import { isAbsoluteMount, resolveMountPath, resolveNativeMountPath } from "./mount-paths.ts";
+import { getTreeSchema } from "./project-schema.ts";
+import type { RojoTreeNode } from "./rojo-types.ts";
+import { isOptionalPath, isRojoTreeNode } from "./tree-node.ts";
 
-// Validate only the field the resolver reads; resolveTree handles arbitrary
-// tree shapes defensively (same contract as `isValidRojoConfig`).
-const nestedProjectSchema = type({ tree: "object" });
-
-const ABSOLUTE_MOUNT = /^(?:[/\\]|[A-Za-z]:[/\\])/;
-
+/** Expanded mounts and the project files needed for cache invalidation. */
 export interface ResolvedNestedProjectSources {
+	/** Every nested project consumed, deduplicated in encounter order. */
 	projectFiles: Array<string>;
+	/** Root instance metadata and child instances. */
 	tree: RojoTreeNode;
 }
 
@@ -35,10 +34,12 @@ interface ResolveContext {
  * every nested project file inlined during resolution. Change-detection
  * callers hash these so an edit to a nested `*.project.json` invalidates the
  * build.
+ * @param options - Tree and directory the root project is written against.
+ * @param fileSystem - Host for all reads and directory discovery.
+ * @returns A copied tree and every project file consumed during expansion.
  */
 export function resolveNestedProjectSources(
-	tree: RojoTreeNode,
-	rootDirectory: string,
+	{ rootDirectory, tree }: { rootDirectory: string; tree: RojoTreeNode },
 	fileSystem: FileSystem = nodeFileSystem,
 ): ResolvedNestedProjectSources {
 	const context: ResolveContext = {
@@ -46,143 +47,37 @@ export function resolveNestedProjectSources(
 		sources: new Set<string>(),
 		visited: new Set<string>(),
 	};
-	const resolved = resolveTree(tree, rootDirectory, rootDirectory, context);
+	const resolved = resolveTree({
+		context,
+		currentDirectory: rootDirectory,
+		node: tree,
+		originalRoot: rootDirectory,
+	});
 	return { projectFiles: [...context.sources], tree: resolved };
 }
 
+/**
+ * Expands project mounts without mutating the input tree.
+ * @param options - Tree and directory the root project is written against.
+ * @param fileSystem - Host for all reads and directory discovery.
+ * @returns A copied tree with nested project mounts expanded against the root directory.
+ */
 export function resolveNestedProjects(
-	tree: RojoTreeNode,
-	rootDirectory: string,
+	{ rootDirectory, tree }: { rootDirectory: string; tree: RojoTreeNode },
 	fileSystem: FileSystem = nodeFileSystem,
 ): RojoTreeNode {
-	return resolveNestedProjectSources(tree, rootDirectory, fileSystem).tree;
+	return resolveNestedProjectSources({ rootDirectory, tree }, fileSystem).tree;
 }
 
-/**
- * Every `$path` in the tree, optional mounts included, with backslashes
- * normalized.
- *
- * A mount is relative to the project file's directory unless the project wrote
- * it absolute, which is preserved as written.
- */
-export function collectPaths(node: RojoTreeNode, result: Array<string>): void {
-	collectMountPaths(node, result, { optional: true });
-}
-
-export function collectRequiredPaths(node: RojoTreeNode, result: Array<string>): void {
-	collectMountPaths(node, result, { optional: false });
-}
-
-/**
- * The filesystem path a `$path` mount names, given the directory it is written
- * against — a project's own directory, or the root a mount was already rebased
- * onto. A `luauRoot` is written the same way and resolves through here too, so
- * a root and a mount are weighed on one rule.
- *
- * Joined, never resolved. `path.resolve` reads a drive-less absolute path
- * (`/external/out`) as drive-relative on Windows and answers with the base's
- * drive, so one mount names a different directory on each host; it also
- * resolves a relative `baseDirectory` against the process cwd, which is not a
- * frame any mount is written in. An absolute mount is already the location, so
- * it is joined onto nothing.
- *
- * Returns a posix-separated path with no trailing separator, matching what
- * {@link collectPaths} yields. A mount may be written `out/`, and `join` keeps
- * that slash where `resolve` ate it; every containment test downstream builds
- * its own `/` boundary, so a mount carrying one reads as inside nothing and
- * nothing reads as inside it.
- *
- * The drive letter is left as written, so a caller that compares two of these
- * canonicalizes both.
- */
-export function resolveMountPath(baseDirectory: string, mount: string): string {
-	return dropTrailingSlash(resolveNativeMountPath(baseDirectory, mount).replaceAll("\\", "/"));
-}
-
-export function rebaseTreePaths(
-	node: RojoTreeNode,
-	fromDirectory: string,
-	toDirectory: string,
-): RojoTreeNode {
-	const result: RojoTreeNode = {};
-
-	for (const [key, value] of Object.entries(node)) {
-		if (key === "$path" && typeof value === "string") {
-			const mountPath = resolveNativeMountPath(fromDirectory, value);
-			result[key] = relative(toDirectory, mountPath).replaceAll("\\", "/");
-			continue;
-		}
-
-		if (key === "$path" && isOptionalPath(value)) {
-			const mountPath = resolveNativeMountPath(fromDirectory, value.optional);
-			result[key] = { optional: relative(toDirectory, mountPath).replaceAll("\\", "/") };
-			continue;
-		}
-
-		if (key.startsWith("$") || !isRojoTreeNode(value)) {
-			result[key] = value;
-			continue;
-		}
-
-		result[key] = rebaseTreePaths(value, fromDirectory, toDirectory);
-	}
-
-	return result;
-}
-
-function collectMountPaths(
-	node: RojoTreeNode,
-	result: Array<string>,
-	options: { optional: boolean },
-): void {
-	for (const [key, value] of Object.entries(node)) {
-		if (key === "$path" && typeof value === "string") {
-			result.push(value.replaceAll("\\", "/"));
-		} else if (key === "$path" && options.optional && isOptionalPath(value)) {
-			result.push(value.optional.replaceAll("\\", "/"));
-		} else if (!key.startsWith("$") && isRojoTreeNode(value)) {
-			collectMountPaths(value, result, options);
-		}
-	}
-}
-
-/**
- * Whether a `$path` names a location on its own, rather than one relative to
- * the project file.
- *
- * Not `path.isAbsolute`, which answers for the host it runs on: `D:/out` and
- * `\out` both read as relative on Linux, so the same project file would resolve
- * to two different trees depending on which machine read it. Every root a
- * project can write is here — posix, drive, and the backslash forms Windows
- * uses for a drive-relative root and a UNC share.
- */
-function isAbsoluteMount(value: string): boolean {
-	return ABSOLUTE_MOUNT.test(value);
-}
-
-/** {@link resolveMountPath}, with the separators left as written. */
-function resolveNativeMountPath(baseDirectory: string, mount: string): string {
-	return isAbsoluteMount(mount) ? mount : join(baseDirectory, mount);
-}
-
-/**
- * Drop a trailing separator, unless it is the whole location: `/` is the posix
- * root and `D:/` a drive root, and a mount can name either.
- */
-function dropTrailingSlash(mountPath: string): string {
-	if (!mountPath.endsWith("/")) {
-		return mountPath;
-	}
-
-	const stripped = mountPath.slice(0, -1);
-	return stripped === "" || stripped.endsWith(":") ? mountPath : stripped;
-}
-
-function nestedProjectPath(
-	fileSystem: FileSystem,
-	currentDirectory: string,
-	value: string,
-): string | undefined {
+function nestedProjectPath({
+	currentDirectory,
+	fileSystem,
+	value,
+}: {
+	currentDirectory: string;
+	fileSystem: FileSystem;
+	value: string;
+}): string | undefined {
 	// Resolve a `$path` string to the nested project file it should inline, or
 	// undefined when the path is a plain source mount. Rojo treats a `$path`
 	// pointing at a directory containing `default.project.json` as a nested
@@ -199,24 +94,25 @@ function nestedProjectPath(
 }
 
 function parseNestedTree(content: string): RojoTreeNode {
-	const result = nestedProjectSchema(JSON.parse(content));
+	const result = type({ tree: getTreeSchema() })(JSON.parse(content));
 	if (result instanceof type.errors) {
 		throw new Error(result.summary);
-	}
-
-	if (!isRojoTreeNode(result.tree)) {
-		throw new Error("Expected `tree` to be an object");
 	}
 
 	return result.tree;
 }
 
-function inlineNestedProject(
-	projectPath: string,
-	currentDirectory: string,
-	originalRoot: string,
-	context: ResolveContext,
-): RojoTreeNode {
+function inlineNestedProject({
+	context,
+	currentDirectory,
+	originalRoot,
+	projectPath,
+}: {
+	context: ResolveContext;
+	currentDirectory: string;
+	originalRoot: string;
+	projectPath: string;
+}): RojoTreeNode {
 	const chain = new Set([...context.visited, projectPath]);
 	context.sources.add(projectPath);
 
@@ -236,18 +132,27 @@ function inlineNestedProject(
 		throw new Error(`Failed to parse nested Rojo project: ${relativePath}`, { cause: err });
 	}
 
-	return resolveTree(tree, dirname(projectPath), originalRoot, {
-		fileSystem: context.fileSystem,
-		sources: context.sources,
-		visited: chain,
+	return resolveTree({
+		context: {
+			fileSystem: context.fileSystem,
+			sources: context.sources,
+			visited: chain,
+		},
+		currentDirectory: dirname(projectPath),
+		node: tree,
+		originalRoot,
 	});
 }
 
-function resolveRootRelativePath(
-	currentDirectory: string,
-	value: string,
-	originalRoot: string,
-): string {
+function resolveRootRelativePath({
+	currentDirectory,
+	originalRoot,
+	value,
+}: {
+	currentDirectory: string;
+	originalRoot: string;
+	value: string;
+}): string {
 	// An absolute `$path` already names the location Rojo mounts, at any depth of
 	// nesting. Rebasing it onto `originalRoot` would name a directory that does
 	// not exist, and every caller that walks the mounts would then miss the
@@ -260,49 +165,86 @@ function resolveRootRelativePath(
 	return relative(originalRoot, mountPath).replaceAll("\\", "/");
 }
 
-function resolveOptionalPath(
-	currentDirectory: string,
-	value: { optional: string },
-	originalRoot: string,
-): { optional: string } {
-	return { optional: resolveRootRelativePath(currentDirectory, value.optional, originalRoot) };
+function resolveOptionalPath({
+	currentDirectory,
+	originalRoot,
+	value,
+}: {
+	currentDirectory: string;
+	originalRoot: string;
+	value: { optional: string };
+}): { optional: string } {
+	return {
+		optional: resolveRootRelativePath({
+			currentDirectory,
+			originalRoot,
+			value: value.optional,
+		}),
+	};
 }
 
-function resolveTree(
-	node: RojoTreeNode,
-	currentDirectory: string,
-	originalRoot: string,
-	context: ResolveContext,
-): RojoTreeNode {
+function resolveTree({
+	context,
+	currentDirectory,
+	node,
+	originalRoot,
+}: {
+	context: ResolveContext;
+	currentDirectory: string;
+	node: RojoTreeNode;
+	originalRoot: string;
+}): RojoTreeNode {
 	const resolved: RojoTreeNode = {};
 
 	for (const [key, value] of Object.entries(node)) {
 		if (key === "$path" && typeof value === "string") {
-			const projectPath = nestedProjectPath(context.fileSystem, currentDirectory, value);
-			if (projectPath === undefined) {
-				resolved[key] = resolveRootRelativePath(currentDirectory, value, originalRoot);
-				continue;
-			}
-
-			if (context.visited.has(projectPath)) {
-				throw new Error(`Circular project reference: ${value}`);
-			}
-
 			Object.assign(
 				resolved,
-				inlineNestedProject(projectPath, currentDirectory, originalRoot, context),
+				resolveStringMount({
+					context,
+					currentDirectory,
+					originalRoot,
+					value,
+				}),
 			);
 			continue;
 		}
 
 		if (key === "$path" && isOptionalPath(value)) {
-			resolved[key] = resolveOptionalPath(currentDirectory, value, originalRoot);
+			resolved[key] = resolveOptionalPath({ currentDirectory, originalRoot, value });
 		} else if (key.startsWith("$") || !isRojoTreeNode(value)) {
 			resolved[key] = value;
 		} else {
-			resolved[key] = resolveTree(value, currentDirectory, originalRoot, context);
+			resolved[key] = resolveTree({ context, currentDirectory, node: value, originalRoot });
 		}
 	}
 
 	return resolved;
+}
+
+function resolveStringMount({
+	context,
+	currentDirectory,
+	originalRoot,
+	value,
+}: {
+	context: ResolveContext;
+	currentDirectory: string;
+	originalRoot: string;
+	value: string;
+}): RojoTreeNode {
+	const projectPath = nestedProjectPath({
+		currentDirectory,
+		fileSystem: context.fileSystem,
+		value,
+	});
+	if (projectPath === undefined) {
+		return { $path: resolveRootRelativePath({ currentDirectory, originalRoot, value }) };
+	}
+
+	if (context.visited.has(projectPath)) {
+		throw new Error(`Circular project reference: ${value}`);
+	}
+
+	return inlineNestedProject({ context, currentDirectory, originalRoot, projectPath });
 }

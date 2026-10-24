@@ -428,8 +428,7 @@ function resolvePackageTree(
 ): RojoTreeNode {
 	const project = loadRojoProject(descriptor.rojoProjectPath, fileSystem);
 	return resolveNestedProjects(
-		project.tree,
-		path.dirname(descriptor.rojoProjectPath),
+		{ rootDirectory: path.dirname(descriptor.rojoProjectPath), tree: project.tree },
 		fileSystem,
 	);
 }

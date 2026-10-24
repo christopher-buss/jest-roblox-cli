@@ -604,16 +604,14 @@ function loadResolvedRojoProject(fileSystem: FileSystem, resolvedPath: string): 
 		}
 
 		const rojoDirectory = path.dirname(resolvedPath);
+		const tree = resolveNestedProjects(
+			{ rootDirectory: rojoDirectory, tree: validated.tree },
+			fileSystem,
+		);
 
 		return {
 			failure: undefined,
-			loaded: {
-				project: {
-					...validated,
-					tree: resolveNestedProjects(validated.tree, rojoDirectory, fileSystem),
-				},
-				rojoDirectory,
-			},
+			loaded: { project: { ...validated, tree }, rojoDirectory },
 		};
 	} catch (err) {
 		// Expected: nothing readable there → the caller falls through to the

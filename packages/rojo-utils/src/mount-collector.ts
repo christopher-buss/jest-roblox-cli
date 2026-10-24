@@ -1,39 +1,63 @@
-import type { RojoTreeNode } from "./types.ts";
-import { isRojoTreeNode, unwrapPath } from "./types.ts";
+import type { RojoTreeNode } from "./rojo-types.ts";
+import { isRojoTreeNode, unwrapPath } from "./tree-node.ts";
 
+/** Filesystem classification supplied by the host, without disk access here. */
 export type PathKind = "directory" | "file" | "missing";
 
+/**
+ * Host seam for distinguishing directory mounts from files and missing paths.
+ */
 export type PathClassifier = (fsPath: string) => PathKind;
 
+/** A directory mount whose prefix is relative to the project file. */
 export interface Mount {
+	/** Slash-separated instance path below the project root. */
 	dataModelPath: string;
+	/** Filesystem prefix used before appending the unmatched source suffix. */
 	fsPath: string;
 }
 
 const TRAILING_SLASH_PATTERN = /\/$/;
 
-export function collectMounts(
-	node: RojoTreeNode,
-	currentDataModelPath: string,
-	classify: PathClassifier,
-): Array<Mount> {
+/**
+ * Collects directory mounts below the root using the supplied classifier.
+ * @param options - Subtree, its accumulated instance prefix, and the host classifier.
+ * @returns Directory mounts in traversal order, excluding project-file mounts.
+ */
+export function collectMounts({
+	classify,
+	currentDataModelPath,
+	node,
+}: {
+	classify: PathClassifier;
+	currentDataModelPath: string;
+	node: RojoTreeNode;
+}): Array<Mount> {
 	const result: Array<Mount> = [];
-	walk(node, currentDataModelPath, classify, result);
+	walk({ classify, currentDataModelPath, node, result });
 	return result;
 }
 
+/**
+ * Retains minimal directory prefixes, preserving sibling boundaries.
+ * @param paths - Directory prefixes in desired output order.
+ * @returns Prefixes with no containing ancestor in the supplied set.
+ */
 export function pruneAncestors(paths: Array<string>): Array<string> {
-	return paths.filter((candidate) => {
-		return paths.every((other) => other === candidate || !candidate.startsWith(`${other}/`));
-	});
+	return paths.filter((candidate) => paths.every((other) => !candidate.startsWith(`${other}/`)));
 }
 
-function addDirectoryMount(
-	node: RojoTreeNode,
-	dataModelPath: string,
-	classify: PathClassifier,
-	result: Array<Mount>,
-): void {
+function addDirectoryMount({
+	classify,
+	dataModelPath,
+	node,
+	result,
+}: {
+	classify: PathClassifier;
+	dataModelPath: string;
+	node: RojoTreeNode;
+	result: Array<Mount>;
+}): void {
 	const rawPath = unwrapPath(node.$path);
 	if (rawPath === undefined) {
 		return;
@@ -49,12 +73,17 @@ function addDirectoryMount(
 	}
 }
 
-function walk(
-	node: RojoTreeNode,
-	currentDataModelPath: string,
-	classify: PathClassifier,
-	result: Array<Mount>,
-): void {
+function walk({
+	classify,
+	currentDataModelPath,
+	node,
+	result,
+}: {
+	classify: PathClassifier;
+	currentDataModelPath: string;
+	node: RojoTreeNode;
+	result: Array<Mount>;
+}): void {
 	for (const [key, value] of Object.entries(node)) {
 		if (key.startsWith("$") || !isRojoTreeNode(value)) {
 			continue;
@@ -63,7 +92,7 @@ function walk(
 		const childDataModelPath =
 			currentDataModelPath === "" ? key : `${currentDataModelPath}/${key}`;
 
-		addDirectoryMount(value, childDataModelPath, classify, result);
-		walk(value, childDataModelPath, classify, result);
+		addDirectoryMount({ classify, dataModelPath: childDataModelPath, node: value, result });
+		walk({ classify, currentDataModelPath: childDataModelPath, node: value, result });
 	}
 }

@@ -25,10 +25,20 @@ const ROJO_FILE_REGEX = /^.+\.project\.json$/;
 export const ROJO_DEFAULT_NAME = "default.project.json";
 export const ROJO_OLD_NAME = "roblox-project.json";
 
+/**
+ * Recognizes named project files without accepting backup suffixes.
+ * @param fileName - Complete basename to classify.
+ * @returns Whether the complete basename is a named Rojo project file.
+ */
 export function isRojoProjectFileName(fileName: string): boolean {
 	return ROJO_FILE_REGEX.test(fileName);
 }
 
+/**
+ * Removes supported module suffixes and script-side qualifiers.
+ * @param filePath - Filesystem path to classify or resolve.
+ * @returns The path with supported suffixes removed; unsupported extensions stay intact.
+ */
 export function stripRojoExtensions(filePath: string): string {
 	let stripped = filePath;
 	const extension = path.extname(stripped);
@@ -45,6 +55,11 @@ export function stripRojoExtensions(filePath: string): string {
 	return stripped;
 }
 
+/**
+ * Normalizes legacy Lua suffixes while retaining other filenames.
+ * @param filePath - Filesystem path to classify or resolve.
+ * @returns The original path, with a terminal .lua changed to .luau.
+ */
 export function convertToLuau(filePath: string): string {
 	const extension = path.extname(filePath);
 	if (extension === LUA_EXT) {
@@ -54,6 +69,12 @@ export function convertToLuau(filePath: string): string {
 	return filePath;
 }
 
+/**
+ * Checks containment using the native host path vocabulary.
+ * @param filePath - Filesystem path to classify or resolve.
+ * @param directoryPath - Candidate containing directory.
+ * @returns Whether the native relative path stays within the directory.
+ */
 export function isPathDescendantOf(filePath: string, directoryPath: string): boolean {
-	return directoryPath === filePath || !path.relative(directoryPath, filePath).startsWith("..");
+	return !path.relative(directoryPath, filePath).startsWith("..");
 }

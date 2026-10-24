@@ -4,13 +4,13 @@ import { standaloneOxlint } from "../../oxlint.shared.ts";
 
 export default defineConfig(
 	standaloneOxlint({
-		name: "packages/shared/rojo-utils",
+		name: "packages/rojo-utils",
 		configDirectory: import.meta.dirname,
 		ignores: ["**/out-tsc/**/*"],
-		jsdoc: false,
+		jsdoc: true,
 		test: {
 			vitest: {
-				extended: false,
+				extended: true,
 				typecheck: true,
 			},
 		},

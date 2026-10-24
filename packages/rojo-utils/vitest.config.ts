@@ -1,20 +1,43 @@
-import { defineConfig } from "vitest/config";
+import { defineConfig, mergeConfig } from "vitest/config";
 
-export default defineConfig({
-	test: {
-		clearMocks: true,
-		coverage: {
-			exclude: ["test/**"],
-			thresholds: {
-				branches: 100,
-				functions: 100,
-				lines: 100,
-				statements: 100,
+import { sharedConfig, unitProject } from "../../vitest.shared.ts";
+
+export default mergeConfig(
+	sharedConfig,
+	defineConfig({
+		test: {
+			coverage: {
+				exclude: [
+					"src/**/*-types.ts",
+					"src/**/*.d.ts",
+					"src/**/*.spec.ts",
+					"src/**/*.spec-d.ts",
+				],
+				include: ["src/**/*.ts"],
+				reporter: ["text", "json", "json-summary"],
 			},
+			projects: [
+				unitProject,
+				{
+					extends: true,
+					test: {
+						name: "type",
+						include: [],
+						typecheck: {
+							build: true,
+							checker: "tsc",
+							enabled: true,
+							include: ["src/**/*.spec-d.ts"],
+							only: true,
+							tsconfig: "./tsconfig.spec.json",
+						},
+					},
+				},
+				{
+					extends: true,
+					test: { name: "integration", include: ["test/integration/**/*.spec.ts"] },
+				},
+			],
 		},
-		include: ["src/**/*.spec.ts"],
-		restoreMocks: true,
-		setupFiles: ["./test/setup/jest-extended.ts"],
-		unstubEnvs: true,
-	},
-});
+	}),
+);
