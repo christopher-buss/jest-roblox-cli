@@ -14,6 +14,7 @@ import type {
 	BackendResult,
 	EnvelopeEntry,
 } from "./backends/interface.ts";
+import { ConfigError } from "./config/errors.ts";
 import { loadConfig } from "./config/loader.ts";
 import type { PackageConfigLoader } from "./config/loader.ts";
 import type {
@@ -5151,6 +5152,57 @@ describe("workspace type tests", () => {
 			}),
 		);
 		expect(result!.typecheckResult).toBeDefined();
+	});
+
+	it("should reject typescript type tests in the standalone binary before staging or dispatch", async () => {
+		expect.assertions(4);
+
+		vi.stubEnv("JEST_ROBLOX_SEA", "true");
+		const { fileSystem, volume } = createMemoryFileSystem();
+
+		volume.fromJSON({
+			...seedPackage(FOO_DIR, {
+				name: "@halcyon/foo",
+				specFiles: {
+					[path.join(FOO_DIR, "src/foo.spec-d.ts")]: "",
+					[path.join(FOO_DIR, "src/foo.spec.ts")]: "",
+				},
+			}),
+			[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
+		});
+
+		setLoadedConfigPerPackage({
+			[FOO_DIR]: {
+				...DEFAULT_CONFIG,
+				rootDir: FOO_DIR,
+				testMatch: ["**/*.spec.ts"],
+				typecheck: { enabled: true },
+			},
+		});
+
+		const { backend } = createStubBackend([
+			{ jestOutput: passingResult(), pkg: "@halcyon/foo", project: "@halcyon/foo" },
+		]);
+		const runTests = vi.spyOn(backend, "runTestsAsync");
+
+		const error: unknown = await runStagedWorkspaceAsync({
+			backend,
+			cli: makeCli(),
+			fileSystem,
+			packageInfos: [FOO_INFO],
+			runOptions: makeRunOptions(),
+			version: "0.0.0-test",
+			workspaceRoot: ROOT,
+		}).catch((err: unknown) => err);
+
+		expect(error).toStrictEqual(
+			new ConfigError(
+				"--typecheck is not available in the standalone binary. Install via npm instead.",
+			),
+		);
+		expect(fileSystem.existsSync(SYNTHESIZED_PROJECT)).toBeFalse();
+		expect(runTests).not.toHaveBeenCalled();
+		expect(runTypecheck).not.toHaveBeenCalled();
 	});
 
 	it("should skip discovered type test files when typechecking is disabled", async () => {

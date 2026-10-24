@@ -21,5 +21,6 @@ export interface TestDefinition extends RawTestDefinition {
 
 export interface CollectedFile {
 	definitions: Array<TestDefinition>;
-	problems: Array<Pick<TypeTestDiagnostic, "code" | "message">>;
+	locations: Map<string, number>;
+	resolve: (diagnostics: Array<TypeTestDiagnostic>) => Array<TypeTestDiagnostic>;
 }

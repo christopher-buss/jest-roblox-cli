@@ -9,37 +9,12 @@ import type {
 
 import { parseSync, Visitor } from "oxc-parser";
 
+import { buildAncestorChain } from "./ancestor-chain.ts";
 import type { RawTestDefinition, TestDefinition } from "./types.ts";
 
 const TEST_FUNCTIONS = new Set(["it", "test"]);
 const SUITE_FUNCTIONS = new Set(["describe", "suite"]);
 const ALL_FUNCTIONS = new Set([...SUITE_FUNCTIONS, ...TEST_FUNCTIONS]);
-
-export function buildAncestorChain(sorted: Array<RawTestDefinition>): Array<TestDefinition> {
-	const result: Array<TestDefinition> = [];
-	const suiteStack: Array<{ end: number; name: string }> = [];
-
-	for (const definition of sorted) {
-		while (
-			suiteStack.length > 0 &&
-			// Stryker disable next-line EqualityOperator: calls never abut.
-			suiteStack.at(-1)!.end <= definition.start // oxlint-disable-line typescript/no-non-null-assertion -- stack length > 0
-		) {
-			suiteStack.pop();
-		}
-
-		result.push({
-			...definition,
-			ancestorNames: suiteStack.map((suite) => suite.name),
-		});
-
-		if (definition.type === "suite") {
-			suiteStack.push({ name: definition.name, end: definition.end });
-		}
-	}
-
-	return result;
-}
 
 export function collectTestDefinitions(source: string): Array<TestDefinition> {
 	const result = parseSync("test.ts", source);

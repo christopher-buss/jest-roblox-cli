@@ -26,7 +26,7 @@ describe("shipped luau library --typecheckOnly e2e", () => {
 		const result = await runCliAsync(["--typecheckOnly"], { cwd: sandbox });
 
 		expect(result.exitCode).toBe(0);
-		expect(result.stdout + result.stderr).toContain("113 passed");
+		expect(result.stdout + result.stderr).toContain("116 passed");
 	});
 
 	it("should report a failing equality as expected and received types", async () => {

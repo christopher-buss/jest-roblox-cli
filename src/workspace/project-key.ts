@@ -3,7 +3,7 @@
  * keys by it — the file selection and the per-package output sinks.
  *
  * JSON-encode the pair so neither segment's content can collide into another
- * pair's key (parity with `groupTypecheckByTsconfig`). A project's
+ * pair's key (parity with `groupTypecheckPassesAsync`). A project's
  * `displayName` is unique only within its own package, so keying on it alone
  * would let two packages that both name a project `shared` collapse onto one
  * entry.

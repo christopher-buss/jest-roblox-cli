@@ -2,10 +2,6 @@ import type { ChildProcess, ExecFileException } from "node:child_process";
 
 import type { ChildProcessRunner } from "../utils/child-process.ts";
 
-/**
- * Milliseconds to wait for a checker to launch (the child `spawn` event) before
- * the pass fails. Bounds only process startup, so a slow check never trips it.
- */
 export const DEFAULT_SPAWN_TIMEOUT = 10_000;
 
 /**
@@ -58,12 +54,8 @@ function settleCheckerResult({
 		return;
 	}
 
-	// `execFile`'s `timeout` (the run-level deadline) is the only kill it
-	// causes, so `killed` is timeout-specific here: maxBuffer overflow surfaces
-	// as a distinct `code` (ERR_CHILD_PROCESS_STDIO_MAXBUFFER) with `killed`
-	// unset. (The launch-timer kill settles the promise first, so its later
-	// `killed` callback is a no-op.) Fail loud rather than let truncated/empty
-	// output read as zero type errors.
+	// Only the run deadline kills here; fail loud rather than read truncated
+	// output as clean.
 	if (error.killed === true) {
 		const message = `${label} typecheck timed out after ${String(runTimeout)}ms (timeout)`;
 		finish(() => {

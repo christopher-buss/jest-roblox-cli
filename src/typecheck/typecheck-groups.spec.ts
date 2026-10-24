@@ -2,8 +2,8 @@ import { performance } from "node:perf_hooks";
 import { describe, expect, it, vi } from "vitest";
 
 import type { JestResult } from "../types/jest-result.ts";
-import type { RunTypecheckGroup } from "./group-by-tsconfig.ts";
-import { groupTypecheckByTsconfig, runTypecheckPassAsync } from "./group-by-tsconfig.ts";
+import type { RunTypecheckGroup } from "./typecheck-groups.ts";
+import { groupTypecheckPassesAsync, runTypecheckPassAsync } from "./typecheck-groups.ts";
 
 interface Deferred {
 	promise: Promise<JestResult>;
@@ -47,7 +47,7 @@ function deferred(): Deferred {
 	return { promise, resolve: resolveResult };
 }
 
-describe(groupTypecheckByTsconfig, () => {
+describe(groupTypecheckPassesAsync, () => {
 	it("should run one pass for a single project entry", async () => {
 		expect.assertions(2);
 
@@ -55,7 +55,7 @@ describe(groupTypecheckByTsconfig, () => {
 			return makeResult({ numPassedTests: 1, numTotalTests: 1 });
 		});
 
-		const result = await groupTypecheckByTsconfig(
+		const result = await groupTypecheckPassesAsync(
 			[{ cwd: "/root", files: ["a.spec-d.ts"], tsconfig: "tsconfig.json" }],
 			run,
 		);
@@ -73,7 +73,7 @@ describe(groupTypecheckByTsconfig, () => {
 
 		const run = vi.fn<RunTypecheckGroup>(async (group) => resultForTsconfig(group.tsconfig));
 
-		const result = await groupTypecheckByTsconfig(
+		const result = await groupTypecheckPassesAsync(
 			[
 				{ cwd: "/r", files: ["a.spec-d.ts"], tsconfig: "a.json" },
 				{ cwd: "/r", files: ["b.spec-d.ts"], tsconfig: "b.json" },
@@ -98,7 +98,7 @@ describe(groupTypecheckByTsconfig, () => {
 
 		const run = vi.fn<RunTypecheckGroup>(async () => makeResult());
 
-		await groupTypecheckByTsconfig(
+		await groupTypecheckPassesAsync(
 			[
 				{ cwd: "/r", files: ["a.spec-d.ts", "shared.spec-d.ts"], tsconfig: "t.json" },
 				{ cwd: "/r", files: ["shared.spec-d.ts", "b.spec-d.ts"], tsconfig: "t.json" },
@@ -118,7 +118,7 @@ describe(groupTypecheckByTsconfig, () => {
 
 		const run = vi.fn<RunTypecheckGroup>(async () => makeResult());
 
-		await groupTypecheckByTsconfig(
+		await groupTypecheckPassesAsync(
 			[
 				{ cwd: "/a", files: ["x.spec-d.ts"], tsconfig: "t.json" },
 				{ cwd: "/b", files: ["y.spec-d.ts"], tsconfig: "t.json" },
@@ -134,7 +134,7 @@ describe(groupTypecheckByTsconfig, () => {
 
 		const run = vi.fn<RunTypecheckGroup>(async () => makeResult());
 
-		await groupTypecheckByTsconfig(
+		await groupTypecheckPassesAsync(
 			[
 				{ cwd: "/a b", files: ["x.spec-d.ts"], tsconfig: "c" },
 				{ cwd: "/a", files: ["y.spec-d.ts"], tsconfig: "b c" },
@@ -152,7 +152,7 @@ describe(groupTypecheckByTsconfig, () => {
 			return makeResult({ startTime: startTimeForCwd(group.cwd) });
 		});
 
-		const result = await groupTypecheckByTsconfig(
+		const result = await groupTypecheckPassesAsync(
 			[
 				{ cwd: "/a", files: ["x.spec-d.ts"] },
 				{ cwd: "/b", files: ["y.spec-d.ts"] },
@@ -169,7 +169,7 @@ describe(groupTypecheckByTsconfig, () => {
 
 		const run = vi.fn<RunTypecheckGroup>(async () => makeResult());
 
-		await groupTypecheckByTsconfig(
+		await groupTypecheckPassesAsync(
 			[
 				{ cwd: "/r", files: ["a.spec-d.luau"], tsconfig: "a.json" },
 				{ cwd: "/r", files: ["b.spec-d.luau"], tsconfig: "b.json" },
@@ -189,7 +189,7 @@ describe(groupTypecheckByTsconfig, () => {
 
 		const run = vi.fn<RunTypecheckGroup>(async () => makeResult());
 
-		await groupTypecheckByTsconfig(
+		await groupTypecheckPassesAsync(
 			[{ cwd: "/r", files: ["a.spec-d.ts", "b.spec-d.luau"], tsconfig: "a.json" }],
 			run,
 		);
@@ -208,7 +208,7 @@ describe(groupTypecheckByTsconfig, () => {
 
 		const run = vi.fn<RunTypecheckGroup>(async () => makeResult());
 
-		await groupTypecheckByTsconfig(
+		await groupTypecheckPassesAsync(
 			[
 				{ cwd: "/a", files: ["a.spec-d.luau"] },
 				{ cwd: "/b", files: ["b.spec-d.luau"] },
@@ -224,7 +224,7 @@ describe(groupTypecheckByTsconfig, () => {
 
 		const run = vi.fn<RunTypecheckGroup>(async () => makeResult());
 
-		const result = await groupTypecheckByTsconfig([], run);
+		const result = await groupTypecheckPassesAsync([], run);
 
 		expect(result).toBeUndefined();
 		expect(run).not.toHaveBeenCalled();
@@ -235,7 +235,7 @@ describe(groupTypecheckByTsconfig, () => {
 
 		const run = vi.fn<RunTypecheckGroup>(async () => makeResult());
 
-		await groupTypecheckByTsconfig(
+		await groupTypecheckPassesAsync(
 			[
 				{ cwd: "/r", files: [], tsconfig: "unused.json" },
 				{ cwd: "/r", files: ["a.spec-d.ts"], tsconfig: "t.json" },
@@ -260,7 +260,7 @@ describe(groupTypecheckByTsconfig, () => {
 			.mockReturnValueOnce(first.promise)
 			.mockReturnValueOnce(second.promise);
 
-		const pending = groupTypecheckByTsconfig(
+		const pending = groupTypecheckPassesAsync(
 			[
 				{ cwd: "/r", files: ["a.spec-d.ts"], tsconfig: "a.json" },
 				{ cwd: "/r", files: ["b.spec-d.ts"], tsconfig: "b.json" },

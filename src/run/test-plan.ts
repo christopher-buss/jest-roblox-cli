@@ -15,7 +15,10 @@ import type { ResolvedConfig } from "../config/schema.ts";
 import { hasUserAuthoredConfig } from "../config/stubs.ts";
 import { resolveAllTsconfigMappings } from "../executor/tsconfig-mappings.ts";
 import type { TimingCollector } from "../timing/orchestration-collector.ts";
-import type { TypecheckGroupEntry } from "../typecheck/group-by-tsconfig.ts";
+import {
+	assertTypecheckAvailable,
+	type TypecheckGroupEntry,
+} from "../typecheck/typecheck-groups.ts";
 import type { TsconfigMapping } from "../types/tsconfig.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import { classifyTestFiles, discoverTestFiles } from "./discovery.ts";
@@ -144,6 +147,7 @@ export function buildTestPlan({ timing, ...discovery }: TestPlanInput): TestPlan
 	const { jobs, typeTestEntries } = timing.profile("collectPendingJobs", () => {
 		return collectPendingJobs(discovery);
 	});
+	assertTypecheckAvailable(typeTestEntries);
 
 	const plan: TestPlan = {
 		jobs,
@@ -271,7 +275,7 @@ function collectRuntimeInjectionPaths({
 // entry, a runtime job, either, or neither.
 //
 // Each project carries its own effective `(tsconfig, cwd)` into the type pass;
-// `groupTypecheckByTsconfig` collapses projects sharing one and checks distinct
+// `groupTypecheckPassesAsync` collapses projects sharing one and checks distinct
 // tsconfigs separately. cwd is always the workspace root in projects mode (all
 // projects build from one tree).
 function toPlannedProject({

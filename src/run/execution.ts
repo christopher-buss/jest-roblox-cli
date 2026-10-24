@@ -16,8 +16,8 @@ import type {
 } from "../staging/place-builder.ts";
 import { buildPlaceAsync } from "../staging/place-builder.ts";
 import type { TimingCollector } from "../timing/orchestration-collector.ts";
-import type { TypecheckGroupEntry, TypecheckPassOutcome } from "../typecheck/group-by-tsconfig.ts";
-import { runTypecheckPassAsync as runGroupedTypecheckPassAsync } from "../typecheck/group-by-tsconfig.ts";
+import type { TypecheckGroupEntry, TypecheckPassOutcome } from "../typecheck/typecheck-groups.ts";
+import { runTypecheckPassAsync as runGroupedTypecheckPassAsync } from "../typecheck/typecheck-groups.ts";
 import type { ChildProcessRunner } from "../utils/child-process.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import type { PosixRoot } from "../utils/normalize-windows-path.ts";

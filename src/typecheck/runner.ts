@@ -13,12 +13,11 @@ import { nodeFileSystem } from "../utils/file-system.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import { collectTestDefinitions } from "./collect.ts";
 import { spawnLuauCheckAsync } from "./luau-check.ts";
-import { collectLuauTestDefinitions, createByteLocationsIndexMap } from "./luau-collect.ts";
-import { applyLuauExpectErrors } from "./luau-expect-error.ts";
+import { collectLuauTestDefinitions } from "./luau-collect.ts";
 import { parseLuauOutput } from "./luau-parse.ts";
 import { parseTscOutput } from "./parse.ts";
 import { DEFAULT_RUN_TIMEOUT, DEFAULT_SPAWN_TIMEOUT, spawnCheckerAsync } from "./spawn-checker.ts";
-import { LUAU_TYPE_TEST_PATTERN, TS_TYPE_TEST_PATTERN } from "./type-test-pattern.ts";
+import { isLuauTypeTestFile } from "./type-test-pattern.ts";
 import type { CollectedFile, RawErrorsMap, TestDefinition, TypeTestDiagnostic } from "./types.ts";
 
 const MISSING_TSGO_MESSAGE =
@@ -49,7 +48,7 @@ const compositeTsconfigSchema = type({
 });
 
 export interface TypecheckOptions {
-	/** What launches tsgo. Defaults to the real launcher. */
+	/** What launches the checker. Defaults to the real launcher. */
 	childProcess?: ChildProcessRunner;
 	files: Array<string>;
 	/**
@@ -57,8 +56,8 @@ export interface TypecheckOptions {
 	 */
 	fileSystem?: FileSystem;
 	/**
-	 * When `false` (default), tsgo errors in non-test source files surface as
-	 * source-level failures. When `true`, only errors inside the discovered
+	 * When `false` (default), checker errors in non-test source files surface
+	 * as source-level failures. When `true`, only errors inside the discovered
 	 * Type Test files are reported.
 	 */
 	ignoreSourceErrors?: boolean | undefined;
@@ -69,13 +68,13 @@ export interface TypecheckOptions {
 	resolveModule?: (specifier: string) => string;
 	rootDir: string;
 	/**
-	 * Milliseconds to wait for the tsgo process to launch before the pass
-	 * throws. The timer is cleared the instant tsgo reports it spawned; it does
-	 * not bound the compile. Defaults to {@link DEFAULT_SPAWN_TIMEOUT}.
+	 * Milliseconds to wait for the checker process to launch before the pass
+	 * throws. The timer is cleared the instant the checker reports it spawned;
+	 * it does not bound the run. Defaults to {@link DEFAULT_SPAWN_TIMEOUT}.
 	 */
 	spawnTimeout?: number | undefined;
 	/**
-	 * Milliseconds the tsgo *compile* may run before it is killed and the pass
+	 * Milliseconds the checker *run* may take before it is killed and the pass
 	 * throws. The run-level `timeout`. Defaults to {@link DEFAULT_RUN_TIMEOUT}.
 	 */
 	timeout?: number | undefined;
@@ -96,14 +95,15 @@ interface PartitionedErrors {
 	fileErrors: Array<string>;
 }
 
-type CheckerSpawnOptions = TypecheckOptions & { childProcess: ChildProcessRunner };
+type CheckerSpawnOptions = TypecheckOptions & {
+	childProcess: ChildProcessRunner;
+	runTimeout: number;
+	spawnTimeout: number;
+};
 
 interface TypeChecker {
-	collect: (source: string) => CollectedFile;
-	filter: typeof applyLuauExpectErrors;
-	locate: (source: string) => Map<string, number>;
+	collect: (source: string, filePath: string) => CollectedFile;
 	parse: (output: string) => RawErrorsMap;
-	pattern: RegExp;
 	spawn: (options: CheckerSpawnOptions) => Promise<string>;
 }
 
@@ -373,23 +373,6 @@ function relativeKey(rootDirectory: string, filePath: string): string {
 	);
 }
 
-function resolveFileErrors({
-	checker,
-	problems,
-	...file
-}: Parameters<TypeChecker["filter"]>[0] & {
-	checker: TypeChecker;
-	problems: CollectedFile["problems"];
-}): Array<TypeTestDiagnostic> {
-	if (problems.length === 0) {
-		return checker.filter(file);
-	}
-
-	return problems.map((problem) => {
-		return { ...problem, column: 0, filePath: file.filePath, line: 0 };
-	});
-}
-
 function collectCheckerRun({
 	files,
 	fileSystem,
@@ -411,16 +394,10 @@ function collectCheckerRun({
 
 	for (const filePath of checkerFiles) {
 		const source = fileSystem.readFileSync(filePath, "utf-8");
-		const { definitions, problems } = checker.collect(source);
 		const key = normalizeWindowsPath(path.relative(options.rootDir, path.resolve(filePath)));
-		files.set(key, { definitions, locations: checker.locate(source) });
-		const diagnostics = resolveFileErrors({
-			checker,
-			diagnostics: checkerErrors.get(key) ?? [],
-			filePath: key,
-			problems,
-			source,
-		});
+		const { definitions, locations, resolve } = checker.collect(source, key);
+		files.set(key, { definitions, locations });
+		const diagnostics = resolve(checkerErrors.get(key) ?? []);
 		if (diagnostics.length > 0) {
 			checkerErrors.set(key, diagnostics);
 		} else {
@@ -432,27 +409,26 @@ function collectCheckerRun({
 }
 
 function selectTypeChecker(filePath: string): TypeChecker {
-	return TYPE_CHECKERS.find(({ pattern }) => pattern.test(filePath)) ?? FALLBACK_CHECKER;
+	return isLuauTypeTestFile(filePath) ? LUAU_CHECKER : TS_CHECKER;
 }
 
 async function runCheckersAsync(options: TypecheckOptions): Promise<Array<CheckerRun>> {
-	const childProcess = options.childProcess ?? nodeChildProcessRunner;
+	const spawnOptions = {
+		...options,
+		childProcess: options.childProcess ?? nodeChildProcessRunner,
+		runTimeout: options.timeout ?? DEFAULT_RUN_TIMEOUT,
+		spawnTimeout: options.spawnTimeout ?? DEFAULT_SPAWN_TIMEOUT,
+	};
 	const filesByChecker: Map<TypeChecker, Array<string>> = options.files.length > 0
 		? Map.groupBy(options.files, selectTypeChecker)
-		: new Map([[FALLBACK_CHECKER, []]]);
-
-	if (process.env["JEST_ROBLOX_SEA"] === "true" && filesByChecker.has(FALLBACK_CHECKER)) {
-		throw new ConfigError(
-			"--typecheck is not available in the standalone binary. Install via npm instead.",
-		);
-	}
+		: new Map([[TS_CHECKER, []]]);
 
 	return Promise.all(
 		Array.from(filesByChecker, async ([checker, checkerFiles]) => {
 			return {
 				checker,
 				checkerFiles,
-				output: await checker.spawn({ ...options, childProcess, files: checkerFiles }),
+				output: await checker.spawn({ ...spawnOptions, files: checkerFiles }),
 			};
 		}),
 	);
@@ -466,8 +442,9 @@ function defaultResolveModule(specifier: string): string {
 // TypeScript 7 is an optional peer dependency, so its absence is an ordinary
 // state to report rather than a broken install — `require.resolve` only raises
 // a bare `MODULE_NOT_FOUND`, which reads as a fault inside the CLI. `ConfigError`
-// matches the sibling guard that rejects `--typecheck` under the standalone
-// binary, and puts the install command in the banner's `Hint:` slot.
+// matches `assertTypecheckAvailable` (`typecheck-groups.ts`), which rejects
+// TypeScript Type Tests under the standalone binary, and puts the install
+// command in the banner's `Hint:` slot.
 function resolveManifest(
 	resolveModule: (specifier: string) => string,
 	packageName: string,
@@ -539,7 +516,7 @@ function buildTsgoArgs(options: TypecheckOptions, isComposite: boolean): Array<s
 // startup, and `execFile`'s own `timeout` (`options.timeout`, the run-level
 // deadline) bounds the compile.
 async function spawnTsgoAsync(options: CheckerSpawnOptions): Promise<string> {
-	const { childProcess, fileSystem = nodeFileSystem } = options;
+	const { childProcess, fileSystem = nodeFileSystem, runTimeout, spawnTimeout } = options;
 	const isComposite = isCompositeProject({
 		fileSystem,
 		rootDirectory: options.rootDir,
@@ -547,9 +524,6 @@ async function spawnTsgoAsync(options: CheckerSpawnOptions): Promise<string> {
 	});
 	const args = buildTsgoArgs(options, isComposite);
 	const tsgoScript = resolveTsgoScript(options.resolveModule ?? defaultResolveModule, fileSystem);
-	const spawnTimeout = options.spawnTimeout ?? DEFAULT_SPAWN_TIMEOUT;
-	const runTimeout = options.timeout ?? DEFAULT_RUN_TIMEOUT;
-
 	return spawnCheckerAsync({
 		args: [tsgoScript, ...args],
 		childProcess,
@@ -561,32 +535,20 @@ async function spawnTsgoAsync(options: CheckerSpawnOptions): Promise<string> {
 	});
 }
 
-async function spawnLuauAsync(options: CheckerSpawnOptions): Promise<string> {
-	return spawnLuauCheckAsync({
-		childProcess: options.childProcess,
-		files: options.files,
-		rootDir: options.rootDir,
-		runTimeout: options.timeout ?? DEFAULT_RUN_TIMEOUT,
-		spawnTimeout: options.spawnTimeout ?? DEFAULT_SPAWN_TIMEOUT,
-	});
-}
-
-const FALLBACK_CHECKER: TypeChecker = {
-	collect: (source) => ({ definitions: collectTestDefinitions(source), problems: [] }),
-	filter: ({ diagnostics }) => diagnostics,
-	locate: createLocationsIndexMap,
+const TS_CHECKER: TypeChecker = {
+	collect: (source) => {
+		return {
+			definitions: collectTestDefinitions(source),
+			locations: createLocationsIndexMap(source),
+			resolve: (diagnostics) => diagnostics,
+		};
+	},
 	parse: parseTscOutput,
-	pattern: TS_TYPE_TEST_PATTERN,
 	spawn: spawnTsgoAsync,
 };
 
 const LUAU_CHECKER: TypeChecker = {
 	collect: collectLuauTestDefinitions,
-	filter: applyLuauExpectErrors,
-	locate: createByteLocationsIndexMap,
 	parse: parseLuauOutput,
-	pattern: LUAU_TYPE_TEST_PATTERN,
-	spawn: spawnLuauAsync,
+	spawn: spawnLuauCheckAsync,
 };
-
-const TYPE_CHECKERS: ReadonlyArray<TypeChecker> = [LUAU_CHECKER, FALLBACK_CHECKER];

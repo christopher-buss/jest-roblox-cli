@@ -1,9 +1,7 @@
 import { stripTsExtension } from "../utils/extensions.ts";
 
-// oxlint-disable-next-line typescript/no-inferrable-types -- isolatedDeclarations requires explicit annotation
-export const TS_TYPE_TEST_PATTERN: RegExp = /\.(?:spec|test)-d\.ts$/;
-// oxlint-disable-next-line typescript/no-inferrable-types -- isolatedDeclarations requires explicit annotation
-export const LUAU_TYPE_TEST_PATTERN: RegExp = /\.(?:spec|test)-d\.luau$/;
+const TS_TYPE_TEST_PATTERN = /\.(?:spec|test)-d\.ts$/;
+const LUAU_TYPE_TEST_PATTERN = /\.(?:spec|test)-d\.luau$/;
 
 export function isLuauTypeTestFile(filePath: string): boolean {
 	return LUAU_TYPE_TEST_PATTERN.test(filePath);

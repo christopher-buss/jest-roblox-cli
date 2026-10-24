@@ -142,4 +142,19 @@ t.describe('equality edge cases', function()
 		-- @expect-error
 		t.expectType<<(number, ...any) -> ()>>():toEqualType<<(number, string) -> ()>>()
 	end)
+
+	t.it('{ a: number } | string does not equal { a: number } | string | { b: number } (extra union member)', function()
+		-- @expect-error
+		t.expectType<<{ a: number } | string>>():toEqualType<<{ a: number } | string | { b: number }>>()
+	end)
+
+	t.it('{ a: number } & { c: string } does not equal { b: number } & { a: number } & { c: string } (extra intersection member)', function()
+		-- @expect-error
+		t.expectType<<{ a: number } & { c: string }>>():toEqualType<<{ b: number } & { a: number } & { c: string }>>()
+	end)
+
+	t.it('<A, B>(A, B) -> A | string does not equal a union adding <X, Y>(X, Y) -> Y (extra generic member)', function()
+		-- @expect-error
+		t.expectType<<(<A, B>(A, B) -> A) | string>>():toEqualType<<(<X, Y>(X, Y) -> Y) | (<X, Y>(X, Y) -> X) | string>>()
+	end)
 end)

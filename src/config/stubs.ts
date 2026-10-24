@@ -12,7 +12,7 @@ import { isString } from "../utils/is-string.ts";
 import { ConfigError } from "./errors.ts";
 import type { ResolvedProjectConfig } from "./projects.ts";
 import type { ProjectTestConfig, ResolvedConfig, UndefinedTolerant } from "./schema.ts";
-import { PROJECT_TEST_KEYS } from "./schema.ts";
+import { DEFAULT_CONFIG, PROJECT_TEST_KEYS } from "./schema.ts";
 
 interface SyncMountStubResult {
 	changed: boolean;
@@ -103,7 +103,9 @@ export function serializeToLuau(config: StubConfig): string {
 
 	const robloxConfig = {
 		...config,
-		testPathIgnorePatterns: toRobloxTestPathIgnorePatterns(config.testPathIgnorePatterns),
+		testPathIgnorePatterns: toRobloxTestPathIgnorePatterns(
+			config.testPathIgnorePatterns ?? DEFAULT_CONFIG.testPathIgnorePatterns,
+		),
 	};
 	for (const [key, value] of Object.entries(robloxConfig)) {
 		if (SKIP_FIELDS.has(key)) {

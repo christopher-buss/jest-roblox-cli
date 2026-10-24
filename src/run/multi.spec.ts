@@ -11,6 +11,7 @@ import { createMemoryFileSystem } from "../../test/mocks/memory-file-system.ts";
 import { movableClockCollector } from "../../test/mocks/movable-clock.ts";
 import { PLACE_INPUT_BY_KIND } from "../../test/mocks/place-input.ts";
 import type { Backend } from "../backends/interface.ts";
+import { ConfigError } from "../config/errors.ts";
 import type { ResolvedProjectConfig } from "../config/projects.ts";
 import {
 	type CliOptions,
@@ -1202,6 +1203,70 @@ describe(runMultiProjectAsync, () => {
 
 		expect(result.typecheckResult).toBeDefined();
 		expect(result.projectResults).toHaveLength(1);
+	});
+
+	it("should reject typescript type tests in the standalone binary before any build or dispatch", async () => {
+		expect.assertions(5);
+
+		vi.stubEnv("JEST_ROBLOX_SEA", "true");
+		const { config, fileSystem, volume } = setupDefaults({ typecheck: { enabled: true } });
+
+		volume.mkdirSync("/test/src/client", { recursive: true });
+		volume.writeFileSync("/test/src/client/a.spec.ts", "");
+		volume.writeFileSync("/test/src/client/a.spec-d.ts", "");
+		mocks.resolveAllProjects.mockResolvedValue([
+			makeResolvedProject({
+				displayName: "client",
+				include: ["src/client/**/*.spec.ts", "src/client/**/*.spec-d.ts"],
+			}),
+		]);
+
+		const error: unknown = await runMultiProjectAsync({
+			cli: makeCli(),
+			config,
+			fileSystem,
+			rawProjects: [makeProjectEntry("client")],
+			seams,
+		}).catch((err: unknown) => err);
+
+		expect(error).toStrictEqual(
+			new ConfigError(
+				"--typecheck is not available in the standalone binary. Install via npm instead.",
+			),
+		);
+		expect(mocks.resolveBackend).not.toHaveBeenCalled();
+		expect(mocks.execFile).not.toHaveBeenCalled();
+		expect(mocks.runProjects).not.toHaveBeenCalled();
+		expect(mocks.runTypecheck).not.toHaveBeenCalled();
+	});
+
+	it("should run luau-only type tests in the standalone binary", async () => {
+		expect.assertions(1);
+
+		vi.stubEnv("JEST_ROBLOX_SEA", "true");
+		const { config, fileSystem, volume } = setupDefaults({
+			typecheck: { enabled: true, only: true },
+		});
+
+		mocks.runTypecheck.mockResolvedValue(makeJestResult());
+		volume.mkdirSync("/test/src/client", { recursive: true });
+		volume.writeFileSync("/test/src/client/a.spec-d.luau", "");
+		mocks.resolveAllProjects.mockResolvedValue([
+			makeResolvedProject({
+				displayName: "client",
+				include: ["src/client/**/*.spec-d.luau"],
+			}),
+		]);
+
+		await runMultiProjectAsync({
+			cli: makeCli(),
+			config,
+			fileSystem,
+			rawProjects: [makeProjectEntry("client")],
+			seams,
+		});
+
+		expect(mocks.runTypecheck).toHaveBeenCalledOnce();
 	});
 
 	it("should check projects with distinct typecheck tsconfigs against their own", async () => {

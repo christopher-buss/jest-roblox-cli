@@ -1,9 +1,10 @@
-import type { AstStat, LuauSpan } from "@isentinel/luau-ast/ast";
+import type { AstStat, AstStatBlock, LuauSpan } from "@isentinel/luau-ast/ast";
+import type { ParseSuccess } from "@isentinel/luau-ast/parser";
 import { visitBlock } from "@isentinel/luau-ast/visit";
 
+import assert from "node:assert";
 import { Buffer } from "node:buffer";
 
-import { luauParser } from "../luau/parser.ts";
 import type { TypeTestDiagnostic } from "./types.ts";
 
 const DIRECTIVE = /^--\s*@expect-error(?:\s|$)/;
@@ -17,13 +18,15 @@ interface Directive {
 export function applyLuauExpectErrors({
 	diagnostics,
 	filePath,
+	parsed,
 	source,
 }: {
 	diagnostics: Array<TypeTestDiagnostic>;
 	filePath: string;
+	parsed: ParseSuccess;
 	source: string;
 }): Array<TypeTestDiagnostic> {
-	const directives = collectDirectives(source);
+	const directives = collectDirectives(source, parsed);
 	if (directives.length === 0) {
 		return diagnostics;
 	}
@@ -56,36 +59,21 @@ export function applyLuauExpectErrors({
 	return remaining;
 }
 
-function compare(a: LuauSpan, b: LuauSpan): number {
-	return (
-		a.beginLine - b.beginLine ||
-		a.beginColumn - b.beginColumn ||
-		b.endLine - a.endLine ||
-		b.endColumn - a.endColumn
-	);
+function contains(
+	span: LuauSpan,
+	{ column, line }: Pick<TypeTestDiagnostic, "column" | "line">,
+): boolean {
+	const isAfterStart =
+		line > span.beginLine || (line === span.beginLine && column >= span.beginColumn);
+	const isBeforeEnd = line < span.endLine || (line === span.endLine && column < span.endColumn);
+	return isAfterStart && isBeforeEnd;
 }
 
 function findTarget(statements: Array<AstStat>, line: number): LuauSpan | undefined {
-	let best: LuauSpan | undefined;
-	for (const { location } of statements) {
-		if (location.beginLine <= line) {
-			continue;
-		}
-
-		if (best === undefined || compare(location, best) < 0) {
-			best = location;
-		}
-	}
-
-	return best;
+	return statements.find(({ location }) => location.beginLine > line)?.location;
 }
 
-function collectDirectives(source: string): Array<Directive> {
-	const parsed = luauParser.parse(source);
-	if (!parsed.ok) {
-		return [];
-	}
-
+function collectDirectives(source: string, parsed: ParseSuccess): Array<Directive> {
 	const lines = source.split(LINE_SPLIT).map((line) => Buffer.from(line));
 	const comments = parsed.comments.filter(({ location, type }) => {
 		const line = lines[location.beginLine - 1];
@@ -99,22 +87,18 @@ function collectDirectives(source: string): Array<Directive> {
 		return [];
 	}
 
-	const statements: Array<AstStat> = [...parsed.root.body];
+	const blocks: Array<AstStatBlock> = [parsed.root];
 	visitBlock(parsed.root, {
 		visitStatBlock(block) {
-			statements.push(...block.body);
+			blocks.push(block);
 			return true;
 		},
 	});
 
 	return comments.map(({ location }) => {
-		return { location, target: findTarget(statements, location.beginLine) };
+		const point = { column: location.beginColumn, line: location.beginLine };
+		const block = blocks.findLast(({ location: span }) => contains(span, point));
+		assert(block, "luau-ast root block spans every comment");
+		return { location, target: findTarget(block.body, location.beginLine) };
 	});
-}
-
-function contains(span: LuauSpan, { column, line }: TypeTestDiagnostic): boolean {
-	const isAfterStart =
-		line > span.beginLine || (line === span.beginLine && column >= span.beginColumn);
-	const isBeforeEnd = line < span.endLine || (line === span.endLine && column < span.endColumn);
-	return isAfterStart && isBeforeEnd;
 }

@@ -145,13 +145,14 @@ type function Same(actual, expected)
 		if a.tag == "negation" then
 			return eq(a:inner(), b:inner())
 		end
-		if a.tag == "table" then
+		if a.tag == "table" or a.tag == "function" then
+			local depth = #assumed
 			table.insert(assumed, { a, b })
-			return tableEq(a, b)
-		end
-		if a.tag == "function" then
-			table.insert(assumed, { a, b })
-			return functionEq(a, b)
+			local same = if a.tag == "table" then tableEq(a, b) else functionEq(a, b)
+			for i = #assumed, depth + 1, -1 do
+				assumed[i] = nil
+			end
+			return same
 		end
 		if a.tag == "generic" or a.tag == "class" or a.tag == "extern" then
 			return a == b

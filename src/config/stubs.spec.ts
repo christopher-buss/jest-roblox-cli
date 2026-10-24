@@ -77,7 +77,7 @@ describe(serializeToLuau, () => {
 				'\ttestEnvironment = "custom",',
 				'\ttestMatch = { "**/*.spec", "**/*.test" },',
 				"\ttestTimeout = 5000,",
-				'\ttestPathIgnorePatterns = { "\\\\.(spec|test)-d$" },',
+				'\ttestPathIgnorePatterns = { "/node_modules/", "/dist/", "/out/", "\\\\.(spec|test)-d$" },',
 				"}",
 				"",
 			].join("\n"),

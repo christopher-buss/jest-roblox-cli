@@ -3,7 +3,7 @@ import { fromPartial } from "@total-typescript/shoehorn";
 import { describe, expect, it, vi } from "vitest";
 
 import type { TimingCollector } from "../timing/orchestration-collector.ts";
-import type { TypecheckPassOutcome } from "../typecheck/group-by-tsconfig.ts";
+import type { TypecheckPassOutcome } from "../typecheck/typecheck-groups.ts";
 import type { WorkspaceProjectResult } from "./coverage-attach.ts";
 import { attachTypecheck } from "./typecheck-pass.ts";
 

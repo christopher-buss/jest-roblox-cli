@@ -1,9 +1,9 @@
 import type { WorkspaceRunOptions } from "../config/schema.ts";
 import { mergeResults } from "../output.ts";
 import type { TimingCollector } from "../timing/orchestration-collector.ts";
-import type { TypecheckGroupEntry, TypecheckPassOutcome } from "../typecheck/group-by-tsconfig.ts";
-import { runTypecheckPassAsync } from "../typecheck/group-by-tsconfig.ts";
 import type { RunTypecheck } from "../typecheck/runner.ts";
+import type { TypecheckGroupEntry, TypecheckPassOutcome } from "../typecheck/typecheck-groups.ts";
+import { runTypecheckPassAsync } from "../typecheck/typecheck-groups.ts";
 import type { JestResult } from "../types/jest-result.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import type { WorkspaceProjectResult } from "./coverage-attach.ts";

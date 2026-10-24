@@ -1,3 +1,4 @@
+import { writeFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -70,5 +71,26 @@ describe("sea config loading", () => {
 
 		expect(result.exitCode).toBeGreaterThan(0);
 		expect(result.stderr).toContain("Missing: apiKey, universeId, placeId");
+	});
+
+	it("should reject typescript type tests before building or dispatching", async () => {
+		expect.assertions(3);
+
+		const sandbox = createRbxtsFixtureSandbox(RBXTS_FIXTURE);
+		writeFileSync(path.join(sandbox, "src/example.spec-d.ts"), "export {};\n");
+		const server = await startFakeOpenCloudServerAsync([
+			{
+				jestOutput: buildMixedOutput(buildPassingPayload()),
+			},
+		]);
+
+		const result = await runCliAsync(["--typecheck"], {
+			cwd: sandbox,
+			env: { ...createOpenCloudEnvironment(server.baseUrl), JEST_ROBLOX_SEA: "true" },
+		});
+
+		expect(result.exitCode).toBeGreaterThan(0);
+		expect(result.stderr).toContain("--typecheck is not available in the standalone binary");
+		expect(server.calls).toBeEmpty();
 	});
 });

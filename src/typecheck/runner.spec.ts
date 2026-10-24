@@ -31,6 +31,11 @@ const LUAU_SOURCE = [
 
 const TSC_7_MANIFEST = JSON.stringify({ bin: { tsc: "./bin/tsc" }, version: "7.0.2" });
 
+interface FileInfo {
+	definitions: Array<TestDefinition>;
+	locations: Map<string, number>;
+}
+
 describe(createLocationsIndexMap, () => {
 	it("should map line:column pairs to character indices", () => {
 		expect.assertions(3);
@@ -49,10 +54,7 @@ describe(mapErrorsToTests, () => {
 		expect.assertions(2);
 
 		const errors: RawErrorsMap = new Map();
-		const files = new Map<
-			string,
-			{ definitions: Array<TestDefinition>; locations: Map<string, number> }
-		>([
+		const files = new Map<string, FileInfo>([
 			[
 				"/test.ts",
 				{
@@ -94,10 +96,9 @@ describe(mapErrorsToTests, () => {
 			{ name: "suite", ancestorNames: [], end: source.length - 1, start: 0, type: "suite" },
 			{ name: "should fail", ancestorNames: ["suite"], end: 64, start: 26, type: "test" },
 		];
-		const files = new Map<
-			string,
-			{ definitions: Array<TestDefinition>; locations: Map<string, number> }
-		>([["/test.ts", { definitions, locations: createLocationsIndexMap(source) }]]);
+		const files = new Map<string, FileInfo>([
+			["/test.ts", { definitions, locations: createLocationsIndexMap(source) }],
+		]);
 
 		const result = mapErrorsToTests({ errors, files, startTime: 123 });
 
@@ -129,10 +130,9 @@ describe(mapErrorsToTests, () => {
 		const definitions: Array<TestDefinition> = [
 			{ name: "should pass", ancestorNames: [], end: 52, start: 25, type: "test" },
 		];
-		const files = new Map<
-			string,
-			{ definitions: Array<TestDefinition>; locations: Map<string, number> }
-		>([["/test.ts", { definitions, locations: createLocationsIndexMap(source) }]]);
+		const files = new Map<string, FileInfo>([
+			["/test.ts", { definitions, locations: createLocationsIndexMap(source) }],
+		]);
 
 		const result = mapErrorsToTests({ errors, files, startTime: 123 });
 
@@ -162,10 +162,9 @@ describe(mapErrorsToTests, () => {
 		const definitions: Array<TestDefinition> = [
 			{ name: "should pass", ancestorNames: [], end: 27, start: 0, type: "test" },
 		];
-		const files = new Map<
-			string,
-			{ definitions: Array<TestDefinition>; locations: Map<string, number> }
-		>([["/test.ts", { definitions, locations: createLocationsIndexMap(source) }]]);
+		const files = new Map<string, FileInfo>([
+			["/test.ts", { definitions, locations: createLocationsIndexMap(source) }],
+		]);
 
 		const result = mapErrorsToTests({ errors, files, startTime: 123 });
 
@@ -203,10 +202,9 @@ describe(mapErrorsToTests, () => {
 		const definitions: Array<TestDefinition> = [
 			{ name: "should fail", ancestorNames: [], end: 39, start: 0, type: "test" },
 		];
-		const files = new Map<
-			string,
-			{ definitions: Array<TestDefinition>; locations: Map<string, number> }
-		>([["/test.ts", { definitions, locations: createLocationsIndexMap(source) }]]);
+		const files = new Map<string, FileInfo>([
+			["/test.ts", { definitions, locations: createLocationsIndexMap(source) }],
+		]);
 
 		const result = mapErrorsToTests({ errors, files, startTime: Date.now() });
 
@@ -231,10 +229,7 @@ describe(mapErrorsToTests, () => {
 			],
 		]);
 
-		const files = new Map<
-			string,
-			{ definitions: Array<TestDefinition>; locations: Map<string, number> }
-		>([
+		const files = new Map<string, FileInfo>([
 			[
 				"/fail.ts",
 				{
@@ -283,10 +278,7 @@ describe(mapErrorsToTests, () => {
 				],
 			],
 		]);
-		const files = new Map<
-			string,
-			{ definitions: Array<TestDefinition>; locations: Map<string, number> }
-		>([
+		const files = new Map<string, FileInfo>([
 			[
 				"src/test.test-d.ts",
 				{
@@ -333,10 +325,7 @@ describe(mapErrorsToTests, () => {
 				],
 			],
 		]);
-		const files = new Map<
-			string,
-			{ definitions: Array<TestDefinition>; locations: Map<string, number> }
-		>([
+		const files = new Map<string, FileInfo>([
 			[
 				"src/test.test-d.ts",
 				{
@@ -367,10 +356,7 @@ describe(mapErrorsToTests, () => {
 		expect.assertions(4);
 
 		const errors: RawErrorsMap = new Map();
-		const files = new Map<
-			string,
-			{ definitions: Array<TestDefinition>; locations: Map<string, number> }
-		>([
+		const files = new Map<string, FileInfo>([
 			[
 				"/test.ts",
 				{
@@ -412,10 +398,7 @@ describe(mapErrorsToTests, () => {
 			],
 		]);
 
-		const files = new Map<
-			string,
-			{ definitions: Array<TestDefinition>; locations: Map<string, number> }
-		>([
+		const files = new Map<string, FileInfo>([
 			[
 				"/test.ts",
 				{
@@ -452,10 +435,7 @@ describe(mapErrorsToTests, () => {
 				],
 			],
 		]);
-		const files = new Map<
-			string,
-			{ definitions: Array<TestDefinition>; locations: Map<string, number> }
-		>([
+		const files = new Map<string, FileInfo>([
 			[
 				"src/nested.spec.ts",
 				{
@@ -1594,44 +1574,6 @@ describe("runTypecheckAsync with Luau Type Tests", () => {
 		expect(cases[1]!.failureMessages).toStrictEqual([
 			"TypeError: Expected this to be 'number', but got 'string'",
 		]);
-	});
-
-	it("should check luau-only type tests in the standalone binary", async () => {
-		expect.assertions(2);
-
-		vi.stubEnv("JEST_ROBLOX_SEA", "true");
-		const { childProcess, commands } = runnerByCommand({ luau: "" });
-
-		const result = await runTypecheckAsync({
-			childProcess,
-			files: [LUAU_SPEC],
-			fileSystem: luauFiles({ [LUAU_SPEC]: LUAU_SOURCE }),
-			rootDir: "/project",
-		});
-
-		expect(commands).toHaveLength(1);
-		expect(result.success).toBeTrue();
-	});
-
-	it("should reject typescript type tests in the standalone binary", async () => {
-		expect.assertions(2);
-
-		vi.stubEnv("JEST_ROBLOX_SEA", "true");
-		const { childProcess, commands } = runnerByCommand({ luau: "" });
-
-		const error: unknown = await runTypecheckAsync({
-			childProcess,
-			files: [LUAU_SPEC, "/project/src/test.spec-d.ts"],
-			fileSystem: luauFiles({ [LUAU_SPEC]: LUAU_SOURCE }),
-			rootDir: "/project",
-		}).catch((err: unknown) => err);
-
-		expect(commands).toBeEmpty();
-		expect(error).toStrictEqual(
-			new ConfigError(
-				"--typecheck is not available in the standalone binary. Install via npm instead.",
-			),
-		);
 	});
 
 	it("should fail the file when the spec lacks --!strict", async () => {

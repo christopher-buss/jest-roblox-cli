@@ -1,3 +1,5 @@
+import assert from "node:assert";
+
 import type { RawErrorsMap, TypeTestDiagnostic } from "./types.ts";
 
 const LINE_SPLIT = /\r?\n/;
@@ -37,12 +39,26 @@ export function parseLuauOutput(stdout: string): RawErrorsMap {
 	return map;
 }
 
-function toDiagnostic(groups: Record<string, string | undefined>): TypeTestDiagnostic {
+function toDiagnostic({
+	code,
+	column,
+	filePath,
+	line,
+	message,
+}: Record<string, string | undefined>): TypeTestDiagnostic {
+	assert(
+		code !== undefined &&
+			column !== undefined &&
+			filePath !== undefined &&
+			line !== undefined &&
+			message !== undefined,
+		"LUAU_HEADER matched without every named group",
+	);
 	return {
-		code: String(groups["code"]),
-		column: Number(groups["column"]),
-		filePath: String(groups["filePath"]),
-		line: Number(groups["line"]),
-		message: String(groups["message"]).replace(TYPE_FUNCTION_PREFIX, "").trimEnd(),
+		code,
+		column: Number(column),
+		filePath,
+		line: Number(line),
+		message: message.replace(TYPE_FUNCTION_PREFIX, "").trimEnd(),
 	};
 }

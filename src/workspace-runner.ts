@@ -14,6 +14,7 @@ import { resolveCodeRoots } from "./staging/code-roots.ts";
 import type { CodeBundleArtifact } from "./staging/place-builder.ts";
 import { NOOP_TIMING_COLLECTOR, type TimingCollector } from "./timing/orchestration-collector.ts";
 import { type RunTypecheck, runTypecheckAsync } from "./typecheck/runner.ts";
+import { assertTypecheckAvailable } from "./typecheck/typecheck-groups.ts";
 import type { ChildProcessRunner } from "./utils/child-process.ts";
 import { nodeChildProcessRunner } from "./utils/child-process.ts";
 import type { FileSystem } from "./utils/file-system.ts";
@@ -553,6 +554,8 @@ async function runWorkspaceProfiledAsync(
 		reportTestSelectionErrors(selection);
 		return undefined;
 	}
+
+	assertTypecheckAvailable(selection.typeTestEntries);
 
 	if (selection.pending.length === 0) {
 		return runWorkspaceNoRuntimeAsync({ options, selection, timing });

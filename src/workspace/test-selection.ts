@@ -18,7 +18,7 @@ import {
 } from "../executor/tsconfig-mappings.ts";
 import type { ClassifiedTestFiles } from "../run/discovery.ts";
 import { classifyTestFiles, filterByTestPathPattern } from "../run/discovery.ts";
-import type { TypecheckGroupEntry } from "../typecheck/group-by-tsconfig.ts";
+import type { TypecheckGroupEntry } from "../typecheck/typecheck-groups.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import { nodeFileSystem } from "../utils/file-system.ts";
 import { createGlobCache, type GlobCache, globSync } from "../utils/glob.ts";
