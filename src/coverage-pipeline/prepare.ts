@@ -133,6 +133,7 @@ export interface PrepareCoverageOptions {
 	fileSystem?: FileSystem;
 	/** What writes the instrumented twins. Defaults to the real one. */
 	instrumenter?: Instrumenter | undefined;
+	instrumentUniverse?: InstrumentUniverse | undefined;
 	/**
 	 * The run's collector, so the two phases this call reports nest under the
 	 * `prepareCoverage` span the caller opened around it. Omitted by the
@@ -289,6 +290,7 @@ interface CoverageInputSources {
 	config: ResolvedConfig;
 	coverageInclude: Array<string> | undefined;
 	fileSystem: FileSystem;
+	instrumentUniverse: InstrumentUniverse | undefined;
 	tsconfigReader: TsconfigReader;
 }
 
@@ -442,6 +444,7 @@ export async function prepareCoverageAsync(
 		coverageInclude,
 		fileSystem = nodeFileSystem,
 		instrumenter = nodeInstrumenter,
+		instrumentUniverse,
 		timing = NOOP_TIMING_COLLECTOR,
 		tsconfigReader = nodeTsconfigReader,
 	}: PrepareCoverageOptions = {},
@@ -453,6 +456,7 @@ export async function prepareCoverageAsync(
 				config,
 				coverageInclude,
 				fileSystem,
+				instrumentUniverse,
 				tsconfigReader,
 			});
 			const isIncremental = decideIncremental(config, inputs);
@@ -1164,11 +1168,12 @@ async function resolveCoverageInputsAsync({
 	config,
 	coverageInclude,
 	fileSystem,
+	instrumentUniverse,
 	tsconfigReader,
 }: CoverageInputSources): Promise<CoverageInputs> {
 	const rojoProjectPath = findRojoProject(config, fileSystem);
 	const isCopyIgnored = createCopyIgnoreMatcher(config.coverageCopyIgnorePatterns);
-	const universe = resolveUniverse({ config, coverageInclude, fileSystem });
+	const universe = instrumentUniverse ?? resolveUniverse({ config, coverageInclude, fileSystem });
 	const rootSources = {
 		config,
 		fileSystem,

@@ -7,7 +7,7 @@ export type { CoveragePlaceBundle } from "./artifacts/build-coverage-place.ts";
 // Place + Coverage-Instrumented Place in one pass (the sole producer of a Clean
 // Place — no CLI flag).
 export { prepareArtifactsAsync } from "./artifacts/prepare-artifacts.ts";
-export type { ArtifactBundle } from "./artifacts/prepare-artifacts.ts";
+export type { ArtifactBundle, PrepareArtifactsOptions } from "./artifacts/prepare-artifacts.ts";
 export type { Backend, BackendOptions, ParallelOption } from "./backends/interface.ts";
 export { OpenCloudBackend, createOpenCloudBackend } from "./backends/open-cloud.ts";
 
@@ -44,6 +44,7 @@ export {
 // readers, file-hash helper). Re-exported from a clean barrel shared with the
 // `source`-condition entry.
 export * from "./coverage-pipeline/artifacts.ts";
+export type { InstrumentUniverse } from "./coverage-pipeline/instrument-universe.ts";
 export { mergeRawCoverage } from "./coverage-pipeline/merge-raw-coverage.ts";
 // Companion harvest seam: turn the raw hit counters a run emits (the
 // `_G.__jest_roblox_cov` global, or a run envelope's `runner.coverage` field)

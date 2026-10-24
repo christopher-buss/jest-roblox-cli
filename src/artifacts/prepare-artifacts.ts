@@ -10,6 +10,7 @@ import type {
 	CoverageArtifacts,
 } from "../coverage-pipeline/build-manifest.ts";
 import { emitBuildManifest } from "../coverage-pipeline/build-manifest.ts";
+import type { InstrumentUniverse } from "../coverage-pipeline/instrument-universe.ts";
 import type { CoverageManifest } from "../coverage-pipeline/manifest.ts";
 import { readManifest, writeManifest } from "../coverage-pipeline/manifest.ts";
 import { computePlaceContentId } from "../coverage-pipeline/place-content-id.ts";
@@ -22,6 +23,7 @@ import {
 import type { RawCoverageData } from "../coverage-pipeline/types.ts";
 import type { RunEntryOptions } from "../run.ts";
 import { nodeRunDispatch, runSingleOrMultiAsync } from "../run.ts";
+import type { RunSeams } from "../run/seams.ts";
 import { nodeRunSeams } from "../run/seams.ts";
 import { collectStubMounts } from "../run/staging.ts";
 import { buildPlaceAsync } from "../staging/place-builder.ts";
@@ -53,6 +55,10 @@ export interface ArtifactBundle {
 	projects: Array<BuildManifestProject>;
 }
 
+export interface PrepareArtifactsOptions extends RunEntryOptions {
+	instrumentUniverse?: InstrumentUniverse | undefined;
+}
+
 interface ProduceArtifactsOptions extends Required<RunEntryOptions> {
 	config: ResolvedConfig;
 	timing: TimingCollector;
@@ -71,15 +77,38 @@ export async function prepareArtifactsAsync(
 	{
 		dispatch = nodeRunDispatch(),
 		fileSystem = nodeFileSystem,
+		instrumentUniverse,
 		seams = nodeRunSeams(),
-	}: RunEntryOptions = {},
+	}: PrepareArtifactsOptions = {},
 ): Promise<ArtifactBundle> {
 	const timing = createTimingCollector();
 	try {
-		return await produceArtifactsAsync({ config, dispatch, fileSystem, seams, timing });
+		return await produceArtifactsAsync({
+			config,
+			dispatch,
+			fileSystem,
+			seams: withInstrumentUniverse(seams, instrumentUniverse),
+			timing,
+		});
 	} finally {
 		timing.flushTimingReport();
 	}
+}
+
+function withInstrumentUniverse(
+	seams: RunSeams,
+	instrumentUniverse: InstrumentUniverse | undefined,
+): RunSeams {
+	if (instrumentUniverse === undefined) {
+		return seams;
+	}
+
+	return {
+		...seams,
+		prepareCoverage: async (config, options) => {
+			return seams.prepareCoverage(config, { ...options, instrumentUniverse });
+		},
+	};
 }
 
 /**

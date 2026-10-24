@@ -1324,6 +1324,26 @@ describe(prepareCoverageAsync, () => {
 			expect(result.manifest.coverageUniverseHash).toBeUndefined();
 		});
 
+		it("should instrument by the caller's universe in place of the coverage globs", async () => {
+			expect.assertions(2);
+
+			const { childProcess, fileSystem, instrumenter } = await seedTwoFilesAsync();
+
+			const result = await prepareCoverageAsync(narrowedConfig(), {
+				childProcess,
+				fileSystem,
+				instrumenter,
+				instrumentUniverse: {
+					digest: "caller-universe",
+					includes: (luauPath) => luauPath === UNCOVERED_FILE,
+				},
+				tsconfigReader: noTsconfig,
+			});
+
+			expect(instrumenter.mock.calls[0]![0].skipFiles).toStrictEqual(new Set(["init.luau"]));
+			expect(result.manifest.coverageUniverseHash).toBe("caller-universe");
+		});
+
 		it("should record the universe digest in the manifest", async () => {
 			expect.assertions(1);
 

@@ -409,6 +409,37 @@ describe(prepareArtifactsAsync, () => {
 		expect(merged.collectCoverage).toBeTrue();
 	});
 
+	it("should hand the caller's instrument universe to the coverage pass", async () => {
+		expect.assertions(1);
+
+		const harness = seed(manifestWithFile());
+		const prepareCoverage = vi.fn<RunSeams["prepareCoverage"]>();
+		const instrumentUniverse = { digest: "scope", includes: () => true };
+
+		await prepareArtifactsAsync(makeConfig(), {
+			...harness,
+			instrumentUniverse,
+			seams: { ...harness.seams, prepareCoverage },
+		});
+		const { seams } = vi.mocked(harness.dispatch.runResolvedProjects).mock.calls[0]![0];
+		await seams.prepareCoverage(makeConfig(), {});
+
+		expect(prepareCoverage).toHaveBeenCalledExactlyOnceWith(expect.anything(), {
+			instrumentUniverse,
+		});
+	});
+
+	it("should hand the caller's seams to the run untouched without an instrument universe", async () => {
+		expect.assertions(1);
+
+		const harness = seed(manifestWithFile());
+
+		await prepareArtifactsAsync(makeConfig(), harness);
+		const { seams } = vi.mocked(harness.dispatch.runResolvedProjects).mock.calls[0]![0];
+
+		expect(seams).toBe(harness.seams);
+	});
+
 	it("should throw when the coverage run produced no artifacts", async () => {
 		expect.assertions(1);
 
