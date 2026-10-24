@@ -46,8 +46,8 @@ export function scopedBreak(floor: number): null | number {
 
 export const sharedConfig: PartialStrykerOptions = {
 	checkers: ["typescript"],
-	// The adaptive launcher owns the machine-wide 75% budget and overrides this
-	// per run. This remains the safe standalone default for direct Stryker use.
+	// `stryker-adaptive` overrides this per run from the machine budget. This
+	// remains the standalone default for direct Stryker use.
 	concurrency: "75%",
 	coverageAnalysis: "perTest",
 	htmlReporter: { fileName: "reports/mutation/index.html" },
