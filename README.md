@@ -1171,6 +1171,16 @@ t.expectType<<GamePass>>():toEqualType<<Expected>>()
 
 See [CONTRIBUTING.md](CONTRIBUTING.md).
 
+The bin prefers TypeScript source when present. Run it with
+`node --conditions=source bin/jest-roblox.js` to resolve workspace dependencies
+from source too. `pnpm build:bundle` still generates the Luau runner and
+materializer that the source imports.
+
+Source consumers of `@isentinel/jest-roblox/artifacts` can register the
+synchronous Node hooks exported by `@isentinel/jest-roblox/loader` before
+dynamically importing that API. These hooks load raw Luau and the CLI's virtual
+asset modules.
+
 ## License
 
 MIT

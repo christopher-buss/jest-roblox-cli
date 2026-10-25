@@ -34,6 +34,7 @@
 			"source": "./src/cli.ts",
 			"default": "./dist/cli.mjs"
 		},
+		"./loader": "./loaders/luau-raw.mjs",
 		"./package.json": "./package.json"
 	},
 	"types": "./dist/index.d.mts",
@@ -156,6 +157,7 @@
 			".": "./dist/index.mjs",
 			"./artifacts": "./dist/index.mjs",
 			"./cli": "./dist/cli.mjs",
+			"./loader": "./loaders/luau-raw.mjs",
 			"./package.json": "./package.json"
 		}
 	}

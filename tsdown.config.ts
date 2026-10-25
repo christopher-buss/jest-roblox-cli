@@ -78,6 +78,7 @@ function customizeExports(exportsMap: ExportsMap): ExportsMap {
 		...exportsMap,
 		".": isConditionalExport(root) ? { ...root, source: "./src/source.ts" } : root,
 		"./artifacts": root,
+		"./loader": "./loaders/luau-raw.mjs",
 	});
 }
 
