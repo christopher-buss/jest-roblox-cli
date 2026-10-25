@@ -36,8 +36,13 @@ describe(applyGapRecord, () => {
 			jest,
 			gapRecord([
 				{ file: FILE, gaps: {} },
-				{ file: FILE, gaps: { "BasePart.GetTouchingParts": 1 }, test: "caught" },
-				{ file: FILE, gaps: {}, test: "clean" },
+				{
+					file: FILE,
+					gaps: { "BasePart.GetTouchingParts": 1 },
+					position: 1,
+					test: "caught",
+				},
+				{ file: FILE, gaps: {}, position: 2, test: "clean" },
 			]),
 		);
 
@@ -62,8 +67,8 @@ describe(applyGapRecord, () => {
 			jest,
 			gapRecord([
 				{ file: FILE, gaps: { "Sound.Pitch": 2 } },
-				{ file: FILE, gaps: { script: 1 }, test: "first" },
-				{ file: FILE, gaps: {}, test: "second" },
+				{ file: FILE, gaps: { script: 1 }, position: 1, test: "first" },
+				{ file: FILE, gaps: {}, position: 2, test: "second" },
 			]),
 		);
 
@@ -75,6 +80,45 @@ describe(applyGapRecord, () => {
 		]);
 	});
 
+	it("should keep two tests of one name apart by position", () => {
+		expect.assertions(2);
+
+		const jest = result(file([testCase("same"), testCase("same", "failed")]));
+		applyGapRecord(
+			jest,
+			gapRecord([
+				{ file: FILE, gaps: { "Sound.Pitch": 1 }, position: 1, test: "same" },
+				{ file: FILE, gaps: {}, position: 2, test: "same" },
+			]),
+		);
+
+		expect(jest.testResults[0]!.testResults.map((test) => test.gaps)).toStrictEqual([
+			{ "Sound.Pitch": 1 },
+			{},
+		]);
+		expect(listBlocked(jest).map((blocked) => blocked.test!.status)).toStrictEqual(["passed"]);
+	});
+
+	it("should refuse a record that names another test at a position", () => {
+		expect.assertions(1);
+
+		const jest = result(file([testCase("a"), testCase("b")]));
+
+		expect(() => {
+			applyGapRecord(
+				jest,
+				gapRecord([
+					{ file: FILE, gaps: {}, position: 1, test: "b" },
+					{ file: FILE, gaps: {}, position: 2, test: "a" },
+				]),
+			);
+		}).toThrow(
+			new MissingGapRecordError(
+				`The run reported "b" as test 1 of ${FILE}, but the result there is "a"`,
+			),
+		);
+	});
+
 	it("should give a raise outside every test file to every file", () => {
 		expect.assertions(1);
 
@@ -84,8 +128,8 @@ describe(applyGapRecord, () => {
 			jest,
 			gapRecord(
 				[
-					{ file: FILE, gaps: {}, test: "a" },
-					{ file: other, gaps: {}, test: "b" },
+					{ file: FILE, gaps: {}, position: 1, test: "a" },
+					{ file: other, gaps: {}, position: 1, test: "b" },
 				],
 				{ require: 1 },
 			),
@@ -101,7 +145,7 @@ describe(applyGapRecord, () => {
 		expect.assertions(2);
 
 		const jest = result(file([testCase("a"), testCase("skipped", "pending")]));
-		applyGapRecord(jest, gapRecord([{ file: FILE, gaps: {}, test: "a" }]));
+		applyGapRecord(jest, gapRecord([{ file: FILE, gaps: {}, position: 1, test: "a" }]));
 
 		expect(jest.success).toBeTrue();
 		expect(jest.testResults[0]!.testResults.map((test) => test.gaps)).toStrictEqual([{}, {}]);
@@ -124,7 +168,7 @@ describe(applyGapRecord, () => {
 		const jest = result(file([testCase("a"), testCase("unreported", "failed")]));
 
 		expect(() => {
-			applyGapRecord(jest, gapRecord([{ file: FILE, gaps: {}, test: "a" }]));
+			applyGapRecord(jest, gapRecord([{ file: FILE, gaps: {}, position: 1, test: "a" }]));
 		}).toThrow(
 			new MissingGapRecordError(`The run has no gap record for "unreported" in ${FILE}`),
 		);
@@ -139,8 +183,8 @@ describe(applyGapRecord, () => {
 			applyGapRecord(
 				jest,
 				gapRecord([
-					{ file: FILE, gaps: {}, test: "a" },
-					{ file: FILE, gaps: {}, test: "lost" },
+					{ file: FILE, gaps: {}, position: 1, test: "a" },
+					{ file: FILE, gaps: {}, position: 2, test: "lost" },
 				]),
 			);
 		}).toThrow(
@@ -191,7 +235,7 @@ describe(applyFailureGaps, () => {
 			gapRecord(
 				[
 					{ file: FILE, gaps: { script: 1 } },
-					{ file: FILE, gaps: { script: 2 }, test: "a" },
+					{ file: FILE, gaps: { script: 2 }, position: 1, test: "a" },
 				],
 				{ require: 1 },
 			),

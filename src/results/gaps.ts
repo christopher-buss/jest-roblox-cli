@@ -8,9 +8,14 @@ export interface BlockedEntry {
 	test?: TestCaseResult;
 }
 
+interface TestGaps {
+	name: string;
+	gaps: GapTally;
+}
+
 interface FileGaps {
 	gaps: GapTally;
-	tests: Map<string, GapTally>;
+	tests: Map<number, TestGaps>;
 }
 
 const RAN: ReadonlySet<TestCaseResult["status"]> = new Set(["failed", "passed"]);
@@ -56,24 +61,7 @@ export function applyGapRecord(result: JestResult, record: GapRecord): void {
 		const reported = byFile.get(file.testFilePath);
 		byFile.delete(file.testFilePath);
 		file.gaps = addGaps({ ...record.unattributed }, reported?.gaps ?? {});
-		for (const test of file.testResults) {
-			const gaps = reported?.tests.get(test.fullName);
-			reported?.tests.delete(test.fullName);
-			if (gaps === undefined && RAN.has(test.status)) {
-				throw new MissingGapRecordError(
-					`The run has no gap record for "${test.fullName}" in ${file.testFilePath}`,
-				);
-			}
-
-			test.gaps = gaps ?? {};
-		}
-
-		const [lost] = reported?.tests.keys() ?? [];
-		if (lost !== undefined) {
-			throw new MissingGapRecordError(
-				`The run reported "${lost}" in ${file.testFilePath}, but has no result for it`,
-			);
-		}
+		applyTestGaps(file, reported?.tests ?? new Map());
 	}
 
 	const [lostFile] = byFile.keys();
@@ -125,11 +113,40 @@ function groupByFile(record: GapRecord): Map<string, FileGaps> {
 		if (entry.test === undefined) {
 			addGaps(file.gaps, entry.gaps);
 		} else {
-			file.tests.set(entry.test, addGaps(file.tests.get(entry.test) ?? {}, entry.gaps));
+			const gaps = file.tests.get(entry.position)?.gaps ?? {};
+			file.tests.set(entry.position, { name: entry.test, gaps: addGaps(gaps, entry.gaps) });
 		}
 	}
 
 	return byFile;
+}
+
+function applyTestGaps(file: TestFileResult, reported: Map<number, TestGaps>): void {
+	for (const [index, test] of file.testResults.entries()) {
+		const position = index + 1;
+		const entry = reported.get(position);
+		reported.delete(position);
+		if (entry !== undefined && entry.name !== test.fullName) {
+			throw new MissingGapRecordError(
+				`The run reported "${entry.name}" as test ${String(position)} of ${file.testFilePath}, but the result there is "${test.fullName}"`,
+			);
+		}
+
+		if (entry === undefined && RAN.has(test.status)) {
+			throw new MissingGapRecordError(
+				`The run has no gap record for "${test.fullName}" in ${file.testFilePath}`,
+			);
+		}
+
+		test.gaps = entry?.gaps ?? {};
+	}
+
+	const [lost] = reported.values();
+	if (lost !== undefined) {
+		throw new MissingGapRecordError(
+			`The run reported "${lost.name}" in ${file.testFilePath}, but has no result for it`,
+		);
+	}
 }
 
 function failWhenBlocked(result: JestResult): void {

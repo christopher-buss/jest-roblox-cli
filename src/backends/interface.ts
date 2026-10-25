@@ -217,12 +217,13 @@ export interface Backend {
 	runTestsAsync(options: BackendOptions): Promise<BackendResult>;
 }
 
-/** The gaps raised in one test file, or in one named test of it. */
-interface AttributedGaps {
-	file: string;
-	gaps: GapTally;
-	test?: string | undefined;
-}
+/**
+ * The gaps raised in one test file, or in one test of it: its full name and its
+ * 1-based position among the file's test results.
+ */
+type AttributedGaps =
+	| { file: string; gaps: GapTally; position: number; test: string }
+	| { file: string; gaps: GapTally; position?: undefined; test?: undefined };
 
 /**
  * The place a backend dispatches against: the one the run builds before

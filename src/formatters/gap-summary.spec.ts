@@ -88,6 +88,34 @@ describe(formatGapSummary, () => {
 		);
 	});
 
+	it("should add the position in its file to a test whose name repeats there", () => {
+		expect.assertions(1);
+
+		const summary = formatGapSummary(
+			result(
+				file({
+					testResults: [
+						testCase("unique", { script: 1 }),
+						testCase("twice runs", { script: 1 }),
+						testCase("twice runs", { script: 2 }),
+					],
+				}),
+			),
+		);
+
+		expect(summary).toBe(
+			[
+				"Blocked (3):",
+				"  src/gap.spec.ts > unique",
+				"    script  1 raise",
+				"  src/gap.spec.ts > twice runs #2",
+				"    script  1 raise",
+				"  src/gap.spec.ts > twice runs #3",
+				"    script  2 raises",
+			].join("\n"),
+		);
+	});
+
 	it("should show each test file by its display path", () => {
 		expect.assertions(1);
 

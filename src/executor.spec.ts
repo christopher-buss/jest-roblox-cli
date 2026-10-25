@@ -3490,8 +3490,13 @@ describe(runProjectsAsync, () => {
 						gaps: {
 							attributed: [
 								{ file, gaps: {} },
-								{ file, gaps: { "Sound.Pitch": 1 }, test: "Test passes" },
-								{ file, gaps: {}, test: "Test also passes" },
+								{
+									file,
+									gaps: { "Sound.Pitch": 1 },
+									position: 1,
+									test: "Test passes",
+								},
+								{ file, gaps: {}, position: 2, test: "Test also passes" },
 							],
 							unattributed: {},
 						},
