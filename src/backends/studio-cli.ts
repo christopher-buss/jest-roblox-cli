@@ -207,6 +207,7 @@ const startedMessageSchema = type({
 const resultMessageSchema = type({
 	"gameOutput?": "string",
 	"jestOutput": "string",
+	"pluginKey?": "string",
 	"pluginVersion?": "string",
 	"protocolVersion?": "number",
 	"requestId": "string",
@@ -960,16 +961,27 @@ function routeRunFrame(
 	}
 }
 
+function isOtherKeysResult(message: RunFrame, pluginKey: string | undefined): boolean {
+	return (
+		message.type === "results" &&
+		pluginKey !== undefined &&
+		message.pluginKey !== undefined &&
+		message.pluginKey !== pluginKey
+	);
+}
+
 /**
  * Forward this run's frames. Frames that aren't valid JSON, aren't a run
- * frame, or belong to another run are ignored
- * (engine/plugin chatter).
+ * frame, belong to another run, or are a result from another key's plugin are
+ * ignored (engine/plugin chatter).
  */
 function listenForRunFrames({
+	pluginKey,
 	requestId,
 	server,
 	...route
 }: Except<RunFrameRoute, "socket"> & {
+	pluginKey: string | undefined;
 	requestId: string;
 	server: WebSocketServer;
 }): void {
@@ -983,7 +995,11 @@ function listenForRunFrames({
 			}
 
 			const message = runFrameSchema(raw);
-			if (message instanceof type.errors || message.requestId !== requestId) {
+			if (
+				message instanceof type.errors ||
+				message.requestId !== requestId ||
+				isOtherKeysResult(message, pluginKey)
+			) {
 				return;
 			}
 
@@ -1200,6 +1216,7 @@ function awaitStudioCliResult({
 				resolve(result);
 			});
 		},
+		pluginKey: deadlineOptions.pluginKey,
 		requestId,
 		server,
 	});

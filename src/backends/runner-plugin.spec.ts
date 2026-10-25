@@ -85,7 +85,7 @@ describe(installManagedPluginAsync, () => {
 
 		const { key } = await installManagedPluginAsync(options(fileSystem));
 
-		expect(key).toMatch(/^1\.2\.3-[\da-f]{8}$/);
+		expect(key).toMatch(/^g2-1\.2\.3-[\da-f]{8}$/);
 		expect(fileSystem.readFileSync(managedFile(key), "utf8")).toBe("rbxm-bytes");
 	});
 
@@ -215,9 +215,9 @@ describe(installManagedPluginAsync, () => {
 		const idleFor = {
 			[`${PLUGINS}/JestRobloxRunner-0.3.0.rbxm`]: 25 * HOUR_MS,
 			[`${PLUGINS}/JestRobloxRunner.rbxm`]: 25 * HOUR_MS,
-			[managedFile("0.9.0-aaaaaaaa")]: 25 * HOUR_MS,
-			[managedFile("1.0.0-bbbbbbbb")]: HOUR_MS,
-			[managedFile("1.0.0-cccccccc")]: 24 * HOUR_MS,
+			[managedFile("g2-0.9.0-aaaaaaaa")]: 25 * HOUR_MS,
+			[managedFile("g2-1.0.0-bbbbbbbb")]: HOUR_MS,
+			[managedFile("g2-1.0.0-cccccccc")]: 24 * HOUR_MS,
 		};
 		fileSystem.mkdirSync(PLUGINS, { recursive: true });
 		for (const [file, idleMs] of Object.entries(idleFor)) {
@@ -230,8 +230,8 @@ describe(installManagedPluginAsync, () => {
 		expect(fileSystem.readdirSync(PLUGINS).toSorted()).toStrictEqual(
 			[
 				"JestRobloxRunner-0.3.0.rbxm",
-				"JestRobloxRunner.cli-1.0.0-bbbbbbbb.rbxm",
-				"JestRobloxRunner.cli-1.0.0-cccccccc.rbxm",
+				"JestRobloxRunner.cli-g2-1.0.0-bbbbbbbb.rbxm",
+				"JestRobloxRunner.cli-g2-1.0.0-cccccccc.rbxm",
 				`JestRobloxRunner.cli-${key}.rbxm`,
 				"JestRobloxRunner.rbxm",
 			].toSorted(),
@@ -243,11 +243,11 @@ describe(installManagedPluginAsync, () => {
 
 		const { fileSystem } = createMemoryFileSystem();
 		const ages = {
-			[managedFile("1.0.0-aaaaaaaa")]: 25 * HOUR_MS,
-			[managedFile("1.0.0-bbbbbbbb")]: 25 * HOUR_MS,
-			[usageMark("1.0.0-aaaaaaaa")]: HOUR_MS,
-			[usageMark("1.0.0-bbbbbbbb")]: 25 * HOUR_MS,
-			[usageMark("1.0.0-cccccccc")]: HOUR_MS,
+			[managedFile("g2-1.0.0-aaaaaaaa")]: 25 * HOUR_MS,
+			[managedFile("g2-1.0.0-bbbbbbbb")]: 25 * HOUR_MS,
+			[usageMark("g2-1.0.0-aaaaaaaa")]: HOUR_MS,
+			[usageMark("g2-1.0.0-bbbbbbbb")]: 25 * HOUR_MS,
+			[usageMark("g2-1.0.0-cccccccc")]: HOUR_MS,
 		};
 		fileSystem.mkdirSync(PLUGINS, { recursive: true });
 		fileSystem.mkdirSync(USAGE, { recursive: true });
@@ -260,24 +260,52 @@ describe(installManagedPluginAsync, () => {
 
 		expect(fileSystem.readdirSync(PLUGINS).toSorted()).toStrictEqual(
 			[
-				"JestRobloxRunner.cli-1.0.0-aaaaaaaa.rbxm",
+				"JestRobloxRunner.cli-g2-1.0.0-aaaaaaaa.rbxm",
 				`JestRobloxRunner.cli-${key}.rbxm`,
 			].toSorted(),
 		);
 		expect(fileSystem.readdirSync(USAGE).toSorted()).toStrictEqual(
 			[
-				"JestRobloxRunner.cli-1.0.0-aaaaaaaa.rbxm",
+				"JestRobloxRunner.cli-g2-1.0.0-aaaaaaaa.rbxm",
 				`JestRobloxRunner.cli-${key}.rbxm`,
 			].toSorted(),
 		);
+	});
+
+	it("should delete managed plugins of an older generation however recently used", async () => {
+		expect.assertions(2);
+
+		const { fileSystem } = createMemoryFileSystem();
+		const fresh = [
+			managedFile("1.0.0-aaaaaaaa"),
+			managedFile("g1-1.0.0-bbbbbbbb"),
+			managedFile("g3-1.0.0-cccccccc"),
+			usageMark("1.0.0-aaaaaaaa"),
+		];
+		fileSystem.mkdirSync(PLUGINS, { recursive: true });
+		fileSystem.mkdirSync(USAGE, { recursive: true });
+		for (const file of fresh) {
+			fileSystem.writeFileSync(file, "");
+			fileSystem.utimesSync(file, new Date(NOW), new Date(NOW));
+		}
+
+		const { key } = await installManagedPluginAsync(options(fileSystem));
+
+		expect(fileSystem.readdirSync(PLUGINS).toSorted()).toStrictEqual(
+			[
+				"JestRobloxRunner.cli-g3-1.0.0-cccccccc.rbxm",
+				`JestRobloxRunner.cli-${key}.rbxm`,
+			].toSorted(),
+		);
+		expect(fileSystem.readdirSync(USAGE)).toStrictEqual([`JestRobloxRunner.cli-${key}.rbxm`]);
 	});
 
 	it("should let a concurrent sweep take a stale plugin and mark first", async () => {
 		expect.assertions(2);
 
 		const { fileSystem: disk } = createMemoryFileSystem();
-		const stalePlugin = managedFile("1.0.0-aaaaaaaa");
-		const orphanMark = usageMark("1.0.0-bbbbbbbb");
+		const stalePlugin = managedFile("g2-1.0.0-aaaaaaaa");
+		const orphanMark = usageMark("g2-1.0.0-bbbbbbbb");
 		disk.mkdirSync(PLUGINS, { recursive: true });
 		disk.mkdirSync(USAGE, { recursive: true });
 		for (const file of [stalePlugin, orphanMark]) {
@@ -405,7 +433,7 @@ describe(installRunnerPluginAsync, () => {
 	])("should install into and sweep the folder $source names", async (discovery) => {
 		expect.assertions(2);
 
-		const idlePlugin = "/custom/Plugins/JestRobloxRunner.cli-1.0.0-aaaaaaaa.rbxm";
+		const idlePlugin = "/custom/Plugins/JestRobloxRunner.cli-g2-1.0.0-aaaaaaaa.rbxm";
 		const { fileSystem } = createMemoryFileSystem({ [idlePlugin]: "" });
 		fileSystem.utimesSync(
 			idlePlugin,

@@ -60,6 +60,12 @@ const KEY_HASH_LENGTH = 8;
 const MANAGED_PREFIX = "JestRobloxRunner.cli-";
 const MANAGED_SUFFIX = ".rbxm";
 const JEST_PLUGIN_PATTERN = /jest.*\.rbxmx?$/i;
+/**
+ * Bump when an installed copy built by an older CLI would break this CLI's
+ * runs. A key with no generation predates the marker and counts as 1.
+ */
+const MANAGED_GENERATION = 2;
+const GENERATION_PATTERN = /^g(\d+)-/;
 
 /**
  * How long another key's Managed Plugin sits unused before the sweep takes it.
@@ -88,7 +94,7 @@ export async function installManagedPluginAsync(
 	}
 
 	markUsed(options, fileName);
-	sweepIdleManagedPlugins(options);
+	sweepStaleManagedPlugins(options);
 	return { key, manualPlugins: listManualPlugins(options) };
 }
 
@@ -135,7 +141,7 @@ function pluginKey({
 	const digest = hashString(
 		JSON.stringify([project, sources.map(({ path: file, text }) => [file, text])]),
 	);
-	return `${version}-${digest.slice(0, KEY_HASH_LENGTH)}`;
+	return `g${MANAGED_GENERATION.toString()}-${version}-${digest.slice(0, KEY_HASH_LENGTH)}`;
 }
 
 /**
@@ -210,12 +216,17 @@ function isManagedPlugin(entry: string): boolean {
 	return entry.startsWith(MANAGED_PREFIX) && entry.endsWith(MANAGED_SUFFIX);
 }
 
+function managedGeneration(entry: string): number {
+	const match = GENERATION_PATTERN.exec(entry.slice(MANAGED_PREFIX.length));
+	return match === null ? 1 : Number(match[1]);
+}
+
 /**
- * Delete other keys' Managed Plugins that have sat idle, and the marks of
- * plugins already gone. A plugin with no mark was last used when it was
- * written.
+ * Delete other keys' Managed Plugins that have sat idle or come from an older
+ * generation, and the marks of plugins already gone. A plugin with no mark was
+ * last used when it was written.
  */
-function sweepIdleManagedPlugins({
+function sweepStaleManagedPlugins({
 	fileSystem,
 	now,
 	pluginsDirectory,
@@ -230,7 +241,7 @@ function sweepIdleManagedPlugins({
 		const mark = path.join(usageDirectory, entry);
 		const usedAt =
 			fileSystem.statSync(mark, { throwIfNoEntry: false }) ?? fileSystem.statSync(file);
-		if (now - usedAt.mtimeMs > IDLE_SWEEP_MS) {
+		if (managedGeneration(entry) < MANAGED_GENERATION || now - usedAt.mtimeMs > IDLE_SWEEP_MS) {
 			fileSystem.rmSync(file, { force: true });
 		}
 	}

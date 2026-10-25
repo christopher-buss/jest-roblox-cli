@@ -48,6 +48,7 @@ interface ReplyOptions {
 	entries?: Array<{ elapsedMs?: number; jestOutput: string }>;
 	gameOutput?: string;
 	omitProtocolVersion?: boolean;
+	pluginKey?: string;
 	pluginVersion?: string;
 	protocolVersion?: number;
 	rawJestOutput?: string;
@@ -156,6 +157,7 @@ function resultFrame(requestId: string, reply: ReplyOptions): string {
 		gameOutput: reply.gameOutput ?? "[]",
 		jestOutput:
 			reply.rawJestOutput ?? envelope(reply.entries ?? [{ jestOutput: successResult() }]),
+		pluginKey: reply.pluginKey,
 		requestId,
 		type: "results",
 	};
@@ -1989,6 +1991,61 @@ describe(StudioCliBackend, () => {
 			const { rawResults } = await settled;
 
 			expect(rawResults[0]!.entry.jestOutput).toContain('"numPassedTests":1');
+		});
+
+		it("should ignore a side-channel result from a copy with another plugin key", async () => {
+			expect.assertions(1);
+
+			const { fileSystem } = createMemoryFileSystem();
+			useResultDeadlineTimers();
+
+			const studio = earlyEndStudio(fileSystem);
+			const settled = makeBackend({ fileSystem, launch: studio.launch }).runTestsAsync(
+				singleJob,
+			);
+			await vi.advanceTimersByTimeAsync(0);
+			const bootstrap = studio.connect();
+			studio.send(bootstrap, "nilReturn");
+			const stale = studio.connect();
+			studio.send(stale, "pluginReady");
+			const plugin = studio.connect();
+			studio.send(plugin, "pluginReady");
+			studio.sendResult(stale, {
+				pluginKey: "g2-1.0.0-00000000",
+				rawJestOutput: JSON.stringify({
+					err: "Studio plugin key mismatch",
+					success: false,
+				}),
+			});
+			studio.sendResult(plugin, {
+				entries: [{ jestOutput: successResult({ numPassedTests: 3 }) }],
+				pluginKey: PLUGIN_KEY,
+			});
+			const { rawResults } = await settled;
+
+			expect(rawResults[0]!.entry.jestOutput).toContain('"numPassedTests":3');
+		});
+
+		it("should take a keyed side-channel result when the run asked for no key", async () => {
+			expect.assertions(1);
+
+			const { fileSystem } = createMemoryFileSystem();
+			useResultDeadlineTimers();
+
+			const studio = earlyEndStudio(fileSystem);
+			const settled = makeBackend({
+				extra: { installPluginAsync: async () => {} },
+				fileSystem,
+				launch: studio.launch,
+			}).runTestsAsync(singleJob);
+			await vi.advanceTimersByTimeAsync(0);
+			const bootstrap = studio.connect();
+			studio.send(bootstrap, "nilReturn");
+			const plugin = studio.connect();
+			studio.send(plugin, "pluginReady");
+			studio.sendResult(plugin, { pluginKey: PLUGIN_KEY });
+
+			await expect(settled).resolves.toHaveProperty("rawResults.length", 1);
 		});
 
 		it("should relay the nil return to a plugin socket that connects after it", async () => {

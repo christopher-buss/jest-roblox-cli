@@ -134,6 +134,7 @@ local function endTest(jestOutput: string, gameOutput: string?): ()
 		jestOutput = jestOutput,
 		gameOutput = gameOutput or "[]",
 		protocolVersion = PROTOCOL_VERSION,
+		pluginKey = PluginKey,
 		pluginVersion = PluginVersion,
 	}
 	local ok, endErr = pcall(function()
