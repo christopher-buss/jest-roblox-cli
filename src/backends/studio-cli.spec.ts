@@ -1890,6 +1890,56 @@ describe(StudioCliBackend, () => {
 			expect(studio.process.kill).toHaveBeenCalledExactlyOnceWith();
 		});
 
+		it("should name the plugin key no copy answered for after a nil return", async () => {
+			expect.assertions(1);
+
+			const { fileSystem } = createMemoryFileSystem();
+			useResultDeadlineTimers();
+
+			const studio = earlyEndStudio(fileSystem);
+			const settled = makeBackend({
+				extra: { timeout: 600_000 },
+				fileSystem,
+				launch: studio.launch,
+			})
+				.runTestsAsync(singleJob)
+				.catch((err: unknown) => err);
+			await vi.advanceTimersByTimeAsync(0);
+			const bootstrap = studio.connect();
+			studio.send(bootstrap, "nilReturn");
+			await vi.advanceTimersByTimeAsync(30_000);
+			const caught: unknown = await settled;
+
+			assert(caught instanceof Error);
+
+			expect(caught.message).toContain(`plugin ${PLUGIN_KEY}`);
+		});
+
+		it("should name no plugin key after a nil return when none was installed", async () => {
+			expect.assertions(1);
+
+			const { fileSystem } = createMemoryFileSystem();
+			useResultDeadlineTimers();
+
+			const studio = earlyEndStudio(fileSystem);
+			const settled = makeBackend({
+				extra: { installPluginAsync: async () => {}, timeout: 600_000 },
+				fileSystem,
+				launch: studio.launch,
+			})
+				.runTestsAsync(singleJob)
+				.catch((err: unknown) => err);
+			await vi.advanceTimersByTimeAsync(0);
+			const bootstrap = studio.connect();
+			studio.send(bootstrap, "nilReturn");
+			await vi.advanceTimersByTimeAsync(30_000);
+			const caught: unknown = await settled;
+
+			assert(caught instanceof Error);
+
+			expect(caught.message).not.toContain("No copy of the Studio plugin");
+		});
+
 		it("should keep the run going while a plugin that took the relay runs the suite", async () => {
 			expect.assertions(1);
 

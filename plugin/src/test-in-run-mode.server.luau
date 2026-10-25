@@ -81,6 +81,17 @@ if typeof(rawSideChannel) == "string" then
 	end
 end
 
+-- Every installed copy shares Studio's WebStreamClient cap, so only the copy
+-- the run asks for may open the socket.
+if
+	sideChannel ~= nil
+	and typeof(sideChannel.payload) == "table"
+	and typeof(sideChannel.payload.pluginKey) == "string"
+	and sideChannel.payload.pluginKey ~= PluginKey
+then
+	sideChannel = nil
+end
+
 local hostSocket: any = nil
 local hasNilRelay = false
 if sideChannel ~= nil then

@@ -372,12 +372,14 @@ interface ResultDeadline {
 interface NilReturnRelayOptions extends Pick<ResultDeadline, "outputFile"> {
 	fileSystem: FileSystem;
 	onExpired: (error: Error) => void;
+	pluginKey: string | undefined;
 	requestId: string;
 }
 
 interface StudioCliResultWait extends ResultDeadline {
 	child: StudioCliProcess;
 	fileSystem: FileSystem;
+	pluginKey: string | undefined;
 	reject: (error: Error) => void;
 	requestId: string;
 	resolve: (message: ResultMessage) => void;
@@ -581,7 +583,7 @@ export class StudioCliBackend implements Backend {
 		const executionStart = Date.now();
 		const child = this.launchStudio({ args, placeFile: place.placeFile, studioPath });
 		session.child = child;
-		const channel = { child, fileSystem: this.fileSystem, server };
+		const channel = { child, fileSystem: this.fileSystem, pluginKey: plugin?.key, server };
 		const message = await waitForResultAsync({ ...channel, deadline, requestId });
 
 		done();
@@ -1108,6 +1110,17 @@ function startRunDeadlines({
 	};
 }
 
+function nilReturnError({
+	pluginKey,
+	...unanswered
+}: Except<NilReturnRelayOptions, "onExpired" | "requestId">): Error {
+	const headline =
+		pluginKey === undefined
+			? NIL_RETURN_HEADLINE
+			: `${NIL_RETURN_HEADLINE}\n  No copy of the Studio plugin ${pluginKey} answered: it did not load, or Studio refused it a socket.`;
+	return unansweredError({ ...unanswered, headline });
+}
+
 function startNilReturnRelay({
 	onExpired,
 	requestId,
@@ -1133,7 +1146,7 @@ function startNilReturnRelay({
 			}
 
 			timer = setTimeout(() => {
-				onExpired(unansweredError({ ...unanswered, headline: NIL_RETURN_HEADLINE }));
+				onExpired(nilReturnError(unanswered));
 			}, NIL_RETURN_PLUGIN_WAIT_MS);
 			for (const socket of pluginSockets) {
 				relayTo(socket);
@@ -1203,10 +1216,12 @@ async function waitForResultAsync({
 	child,
 	deadline,
 	fileSystem,
+	pluginKey,
 	requestId,
 	server,
 }: ResultChannel & {
 	readonly deadline: ResultDeadline;
+	readonly pluginKey: string | undefined;
 	readonly requestId: string;
 }): Promise<ResultMessage> {
 	return new Promise<ResultMessage>((resolve, reject) => {
@@ -1214,6 +1229,7 @@ async function waitForResultAsync({
 			...deadline,
 			child,
 			fileSystem,
+			pluginKey,
 			reject,
 			requestId,
 			resolve,

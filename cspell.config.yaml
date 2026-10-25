@@ -40,6 +40,7 @@ words:
   - highlightjs
   - indexexpr
   - injective
+  - inlines
   - instrumentability
   - instrumentable
   - instrumenter

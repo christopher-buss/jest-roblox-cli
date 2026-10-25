@@ -189,6 +189,18 @@ assert(output.entries ~= nil and #output.entries == 0 and output.bailed == false
 		).toContain("ALL OK");
 	});
 
+	it("should leave the socket to the copy a recovered payload asks for", () => {
+		expect.assertions(1);
+
+		expect(
+			runSession(
+				"nil",
+				'assert(socketsOpened == 0, "A copy with another key opened the studio-cli socket")',
+				'{ test = true, protocolVersion = 10, pluginKey = "another-installed-plugin" }',
+			),
+		).toContain("ALL OK");
+	});
+
 	it("should relay an embedded workspace result for a recovered marked payload", () => {
 		expect.assertions(1);
 

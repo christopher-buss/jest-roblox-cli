@@ -7,6 +7,7 @@ local encoded = {}
 local elapsed = 0
 local attributes = {}
 local receiveRelay = nil
+local socketsOpened = 0
 
 local HttpService = {}
 function HttpService:JSONEncode(value)
@@ -21,6 +22,7 @@ function HttpService:JSONDecode(token)
 end
 
 function HttpService:CreateWebStreamClient()
+	socketsOpened += 1
 	return {
 		Opened = { Once = function(_self, callback) callback() end },
 		MessageReceived = { Connect = function(_self, callback) receiveRelay = callback end },
