@@ -32,6 +32,24 @@ export interface LuauSpan {
 	endLine: number;
 }
 
+/**
+ * A 1-based column counting UTF-16 code units, so it indexes a JavaScript
+ * string. The tag keeps a byte column from passing for one.
+ */
+export type Utf16Column = number & Utf16ColumnBrand;
+
+/** A {@link LuauSpan} restated in UTF-16 columns. */
+export interface Utf16Span {
+	/** 1-based UTF-16 column where the span begins. */
+	beginColumn: Utf16Column;
+	/** 1-based line where the span begins. */
+	beginLine: number;
+	/** Exclusive 1-based UTF-16 column where the span ends. */
+	endColumn: Utf16Column;
+	/** 1-based line where the span ends. */
+	endLine: number;
+}
+
 /** A boolean literal expression. */
 export interface AstExprConstantBool {
 	/** Source span with 1-based lines and UTF-8 byte columns. */
@@ -579,4 +597,12 @@ export interface AstStatWhile {
 	location: LuauSpan;
 	/** Node kind used to discriminate the tree union. */
 	type: "AstStatWhile";
+}
+
+/**
+ * Hand-rolled rather than type-fest's `Tagged`: jest-roblox's declaration build
+ * inlines this lib and refuses a `node_modules` module it was not told to.
+ */
+interface Utf16ColumnBrand {
+	readonly isUtf16Column: true;
 }

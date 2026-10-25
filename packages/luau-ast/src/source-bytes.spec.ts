@@ -114,7 +114,7 @@ describe("byte columns as UTF-16 columns", () => {
 
 		const bytes = indexSourceBytes("local x = 1\n");
 
-		expect(bytes.toUtf16Column(1, 11)).toBe(11);
+		expect<number>(bytes.toUtf16Column(1, 11)).toBe(11);
 	});
 
 	// `local a = "∞" 1` — the closing quote is byte column 15 and UTF-16
@@ -124,8 +124,8 @@ describe("byte columns as UTF-16 columns", () => {
 
 		const bytes = indexSourceBytes('local a = "\u{221E}" 1\n');
 
-		expect(bytes.toUtf16Column(1, 11)).toBe(11);
-		expect(bytes.toUtf16Column(1, 15)).toBe(13);
+		expect<number>(bytes.toUtf16Column(1, 11)).toBe(11);
+		expect<number>(bytes.toUtf16Column(1, 15)).toBe(13);
 	});
 
 	// An astral character is four bytes but two UTF-16 units, so a column past
@@ -135,7 +135,7 @@ describe("byte columns as UTF-16 columns", () => {
 
 		const bytes = indexSourceBytes('local a = "\u{1F389}"\n');
 
-		expect(bytes.toUtf16Column(1, 16)).toBe(14);
+		expect<number>(bytes.toUtf16Column(1, 16)).toBe(14);
 	});
 
 	// A span that ends the line ends one byte past it, which is one UTF-16
@@ -145,7 +145,7 @@ describe("byte columns as UTF-16 columns", () => {
 
 		const bytes = indexSourceBytes('local a = "\u{221E}"\n');
 
-		expect(bytes.toUtf16Column(1, 16)).toBe(14);
+		expect<number>(bytes.toUtf16Column(1, 16)).toBe(14);
 	});
 
 	it("should count a carriage return as part of the line it ends", () => {
@@ -153,7 +153,7 @@ describe("byte columns as UTF-16 columns", () => {
 
 		const bytes = indexSourceBytes('local a = "\u{221E}"\r\nlocal b = 2\r\n');
 
-		expect(bytes.toUtf16Column(1, 15)).toBe(13);
+		expect<number>(bytes.toUtf16Column(1, 15)).toBe(13);
 	});
 
 	it("should convert each line against its own bytes", () => {
@@ -161,8 +161,28 @@ describe("byte columns as UTF-16 columns", () => {
 
 		const bytes = indexSourceBytes('local a = "\u{221E}"\nlocal b = "yes"\n');
 
-		expect(bytes.toUtf16Column(1, 15)).toBe(13);
-		expect(bytes.toUtf16Column(2, 16)).toBe(16);
+		expect<number>(bytes.toUtf16Column(1, 15)).toBe(13);
+		expect<number>(bytes.toUtf16Column(2, 16)).toBe(16);
+	});
+
+	it("should convert each end of a span against its own line", () => {
+		expect.assertions(1);
+
+		const bytes = indexSourceBytes('local a = "\u{221E}" .. f(\n"\u{1F389}" .. b)\n');
+
+		expect<LuauSpan>(
+			bytes.toUtf16Span(span({ beginColumn: 15, beginLine: 1, endColumn: 12, endLine: 2 })),
+		).toStrictEqual(span({ beginColumn: 13, beginLine: 1, endColumn: 10, endLine: 2 }));
+	});
+
+	it("should leave every column of an all-ASCII source alone", () => {
+		expect.assertions(1);
+
+		const bytes = indexSourceBytes("local x = a + b\n");
+
+		expect<LuauSpan>(bytes.toUtf16Span(span({ beginColumn: 11, endColumn: 16 }))).toStrictEqual(
+			span({ beginColumn: 11, endColumn: 16 }),
+		);
 	});
 
 	it("should convert a byte range on the first line back to a span", () => {
@@ -233,8 +253,23 @@ describe("buffer work", () => {
 		expect(calls).toBe(0);
 	});
 
+	it("should convert an all-ASCII source without measuring a line", () => {
+		expect.assertions(1);
+
+		const bytes = indexSourceBytes("first\n");
+		const byteLength = vi.spyOn(Buffer, "byteLength");
+		onTestFinished(() => {
+			byteLength.mockRestore();
+		});
+		bytes.toUtf16Column(1, 2);
+		bytes.toUtf16Column(1, 4);
+		const calls = byteLength.mock.calls.length;
+
+		expect(calls).toBe(0);
+	});
+
 	it.for([
-		{ columns: [2, 4], expectedCalls: 1, source: "first\n" },
+		{ columns: [2, 4], expectedCalls: 1, source: "first\né\n" },
 		{ columns: [3, 5], expectedCalls: 2, source: "éé\n" },
 	])(
 		"should build one cached column converter for $source",

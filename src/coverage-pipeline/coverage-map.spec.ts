@@ -1,6 +1,7 @@
 import process from "node:process";
 import { describe, expect, it, vi } from "vitest";
 
+import { asciiColumn } from "../../test/mocks/ascii-columns.ts";
 import { createMemoryFileSystem } from "../../test/mocks/memory-file-system.ts";
 import type { CoverageMap, ReadCoverageMapResult } from "./coverage-map.ts";
 import { readCoverageMap, writeCoverageMap } from "./coverage-map.ts";
@@ -9,8 +10,8 @@ function exampleCoverageMap(overrides: Partial<CoverageMap> = {}): CoverageMap {
 	return {
 		statementMap: {
 			"1": {
-				end: { column: 12, line: 1 },
-				start: { column: 1, line: 1 },
+				end: { column: asciiColumn(12), line: 1 },
+				start: { column: asciiColumn(1), line: 1 },
 			},
 		},
 		...overrides,
@@ -52,8 +53,14 @@ describe(writeCoverageMap, () => {
 			branchMap: {
 				"1": {
 					locations: [
-						{ end: { column: 6, line: 5 }, start: { column: 1, line: 4 } },
-						{ end: { column: 6, line: 8 }, start: { column: 1, line: 7 } },
+						{
+							end: { column: asciiColumn(6), line: 5 },
+							start: { column: asciiColumn(1), line: 4 },
+						},
+						{
+							end: { column: asciiColumn(6), line: 8 },
+							start: { column: asciiColumn(1), line: 7 },
+						},
 					],
 					type: "if",
 				},
@@ -61,11 +68,17 @@ describe(writeCoverageMap, () => {
 			functionMap: {
 				"1": {
 					name: "doThing",
-					location: { end: { column: 4, line: 3 }, start: { column: 1, line: 2 } },
+					location: {
+						end: { column: asciiColumn(4), line: 3 },
+						start: { column: asciiColumn(1), line: 2 },
+					},
 				},
 			},
 			statementMap: {
-				"1": { end: { column: 12, line: 1 }, start: { column: 1, line: 1 } },
+				"1": {
+					end: { column: asciiColumn(12), line: 1 },
+					start: { column: asciiColumn(1), line: 1 },
+				},
 			},
 		};
 

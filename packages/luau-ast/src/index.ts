@@ -43,6 +43,8 @@ export type {
 	CompoundOp,
 	LuauSpan,
 	UnaryOp,
+	Utf16Column,
+	Utf16Span,
 } from "./ast-types.ts";
 
 // Edit surface: replacements the printer consults, and binding renames

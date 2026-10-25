@@ -5,9 +5,9 @@ import { describe, expect, it } from "vitest";
 import type { CollectorResult } from "./coverage-accumulator.ts";
 import { toUtf16Columns } from "./utf16-columns.ts";
 
-type BranchArm = CollectorResult["branches"][number]["arms"][number];
+type BranchArm = CollectorResult<LuauSpan>["branches"][number]["arms"][number];
 
-function emptyResult(): CollectorResult {
+function emptyResult(): CollectorResult<LuauSpan> {
 	return {
 		branches: [],
 		functions: [],
@@ -25,11 +25,11 @@ function span(
 	return { beginColumn, beginLine: line, endColumn, endLine: line };
 }
 
-function statementResult(location: LuauSpan): CollectorResult {
+function statementResult(location: LuauSpan): CollectorResult<LuauSpan> {
 	return { ...emptyResult(), statements: [{ index: 1, location }] };
 }
 
-function branchResult(arm: BranchArm, branchType: string): CollectorResult {
+function branchResult(arm: BranchArm, branchType: string): CollectorResult<LuauSpan> {
 	return { ...emptyResult(), branches: [{ arms: [arm], branchType, index: 1 }] };
 }
 
@@ -41,7 +41,7 @@ describe("utf16-columns", () => {
 			const result = statementResult(span(1, { beginColumn: 1, endColumn: 12 }));
 			const converted = toUtf16Columns(result, "local x = 1\n");
 
-			expect(converted).toBe(result);
+			expect<CollectorResult<LuauSpan>>(converted).toStrictEqual(result);
 		});
 
 		// `local a = "∞" 1` — the closing quote is byte column 15 and UTF-16
@@ -58,8 +58,8 @@ describe("utf16-columns", () => {
 			);
 			const { location } = converted.statements[0]!;
 
-			expect(location.beginColumn).toBe(11);
-			expect(location.endColumn).toBe(13);
+			expect<number>(location.beginColumn).toBe(11);
+			expect<number>(location.endColumn).toBe(13);
 		});
 
 		it("should convert the body position of a function and of a branch arm", () => {
@@ -89,9 +89,9 @@ describe("utf16-columns", () => {
 				source,
 			);
 
-			expect(converted.functions[0]!.location.endColumn).toBe(39);
-			expect(converted.branches[0]!.arms[0]!.location.endColumn).toBe(32);
-			expect(converted.branches[0]!.arms[0]!.bodyFirstColumn).toBe(34);
+			expect<number>(converted.functions[0]!.location.endColumn).toBe(39);
+			expect<number>(converted.branches[0]!.arms[0]!.location.endColumn).toBe(32);
+			expect<number>(converted.branches[0]!.arms[0]!.bodyFirstColumn).toBe(34);
 		});
 
 		// `bodyFirstLine`/`bodyFirstColumn` of 0 is the "wrap probe, not point
@@ -111,7 +111,7 @@ describe("utf16-columns", () => {
 				'local a = "\u{221E}"\n',
 			);
 
-			expect(converted.branches[0]!.arms[0]!.bodyFirstColumn).toBe(0);
+			expect<number>(converted.branches[0]!.arms[0]!.bodyFirstColumn).toBe(0);
 		});
 
 		it("should convert implicit-else probe and wrap positions", () => {
@@ -135,8 +135,8 @@ describe("utf16-columns", () => {
 				source,
 			);
 
-			expect(converted.implicitElseProbes[0]!.endColumn).toBe(23);
-			expect(converted.wrapProbes[0]!.exprLocation.endColumn).toBe(21);
+			expect<number>(converted.implicitElseProbes[0]!.endColumn).toBe(23);
+			expect<number>(converted.wrapProbes[0]!.exprLocation.endColumn).toBe(21);
 		});
 	});
 });

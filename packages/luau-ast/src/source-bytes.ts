@@ -1,7 +1,7 @@
 import assert from "node:assert";
 import { Buffer } from "node:buffer";
 
-import type { LuauSpan } from "./ast-types.ts";
+import type { LuauSpan, Utf16Column, Utf16Span } from "./ast-types.ts";
 import { createUtf8OffsetMap } from "./utf-8-offsets.ts";
 
 /** Byte-offset range within a source file. Start inclusive, end exclusive. */
@@ -61,7 +61,9 @@ export interface SourceBytes {
 	 * column one past the line's last byte answers one past its last UTF-16
 	 * unit.
 	 */
-	toUtf16Column: (line: number, column: number) => number;
+	toUtf16Column: (line: number, column: number) => Utf16Column;
+	/** {@link SourceBytes.toUtf16Column} over both ends of a parser span. */
+	toUtf16Span: (span: LuauSpan) => Utf16Span;
 }
 
 /**
@@ -111,10 +113,21 @@ export function indexSourceBytes(source: string): SourceBytes {
 		},
 		spanToRange: (span) => spanToByteRange(span, lineStartOffset),
 		text: source,
-		toUtf16Column: createColumnConverter((line) => {
-			return decode(buffer, { end: lineEndOffset(line), start: lineStartOffset(line) });
-		}),
+		...createUtf16Conversion({ buffer, lineEndOffset, lineStartOffset, source }),
 	};
+}
+
+/**
+ * The one place the brand is applied, so {@link indexSourceBytes} is its only
+ * source. A tag exists only in the type system, so an assertion is how one is
+ * ever attached.
+ *
+ * @param column - A column already counted in UTF-16 units.
+ * @returns The same column, tagged.
+ */
+function asUtf16Column(column: number): Utf16Column {
+	// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- see above
+	return column as Utf16Column;
 }
 
 /**
@@ -128,16 +141,16 @@ export function indexSourceBytes(source: string): SourceBytes {
  */
 function createColumnConverter(
 	readLine: (line: number) => string,
-): (line: number, column: number) => number {
-	const convertersByLine = new Map<number, (column: number) => number>();
+): (line: number, column: number) => Utf16Column {
+	const convertersByLine = new Map<number, (column: number) => Utf16Column>();
 
-	function converterFor(line: number): (column: number) => number {
+	function converterFor(line: number): (column: number) => Utf16Column {
 		// The trailing newline stays in the mapped text: it changes no column
 		// before it, and dropping a carriage return would shift every column
 		// past it, because the parser counts bytes from the start of the line.
 		const text = readLine(line);
 		if (Buffer.byteLength(text, "utf-8") === text.length) {
-			return (column) => column;
+			return asUtf16Column;
 		}
 
 		const offsets = createUtf8OffsetMap(text);
@@ -146,7 +159,7 @@ function createColumnConverter(
 		 * @param column - The one-based UTF-8 byte column.
 		 * @returns The corresponding one-based UTF-16 column.
 		 */
-		return (column) => offsets.toUtf16(column - 1) + 1;
+		return (column) => asUtf16Column(offsets.toUtf16(column - 1) + 1);
 	}
 
 	return (line, column) => {
@@ -169,6 +182,40 @@ function createColumnConverter(
  */
 function decode(buffer: Buffer, range: ByteRange): string {
 	return buffer.subarray(range.start, range.end).toString("utf-8");
+}
+
+function createUtf16Conversion({
+	buffer,
+	lineEndOffset,
+	lineStartOffset,
+	source,
+}: {
+	buffer: Buffer;
+	lineEndOffset: (line: number) => number;
+	lineStartOffset: (line: number) => number;
+	source: string;
+}): Pick<SourceBytes, "toUtf16Column" | "toUtf16Span"> {
+	const toUtf16Column =
+		buffer.length === source.length
+			? (_line: number, column: number) => asUtf16Column(column)
+			: createColumnConverter((line) => {
+					return decode(buffer, {
+						end: lineEndOffset(line),
+						start: lineStartOffset(line),
+					});
+				});
+
+	return {
+		toUtf16Column,
+		toUtf16Span: (span) => {
+			return {
+				beginColumn: toUtf16Column(span.beginLine, span.beginColumn),
+				beginLine: span.beginLine,
+				endColumn: toUtf16Column(span.endLine, span.endColumn),
+				endLine: span.endLine,
+			};
+		},
+	};
 }
 
 /**

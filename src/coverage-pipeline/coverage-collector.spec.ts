@@ -21,7 +21,7 @@ function span({
 }
 
 /** Parse real source and run the collector over it. */
-function collect(source: string): CollectorResult {
+function collect(source: string): CollectorResult<LuauSpan> {
 	const parsed = luauParser.parse(source);
 	assert(parsed.ok);
 	return collectCoverage(parsed, source);

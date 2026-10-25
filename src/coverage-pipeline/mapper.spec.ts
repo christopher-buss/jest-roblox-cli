@@ -5,7 +5,6 @@ import { assert, describe, expect, it, vi } from "vitest";
 import { createMemoryFileSystem } from "../../test/mocks/memory-file-system.ts";
 import { buildSourceMap } from "../../test/mocks/source-map.ts";
 import type { FileSystem } from "../utils/file-system.ts";
-import type { CoverageMap } from "./coverage-map.ts";
 import type { CoverageManifest } from "./manifest.ts";
 import { MANIFEST_VERSION } from "./manifest.ts";
 import type {
@@ -16,6 +15,17 @@ import type {
 } from "./mapper.ts";
 import { CoverageMapMalformedError, mapCoverageToTypeScript } from "./mapper.ts";
 import type { RawCoverageData } from "./types.ts";
+
+interface FileLocation {
+	end: { column: number; line: number };
+	start: { column: number; line: number };
+}
+
+interface CoverageMapFile {
+	branchMap?: Record<string, { locations: Array<FileLocation>; type: string }>;
+	functionMap?: Record<string, { location: FileLocation; name: string }>;
+	statementMap: Record<string, FileLocation>;
+}
 
 const resolvePosition = vi.fn<PositionResolver>();
 
@@ -70,16 +80,16 @@ function createManifest(files: CoverageManifest["files"] = {}): CoverageManifest
 }
 
 function createCoverageMap(
-	statementMap: CoverageMap["statementMap"] = {},
+	statementMap: CoverageMapFile["statementMap"] = {},
 	{
 		branchMap,
 		functionMap,
 	}: {
-		branchMap?: CoverageMap["branchMap"] | undefined;
-		functionMap?: CoverageMap["functionMap"] | undefined;
+		branchMap?: CoverageMapFile["branchMap"] | undefined;
+		functionMap?: CoverageMapFile["functionMap"] | undefined;
 	} = {},
-): CoverageMap {
-	let coverageMap: CoverageMap = { statementMap };
+): CoverageMapFile {
+	let coverageMap: CoverageMapFile = { statementMap };
 	if (functionMap !== undefined) {
 		coverageMap = { ...coverageMap, functionMap };
 	}
@@ -511,7 +521,7 @@ describe(mapCoverageToTypeScript, () => {
 		const firstSpan = { end: { column: 26, line: 21 }, start: { column: 1, line: 21 } };
 		const secondSpan = { end: { column: 27, line: 22 }, start: { column: 1, line: 22 } };
 
-		function setupLuauFile(statementMap: CoverageMap["statementMap"]): FileSystem {
+		function setupLuauFile(statementMap: CoverageMapFile["statementMap"]): FileSystem {
 			return setupFs({
 				"out/shared/player.luau.cov-map.json": JSON.stringify(
 					createCoverageMap(statementMap),
@@ -844,7 +854,7 @@ describe(mapCoverageToTypeScript, () => {
 		it("should map Luau function to TypeScript location", () => {
 			expect.assertions(4);
 
-			const coverageMap: CoverageMap = {
+			const coverageMap: CoverageMapFile = {
 				functionMap: {
 					"1": {
 						name: "greet",
@@ -895,7 +905,7 @@ describe(mapCoverageToTypeScript, () => {
 		it("should default function hit count to zero when not in raw data", () => {
 			expect.assertions(1);
 
-			const coverageMap: CoverageMap = {
+			const coverageMap: CoverageMapFile = {
 				functionMap: {
 					"1": {
 						name: "foo",
@@ -937,7 +947,7 @@ describe(mapCoverageToTypeScript, () => {
 		it("should map multiple functions to the same TypeScript file", () => {
 			expect.assertions(2);
 
-			const coverageMap: CoverageMap = {
+			const coverageMap: CoverageMapFile = {
 				functionMap: {
 					"1": {
 						name: "greet",
@@ -1026,7 +1036,7 @@ describe(mapCoverageToTypeScript, () => {
 		it("should drop unmapped function when no statements provide a fallback path", () => {
 			expect.assertions(1);
 
-			const coverageMap: CoverageMap = {
+			const coverageMap: CoverageMapFile = {
 				functionMap: {
 					"1": {
 						name: "add",

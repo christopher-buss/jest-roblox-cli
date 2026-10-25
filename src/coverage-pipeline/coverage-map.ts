@@ -1,3 +1,5 @@
+import type { Utf16Column } from "@isentinel/luau-ast/ast";
+
 import { type } from "arktype";
 
 import { atomicWrite } from "../utils/atomic-write.ts";
@@ -5,8 +7,8 @@ import type { FileSystem } from "../utils/file-system.ts";
 import { nodeFileSystem } from "../utils/file-system.ts";
 
 export interface SourceLocation {
-	end: { column: number; line: number };
-	start: { column: number; line: number };
+	end: { column: Utf16Column; line: number };
+	start: { column: Utf16Column; line: number };
 }
 
 export interface CoverageMap {

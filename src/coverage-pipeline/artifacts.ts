@@ -23,6 +23,7 @@ export type {
 	ReadBuildManifestOptions,
 	ReadBuildManifestResult,
 } from "./build-manifest.ts";
+export type { CoverageMap, SourceLocation } from "./coverage-map.ts";
 export { parseVersionedManifest } from "./manifest-parse.ts";
 export type { ParsedManifest } from "./manifest-parse.ts";
 export {

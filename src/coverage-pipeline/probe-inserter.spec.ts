@@ -1,9 +1,24 @@
+import type { LuauSpan } from "@isentinel/luau-ast/ast";
+
 import { describe, expect, it } from "vitest";
 
 import type { CollectorResult } from "./coverage-collector.ts";
 import { insertProbes } from "./probe-inserter.ts";
+import { toUtf16Columns } from "./utf16-columns.ts";
 
-function emptyResult(): CollectorResult {
+function insert({
+	fileKey,
+	result,
+	source,
+}: {
+	fileKey: string;
+	result: CollectorResult<LuauSpan>;
+	source: string;
+}): string {
+	return insertProbes({ fileKey, result: toUtf16Columns(result, source), source });
+}
+
+function emptyResult(): CollectorResult<LuauSpan> {
 	return {
 		branches: [],
 		functions: [],
@@ -21,7 +36,7 @@ function binaryArm({
 	beginColumn: number;
 	endColumn: number;
 	line?: number;
-}): CollectorResult["branches"][number]["arms"][number] {
+}): CollectorResult<LuauSpan>["branches"][number]["arms"][number] {
 	return {
 		bodyFirstColumn: 0,
 		bodyFirstLine: 0,
@@ -41,7 +56,7 @@ function wrap({
 	branchIndex: number;
 	endColumn: number;
 	line?: number;
-}): CollectorResult["wrapProbes"][number] {
+}): CollectorResult<LuauSpan>["wrapProbes"][number] {
 	return {
 		armIndex,
 		branchIndex,
@@ -59,21 +74,21 @@ describe("probe-inserter", () => {
 			expect.assertions(3);
 
 			expect(
-				insertProbes({
+				insert({
 					fileKey: "test.luau",
 					result: emptyResult(),
 					source: "--!strict\n",
 				}),
 			).toBe("--!strict\n");
 			expect(
-				insertProbes({
+				insert({
 					fileKey: "test.luau",
 					result: emptyResult(),
 					source: "--!strict\n--!native\n",
 				}),
 			).toBe("--!strict\n--!native\n");
 			expect(
-				insertProbes({
+				insert({
 					fileKey: "test.luau",
 					result: emptyResult(),
 					source: "-- one\n-- two\n",
@@ -84,7 +99,7 @@ describe("probe-inserter", () => {
 		it("should declare the function bucket for a file whose only sites are functions", () => {
 			expect.assertions(3);
 
-			const collector: CollectorResult = {
+			const collector: CollectorResult<LuauSpan> = {
 				...emptyResult(),
 				functions: [
 					{
@@ -97,7 +112,7 @@ describe("probe-inserter", () => {
 				],
 			};
 
-			const result = insertProbes({
+			const result = insert({
 				fileKey: "test.luau",
 				result: collector,
 				source: "local function f()\nend",
@@ -111,7 +126,7 @@ describe("probe-inserter", () => {
 		it("should declare the branch bucket for a file whose only sites are branches", () => {
 			expect.assertions(2);
 
-			const collector: CollectorResult = {
+			const collector: CollectorResult<LuauSpan> = {
 				...emptyResult(),
 				branches: [
 					{
@@ -125,7 +140,7 @@ describe("probe-inserter", () => {
 				],
 			};
 
-			const result = insertProbes({
+			const result = insert({
 				fileKey: "test.luau",
 				result: collector,
 				source: "local x = a or b",
@@ -142,7 +157,7 @@ describe("probe-inserter", () => {
 			expect.assertions(2);
 
 			const source = '--!strict\nlocal a = 1\nlocal b = 2\nerror("boom")';
-			const collector: CollectorResult = {
+			const collector: CollectorResult<LuauSpan> = {
 				...emptyResult(),
 				branches: Array.from({ length: 12 }, (_unused, index) => {
 					return {
@@ -156,7 +171,7 @@ describe("probe-inserter", () => {
 				}),
 			};
 
-			const result = insertProbes({ fileKey: "test.luau", result: collector, source });
+			const result = insert({ fileKey: "test.luau", result: collector, source });
 
 			const lines = result.split("\n");
 
@@ -168,7 +183,7 @@ describe("probe-inserter", () => {
 			expect.assertions(5);
 
 			const source = "local x = 1";
-			const collector: CollectorResult = {
+			const collector: CollectorResult<LuauSpan> = {
 				...emptyResult(),
 				statements: [
 					{
@@ -178,7 +193,7 @@ describe("probe-inserter", () => {
 				],
 			};
 
-			const result = insertProbes({ fileKey: "test.luau", result: collector, source });
+			const result = insert({ fileKey: "test.luau", result: collector, source });
 
 			expect(result).toContain("_G.__jest_roblox_cov");
 			expect(result).toContain('__cov_file_key = "test.luau"');
@@ -193,7 +208,7 @@ describe("probe-inserter", () => {
 			expect.assertions(2);
 
 			const source = "--!strict\nlocal x = if flag then 1 else 2";
-			const collector: CollectorResult = {
+			const collector: CollectorResult<LuauSpan> = {
 				...emptyResult(),
 				branches: [
 					{
@@ -226,7 +241,7 @@ describe("probe-inserter", () => {
 				],
 			};
 
-			const result = insertProbes({
+			const result = insert({
 				fileKey: 'path\\to"\n\r\0file.luau',
 				result: collector,
 				source,
@@ -240,7 +255,7 @@ describe("probe-inserter", () => {
 			expect.assertions(2);
 
 			const directives = "--!strict\n--!native\n--!optimize 2\n";
-			const result = insertProbes({
+			const result = insert({
 				fileKey: "test.luau",
 				result: emptyResult(),
 				source: `${directives}local x = 1`,
@@ -258,7 +273,7 @@ describe("probe-inserter", () => {
 			// Luau reads `--!Native` as a hot comment and ignores it, so the
 			// `--!native` behind it still opens the file and still counts.
 			const directives = "--!strict\n--!Native\n--!native\n";
-			const result = insertProbes({
+			const result = insert({
 				fileKey: "test.luau",
 				result: emptyResult(),
 				source: `${directives}local x = 1`,
@@ -271,7 +286,7 @@ describe("probe-inserter", () => {
 			expect.assertions(1);
 
 			const header = "--!strict\n\n--!native\n";
-			const result = insertProbes({
+			const result = insert({
 				fileKey: "test.luau",
 				result: emptyResult(),
 				source: `${header}local x = 1`,
@@ -287,14 +302,14 @@ describe("probe-inserter", () => {
 			const blockCommented = "--!strict\n--[[ why\nnative ]]\n--!native\n";
 
 			expect(
-				insertProbes({
+				insert({
 					fileKey: "test.luau",
 					result: emptyResult(),
 					source: `${lineCommented}local x = 1`,
 				}),
 			).toStartWith(lineCommented);
 			expect(
-				insertProbes({
+				insert({
 					fileKey: "test.luau",
 					result: emptyResult(),
 					source: `${blockCommented}local x = 1`,
@@ -306,7 +321,7 @@ describe("probe-inserter", () => {
 			expect.assertions(1);
 
 			const header = "--!strict\n\t--!native\n";
-			const result = insertProbes({
+			const result = insert({
 				fileKey: "test.luau",
 				result: emptyResult(),
 				source: `${header}local x = 1`,
@@ -318,7 +333,7 @@ describe("probe-inserter", () => {
 		it("should keep code below the preamble when a bare return splits a line", () => {
 			expect.assertions(1);
 
-			const collector: CollectorResult = {
+			const collector: CollectorResult<LuauSpan> = {
 				...emptyResult(),
 				statements: [
 					{
@@ -330,7 +345,7 @@ describe("probe-inserter", () => {
 
 			// Luau ends the comment at the `\r` and calls what follows code, so
 			// hoisting the whole line would put `__cov_s[1]` above its own table.
-			const result = insertProbes({
+			const result = insert({
 				fileKey: "test.luau",
 				result: collector,
 				source: "--!strict\rlocal x = 1",
@@ -343,7 +358,7 @@ describe("probe-inserter", () => {
 			expect.assertions(1);
 
 			expect(
-				insertProbes({
+				insert({
 					fileKey: "test.luau",
 					result: emptyResult(),
 					source: "local x = '--!strict'",
@@ -355,7 +370,7 @@ describe("probe-inserter", () => {
 			expect.assertions(3);
 
 			const source = "local x = 1\nprint(x)";
-			const collector: CollectorResult = {
+			const collector: CollectorResult<LuauSpan> = {
 				...emptyResult(),
 				statements: [
 					{
@@ -369,7 +384,7 @@ describe("probe-inserter", () => {
 				],
 			};
 
-			const result = insertProbes({ fileKey: "test.luau", result: collector, source });
+			const result = insert({ fileKey: "test.luau", result: collector, source });
 
 			expect(result).toContain("__cov_s[1] += 1; local x = 1");
 			expect(result).toContain("__cov_s[2] += 1; print(x)");
@@ -380,7 +395,7 @@ describe("probe-inserter", () => {
 			expect.assertions(2);
 
 			const source = "local function greet(name)\n    return name\nend";
-			const collector: CollectorResult = {
+			const collector: CollectorResult<LuauSpan> = {
 				...emptyResult(),
 				functions: [
 					{
@@ -403,7 +418,7 @@ describe("probe-inserter", () => {
 				],
 			};
 
-			const result = insertProbes({ fileKey: "test.luau", result: collector, source });
+			const result = insert({ fileKey: "test.luau", result: collector, source });
 
 			expect(result).toContain("__cov_f[1] += 1;");
 			expect(result).toContain("__cov_f");
@@ -413,7 +428,7 @@ describe("probe-inserter", () => {
 			expect.assertions(4);
 
 			const source = "if true then\n    local a = 1\nelse\n    local b = 2\nend";
-			const collector: CollectorResult = {
+			const collector: CollectorResult<LuauSpan> = {
 				...emptyResult(),
 				branches: [
 					{
@@ -459,7 +474,7 @@ describe("probe-inserter", () => {
 				],
 			};
 
-			const result = insertProbes({ fileKey: "test.luau", result: collector, source });
+			const result = insert({ fileKey: "test.luau", result: collector, source });
 
 			expect(result).toContain("__cov_b[1][1] += 1;");
 			expect(result).toContain("__cov_b[1][2] += 1;");
@@ -473,7 +488,7 @@ describe("probe-inserter", () => {
 			expect.assertions(1);
 
 			const source = "if true then\n  local y = 2\nend";
-			const collector: CollectorResult = {
+			const collector: CollectorResult<LuauSpan> = {
 				...emptyResult(),
 				branches: [
 					{
@@ -516,7 +531,7 @@ describe("probe-inserter", () => {
 				],
 			};
 
-			const result = insertProbes({ fileKey: "test.luau", result: collector, source });
+			const result = insert({ fileKey: "test.luau", result: collector, source });
 
 			expect(result).toContain("else __cov_b[1][2] += 1 end");
 		});
@@ -525,7 +540,7 @@ describe("probe-inserter", () => {
 			expect.assertions(2);
 
 			const source = "--!strict\nlocal x = 1";
-			const collector: CollectorResult = {
+			const collector: CollectorResult<LuauSpan> = {
 				...emptyResult(),
 				statements: [
 					{
@@ -535,7 +550,7 @@ describe("probe-inserter", () => {
 				],
 			};
 
-			const result = insertProbes({ fileKey: "test.luau", result: collector, source });
+			const result = insert({ fileKey: "test.luau", result: collector, source });
 
 			expect(result).toMatch(/^--!strict\n/);
 			expect(result).toContain("__cov_s[1] += 1; local x = 1");
@@ -545,7 +560,7 @@ describe("probe-inserter", () => {
 			expect.assertions(1);
 
 			const source = "local x = 1";
-			const collector: CollectorResult = {
+			const collector: CollectorResult<LuauSpan> = {
 				...emptyResult(),
 				statements: [
 					{
@@ -555,7 +570,7 @@ describe("probe-inserter", () => {
 				],
 			};
 
-			const result = insertProbes({
+			const result = insert({
 				fileKey: 'path\\to\\"file".luau',
 				result: collector,
 				source,
@@ -568,7 +583,7 @@ describe("probe-inserter", () => {
 			expect.assertions(1);
 
 			const source = "local function noop() end";
-			const collector: CollectorResult = {
+			const collector: CollectorResult<LuauSpan> = {
 				...emptyResult(),
 				functions: [
 					{
@@ -587,7 +602,7 @@ describe("probe-inserter", () => {
 				],
 			};
 
-			const result = insertProbes({ fileKey: "test.luau", result: collector, source });
+			const result = insert({ fileKey: "test.luau", result: collector, source });
 
 			expect(result).toContain("__cov_f[1] += 1;");
 		});
@@ -596,7 +611,7 @@ describe("probe-inserter", () => {
 			expect.assertions(1);
 
 			const source = "local function noop() end";
-			const collector: CollectorResult = {
+			const collector: CollectorResult<LuauSpan> = {
 				...emptyResult(),
 				functions: [
 					{
@@ -615,7 +630,7 @@ describe("probe-inserter", () => {
 				],
 			};
 
-			const result = insertProbes({ fileKey: "test.luau", result: collector, source });
+			const result = insert({ fileKey: "test.luau", result: collector, source });
 
 			expect(result).not.toContain("__cov_f[1] += 1");
 		});
@@ -626,7 +641,7 @@ describe("probe-inserter", () => {
 			// local x = if true then 1 else 2
 			// columns:  1234567890123456789012345678901234
 			const source = "local x = if true then 1 else 2";
-			const collector: CollectorResult = {
+			const collector: CollectorResult<LuauSpan> = {
 				...emptyResult(),
 				branches: [
 					{
@@ -676,7 +691,7 @@ describe("probe-inserter", () => {
 				],
 			};
 
-			const result = insertProbes({ fileKey: "test.luau", result: collector, source });
+			const result = insert({ fileKey: "test.luau", result: collector, source });
 
 			expect(result).toContain("__cov_br(1, 1, 1)");
 			expect(result).toContain("__cov_br(1, 2, 2)");
@@ -688,7 +703,7 @@ describe("probe-inserter", () => {
 
 			// local x = if a then 1 elseif b then 2 else 3
 			const source = "local x = if a then 1 elseif b then 2 else 3";
-			const collector: CollectorResult = {
+			const collector: CollectorResult<LuauSpan> = {
 				...emptyResult(),
 				branches: [
 					{
@@ -753,7 +768,7 @@ describe("probe-inserter", () => {
 				],
 			};
 
-			const result = insertProbes({ fileKey: "test.luau", result: collector, source });
+			const result = insert({ fileKey: "test.luau", result: collector, source });
 
 			expect(result).toContain("__cov_br(1, 1, 1)");
 			expect(result).toContain("__cov_br(1, 2, 2)");
@@ -770,7 +785,7 @@ describe("probe-inserter", () => {
 			// surrounds the inner one.
 			// columns:        1234567890123456789012345
 			const source = "local v = a and b and c";
-			const collector: CollectorResult = {
+			const collector: CollectorResult<LuauSpan> = {
 				...emptyResult(),
 				branches: [
 					{
@@ -804,7 +819,7 @@ describe("probe-inserter", () => {
 				],
 			};
 
-			const result = insertProbes({ fileKey: "test.luau", result: collector, source });
+			const result = insert({ fileKey: "test.luau", result: collector, source });
 
 			expect(result).toContain(
 				"__cov_br(1, 1, __cov_br(2, 1, a) and __cov_br(2, 2, b)) and __cov_br(1, 2, c)",
@@ -820,7 +835,7 @@ describe("probe-inserter", () => {
 			// their closes are on different lines, so ordering falls to the
 			// line component of the wrap's far end.
 			const source = "local v = a\n\tand b and c";
-			const collector: CollectorResult = {
+			const collector: CollectorResult<LuauSpan> = {
 				...emptyResult(),
 				branches: [
 					{
@@ -874,7 +889,7 @@ describe("probe-inserter", () => {
 				],
 			};
 
-			const result = insertProbes({ fileKey: "test.luau", result: collector, source });
+			const result = insert({ fileKey: "test.luau", result: collector, source });
 
 			// The outer open stays outside the inner open on line 1.
 			expect(result).toContain("local v = __cov_br(1, 1, __cov_br(2, 1, a)");
@@ -886,7 +901,7 @@ describe("probe-inserter", () => {
 			// A statement bump and a wrap open landing on the same column: the
 			// bump stays to the left of (outside) the wrap.
 			const source = "0000000000ab";
-			const collector: CollectorResult = {
+			const collector: CollectorResult<LuauSpan> = {
 				...emptyResult(),
 				branches: [
 					{
@@ -907,7 +922,7 @@ describe("probe-inserter", () => {
 				wrapProbes: [wrap({ armIndex: 1, beginColumn: 11, branchIndex: 1, endColumn: 12 })],
 			};
 
-			const result = insertProbes({ fileKey: "test.luau", result: collector, source });
+			const result = insert({ fileKey: "test.luau", result: collector, source });
 
 			expect(result.indexOf("__cov_s[1]")).toBeLessThan(result.indexOf("__cov_br(1, 1,"));
 		});
@@ -916,7 +931,7 @@ describe("probe-inserter", () => {
 			expect.assertions(1);
 
 			const source = "local x = 1";
-			const collector: CollectorResult = {
+			const collector: CollectorResult<LuauSpan> = {
 				...emptyResult(),
 				statements: [
 					{
@@ -926,7 +941,7 @@ describe("probe-inserter", () => {
 				],
 			};
 
-			const result = insertProbes({ fileKey: "test.luau", result: collector, source });
+			const result = insert({ fileKey: "test.luau", result: collector, source });
 
 			expect(result).not.toContain("__cov_br");
 		});
@@ -935,7 +950,7 @@ describe("probe-inserter", () => {
 			expect.assertions(1);
 
 			const source = "if x then\n    -- comment\nend";
-			const collector: CollectorResult = {
+			const collector: CollectorResult<LuauSpan> = {
 				...emptyResult(),
 				branches: [
 					{
@@ -963,7 +978,7 @@ describe("probe-inserter", () => {
 				],
 			};
 
-			const result = insertProbes({ fileKey: "test.luau", result: collector, source });
+			const result = insert({ fileKey: "test.luau", result: collector, source });
 
 			expect(result).toContain("if x then __cov_b[1][1] += 1;");
 		});
@@ -972,7 +987,7 @@ describe("probe-inserter", () => {
 			expect.assertions(1);
 
 			const source = "local x = 1\r\nprint(x)";
-			const collector: CollectorResult = {
+			const collector: CollectorResult<LuauSpan> = {
 				...emptyResult(),
 				statements: [
 					{
@@ -986,7 +1001,7 @@ describe("probe-inserter", () => {
 				],
 			};
 
-			const result = insertProbes({ fileKey: "test.luau", result: collector, source });
+			const result = insert({ fileKey: "test.luau", result: collector, source });
 
 			expect(result).toEndWith("__cov_s[1] += 1; local x = 1\n__cov_s[2] += 1; print(x)");
 		});

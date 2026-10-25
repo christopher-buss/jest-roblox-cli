@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { asciiColumn, asciiSpan } from "../../test/mocks/ascii-columns.ts";
 import type { CollectorResult } from "./coverage-collector.ts";
 import { buildCoverageMap } from "./coverage-map-builder.ts";
 
@@ -35,11 +36,21 @@ describe("covmap-builder", () => {
 				statements: [
 					{
 						index: 1,
-						location: { beginColumn: 1, beginLine: 1, endColumn: 12, endLine: 1 },
+						location: asciiSpan({
+							beginColumn: 1,
+							beginLine: 1,
+							endColumn: 12,
+							endLine: 1,
+						}),
 					},
 					{
 						index: 2,
-						location: { beginColumn: 1, beginLine: 2, endColumn: 9, endLine: 2 },
+						location: asciiSpan({
+							beginColumn: 1,
+							beginLine: 2,
+							endColumn: 9,
+							endLine: 2,
+						}),
 					},
 				],
 			} satisfies CollectorResult;
@@ -47,12 +58,12 @@ describe("covmap-builder", () => {
 			const coverageMap = buildCoverageMap(result);
 
 			expect(coverageMap.statementMap["1"]).toStrictEqual({
-				end: { column: 12, line: 1 },
-				start: { column: 1, line: 1 },
+				end: { column: asciiColumn(12), line: 1 },
+				start: { column: asciiColumn(1), line: 1 },
 			});
 			expect(coverageMap.statementMap["2"]).toStrictEqual({
-				end: { column: 9, line: 2 },
-				start: { column: 1, line: 2 },
+				end: { column: asciiColumn(9), line: 2 },
+				start: { column: asciiColumn(1), line: 2 },
 			});
 		});
 
@@ -67,7 +78,12 @@ describe("covmap-builder", () => {
 						bodyFirstColumn: 5,
 						bodyFirstLine: 2,
 						index: 1,
-						location: { beginColumn: 1, beginLine: 1, endColumn: 4, endLine: 3 },
+						location: asciiSpan({
+							beginColumn: 1,
+							beginLine: 1,
+							endColumn: 4,
+							endLine: 3,
+						}),
 					},
 				],
 			} satisfies CollectorResult;
@@ -78,8 +94,8 @@ describe("covmap-builder", () => {
 			expect(coverageMap.functionMap!["1"]).toStrictEqual({
 				name: "greet",
 				location: {
-					end: { column: 4, line: 3 },
-					start: { column: 1, line: 1 },
+					end: { column: asciiColumn(4), line: 3 },
+					start: { column: asciiColumn(1), line: 1 },
 				},
 			});
 		});
@@ -95,22 +111,22 @@ describe("covmap-builder", () => {
 							{
 								bodyFirstColumn: 5,
 								bodyFirstLine: 2,
-								location: {
+								location: asciiSpan({
 									beginColumn: 13,
 									beginLine: 1,
 									endColumn: 1,
 									endLine: 3,
-								},
+								}),
 							},
 							{
 								bodyFirstColumn: 5,
 								bodyFirstLine: 4,
-								location: {
+								location: asciiSpan({
 									beginColumn: 5,
 									beginLine: 3,
 									endColumn: 1,
 									endLine: 5,
-								},
+								}),
 							},
 						],
 						branchType: "if",
@@ -124,8 +140,14 @@ describe("covmap-builder", () => {
 			expect(coverageMap.branchMap).toBeDefined();
 			expect(coverageMap.branchMap!["1"]).toStrictEqual({
 				locations: [
-					{ end: { column: 1, line: 3 }, start: { column: 13, line: 1 } },
-					{ end: { column: 1, line: 5 }, start: { column: 5, line: 3 } },
+					{
+						end: { column: asciiColumn(1), line: 3 },
+						start: { column: asciiColumn(13), line: 1 },
+					},
+					{
+						end: { column: asciiColumn(1), line: 5 },
+						start: { column: asciiColumn(5), line: 3 },
+					},
 				],
 				type: "if",
 			});
