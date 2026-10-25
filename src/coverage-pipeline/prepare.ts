@@ -12,7 +12,7 @@ import { nodeTsconfigReader } from "../executor/tsconfig-mappings.ts";
 import { CODE_SPLIT_PASS_VERSION } from "../staging/code-split.ts";
 import type { CodeBundleArtifact, UnwrappedBuildPlaceOptions } from "../staging/place-builder.ts";
 import { buildCodeBundle, buildPlaceAsync } from "../staging/place-builder.ts";
-import type { CoverageRoot } from "../staging/synthesizer.ts";
+import type { CoverageRoot, StubMount } from "../staging/synthesizer.ts";
 import type { TimingCollector } from "../timing/orchestration-collector.ts";
 import { NOOP_TIMING_COLLECTOR } from "../timing/orchestration-collector.ts";
 import type { RojoProject } from "../types/rojo.ts";
@@ -260,6 +260,7 @@ interface BuildCoveragePlaceOptions {
 	packageDirectory: string;
 	rojoProjectPath: string;
 	shadow: Pick<ShadowRootsResult, "coverageRoots" | "coverageSpine">;
+	stubMounts: Array<StubMount>;
 }
 
 /**
@@ -826,6 +827,7 @@ function coveragePlaceOptions({
 	packageDirectory,
 	rojoProjectPath,
 	shadow,
+	stubMounts,
 }: BuildCoveragePlaceOptions): UnwrappedBuildPlaceOptions {
 	return {
 		childProcess,
@@ -843,6 +845,7 @@ function coveragePlaceOptions({
 				coverageSpine: shadow.coverageSpine,
 				packageDirectory: path.resolve(packageDirectory),
 				rojoProjectPath: path.resolve(rojoProjectPath),
+				stubMounts,
 			},
 		],
 		placeFile: COVERAGE_PLACE_FILE,
@@ -929,12 +932,14 @@ function toBuildOptions({
 	config,
 	inputs,
 	shadow,
+	stubMounts,
 }: {
 	childProcess: ChildProcessRunner;
 	codeRoots: ReadonlyArray<PosixRoot> | undefined;
 	config: ResolvedConfig;
 	inputs: CoverageInputs;
 	shadow: ShadowRootsResult;
+	stubMounts: Array<StubMount>;
 }): BuildCoveragePlaceOptions {
 	return {
 		childProcess,
@@ -943,6 +948,7 @@ function toBuildOptions({
 		packageDirectory: config.rootDir,
 		rojoProjectPath: inputs.rojoProjectPath,
 		shadow,
+		stubMounts,
 	};
 }
 
@@ -952,6 +958,18 @@ function reuseCodeBundle(build: BuildCoveragePlaceOptions): CodeBundleArtifact |
 	return codeRoots === undefined
 		? undefined
 		: buildCodeBundle({ ...coveragePlaceOptions(build), codeRoots });
+}
+
+function runBake(
+	bake: ShadowBake | undefined,
+	narrowed: CoverageInputs["narrowed"],
+): { hasBakeChanges: boolean; stubMounts: Array<StubMount> } {
+	if (bake === undefined) {
+		return { hasBakeChanges: false, stubMounts: [] };
+	}
+
+	const layout = createShadowLayout(SHADOW_DIR, narrowed);
+	return { hasBakeChanges: bake.run(layout), stubMounts: bake.stubMounts(layout) };
 }
 
 /**
@@ -967,13 +985,12 @@ async function bakeCoveragePlaceAsync({
 	config,
 	instrumented: { inputs, isIncremental, shadow },
 }: BakeCoveragePlaceOptions): Promise<BakedCoveragePlace> {
-	const build = toBuildOptions({ childProcess, codeRoots, config, inputs, shadow });
-	// The layout stays inside the optional call: a run with no bake never
-	// builds one, and it is the only thing that would read it.
-	const hasBakeChanges = bake?.run(createShadowLayout(SHADOW_DIR, inputs.narrowed)) === true;
+	const { hasBakeChanges, stubMounts } = runBake(bake, inputs.narrowed);
+	const build = toBuildOptions({ childProcess, codeRoots, config, inputs, shadow, stubMounts });
 	const hasChanges = hasCoverageChanges(inputs, {
 		hasExtraChanges:
 			hasBakeChanges ||
+			stubMounts.length > 0 ||
 			inputs.previousManifest?.codeSplitKey !== describeCodeSplit(codeRoots),
 		isIncremental,
 		shadow,

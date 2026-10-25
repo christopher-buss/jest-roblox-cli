@@ -8,7 +8,7 @@ import type { PosixRoot } from "../utils/normalize-windows-path.ts";
 import { normalizeWindowsPath, toPosixRoot } from "../utils/normalize-windows-path.ts";
 import { createCopyIgnoreMatcher } from "./discover-files.ts";
 import type { PreparedSpine, PrepareSpineOptions } from "./spine.ts";
-import { prepareSpine, resolveSpineDirectories } from "./spine.ts";
+import { createShadowLayout, prepareSpine, resolveSpineDirectories } from "./spine.ts";
 
 const REPO = normalizeWindowsPath(path.resolve("/repo"));
 const SHADOW = `${REPO}/.jest-roblox/coverage`;
@@ -39,6 +39,43 @@ function at(relativePath: string): PosixRoot {
  * directions, so neither verdict rides on the mount set’s iteration order.
  */
 const NESTED_MOUNTS = [at("server"), at("server/modules")];
+
+describe(createShadowLayout, () => {
+	it("should serve a directory inside a narrowed root from the shadow", () => {
+		expect.assertions(2);
+
+		const layout = createShadowLayout("/shadow", [
+			{ luauRoot: toPosixRoot("src"), roots: [toPosixRoot("src/core")], spine: [] },
+		]);
+
+		expect(layout.isShadowed("src/core/ecs")).toBeTrue();
+		expect(layout.isShadowed("src/other")).toBeFalse();
+	});
+
+	it("should serve a demoted mount from the shadow", () => {
+		expect.assertions(1);
+
+		const layout = createShadowLayout("/shadow", [
+			{
+				luauRoot: toPosixRoot("src"),
+				roots: [toPosixRoot("src/core")],
+				spine: [toPosixRoot("src")],
+			},
+		]);
+
+		expect(layout.isShadowed("src")).toBeTrue();
+	});
+
+	it("should read a root that narrowed to nothing from source", () => {
+		expect.assertions(1);
+
+		const layout = createShadowLayout("/shadow", [
+			{ luauRoot: toPosixRoot("test"), roots: [], spine: [] },
+		]);
+
+		expect(layout.isShadowed("test")).toBeFalse();
+	});
+});
 
 describe(resolveSpineDirectories, () => {
 	it("should return nothing when every root is a mount", () => {

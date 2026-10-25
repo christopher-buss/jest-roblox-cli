@@ -52,6 +52,7 @@ import {
 	readBuildManifest,
 	readCoverageManifest,
 	resolveConfig,
+	resolveLayoutProject,
 	runProjectsAsync,
 	runTypecheckAsync,
 	writeGameOutput,
@@ -105,6 +106,12 @@ describe(resolveConfig, () => {
 	it("should accept Config and return ResolvedConfig", () => {
 		expectTypeOf(resolveConfig).parameter(0).toExtend<Config>();
 		expectTypeOf(resolveConfig).returns.toEqualTypeOf<ResolvedConfig>();
+	});
+});
+
+describe(resolveLayoutProject, () => {
+	it("should give back the config the CLI runs", () => {
+		expectTypeOf(resolveLayoutProject).returns.toEqualTypeOf<ResolvedConfig>();
 	});
 });
 

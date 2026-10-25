@@ -184,7 +184,7 @@ function seedFilesystem(
 
 /** A bake that owns nothing, for a test that only cares what the hook does. */
 function makeBake(run: ShadowBake["run"]): ShadowBake {
-	return { isBakeOwned: () => false, run };
+	return { isBakeOwned: () => false, run, stubMounts: () => [] };
 }
 
 /**
@@ -2374,6 +2374,45 @@ describe(prepareCoverageAsync, () => {
 
 			await prepareCoverageAsync(config, {
 				bake: makeBake(run),
+				childProcess,
+				fileSystem,
+				instrumenter,
+				tsconfigReader: noTsconfig,
+			});
+
+			expect(execFile).toHaveBeenCalledWith(
+				"rojo",
+				expect.any(Array),
+				expect.any(Object),
+				expect.any(Function),
+			);
+		});
+
+		it("should force rebuild when the bake mounts a stub beside the shadow", async () => {
+			expect.assertions(1);
+
+			const { fileSystem, volume } = createMemoryFileSystem();
+
+			const { childProcess, execFile, instrumenter } = setupMocks(volume);
+			instrumenter.mockReturnValue({});
+
+			await seedIncrementalScenarioAsync(fileSystem, { volume });
+
+			const config = makeConfig({ luauRoots: ["out-tsc/test"] });
+			const bake: ShadowBake = {
+				...makeBake(() => false),
+				stubMounts: () => {
+					return [
+						{
+							absStubPath: "/cache/test/jest.config.luau",
+							dataModelPath: "ReplicatedStorage",
+						},
+					];
+				},
+			};
+
+			await prepareCoverageAsync(config, {
+				bake,
 				childProcess,
 				fileSystem,
 				instrumenter,

@@ -82,6 +82,16 @@ export function createStubBake({
 				shadow,
 			});
 		},
+		stubMounts: (shadow) => {
+			return projects.flatMap((project) => {
+				return project.rojoMounts.flatMap((mount) => {
+					const absStubPath = path.resolve(cacheRoot, mount.fsPath, STUB_FILENAME);
+					return !shadow.isShadowed(mount.fsPath) && fileSystem.existsSync(absStubPath)
+						? [{ absStubPath, dataModelPath: mount.dataModelPath }]
+						: [];
+				});
+			});
+		},
 	};
 }
 
@@ -494,6 +504,9 @@ function syncMountStub({
 	readonly project: ResolvedProjectConfig;
 }): SyncMountStubResult {
 	assertMountContained({ fsPath, project, rootDirectory });
+	if (!shadow.isShadowed(fsPath)) {
+		return { changed: false, targetPath: undefined };
+	}
 
 	const sourcePath = path.resolve(rootDirectory, fsPath, STUB_FILENAME);
 	if (!fileSystem.existsSync(sourcePath)) {

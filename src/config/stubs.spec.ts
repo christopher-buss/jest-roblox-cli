@@ -383,7 +383,11 @@ describe(generateProjectConfigs, () => {
 
 /** A shadow whose mirror is where every mount is read from — no demote. */
 function shadowAt(root: string): ShadowLayout {
-	return { mountedDirectory: (relative) => path.posix.join(root, relative), root };
+	return {
+		isShadowed: () => true,
+		mountedDirectory: (relative) => path.posix.join(root, relative),
+		root,
+	};
 }
 
 describe(syncStubsToShadowDirectory, () => {
@@ -424,6 +428,40 @@ describe(syncStubsToShadowDirectory, () => {
 		});
 
 		expect(volume.readFileSync("/shadow/out/client/jest.config.luau", "utf8")).toBe("-- stub");
+	});
+
+	it("should write no stub for a mount the place reads from source", () => {
+		expect.assertions(1);
+
+		const { fileSystem, volume } = createMemoryFileSystem();
+		volume.mkdirSync("/root/out/client", { recursive: true });
+		volume.writeFileSync("/root/out/client/jest.config.luau", "-- stub");
+
+		syncStubsToShadowDirectory({
+			fileSystem,
+			projects: [makeResolvedProject({ outDir: "out/client" })],
+			rootDirectory: "/root",
+			shadow: { ...shadowAt("/shadow"), isShadowed: () => false },
+		});
+
+		expect(volume.existsSync("/shadow/out/client/jest.config.luau")).toBeFalse();
+	});
+
+	it("should report no change for a mount the place reads from source", () => {
+		expect.assertions(1);
+
+		const { fileSystem, volume } = createMemoryFileSystem();
+		volume.mkdirSync("/root/out/client", { recursive: true });
+		volume.writeFileSync("/root/out/client/jest.config.luau", "-- stub");
+
+		const hasChanged = syncStubsToShadowDirectory({
+			fileSystem,
+			projects: [makeResolvedProject({ outDir: "out/client" })],
+			rootDirectory: "/root",
+			shadow: { ...shadowAt("/shadow"), isShadowed: () => false },
+		});
+
+		expect(hasChanged).toBeFalse();
 	});
 
 	it("should return true when stub is new", () => {
@@ -832,6 +870,44 @@ describe(createStubBake, () => {
 			bake.isBakeOwned("/shadow/custom.luau"),
 			bake.isBakeOwned("/shadow/jest.config.lua"),
 		]).toStrictEqual([false, false, true]);
+	});
+});
+
+describe("createStubBake stub mounts", () => {
+	it("should mount the cached stub of a mount the place reads from source", () => {
+		expect.assertions(2);
+
+		const { fileSystem } = createMemoryFileSystem({
+			"/cache/out/client/jest.config.luau": "-- stub",
+		});
+		const bake = createStubBake({
+			cacheRoot: "/cache",
+			fileSystem,
+			projects: [makeResolvedProject()],
+		});
+
+		expect(bake.stubMounts({ ...shadowAt("/shadow"), isShadowed: () => false })).toStrictEqual([
+			{
+				absStubPath: path.resolve("/cache", "out/client", "jest.config.luau"),
+				dataModelPath: "ReplicatedStorage/client",
+			},
+		]);
+		expect(bake.stubMounts(shadowAt("/shadow"))).toStrictEqual([]);
+	});
+
+	it("should mount nothing for a mount with no cached stub", () => {
+		expect.assertions(1);
+
+		const { fileSystem } = createMemoryFileSystem();
+		const bake = createStubBake({
+			cacheRoot: "/cache",
+			fileSystem,
+			projects: [makeResolvedProject()],
+		});
+
+		expect(bake.stubMounts({ ...shadowAt("/shadow"), isShadowed: () => false })).toStrictEqual(
+			[],
+		);
 	});
 });
 
@@ -1873,6 +1949,7 @@ describe(isGeneratedStub, () => {
 			projects,
 			rootDirectory: "/root",
 			shadow: {
+				isShadowed: () => true,
 				mountedDirectory: () => "/shadow/.spine/out/client",
 				root: "/shadow",
 			},

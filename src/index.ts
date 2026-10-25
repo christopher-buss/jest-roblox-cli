@@ -15,6 +15,7 @@ export { StudioCliBackend, createStudioCliBackend } from "./backends/studio-cli.
 
 export { StudioBackend, createStudioBackend } from "./backends/studio.ts";
 
+export { resolveLayoutProject } from "./config/layout-project.ts";
 export { loadConfig, resolveConfig } from "./config/loader.ts";
 export type { ResolvedProjectConfig } from "./config/projects.ts";
 export type {

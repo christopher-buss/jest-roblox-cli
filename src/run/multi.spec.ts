@@ -213,6 +213,7 @@ function makeCoverageResult(
 
 function makeShadowLayout(): ShadowLayout {
 	return {
+		isShadowed: () => true,
 		mountedDirectory: (sourceRelative) => path.resolve("/shadow", sourceRelative),
 		root: path.resolve("/shadow"),
 	};

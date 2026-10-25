@@ -1,5 +1,6 @@
 import * as path from "node:path";
 
+import type { StubMount } from "../staging/synthesizer.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import { nodeFileSystem } from "../utils/file-system.ts";
 import type { PosixRoot } from "../utils/normalize-windows-path.ts";
@@ -46,6 +47,7 @@ const SPINE_LEAF = ".self";
  * assumed the mirror would land its file somewhere nothing mounts.
  */
 export interface ShadowLayout {
+	isShadowed: (sourceRelative: string) => boolean;
 	/** The directory the place mounts in `sourceRelative`'s place. */
 	mountedDirectory: (sourceRelative: string) => string;
 	/** The shadow root, for a sweep over everything a bake has written. */
@@ -69,6 +71,8 @@ export interface ShadowBake {
 	 * Answers whether it wrote anything, which forces the rebuild.
 	 */
 	run: (layout: ShadowLayout) => boolean;
+	/** The stubs the place mounts for the directories it reads from source. */
+	stubMounts: (layout: ShadowLayout) => Array<StubMount>;
 }
 
 /** What the spine pass produced for one shadow tree. */
@@ -235,7 +239,12 @@ export function createShadowLayout(
 	narrowed: ReadonlyArray<NarrowedMount>,
 ): ShadowLayout {
 	const demoted = new Set(narrowed.flatMap((entry) => entry.spine));
+	const roots = narrowed.flatMap((entry) => entry.roots);
 	return {
+		isShadowed: (sourceRelative) => {
+			const directory = toPosixRoot(sourceRelative);
+			return demoted.has(directory) || roots.some((root) => isWithinRoot(directory, root));
+		},
 		mountedDirectory: (sourceRelative) => {
 			// Canonical on the way in, because the demoted set is: a caller
 			// spelling one of these directories differently must still be told
