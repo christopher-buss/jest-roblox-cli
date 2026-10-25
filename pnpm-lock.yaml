@@ -246,8 +246,8 @@ importers:
         specifier: 2.0.0
         version: 2.0.0(typescript@6.0.3)
       '@isentinel/weld':
-        specifier: 0.2.1
-        version: 0.2.1(jiti@2.7.0)(magicast@0.5.5)(typescript@6.0.3)(zod@4.6.7)
+        specifier: 0.2.2
+        version: 0.2.2(jiti@2.7.0)(magicast@0.5.5)(typescript@6.0.3)(zod@4.6.7)
       '@oxc-project/types':
         specifier: 0.146.0
         version: 0.146.0
@@ -1476,8 +1476,8 @@ packages:
     peerDependencies:
       typescript: ^5.5.0
 
-  '@isentinel/weld@0.2.1':
-    resolution: {integrity: sha512-jXRjnJFgA3Kcsxv+7HZ4mV+QB1q08FnO5R/mTqQEeK9dB0l7TTX5DrPWQnCuv7jm2rT5F3zFv/inmhJCvpyJcw==}
+  '@isentinel/weld@0.2.2':
+    resolution: {integrity: sha512-pnISe6BCUtnZf5zl+Q/1d0zQJZ0V+/OKXI2D6WRITnGwEpLXY4CybpptuxtM5isJUpVpBJTOEiTWPCpB7KtIDg==}
     engines: {node: '>=24.12.0'}
     hasBin: true
 
@@ -6631,7 +6631,7 @@ snapshots:
     dependencies:
       typescript: 6.0.3
 
-  '@isentinel/weld@0.2.1(jiti@2.7.0)(magicast@0.5.5)(typescript@6.0.3)(zod@4.6.7)':
+  '@isentinel/weld@0.2.2(jiti@2.7.0)(magicast@0.5.5)(typescript@6.0.3)(zod@4.6.7)':
     dependencies:
       '@jridgewell/gen-mapping': 0.3.13
       '@t3-oss/env-core': 0.13.11(arktype@2.2.3)(typescript@6.0.3)(zod@4.6.7)
@@ -6640,6 +6640,7 @@ snapshots:
       defu: 6.1.7
       dts-bundle-generator: 9.5.1
       tinyrainbow: 3.1.1
+      type-fest: 5.7.0
     transitivePeerDependencies:
       - chokidar
       - dotenv
