@@ -95,6 +95,10 @@ function buildLayoutProject(
 				$className: "ServerScriptService",
 				$properties: { LoadStringEnabled: true },
 			},
+			Workspace: {
+				$className: "Workspace",
+				$properties: { SignalBehavior: "Deferred" },
+			},
 		},
 	};
 }

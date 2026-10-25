@@ -113,7 +113,8 @@ top-level directory except `node_modules` and dot-directories mounts under
 `ReplicatedStorage/<package directory>`, so a relative string require such as
 `require("../src")` resolves the same in the place as on disk. Jest comes from
 the nearest `node_modules/@rbxts-js.project.json` above the package, mounted at
-`ReplicatedStorage/node_modules/@rbxts-js`.
+`ReplicatedStorage/node_modules/@rbxts-js`. The project sets
+`Workspace.SignalBehavior` to `Deferred`.
 
 ## Usage
 
