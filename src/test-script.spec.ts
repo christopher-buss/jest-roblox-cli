@@ -383,7 +383,7 @@ describe(generateTestScript, () => {
 
 		expect(script).toContain("JSONDecode");
 		expect(script).toContain('"verbose":true');
-		expect(script).toStartWith("local __WELD_MODULES = {");
+		expect(script).toStartWith("--!strict\nlocal __WELD_MODULES = {");
 		expect(script).not.toContain("__CONFIG_JSON__");
 	});
 });
