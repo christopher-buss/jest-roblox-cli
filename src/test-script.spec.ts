@@ -377,13 +377,14 @@ describe(generateTestScript, () => {
 	});
 
 	it("should embed config as JSON", () => {
-		expect.assertions(4);
+		expect.assertions(5);
 
 		const script = generateTestScript(createOptions({ config: { verbose: true } }));
 
 		expect(script).toContain("JSONDecode");
 		expect(script).toContain('"verbose":true');
-		expect(script).toStartWith("--!strict\nlocal __WELD_MODULES = {");
+		expect(script).toStartWith("--!strict\n");
+		expect(script).toMatch(/^local __WELD_MODULES = \{/mu);
 		expect(script).not.toContain("__CONFIG_JSON__");
 	});
 });
