@@ -1,6 +1,7 @@
 --!strict
 local HttpService = game:GetService("HttpService")
 
+local CircusStateRelease = require("./circus-state-release")
 local GameOutputCapture = require("./game-output-capture")
 local InfiniteYield = require("./infinite-yield")
 local InstanceResolver = require("./instance-resolver")
@@ -88,6 +89,7 @@ function module.run(callingScript: LuaSourceContainer, config: Config): (string,
 
 	local t_patchSnapshot0 = os.clock()
 	local patchState = SnapshotPatch.patch(findValue, snapshotWrites)
+	CircusStateRelease.patch(findValue)
 	local t_patchSnapshot = os.clock()
 
 	local t_requireJest0 = os.clock()

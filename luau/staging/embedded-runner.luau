@@ -9,6 +9,7 @@ local HttpService = game:GetService("HttpService")
 local MemoryStoreService = game:GetService("MemoryStoreService")
 
 local Bail = require("./bail")
+local CircusStateRelease = require("../circus-state-release")
 local GameOutputCapture = require("../game-output-capture")
 local InfiniteYield = require("../infinite-yield")
 local InstanceResolver = require("../instance-resolver")
@@ -213,6 +214,7 @@ local function runEntry(
 	local setupTimingState: SetupTiming.PatchState? = nil
 	local t_patchSnapshot0 = os.clock()
 	local patchState = SnapshotPatch.patch(JestModule, snapshotWrites)
+	CircusStateRelease.patch(JestModule)
 	local t_patchSnapshot = os.clock()
 
 	-- Intercept Jest's stdout/stderr around runCLI so per-pkg failure messages

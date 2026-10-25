@@ -108,8 +108,7 @@ local module = {}
 -- lives one module down, on `circus/state`. Reading the symbol off the root
 -- yields nil, and calling it throws from inside the run.
 local function findCircusState(circusModule: Instance): ModuleScript
-	local circus = circusModule:FindFirstChild("circus")
-	local state = if circus then circus:FindFirstChild("state") else nil
+	local state = InstanceResolver.findCircusModule(circusModule, "state")
 	assert(
 		state and state:IsA("ModuleScript"),
 		"jest-circus exposes no circus/state module to register the coverage hook on"

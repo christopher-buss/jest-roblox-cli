@@ -90,6 +90,10 @@ local stubs = {
 
 			return if name == "JestRuntime" then RuntimeModule else ExpectModule
 		end,
+		findCircusModule = function(circusPackage, name: string)
+			local circus = circusPackage:FindFirstChild("circus")
+			return if circus then circus:FindFirstChild(name) else nil
+		end,
 	},
 	["./per-test-coverage"] = {
 		arm = function(options: any)

@@ -447,6 +447,10 @@ local stubs = {
 
 			return if name == "JestRuntime" then RuntimeModule else ExpectModule
 		end,
+		findCircusModule = function(circusPackage, name: string)
+			local circus = circusPackage:FindFirstChild("circus")
+			return if circus then circus:FindFirstChild(name) else nil
+		end,
 	},
 	["./materializer"] = {
 		materialize = function(pkg)
@@ -485,6 +489,9 @@ local stubs = {
 			return nil
 		end,
 		unpatch = function() end,
+	},
+	["../circus-state-release"] = {
+		patch = function() end,
 	},
 	-- Reached through the shared runner-result module, which resolves the
 	-- run's own jest-circus / Expect / jest-runtime packages before arming.

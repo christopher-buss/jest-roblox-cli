@@ -90,4 +90,9 @@ function module.findSiblingPackage(jestModule: ModuleScript, ...: string): Insta
 	return nil
 end
 
+function module.findCircusModule(circusPackage: Instance, name: string): Instance?
+	local circus = circusPackage:FindFirstChild("circus")
+	return if circus then circus:FindFirstChild(name) else nil
+end
+
 return module
