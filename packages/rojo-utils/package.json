@@ -51,9 +51,9 @@
 	"devDependencies": {
 		"@isentinel/eslint-config": "6.2.0",
 		"@isentinel/tsconfig": "2.0.0",
-		"@stryker-mutator/core": "10.0.0",
-		"@stryker-mutator/typescript-checker": "10.0.0",
-		"@stryker-mutator/vitest-runner": "10.0.0",
+		"@stryker-mutator/core": "10.1.1",
+		"@stryker-mutator/typescript-checker": "10.1.1",
+		"@stryker-mutator/vitest-runner": "10.1.1",
 		"@total-typescript/shoehorn": "0.1.2",
 		"@types/node": "24.12.3",
 		"@typescript/native": "npm:typescript@7.0.2",

@@ -58,6 +58,7 @@ export const sharedConfig: PartialStrykerOptions = {
 	ignoreStatic: true,
 	incremental: true,
 	incrementalFile: "reports/stryker-incremental.json",
+	jsonReporter: { fileName: "reports/mutation/mutation.json" },
 	mutate: [
 		"src/**/*.ts",
 		"!src/**/*.spec.ts",
@@ -74,7 +75,7 @@ export const sharedConfig: PartialStrykerOptions = {
 		"@stryker-mutator/typescript-checker",
 		import.meta.url,
 	],
-	reporters: ["html", "clear-text", "progress"],
+	reporters: ["html", "clear-text", "progress", "json"],
 	testRunner: "vitest",
 	thresholds: { break: scopedBreak(100), high: 100, low: 100 },
 	// Padding added on top of 1.5x the dry-run net time before a mutant counts
