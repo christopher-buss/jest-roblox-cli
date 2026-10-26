@@ -4,7 +4,13 @@ const FULL_COVERAGE = { branches: 100, functions: 100, lines: 100, statements: 1
 
 export const unitProject = {
 	extends: true,
-	test: { name: "unit", include: ["src/**/*.spec.ts"] },
+	test: {
+		name: "unit",
+		include: ["src/**/*.spec.ts"],
+		isolate: false,
+		maxWorkers: 4,
+		sequence: { groupOrder: 1 },
+	},
 } satisfies TestProjectInlineConfiguration;
 
 export const sharedConfig = defineConfig({

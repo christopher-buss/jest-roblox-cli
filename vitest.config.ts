@@ -260,7 +260,10 @@ export default defineConfig({
 			},
 		},
 		projects: [
-			unitProject,
+			{
+				...unitProject,
+				test: { ...unitProject.test, maxWorkers: 4, sequence: { groupOrder: 1 } },
+			},
 			{
 				test: {
 					name: "integration",

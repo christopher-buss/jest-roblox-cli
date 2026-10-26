@@ -3,13 +3,30 @@ import { fromAny } from "@total-typescript/shoehorn";
 import * as path from "node:path";
 import process from "node:process";
 import { stripVTControlCharacters } from "node:util";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, onTestFinished, vi } from "vitest";
 
 import { createMemoryReportEnvironment } from "#test/mocks/memory-report-context.ts";
 import { projectRootFilter, sourceTwinFilter } from "./agent-table-filter.ts";
 import type { MappedCoverageResult, MappedFileCoverage } from "./mapper.ts";
 import * as reporterRegistry from "./reporter-registry.ts";
 import { checkThresholds, generateReports, printCoverageHeader } from "./reporter.ts";
+
+function stubTerminalColumns(columns: number): void {
+	const original = Object.getOwnPropertyDescriptor(process.stdout, "columns");
+	onTestFinished(() => {
+		if (original === undefined) {
+			Reflect.deleteProperty(process.stdout, "columns");
+			return;
+		}
+
+		Object.defineProperty(process.stdout, "columns", original);
+	});
+	Object.defineProperty(process.stdout, "columns", {
+		configurable: true,
+		value: columns,
+		writable: true,
+	});
+}
 
 function createMappedFile(overrides: Partial<MappedFileCoverage> = {}): MappedFileCoverage {
 	return {
@@ -541,7 +558,7 @@ describe(generateReports, () => {
 		it("should use stdout.columns when available", () => {
 			expect.assertions(2);
 
-			Object.defineProperty(process.stdout, "columns", { configurable: true, value: 200 });
+			stubTerminalColumns(200);
 			vi.spyOn(process.stdout, "write").mockReturnValue(true);
 			const createReporter = vi.spyOn(reporterRegistry, "createReporter");
 
@@ -559,11 +576,6 @@ describe(generateReports, () => {
 				coverageDirectory: "/tmp/unused",
 				mapped: result,
 				reporters: ["text"],
-			});
-
-			Object.defineProperty(process.stdout, "columns", {
-				configurable: true,
-				value: undefined,
 			});
 
 			expect(stdoutOutput()).toContain("deeply/nested/path/to/module/index.ts");
