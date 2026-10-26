@@ -1,0 +1,91 @@
+name: Release binaries
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag (for example v0.4.10)
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-binaries-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  build-sea:
+    defaults:
+      run:
+        shell: bash
+    env:
+      ARCHIVE: ${{ matrix.archive }}
+      BINARY: ${{ matrix.binary }}
+      GH_REPO: ${{ github.repository }}
+      RELEASE_TAG: ${{ inputs.tag }}
+    runs-on: ${{ matrix.os }}
+    steps:
+      - env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        id: asset
+        name: Check existing release asset
+        run: |
+          assets=$(gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name')
+          if printf '%s\n' "$assets" | grep -Fxq -- "$ARCHIVE"; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - if: steps.asset.outputs.exists == 'false'
+        name: Configure LF checkout
+        run: git config --global core.autocrlf false
+
+      - if: steps.asset.outputs.exists == 'false'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          ref: refs/tags/${{ inputs.tag }}
+
+      - if: steps.asset.outputs.exists == 'false'
+        uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518
+
+      - if: steps.asset.outputs.exists == 'false'
+        name: Install
+        run: nci
+
+      - if: steps.asset.outputs.exists == 'false'
+        name: Build
+        run: nr build
+
+      - if: steps.asset.outputs.exists == 'false'
+        name: Archive binary
+        run: |
+          src="dist/sea/jest-roblox"
+          if [[ "$BINARY" == *.exe ]]; then src="${src}.exe"; fi
+          mv "$src" "dist/sea/$BINARY"
+          tar -C dist/sea -cJf "dist/sea/$ARCHIVE" "$BINARY"
+
+      - env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        if: steps.asset.outputs.exists == 'false'
+        name: Upload archive to release
+        run: gh release upload "$RELEASE_TAG" "dist/sea/$ARCHIVE"
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - archive: jest-roblox-linux-x64.tar.xz
+            binary: jest-roblox-linux-x64
+            os: ubuntu-latest
+
+          - archive: jest-roblox-darwin-arm64.tar.xz
+            binary: jest-roblox-darwin-arm64
+            os: macos-latest
+
+          - archive: jest-roblox-windows-x64.tar.xz
+            binary: jest-roblox-windows-x64.exe
+            os: windows-latest

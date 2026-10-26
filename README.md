@@ -1181,6 +1181,19 @@ synchronous Node hooks exported by `@isentinel/jest-roblox/loader` before
 dynamically importing that API. These hooks load raw Luau and the CLI's virtual
 asset modules.
 
+### Recover missing release binaries
+
+Maintainers can run the **Release binaries** workflow for an existing release
+tag:
+
+```bash
+gh workflow run release-binaries.yaml --repo christopher-buss/jest-roblox-cli --ref main --field tag=v0.4.10
+```
+
+The workflow builds from that tag with LF checkout and uploads missing Linux
+x64, macOS arm64, and Windows x64 archives. Existing assets stay in place. It
+does not publish to npm or change the release tag.
+
 ## License
 
 MIT
