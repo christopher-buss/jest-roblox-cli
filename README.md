@@ -70,13 +70,15 @@ Limitations vs the npm package:
 
 - TypeScript Type Tests (`.spec-d.ts`) are not available; Luau Type Tests
   (`.spec-d.luau`) run when `lute` is on your `PATH`
-- `.ts` config files are not supported (use `.json`, `.js`, or `.mjs`)
+- `.ts` config files are not supported (use `jest.config.luau`, `.json`, `.js`,
+  or `.mjs`)
 - External tools (rojo) must still be on your `PATH`
 
 ## Quick start
 
 Add a `jest.config.ts` (or `.js`, `.json`, `.yaml`, `.toml`) to your project
-root:
+root. A Luau-only project can write `jest.config.luau` instead (see
+[Luau configs](#luau-configs)).
 
 ```typescript
 import { defineConfig } from "@isentinel/jest-roblox";
@@ -154,7 +156,9 @@ jest-roblox --project client --project server
 
 Config files are loaded by [c12](https://github.com/unjs/c12), which
 auto-discovers `jest.config.*` in any format it supports (`.ts`, `.js`, `.mjs`,
-`.cjs`, `.json`, `.yaml`, `.toml`).
+`.cjs`, `.json`, `.yaml`, `.toml`). A `jest.config.luau` is discovered too (see
+[Luau configs](#luau-configs)). Keep one config: a `jest.config.luau` beside
+another format, or beside one in `.config/`, is an error that names both files.
 
 Configs can extend a shared base with `extends`:
 
@@ -168,6 +172,36 @@ export default defineConfig({
 ```
 
 Precedence: CLI flags > config file > extended config > defaults.
+
+### Luau configs
+
+A Luau-only project can write its config as `jest.config.luau`. It has the same
+fields as every other format and returns them as a table:
+
+```luau
+return {
+	placeFile = "game.rbxl",
+	test = {
+		projects = { "ReplicatedStorage/client" },
+		testMatch = { "**/*.spec" },
+	},
+}
+```
+
+The CLI reads the file without running it, so no Luau runtime is needed. The
+returned value may hold only string, number and boolean literals, tables, `::`
+casts, and a `defineConfig(...)` call, which returns its argument. Statements
+before the `return`, such as a `require` used only for types, are ignored. Any
+other syntax in the returned value stops the load with an error that names the
+file and line.
+
+`--config path/to/file.luau` loads a Luau config explicitly. A relative
+`rootDir` or `workspace.root` is relative to the Luau config's directory, as in
+other formats. Mergeable fields cannot take the function form in Luau.
+
+A string entry in `test.projects` can also point at a directory with a
+`jest.config.luau` project config, which holds the per-project `test` fields at
+its top level (`displayName`, `testMatch`, …). It is read the same way.
 
 ### Root config fields
 

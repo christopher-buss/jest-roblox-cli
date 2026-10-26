@@ -33,6 +33,7 @@ words:
   - foreachi
   - frexp
   - fwasm
+  - getenv
   - getmetatable
   - getn
   - gmatch

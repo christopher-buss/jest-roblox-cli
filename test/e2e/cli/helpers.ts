@@ -112,7 +112,11 @@ export async function runCliAsync(
 	args: Array<string>,
 	cwdOrOptions?: RunCliOptions | string,
 ): Promise<ExecResult> {
-	return execNodeAsync(BIN, args, cwdOrOptions);
+	return execCliAsync({
+		args: [BIN, ...withIsolatedBackend(args)],
+		command: "node",
+		cwdOrOptions,
+	});
 }
 
 /**
@@ -128,7 +132,20 @@ export async function runSeaBundleAsync(
 	args: Array<string>,
 	cwdOrOptions?: RunCliOptions | string,
 ): Promise<ExecResult> {
-	return execNodeAsync(SEA_BUNDLE, args, cwdOrOptions);
+	return execCliAsync({
+		args: [SEA_BUNDLE, ...withIsolatedBackend(args)],
+		command: "node",
+		cwdOrOptions,
+	});
+}
+
+export async function runSeaExecutableAsync(
+	args: Array<string>,
+	cwdOrOptions?: RunCliOptions | string,
+): Promise<ExecResult> {
+	const extension = nodeProcess.platform === "win32" ? ".exe" : "";
+	const command = path.resolve(__dirname, `../../../dist/sea/jest-roblox${extension}`);
+	return execCliAsync({ args: withIsolatedBackend(args), command, cwdOrOptions });
 }
 
 export function readJsonSync(filePath: string): JSONValue {
@@ -156,17 +173,21 @@ export function rojoOnPath(): boolean {
 	return isRojoOnPath;
 }
 
-async function execNodeAsync(
-	entry: string,
-	args: Array<string>,
-	cwdOrOptions?: RunCliOptions | string,
-): Promise<ExecResult> {
+async function execCliAsync({
+	args,
+	command,
+	cwdOrOptions,
+}: {
+	args: Array<string>;
+	command: string;
+	cwdOrOptions: RunCliOptions | string | undefined;
+}): Promise<ExecResult> {
 	const options = typeof cwdOrOptions === "string" ? { cwd: cwdOrOptions } : (cwdOrOptions ?? {});
 
 	return new Promise((resolve) => {
 		execFile(
-			"node",
-			[entry, ...withIsolatedBackend(args)],
+			command,
+			args,
 			{
 				cwd: options.cwd,
 				encoding: "utf-8",

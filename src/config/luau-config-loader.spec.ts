@@ -21,6 +21,60 @@ function seedConfig(source: string, filePath = "/project/jest.config.luau"): See
 }
 
 describe(loadLuauConfig, () => {
+	it("should preserve a nonempty record for normal schema validation", () => {
+		expect.assertions(1);
+
+		const { filePath, fileSystem } = seedConfig(
+			'return { testMatch = { pattern = "**/*.spec" } }',
+		);
+
+		expect(loadLuauConfig(filePath, fileSystem)).toStrictEqual({
+			testMatch: { pattern: "**/*.spec" },
+		});
+	});
+
+	it("should use empty tables for lists according to the config schema", () => {
+		expect.assertions(1);
+
+		const { filePath, fileSystem } = seedConfig(`return {
+			luauRoots = {},
+			workspace = { packages = {}, exclude = {} },
+			test = {
+				testPathIgnorePatterns = {},
+				snapshotFormat = {},
+				testEnvironmentOptions = { include = {} },
+				typecheck = { include = {}, exclude = {} },
+				projects = { { test = { include = {}, setupFiles = {} } }, "src/other" },
+			},
+		}`);
+
+		expect(loadLuauConfig(filePath, fileSystem)).toStrictEqual({
+			luauRoots: [],
+			test: {
+				projects: [{ test: { include: [], setupFiles: [] } }, "src/other"],
+				snapshotFormat: {},
+				testEnvironmentOptions: { include: {} },
+				testPathIgnorePatterns: [],
+				typecheck: { exclude: [], include: [] },
+			},
+			workspace: { exclude: [], packages: [] },
+		});
+	});
+
+	it("should normalize empty lists in a flat project config", () => {
+		expect.assertions(1);
+
+		const { filePath, fileSystem } = seedConfig(
+			'return { displayName = "project", include = {}, typecheck = { exclude = {} } }',
+		);
+
+		expect(loadLuauConfig(filePath, fileSystem)).toStrictEqual({
+			displayName: "project",
+			include: [],
+			typecheck: { exclude: [] },
+		});
+	});
+
 	it("should evaluate the config's return table", () => {
 		expect.assertions(1);
 
@@ -53,6 +107,19 @@ describe(loadLuauConfig, () => {
 		expect(() => loadLuauConfig(filePath, fileSystem)).toThrowWithMessage(
 			Error,
 			"Failed to evaluate Luau config /project/jest.config.luau: Expected identifier when parsing expression, got ','; Expected identifier when parsing expression, got '}'",
+		);
+	});
+
+	it("should name the file and line of syntax it cannot read", () => {
+		expect.assertions(1);
+
+		const { filePath, fileSystem } = seedConfig(
+			'return {\n\tdisplayName = "a",\n\ttestTimeout = getTimeout(),\n}',
+		);
+
+		expect(() => loadLuauConfig(filePath, fileSystem)).toThrowWithMessage(
+			Error,
+			"Luau config /project/jest.config.luau:3 holds a function call, which a plain-data Luau config cannot hold. Use only literals, tables, `::` casts and defineConfig(...).",
 		);
 	});
 

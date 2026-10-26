@@ -14,11 +14,12 @@ const PARALLEL_FIXTURE = path.resolve(__dirname, "../../e2e/fixtures/parallel-co
 describe("config resolution", () => {
 	describe("luau project", () => {
 		it("should load config from jest.config.luau", async () => {
-			expect.assertions(1);
+			expect.assertions(2);
 
 			const config = await loadConfig({ cwd: LUAU_FIXTURE });
 
 			expect(config.rootDir).toBe(LUAU_FIXTURE);
+			expect(config.placeFile).toBe("game.rbxl");
 		});
 
 		it("should be detected as a luau project", async () => {

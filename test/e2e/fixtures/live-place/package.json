@@ -25,7 +25,8 @@
 				"executor": "nx:noop",
 				"cache": true,
 				"dependsOn": [],
-				"inputs": []
+				"inputs": [],
+				"outputs": []
 			},
 			"build-test": {
 				"executor": "nx:noop",

@@ -1,12 +1,27 @@
 import { type } from "arktype";
 import * as path from "node:path";
 
-import { evalLuauReturnLiterals, type LuauLiteralTable } from "../luau/eval-literals.ts";
+import {
+	evalLuauReturnLiterals,
+	type LuauLiteral,
+	type LuauLiteralTable,
+} from "../luau/eval-literals.ts";
 import { luauParser } from "../luau/parser.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import { nodeFileSystem } from "../utils/file-system.ts";
+import { configSchema } from "./schema.ts";
 
 const luauConfigTableSchema = type("object").as<LuauLiteralTable>();
+const testConfigSchema = configSchema.get("test").exclude("undefined");
+const ARRAY_CONFIG_KEYS: ReadonlySet<string> = new Set(
+	[
+		...configSchema.props,
+		...testConfigSchema.props,
+		...configSchema.get("workspace").exclude("undefined").props,
+	]
+		.filter(({ value }) => value.allows([]) && !value.allows({}))
+		.map(({ key }) => key),
+);
 
 /**
  * Parse a .luau config file in process and evaluate its return expression.
@@ -24,12 +39,19 @@ export function loadLuauConfig(
 		throw new Error(`Failed to evaluate Luau config ${filePath}: ${parsed.errors.join("; ")}`);
 	}
 
-	const result = luauConfigTableSchema(evalLuauReturnLiterals(parsed.root));
+	const evaluation = evalLuauReturnLiterals(parsed.root);
+	if (evaluation.kind === "unreadable") {
+		throw new Error(
+			`Luau config ${filePath}:${evaluation.line} holds ${evaluation.syntax}, which a plain-data Luau config cannot hold. Use only literals, tables, \`::\` casts and defineConfig(...).`,
+		);
+	}
+
+	const result = luauConfigTableSchema(evaluation.value);
 	if (result instanceof type.errors || Array.isArray(result)) {
 		throw new Error(`Luau config ${filePath} must return a table`);
 	}
 
-	return result;
+	return normalizeEmptyLists(result);
 }
 
 /**
@@ -55,4 +77,38 @@ export function findLuauConfigFile({
 	}
 
 	return undefined;
+}
+
+function isLiteralTable(value: LuauLiteral): value is LuauLiteralTable {
+	return typeof value === "object" && !Array.isArray(value);
+}
+
+function normalizeEmptyLists(table: LuauLiteralTable): LuauLiteralTable {
+	for (const [key, value] of Object.entries(table)) {
+		if (
+			isLiteralTable(value) &&
+			Object.keys(value).length === 0 &&
+			ARRAY_CONFIG_KEYS.has(key)
+		) {
+			table[key] = [];
+		}
+	}
+
+	for (const key of ["test", "typecheck", "workspace"]) {
+		const value = table[key];
+		if (isLiteralTable(value)) {
+			normalizeEmptyLists(value);
+		}
+	}
+
+	const { projects } = table;
+	if (Array.isArray(projects)) {
+		for (const project of projects) {
+			if (isLiteralTable(project)) {
+				normalizeEmptyLists(project);
+			}
+		}
+	}
+
+	return table;
 }

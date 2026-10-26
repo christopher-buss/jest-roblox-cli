@@ -1,4 +1,4 @@
-import { loadConfig as c12LoadConfig, type LoadConfigOptions } from "c12";
+import { loadConfig as c12LoadConfig, type LoadConfigOptions, SUPPORTED_EXTENSIONS } from "c12";
 import { defuFn } from "defu";
 import { createRequire } from "node:module";
 import * as path from "node:path";
@@ -7,8 +7,11 @@ import process from "node:process";
 import type { FileSystem } from "../utils/file-system.ts";
 import { nodeFileSystem } from "../utils/file-system.ts";
 import { isAbsolutePath, normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
+import { loadLuauConfig } from "./luau-config-loader.ts";
 import type { Config, ResolvedConfig } from "./schema.ts";
-import { DEFAULT_CONFIG, validateConfig } from "./schema.ts";
+import { DEFAULT_CONFIG, validateConfig, validateConfigLayer } from "./schema.ts";
+
+const LUAU_CONFIG_FILENAME = "jest.config.luau";
 
 // c12 resolves and evaluates a config file through handles of its own, so a
 // `FileSystem` does not reach it.
@@ -38,12 +41,13 @@ type ConfigLoadContext = Required<ConfigLoadOptions>;
 
 interface LoadedConfig {
 	config: Config;
-	/**
-	 * Directory of the config file c12 actually resolved — the anchor for a
-	 * declared relative `rootDir`. Falls back to the caller's `cwd` when the
-	 * load found no file at all.
-	 */
 	loadDirectory: string;
+}
+
+/** `configFile` may name a missing file when a c12 search matched nothing. */
+interface ConfigLayer {
+	config: Config;
+	configFile?: string | undefined;
 }
 
 /**
@@ -227,12 +231,70 @@ async function invokeC12({
 		: configLoader<Config>(options);
 }
 
-/**
- * Load the config layers, reporting the directory c12 resolved the entry file
- * from alongside the merged result. The directory is the anchor a declared
- * relative `rootDir` needs, and it survives only here — `processExtends` merges
- * the layers into one object that no longer records where any of them lived.
- */
+function isLuauConfigPath(filePath: string): boolean {
+	return filePath.endsWith(".luau");
+}
+
+function loadLuauLayer({
+	configFile,
+	fileSystem,
+	requested,
+}: {
+	readonly configFile: string;
+	readonly fileSystem: FileSystem;
+	readonly requested: string;
+}): ConfigLayer {
+	if (!fileSystem.existsSync(configFile)) {
+		throw new Error(`Config file not found: ${requested}`);
+	}
+
+	return { config: validateConfigLayer(loadLuauConfig(configFile, fileSystem)), configFile };
+}
+
+async function loadEntryLayer({
+	configPath,
+	context,
+	cwd,
+}: {
+	readonly configPath: string | undefined;
+	readonly context: ConfigLoadContext;
+	readonly cwd: string;
+}): Promise<ConfigLayer> {
+	const { fileSystem } = context;
+	if (configPath !== undefined && isLuauConfigPath(configPath)) {
+		const configFile = path.resolve(cwd, configPath);
+		return loadLuauLayer({ configFile, fileSystem, requested: configPath });
+	}
+
+	const luauFile = path.resolve(cwd, LUAU_CONFIG_FILENAME);
+	if (configPath === undefined && fileSystem.existsSync(luauFile)) {
+		const scriptFile = SUPPORTED_EXTENSIONS.flatMap((extension) => [
+			path.resolve(cwd, `jest.config${extension}`),
+			path.resolve(cwd, ".config", `jest${extension}`),
+			path.resolve(cwd, ".config", `jest.config${extension}`),
+		]).find((candidate) => fileSystem.existsSync(candidate));
+		if (scriptFile !== undefined) {
+			throw new Error(`Found two jest configs: ${scriptFile} and ${luauFile}. Keep one.`);
+		}
+
+		return loadLuauLayer({ configFile: luauFile, fileSystem, requested: luauFile });
+	}
+
+	return invokeC12({
+		configFile: configPath,
+		configLoader: context.configLoader,
+		cwd,
+		fileSystem,
+	}).catch((err: unknown) => {
+		if (configPath !== undefined && isC12NotFoundError(err)) {
+			throw new Error(`Config file not found: ${configPath}`, { cause: err });
+		}
+
+		throw err;
+	});
+}
+
+// Keep the entry directory before processExtends merges away each layer's origin.
 async function loadConfigLayers({
 	configPath,
 	context,
@@ -243,23 +305,7 @@ async function loadConfigLayers({
 	readonly cwd: string;
 }): Promise<LoadedConfig> {
 	const { fileSystem } = context;
-
-	let result;
-	try {
-		result = await invokeC12({
-			configFile: configPath,
-			configLoader: context.configLoader,
-			cwd,
-			fileSystem,
-		});
-	} catch (err) {
-		if (configPath !== undefined && isC12NotFoundError(err)) {
-			throw new Error(`Config file not found: ${configPath}`, { cause: err });
-		}
-
-		throw err;
-	}
-
+	const result = await loadEntryLayer({ configPath, context, cwd });
 	const mergedConfig = await processExtends({ context, result, visited: new Set() });
 	const loadedFile = result.configFile;
 
@@ -278,8 +324,9 @@ async function loadConfigLayers({
  * The `rootDir` every consumer anchors on, absolute. A declared relative one
  * anchors on `loadDirectory` — the directory holding the config that declared
  * it, which in workspace mode is the package directory. That is what makes
- * `rootDir: "."` name the package rather than the invocation directory, whether
- * the package config was found by search or named outright with `--config`.
+ * `rootDir: "."` name the package rather than the invocation directory,
+ * whether the package config was found by search or named outright with
+ * `--config`.
  *
  * An absent `rootDir` still defaults to the invocation directory: a package
  * that declares nothing is opting into the caller's frame of reference, and
@@ -288,8 +335,8 @@ async function loadConfigLayers({
  *
  * Absoluteness is the cross-host question, not `path.resolve`'s: that reads
  * `D:/repo` as a relative filename off Linux and would hang the whole config
- * under `<cwd>/D:/repo`. An already-absolute `rootDir` is passed through in the
- * spelling the config wrote, which is what the prefix-comparing consumers
+ * under `<cwd>/D:/repo`. An already-absolute `rootDir` is passed through in
+ * the spelling the config wrote, which is what the prefix-comparing consumers
  * (`resolveUniverseAnchor`, `filter-projects-by-files`) expect to see.
  */
 function anchorRootDirectory({
@@ -350,7 +397,7 @@ async function processExtends({
 	visited,
 }: {
 	readonly context: ConfigLoadContext;
-	readonly result: Awaited<ReturnType<typeof invokeC12>>;
+	readonly result: ConfigLayer;
 	readonly visited: Set<string>;
 }): Promise<Config> {
 	const { fileSystem } = context;

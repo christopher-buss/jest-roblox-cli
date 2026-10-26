@@ -142,6 +142,10 @@ function sourceAliases(packageName: string) {
 }
 
 const workspaceSourceAliases = [
+	{
+		find: "@isentinel/jest-roblox/artifacts",
+		replacement: resolve(import.meta.dirname, "src/index.ts"),
+	},
 	...sourceAliases("@isentinel/luau-ast"),
 	...sourceAliases("@isentinel/rojo-utils"),
 	...sourceAliases("@isentinel/roblox-runner"),

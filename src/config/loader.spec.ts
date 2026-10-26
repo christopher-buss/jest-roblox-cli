@@ -179,6 +179,20 @@ describe("config loader seams", () => {
 		expect(result.rootDir).toBe(process.cwd());
 	});
 
+	it("should retain the loader error as the cause for a missing explicit config", async () => {
+		expect.assertions(1);
+
+		const error = new Error("missing.config.mjs cannot be resolved");
+		const { fileSystem } = createMemoryFileSystem();
+		async function configLoader(): Promise<never> {
+			throw error;
+		}
+
+		await expect(
+			loadConfig({ configLoader, configPath: "missing.config.mjs", fileSystem }),
+		).rejects.toHaveProperty("cause", error);
+	});
+
 	it("should pass through auto-discovery loader failures", async () => {
 		expect.assertions(1);
 
@@ -190,6 +204,169 @@ describe("config loader seams", () => {
 		await expect(
 			loadRawConfig({ configLoader, configPath: undefined, cwd: "/repo" }),
 		).rejects.toBe(error);
+	});
+
+	describe("luau configs", () => {
+		it("should discover a jest.config.luau in the working directory", async () => {
+			expect.assertions(2);
+
+			const temporaryDirectory = path.resolve("/project");
+			const { fileSystem } = createMemoryFileSystem({
+				[path.join(temporaryDirectory, "jest.config.luau")]:
+					'return { placeFile = "luau.rbxl", test = { verbose = true } }',
+			});
+
+			const result = await loadConfig({ cwd: temporaryDirectory, fileSystem });
+
+			expect(result.placeFile).toBe("luau.rbxl");
+			expect(result.verbose).toBeTrue();
+		});
+
+		it("should load the luau file an explicit config path names", async () => {
+			expect.assertions(1);
+
+			const temporaryDirectory = path.resolve("/project");
+			const { fileSystem } = createMemoryFileSystem({
+				[path.join(temporaryDirectory, "custom.luau")]:
+					"return { test = { verbose = true } }",
+			});
+
+			const result = await loadConfig({
+				configPath: "custom.luau",
+				cwd: temporaryDirectory,
+				fileSystem,
+			});
+
+			expect(result.verbose).toBeTrue();
+		});
+
+		it("should throw when an explicit luau config path is missing", async () => {
+			expect.assertions(1);
+
+			const temporaryDirectory = path.resolve("/project");
+			const { fileSystem } = createMemoryFileSystem();
+
+			await expect(
+				loadConfig({ configPath: "missing.luau", cwd: temporaryDirectory, fileSystem }),
+			).rejects.toThrowWithMessage(Error, "Config file not found: missing.luau");
+		});
+
+		it("should anchor a relative rootDir on the luau config's directory", async () => {
+			expect.assertions(1);
+
+			const temporaryDirectory = path.resolve("/project");
+			const configDirectory = path.join(temporaryDirectory, "packages", "core");
+			const { fileSystem } = createMemoryFileSystem({
+				[path.join(configDirectory, "jest.config.luau")]: 'return { rootDir = "." }',
+			});
+
+			const result = await loadConfig({
+				configPath: "packages/core/jest.config.luau",
+				cwd: temporaryDirectory,
+				fileSystem,
+			});
+
+			expect(result.rootDir).toBe(configDirectory);
+		});
+
+		it("should anchor a relative workspace.root on the luau config's directory", async () => {
+			expect.assertions(1);
+
+			const temporaryDirectory = path.resolve("/project");
+			const { fileSystem } = createMemoryFileSystem({
+				[path.join(temporaryDirectory, "jest.config.luau")]:
+					'return { workspace = { packages = { "packages/*" }, root = "." } }',
+			});
+
+			const result = await loadConfig({ cwd: temporaryDirectory, fileSystem });
+
+			expect(result.workspace!.root).toBe(temporaryDirectory);
+		});
+
+		it("should reject jest options outside a test block as every format does", async () => {
+			expect.assertions(1);
+
+			const temporaryDirectory = path.resolve("/project");
+			const { fileSystem } = createMemoryFileSystem({
+				[path.join(temporaryDirectory, "jest.config.luau")]: "return { verbose = true }",
+			});
+
+			await expect(
+				loadConfig({ cwd: temporaryDirectory, fileSystem }),
+			).rejects.toThrowWithMessage(
+				Error,
+				"jest options must be wrapped in a `test:` block. Move these keys under `test:`: verbose",
+			);
+		});
+
+		it.for(["jest.config.mjs", ".config/jest.json", ".config/jest.config.yaml"])(
+			"should name both files before evaluating a conflicting %s",
+			async (relativePath) => {
+				expect.assertions(1);
+
+				const temporaryDirectory = path.resolve("/project");
+				const luauPath = path.join(temporaryDirectory, "jest.config.luau");
+				const scriptPath = path.join(temporaryDirectory, relativePath);
+				const { fileSystem } = createMemoryFileSystem({
+					[luauPath]: "return {}",
+					[scriptPath]: "this config must never be evaluated",
+				});
+
+				await expect(
+					loadConfig({ cwd: temporaryDirectory, fileSystem }),
+				).rejects.toThrowWithMessage(
+					Error,
+					`Found two jest configs: ${scriptPath} and ${luauPath}. Keep one.`,
+				);
+			},
+		);
+
+		it("should load an explicit script config that sits beside a luau config", async () => {
+			expect.assertions(1);
+
+			const fixture = loadFixture({ "jest.config.mjs": { test: { verbose: true } } });
+			fixture.fileSystem.writeFileSync(
+				path.join(fixture.cwd, "jest.config.luau"),
+				"return { test = { verbose = false } }",
+			);
+
+			const result = await loadConfig({ ...fixture, configPath: "jest.config.mjs" });
+
+			expect(result.verbose).toBeTrue();
+		});
+
+		it("should let a luau config extend a script config", async () => {
+			expect.assertions(2);
+
+			const fixture = loadFixture({
+				"jest.shared.mjs": { test: { verbose: true }, timeout: 12345 },
+			});
+			fixture.fileSystem.writeFileSync(
+				path.join(fixture.cwd, "jest.config.luau"),
+				'return { extends = "./jest.shared.mjs", test = { verbose = false } }',
+			);
+
+			const result = await loadConfig(fixture);
+
+			expect(result.timeout).toBe(12345);
+			expect(result.verbose).toBeFalse();
+		});
+
+		it("should name the extends entry when its luau file is missing", async () => {
+			expect.assertions(1);
+
+			const fixture = loadFixture();
+			fixture.fileSystem.mkdirSync(fixture.cwd, { recursive: true });
+			fixture.fileSystem.writeFileSync(
+				path.join(fixture.cwd, "jest.config.luau"),
+				'return { extends = "./missing.luau" }',
+			);
+
+			await expect(loadConfig(fixture)).rejects.toThrowWithMessage(
+				Error,
+				/Failed to resolve extends "\.\/missing\.luau"/,
+			);
+		});
 	});
 });
 

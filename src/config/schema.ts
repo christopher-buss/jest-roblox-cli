@@ -1196,7 +1196,7 @@ const KEY_LOCATIONS: Readonly<Record<string, "root" | "test">> = (() => {
 	return result;
 })();
 
-export function validateConfig(raw: unknown): Config {
+export function validateConfigLayer(raw: unknown): Config {
 	assertNoLegacyKeys(raw);
 
 	const result = configSchema(raw);
@@ -1204,6 +1204,11 @@ export function validateConfig(raw: unknown): Config {
 		throw new Error(`Invalid config: ${result.summary}`);
 	}
 
+	return result;
+}
+
+export function validateConfig(raw: unknown): Config {
+	const result = validateConfigLayer(raw);
 	const { workspace } = result;
 	if (
 		workspace !== undefined &&
