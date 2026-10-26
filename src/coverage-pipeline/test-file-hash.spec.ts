@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { createMemoryFileSystem } from "../../test/mocks/memory-file-system.ts";
+import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { hashFile } from "../utils/hash.ts";
 import { resolveTestFileHash } from "./test-file-hash.ts";
 

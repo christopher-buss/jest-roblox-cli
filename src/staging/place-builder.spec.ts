@@ -8,15 +8,10 @@ import process from "node:process";
 import type { Mock } from "vitest";
 import { describe, expect, it, vi } from "vitest";
 
-import { ageFile } from "../../test/mocks/aged-file.ts";
-import type { MemoryFileSystem } from "../../test/mocks/memory-file-system.ts";
-import { createMemoryFileSystem } from "../../test/mocks/memory-file-system.ts";
-import {
-	mountOf,
-	poolKeyOf,
-	staged,
-	stagedProjectSchema,
-} from "../../test/mocks/staged-project.ts";
+import { ageFile } from "#test/mocks/aged-file.ts";
+import type { MemoryFileSystem } from "#test/mocks/memory-file-system.ts";
+import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
+import { mountOf, poolKeyOf, staged, stagedProjectSchema } from "#test/mocks/staged-project.ts";
 import type { ChildProcessRunner } from "../utils/child-process.ts";
 import { hashBuffer } from "../utils/hash.ts";
 import { normalizeWindowsPath, toPosixRoot } from "../utils/normalize-windows-path.ts";

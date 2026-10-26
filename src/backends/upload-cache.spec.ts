@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { MemoryVolume } from "../../test/mocks/memory-file-system.ts";
-import { createMemoryFileSystem } from "../../test/mocks/memory-file-system.ts";
+import type { MemoryVolume } from "#test/mocks/memory-file-system.ts";
+import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import {
 	hashPlaceFile,

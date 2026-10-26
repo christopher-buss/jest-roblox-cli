@@ -5,8 +5,8 @@ import process from "node:process";
 import { stripVTControlCharacters } from "node:util";
 import { describe, expect, it, vi } from "vitest";
 
-import type { MemoryFileSystem, MemoryVolume } from "../test/mocks/memory-file-system.ts";
-import { createMemoryFileSystem } from "../test/mocks/memory-file-system.ts";
+import type { MemoryFileSystem, MemoryVolume } from "#test/mocks/memory-file-system.ts";
+import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import type { Backend, BackendOptions, BackendResult } from "./backends/interface.ts";
 import type { ResolvedConfig } from "./config/schema.ts";
 import { DEFAULT_CONFIG } from "./config/schema.ts";

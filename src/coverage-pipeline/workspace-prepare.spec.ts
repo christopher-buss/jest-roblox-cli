@@ -4,8 +4,8 @@ import process from "node:process";
 import type { MockedFunction } from "vitest";
 import { describe, expect, it, vi } from "vitest";
 
-import type { MemoryVolume } from "../../test/mocks/memory-file-system.ts";
-import { createMemoryFileSystem } from "../../test/mocks/memory-file-system.ts";
+import type { MemoryVolume } from "#test/mocks/memory-file-system.ts";
+import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { DEFAULT_CONFIG } from "../config/schema.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import { normalizeWindowsPath, toPosixRoot } from "../utils/normalize-windows-path.ts";

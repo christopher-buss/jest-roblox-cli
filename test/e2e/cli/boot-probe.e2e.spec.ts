@@ -2,7 +2,7 @@ import { appendFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { isTaskCreatePost, startFakeOpenCloudServerAsync } from "./fake-open-cloud.ts";
+import { isTaskCreatePost, startFakeOpenCloudServerAsync } from "#test/e2e/cli/fake-open-cloud.ts";
 import {
 	buildMixedOutput,
 	buildPassingPayload,
@@ -11,7 +11,7 @@ import {
 	patchSandboxConfig,
 	rojoOnPath,
 	runCliAsync,
-} from "./helpers.ts";
+} from "#test/e2e/cli/helpers.ts";
 
 const RBXTS_FIXTURE = path.resolve(__dirname, "../fixtures/rbxts-project");
 

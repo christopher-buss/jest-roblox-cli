@@ -4,7 +4,7 @@ import * as path from "node:path";
 import process from "node:process";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 
-import { createMemoryFileSystem } from "../../test/mocks/memory-file-system.ts";
+import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import type { CliOptions, WorkspaceRunOptions } from "../config/schema.ts";
 import { DEFAULT_CONFIG } from "../config/schema.ts";
 import type { ChildProcessRunner } from "../utils/child-process.ts";

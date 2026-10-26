@@ -6,11 +6,11 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, onTestFinished } from "vitest";
 
-import { LUTE_HARNESS_TIMEOUT } from "./lute-timeout.ts";
+import { LUTE_HARNESS_TIMEOUT } from "#test/e2e/luau/lute-timeout.ts";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const MODULE_SOURCE = fs.readFileSync(
-	path.join(HERE, "../../plugin/src/reconnect-loop.luau"),
+	path.join(HERE, "../../../plugin/src/reconnect-loop.luau"),
 	"utf-8",
 );
 const HARNESS = fs.readFileSync(path.join(HERE, "reconnect-loop.harness.luau"), "utf-8");

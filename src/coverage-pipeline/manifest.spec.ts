@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { createMemoryFileSystem } from "../../test/mocks/memory-file-system.ts";
+import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import type { CoverageManifest, ReadManifestResult } from "./manifest.ts";
 import { MANIFEST_VERSION, readManifest, writeManifest } from "./manifest.ts";
 

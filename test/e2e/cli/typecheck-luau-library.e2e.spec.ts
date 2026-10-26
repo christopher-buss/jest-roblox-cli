@@ -2,7 +2,7 @@ import { writeFileSync } from "node:fs";
 import * as path from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { createFixtureSandbox, runCliAsync } from "./helpers.ts";
+import { createFixtureSandbox, runCliAsync } from "#test/e2e/cli/helpers.ts";
 
 const LIBRARY_FIXTURE = path.resolve(__dirname, "../fixtures/typecheck-luau-library");
 const LIBRARY_BROKEN_FIXTURE = path.resolve(__dirname, "../fixtures/typecheck-luau-library-broken");

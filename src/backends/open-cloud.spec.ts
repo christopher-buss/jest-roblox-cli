@@ -12,14 +12,11 @@ import type {
 import { formatPlaceMismatch, PLACE_MISMATCH } from "@isentinel/roblox-runner/testing";
 
 import { Buffer } from "node:buffer";
-import * as fs from "node:fs";
-import * as os from "node:os";
 import * as path from "node:path";
 import process from "node:process";
 import { assert, describe, expect, it, onTestFinished, vi } from "vitest";
 
-import { startFakeOpenCloudServerAsync } from "../../test/e2e/cli/fake-open-cloud.ts";
-import { createMemoryFileSystem } from "../../test/mocks/memory-file-system.ts";
+import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { ConfigError } from "../config/errors.ts";
 import { DEFAULT_CONFIG } from "../config/schema.ts";
 import type { ResolvedConfig } from "../config/schema.ts";
@@ -374,41 +371,13 @@ function jobsOptions(
 	return parallel === undefined ? { jobs } : { jobs, parallel };
 }
 
-/**
- * A temp rootDir holding a real place file — the upload cache reads bytes off
- * disk, and this spec deliberately does not mock `node:fs`.
- */
-function temporaryRoot(): string {
-	const directory = fs.mkdtempSync(path.join(os.tmpdir(), "jest-roblox-upload-cache-"));
-	fs.writeFileSync(path.join(directory, "place.rbxl"), "place-bytes");
-	onTestFinished(() => {
-		fs.rmSync(directory, { force: true, recursive: true });
+function cacheFixture() {
+	const rootDirectory = path.resolve("upload-cache");
+	const { fileSystem } = createMemoryFileSystem({
+		[BUNDLE_FILE]: BUNDLE_JSON,
+		[path.join(rootDirectory, "place.rbxl")]: "place-bytes",
 	});
-
-	return directory;
-}
-
-/**
- * Forward fixture traffic while rejecting a default production URL locally.
- */
-function localOnlyFetch(
-	baseUrl: string,
-	fetchAsync: typeof globalThis.fetch,
-): typeof globalThis.fetch {
-	return async (input, init) => {
-		const url = input instanceof Request ? input.url : String(input);
-		if (url.startsWith(baseUrl)) {
-			return fetchAsync(input, init);
-		}
-
-		return new Response(
-			JSON.stringify({ error: { message: "Unexpected non-local request" } }),
-			{
-				headers: { "content-type": "application/json" },
-				status: 401,
-			},
-		);
-	};
+	return { fileSystem, rootDirectory };
 }
 
 function cacheJob(rootDirectory: string, overrides: Partial<ResolvedConfig> = {}): ProjectJob {
@@ -432,13 +401,12 @@ function probeStub(): RunnerStub {
 	return stub;
 }
 
-/** One passing run against `rootDirectory`, returning the stub it drove. */
 async function runProbedRunAsync(
-	rootDirectory: string,
+	{ fileSystem, rootDirectory }: ReturnType<typeof cacheFixture>,
 	overrides: Partial<ResolvedConfig> = {},
 ): Promise<RunnerStub> {
 	const stub = probeStub();
-	const backend = createBackend({ runner: stub.runner });
+	const backend = createBackend({ fileSystem, runner: stub.runner });
 	await backend.runTestsAsync(jobsOptions([cacheJob(rootDirectory, overrides)]));
 	return stub;
 }
@@ -2286,36 +2254,6 @@ describe(createOpenCloudBackend, () => {
 		expect(backend).toBeInstanceOf(OpenCloudBackend);
 	});
 
-	it("should run through the configured Open Cloud base URL", { timeout: 1000 }, async () => {
-		expect.assertions(3);
-
-		const server = await startFakeOpenCloudServerAsync([{ jestOutput: successJest() }]);
-		const fetchAsync = globalThis.fetch;
-		const fetch = vi
-			.spyOn(globalThis, "fetch")
-			.mockImplementation(localOnlyFetch(server.baseUrl, fetchAsync));
-		onTestFinished(() => {
-			fetch.mockRestore();
-		});
-		vi.stubEnv("JEST_ROBLOX_OPEN_CLOUD_BASE_URL", server.baseUrl);
-		const rootDirectory = temporaryRoot();
-		fs.writeFileSync(path.join(rootDirectory, "place.rbxlx"), '<roblox version="4"></roblox>');
-
-		const backend = new OpenCloudBackend(credentials);
-		const result = await backend.runTestsAsync({
-			jobs: [cacheJob(rootDirectory, { bootProbeTimeout: 0, placeFile: "place.rbxlx" })],
-		});
-
-		expect(result.rawResults).toHaveLength(1);
-		expect(server.calls).not.toBeEmpty();
-		expect(fetch).toHaveBeenCalledWith(
-			expect.stringContaining(
-				`${server.baseUrl}/cloud/v2/universes/123/places/456/versions/1/luau-execution-session-tasks`,
-			),
-			expect.anything(),
-		);
-	});
-
 	it("should construct the default runner with JEST_ROBLOX_OCALE_MAX_RETRIES set", () => {
 		expect.assertions(1);
 
@@ -2402,15 +2340,13 @@ describe(resolveOcaleMaxRetries, () => {
 	});
 });
 
-// Real tmpdir I/O per test (the cache reads place bytes off disk), so the
-// suite-wide per-test budget cannot hold this describe under parallel load.
-describe("upload cache", { timeout: 1000 }, () => {
+describe("upload cache", () => {
 	/** How many uploads one passing run made. */
 	async function runOnceAsync(
-		rootDirectory: string,
+		fixture: ReturnType<typeof cacheFixture>,
 		overrides: Partial<ResolvedConfig> = {},
 	): Promise<number> {
-		const { uploadCalls } = await runProbedRunAsync(rootDirectory, overrides);
+		const { uploadCalls } = await runProbedRunAsync(fixture, overrides);
 		return uploadCalls.length;
 	}
 
@@ -2422,9 +2358,10 @@ describe("upload cache", { timeout: 1000 }, () => {
 	it("should upload on the first run and skip it on the second", async () => {
 		expect.assertions(2);
 
-		const rootDirectory = temporaryRoot();
-		const first = await runOnceAsync(rootDirectory);
-		const second = await runOnceAsync(rootDirectory);
+		const fixture = cacheFixture();
+
+		const first = await runOnceAsync(fixture);
+		const second = await runOnceAsync(fixture);
 
 		expect(first).toBe(1);
 		expect(second).toBe(0);
@@ -2433,11 +2370,12 @@ describe("upload cache", { timeout: 1000 }, () => {
 	it("should announce the cached version without opening an upload stage", async () => {
 		expect.assertions(1);
 
-		const rootDirectory = temporaryRoot();
-		await runOnceAsync(rootDirectory);
+		const fixture = cacheFixture();
+		const { fileSystem, rootDirectory } = fixture;
+		await runOnceAsync(fixture);
 		const stub = probeStub();
 		const notes: Array<{ detail: string; id: StageId }> = [];
-		const backend = createBackend({ runner: stub.runner });
+		const backend = createBackend({ fileSystem, runner: stub.runner });
 
 		await backend.runTestsAsync({
 			jobs: [cacheJob(rootDirectory)],
@@ -2455,10 +2393,11 @@ describe("upload cache", { timeout: 1000 }, () => {
 	it("should upload again when the place bytes change", async () => {
 		expect.assertions(1);
 
-		const rootDirectory = temporaryRoot();
-		await runOnceAsync(rootDirectory);
-		fs.writeFileSync(path.join(rootDirectory, "place.rbxl"), "different-bytes");
-		const uploads = await runOnceAsync(rootDirectory);
+		const fixture = cacheFixture();
+		const { fileSystem, rootDirectory } = fixture;
+		await runOnceAsync(fixture);
+		fileSystem.writeFileSync(path.join(rootDirectory, "place.rbxl"), "different-bytes");
+		const uploads = await runOnceAsync(fixture);
 
 		expect(uploads).toBe(1);
 	});
@@ -2466,9 +2405,10 @@ describe("upload cache", { timeout: 1000 }, () => {
 	it("should always upload when the cache is disabled", async () => {
 		expect.assertions(2);
 
-		const rootDirectory = temporaryRoot();
-		const first = await runOnceAsync(rootDirectory, { uploadCache: false });
-		const second = await runOnceAsync(rootDirectory, { uploadCache: false });
+		const fixture = cacheFixture();
+
+		const first = await runOnceAsync(fixture, { uploadCache: false });
+		const second = await runOnceAsync(fixture, { uploadCache: false });
 
 		expect(first).toBe(1);
 		expect(second).toBe(1);
@@ -2477,26 +2417,28 @@ describe("upload cache", { timeout: 1000 }, () => {
 	it("should not write a cache file when the cache is disabled", async () => {
 		expect.assertions(1);
 
-		const rootDirectory = temporaryRoot();
-		await runOnceAsync(rootDirectory, { uploadCache: false });
+		const fixture = cacheFixture();
+		const { fileSystem, rootDirectory } = fixture;
+		await runOnceAsync(fixture, { uploadCache: false });
 
 		expect(
-			fs.existsSync(path.join(rootDirectory, ".jest-roblox", "upload-cache.json")),
+			fileSystem.existsSync(path.join(rootDirectory, ".jest-roblox", "upload-cache.json")),
 		).toBeFalse();
 	});
 
 	it("should clear a suspect cache without restarting dispatched tests", async () => {
 		expect.assertions(4);
 
-		const rootDirectory = temporaryRoot();
-		await runOnceAsync(rootDirectory);
+		const fixture = cacheFixture();
+		const { fileSystem, rootDirectory } = fixture;
+		await runOnceAsync(fixture);
 		const capture = captureStderr();
 		const failure = apiError(404);
 		const stub = createRunnerStub();
 		stub.setExecute(() => {
 			throw failure;
 		});
-		const backend = createBackend({ runner: stub.runner });
+		const backend = createBackend({ fileSystem, runner: stub.runner });
 
 		await expect(backend.runTestsAsync(jobsOptions([cacheJob(rootDirectory)]))).rejects.toBe(
 			failure,
@@ -2505,34 +2447,36 @@ describe("upload cache", { timeout: 1000 }, () => {
 		expect(capture.writes.join("")).toContain(
 			"clearing the upload cache without restarting dispatched tests",
 		);
-		await expect(runOnceAsync(rootDirectory)).resolves.toBe(1);
+		await expect(runOnceAsync(fixture)).resolves.toBe(1);
 	});
 
 	it("should not re-upload for a failure that is not a missing version", async () => {
 		expect.assertions(3);
 
-		const rootDirectory = temporaryRoot();
-		await runOnceAsync(rootDirectory);
+		const fixture = cacheFixture();
+		const { fileSystem, rootDirectory } = fixture;
+		await runOnceAsync(fixture);
 
 		const stub = createRunnerStub();
 		stub.setExecute(() => {
 			throw apiError(500);
 		});
 
-		const backend = createBackend({ runner: stub.runner });
+		const backend = createBackend({ fileSystem, runner: stub.runner });
 
 		await expect(backend.runTestsAsync(jobsOptions([cacheJob(rootDirectory)]))).rejects.toThrow(
 			"execute failed",
 		);
 		expect(stub.uploadCalls).toHaveLength(0);
-		await expect(runOnceAsync(rootDirectory)).resolves.toBe(0);
+		await expect(runOnceAsync(fixture)).resolves.toBe(0);
 	});
 
 	it("should report cache lookup time separately from execution", async () => {
 		expect.assertions(1);
 
-		const rootDirectory = temporaryRoot();
-		await runOnceAsync(rootDirectory);
+		const fixture = cacheFixture();
+		const { fileSystem, rootDirectory } = fixture;
+		await runOnceAsync(fixture);
 		vi.spyOn(Date, "now")
 			.mockReturnValueOnce(100)
 			.mockReturnValueOnce(101)
@@ -2540,7 +2484,7 @@ describe("upload cache", { timeout: 1000 }, () => {
 			.mockReturnValue(222);
 		const stub = createRunnerStub();
 		stub.setExecute(() => scriptResult(envelope([{ jestOutput: successJest() }])));
-		const backend = createBackend({ runner: stub.runner });
+		const backend = createBackend({ fileSystem, runner: stub.runner });
 		const result = await backend.runTestsAsync(jobsOptions([cacheJob(rootDirectory)]));
 
 		expect(result.timing).toStrictEqual({ executionMs: 22, uploadMs: 1 });
@@ -2549,8 +2493,9 @@ describe("upload cache", { timeout: 1000 }, () => {
 	it("should not restart a cached run when a timeout recovery encounters a missing version", async () => {
 		expect.assertions(2);
 
-		const rootDirectory = temporaryRoot();
-		await runOnceAsync(rootDirectory);
+		const fixture = cacheFixture();
+		const { fileSystem, rootDirectory } = fixture;
+		await runOnceAsync(fixture);
 		const stub = createRunnerStub();
 		stub.setExecute(
 			vi
@@ -2562,7 +2507,7 @@ describe("upload cache", { timeout: 1000 }, () => {
 				.mockReturnValue(scriptResult(envelope([{ jestOutput: successJest() }]))),
 		);
 		captureStderr();
-		const backend = bundleBackend(stub);
+		const backend = bundleBackend(stub, { fileSystem });
 
 		await expect(
 			backend.runTestsAsync({
@@ -2706,15 +2651,16 @@ describe("boot probe", { timeout: 1000 }, () => {
 		async ({ message, outputs }) => {
 			expect.assertions(5);
 
-			const rootDirectory = temporaryRoot();
+			const fixture = cacheFixture();
+			const { fileSystem, rootDirectory } = fixture;
 			const stub = probeStub();
 			stub.setProbe(() => ({ durationMs: 0, outputs }));
-			const backend = createBackend({ runner: stub.runner });
+			const backend = createBackend({ fileSystem, runner: stub.runner });
 
 			const caught = await backend
 				.runTestsAsync(jobsOptions([cacheJob(rootDirectory)]))
 				.catch((err: unknown) => err);
-			const next = await runProbedRunAsync(rootDirectory);
+			const next = await runProbedRunAsync(fixture);
 
 			expect(caught).toBeInstanceOf(BootUnverifiedError);
 			expect(caught).toHaveProperty("message", expect.stringContaining(message));
@@ -2794,9 +2740,10 @@ describe("boot probe", { timeout: 1000 }, () => {
 	it("should skip the probe and pin the tests to the version the upload cache reused", async () => {
 		expect.assertions(4);
 
-		const rootDirectory = temporaryRoot();
-		const first = await runProbedRunAsync(rootDirectory);
-		const second = await runProbedRunAsync(rootDirectory);
+		const fixture = cacheFixture();
+
+		const first = await runProbedRunAsync(fixture);
+		const second = await runProbedRunAsync(fixture);
 
 		expect(first.probeCalls).toHaveLength(1);
 		expect(second.uploadCalls).toHaveLength(0);
@@ -2812,9 +2759,10 @@ describe("boot probe", { timeout: 1000 }, () => {
 	it("should skip the probe, and cache nothing, when the budget is zero", async () => {
 		expect.assertions(4);
 
-		const rootDirectory = temporaryRoot();
-		const first = await runProbedRunAsync(rootDirectory, { bootProbeTimeout: 0 });
-		const second = await runProbedRunAsync(rootDirectory, { bootProbeTimeout: 0 });
+		const fixture = cacheFixture();
+
+		const first = await runProbedRunAsync(fixture, { bootProbeTimeout: 0 });
+		const second = await runProbedRunAsync(fixture, { bootProbeTimeout: 0 });
 
 		expect(first.probeCalls).toHaveLength(0);
 		expect(second.probeCalls).toHaveLength(0);
@@ -2846,9 +2794,10 @@ describe("boot probe", { timeout: 1000 }, () => {
 	it("should leave the runner to guess when the version came from the cache", async () => {
 		expect.assertions(1);
 
-		const rootDirectory = temporaryRoot();
-		await runProbedRunAsync(rootDirectory);
-		const second = await runProbedRunAsync(rootDirectory);
+		const fixture = cacheFixture();
+
+		await runProbedRunAsync(fixture);
+		const second = await runProbedRunAsync(fixture);
 
 		expect(second.executeCalls[0]!.bootProven).toBeFalse();
 	});
@@ -2857,19 +2806,20 @@ describe("boot probe", { timeout: 1000 }, () => {
 	it("should not cache a version whose probes never completed", async () => {
 		expect.assertions(3);
 
-		const rootDirectory = temporaryRoot();
+		const fixture = cacheFixture();
+		const { fileSystem, rootDirectory } = fixture;
 		const failing = probeStub();
 		failing.setProbe(() => {
 			throw pollTimeout();
 		});
 
-		const backend = createBackend({ runner: failing.runner });
+		const backend = createBackend({ fileSystem, runner: failing.runner });
 
 		await expect(
 			backend.runTestsAsync(jobsOptions([cacheJob(rootDirectory)])),
 		).rejects.toBeInstanceOf(BootUnverifiedError);
 
-		const next = await runProbedRunAsync(rootDirectory);
+		const next = await runProbedRunAsync(fixture);
 
 		expect(next.uploadCalls).toHaveLength(1);
 		expect(next.probeCalls).toHaveLength(1);

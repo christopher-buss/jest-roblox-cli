@@ -1,9 +1,7 @@
 import { fromAny } from "@total-typescript/shoehorn";
 
-import * as fs from "node:fs";
-import * as os from "node:os";
 import * as path from "node:path";
-import { describe, expect, it, onTestFinished, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { RojoResolverFactory } from "../utils/rojo-project-reader.ts";
 import { createRojoResolverCache, createSetupResolver } from "./setup-resolver.ts";
@@ -49,21 +47,6 @@ function fakeModuleResolver(mapping: Record<string, string>) {
  */
 function logicalNodeModulesPath(specifier: string): string {
 	return path.resolve(CONFIG_DIRECTORY, "node_modules", specifier);
-}
-
-function writeRealProject(files: Record<string, string>): string {
-	const directory = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "setup-resolver-")));
-	onTestFinished(() => {
-		fs.rmSync(directory, { force: true, recursive: true });
-	});
-
-	for (const [relativePath, contents] of Object.entries(files)) {
-		const full = path.join(directory, relativePath);
-		fs.mkdirSync(path.dirname(full), { recursive: true });
-		fs.writeFileSync(full, contents);
-	}
-
-	return directory;
 }
 
 describe(createSetupResolver, () => {
@@ -151,28 +134,6 @@ describe(createSetupResolver, () => {
 	});
 
 	describe("package specifiers", () => {
-		it("should resolve packages relative to the config directory by default", () => {
-			expect.assertions(1);
-
-			const directory = writeRealProject({
-				"node_modules/example/package.json": JSON.stringify({ main: "setup.luau" }),
-				"node_modules/example/setup.luau": "return {}",
-			});
-			stubRojoResolver({
-				[path.resolve(directory, "node_modules", "example")]: [
-					"ReplicatedStorage",
-					"example",
-				],
-			});
-			const resolve = createSetupResolver({
-				configDirectory: directory,
-				createResolver,
-				rojoConfigPath: path.join(directory, "default.project.json"),
-			});
-
-			expect(resolve("example")).toBe("ReplicatedStorage/example");
-		});
-
 		it("should resolve a scoped package specifier", () => {
 			expect.assertions(1);
 
@@ -255,28 +216,6 @@ describe(createSetupResolver, () => {
 			);
 		});
 	});
-
-	it("should walk the real rojo project when no factory is given", () => {
-		expect.assertions(1);
-
-		const directory = writeRealProject({
-			"default.project.json": JSON.stringify({
-				name: "Game",
-				tree: {
-					$className: "DataModel",
-					ReplicatedStorage: { $path: "src" },
-				},
-			}),
-			"src/test-setup.luau": "return {}",
-		});
-
-		const resolve = createSetupResolver({
-			configDirectory: directory,
-			rojoConfigPath: path.join(directory, "default.project.json"),
-		});
-
-		expect(resolve("./src/test-setup.luau")).toBe("ReplicatedStorage/test-setup");
-	});
 });
 
 describe("resolver caching", () => {
@@ -317,5 +256,40 @@ describe("resolver caching", () => {
 		makeResolver({ cache, rojoConfigPath: "/project/other.project.json" });
 
 		expect(createResolver).toHaveBeenCalledTimes(2);
+	});
+});
+
+describe("native resolver", () => {
+	it("should resolve a committed project through the default factory", () => {
+		expect.assertions(1);
+
+		const directory = path.resolve(import.meta.dirname, "../../test/fixtures/setup-resolver");
+		const resolve = createSetupResolver({
+			configDirectory: directory,
+			rojoConfigPath: path.join(directory, "default.project.json"),
+		});
+
+		expect(resolve("./test-setup.luau")).toBe("ReplicatedStorage");
+	});
+});
+
+describe("native package resolver", () => {
+	it("should resolve packages relative to the config directory by default", () => {
+		expect.assertions(1);
+
+		const directory = path.resolve(import.meta.dirname, "../../test/e2e/fixtures/live-place");
+		stubRojoResolver({
+			[path.join(directory, "node_modules", "@rbxts/jest-globals")]: [
+				"ReplicatedStorage",
+				"@rbxts/jest-globals",
+			],
+		});
+		const resolve = createSetupResolver({
+			configDirectory: directory,
+			createResolver,
+			rojoConfigPath: path.join(directory, "default.project.json"),
+		});
+
+		expect(resolve("@rbxts/jest-globals")).toBe("ReplicatedStorage/@rbxts/jest-globals");
 	});
 });

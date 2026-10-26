@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import type { MemoryFileSystem } from "../test/mocks/memory-file-system.ts";
-import { createMemoryFileSystem } from "../test/mocks/memory-file-system.ts";
+import type { MemoryFileSystem } from "#test/mocks/memory-file-system.ts";
+import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { stampPluginVersion } from "./stamp-plugin-version.ts";
 
 /**

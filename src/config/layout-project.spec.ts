@@ -1,7 +1,7 @@
 import * as path from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { createMemoryFileSystem } from "../../test/mocks/memory-file-system.ts";
+import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { LAYOUT_PROJECT_FILE, resolveLayoutProject } from "./layout-project.ts";
 import { DEFAULT_CONFIG, type ResolvedConfig } from "./schema.ts";
 

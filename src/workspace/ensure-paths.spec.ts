@@ -1,11 +1,9 @@
 import { fromPartial } from "@total-typescript/shoehorn";
 
-import * as fs from "node:fs";
-import * as os from "node:os";
 import * as path from "node:path";
-import { describe, expect, it, onTestFinished, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-import { createMemoryFileSystem } from "../../test/mocks/memory-file-system.ts";
+import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import { ensurePackageDirectories } from "./ensure-paths.ts";
 import type { PackageDescriptor } from "./preflight.ts";
@@ -82,24 +80,23 @@ describe(ensurePackageDirectories, () => {
 	it("should ignore missing and malformed projects", () => {
 		expect.assertions(2);
 
-		const temporaryRoot = fs.realpathSync(
-			fs.mkdtempSync(path.join(os.tmpdir(), "jest-roblox-cli-")),
-		);
-		onTestFinished(() => {
-			fs.rmSync(temporaryRoot, { force: true, recursive: true });
-		});
-
+		const { fileSystem } = createMemoryFileSystem();
+		const temporaryRoot = path.resolve("fixture");
 		const projectPath = path.join(temporaryRoot, "default.project.json");
-		fs.writeFileSync(projectPath, "{}");
+		fileSystem.mkdirSync(temporaryRoot, { recursive: true });
+		fileSystem.writeFileSync(projectPath, "{}");
 
 		expect(() => {
-			ensurePackageDirectories([
-				fromPartial<PackageDescriptor>({
-					rojoProjectPath: path.join(temporaryRoot, "missing.json"),
-				}),
-				fromPartial<PackageDescriptor>({ rojoProjectPath: projectPath }),
-			]);
+			ensurePackageDirectories(
+				[
+					fromPartial<PackageDescriptor>({
+						rojoProjectPath: path.join(temporaryRoot, "missing.json"),
+					}),
+					fromPartial<PackageDescriptor>({ rojoProjectPath: projectPath }),
+				],
+				fileSystem,
+			);
 		}).not.toThrow();
-		expect(fs.readdirSync(temporaryRoot)).toStrictEqual(["default.project.json"]);
+		expect(fileSystem.readdirSync(temporaryRoot)).toStrictEqual(["default.project.json"]);
 	});
 });

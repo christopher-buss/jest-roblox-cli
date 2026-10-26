@@ -4,12 +4,12 @@ import { type } from "arktype";
 import { Buffer } from "node:buffer";
 import { assert, describe, expect, it, onTestFinished, vi } from "vitest";
 
-import type { MockWebSocketServer } from "../../test/mocks/mock-web-socket-server.ts";
+import type { MockWebSocketServer } from "#test/mocks/mock-web-socket-server.ts";
 import {
 	getLastCreatedServer,
 	mockWebSocketServerFactory as webSocketServerFactory,
-} from "../../test/mocks/mock-web-socket-server.ts";
-import { MockWebSocket } from "../../test/mocks/mock-web-socket.ts";
+} from "#test/mocks/mock-web-socket-server.ts";
+import { MockWebSocket } from "#test/mocks/mock-web-socket.ts";
 import { DEFAULT_CONFIG } from "../config/schema.ts";
 import type { ResolvedConfig } from "../config/schema.ts";
 import type { RunProgress } from "../progress/reporter.ts";

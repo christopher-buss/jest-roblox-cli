@@ -9,7 +9,11 @@
 import * as path from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { createFixtureSandbox, readMergedTestFilePaths, runCliAsync } from "./helpers.ts";
+import {
+	createFixtureSandbox,
+	readMergedTestFilePaths,
+	runCliAsync,
+} from "#test/e2e/cli/helpers.ts";
 
 const WORKSPACE_FIXTURE = path.resolve(__dirname, "../fixtures/workspace");
 

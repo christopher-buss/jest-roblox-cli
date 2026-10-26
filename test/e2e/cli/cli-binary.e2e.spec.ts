@@ -1,7 +1,7 @@
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { createFixtureSandbox, patchSandboxConfig, runCli } from "./helpers.ts";
+import { createFixtureSandbox, patchSandboxConfig, runCli } from "#test/e2e/cli/helpers.ts";
 
 const LUAU_FIXTURE = path.resolve(__dirname, "../fixtures/luau-project");
 const RBXTS_FIXTURE = path.resolve(__dirname, "../fixtures/rbxts-project");

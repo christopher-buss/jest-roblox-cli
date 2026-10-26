@@ -7,10 +7,10 @@ import process from "node:process";
 import type { Except } from "type-fest";
 import { assert, describe, expect, it, vi } from "vitest";
 
-import { writeAgedFile } from "../../test/mocks/aged-file.ts";
-import type { MemoryFileSystem, MemoryVolume } from "../../test/mocks/memory-file-system.ts";
-import { createMemoryFileSystem } from "../../test/mocks/memory-file-system.ts";
-import { movableClockCollector, tickingClockCollector } from "../../test/mocks/movable-clock.ts";
+import { writeAgedFile } from "#test/mocks/aged-file.ts";
+import type { MemoryFileSystem, MemoryVolume } from "#test/mocks/memory-file-system.ts";
+import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
+import { movableClockCollector, tickingClockCollector } from "#test/mocks/movable-clock.ts";
 import type { ResolvedProjectConfig } from "../config/projects.ts";
 import type { ResolvedConfig } from "../config/schema.ts";
 import { DEFAULT_CONFIG } from "../config/schema.ts";

@@ -3,7 +3,7 @@ import { fromAny } from "@total-typescript/shoehorn";
 import * as path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
-import { createMemoryFileSystem } from "../../test/mocks/memory-file-system.ts";
+import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import type { ExecuteResult } from "../executor/types.ts";
 import type { GameOutputEntry } from "../types/game-output.ts";
 import type { JestResult } from "../types/jest-result.ts";

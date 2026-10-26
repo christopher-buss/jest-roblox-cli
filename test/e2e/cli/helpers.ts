@@ -6,10 +6,10 @@ import path from "node:path";
 import nodeProcess from "node:process";
 import { assert, onTestFinished } from "vitest";
 
+import { createSandboxDirectory } from "#test/e2e/sandbox-root.ts";
 import { isStudioDiscoverable } from "../../../src/backends/auto.ts";
 import type { CodeBundleArtifact } from "../../../src/staging/place-builder.ts";
 import type { JestResult } from "../../../src/types/jest-result.ts";
-import { createSandboxDirectory } from "../sandbox-root.ts";
 
 export interface JestEnvelopePayload {
 	runner: { setup: number };
@@ -397,7 +397,7 @@ const RBXTS_EXAMPLE_SPEC_LUAU_MAP = JSON.stringify({
 	names: [],
 	sources: ["../src/example.spec.ts"],
 	sourcesContent: [
-		'import { add, greet } from "./example";\n\nconst result = greet("Alice");\nprint(result);\n\nconst sum = add(2, 3);\nprint(sum);\n',
+		'import { add, greet } from "#test/e2e/cli/example";\n\nconst result = greet("Alice");\nprint(result);\n\nconst sum = add(2, 3);\nprint(sum);\n',
 	],
 	version: 3,
 });

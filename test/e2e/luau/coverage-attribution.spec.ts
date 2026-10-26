@@ -6,7 +6,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, onTestFinished } from "vitest";
 
-import { LUTE_HARNESS_TIMEOUT } from "./lute-timeout.ts";
+import { LUTE_HARNESS_TIMEOUT } from "#test/e2e/luau/lute-timeout.ts";
 
 // Drives the attribution module under the real lute binary, inlining it into the
 // harness the same way the runner welds it. The harness exercises the pure
@@ -16,7 +16,7 @@ import { LUTE_HARNESS_TIMEOUT } from "./lute-timeout.ts";
 // imported) so the spec needs no `*.luau` ambient declaration.
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const MODULE_SOURCE = fs.readFileSync(
-	path.join(HERE, "../../luau/coverage-attribution.luau"),
+	path.join(HERE, "../../../luau/coverage-attribution.luau"),
 	"utf-8",
 );
 const HARNESS = fs.readFileSync(path.join(HERE, "coverage-attribution.harness.luau"), "utf-8");

@@ -6,13 +6,13 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, onTestFinished } from "vitest";
 
-import { LUTE_HARNESS_TIMEOUT } from "./lute-timeout.ts";
+import { LUTE_HARNESS_TIMEOUT } from "#test/e2e/luau/lute-timeout.ts";
 
 // Drives the shared infinite-yield watchdog under lute. Its only dependency is
 // LogService, which the harness fakes. Requires `lute` on PATH (mise, in dev
 // and CI).
 const CURRENT_DIRECTORY = path.dirname(fileURLToPath(import.meta.url));
-const LUAU_DIRECTORY = path.join(CURRENT_DIRECTORY, "../../luau");
+const LUAU_DIRECTORY = path.join(CURRENT_DIRECTORY, "../../../luau");
 const MODULE_SOURCE = fs.readFileSync(path.join(LUAU_DIRECTORY, "infinite-yield.luau"), "utf-8");
 const HARNESS = fs.readFileSync(
 	path.join(CURRENT_DIRECTORY, "infinite-yield.harness.luau"),

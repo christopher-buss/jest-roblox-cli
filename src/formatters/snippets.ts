@@ -38,6 +38,7 @@ interface SnippetStyle {
 }
 
 interface TsSnippetOptions {
+	fileSystem: FileSystem;
 	loc: MappedLocation;
 	showLuau: boolean;
 	styles: Styles;
@@ -142,11 +143,11 @@ export function resolveSourceSnippets({
 }): Array<string> {
 	if (mappedLocations.length > 0) {
 		return mappedLocations.flatMap((loc) => {
-			return formatMappedLocationSnippets({ loc, showLuau, styles, useColor });
+			return formatMappedLocationSnippets({ fileSystem, loc, showLuau, styles, useColor });
 		});
 	}
 
-	const fallback = formatFallbackSnippet({ message, styles, useColor });
+	const fallback = formatFallbackSnippet({ fileSystem, message, styles, useColor });
 	if (fallback.length > 0) {
 		return fallback;
 	}
@@ -220,6 +221,7 @@ function formatCaretLine({ column, content, padding, styles }: FormatCaretLineOp
 // branches on them to pick between this and the Luau-only rendering, so
 // re-checking them here would be an unreachable guard.
 function tsSnippetLines({
+	fileSystem,
 	loc,
 	showLuau,
 	styles,
@@ -231,6 +233,7 @@ function tsSnippetLines({
 		column: loc.tsColumn,
 		context: 2,
 		filePath: tsPath,
+		fileSystem,
 		line: tsLine,
 		sourceContent: loc.sourceContent,
 	});
@@ -247,14 +250,20 @@ function tsSnippetLines({
 }
 
 function luauSnippetLines({
+	fileSystem,
 	language,
 	loc,
 	styles,
 	useColor,
-}: SnippetStyle & { language?: string; loc: MappedLocation }): Array<string> {
+}: SnippetStyle & {
+	fileSystem: FileSystem;
+	language?: string;
+	loc: MappedLocation;
+}): Array<string> {
 	const luauSnippet = getSourceSnippet({
 		context: 2,
 		filePath: loc.luauPath,
+		fileSystem,
 		line: loc.luauLine,
 	});
 	if (luauSnippet === undefined) {
@@ -274,32 +283,46 @@ function luauSnippetLines({
 }
 
 function formatMappedLocationSnippets({
+	fileSystem,
 	loc,
 	showLuau,
 	styles,
 	useColor,
-}: SnippetStyle & { loc: MappedLocation; showLuau: boolean }): Array<string> {
+}: SnippetStyle & {
+	fileSystem: FileSystem;
+	loc: MappedLocation;
+	showLuau: boolean;
+}): Array<string> {
 	const { tsLine, tsPath } = loc;
 
 	// Luau-only: show the Luau snippet without a language label
 	if (tsPath === undefined || tsLine === undefined) {
-		return luauSnippetLines({ loc, styles, useColor });
+		return luauSnippetLines({ fileSystem, loc, styles, useColor });
 	}
 
 	// When TS fields are present, show TypeScript snippet (+ optional Luau)
-	const snippets = tsSnippetLines({ loc, showLuau, styles, tsLine, tsPath, useColor });
+	const snippets = tsSnippetLines({
+		fileSystem,
+		loc,
+		showLuau,
+		styles,
+		tsLine,
+		tsPath,
+		useColor,
+	});
 	if (showLuau) {
-		snippets.push(...luauSnippetLines({ language: "Luau", loc, styles, useColor }));
+		snippets.push(...luauSnippetLines({ fileSystem, language: "Luau", loc, styles, useColor }));
 	}
 
 	return snippets;
 }
 
 function formatFallbackSnippet({
+	fileSystem,
 	message,
 	styles,
 	useColor,
-}: SnippetStyle & { message: string }): Array<string> {
+}: SnippetStyle & { fileSystem: FileSystem; message: string }): Array<string> {
 	const location = parseSourceLocation(message);
 	if (location === undefined) {
 		return [];
@@ -309,6 +332,7 @@ function formatFallbackSnippet({
 		column: location.column,
 		context: 2,
 		filePath: location.path,
+		fileSystem,
 		line: location.line,
 	});
 	if (snippet === undefined) {

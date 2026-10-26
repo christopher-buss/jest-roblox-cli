@@ -6,10 +6,10 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, onTestFinished } from "vitest";
 
-import { LUTE_HARNESS_TIMEOUT } from "./lute-timeout.ts";
+import { LUTE_HARNESS_TIMEOUT } from "#test/e2e/luau/lute-timeout.ts";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const LUAU_DIRECTORY = path.join(HERE, "../../luau");
+const LUAU_DIRECTORY = path.join(HERE, "../../../luau");
 const HOOK_SOURCE = fs.readFileSync(path.join(LUAU_DIRECTORY, "circus-hook.luau"), "utf-8");
 const MODULE_SOURCE = fs.readFileSync(
 	path.join(LUAU_DIRECTORY, "cooperative-scheduler.luau"),

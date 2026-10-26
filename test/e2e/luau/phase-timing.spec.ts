@@ -6,27 +6,21 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, onTestFinished } from "vitest";
 
-import { LUTE_HARNESS_TIMEOUT } from "./lute-timeout.ts";
+import { LUTE_HARNESS_TIMEOUT } from "#test/e2e/luau/lute-timeout.ts";
 
-// Drives the workspace return-envelope budget under lute. Pure module, no
+// Drives the shared `runner.timing` envelope builder under lute. Pure module, no
 // dependencies to inline. Requires `lute` on PATH (mise, in dev and CI).
 const CURRENT_DIRECTORY = path.dirname(fileURLToPath(import.meta.url));
-const LUAU_DIRECTORY = path.join(CURRENT_DIRECTORY, "../../luau");
-const MODULE_SOURCE = fs.readFileSync(
-	path.join(LUAU_DIRECTORY, "staging/result-budget.luau"),
-	"utf-8",
-);
-const HARNESS = fs.readFileSync(
-	path.join(CURRENT_DIRECTORY, "result-budget.harness.luau"),
-	"utf-8",
-);
+const LUAU_DIRECTORY = path.join(CURRENT_DIRECTORY, "../../../luau");
+const MODULE_SOURCE = fs.readFileSync(path.join(LUAU_DIRECTORY, "phase-timing.luau"), "utf-8");
+const HARNESS = fs.readFileSync(path.join(CURRENT_DIRECTORY, "phase-timing.harness.luau"), "utf-8");
 
-describe("workspace result budget under lute", { timeout: LUTE_HARNESS_TIMEOUT }, () => {
-	it("should pass the result-budget harness assertions", () => {
+describe("shared phase-timing builder under lute", { timeout: LUTE_HARNESS_TIMEOUT }, () => {
+	it("should pass the phase-timing harness assertions", () => {
 		expect.assertions(1);
 
 		const script = HARNESS.replace("__MODULE__", () => `(function()\n${MODULE_SOURCE}\nend)()`);
-		const directory = fs.mkdtempSync(path.join(os.tmpdir(), "result-budget-"));
+		const directory = fs.mkdtempSync(path.join(os.tmpdir(), "phase-timing-"));
 		onTestFinished(() => {
 			fs.rmSync(directory, { force: true, recursive: true });
 		});

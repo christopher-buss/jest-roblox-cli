@@ -3,7 +3,7 @@ import { fromAny } from "@total-typescript/shoehorn";
 import * as path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
-import { createMemoryFileSystem } from "../../test/mocks/memory-file-system.ts";
+import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import type { ResolvedProjectConfig } from "../config/projects.ts";
 import { DEFAULT_CONFIG, type ResolvedConfig } from "../config/schema.ts";
 import { STUB_FILENAME } from "../config/stubs.ts";

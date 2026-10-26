@@ -6,8 +6,8 @@
 
 	Deliberately free of Roblox globals — `encode` arrives as a dependency — so
 	the half of the coordinator that is easy to get wrong runs under Lute
-	(`test/luau/vm-parallel.harness.luau`, driven by the
-	`test/luau/vm-parallel.spec.ts` wrapper) rather than only inside a Studio
+	(`test/e2e/luau/vm-parallel.harness.luau`, driven by the
+	`test/e2e/luau/vm-parallel.spec.ts` wrapper) rather than only inside a Studio
 	session.
 ]]
 local module = {}

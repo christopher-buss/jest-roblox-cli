@@ -1,10 +1,10 @@
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
+import { createRbxtsFixtureSandbox } from "#test/e2e/cli/helpers.ts";
 import { createSourceMapper, type RojoProject } from "../../../src/source-mapper/index.ts";
 import type { TsconfigMapping } from "../../../src/types/tsconfig.ts";
 import { normalizeWindowsPath } from "../../../src/utils/normalize-windows-path.ts";
-import { createRbxtsFixtureSandbox } from "../../e2e/cli/helpers.ts";
 
 const normalize = normalizeWindowsPath;
 const RBXTS_FIXTURE = path.resolve(__dirname, "../../e2e/fixtures/rbxts-project");

@@ -1,15 +1,15 @@
 import istanbulCoverage from "istanbul-lib-coverage";
-import istanbulReport from "istanbul-lib-report";
 import { Buffer } from "node:buffer";
 import { createHash } from "node:crypto";
 import * as fs from "node:fs";
 import { createRequire } from "node:module";
-import * as os from "node:os";
 import * as path from "node:path";
-import { assert, describe, expect, it, onTestFinished, vi } from "vitest";
+import { assert, describe, expect, it, vi } from "vitest";
 
+import { createMemoryReportEnvironment } from "#test/mocks/memory-report-context.ts";
 import type { CoverageReporter } from "../config/schema.ts";
 import { isCoverageReporter, VALID_COVERAGE_REPORTERS } from "../config/schema.ts";
+import type { FileSystem } from "../utils/file-system.ts";
 import type { HtmlAssetGroup } from "./html-assets.ts";
 import { writeIstanbulHtmlAssets } from "./html-assets.ts";
 import { createReporter } from "./reporter-registry.ts";
@@ -58,9 +58,11 @@ function readSourceAssets(group: HtmlAssetGroup): Map<string, Buffer> {
 	return assets;
 }
 
-function readWrittenAssets(directory: string): Map<string, Buffer> {
-	const names = fs.readdirSync(directory);
-	return new Map(names.map((name) => [name, fs.readFileSync(path.join(directory, name))]));
+function readWrittenAssets(directory: string, fileSystem: FileSystem): Map<string, Buffer> {
+	const names = fileSystem.readdirSync(directory);
+	return new Map(
+		names.map((name) => [name, fileSystem.readFileSync(path.join(directory, name))]),
+	);
 }
 
 function digestAssets(assets: Map<string, Buffer>): Map<string, string> {
@@ -69,34 +71,6 @@ function digestAssets(assets: Map<string, Buffer>): Map<string, string> {
 			return [name, createHash("sha256").update(content).digest("hex")];
 		}),
 	);
-}
-
-/**
- * A real istanbul file writer rooted at `directory`. Reached through
- * `createContext` because that is how a reporter gets one, and the write it
- * performs — bytes through a file descriptor typed for strings — is the half of
- * this that has to hold.
- */
-function createContext(directory: string): istanbulReport.Context {
-	return istanbulReport.createContext({
-		coverageMap: istanbulCoverage.createCoverageMap({}),
-		dir: directory,
-	});
-}
-
-function createWriter(directory: string): istanbulReport.Context["writer"] {
-	return istanbulReport.createContext({
-		coverageMap: istanbulCoverage.createCoverageMap({}),
-		dir: directory,
-	}).writer;
-}
-
-function createTemporaryDirectory(): string {
-	const directory = fs.mkdtempSync(path.join(os.tmpdir(), "jest-roblox-assets-"));
-	onTestFinished(() => {
-		fs.rmSync(directory, { force: true, recursive: true });
-	});
-	return directory;
 }
 
 describe(createReporter, () => {
@@ -122,13 +96,19 @@ describe(writeIstanbulHtmlAssets, () => {
 		(group) => {
 			expect.assertions(1);
 
-			const directory = createTemporaryDirectory();
+			const { createContext, directory, fileSystem } = createMemoryReportEnvironment();
 
-			writeIstanbulHtmlAssets(createWriter(directory), group);
+			writeIstanbulHtmlAssets(
+				createContext({
+					coverageMap: istanbulCoverage.createCoverageMap({}),
+					dir: directory,
+				}).writer,
+				group,
+			);
 
 			// Names as well as bytes: an istanbul upgrade that adds an asset
 			// has to reach the bundle, and nothing else here would notice.
-			expect(digestAssets(readWrittenAssets(directory))).toStrictEqual(
+			expect(digestAssets(readWrittenAssets(directory, fileSystem))).toStrictEqual(
 				digestAssets(readSourceAssets(group)),
 			);
 		},
@@ -137,8 +117,11 @@ describe(writeIstanbulHtmlAssets, () => {
 	it("should close every asset writer after publishing", () => {
 		expect.assertions(1);
 
-		const directory = createTemporaryDirectory();
-		const writer = createWriter(directory);
+		const { createContext, directory } = createMemoryReportEnvironment();
+		const { writer } = createContext({
+			coverageMap: istanbulCoverage.createCoverageMap({}),
+			dir: directory,
+		});
 		const writeFile = writer.writeFile.bind(writer);
 		const closed: Array<string> = [];
 		vi.spyOn(writer, "writeFile").mockImplementation((name) => {
@@ -169,10 +152,12 @@ describe("report execution", () => {
 	])("should write the %s report with its assets", ([name, subdirectory]) => {
 		expect.assertions(1);
 
-		const directory = createTemporaryDirectory();
+		const { createContext, directory, fileSystem } = createMemoryReportEnvironment();
 
-		createReporter(name, {}).execute(createContext(directory));
+		createReporter(name, {}).execute(
+			createContext({ coverageMap: istanbulCoverage.createCoverageMap({}), dir: directory }),
+		);
 
-		expect(fs.existsSync(path.join(directory, subdirectory, "base.css"))).toBeTrue();
+		expect(fileSystem.existsSync(path.join(directory, subdirectory, "base.css"))).toBeTrue();
 	});
 });

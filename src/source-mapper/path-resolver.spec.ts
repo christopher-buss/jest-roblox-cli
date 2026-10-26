@@ -1,7 +1,7 @@
 import process from "node:process";
 import { describe, expect, it } from "vitest";
 
-import { createMemoryFileSystem } from "../../test/mocks/memory-file-system.ts";
+import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { createPathResolver, luauInitToIndex } from "./path-resolver.ts";
 
 describe(createPathResolver, () => {

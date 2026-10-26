@@ -21,6 +21,9 @@
 	"author": "Christopher Buss <christopher.buss@pm.me> (https://github.com/christopher-buss)",
 	"sideEffects": false,
 	"type": "module",
+	"imports": {
+		"#test/*": "./test/*"
+	},
 	"exports": {
 		".": {
 			"source": "./src/source.ts",

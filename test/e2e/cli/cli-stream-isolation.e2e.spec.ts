@@ -2,14 +2,14 @@ import { type } from "arktype";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { startFakeOpenCloudServerAsync } from "./fake-open-cloud.ts";
+import { startFakeOpenCloudServerAsync } from "#test/e2e/cli/fake-open-cloud.ts";
 import {
 	buildMixedOutput,
 	buildPassingPayload,
 	createOpenCloudEnvironment,
 	createRbxtsFixtureSandbox,
 	runCliAsync,
-} from "./helpers.ts";
+} from "#test/e2e/cli/helpers.ts";
 
 const RBXTS_FIXTURE = path.resolve(__dirname, "../fixtures/rbxts-project");
 

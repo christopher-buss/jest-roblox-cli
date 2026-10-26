@@ -1,11 +1,10 @@
 import { fromPartial } from "@total-typescript/shoehorn";
 
-import * as fs from "node:fs";
-import * as os from "node:os";
 import * as path from "node:path";
 import color from "tinyrainbow";
-import { describe, expect, it, onTestFinished } from "vitest";
+import { describe, expect, it } from "vitest";
 
+import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import type { SourceMapper } from "../source-mapper/index.ts";
 import type { TestCaseResult, TestFileResult } from "../types/jest-result.ts";
 import {
@@ -34,14 +33,10 @@ function createTaggedStyles(): Styles {
 	};
 }
 
-function makeTemporaryFile(content: string): string {
-	const directory = fs.mkdtempSync(path.join(os.tmpdir(), "jest-roblox-failure-"));
-	const filePath = path.join(directory, "example.spec.luau");
-	fs.writeFileSync(filePath, content);
-	onTestFinished(() => {
-		fs.rmSync(directory, { force: true, recursive: true });
-	});
-	return filePath;
+function makeSourceFile(content: string) {
+	const filePath = path.resolve("example.spec.luau");
+	const { fileSystem } = createMemoryFileSystem({ [filePath]: content });
+	return { filePath, fileSystem };
 }
 
 describe(parseErrorMessage, () => {
@@ -102,7 +97,7 @@ describe(formatFailure, () => {
 	it("should omit Luau snippets by default", () => {
 		expect.assertions(2);
 
-		const luauPath = makeTemporaryFile("return false\n");
+		const { filePath: luauPath, fileSystem } = makeSourceFile("return false\n");
 		const sourceMapper = fromPartial<SourceMapper>({
 			mapFailureWithLocations: () => {
 				return {
@@ -124,7 +119,7 @@ describe(formatFailure, () => {
 			failureMessages: ["Error: mismatch"],
 			title: "case",
 		});
-		const output = formatFailure({ sourceMapper, test, useColor: false });
+		const output = formatFailure({ fileSystem, sourceMapper, test, useColor: false });
 
 		expect(output).toContain("src/example.spec.ts:1");
 		expect(output).not.toContain("(Luau)");
@@ -164,14 +159,16 @@ describe(formatFailure, () => {
 	it("should not search for a snapshot call for an ordinary failure", () => {
 		expect.assertions(1);
 
-		const filePath = makeTemporaryFile("expect(value).toMatchSnapshot();\n");
+		const { filePath, fileSystem } = makeSourceFile("expect(value).toMatchSnapshot();\n");
 		const test = fromPartial<TestCaseResult>({
 			ancestorTitles: [],
 			failureMessages: ["ordinary failure"],
 			title: "case",
 		});
 
-		expect(formatFailure({ filePath, test, useColor: false })).not.toContain(`❯ ${filePath}:1`);
+		expect(formatFailure({ filePath, fileSystem, test, useColor: false })).not.toContain(
+			`❯ ${filePath}:1`,
+		);
 	});
 
 	it("should render expected/received and snapshot failures completely", () => {

@@ -10,7 +10,7 @@
 -- independent of there.
 --
 -- Pure and Roblox-free by design so it's testable under `lute` without
--- faking `game`/services/Jest — see test/luau/phase-timing.spec.ts.
+-- faking `game`/services/Jest — see test/e2e/luau/phase-timing.spec.ts.
 
 local module = {}
 

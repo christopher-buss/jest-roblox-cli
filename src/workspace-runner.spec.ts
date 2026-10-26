@@ -5,9 +5,9 @@ import process from "node:process";
 import type { Except } from "type-fest";
 import { assert, describe, expect, it, vi } from "vitest";
 
-import type { MemoryFileSystem } from "../test/mocks/memory-file-system.ts";
-import { createMemoryFileSystem } from "../test/mocks/memory-file-system.ts";
-import { movableClockCollector } from "../test/mocks/movable-clock.ts";
+import type { MemoryFileSystem } from "#test/mocks/memory-file-system.ts";
+import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
+import { movableClockCollector } from "#test/mocks/movable-clock.ts";
 import type {
 	Backend,
 	BackendOptions,

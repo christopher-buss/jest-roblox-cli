@@ -1,7 +1,7 @@
 import * as path from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { createMemoryFileSystem } from "../../test/mocks/memory-file-system.ts";
+import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import { toPosixRoot } from "../utils/normalize-windows-path.ts";
 import { createCopyIgnoreMatcher } from "./discover-files.ts";

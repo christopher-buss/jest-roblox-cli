@@ -4,12 +4,12 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { assert, describe, expect, it } from "vitest";
 
-import { collectCoverage } from "../../src/coverage-pipeline/coverage-collector.ts";
-import { buildCoverageMap } from "../../src/coverage-pipeline/coverage-map-builder.ts";
-import { insertProbes } from "../../src/coverage-pipeline/probe-inserter.ts";
-import { luauParser } from "../../src/luau/parser.ts";
+import { collectCoverage } from "../../../src/coverage-pipeline/coverage-collector.ts";
+import { buildCoverageMap } from "../../../src/coverage-pipeline/coverage-map-builder.ts";
+import { insertProbes } from "../../../src/coverage-pipeline/probe-inserter.ts";
+import { luauParser } from "../../../src/luau/parser.ts";
 
-const FIXTURES_DIR = path.resolve(import.meta.dirname, "../fixtures/coverage-pipeline");
+const FIXTURES_DIR = path.resolve(import.meta.dirname, "../../fixtures/coverage-pipeline");
 
 function instrumentFixture(fixtureName: string, fileKey: string) {
 	const fixturePath = path.join(FIXTURES_DIR, fixtureName);

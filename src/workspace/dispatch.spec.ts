@@ -3,7 +3,7 @@ import { fromAny } from "@total-typescript/shoehorn";
 import process from "node:process";
 import { assert, describe, expect, it, onTestFinished, vi } from "vitest";
 
-import { createMemoryFileSystem } from "../../test/mocks/memory-file-system.ts";
+import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import type { Backend, ProjectJob } from "../backends/interface.ts";
 import { DEFAULT_CONFIG } from "../config/schema.ts";
 import type { ExecuteResult, runProjectsAsync, RunProjectsResult } from "../executor.ts";

@@ -3,14 +3,14 @@ import { type } from "arktype";
 import * as path from "node:path";
 import { assert, describe, expect, it } from "vitest";
 
-import type { MemoryFileSystem } from "../../test/mocks/memory-file-system.ts";
+import type { MemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import {
 	mountOf,
 	seed,
 	staged,
 	stagedProject,
 	stagedProjectSchema,
-} from "../../test/mocks/staged-project.ts";
+} from "#test/mocks/staged-project.ts";
 import type { RojoTreeNode } from "../types/rojo.ts";
 import type { PosixRoot } from "../utils/normalize-windows-path.ts";
 import { normalizeWindowsPath, toPosixRoot } from "../utils/normalize-windows-path.ts";

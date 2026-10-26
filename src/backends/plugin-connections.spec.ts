@@ -4,9 +4,9 @@ import { Buffer } from "node:buffer";
 import { assert, describe, expect, it, onTestFinished, vi } from "vitest";
 import type { WebSocket, WebSocketServer } from "ws";
 
+import { MockWebSocketServer } from "#test/mocks/mock-web-socket-server.ts";
+import { MockWebSocket } from "#test/mocks/mock-web-socket.ts";
 import packageJson from "../../package.json" with { type: "json" };
-import { MockWebSocketServer } from "../../test/mocks/mock-web-socket-server.ts";
-import { MockWebSocket } from "../../test/mocks/mock-web-socket.ts";
 import {
 	closePluginServer,
 	describePluginMismatch,

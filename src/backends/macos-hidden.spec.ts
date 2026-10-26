@@ -4,7 +4,7 @@ import { EventEmitter } from "node:events";
 import { Script } from "node:vm";
 import { describe, expect, it, vi } from "vitest";
 
-import { createMemoryFileSystem } from "../../test/mocks/memory-file-system.ts";
+import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import type { ChildProcessRunner } from "../utils/child-process.ts";
 import { findAppBundle, launchHiddenOnMacos } from "./macos-hidden.ts";
 

@@ -6,25 +6,24 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, onTestFinished } from "vitest";
 
-import { LUTE_HARNESS_TIMEOUT } from "./lute-timeout.ts";
+import { LUTE_HARNESS_TIMEOUT } from "#test/e2e/luau/lute-timeout.ts";
 
+// Drives the workspace materializer under lute against a fake DataModel the
+// harness supplies. Requires `lute` on PATH (mise, in dev and CI).
 const CURRENT_DIRECTORY = path.dirname(fileURLToPath(import.meta.url));
-const LUAU_DIRECTORY = path.join(CURRENT_DIRECTORY, "../../luau");
+const LUAU_DIRECTORY = path.join(CURRENT_DIRECTORY, "../../../luau");
 const MODULE_SOURCE = fs.readFileSync(
-	path.join(LUAU_DIRECTORY, "runtime-stub-hooks.luau"),
+	path.join(LUAU_DIRECTORY, "staging/materializer.luau"),
 	"utf-8",
 );
-const HARNESS = fs.readFileSync(
-	path.join(CURRENT_DIRECTORY, "runtime-stub-hooks.harness.luau"),
-	"utf-8",
-);
+const HARNESS = fs.readFileSync(path.join(CURRENT_DIRECTORY, "materializer.harness.luau"), "utf-8");
 
-describe("runtime jest.config stubs under lute", { timeout: LUTE_HARNESS_TIMEOUT }, () => {
-	it("should pass the runtime-stub-hooks harness assertions", () => {
+describe("workspace materializer under lute", { timeout: LUTE_HARNESS_TIMEOUT }, () => {
+	it("should pass the materializer harness assertions", () => {
 		expect.assertions(1);
 
 		const script = HARNESS.replace("__MODULE__", () => `(function()\n${MODULE_SOURCE}\nend)()`);
-		const directory = fs.mkdtempSync(path.join(os.tmpdir(), "runtime-stub-hooks-"));
+		const directory = fs.mkdtempSync(path.join(os.tmpdir(), "materializer-"));
 		onTestFinished(() => {
 			fs.rmSync(directory, { force: true, recursive: true });
 		});

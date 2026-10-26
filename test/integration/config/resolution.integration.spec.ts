@@ -1,11 +1,11 @@
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
+import { readJsonSync } from "#test/e2e/cli/helpers.ts";
 import { loadConfig } from "../../../src/config/loader.ts";
 import { resolveAllProjects } from "../../../src/config/projects.ts";
 import { isLuauProject, resolveAllTsconfigMappings } from "../../../src/executor.ts";
 import { rojoProjectSchema } from "../../../src/types/rojo.ts";
-import { readJsonSync } from "../../e2e/cli/helpers.ts";
 
 const LUAU_FIXTURE = path.resolve(__dirname, "../../e2e/fixtures/luau-project");
 const RBXTS_FIXTURE = path.resolve(__dirname, "../../e2e/fixtures/rbxts-project");

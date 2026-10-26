@@ -4,8 +4,8 @@ import type { ScriptResult } from "@isentinel/roblox-runner";
 
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 
+import { observeDelayedOriginalAsync } from "#test/e2e/live/execution-claim-helper.ts";
 import { EXECUTION_NOT_CLAIMED } from "../src/luau/execution-claim.ts";
-import { observeDelayedOriginalAsync } from "./e2e/live/execution-claim-helper.ts";
 
 const RECOVERED: ScriptResult = { durationMs: 1, outputs: ["EXECUTED"] };
 const DENIED: ScriptResult = { durationMs: 1, outputs: [EXECUTION_NOT_CLAIMED] };

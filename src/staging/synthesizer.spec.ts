@@ -3,7 +3,7 @@ import * as path from "node:path";
 import process from "node:process";
 import { assert, describe, expect, it, vi } from "vitest";
 
-import { createMemoryFileSystem } from "../../test/mocks/memory-file-system.ts";
+import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { ConfigError } from "../config/errors.ts";
 import type { RojoTreeNode } from "../types/rojo.ts";
 import {

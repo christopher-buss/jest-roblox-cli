@@ -4,6 +4,8 @@ import type { RunnerCredentials } from "@isentinel/roblox-runner";
 import process from "node:process";
 
 import type { CliOptions, ResolvedConfig } from "../config/schema.ts";
+import type { FileSystem } from "../utils/file-system.ts";
+import { nodeFileSystem } from "../utils/file-system.ts";
 import type { Backend, BackendKind, ParallelOption } from "./interface.ts";
 import { createOpenCloudBackend } from "./open-cloud.ts";
 import { createStudioCliBackend } from "./studio-cli.ts";
@@ -27,6 +29,7 @@ export interface BackendResolutionRequest extends BackendResolutionOptions {
 }
 
 interface BackendResolutionOptions {
+	fileSystem?: FileSystem;
 	isStudioInstalled?: StudioInstalledCheck;
 	webSocketServerFactory?: WebSocketServerFactory;
 }
@@ -105,11 +108,12 @@ export function assertVmParallel(kind: BackendKind, vmParallel: ParallelOption):
 export async function resolveBackendAsync({
 	cli,
 	config,
+	fileSystem = nodeFileSystem,
 	isStudioInstalled = isStudioDiscoverable,
 	webSocketServerFactory = nodeWebSocketServerFactory,
 }: BackendResolutionRequest): Promise<Backend> {
 	const kind = resolveAutoBackend(config, isStudioInstalled);
-	const backend = createBackend({ cli, config, kind, webSocketServerFactory });
+	const backend = createBackend({ cli, config, fileSystem, kind, webSocketServerFactory });
 	assertVmParallel(backend.kind, config.experimentalVmParallel);
 	return backend;
 }
@@ -125,11 +129,13 @@ function buildCredentials(cli: CliOptions, config: ResolvedConfig): RunnerCreden
 function createBackend({
 	cli,
 	config,
+	fileSystem,
 	kind,
 	webSocketServerFactory,
 }: {
 	readonly cli: CliOptions;
 	readonly config: ResolvedConfig;
+	readonly fileSystem: FileSystem;
 	readonly kind: BackendKind;
 	readonly webSocketServerFactory: WebSocketServerFactory;
 }): Backend {
@@ -144,6 +150,7 @@ function createBackend({
 	if (kind === "studio-cli") {
 		// `headed` is CLI-only — read straight from `cli`, never from `config`.
 		return createStudioCliBackend({
+			fileSystem,
 			headed: cli.headed,
 			hiddenDesktop: config.hiddenDesktop,
 			pluginsDirectory: config.pluginsDirectory,
@@ -152,5 +159,5 @@ function createBackend({
 		});
 	}
 
-	return createOpenCloudBackend(buildCredentials(cli, config));
+	return createOpenCloudBackend(buildCredentials(cli, config), { fileSystem });
 }

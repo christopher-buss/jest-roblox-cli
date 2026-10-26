@@ -6,7 +6,7 @@ import {
 	hostStudioEnvironment,
 	IS_STUDIO_ON_HOST,
 	runCliAsync,
-} from "./helpers.ts";
+} from "#test/e2e/cli/helpers.ts";
 
 const WORKSPACE_FIXTURE_PATH = path.resolve(__dirname, "../fixtures/workspace-studio");
 const RUN_TIMEOUT_MS = 180_000;

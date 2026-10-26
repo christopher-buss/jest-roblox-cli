@@ -1,13 +1,12 @@
 import { fromPartial } from "@total-typescript/shoehorn";
 
-import * as fs from "node:fs";
-import * as os from "node:os";
 import * as path from "node:path";
 import process from "node:process";
 import { stripVTControlCharacters } from "node:util";
 import color from "tinyrainbow";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 
+import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { mergeJestTotals } from "../results/merge.ts";
 import type { SourceMapper, SourceSnippet } from "../source-mapper/index.ts";
 import type { JestResult, TestCaseResult, TestFileResult } from "../types/jest-result.ts";
@@ -933,12 +932,10 @@ describe(formatFailure, () => {
 	it("should show Luau snippet for Luau-only mapped location", () => {
 		expect.assertions(3);
 
-		const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "fmt-test-"));
-		onTestFinished(() => {
-			fs.rmSync(temporaryDirectory, { force: true, recursive: true });
+		const luauFile = path.resolve("test.spec.luau");
+		const { fileSystem } = createMemoryFileSystem({
+			[luauFile]: "line1\nline2\nline3\nline4\nexpect(x).toBe(1)\nline6",
 		});
-		const luauFile = path.join(temporaryDirectory, "test.spec.luau");
-		fs.writeFileSync(luauFile, "line1\nline2\nline3\nline4\nexpect(x).toBe(1)\nline6");
 
 		const luauOnlyResult = {
 			locations: [{ luauLine: 5, luauPath: luauFile }],
@@ -958,6 +955,7 @@ describe(formatFailure, () => {
 		};
 
 		const formatted = formatFailure({
+			fileSystem,
 			sourceMapper,
 			test,
 			useColor: false,
@@ -2662,13 +2660,10 @@ describe("formatTestSummary setup timing", () => {
 });
 
 describe("formatSnapshotCallSnippet via formatFailure", () => {
-	function writeTemporary(content: string): string {
-		const filePath = path.join(os.tmpdir(), `formatter-test-${Date.now()}.ts`);
-		fs.writeFileSync(filePath, content, "utf-8");
-		onTestFinished(() => {
-			fs.unlinkSync(filePath);
-		});
-		return filePath;
+	function makeSourceFile(content: string) {
+		const filePath = path.resolve("formatter-test.ts");
+		const { fileSystem } = createMemoryFileSystem({ [filePath]: content });
+		return { filePath, fileSystem };
 	}
 
 	function makeSnapshotMessage(): string {
@@ -2688,7 +2683,7 @@ describe("formatSnapshotCallSnippet via formatFailure", () => {
 	it("should show snapshot call snippet when file exists with exactly one toMatchSnapshot", () => {
 		expect.assertions(2);
 
-		const filePath = writeTemporary(
+		const { filePath, fileSystem } = makeSourceFile(
 			[
 				"import { describe, it, expect } from 'vitest';",
 				"",
@@ -2711,6 +2706,7 @@ describe("formatSnapshotCallSnippet via formatFailure", () => {
 
 		const formatted = formatFailure({
 			filePath,
+			fileSystem,
 			test,
 			useColor: false,
 		});
@@ -2722,7 +2718,7 @@ describe("formatSnapshotCallSnippet via formatFailure", () => {
 	it("should not show snippet when file has multiple toMatchSnapshot calls", () => {
 		expect.assertions(1);
 
-		const filePath = writeTemporary(
+		const { filePath, fileSystem } = makeSourceFile(
 			["expect(a).toMatchSnapshot();", "expect(b).toMatchSnapshot();"].join("\n"),
 		);
 
@@ -2737,6 +2733,7 @@ describe("formatSnapshotCallSnippet via formatFailure", () => {
 
 		const formatted = formatFailure({
 			filePath,
+			fileSystem,
 			test,
 			useColor: false,
 		});
@@ -2752,11 +2749,8 @@ describe("showLuau mapped location snippets", () => {
 
 		const luauContent = Array.from({ length: 15 }, (_, index) => `-- line ${index + 1}`);
 		luauContent[9] = "expect(value).toBe(42)";
-		const luauFile = path.join(os.tmpdir(), `formatter-test-${Date.now()}.luau`);
-		onTestFinished(() => {
-			fs.unlinkSync(luauFile);
-		});
-		fs.writeFileSync(luauFile, luauContent.join("\n"), "utf-8");
+		const luauFile = path.resolve("formatter-test.luau");
+		const { fileSystem } = createMemoryFileSystem({ [luauFile]: luauContent.join("\n") });
 
 		const sourceContent = Array.from({ length: 10 }, (_, index) => `line ${index + 1}`);
 		sourceContent[4] = "expect(value).toBe(42);";
@@ -2789,6 +2783,7 @@ describe("showLuau mapped location snippets", () => {
 		};
 
 		const formatted = formatFailure({
+			fileSystem,
 			showLuau: true,
 			sourceMapper,
 			test,
@@ -2802,47 +2797,35 @@ describe("showLuau mapped location snippets", () => {
 });
 
 describe("formatFallbackSnippet via formatFailure", () => {
-	// Reads and renders a real source file, which the 100ms Stryker budget
-	// cannot hold. The number restates the `unit` project default rather than
-	// picking a tighter one: a site budget here exists only to clear the
-	// mutation floor, and one below the default turns every other run's
-	// headroom into a wall-clock race against the rest of the workspace.
-	it(
-		"should show fallback snippet when message contains a parseable source location",
-		{ timeout: 5000 },
-		() => {
-			expect.assertions(2);
+	it("should show fallback snippet when message contains a parseable source location", () => {
+		expect.assertions(2);
 
-			const fileContent = [
-				"import { describe, it, expect } from 'vitest';",
-				"",
-				"describe('math', () => {",
-				"  it('should add', () => {",
-				"    expect(1 + 1).toBe(3);",
-				"  });",
-				"});",
-			].join("\n");
-			const temporaryFile = path.join("src", "formatters", `__tmp-fallback-${Date.now()}.ts`);
-			onTestFinished(() => {
-				fs.unlinkSync(temporaryFile);
-			});
-			fs.writeFileSync(temporaryFile, fileContent, "utf-8");
+		const fileContent = [
+			"import { describe, it, expect } from 'vitest';",
+			"",
+			"describe('math', () => {",
+			"  it('should add', () => {",
+			"    expect(1 + 1).toBe(3);",
+			"  });",
+			"});",
+		].join("\n");
+		const temporaryFile = path.join("src", "formatters", "fallback-fixture.ts");
+		const { fileSystem } = createMemoryFileSystem({ [temporaryFile]: fileContent });
 
-			const test: TestCaseResult = {
-				ancestorTitles: [],
-				duration: 1,
-				failureMessages: [`LoadModule error: ${temporaryFile}:5:10`],
-				fullName: "test",
-				status: "failed",
-				title: "test",
-			};
+		const test: TestCaseResult = {
+			ancestorTitles: [],
+			duration: 1,
+			failureMessages: [`LoadModule error: ${temporaryFile}:5:10`],
+			fullName: "test",
+			status: "failed",
+			title: "test",
+		};
 
-			const formatted = formatFailure({ test, useColor: false });
+		const formatted = formatFailure({ fileSystem, test, useColor: false });
 
-			expect(formatted).toContain(`❯ ${temporaryFile}:5:10`);
-			expect(formatted).toContain("expect(1 + 1).toBe(3)");
-		},
-	);
+		expect(formatted).toContain(`❯ ${temporaryFile}:5:10`);
+		expect(formatted).toContain("expect(1 + 1).toBe(3)");
+	});
 });
 
 describe("expandTabs via formatSourceSnippet", () => {

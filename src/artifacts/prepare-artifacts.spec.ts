@@ -5,8 +5,8 @@ import * as path from "node:path";
 import process from "node:process";
 import { describe, expect, it, vi } from "vitest";
 
-import type { MemoryVolume } from "../../test/mocks/memory-file-system.ts";
-import { createMemoryFileSystem } from "../../test/mocks/memory-file-system.ts";
+import type { MemoryVolume } from "#test/mocks/memory-file-system.ts";
+import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import type { ResolvedProjectConfig } from "../config/projects.ts";
 import { DEFAULT_CONFIG, type ResolvedConfig } from "../config/schema.ts";
 import type { AttributionResult } from "../coverage-pipeline/attribution.ts";

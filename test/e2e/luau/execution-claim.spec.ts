@@ -5,10 +5,13 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, it, onTestFinished } from "vitest";
 
-import claimSource from "../../luau/execution-claim.luau";
-import { EXECUTION_NOT_CLAIMED, EXECUTION_START_EXPIRED } from "../../src/luau/execution-claim.ts";
-import { prepareTaskScript } from "../../src/luau/task-script.ts";
-import { LUTE_HARNESS_TIMEOUT } from "./lute-timeout.ts";
+import { LUTE_HARNESS_TIMEOUT } from "#test/e2e/luau/lute-timeout.ts";
+import claimSource from "../../../luau/execution-claim.luau";
+import {
+	EXECUTION_NOT_CLAIMED,
+	EXECUTION_START_EXPIRED,
+} from "../../../src/luau/execution-claim.ts";
+import { prepareTaskScript } from "../../../src/luau/task-script.ts";
 
 describe("execution claim", () => {
 	it(

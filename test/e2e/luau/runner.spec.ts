@@ -6,13 +6,13 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, onTestFinished } from "vitest";
 
-import { LUTE_HARNESS_TIMEOUT } from "./lute-timeout.ts";
+import { LUTE_HARNESS_TIMEOUT } from "#test/e2e/luau/lute-timeout.ts";
 
 // Drives the multi-mode runner under lute with the real Game Output capture,
 // watchdog and result seam, and every other sibling stubbed by the harness.
 // Requires `lute` on PATH (mise, in dev and CI).
 const CURRENT_DIRECTORY = path.dirname(fileURLToPath(import.meta.url));
-const LUAU_DIRECTORY = path.join(CURRENT_DIRECTORY, "../../luau");
+const LUAU_DIRECTORY = path.join(CURRENT_DIRECTORY, "../../../luau");
 const MODULE_SOURCE = fs.readFileSync(path.join(LUAU_DIRECTORY, "runner.luau"), "utf-8");
 const CAPTURE_SOURCE = fs.readFileSync(
 	path.join(LUAU_DIRECTORY, "game-output-capture.luau"),

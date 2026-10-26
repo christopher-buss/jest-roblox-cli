@@ -2,7 +2,7 @@ import { originalPositionFor, TraceMap } from "@jridgewell/trace-mapping";
 
 import { describe, expect, it } from "vitest";
 
-import { buildSourceMap } from "./source-map.ts";
+import { buildSourceMap } from "#test/mocks/source-map.ts";
 
 // The encoder here is hand-rolled, and four specs assert against maps it
 // builds. A bug in the VLQ arithmetic would not fail loudly in any of them —

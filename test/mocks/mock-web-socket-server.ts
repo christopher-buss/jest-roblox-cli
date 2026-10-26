@@ -6,8 +6,8 @@ import type { Mock } from "vitest";
 import { vi } from "vitest";
 import type { WebSocketServer } from "ws";
 
+import type { MockWebSocket } from "#test/mocks/mock-web-socket.ts";
 import type { WebSocketServerOptions } from "../../src/backends/web-socket-server-factory.ts";
-import type { MockWebSocket } from "./mock-web-socket.ts";
 
 const instances: Array<MockWebSocketServer> = [];
 

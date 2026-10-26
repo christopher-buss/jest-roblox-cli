@@ -7,7 +7,7 @@ import * as path from "node:path";
 import type { Mock } from "vitest";
 import { assert, describe, expect, it, vi } from "vitest";
 
-import { createMemoryFileSystem } from "../../test/mocks/memory-file-system.ts";
+import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import type { RojoTreeNode } from "../types/rojo.ts";
 import { toPosixRoot } from "../utils/normalize-windows-path.ts";
 import { ConfigError } from "./errors.ts";

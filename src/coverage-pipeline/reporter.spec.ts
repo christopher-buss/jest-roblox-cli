@@ -1,12 +1,11 @@
 import { fromAny } from "@total-typescript/shoehorn";
 
-import * as fs from "node:fs";
-import * as os from "node:os";
 import * as path from "node:path";
 import process from "node:process";
 import { stripVTControlCharacters } from "node:util";
-import { describe, expect, it, onTestFinished, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
+import { createMemoryReportEnvironment } from "#test/mocks/memory-report-context.ts";
 import { projectRootFilter, sourceTwinFilter } from "./agent-table-filter.ts";
 import type { MappedCoverageResult, MappedFileCoverage } from "./mapper.ts";
 import * as reporterRegistry from "./reporter-registry.ts";
@@ -36,15 +35,6 @@ function createMappedFile(overrides: Partial<MappedFileCoverage> = {}): MappedFi
 
 function createResult(files: Record<string, MappedFileCoverage> = {}): MappedCoverageResult {
 	return { files };
-}
-
-function createTemporaryDirectory(): string {
-	const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "cov-report-"));
-	onTestFinished(() => {
-		fs.rmSync(temporaryDirectory, { force: true, recursive: true });
-	});
-
-	return temporaryDirectory;
 }
 
 function stdoutOutput(): string {
@@ -95,9 +85,11 @@ describe(generateReports, () => {
 				"src/shared/player.ts": createMappedFile(),
 			});
 
-			const temporaryDirectory = createTemporaryDirectory();
+			const { createContext, directory: temporaryDirectory } =
+				createMemoryReportEnvironment();
 			generateReports({
 				coverageDirectory: temporaryDirectory,
+				createContext,
 				mapped: result,
 				reporters: ["text"],
 			});
@@ -137,13 +129,18 @@ describe(generateReports, () => {
 		it("should generate lcov.info file", () => {
 			expect.assertions(1);
 
-			const temporaryDirectory = createTemporaryDirectory();
+			const {
+				createContext,
+				directory: temporaryDirectory,
+				fileSystem: fs,
+			} = createMemoryReportEnvironment();
 			const result = createResult({
 				"src/shared/player.ts": createMappedFile(),
 			});
 
 			generateReports({
 				coverageDirectory: temporaryDirectory,
+				createContext,
 				mapped: result,
 				reporters: ["lcov"],
 			});
@@ -158,13 +155,18 @@ describe(generateReports, () => {
 		it("should generate coverage-final.json file", () => {
 			expect.assertions(1);
 
-			const temporaryDirectory = createTemporaryDirectory();
+			const {
+				createContext,
+				directory: temporaryDirectory,
+				fileSystem: fs,
+			} = createMemoryReportEnvironment();
 			const result = createResult({
 				"src/shared/player.ts": createMappedFile(),
 			});
 
 			generateReports({
 				coverageDirectory: temporaryDirectory,
+				createContext,
 				mapped: result,
 				reporters: ["json"],
 			});
@@ -177,11 +179,16 @@ describe(generateReports, () => {
 		it("should generate json when the agent text filter matches no file", () => {
 			expect.assertions(1);
 
-			const temporaryDirectory = createTemporaryDirectory();
+			const {
+				createContext,
+				directory: temporaryDirectory,
+				fileSystem: fs,
+			} = createMemoryReportEnvironment();
 			generateReports({
 				agentMode: true,
 				agentTextFilter: sourceTwinFilter(["src/missing.test.ts"], process.cwd()),
 				coverageDirectory: temporaryDirectory,
+				createContext,
 				mapped: createResult({
 					"src/shared/player.ts": createMappedFile(),
 				}),
@@ -223,9 +230,11 @@ describe(generateReports, () => {
 				"src/shared/player.ts": createMappedFile(),
 			});
 
-			const temporaryDirectory = createTemporaryDirectory();
+			const { createContext, directory: temporaryDirectory } =
+				createMemoryReportEnvironment();
 			generateReports({
 				coverageDirectory: temporaryDirectory,
+				createContext,
 				mapped: result,
 				reporters: ["text"],
 			});
@@ -471,12 +480,14 @@ describe(generateReports, () => {
 		it("should not print totals when no text reporter is present", () => {
 			expect.assertions(1);
 
-			const temporaryDirectory = createTemporaryDirectory();
+			const { createContext, directory: temporaryDirectory } =
+				createMemoryReportEnvironment();
 			vi.spyOn(process.stdout, "write").mockReturnValue(true);
 
 			generateReports({
 				agentMode: true,
 				coverageDirectory: temporaryDirectory,
+				createContext,
 				mapped: createResult({ "src/shared/player.ts": createMappedFile() }),
 				reporters: ["lcov"],
 			});
@@ -504,12 +515,17 @@ describe(generateReports, () => {
 		it("should print the compact summary when text is mixed with a file reporter", () => {
 			expect.assertions(2);
 
-			const temporaryDirectory = createTemporaryDirectory();
+			const {
+				createContext,
+				directory: temporaryDirectory,
+				fileSystem: fs,
+			} = createMemoryReportEnvironment();
 			vi.spyOn(process.stdout, "write").mockReturnValue(true);
 
 			generateReports({
 				agentMode: true,
 				coverageDirectory: temporaryDirectory,
+				createContext,
 				mapped: createResult({
 					"src/shared/player.ts": createMappedFile({ s: { "0": 3, "1": 2, "2": 5 } }),
 				}),
@@ -633,7 +649,11 @@ describe(generateReports, () => {
 		it("should generate report without throwing when file has branch coverage data", () => {
 			expect.assertions(1);
 
-			const temporaryDirectory = createTemporaryDirectory();
+			const {
+				createContext,
+				directory: temporaryDirectory,
+				fileSystem: fs,
+			} = createMemoryReportEnvironment();
 			const result = createResult({
 				"src/shared/player.ts": createMappedFile({
 					b: { "0": [3, 1] },
@@ -652,6 +672,7 @@ describe(generateReports, () => {
 
 			generateReports({
 				coverageDirectory: temporaryDirectory,
+				createContext,
 				mapped: result,
 				reporters: ["json"],
 			});
@@ -673,10 +694,12 @@ describe(generateReports, () => {
 				"src/shared/player.ts": createMappedFile({ path: "src/shared/player.ts" }),
 			});
 
-			const temporaryDirectory = createTemporaryDirectory();
+			const { createContext, directory: temporaryDirectory } =
+				createMemoryReportEnvironment();
 			generateReports({
 				collectCoverageFrom: ["src/**/*.ts"],
 				coverageDirectory: temporaryDirectory,
+				createContext,
 				mapped: result,
 				reporters: ["text"],
 			});
@@ -697,9 +720,11 @@ describe(generateReports, () => {
 				"src/shared/player.ts": createMappedFile({ path: "src/shared/player.ts" }),
 			});
 
-			const temporaryDirectory = createTemporaryDirectory();
+			const { createContext, directory: temporaryDirectory } =
+				createMemoryReportEnvironment();
 			generateReports({
 				coverageDirectory: temporaryDirectory,
+				createContext,
 				mapped: result,
 				reporters: ["text"],
 			});
@@ -721,10 +746,12 @@ describe(generateReports, () => {
 				"vendor/external.ts": createMappedFile({ path: "vendor/external.ts" }),
 			});
 
-			const temporaryDirectory = createTemporaryDirectory();
+			const { createContext, directory: temporaryDirectory } =
+				createMemoryReportEnvironment();
 			generateReports({
 				collectCoverageFrom: ["src/**/*.ts", "lib/**/*.ts"],
 				coverageDirectory: temporaryDirectory,
+				createContext,
 				mapped: result,
 				reporters: ["text"],
 			});
@@ -748,10 +775,12 @@ describe(generateReports, () => {
 				"src/shared/player.ts": createMappedFile({ path: "src/shared/player.ts" }),
 			});
 
-			const temporaryDirectory = createTemporaryDirectory();
+			const { createContext, directory: temporaryDirectory } =
+				createMemoryReportEnvironment();
 			generateReports({
 				collectCoverageFrom: ["src/**/*.ts", "!**/*.spec.ts"],
 				coverageDirectory: temporaryDirectory,
+				createContext,
 				mapped: result,
 				reporters: ["text"],
 			});
@@ -774,10 +803,12 @@ describe(generateReports, () => {
 				"src/shared/player.ts": createMappedFile({ path: "src/shared/player.ts" }),
 			});
 
-			const temporaryDirectory = createTemporaryDirectory();
+			const { createContext, directory: temporaryDirectory } =
+				createMemoryReportEnvironment();
 			generateReports({
 				collectCoverageFrom: ["!**/*.spec.ts"],
 				coverageDirectory: temporaryDirectory,
+				createContext,
 				mapped: result,
 				reporters: ["text"],
 			});
@@ -798,10 +829,12 @@ describe(generateReports, () => {
 				"src/shared/player.ts": createMappedFile({ path: "src/shared/player.ts" }),
 			});
 
-			const temporaryDirectory = createTemporaryDirectory();
+			const { createContext, directory: temporaryDirectory } =
+				createMemoryReportEnvironment();
 			generateReports({
 				collectCoverageFrom: [],
 				coverageDirectory: temporaryDirectory,
+				createContext,
 				mapped: result,
 				reporters: ["text"],
 			});
@@ -824,10 +857,12 @@ describe(generateReports, () => {
 				"src/shared/player.ts": createMappedFile({ path: "src/shared/player.ts" }),
 			});
 
-			const temporaryDirectory = createTemporaryDirectory();
+			const { createContext, directory: temporaryDirectory } =
+				createMemoryReportEnvironment();
 			generateReports({
 				collectCoverageFrom: ["*.ts", "!*.spec.ts"],
 				coverageDirectory: temporaryDirectory,
+				createContext,
 				mapped: result,
 				reporters: ["text"],
 			});
@@ -851,10 +886,12 @@ describe(generateReports, () => {
 				[absoluteSpecPath]: createMappedFile({ path: absoluteSpecPath }),
 			});
 
-			const temporaryDirectory = createTemporaryDirectory();
+			const { createContext, directory: temporaryDirectory } =
+				createMemoryReportEnvironment();
 			generateReports({
 				collectCoverageFrom: ["src/**/*.ts", "!**/*.spec.ts"],
 				coverageDirectory: temporaryDirectory,
+				createContext,
 				mapped: result,
 				reporters: ["text"],
 			});
@@ -874,10 +911,12 @@ describe(generateReports, () => {
 				"src/shared/player.ts": createMappedFile({ path: "src/shared/player.ts" }),
 			});
 
-			const temporaryDirectory = createTemporaryDirectory();
+			const { createContext, directory: temporaryDirectory } =
+				createMemoryReportEnvironment();
 			generateReports({
 				collectCoverageFrom: ["nonexistent/**/*.ts"],
 				coverageDirectory: temporaryDirectory,
+				createContext,
 				mapped: result,
 				reporters: ["text"],
 			});
@@ -1037,11 +1076,16 @@ describe(generateReports, () => {
 
 			vi.spyOn(process.stdout, "write").mockReturnValue(true);
 
-			const temporaryDirectory = createTemporaryDirectory();
+			const {
+				createContext,
+				directory: temporaryDirectory,
+				fileSystem: fs,
+			} = createMemoryReportEnvironment();
 			generateReports({
 				agentMode: true,
 				agentTextFilter: sourceTwinFilter(["src/shared/player.test.ts"], process.cwd()),
 				coverageDirectory: temporaryDirectory,
+				createContext,
 				mapped: twoFileUniverse(),
 				reporters: ["lcov"],
 			});

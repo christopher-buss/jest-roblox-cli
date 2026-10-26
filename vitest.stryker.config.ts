@@ -14,14 +14,6 @@ export default defineConfig({
 	...unitProject,
 	test: {
 		...unitProject.test,
-		// Tests the `unit` project keeps but a mutation run cannot afford:
-		// each spawns a real lute per test. With perTest coverage analysis
-		// every mutant they cover re-pays that cost.
-		exclude: [
-			...unitProject.test.exclude,
-			"test/luau/**",
-			"test/coverage-pipeline/instrument-luau.spec.ts",
-		],
 		// Stryker activates one mutant per run through module state, so a
 		// worker cannot carry a module registry between files.
 		isolate: true,

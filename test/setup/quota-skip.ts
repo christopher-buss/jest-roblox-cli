@@ -2,7 +2,7 @@ import { TaskQuotaError } from "@isentinel/roblox-runner";
 
 import type { TestContext } from "vitest";
 
-import { NOTE_PREFIX } from "./quota-skip-reporter.ts";
+import { NOTE_PREFIX } from "#test/setup/quota-skip-reporter.ts";
 
 const INFRASTRUCTURE_EXIT_CODE = 3;
 const MINUTE_WINDOW_SECONDS = 60;

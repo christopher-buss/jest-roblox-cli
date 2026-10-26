@@ -4,9 +4,9 @@ import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 
-import { startFakeOpenCloudServerAsync } from "./cli/fake-open-cloud.ts";
-import { writeCodeBundle } from "./cli/helpers.ts";
-import { IS_BINARY_INPUT } from "./live/live-gate.ts";
+import { startFakeOpenCloudServerAsync } from "#test/e2e/cli/fake-open-cloud.ts";
+import { writeCodeBundle } from "#test/e2e/cli/helpers.ts";
+import { IS_BINARY_INPUT } from "#test/e2e/live/live-gate.ts";
 
 function temporaryPlace(): { placeFile: string; rootDir: string } {
 	const rootDirectory = mkdtempSync(path.join(tmpdir(), "jest-roblox-bundle-"));

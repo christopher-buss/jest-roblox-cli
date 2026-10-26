@@ -1,9 +1,8 @@
 import { Buffer } from "node:buffer";
-import * as fs from "node:fs";
-import * as os from "node:os";
 import * as path from "node:path";
-import { describe, expect, it, onTestFinished } from "vitest";
+import { describe, expect, it } from "vitest";
 
+import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import {
 	describeCodeBundle,
 	describePlaceFile,
@@ -22,55 +21,53 @@ describe("the stage the block settles on", () => {
 	});
 });
 
-/** Writes a file of exactly `bytes` and returns its path, cleaning up after. */
-function makePlaceFile(bytes: number): string {
-	const directory = fs.mkdtempSync(path.join(os.tmpdir(), "jest-roblox-stage-"));
-	onTestFinished(() => {
-		fs.rmSync(directory, { force: true, recursive: true });
-	});
-
-	const placeFilePath = path.join(directory, "game.rbxl");
-	fs.writeFileSync(placeFilePath, Buffer.alloc(bytes));
-	return placeFilePath;
+function makePlaceFile(bytes: number): Parameters<typeof describePlaceFile> {
+	const { fileSystem } = createMemoryFileSystem();
+	const placeFilePath = path.resolve("game.rbxl");
+	fileSystem.mkdirSync(path.dirname(placeFilePath), { recursive: true });
+	fileSystem.writeFileSync(placeFilePath, Buffer.alloc(bytes));
+	return [placeFilePath, fileSystem];
 }
 
 describe(describePlaceFile, () => {
 	it("should report a place under a kilobyte in whole bytes", () => {
 		expect.assertions(1);
 
-		expect(describePlaceFile(makePlaceFile(512))).toBe("512 B");
+		expect(describePlaceFile(...makePlaceFile(512))).toBe("512 B");
 	});
 
 	it("should report a kilobyte-scale place to one decimal", () => {
 		expect.assertions(1);
 
-		expect(describePlaceFile(makePlaceFile(1536))).toBe("1.5 KB");
+		expect(describePlaceFile(...makePlaceFile(1536))).toBe("1.5 KB");
 	});
 
 	it("should report a megabyte-scale place to one decimal", () => {
 		expect.assertions(1);
 
-		expect(describePlaceFile(makePlaceFile(13_002_342))).toBe("12.4 MB");
+		expect(describePlaceFile(...makePlaceFile(13_002_342))).toBe("12.4 MB");
 	});
 
 	it("should turn over to kilobytes at exactly one kilobyte", () => {
 		expect.assertions(2);
 
-		expect(describePlaceFile(makePlaceFile(1023))).toBe("1023 B");
-		expect(describePlaceFile(makePlaceFile(1024))).toBe("1.0 KB");
+		expect(describePlaceFile(...makePlaceFile(1023))).toBe("1023 B");
+		expect(describePlaceFile(...makePlaceFile(1024))).toBe("1.0 KB");
 	});
 
 	it("should turn over to megabytes at exactly one megabyte", () => {
 		expect.assertions(2);
 
-		expect(describePlaceFile(makePlaceFile(1_048_575))).toBe("1024.0 KB");
-		expect(describePlaceFile(makePlaceFile(1_048_576))).toBe("1.0 MB");
+		expect(describePlaceFile(...makePlaceFile(1_048_575))).toBe("1024.0 KB");
+		expect(describePlaceFile(...makePlaceFile(1_048_576))).toBe("1.0 MB");
 	});
 
 	it("should report nothing for a place that cannot be read", () => {
 		expect.assertions(1);
 
-		expect(describePlaceFile(path.join(os.tmpdir(), "no-such-place.rbxl"))).toBeUndefined();
+		const { fileSystem } = createMemoryFileSystem();
+
+		expect(describePlaceFile(path.resolve("no-such-place.rbxl"), fileSystem)).toBeUndefined();
 	});
 });
 

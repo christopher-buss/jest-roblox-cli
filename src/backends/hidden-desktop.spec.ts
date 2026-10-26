@@ -4,7 +4,7 @@ import { Buffer } from "node:buffer";
 import { EventEmitter } from "node:events";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 
-import { createMemoryFileSystem } from "../../test/mocks/memory-file-system.ts";
+import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import type { ChildProcessRunner } from "../utils/child-process.ts";
 import { launchOnHiddenDesktop } from "./hidden-desktop.ts";
 

@@ -16,6 +16,7 @@
 			"path": "./tsconfig.lib.json"
 		}
 	],
+	"files": ["test/fixtures/model-classes/rojo-compressed.json"],
 	"include": [
 		"scripts/**/*.ts",
 		"src/**/*.d.ts",

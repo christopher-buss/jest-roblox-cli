@@ -8,11 +8,14 @@ import process from "node:process";
 import type { TestContext } from "vitest";
 import { assert, describe, expect, it, onTestFinished, vi } from "vitest";
 
+import {
+	type FakeOpenCloudTask,
+	startFakeOpenCloudServerAsync,
+} from "#test/e2e/cli/fake-open-cloud.ts";
+import { IS_BINARY_INPUT, IS_LIVE } from "#test/e2e/live/live-gate.ts";
+import { skipOnQuotaAsync } from "#test/setup/quota-skip.ts";
 import { openCloudExecutionBudgets } from "../../../src/backends/open-cloud-budgets.ts";
 import type { JestResult } from "../../../src/types/jest-result.ts";
-import { skipOnQuotaAsync } from "../../setup/quota-skip.ts";
-import { type FakeOpenCloudTask, startFakeOpenCloudServerAsync } from "../cli/fake-open-cloud.ts";
-import { IS_BINARY_INPUT, IS_LIVE } from "./live-gate.ts";
 
 interface HttpResponse {
 	body: unknown;

@@ -1,23 +1,15 @@
-import * as fs from "node:fs";
-import * as os from "node:os";
-import * as path from "node:path";
+import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
-import { describe, expect, it, onTestFinished, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { buildIstanbulHtmlAssetsModule } from "../loaders/istanbul-html-assets.mjs";
 import { load, resolve } from "../loaders/luau-raw.mjs";
 import { buildRunnerPluginSourcesModule } from "../loaders/runner-plugin-sources.mjs";
 
-function temporaryLuauUrl(content: string): string {
-	const directory = fs.mkdtempSync(path.join(os.tmpdir(), "luau-raw-"));
-	const luauPath = path.join(directory, "runner.luau");
-	fs.writeFileSync(luauPath, content, "utf-8");
-	onTestFinished(() => {
-		fs.rmSync(directory, { force: true, recursive: true });
-	});
-
-	return pathToFileURL(luauPath).href;
-}
+const requireFromTest = createRequire(import.meta.url);
+const LUAU_FIXTURE_URL = pathToFileURL(
+	requireFromTest.resolve("#test/fixtures/luau-raw/runner.luau"),
+).href;
 
 function mockNextResolve(url: string) {
 	return vi.fn<Parameters<typeof resolve>[2]>().mockReturnValue({ url });
@@ -83,11 +75,7 @@ describe(load, () => {
 	it("should export file content as string for .luau files", () => {
 		expect.assertions(1);
 
-		const result = load(
-			temporaryLuauUrl("print('hello')"),
-			{ format: "luau-raw" },
-			mockNextLoad(),
-		);
+		const result = load(LUAU_FIXTURE_URL, { format: "luau-raw" }, mockNextLoad());
 
 		expect(result.source).toBe("export default \"print('hello')\";");
 	});

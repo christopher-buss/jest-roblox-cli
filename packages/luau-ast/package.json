@@ -14,7 +14,8 @@
 	"sideEffects": false,
 	"type": "module",
 	"imports": {
-		"#test/*": "./test/*.ts"
+		"#test/*": "./test/*.ts",
+		"#test/fixtures/*": "./test/fixtures/*"
 	},
 	"exports": {
 		".": {

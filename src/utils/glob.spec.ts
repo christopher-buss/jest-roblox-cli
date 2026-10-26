@@ -1,7 +1,7 @@
 import process from "node:process";
 import { describe, expect, it, vi } from "vitest";
 
-import { createMemoryFileSystem } from "../../test/mocks/memory-file-system.ts";
+import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { createGlobCache, globSync, matchesGlobPattern } from "./glob.ts";
 
 const CWD = "/project";

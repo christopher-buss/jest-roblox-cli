@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { writeAgedFile } from "../../test/mocks/aged-file.ts";
-import type { MemoryFileSystem } from "../../test/mocks/memory-file-system.ts";
-import { createMemoryFileSystem } from "../../test/mocks/memory-file-system.ts";
+import { writeAgedFile } from "#test/mocks/aged-file.ts";
+import type { MemoryFileSystem } from "#test/mocks/memory-file-system.ts";
+import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import { computeRojoInputsHashAsync } from "./rojo-inputs.ts";
 

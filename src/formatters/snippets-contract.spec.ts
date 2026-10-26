@@ -1,23 +1,12 @@
-import * as fs from "node:fs";
 import * as path from "node:path";
 import process from "node:process";
 import color from "tinyrainbow";
-import { describe, expect, it, onTestFinished } from "vitest";
+import { describe, expect, it } from "vitest";
 
-import { createMemoryFileSystem } from "../../test/mocks/memory-file-system.ts";
+import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import type { MappedLocation, SourceSnippet } from "../source-mapper/index.ts";
 import { createTaggedStyles } from "./__fixtures__/tagged-styles.ts";
 import { formatSourceSnippet, parseSourceLocation, resolveSourceSnippets } from "./snippets.ts";
-
-function makeTemporarySource(extension: "luau" | "ts", content = "return true\n"): string {
-	const directory = fs.mkdtempSync(path.join(process.cwd(), "snippet-contract-"));
-	const filePath = path.join(directory, `example.${extension}`);
-	fs.writeFileSync(filePath, content);
-	onTestFinished(() => {
-		fs.rmSync(directory, { force: true, recursive: true });
-	});
-	return filePath;
-}
 
 function resolve(
 	mappedLocations: Array<MappedLocation>,
@@ -32,6 +21,12 @@ function resolve(
 		useColor: false,
 		...overrides,
 	});
+}
+
+function makeSourceFile(extension: "luau" | "ts", content = "return true\n") {
+	const filePath = path.resolve(`example.${extension}`);
+	const { fileSystem } = createMemoryFileSystem({ [filePath]: content });
+	return { filePath, fileSystem };
 }
 
 describe(formatSourceSnippet, () => {
@@ -135,17 +130,20 @@ describe(resolveSourceSnippets, () => {
 	it("should put one blank line before a mapped TypeScript or Luau snippet", () => {
 		expect.assertions(3);
 
-		const luauPath = makeTemporarySource("luau");
-		const ts = resolve([
-			{
-				luauLine: 1,
-				luauPath,
-				sourceContent: "throw new Error();\n",
-				tsLine: 1,
-				tsPath: "src/example.ts",
-			},
-		]);
-		const luau = resolve([{ luauLine: 1, luauPath }]);
+		const { filePath: luauPath, fileSystem } = makeSourceFile("luau");
+		const ts = resolve(
+			[
+				{
+					luauLine: 1,
+					luauPath,
+					sourceContent: "throw new Error();\n",
+					tsLine: 1,
+					tsPath: "src/example.ts",
+				},
+			],
+			{ fileSystem },
+		);
+		const luau = resolve([{ luauLine: 1, luauPath }], { fileSystem });
 
 		expect(ts).toHaveLength(2);
 		expect(ts[0]).toBe("");
@@ -155,7 +153,7 @@ describe(resolveSourceSnippets, () => {
 	it("should append Luau only when requested for a mapped TypeScript location", () => {
 		expect.assertions(2);
 
-		const luauPath = makeTemporarySource("luau");
+		const { filePath: luauPath, fileSystem } = makeSourceFile("luau");
 		const mappedLocations = [
 			{
 				luauLine: 1,
@@ -166,8 +164,8 @@ describe(resolveSourceSnippets, () => {
 			},
 		];
 
-		expect(resolve(mappedLocations)).toHaveLength(2);
-		expect(resolve(mappedLocations, { showLuau: true })).toHaveLength(4);
+		expect(resolve(mappedLocations, { fileSystem })).toHaveLength(2);
+		expect(resolve(mappedLocations, { fileSystem, showLuau: true })).toHaveLength(4);
 	});
 
 	it("should return no fallback snippet when its source is unavailable", () => {
@@ -179,10 +177,10 @@ describe(resolveSourceSnippets, () => {
 	it("should put one blank line before a fallback snippet", () => {
 		expect.assertions(1);
 
-		const filePath = makeTemporarySource("ts", "throw new Error();\n");
+		const { filePath, fileSystem } = makeSourceFile("ts", "throw new Error();\n");
 		const relativePath = path.relative(process.cwd(), filePath);
 
-		expect(resolve([], { message: `at ${relativePath}:1` })[0]).toBe("");
+		expect(resolve([], { fileSystem, message: `at ${relativePath}:1` })[0]).toBe("");
 	});
 
 	it("should skip snapshot lookup when the file is unavailable", () => {

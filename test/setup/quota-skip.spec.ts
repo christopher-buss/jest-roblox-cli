@@ -5,7 +5,7 @@ import { fromPartial } from "@total-typescript/shoehorn";
 import type { TestContext } from "vitest";
 import { describe, expect, it, vi } from "vitest";
 
-import { quotaSkipNote, skipOnQuotaAsync } from "./quota-skip.ts";
+import { quotaSkipNote, skipOnQuotaAsync } from "#test/setup/quota-skip.ts";
 
 const QUOTA_STDERR = [
 	"RESOURCE_EXHAUSTED: Luau task creation rate limit exceeded.",

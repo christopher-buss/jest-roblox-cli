@@ -7,8 +7,8 @@ import { stripVTControlCharacters } from "node:util";
 import type { MockInstance } from "vitest";
 import { assert, describe, expect, it, onTestFinished, vi } from "vitest";
 
+import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import packageJson from "../package.json" with { type: "json" };
-import { createMemoryFileSystem } from "../test/mocks/memory-file-system.ts";
 import type { CliDependencies } from "./cli.ts";
 import { main, parseArgs, REPEATABLE_FLAGS, runAsync } from "./cli.ts";
 import { defaultFormatters } from "./config/default-formatters.ts";

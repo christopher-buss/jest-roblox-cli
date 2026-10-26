@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { createMemoryFileSystem } from "../../test/mocks/memory-file-system.ts";
+import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import type { JestResult, TestCaseResult } from "../types/jest-result.ts";
 import { hashFile, hashString } from "../utils/hash.ts";
 import { createTestSourceResolver } from "./test-source.ts";

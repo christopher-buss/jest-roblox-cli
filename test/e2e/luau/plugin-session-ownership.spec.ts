@@ -5,9 +5,9 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, it, onTestFinished } from "vitest";
 
-import { LUTE_HARNESS_TIMEOUT } from "./lute-timeout.ts";
+import { LUTE_HARNESS_TIMEOUT } from "#test/e2e/luau/lute-timeout.ts";
 
-const REPOSITORY_DIRECTORY = path.resolve(import.meta.dirname, "../..");
+const REPOSITORY_DIRECTORY = path.resolve(import.meta.dirname, "../../..");
 const PLUGIN_SOURCE = fs.readFileSync(
 	path.join(REPOSITORY_DIRECTORY, "plugin/src/test-in-run-mode.server.luau"),
 	"utf8",

@@ -4,7 +4,7 @@ import { fromAny } from "@total-typescript/shoehorn";
 import { type } from "arktype";
 import { describe, expect, it, vi } from "vitest";
 
-import { createMemoryFileSystem } from "../../test/mocks/memory-file-system.ts";
+import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import type { ChildProcessRunner } from "../utils/child-process.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import type { ManagedPluginOptions } from "./runner-plugin.ts";

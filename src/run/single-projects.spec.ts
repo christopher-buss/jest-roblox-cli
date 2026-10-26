@@ -2,7 +2,7 @@ import { fromAny } from "@total-typescript/shoehorn";
 
 import { assert, describe, expect, it } from "vitest";
 
-import { createMemoryFileSystem } from "../../test/mocks/memory-file-system.ts";
+import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { ConfigError } from "../config/errors.ts";
 import { DEFAULT_CONFIG, type ResolvedConfig } from "../config/schema.ts";
 import { deriveCoverageFromIncludes } from "../coverage-pipeline/derive-coverage-from.ts";

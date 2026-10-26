@@ -2,15 +2,15 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { runLogPath } from "../../../src/run-log/run-log.ts";
-import { startFakeOpenCloudServerAsync } from "./fake-open-cloud.ts";
+import { startFakeOpenCloudServerAsync } from "#test/e2e/cli/fake-open-cloud.ts";
 import {
 	buildPassingJestOutput,
 	createFixtureSandbox,
 	createOpenCloudEnvironment,
 	rojoOnPath,
 	runCliAsync,
-} from "./helpers.ts";
+} from "#test/e2e/cli/helpers.ts";
+import { runLogPath } from "../../../src/run-log/run-log.ts";
 
 const LUAU_FIXTURE_PATH = path.resolve(__dirname, "../fixtures/luau-project");
 const RUN_TIMEOUT_MS = 60_000;

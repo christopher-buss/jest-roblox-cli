@@ -1,8 +1,7 @@
-import * as fs from "node:fs";
-import * as os from "node:os";
 import * as path from "node:path";
-import { describe, expect, it, onTestFinished } from "vitest";
+import { describe, expect, it } from "vitest";
 
+import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import type { GameOutputEntry } from "../types/game-output.ts";
 import {
 	buildBatchGameOutput,
@@ -63,28 +62,18 @@ describe(parseGameOutput, () => {
 });
 
 describe(writeGameOutput, () => {
-	// Under `os.tmpdir()`, not `import.meta.dirname`. Builds, typechecks, and
-	// lint runs hold handles on `src/` while the suite runs, and on Windows a
-	// recursive delete of a directory another process has open fails with
-	// EPERM — which flaked the cleanup and stranded the fixture in the source
-	// tree, where it then showed up as an untracked path.
-	const testDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "game-output-"));
-	const testFile = path.join(testDirectory, "game-output.json");
-
 	it("should write entries to file as JSON", () => {
 		expect.assertions(1);
 
+		const { fileSystem } = createMemoryFileSystem();
+		const testFile = path.resolve("game-output.json");
 		const entries: Array<GameOutputEntry> = [
 			{ message: "test", messageType: 0, timestamp: 1000 },
 		];
 
-		writeGameOutput({ entries, filePath: testFile });
+		writeGameOutput({ entries, filePath: testFile, fileSystem });
 
-		onTestFinished(() => {
-			fs.rmSync(testDirectory, { force: true, recursive: true });
-		});
-
-		const written = JSON.parse(fs.readFileSync(testFile, "utf-8"));
+		const written = JSON.parse(fileSystem.readFileSync(testFile, "utf-8"));
 
 		expect(written).toStrictEqual(entries);
 	});
@@ -92,21 +81,16 @@ describe(writeGameOutput, () => {
 	it("should write to existing directory without creating it", () => {
 		expect.assertions(1);
 
-		// First call creates the directory
-		writeGameOutput({ entries: [], filePath: testFile });
-
-		onTestFinished(() => {
-			fs.rmSync(testDirectory, { force: true, recursive: true });
-		});
-
-		// Second call writes into the already-existing directory
+		const { fileSystem } = createMemoryFileSystem();
+		const testFile = path.resolve("game-output.json");
+		writeGameOutput({ entries: [], filePath: testFile, fileSystem });
 		const entries: Array<GameOutputEntry> = [
 			{ message: "second", messageType: 0, timestamp: 2000 },
 		];
 
-		writeGameOutput({ entries, filePath: testFile });
+		writeGameOutput({ entries, filePath: testFile, fileSystem });
 
-		const written = JSON.parse(fs.readFileSync(testFile, "utf-8"));
+		const written = JSON.parse(fileSystem.readFileSync(testFile, "utf-8"));
 
 		expect(written).toStrictEqual(entries);
 	});
@@ -114,14 +98,11 @@ describe(writeGameOutput, () => {
 	it("should create parent directories", () => {
 		expect.assertions(1);
 
-		const nested = path.join(testDirectory, "nested", "game-output.json");
-		writeGameOutput({ entries: [], filePath: nested });
+		const { fileSystem } = createMemoryFileSystem();
+		const nested = path.resolve("nested", "game-output.json");
+		writeGameOutput({ entries: [], filePath: nested, fileSystem });
 
-		onTestFinished(() => {
-			fs.rmSync(testDirectory, { force: true, recursive: true });
-		});
-
-		expect(fs.existsSync(nested)).toBeTrue();
+		expect(fileSystem.existsSync(nested)).toBeTrue();
 	});
 });
 
@@ -201,12 +182,11 @@ describe(countGroupedEntries, () => {
 });
 
 describe(writeGroupedGameOutput, () => {
-	const testDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "game-output-grouped-"));
-	const testFile = path.join(testDirectory, "game-output.log");
-
 	it("should write grouped entries to file as JSON, creating parent dirs", () => {
 		expect.assertions(1);
 
+		const { fileSystem } = createMemoryFileSystem();
+		const testFile = path.resolve("game-output.log");
 		const groups = [
 			{
 				entries: [{ message: "test", messageType: 0, timestamp: 1000 }],
@@ -215,13 +195,9 @@ describe(writeGroupedGameOutput, () => {
 			},
 		];
 
-		writeGroupedGameOutput({ filePath: testFile, groups });
+		writeGroupedGameOutput({ filePath: testFile, fileSystem, groups });
 
-		onTestFinished(() => {
-			fs.rmSync(testDirectory, { force: true, recursive: true });
-		});
-
-		const written = JSON.parse(fs.readFileSync(testFile, "utf-8"));
+		const written = JSON.parse(fileSystem.readFileSync(testFile, "utf-8"));
 
 		expect(written).toStrictEqual(groups);
 	});

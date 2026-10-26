@@ -5,6 +5,8 @@ import type { ScriptResult } from "@isentinel/roblox-runner";
 import process from "node:process";
 import { assert, describe, expect, it, vi } from "vitest";
 
+import { observeDelayedOriginalAsync } from "#test/e2e/live/execution-claim-helper.ts";
+import { IS_BINARY_INPUT, IS_LIVE } from "#test/e2e/live/live-gate.ts";
 import {
 	DEFAULT_BOOT_WATCH_MS,
 	executeWithRecoveryAsync,
@@ -16,8 +18,6 @@ import {
 	EXECUTION_NOT_CLAIMED,
 	ExecutionClaimObserver,
 } from "../../../src/luau/execution-claim.ts";
-import { observeDelayedOriginalAsync } from "./execution-claim-helper.ts";
-import { IS_BINARY_INPUT, IS_LIVE } from "./live-gate.ts";
 
 const TASK_TIMEOUT_MS = 30_000;
 const TASK_BUDGETS = openCloudExecutionBudgets(TASK_TIMEOUT_MS);

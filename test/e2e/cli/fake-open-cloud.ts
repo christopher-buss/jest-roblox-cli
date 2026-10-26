@@ -38,8 +38,8 @@ export function isTaskCreatePost(call: { method: string; url: string }): boolean
 }
 
 /**
- * Where the fake serves the presigned PUT it hands out. Live Open Cloud names a
- * storage host the API does not own, and the client PUTs there over a plain
+ * Where the fake serves the presigned PUT it hands out. Live Open Cloud names
+ * a storage host the API does not own, and the client PUTs there over a plain
  * `fetch` rather than through its own transport — so the fake has to answer at
  * a real URL of its own for a spec to see the bytes at all.
  */
@@ -251,8 +251,8 @@ function isJsonObject(value: JSONValue): value is JSONObject {
 
 /**
  * The queue-add body's `data` field. Open Cloud rejects an absent or null
- * value, so a fake handed one is being driven wrongly — fail loudly rather than
- * enqueue a bogus item.
+ * value, so a fake handed one is being driven wrongly — fail loudly rather
+ * than enqueue a bogus item.
  */
 function readItemData(parsed: JSONValue): Exclude<JSONValue, null> {
 	const data = isJsonObject(parsed) ? parsed["data"] : undefined;
@@ -731,6 +731,7 @@ async function handleRequestAsync({
 	const url = new URL(request.url ?? "/", "http://127.0.0.1");
 
 	if (request.method === "POST" && url.pathname.endsWith("/versions")) {
+		await readBodyAsync(request);
 		handlePublishVersion({ response, state });
 		return;
 	}

@@ -4,9 +4,9 @@ import * as path from "node:path";
 import process from "node:process";
 import { describe, expect, it, vi } from "vitest";
 
-import { fakeTimingCollector, phaseNamesOf } from "../../test/mocks/fake-timing-collector.ts";
-import type { MemoryVolume } from "../../test/mocks/memory-file-system.ts";
-import { createMemoryFileSystem } from "../../test/mocks/memory-file-system.ts";
+import { fakeTimingCollector, phaseNamesOf } from "#test/mocks/fake-timing-collector.ts";
+import type { MemoryVolume } from "#test/mocks/memory-file-system.ts";
+import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import type { ResolvedProjectConfig } from "../config/projects.ts";
 import { STUB_FILENAME } from "../config/stubs.ts";
 import type { WorkspacePackageCoverage } from "../coverage-pipeline/workspace-prepare.ts";

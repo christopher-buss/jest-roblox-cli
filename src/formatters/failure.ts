@@ -3,6 +3,8 @@ import color from "tinyrainbow";
 
 import type { MappedLocation, SourceMapper } from "../source-mapper/index.ts";
 import { execErrorTitle, type TestCaseResult, type TestFileResult } from "../types/jest-result.ts";
+import type { FileSystem } from "../utils/file-system.ts";
+import { nodeFileSystem } from "../utils/file-system.ts";
 import {
 	type FailureContext,
 	type FormatOptions,
@@ -123,6 +125,7 @@ export function cleanExecErrorMessage(raw: string): string {
 export function formatFailure({
 	failureIndex,
 	filePath,
+	fileSystem = nodeFileSystem,
 	showLuau = false,
 	sourceMapper,
 	styles,
@@ -132,6 +135,7 @@ export function formatFailure({
 }: {
 	failureIndex?: number | undefined;
 	filePath?: string | undefined;
+	fileSystem?: FileSystem;
 	showLuau?: boolean | undefined;
 	sourceMapper?: SourceMapper | undefined;
 	styles?: Styles | undefined;
@@ -155,6 +159,7 @@ export function formatFailure({
 		lines.push(
 			...formatFailureMessage(originalMessage, {
 				filePath,
+				fileSystem,
 				showLuau,
 				sourceMapper,
 				styles: st,
@@ -307,12 +312,14 @@ function formatFailureMessage(
 	originalMessage: string,
 	{
 		filePath,
+		fileSystem,
 		showLuau,
 		sourceMapper,
 		styles,
 		useColor,
 	}: {
 		filePath?: string | undefined;
+		fileSystem: FileSystem;
 		showLuau: boolean;
 		sourceMapper?: SourceMapper | undefined;
 		styles: Styles;
@@ -334,6 +341,7 @@ function formatFailureMessage(
 		...formatDiffBlock(parsed, styles),
 		...resolveSourceSnippets({
 			filePath,
+			fileSystem,
 			hasSnapshotDiff: parsed.snapshotDiff !== undefined,
 			mappedLocations,
 			message,

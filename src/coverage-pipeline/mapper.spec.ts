@@ -2,8 +2,8 @@ import { fromAny, fromPartial } from "@total-typescript/shoehorn";
 
 import { assert, describe, expect, it, vi } from "vitest";
 
-import { createMemoryFileSystem } from "../../test/mocks/memory-file-system.ts";
-import { buildSourceMap } from "../../test/mocks/source-map.ts";
+import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
+import { buildSourceMap } from "#test/mocks/source-map.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import type { CoverageManifest } from "./manifest.ts";
 import { MANIFEST_VERSION } from "./manifest.ts";

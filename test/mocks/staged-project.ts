@@ -3,9 +3,9 @@ import { isRojoTreeNode } from "@isentinel/rojo-utils";
 import { type } from "arktype";
 import { assert } from "vitest";
 
+import type { MemoryFileSystem } from "#test/mocks/memory-file-system.ts";
+import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import type { RojoTreeNode } from "../../src/types/rojo.ts";
-import type { MemoryFileSystem } from "./memory-file-system.ts";
-import { createMemoryFileSystem } from "./memory-file-system.ts";
 
 /**
  * Where synthesis parks each package's tree, mirroring `STAGE_KEY` in

@@ -3,7 +3,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { startFakeOpenCloudServerAsync } from "../cli/fake-open-cloud.ts";
+import { startFakeOpenCloudServerAsync } from "#test/e2e/cli/fake-open-cloud.ts";
 import {
 	buildPassingJestOutput,
 	createFixtureSandbox,
@@ -11,7 +11,7 @@ import {
 	readJsonSync,
 	rojoOnPath,
 	runCliAsync,
-} from "../cli/helpers.ts";
+} from "#test/e2e/cli/helpers.ts";
 
 // Regression: `--workspace --coverage` against a package whose rojo
 // `$path` mounts a directory holding BOTH `*.spec.luau` and non-spec helpers

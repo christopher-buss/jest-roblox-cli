@@ -1,7 +1,7 @@
 import * as path from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { createMemoryFileSystem } from "../../test/mocks/memory-file-system.ts";
+import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { validatePackages } from "./preflight.ts";
 
 const ROOT = path.resolve("/repo");

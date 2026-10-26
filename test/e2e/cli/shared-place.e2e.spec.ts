@@ -4,12 +4,11 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { assert, describe, expect, it } from "vitest";
 
-import { CODE_BUNDLE_REBUILD_SOURCE } from "../../../src/luau/code-bundle-rebuild.ts";
 import {
 	isTaskCreatePost,
 	startFakeOpenCloudServerAsync,
 	TASK_CREATE_SUFFIX,
-} from "./fake-open-cloud.ts";
+} from "#test/e2e/cli/fake-open-cloud.ts";
 import {
 	buildMixedOutput,
 	buildPassingPayload,
@@ -17,8 +16,9 @@ import {
 	createRbxtsFixtureSandbox,
 	rojoOnPath,
 	runCliAsync,
-} from "./helpers.ts";
-import { descendants, readPlaceTree } from "./place-tree.ts";
+} from "#test/e2e/cli/helpers.ts";
+import { descendants, readPlaceTree } from "#test/e2e/cli/place-tree.ts";
+import { CODE_BUNDLE_REBUILD_SOURCE } from "../../../src/luau/code-bundle-rebuild.ts";
 
 const RBXTS_FIXTURE = path.resolve(__dirname, "../fixtures/rbxts-project");
 const PLACE_FILE = "game.rbxlx";

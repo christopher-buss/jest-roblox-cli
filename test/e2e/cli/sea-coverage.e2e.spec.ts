@@ -2,13 +2,13 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { startFakeOpenCloudServerAsync } from "./fake-open-cloud.ts";
+import { startFakeOpenCloudServerAsync } from "#test/e2e/cli/fake-open-cloud.ts";
 import {
 	createFixtureSandbox,
 	createOpenCloudEnvironment,
 	rojoOnPath,
 	runSeaBundleAsync,
-} from "./helpers.ts";
+} from "#test/e2e/cli/helpers.ts";
 
 // Regression: every `--coverage` run on the standalone binary died after the
 // suite, before writing a report — `No such built-in module: <exe dir>\lib\text`

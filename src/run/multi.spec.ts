@@ -5,11 +5,11 @@ import process from "node:process";
 import type { Mock } from "vitest";
 import { assert, describe, expect, it, vi } from "vitest";
 
+import type { MemoryVolume } from "#test/mocks/memory-file-system.ts";
+import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
+import { movableClockCollector } from "#test/mocks/movable-clock.ts";
+import { PLACE_INPUT_BY_KIND } from "#test/mocks/place-input.ts";
 import packageJson from "../../package.json" with { type: "json" };
-import type { MemoryVolume } from "../../test/mocks/memory-file-system.ts";
-import { createMemoryFileSystem } from "../../test/mocks/memory-file-system.ts";
-import { movableClockCollector } from "../../test/mocks/movable-clock.ts";
-import { PLACE_INPUT_BY_KIND } from "../../test/mocks/place-input.ts";
 import type { Backend } from "../backends/interface.ts";
 import { ConfigError } from "../config/errors.ts";
 import type { ResolvedProjectConfig } from "../config/projects.ts";

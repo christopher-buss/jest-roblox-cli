@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { asciiColumn, asciiSpan } from "../../test/mocks/ascii-columns.ts";
+import { asciiColumn, asciiSpan } from "#test/mocks/ascii-columns.ts";
 import type { CollectorResult } from "./coverage-collector.ts";
 import { buildCoverageMap } from "./coverage-map-builder.ts";
 

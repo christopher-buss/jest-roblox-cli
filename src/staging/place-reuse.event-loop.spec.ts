@@ -1,52 +1,44 @@
-import * as fs from "node:fs";
-import * as os from "node:os";
 import * as path from "node:path";
-import { describe, expect, it, onTestFinished } from "vitest";
+import { setTimeout as delayAsync } from "node:timers/promises";
+import { describe, expect, it, vi } from "vitest";
 
+import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { MANIFEST_VERSION } from "../coverage-pipeline/manifest.ts";
 import { computePlaceInputsKeyAsync } from "./place-reuse.ts";
 
-/**
- * A mount with a few real files on a real disk. Real because the property
- * under test is that the fingerprint reaches the event loop at all, and an
- * in-memory filesystem can answer a read without ever going near it.
- */
-function stageInputs(): { projectFile: string; projectJson: string } {
-	const root = fs.mkdtempSync(path.join(os.tmpdir(), "place-reuse-loop-"));
-	onTestFinished(() => {
-		fs.rmSync(root, { force: true, recursive: true });
-	});
-
-	const mount = path.join(root, "src");
-	fs.mkdirSync(mount);
-	for (const name of ["a", "b", "c"]) {
-		fs.writeFileSync(path.join(mount, `${name}.luau`), `return "${name}"\n`);
-	}
-
+function stageInputs() {
+	const root = path.resolve("place-reuse-loop");
 	const projectFile = path.join(root, "synthesized.project.json");
 	const projectJson = JSON.stringify({
 		name: "synthesized",
 		tree: { $className: "DataModel", ReplicatedStorage: { $path: "src" } },
 	});
-	fs.writeFileSync(projectFile, projectJson);
-	return { projectFile, projectJson };
+	const { fileSystem } = createMemoryFileSystem({
+		[path.join(root, "src/a.luau")]: 'return "a"\n',
+		[path.join(root, "src/b.luau")]: 'return "b"\n',
+		[path.join(root, "src/c.luau")]: 'return "c"\n',
+		[projectFile]: projectJson,
+	});
+	const readFile = fileSystem.promises.readFile.bind(fileSystem.promises);
+	vi.spyOn(fileSystem.promises, "readFile").mockImplementation(async (...args) => {
+		await delayAsync(0);
+		return readFile(...args);
+	});
+	return { fileSystem, projectFile, projectJson };
 }
 
 describe(computePlaceInputsKeyAsync, () => {
 	it("should reach the event loop while it fingerprints the build inputs", async () => {
 		expect.assertions(2);
 
-		const { projectFile, projectJson } = stageInputs();
-		// A timer is the sharpest probe available: its callback cannot run
-		// across an awaited synchronous call, however long that call takes, and
-		// runs across the first real read once the walk is asynchronous.
+		const { fileSystem, projectFile, projectJson } = stageInputs();
 		let wasEventLoopReached = false;
 		setTimeout(() => {
 			wasEventLoopReached = true;
 		}, 0);
-
 		const key = await computePlaceInputsKeyAsync({
 			digestCacheFile: path.join(path.dirname(projectFile), "input-digests"),
+			fileSystem,
 			manifests: [],
 			projectFile,
 			projectJson,
@@ -55,9 +47,6 @@ describe(computePlaceInputsKeyAsync, () => {
 		});
 
 		expect(key).toBeTypeOf("string");
-		// The stage block repaints from a timer of its own. A fingerprint that
-		// never yields freezes that block on the duration it opened with, which
-		// is what a `build` row reading `0ms` for its whole life was.
 		expect(wasEventLoopReached).toBeTrue();
 	});
 });

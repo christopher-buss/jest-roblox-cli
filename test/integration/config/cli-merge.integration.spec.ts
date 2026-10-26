@@ -4,9 +4,9 @@ import { writeFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
+import { createFixtureSandbox } from "#test/e2e/cli/helpers.ts";
 import { parseArgs } from "../../../src/cli.ts";
 import { loadConfig } from "../../../src/config/loader.ts";
-import { createFixtureSandbox } from "../../e2e/cli/helpers.ts";
 
 const RBXTS_FIXTURE = path.resolve(__dirname, "../../e2e/fixtures/rbxts-project");
 const ENV_PREFIX = "JEST_";

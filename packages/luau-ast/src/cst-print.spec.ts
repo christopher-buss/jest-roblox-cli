@@ -2,9 +2,9 @@ import { fromPartial } from "@total-typescript/shoehorn";
 
 import { assert, describe, expect, it } from "vitest";
 
+import cst from "#test/fixtures/trees/cst.json" with { type: "json" };
 import { numberNode } from "#test/helpers/unit/cst";
 import { cstTree } from "#test/helpers/unit/trees";
-import cst from "../test/fixtures/trees/cst.json" with { type: "json" };
 import type { CstEdits, Replacement } from "./cst-edit.ts";
 import { printCst, printCstMapped } from "./cst-print.ts";
 import type { CstNode } from "./cst.ts";

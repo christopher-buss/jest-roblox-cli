@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { createMemoryFileSystem } from "../../test/mocks/memory-file-system.ts";
+import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { toPosixRoot } from "../utils/normalize-windows-path.ts";
 import { createCopyIgnoreMatcher } from "./discover-files.ts";
 import { MANIFEST_VERSION } from "./manifest.ts";

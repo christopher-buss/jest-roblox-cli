@@ -6,6 +6,14 @@ import process from "node:process";
 import { stripVTControlCharacters } from "node:util";
 import { assert, describe, expect, it, vi } from "vitest";
 
+import { startFakeOpenCloudServerAsync } from "#test/e2e/cli/fake-open-cloud.ts";
+import {
+	buildMixedOutput,
+	buildPassingPayload,
+	createFixtureSandbox,
+	writeCodeBundle,
+} from "#test/e2e/cli/helpers.ts";
+import { IS_BINARY_INPUT } from "#test/e2e/live/live-gate.ts";
 import type { Backend } from "../../../src/backends/interface.ts";
 import { OpenCloudBackend } from "../../../src/backends/open-cloud.ts";
 import { runAsync } from "../../../src/cli.ts";
@@ -16,14 +24,6 @@ import {
 } from "../../../src/luau/execution-claim.ts";
 import { runJestRobloxAsync } from "../../../src/run.ts";
 import { nodeRunSeams } from "../../../src/run/seams.ts";
-import { startFakeOpenCloudServerAsync } from "../../e2e/cli/fake-open-cloud.ts";
-import {
-	buildMixedOutput,
-	buildPassingPayload,
-	createFixtureSandbox,
-	writeCodeBundle,
-} from "../../e2e/cli/helpers.ts";
-import { IS_BINARY_INPUT } from "../../e2e/live/live-gate.ts";
 
 const FIXTURE = path.resolve(import.meta.dirname, "../../e2e/fixtures/luau-project");
 const JEST_OUTPUT = buildMixedOutput(buildPassingPayload());

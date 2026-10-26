@@ -26,6 +26,7 @@ export interface CoverageReportOptions {
 	collectCoverageFrom?: Array<string> | undefined;
 	coverageDirectory: string;
 	coveragePathIgnorePatterns?: Array<string> | undefined;
+	createContext?: typeof istanbulReport.createContext | undefined;
 	mapped: MappedCoverageResult;
 	reporters: Array<CoverageReporter>;
 }
@@ -75,7 +76,8 @@ export function generateReports(options: CoverageReportOptions): void {
 
 	const isAgentMode = options.agentMode === true;
 	const defaultSummarizer = isAgentMode ? "flat" : "pkg";
-	const context = istanbulReport.createContext({
+	const createContext = options.createContext ?? istanbulReport.createContext;
+	const context = createContext({
 		coverageMap,
 		defaultSummarizer,
 		dir: options.coverageDirectory,
@@ -89,6 +91,7 @@ export function generateReports(options: CoverageReportOptions): void {
 	const textTable = resolveTextTableView({
 		agentTextFilter: isAgentMode ? options.agentTextFilter : undefined,
 		coverageDirectory: options.coverageDirectory,
+		createContext,
 		defaultSummarizer,
 		fallback: context,
 		filtered,
@@ -195,12 +198,14 @@ function buildCoverageMap(mapped: MappedCoverageResult): CoverageMap {
 function resolveTextTableView({
 	agentTextFilter,
 	coverageDirectory,
+	createContext,
 	defaultSummarizer,
 	fallback,
 	filtered,
 }: {
 	agentTextFilter: CoverageDisplayPredicate | undefined;
 	coverageDirectory: string;
+	createContext: typeof istanbulReport.createContext;
 	defaultSummarizer: "flat" | "pkg";
 	fallback: ReturnType<typeof istanbulReport.createContext>;
 	filtered: MappedCoverageResult;
@@ -210,7 +215,7 @@ function resolveTextTableView({
 	}
 
 	const textCoverageMap = buildCoverageMap(narrowMappedForAgentTable(filtered, agentTextFilter));
-	const context = istanbulReport.createContext({
+	const context = createContext({
 		coverageMap: textCoverageMap,
 		defaultSummarizer,
 		dir: coverageDirectory,

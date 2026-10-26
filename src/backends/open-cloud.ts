@@ -489,7 +489,7 @@ export class OpenCloudBackend implements Backend {
 			process.stderr.write(
 				"Warning: Open Cloud returned 404; clearing the upload cache without restarting dispatched tests.\n",
 			);
-			invalidateCachedVersion({ rootDirectory, target });
+			invalidateCachedVersion({ fileSystem: this.fileSystem, rootDirectory, target });
 			throw err;
 		}
 	}
@@ -861,11 +861,13 @@ export class OpenCloudBackend implements Backend {
 		target: UploadCacheTarget;
 	}): Promise<UploadOutcome> {
 		const start = Date.now();
-		const hash = config.uploadCache ? hashPlaceFile(target.placeFilePath) : undefined;
+		const { fileSystem } = this;
+		const { rootDir: rootDirectory, uploadCache: canCache } = config;
+		const hash = canCache ? hashPlaceFile(target.placeFilePath, fileSystem) : undefined;
 		// A hash of undefined means "no cache this run" for both reads and
 		// writes: either the caller disabled it, or the file could not be read.
 		if (hash !== undefined) {
-			const cached = readCachedVersion({ hash, rootDirectory: config.rootDir, target });
+			const cached = readCachedVersion({ fileSystem, hash, rootDirectory, target });
 			if (cached !== undefined) {
 				// Noted rather than opened: nothing went over the wire, so the
 				// stage has a result and never had a wait.
@@ -879,7 +881,7 @@ export class OpenCloudBackend implements Backend {
 			}
 		}
 
-		const done = progress.begin("upload", describePlaceFile(target.placeFilePath));
+		const done = progress.begin("upload", describePlaceFile(target.placeFilePath, fileSystem));
 		const upload = await this.runner.uploadPlaceAsync({
 			placeFilePath: target.placeFilePath,
 		});
@@ -927,6 +929,7 @@ export class OpenCloudBackend implements Backend {
 					hash: upload.hash,
 					versionNumber: upload.versionNumber,
 				},
+				fileSystem: this.fileSystem,
 				rootDirectory: config.rootDir,
 				target,
 			});
@@ -968,8 +971,11 @@ export function resolveOcaleMaxRetries(): number | undefined {
 	return Number.isInteger(parsed) && parsed >= 0 ? parsed : undefined;
 }
 
-export function createOpenCloudBackend(credentials: OpenCloudCredentials): OpenCloudBackend {
-	return new OpenCloudBackend(credentials);
+export function createOpenCloudBackend(
+	credentials: OpenCloudCredentials,
+	options: OpenCloudOptions = {},
+): OpenCloudBackend {
+	return new OpenCloudBackend(credentials, options);
 }
 
 /**

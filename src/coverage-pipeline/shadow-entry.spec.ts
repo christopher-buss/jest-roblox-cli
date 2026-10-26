@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { createMemoryFileSystem } from "../../test/mocks/memory-file-system.ts";
+import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { clearDirectoryAtFilePath, createShadowDirectory } from "./shadow-entry.ts";
 
 describe(createShadowDirectory, () => {

@@ -1,6 +1,7 @@
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
+import { readJsonSync } from "#test/e2e/cli/helpers.ts";
 import type { Backend, BackendOptions, BackendResult } from "../../../src/backends/interface.ts";
 import { loadConfig } from "../../../src/config/loader.ts";
 import { resolveAllProjects } from "../../../src/config/projects.ts";
@@ -8,7 +9,6 @@ import { runProjectsAsync } from "../../../src/executor.ts";
 import { generateTestScript } from "../../../src/test-script.ts";
 import type { JestResult } from "../../../src/types/jest-result.ts";
 import { rojoProjectSchema } from "../../../src/types/rojo.ts";
-import { readJsonSync } from "../../e2e/cli/helpers.ts";
 
 const MULTI_ROOT_FIXTURE = path.resolve(__dirname, "../../e2e/fixtures/multi-root-project");
 

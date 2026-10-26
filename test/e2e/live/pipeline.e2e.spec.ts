@@ -4,12 +4,12 @@ import * as path from "node:path";
 import process from "node:process";
 import { assert, describe, expect, it, onTestFinished } from "vitest";
 
+import { createFixtureSandbox, runCliAsync } from "#test/e2e/cli/helpers.ts";
+import { IS_LIVE, liveEnvironment } from "#test/e2e/live/live-gate.ts";
+import { quotaSkipNote, skipOnQuotaAsync } from "#test/setup/quota-skip.ts";
 import { openCloudExecutionBudgets } from "../../../src/backends/open-cloud-budgets.ts";
 import { PLACE_DIR } from "../../../src/coverage-pipeline/prepare.ts";
 import { loadConfig, prepareArtifactsAsync, readCoverageManifest } from "../../../src/index.ts";
-import { quotaSkipNote, skipOnQuotaAsync } from "../../setup/quota-skip.ts";
-import { createFixtureSandbox, runCliAsync } from "../cli/helpers.ts";
-import { IS_LIVE, liveEnvironment } from "./live-gate.ts";
 
 /**
  * The live pipeline suite. Gated on JEST_ROBLOX_LIVE=1 plus the three Open

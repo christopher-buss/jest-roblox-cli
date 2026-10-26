@@ -1,6 +1,7 @@
+import * as path from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { createMemoryFileSystem } from "../../test/mocks/memory-file-system.ts";
+import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import { findLuauConfigFile, loadLuauConfig } from "./luau-config-loader.ts";
 
@@ -105,5 +106,26 @@ describe(findLuauConfigFile, () => {
 		expect(
 			findLuauConfigFile({ cwd: "/cwd", directoryOrFile: "project", fileSystem }),
 		).toBeUndefined();
+	});
+});
+
+describe("loadLuauConfig lute integration", () => {
+	it("should preserve string-valued config fields end-to-end", () => {
+		expect.assertions(1);
+
+		const filePath = path.resolve("config-fixture/jest.config.luau");
+		const source = `return {
+	displayName = "luau-integration",
+	testMatch = { "**/*.spec.luau" },
+}
+`;
+
+		const { fileSystem } = createMemoryFileSystem({ [filePath]: source });
+		const result = loadLuauConfig(filePath, fileSystem);
+
+		expect(result).toStrictEqual({
+			displayName: "luau-integration",
+			testMatch: ["**/*.spec.luau"],
+		});
 	});
 });

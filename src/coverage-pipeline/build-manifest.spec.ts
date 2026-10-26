@@ -1,8 +1,8 @@
 import { Buffer } from "node:buffer";
 import { describe, expect, it } from "vitest";
 
-import type { MemoryVolume } from "../../test/mocks/memory-file-system.ts";
-import { createMemoryFileSystem } from "../../test/mocks/memory-file-system.ts";
+import type { MemoryVolume } from "#test/mocks/memory-file-system.ts";
+import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { hashBuffer, hashFile } from "../utils/hash.ts";
 import type {
 	BuildManifest,

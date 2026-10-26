@@ -9,13 +9,13 @@ import * as path from "node:path";
 import nodeProcess from "node:process";
 import { assert, describe, expect, it, type Mock, onTestFinished, vi } from "vitest";
 
-import { createMemoryFileSystem } from "../../test/mocks/memory-file-system.ts";
+import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import {
 	getLastCreatedServer,
 	MockWebSocketServer,
 	mockWebSocketServerFactory as webSocketServerFactory,
-} from "../../test/mocks/mock-web-socket-server.ts";
-import { MockWebSocket } from "../../test/mocks/mock-web-socket.ts";
+} from "#test/mocks/mock-web-socket-server.ts";
+import { MockWebSocket } from "#test/mocks/mock-web-socket.ts";
 import { runAsync } from "../cli.ts";
 import { DEFAULT_CONFIG } from "../config/schema.ts";
 import type { ResolvedConfig } from "../config/schema.ts";
@@ -1418,9 +1418,9 @@ describe(StudioCliBackend, () => {
 	it("should throw when given no jobs", async () => {
 		expect.assertions(1);
 
-		const { fileSystem } = createMemoryFileSystem();
+		const backend = new StudioCliBackend();
 
-		await expect(backendReplying(fileSystem).runTestsAsync({ jobs: [] })).rejects.toThrow(
+		await expect(backend.runTestsAsync({ jobs: [] })).rejects.toThrow(
 			"StudioCliBackend requires at least one job",
 		);
 	});

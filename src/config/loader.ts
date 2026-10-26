@@ -1,6 +1,5 @@
 import { loadConfig as c12LoadConfig, type LoadConfigOptions } from "c12";
 import { defuFn } from "defu";
-import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import * as path from "node:path";
 import process from "node:process";
@@ -176,9 +175,9 @@ function isSea(): boolean {
 // unresolvable import surfaces Node's standard module-resolution error. `.json`
 // keeps its read + parse path (a bare `require` of JSON works too, but reading
 // avoids relying on CJS JSON-module semantics).
-async function seaImport(id: string): Promise<ConfigModule | JSONValue> {
+async function seaImport(id: string, fileSystem: FileSystem): Promise<ConfigModule | JSONValue> {
 	if (id.endsWith(".json")) {
-		const content = await readFile(id, "utf-8");
+		const content = await fileSystem.promises.readFile(id, "utf-8");
 		return JSON.parse(content);
 	}
 
@@ -197,10 +196,12 @@ async function invokeC12({
 	configFile,
 	configLoader,
 	cwd,
+	fileSystem,
 }: {
 	readonly configFile: string | undefined;
 	readonly configLoader: ConfigLoader;
 	readonly cwd: string;
+	readonly fileSystem: FileSystem;
 }) {
 	let options: LoadConfigOptions<Config> = {
 		name: "jest",
@@ -222,7 +223,7 @@ async function invokeC12({
 	// single-executable archive. Bypass jiti entirely by providing a
 	// custom import function.
 	return isSea()
-		? configLoader<Config>({ ...options, import: seaImport })
+		? configLoader<Config>({ ...options, import: async (id) => seaImport(id, fileSystem) })
 		: configLoader<Config>(options);
 }
 
@@ -249,6 +250,7 @@ async function loadConfigLayers({
 			configFile: configPath,
 			configLoader: context.configLoader,
 			cwd,
+			fileSystem,
 		});
 	} catch (err) {
 		if (configPath !== undefined && isC12NotFoundError(err)) {
@@ -404,6 +406,7 @@ async function loadExtendsLayers({
 				configFile: target,
 				configLoader: context.configLoader,
 				cwd: path.dirname(target),
+				fileSystem: context.fileSystem,
 			});
 		} catch (err) {
 			throw new Error(`Failed to resolve extends "${entry}" from "${canonicalFile}".`, {

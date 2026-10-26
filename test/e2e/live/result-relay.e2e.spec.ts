@@ -6,10 +6,10 @@ import process from "node:process";
 import { setTimeout as delayAsync } from "node:timers/promises";
 import { describe, expect, it } from "vitest";
 
+import { IS_BINARY_INPUT, IS_LIVE } from "#test/e2e/live/live-gate.ts";
 import { executeWithRecoveryAsync } from "../../../src/backends/execution-recovery.ts";
 import { openCloudExecutionBudgets } from "../../../src/backends/open-cloud-budgets.ts";
 import { executeWithResultRelayAsync } from "../../../src/backends/result-relay.ts";
-import { IS_BINARY_INPUT, IS_LIVE } from "./live-gate.ts";
 
 const TASK_TIMEOUT_MS = 30_000;
 const TASK_BUDGETS = openCloudExecutionBudgets(TASK_TIMEOUT_MS);

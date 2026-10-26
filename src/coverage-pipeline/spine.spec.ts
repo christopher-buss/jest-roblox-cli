@@ -1,8 +1,8 @@
 import * as path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
-import type { MemoryFileSystem, MemoryVolume } from "../../test/mocks/memory-file-system.ts";
-import { createMemoryFileSystem } from "../../test/mocks/memory-file-system.ts";
+import type { MemoryFileSystem, MemoryVolume } from "#test/mocks/memory-file-system.ts";
+import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import type { PosixRoot } from "../utils/normalize-windows-path.ts";
 import { normalizeWindowsPath, toPosixRoot } from "../utils/normalize-windows-path.ts";

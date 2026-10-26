@@ -12,8 +12,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it, onTestFinished } from "vitest";
 
+import { createSandboxDirectory, sweepStaleSandboxes } from "#test/e2e/sandbox-root.ts";
 import { normalizeWindowsPath } from "../../../src/utils/normalize-windows-path.ts";
-import { createSandboxDirectory, sweepStaleSandboxes } from "../sandbox-root.ts";
 
 const PACKAGE_ROOT = path.resolve(__dirname, "../../..");
 const VITEST_BIN = path.resolve(PACKAGE_ROOT, "node_modules/vitest/vitest.mjs");

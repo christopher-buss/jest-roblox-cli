@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { createMemoryFileSystem } from "./memory-file-system.ts";
+import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 
 describe(createMemoryFileSystem, () => {
 	// A seed key without a leading slash is relative, and memfs resolves a

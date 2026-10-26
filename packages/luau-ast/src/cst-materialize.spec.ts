@@ -1,7 +1,7 @@
 import { assert, describe, expect, it } from "vitest";
 
+import rawCst from "#test/fixtures/trees/raw-cst.json" with { type: "json" };
 import { cstTree, rawTree } from "#test/helpers/unit/trees";
-import rawCst from "../test/fixtures/trees/raw-cst.json" with { type: "json" };
 import { materializeCst } from "./cst-materialize.ts";
 import type { Trivia } from "./cst-token.ts";
 

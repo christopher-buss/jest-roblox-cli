@@ -4,9 +4,9 @@ import { dirname, resolve } from "node:path";
 import type { TestProjectInlineConfiguration } from "vitest/config";
 import { defaultExclude, defineConfig } from "vitest/config";
 
+import { QuotaSkipReporter } from "#test/setup/quota-skip-reporter.ts";
 import { virtualModulesPlugin } from "./loaders/virtual-modules.mjs";
 import { nodeFileSystem } from "./src/utils/file-system.ts";
-import { QuotaSkipReporter } from "./test/setup/quota-skip-reporter.ts";
 
 const DRIVE_LETTER_START_REGEX = /^[A-Za-z]:\//;
 

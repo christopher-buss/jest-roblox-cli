@@ -1,20 +1,22 @@
-import * as fs from "node:fs";
-import * as os from "node:os";
+import { OcaleRunner } from "@isentinel/roblox-runner";
+
 import * as path from "node:path";
 import process from "node:process";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 
+import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import {
 	getLastCreatedServer,
 	MockWebSocketServer,
 	mockWebSocketServerFactory as webSocketServerFactory,
-} from "../../test/mocks/mock-web-socket-server.ts";
+} from "#test/mocks/mock-web-socket-server.ts";
 import { DEFAULT_CONFIG } from "../config/schema.ts";
 import type { CliOptions, ResolvedConfig } from "../config/schema.ts";
 import { isStudioDiscoverable, resolveAutoBackend, resolveBackendAsync } from "./auto.ts";
 import { OpenCloudBackend } from "./open-cloud.ts";
 import { StudioCliBackend } from "./studio-cli.ts";
 import { StudioBackend } from "./studio.ts";
+import { hashPlaceFile, writeCachedVersion } from "./upload-cache.ts";
 
 function makeConfig(overrides: Partial<ResolvedConfig> = {}): ResolvedConfig {
 	return { ...DEFAULT_CONFIG, ...overrides };
@@ -22,15 +24,6 @@ function makeConfig(overrides: Partial<ResolvedConfig> = {}): ResolvedConfig {
 
 function makeCli(overrides: Partial<CliOptions> = {}): CliOptions {
 	return overrides;
-}
-
-function makeTemporaryDirectory(): string {
-	const directory = fs.mkdtempSync(path.join(os.tmpdir(), "jest-roblox-auto-"));
-	onTestFinished(() => {
-		fs.rmSync(directory, { force: true, recursive: true });
-	});
-
-	return directory;
 }
 
 function stubPlatform(platform: NodeJS.Platform): void {
@@ -197,6 +190,45 @@ describe(resolveBackendAsync, () => {
 		expect(backend).toBeInstanceOf(OpenCloudBackend);
 	});
 
+	it("should reuse a proven Open Cloud place from the supplied filesystem", async () => {
+		expect.assertions(3);
+
+		stubNoStudioPath();
+		stubCredentials();
+		vi.spyOn(process.stderr, "write").mockReturnValue(true);
+		const rootDirectory = path.resolve("fixture");
+		const placeFile = path.join(rootDirectory, "place.rbxl");
+		const { fileSystem } = createMemoryFileSystem({ [placeFile]: "place" });
+		const config = makeConfig({ backend: "auto", placeFile, rootDir: rootDirectory });
+		writeCachedVersion({
+			entry: { hash: hashPlaceFile(placeFile, fileSystem)!, versionNumber: 42 },
+			fileSystem,
+			rootDirectory,
+			target: { placeFilePath: placeFile, placeId: "456", universeId: "123" },
+		});
+		const upload = vi
+			.spyOn(OcaleRunner.prototype, "uploadPlaceAsync")
+			.mockRejectedValue(new Error("The proven place should not be uploaded"));
+		const execute = vi.spyOn(OcaleRunner.prototype, "executeScriptAsync").mockResolvedValue({
+			durationMs: 1,
+			outputs: [JSON.stringify({ entries: [{ jestOutput: "complete" }] })],
+		});
+		const backend = await resolveBackendAsync({
+			cli: makeCli(),
+			config,
+			fileSystem,
+			isStudioInstalled: () => false,
+		});
+		const result = await backend.runTestsAsync({
+			jobs: [{ config, displayName: "project", testFiles: [] }],
+			scriptOverride: "return 'result'",
+		});
+
+		expect(result.rawResults[0]!.entry.jestOutput).toBe("complete");
+		expect(execute).toHaveBeenCalledWith(expect.objectContaining({ placeVersion: 42 }));
+		expect(upload).not.toHaveBeenCalled();
+	});
+
 	it("should name the missing credential when auto has neither Studio nor Open Cloud", async () => {
 		expect.assertions(1);
 
@@ -285,7 +317,8 @@ describe(resolveBackendAsync, () => {
 	it("should forward the configured Studio path to the studio-cli backend", async () => {
 		expect.assertions(1);
 
-		const rootDirectory = makeTemporaryDirectory();
+		const rootDirectory = path.resolve("fixture");
+		const { fileSystem } = createMemoryFileSystem();
 		const configuredPath = path.join(rootDirectory, "configured-studio.exe");
 		vi.stubEnv("JEST_ROBLOX_STUDIO_PATH", path.join(rootDirectory, "environment-studio.exe"));
 
@@ -296,7 +329,7 @@ describe(resolveBackendAsync, () => {
 			rootDir: rootDirectory,
 			studioPath: configuredPath,
 		});
-		const backend = await resolveBackendAsync({ cli: makeCli(), config });
+		const backend = await resolveBackendAsync({ cli: makeCli(), config, fileSystem });
 
 		await expect(
 			backend.runTestsAsync({
@@ -311,9 +344,9 @@ describe(resolveBackendAsync, () => {
 	it("should skip the relative env plugins folder when the config key reaches studio-cli", async () => {
 		expect.assertions(2);
 
-		const rootDirectory = makeTemporaryDirectory();
+		const rootDirectory = path.resolve("fixture");
 		const studioPath = path.join(rootDirectory, "RobloxStudioBeta.exe");
-		fs.writeFileSync(studioPath, "");
+		const { fileSystem } = createMemoryFileSystem({ [studioPath]: "" });
 		stubPlatform("darwin");
 		vi.stubEnv("JEST_ROBLOX_PLUGINS_DIR", "environment-plugins");
 		vi.stubEnv("PATH", "");
@@ -327,7 +360,7 @@ describe(resolveBackendAsync, () => {
 				rootDir: rootDirectory,
 				studioPath,
 			});
-			const backend = await resolveBackendAsync({ cli: makeCli(), config });
+			const backend = await resolveBackendAsync({ cli: makeCli(), config, fileSystem });
 			await backend.runTestsAsync({
 				jobs: [{ config, displayName: "project", testFiles: ["test.spec.ts"] }],
 			});

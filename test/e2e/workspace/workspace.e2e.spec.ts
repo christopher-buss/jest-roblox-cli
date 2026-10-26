@@ -14,9 +14,9 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { describe, expect, it } from "vitest";
 
+import { createFixtureSandbox, rojoOnPath } from "#test/e2e/cli/helpers.ts";
 import { synthesize } from "../../../src/staging/synthesizer.ts";
 import { buildWithRojoAsync } from "../../../src/utils/rojo-builder.ts";
-import { createFixtureSandbox, rojoOnPath } from "../cli/helpers.ts";
 
 const FIXTURE = path.resolve(__dirname, "../fixtures/workspace");
 

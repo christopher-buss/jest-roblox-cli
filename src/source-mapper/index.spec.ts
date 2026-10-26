@@ -1,9 +1,9 @@
 import * as path from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { createMemoryFileSystem } from "../../test/mocks/memory-file-system.ts";
-import type { SourceMapSegment } from "../../test/mocks/source-map.ts";
-import { buildSourceMap } from "../../test/mocks/source-map.ts";
+import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
+import type { SourceMapSegment } from "#test/mocks/source-map.ts";
+import { buildSourceMap } from "#test/mocks/source-map.ts";
 import { formatSourceSnippet } from "../formatters/formatter.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";

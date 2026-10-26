@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { rojoOnPath } from "./helpers.ts";
-import type { FixtureInstance } from "./place-fixture.ts";
-import { buildFixturePlaceAsync, FIXTURE_PACKAGE, modelXml } from "./place-fixture.ts";
-import { nodeAt, readPlaceTree } from "./place-tree.ts";
+import { rojoOnPath } from "#test/e2e/cli/helpers.ts";
+import type { FixtureInstance } from "#test/e2e/cli/place-fixture.ts";
+import { buildFixturePlaceAsync, FIXTURE_PACKAGE, modelXml } from "#test/e2e/cli/place-fixture.ts";
+import { nodeAt, readPlaceTree } from "#test/e2e/cli/place-tree.ts";
 
 /**
  * The pass-through half of the staged-mount story: a model carrying no pinned

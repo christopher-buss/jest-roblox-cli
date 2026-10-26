@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it, onTestFinished } from "vitest";
 
+import { createRbxtsFixtureSandbox } from "#test/e2e/cli/helpers.ts";
 import {
 	INSTRUMENTER_VERSION,
 	instrumentRoot,
@@ -15,7 +16,6 @@ import { MANIFEST_VERSION } from "../../../src/coverage-pipeline/manifest.ts";
 import { mapCoverageToTypeScript } from "../../../src/coverage-pipeline/mapper.ts";
 import type { RawCoverageData } from "../../../src/coverage-pipeline/types.ts";
 import { normalizeWindowsPath, toPosixRoot } from "../../../src/utils/normalize-windows-path.ts";
-import { createRbxtsFixtureSandbox } from "../../e2e/cli/helpers.ts";
 
 const normalize = normalizeWindowsPath;
 const RBXTS_FIXTURE = path.resolve(__dirname, "../../e2e/fixtures/rbxts-project");

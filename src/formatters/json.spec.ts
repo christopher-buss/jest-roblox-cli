@@ -1,8 +1,7 @@
-import * as fs from "node:fs";
-import * as os from "node:os";
 import * as path from "node:path";
-import { describe, expect, it, onTestFinished } from "vitest";
+import { describe, expect, it } from "vitest";
 
+import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import type { JestResult } from "../types/jest-result.ts";
 import { MINIMAL_RESULT } from "./__fixtures__/results.ts";
 import { formatJson, writeJsonFileAsync } from "./json.ts";
@@ -27,18 +26,12 @@ describe(formatJson, () => {
 	});
 });
 
-function createTemporaryDirectory(): string {
-	return fs.mkdtempSync(path.join(os.tmpdir(), "jest-roblox-test-"));
-}
-
 describe(writeJsonFileAsync, () => {
 	it("should write JSON to file", async () => {
 		expect.assertions(1);
 
-		const temporaryDirectory = createTemporaryDirectory();
-		onTestFinished(() => {
-			fs.rmSync(temporaryDirectory, { recursive: true });
-		});
+		const { fileSystem } = createMemoryFileSystem();
+		const temporaryDirectory = path.resolve("fixture");
 
 		const result: JestResult = {
 			numFailedTests: 0,
@@ -51,9 +44,9 @@ describe(writeJsonFileAsync, () => {
 		};
 
 		const filePath = path.join(temporaryDirectory, "results.json");
-		await writeJsonFileAsync({ filePath, result });
+		await writeJsonFileAsync({ filePath, fileSystem, result });
 
-		const content = fs.readFileSync(filePath, "utf8");
+		const content = fileSystem.readFileSync(filePath, "utf8");
 
 		expect(content).toBe(formatJson(result));
 	});
@@ -61,10 +54,8 @@ describe(writeJsonFileAsync, () => {
 	it("should create parent directories if needed", async () => {
 		expect.assertions(1);
 
-		const temporaryDirectory = createTemporaryDirectory();
-		onTestFinished(() => {
-			fs.rmSync(temporaryDirectory, { recursive: true });
-		});
+		const { fileSystem } = createMemoryFileSystem();
+		const temporaryDirectory = path.resolve("fixture");
 
 		const result: JestResult = {
 			numFailedTests: 0,
@@ -77,9 +68,9 @@ describe(writeJsonFileAsync, () => {
 		};
 
 		const filePath = path.join(temporaryDirectory, "nested", "deep", "results.json");
-		await writeJsonFileAsync({ filePath, result });
+		await writeJsonFileAsync({ filePath, fileSystem, result });
 
-		expect(fs.existsSync(filePath)).toBeTrue();
+		expect(fileSystem.existsSync(filePath)).toBeTrue();
 	});
 });
 

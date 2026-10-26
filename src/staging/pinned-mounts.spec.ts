@@ -6,14 +6,14 @@ import * as path from "node:path";
 import type { Mock } from "vitest";
 import { describe, expect, it, vi } from "vitest";
 
-import type { MemoryFileSystem } from "../../test/mocks/memory-file-system.ts";
+import type { MemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import {
 	mountOf,
 	seed as seedVolume,
 	staged,
 	stagedProject,
 	stagedProjectSchema,
-} from "../../test/mocks/staged-project.ts";
+} from "#test/mocks/staged-project.ts";
 import { ConfigError } from "../config/errors.ts";
 import type { ChildProcessRunner } from "../utils/child-process.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";

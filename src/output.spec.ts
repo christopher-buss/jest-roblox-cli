@@ -5,7 +5,7 @@ import process from "node:process";
 import type { MockInstance } from "vitest";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 
-import { createMemoryFileSystem, type MemoryVolume } from "../test/mocks/memory-file-system.ts";
+import { createMemoryFileSystem, type MemoryVolume } from "#test/mocks/memory-file-system.ts";
 import { DEFAULT_CONFIG, type ResolvedConfig } from "./config/schema.ts";
 import type { loadCoverageManifest } from "./coverage-pipeline/manifest-load.ts";
 import {

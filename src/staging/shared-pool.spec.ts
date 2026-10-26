@@ -8,7 +8,7 @@ import {
 	staged,
 	stagedProject,
 	stagedProjectSchema,
-} from "../../test/mocks/staged-project.ts";
+} from "#test/mocks/staged-project.ts";
 import type { RojoTreeNode } from "../types/rojo.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";

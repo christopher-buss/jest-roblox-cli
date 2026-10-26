@@ -4,7 +4,7 @@ import type { ResolvedConfig as C12ResolvedConfig, LoadConfigOptions } from "c12
 import type { Mock } from "vitest";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 
-import { createMemoryFileSystem } from "../../test/mocks/memory-file-system.ts";
+import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import type { ConfigLoadOptions } from "./loader.ts";
 import { loadRawConfig } from "./loader.ts";
