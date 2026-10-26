@@ -54,7 +54,7 @@ describe(resolveNestedProjects, () => {
 		);
 
 		const parseError = captureError(() => {
-			return resolveNestedProjects(
+			resolveNestedProjects(
 				{ rootDirectory: directory, tree: { $path: "broken.project.json" } },
 				fileSystem,
 			);
@@ -63,7 +63,7 @@ describe(resolveNestedProjects, () => {
 		fs.rmSync(path.join(directory, "array.project.json"));
 
 		const readError = captureError(() => {
-			return resolveNestedProjects(
+			resolveNestedProjects(
 				{ rootDirectory: directory, tree: { $path: "array.project.json" } },
 				fileSystem,
 			);

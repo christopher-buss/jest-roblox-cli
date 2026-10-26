@@ -5,6 +5,7 @@ const SOURCE_FILES = ["src/**/*.ts"];
 export default isentinel(
 	{
 		name: "packages/rojo-utils",
+		antiSlop: true,
 		jsdoc: true,
 		namedConfigs: true,
 		naming: true,

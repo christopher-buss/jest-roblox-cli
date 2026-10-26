@@ -6,6 +6,7 @@ export default defineConfig<OxlintConfig>({
 	...standaloneOxlint(
 		{
 			name: "tools/jest-roblox-cli",
+			antiSlop: false,
 			configDirectory: import.meta.dirname,
 			ignores: [
 				"**/__fixtures__/**/*",

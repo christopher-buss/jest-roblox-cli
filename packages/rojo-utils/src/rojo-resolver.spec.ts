@@ -1,3 +1,5 @@
+import { fromAny } from "@total-typescript/shoehorn";
+
 import path from "node:path";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 
@@ -605,9 +607,12 @@ describe("state serialization", () => {
 		expect(resolver.getState()).toStrictEqual(snapshot);
 
 		const exported = resolver.getState();
-		Reflect.set(exported.filePathToRbxPathMap[0]![1], 0, "changed");
-		Reflect.set(exported.isolatedContainers[0]!, 0, "changed");
-		Reflect.set(exported.partitions[0]!.rbxPath, 0, "changed");
+		const filePath: Array<string> = fromAny(exported.filePathToRbxPathMap[0]![1]);
+		const isolatedPath: Array<string> = fromAny(exported.isolatedContainers[0]!);
+		const partitionPath: Array<string> = fromAny(exported.partitions[0]!.rbxPath);
+		filePath[0] = "changed";
+		isolatedPath[0] = "changed";
+		partitionPath[0] = "changed";
 		exported.warnings.push("changed");
 
 		expect(resolver.getState()).toStrictEqual(snapshot);

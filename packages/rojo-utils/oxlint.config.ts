@@ -5,6 +5,7 @@ import { standaloneOxlint } from "../../oxlint.shared.ts";
 export default defineConfig(
 	standaloneOxlint({
 		name: "packages/rojo-utils",
+		antiSlop: true,
 		configDirectory: import.meta.dirname,
 		ignores: ["**/out-tsc/**/*"],
 		jsdoc: true,

@@ -29,6 +29,10 @@ interface ResolveContext {
 	visited: Set<string>;
 }
 
+interface OptionalMount {
+	optional: string;
+}
+
 /**
  * Like {@link resolveNestedProjects}, but also reports the absolute path of
  * every nested project file inlined during resolution. Change-detection
@@ -172,8 +176,8 @@ function resolveOptionalPath({
 }: {
 	currentDirectory: string;
 	originalRoot: string;
-	value: { optional: string };
-}): { optional: string } {
+	value: OptionalMount;
+}): OptionalMount {
 	return {
 		optional: resolveRootRelativePath({
 			currentDirectory,

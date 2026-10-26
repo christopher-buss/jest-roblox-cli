@@ -18,11 +18,16 @@ export function isRojoTreeNode(value: unknown): value is RojoTreeNode {
  * @param value - Candidate from an existing parsed tree.
  * @returns Whether the value has a string-valued optional mount.
  */
-export function isOptionalPath(value: RojoTreeNode[string]): value is {
+export function isOptionalPath(value: JSONValue | RojoTreeNode[string]): value is {
 	/** A mount that may be absent from the filesystem. */
 	optional: string;
 } {
-	return isRojoTreeNode(value) && typeof value["optional"] === "string";
+	return (
+		typeof value === "object" &&
+		value !== null &&
+		!Array.isArray(value) &&
+		typeof value.optional === "string"
+	);
 }
 
 /**

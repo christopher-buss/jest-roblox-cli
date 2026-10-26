@@ -1,6 +1,6 @@
 import { assert } from "vitest";
 
-export function captureError(action: () => unknown): Error {
+export function captureError(action: () => void): Error {
 	try {
 		action();
 	} catch (err) {

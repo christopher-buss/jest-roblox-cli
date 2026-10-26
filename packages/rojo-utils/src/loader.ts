@@ -90,7 +90,7 @@ function orThrow<T>(result: ArkErrors | T, projectPath: string): T {
  * @returns True when the value is not an array.
  */
 function rejectArray(
-	value: object,
+	value: unknown,
 	ctx: { reject: (reason: { actual: string; expected: string }) => false },
 ): boolean {
 	if (!Array.isArray(value)) {

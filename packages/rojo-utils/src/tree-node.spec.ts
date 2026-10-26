@@ -17,7 +17,7 @@ describe(isRojoTreeNode, () => {
 });
 
 describe(isOptionalPath, () => {
-	it.for([{}, { optional: false }, "src", undefined])(
+	it.for([{}, { optional: false }, "src", undefined, null, []])(
 		"should reject a non-optional mount %j",
 		(value) => {
 			expect.assertions(1);

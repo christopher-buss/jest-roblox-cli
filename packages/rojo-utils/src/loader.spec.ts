@@ -51,7 +51,7 @@ describe(loadRojoProject, () => {
 		const { directory, fileSystem } = makeFileSystem({ "broken.project.json": "{" });
 
 		const error = captureError(() => {
-			return loadRojoProject(path.join(directory, "broken.project.json"), fileSystem);
+			loadRojoProject(path.join(directory, "broken.project.json"), fileSystem);
 		});
 
 		expect(error.cause).toBeInstanceOf(SyntaxError);

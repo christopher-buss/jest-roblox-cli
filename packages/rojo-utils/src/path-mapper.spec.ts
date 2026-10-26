@@ -20,7 +20,9 @@ describe(mapFsRootToDataModel, () => {
 	it("should omit the available-path appendix when the tree has no mounts", () => {
 		expect.assertions(1);
 
-		const error = captureError(() => mapFsRootToDataModel("missing", {}));
+		const error = captureError(() => {
+			mapFsRootToDataModel("missing", {});
+		});
 
 		expect(error.message).toBe("No Rojo tree mapping found for path: missing");
 	});

@@ -5,6 +5,7 @@ const SOURCE_FILES = ["src/**/*.ts"];
 export default isentinel(
 	{
 		name: "packages/luau-ast",
+		antiSlop: false,
 		jsdoc: true,
 		namedConfigs: true,
 		naming: true,
