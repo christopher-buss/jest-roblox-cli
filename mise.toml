@@ -12,7 +12,7 @@ _.path = [
 "github:rojo-rbx/rojo" = "7.7.0"
 "npm:@antfu/ni" = "latest"
 node = "26.5.0"
-pnpm = "12.15.0"
+pnpm = "12.16.0"
 watchexec = "latest"
 
 [tasks.dev]
