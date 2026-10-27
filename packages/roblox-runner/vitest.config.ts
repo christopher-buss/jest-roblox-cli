@@ -12,7 +12,15 @@ export default mergeConfig(
 				reporter: ["text", "json", "json-summary"],
 			},
 			projects: [
-				unitProject,
+				mergeConfig(unitProject, {
+					test: {
+						deps: {
+							optimizer: {
+								ssr: { include: ["arktype"] },
+							},
+						},
+					},
+				}),
 				{
 					extends: true,
 					test: {

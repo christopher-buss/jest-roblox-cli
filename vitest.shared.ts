@@ -6,6 +6,7 @@ export const unitProject = {
 	extends: true,
 	test: {
 		name: "unit",
+		deps: { optimizer: { ssr: { enabled: true, include: ["jest-extended"] } } },
 		include: ["src/**/*.spec.ts"],
 		isolate: false,
 		maxWorkers: 4,

@@ -7,6 +7,7 @@ import { defaultExclude, defineConfig } from "vitest/config";
 import { QuotaSkipReporter } from "#test/setup/quota-skip-reporter.ts";
 import { virtualModulesPlugin } from "./loaders/virtual-modules.mjs";
 import { nodeFileSystem } from "./src/utils/file-system.ts";
+import { unitProject as sharedUnitProject } from "./vitest.shared.ts";
 
 const DRIVE_LETTER_START_REGEX = /^[A-Za-z]:\//;
 
@@ -204,6 +205,7 @@ export const unitProject = {
 			include: ["src/**/*.bench.ts"],
 		},
 		clearMocks: true,
+		deps: sharedUnitProject.test.deps,
 		env: {
 			GITHUB_ACTIONS: "",
 		},
