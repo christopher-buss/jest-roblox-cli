@@ -1,4 +1,5 @@
 import { availableParallelism } from "node:os";
+import { join } from "node:path";
 
 import { type PartialStrykerOptions, scopedBreak, sharedConfig } from "./stryker.shared.config.ts";
 
@@ -39,6 +40,6 @@ export default {
 	timeoutMS: 10_000,
 	tsconfigFile: "tsconfig.json",
 	vitest: {
-		configFile: "vitest.stryker.config.ts",
+		configFile: join(import.meta.dirname, "vitest.stryker.config.ts"),
 	},
 } satisfies PartialStrykerOptions;
