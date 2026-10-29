@@ -1,0 +1,21 @@
+name: Label external issues
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  issues: write
+
+jobs:
+  label:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Add the External label
+        run: |
+          gh label create External --repo "$GITHUB_REPOSITORY" \
+            --color ededed --description "Opened by an outside user" 2>/dev/null || true
+          gh issue edit "$NUMBER" --repo "$GITHUB_REPOSITORY" --add-label External
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NUMBER: ${{ github.event.issue.number }}
