@@ -4,8 +4,24 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local StudioTestService = game:GetService("StudioTestService")
 
+-- How long a play server's copy waits for the session to start running. Studio
+-- can start the run-mode plugins a second or two before `IsRunning` turns true;
+-- a copy that returned then would never call `EndTest`, and the run would hang.
+local RUNNING_WAIT_SECONDS = 10
+
 if not RunService:IsRunning() then
-	return
+	if RunService:IsEdit() then
+		return
+	end
+
+	local runningDeadline = os.clock() + RUNNING_WAIT_SECONDS
+	while not RunService:IsRunning() and os.clock() < runningDeadline do
+		task.wait(0.05)
+	end
+
+	if not RunService:IsRunning() then
+		return
+	end
 end
 
 -- Plugin/CLI protocol version. Must match `STUDIO_PROTOCOL_VERSION` in

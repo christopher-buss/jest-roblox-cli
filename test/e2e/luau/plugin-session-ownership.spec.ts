@@ -54,7 +54,12 @@ end`);
 
 const MODULE_FACTORIES = moduleFactories();
 
-function runSession(request: string, assertion: string, sideChannelPayload = "nil"): string {
+function runSession(
+	request: string,
+	assertion: string,
+	sideChannelPayload = "nil",
+	runState = "{}",
+): string {
 	const directory = fs.mkdtempSync(path.join(os.tmpdir(), "plugin-session-ownership-"));
 	onTestFinished(() => {
 		fs.rmSync(directory, { force: true, recursive: true });
@@ -64,6 +69,7 @@ function runSession(request: string, assertion: string, sideChannelPayload = "ni
 		scriptPath,
 		HARNESS_SOURCE.replace("__REQUEST__", () => request)
 			.replace("__SIDE_CHANNEL_PAYLOAD__", () => sideChannelPayload)
+			.replace("__RUN_STATE__", () => runState)
 			.replace("__MODULES__", () => MODULE_FACTORIES)
 			.replace("__PLUGIN__", () => PLUGIN_SOURCE)
 			.replace("__ASSERTION__", () => assertion),
@@ -213,6 +219,47 @@ local output = HttpService:JSONDecode(frame.jestOutput)
 assert(frame.requestId == "request-123" and output.entries ~= nil and #output.entries == 0,
     output.err or "Expected a relayed workspace result")`,
 				"{ test = true, protocolVersion = 10, workspace = { entries = {} } }",
+			),
+		).toContain("ALL OK");
+	});
+
+	it("should run a marked session whose play server starts running after the plugin", () => {
+		expect.assertions(1);
+
+		expect(
+			runSession(
+				"{ test = true, protocolVersion = 10, workspace = { entries = {} } }",
+				`assert(#results == 1, "A session that started running late must end")
+local output = HttpService:JSONDecode(results[1].jestOutput)
+assert(output.entries ~= nil and #output.entries == 0, output.err or "Expected an empty workspace result")`,
+				"nil",
+				"{ runningAfter = 1.5 }",
+			),
+		).toContain("ALL OK");
+	});
+
+	it("should stay out of the edit data model", () => {
+		expect.assertions(1);
+
+		expect(
+			runSession(
+				"{ test = true, protocolVersion = 10, workspace = { entries = {} } }",
+				'assert(#results == 0 and testArgsReads == 0, "The edit data model read the test arguments")',
+				"nil",
+				"{ edit = true, runningAfter = math.huge }",
+			),
+		).toContain("ALL OK");
+	});
+
+	it("should give up on a play server that never starts running", () => {
+		expect.assertions(1);
+
+		expect(
+			runSession(
+				"{ test = true, protocolVersion = 10, workspace = { entries = {} } }",
+				'assert(#results == 0 and testArgsReads == 0, "A session that never ran read the test arguments")',
+				"nil",
+				"{ runningAfter = math.huge }",
 			),
 		).toContain("ALL OK");
 	});
