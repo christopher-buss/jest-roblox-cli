@@ -3,7 +3,7 @@ import { loadConfig, runJestRobloxAsync } from "@isentinel/jest-roblox/artifacts
 import * as fs from "node:fs";
 import * as os from "node:os";
 import path from "node:path";
-import { describe, expect, it, onTestFinished } from "vitest";
+import { describe, expect, it, onTestFinished, vi } from "vitest";
 
 const ROJO_TREE = {
 	$className: "DataModel",
@@ -70,6 +70,8 @@ describe("luau configs through loadConfig", () => {
 	it("should read a typed plain-data top-level config without running it", async () => {
 		expect.assertions(3);
 
+		vi.stubEnv("PATH", "");
+		vi.stubEnv("JEST_ROBLOX_LUTE_PATH", undefined);
 		const directory = createProject({
 			"jest.config.luau": [
 				'local jest = require("@jest-roblox/config")',
