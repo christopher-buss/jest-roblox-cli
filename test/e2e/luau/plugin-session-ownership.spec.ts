@@ -54,7 +54,32 @@ end`);
 
 const MODULE_FACTORIES = moduleFactories();
 
-function runSession(request: string, assertion: string, sideChannelPayload = "nil"): string {
+const MARKED_WORKSPACE_REQUEST =
+	"{ test = true, protocolVersion = 10, workspace = { entries = {} } }";
+
+interface RunState {
+	edit?: boolean;
+	runningAfter?: number;
+}
+
+interface SessionOptions {
+	assertion: string;
+	request: string;
+	runState?: RunState;
+	sideChannelPayload?: string;
+}
+
+function luauRunState({ edit = false, runningAfter = 0 }: RunState): string {
+	const after = runningAfter === Infinity ? "math.huge" : runningAfter.toString();
+	return `{ edit = ${edit.toString()}, runningAfter = ${after} }`;
+}
+
+function runSession({
+	assertion,
+	request,
+	runState = {},
+	sideChannelPayload = "nil",
+}: SessionOptions): string {
 	const directory = fs.mkdtempSync(path.join(os.tmpdir(), "plugin-session-ownership-"));
 	onTestFinished(() => {
 		fs.rmSync(directory, { force: true, recursive: true });
@@ -64,6 +89,7 @@ function runSession(request: string, assertion: string, sideChannelPayload = "ni
 		scriptPath,
 		HARNESS_SOURCE.replace("__REQUEST__", () => request)
 			.replace("__SIDE_CHANNEL_PAYLOAD__", () => sideChannelPayload)
+			.replace("__RUN_STATE__", () => luauRunState(runState))
 			.replace("__MODULES__", () => MODULE_FACTORIES)
 			.replace("__PLUGIN__", () => PLUGIN_SOURCE)
 			.replace("__ASSERTION__", () => assertion),
@@ -76,10 +102,10 @@ describe("studio plugin session ownership", { timeout: LUTE_HARNESS_TIMEOUT }, (
 		expect.assertions(1);
 
 		expect(
-			runSession(
-				'{ nativeAudit = "request-123" }',
-				'assert(#results == 0, "Unmarked nativeAudit session called EndTest")',
-			),
+			runSession({
+				assertion: 'assert(#results == 0, "Unmarked nativeAudit session called EndTest")',
+				request: '{ nativeAudit = "request-123" }',
+			}),
 		).toContain("ALL OK");
 	});
 
@@ -87,10 +113,11 @@ describe("studio plugin session ownership", { timeout: LUTE_HARNESS_TIMEOUT }, (
 		expect.assertions(1);
 
 		expect(
-			runSession(
-				"{ protocolVersion = 10 }",
-				'assert(#results == 0, "Unmarked matching-protocol session called EndTest")',
-			),
+			runSession({
+				assertion:
+					'assert(#results == 0, "Unmarked matching-protocol session called EndTest")',
+				request: "{ protocolVersion = 10 }",
+			}),
 		).toContain("ALL OK");
 	});
 
@@ -98,7 +125,10 @@ describe("studio plugin session ownership", { timeout: LUTE_HARNESS_TIMEOUT }, (
 		expect.assertions(1);
 
 		expect(
-			runSession("42", 'assert(#results == 0, "Scalar session called EndTest")'),
+			runSession({
+				assertion: 'assert(#results == 0, "Scalar session called EndTest")',
+				request: "42",
+			}),
 		).toContain("ALL OK");
 	});
 
@@ -106,10 +136,10 @@ describe("studio plugin session ownership", { timeout: LUTE_HARNESS_TIMEOUT }, (
 		expect.assertions(1);
 
 		expect(
-			runSession(
-				"{ test = false, protocolVersion = 10 }",
-				'assert(#results == 0, "False-marker session called EndTest")',
-			),
+			runSession({
+				assertion: 'assert(#results == 0, "False-marker session called EndTest")',
+				request: "{ test = false, protocolVersion = 10 }",
+			}),
 		).toContain("ALL OK");
 	});
 
@@ -117,10 +147,10 @@ describe("studio plugin session ownership", { timeout: LUTE_HARNESS_TIMEOUT }, (
 		expect.assertions(1);
 
 		expect(
-			runSession(
-				'{ test = "true", protocolVersion = 10 }',
-				'assert(#results == 0, "String-marker session called EndTest")',
-			),
+			runSession({
+				assertion: 'assert(#results == 0, "String-marker session called EndTest")',
+				request: '{ test = "true", protocolVersion = 10 }',
+			}),
 		).toContain("ALL OK");
 	});
 
@@ -128,12 +158,12 @@ describe("studio plugin session ownership", { timeout: LUTE_HARNESS_TIMEOUT }, (
 		expect.assertions(1);
 
 		expect(
-			runSession(
-				"{ test = true }",
-				`assert(#results == 1, "Marked missing-protocol session must end")
+			runSession({
+				assertion: `assert(#results == 1, "Marked missing-protocol session must end")
 local output = HttpService:JSONDecode(results[1].jestOutput)
 assert(output.success == false and string.find(output.err, "protocol version mismatch", 1, true), output.err)`,
-			),
+				request: "{ test = true }",
+			}),
 		).toContain("ALL OK");
 	});
 
@@ -141,12 +171,12 @@ assert(output.success == false and string.find(output.err, "protocol version mis
 		expect.assertions(1);
 
 		expect(
-			runSession(
-				"{ test = true, protocolVersion = 9 }",
-				`assert(#results == 1, "Marked mismatched-protocol session must end")
+			runSession({
+				assertion: `assert(#results == 1, "Marked mismatched-protocol session must end")
 local output = HttpService:JSONDecode(results[1].jestOutput)
 assert(output.success == false and string.find(output.err, "CLI v9", 1, true), output.err)`,
-			),
+				request: "{ test = true, protocolVersion = 9 }",
+			}),
 		).toContain("ALL OK");
 	});
 
@@ -154,12 +184,13 @@ assert(output.success == false and string.find(output.err, "CLI v9", 1, true), o
 		expect.assertions(1);
 
 		expect(
-			runSession(
-				'{ test = true, protocolVersion = 10, pluginKey = "another-installed-plugin" }',
-				`assert(#results == 1, "Marked mismatched-key session must end")
+			runSession({
+				assertion: `assert(#results == 1, "Marked mismatched-key session must end")
 local output = HttpService:JSONDecode(results[1].jestOutput)
 assert(output.success == false and string.find(output.err, "plugin key mismatch", 1, true), output.err)`,
-			),
+				request:
+					'{ test = true, protocolVersion = 10, pluginKey = "another-installed-plugin" }',
+			}),
 		).toContain("ALL OK");
 	});
 
@@ -167,13 +198,13 @@ assert(output.success == false and string.find(output.err, "plugin key mismatch"
 		expect.assertions(1);
 
 		expect(
-			runSession(
-				"{ test = true, protocolVersion = 10, workspace = { entries = {} } }",
-				`assert(#results == 1, "Marked workspace session must end")
+			runSession({
+				assertion: `assert(#results == 1, "Marked workspace session must end")
 local output = HttpService:JSONDecode(results[1].jestOutput)
 assert(output.entries ~= nil and #output.entries == 0 and output.bailed == false and output.deferred == false,
     output.err or "Expected an empty workspace result")`,
-			),
+				request: MARKED_WORKSPACE_REQUEST,
+			}),
 		).toContain("ALL OK");
 	});
 
@@ -181,11 +212,12 @@ assert(output.entries ~= nil and #output.entries == 0 and output.bailed == false
 		expect.assertions(1);
 
 		expect(
-			runSession(
-				"nil",
-				'assert(#results == 0 and #relayedResults == 0, "Unmarked nil-relay payload ended the session")',
-				'{ nativeAudit = "request-123", protocolVersion = 10 }',
-			),
+			runSession({
+				assertion:
+					'assert(#results == 0 and #relayedResults == 0, "Unmarked nil-relay payload ended the session")',
+				request: "nil",
+				sideChannelPayload: '{ nativeAudit = "request-123", protocolVersion = 10 }',
+			}),
 		).toContain("ALL OK");
 	});
 
@@ -193,11 +225,13 @@ assert(output.entries ~= nil and #output.entries == 0 and output.bailed == false
 		expect.assertions(1);
 
 		expect(
-			runSession(
-				"nil",
-				'assert(socketsOpened == 0, "A copy with another key opened the studio-cli socket")',
-				'{ test = true, protocolVersion = 10, pluginKey = "another-installed-plugin" }',
-			),
+			runSession({
+				assertion:
+					'assert(socketsOpened == 0, "A copy with another key opened the studio-cli socket")',
+				request: "nil",
+				sideChannelPayload:
+					'{ test = true, protocolVersion = 10, pluginKey = "another-installed-plugin" }',
+			}),
 		).toContain("ALL OK");
 	});
 
@@ -205,15 +239,70 @@ assert(output.entries ~= nil and #output.entries == 0 and output.bailed == false
 		expect.assertions(1);
 
 		expect(
-			runSession(
-				"nil",
-				`assert(#results == 0 and #relayedResults == 1, "Marked nil-relay payload must return through the socket")
+			runSession({
+				assertion: `assert(#results == 0 and #relayedResults == 1, "Marked nil-relay payload must return through the socket")
 local frame = relayedResults[1]
 local output = HttpService:JSONDecode(frame.jestOutput)
 assert(frame.requestId == "request-123" and output.entries ~= nil and #output.entries == 0,
     output.err or "Expected a relayed workspace result")`,
-				"{ test = true, protocolVersion = 10, workspace = { entries = {} } }",
-			),
+				request: "nil",
+				sideChannelPayload: MARKED_WORKSPACE_REQUEST,
+			}),
+		).toContain("ALL OK");
+	});
+
+	it("should run a marked session whose play server starts running after the plugin", () => {
+		expect.assertions(1);
+
+		expect(
+			runSession({
+				assertion: `assert(#results == 1, "A session that started running late must end")
+local output = HttpService:JSONDecode(results[1].jestOutput)
+assert(output.entries ~= nil and #output.entries == 0, output.err or "Expected an empty workspace result")`,
+				request: MARKED_WORKSPACE_REQUEST,
+				runState: { runningAfter: 1.5 },
+			}),
+		).toContain("ALL OK");
+	});
+
+	it("should stay out of the edit data model", () => {
+		expect.assertions(1);
+
+		expect(
+			runSession({
+				assertion:
+					'assert(#results == 0 and testArgsReads == 0, "The edit data model read the test arguments")',
+				request: MARKED_WORKSPACE_REQUEST,
+				runState: { edit: true, runningAfter: Infinity },
+			}),
+		).toContain("ALL OK");
+	});
+
+	it("should warn when the play server of a studio-cli run never starts running", () => {
+		expect.assertions(1);
+
+		expect(
+			runSession({
+				assertion: `assert(#results == 0 and testArgsReads == 0 and socketsOpened == 0, "A session that never ran went on")
+assert(#warnings == 1 and string.find(warnings[1], "did not start running", 1, true), "A copy that gave up said nothing")
+table.clear(warnings)`,
+				request: MARKED_WORKSPACE_REQUEST,
+				runState: { runningAfter: Infinity },
+				sideChannelPayload: MARKED_WORKSPACE_REQUEST,
+			}),
+		).toContain("ALL OK");
+	});
+
+	it("should give up quietly on a play server outside a studio-cli run that never starts running", () => {
+		expect.assertions(1);
+
+		expect(
+			runSession({
+				assertion:
+					'assert(#results == 0 and testArgsReads == 0, "A session that never ran read the test arguments")',
+				request: MARKED_WORKSPACE_REQUEST,
+				runState: { runningAfter: Infinity },
+			}),
 		).toContain("ALL OK");
 	});
 });

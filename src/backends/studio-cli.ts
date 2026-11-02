@@ -108,7 +108,7 @@ const STUDIO_LOG_TAIL = 15;
 /** Per-line cap on the quoted Studio log tail, in characters. */
 const STUDIO_LOG_LINE_LIMIT = 300;
 
-// Must stay below `NIL_RELAY_WAIT_SECONDS` in
+// Must stay below `NIL_RELAY_WAIT_SECONDS` and above `RUNNING_WAIT_SECONDS` in
 // `plugin/src/test-in-run-mode.server.luau`.
 const NIL_RETURN_PLUGIN_WAIT_MS = 30_000;
 
@@ -1133,7 +1133,7 @@ function nilReturnError({
 	const headline =
 		pluginKey === undefined
 			? NIL_RETURN_HEADLINE
-			: `${NIL_RETURN_HEADLINE}\n  No copy of the Studio plugin ${pluginKey} answered: it did not load, or Studio refused it a socket.`;
+			: `${NIL_RETURN_HEADLINE}\n  No copy of the Studio plugin ${pluginKey} answered: it did not load, Studio refused it a socket, or the play server never started running.`;
 	return unansweredError({ ...unanswered, headline });
 }
 

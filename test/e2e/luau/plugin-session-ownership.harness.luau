@@ -1,6 +1,7 @@
 --!nocheck
 local request = __REQUEST__
 local sideChannelPayload = __SIDE_CHANNEL_PAYLOAD__
+local runState = __RUN_STATE__
 local results = {}
 local relayedResults = {}
 local encoded = {}
@@ -8,6 +9,7 @@ local elapsed = 0
 local attributes = {}
 local receiveRelay = nil
 local socketsOpened = 0
+local testArgsReads = 0
 
 local HttpService = {}
 function HttpService:JSONEncode(value)
@@ -54,6 +56,7 @@ end
 
 local StudioTestService = {}
 function StudioTestService:GetTestArgs()
+	testArgsReads += 1
 	return request
 end
 
@@ -64,7 +67,10 @@ end
 local services = {
 	HttpService = HttpService,
 	ReplicatedStorage = ReplicatedStorage,
-	RunService = { IsRunning = function() return true end },
+	RunService = {
+		IsEdit = function() return runState.edit == true end,
+		IsRunning = function() return elapsed >= (runState.runningAfter or 0) end,
+	},
 	StudioTestService = StudioTestService,
 	MemoryStoreService = {},
 	LogService = {},
@@ -114,7 +120,8 @@ loadModule = function(module)
 	return loaded[module]
 end
 local require = loadModule
-local warn = function(message) error(message, 0) end
+local warnings = {}
+local warn = function(message) table.insert(warnings, message) end
 
 __MODULES__
 
@@ -124,4 +131,5 @@ end
 
 runPlugin()
 __ASSERTION__
+assert(#warnings == 0, "Unexpected warning: " .. tostring(warnings[1]))
 print("ALL OK")

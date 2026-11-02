@@ -4,8 +4,41 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local StudioTestService = game:GetService("StudioTestService")
 
+-- Must stay below `NIL_RETURN_PLUGIN_WAIT_MS` in `src/backends/studio-cli.ts`.
+local RUNNING_WAIT_SECONDS = 10
+local RUNNING_POLL_SECONDS = 0.05
+
+-- Mirrors `src/backends/studio-cli.ts`.
+local SIDE_CHANNEL_ATTRIBUTE = "JestRobloxRunSideChannel"
+
+local function waitUntilRunning(): boolean
+	local deadline = os.clock() + RUNNING_WAIT_SECONDS
+	while not RunService:IsRunning() do
+		if os.clock() >= deadline then
+			return false
+		end
+
+		task.wait(RUNNING_POLL_SECONDS)
+	end
+
+	return true
+end
+
 if not RunService:IsRunning() then
-	return
+	if RunService:IsEdit() then
+		return
+	end
+
+	if not waitUntilRunning() then
+		if typeof(ReplicatedStorage:GetAttribute(SIDE_CHANNEL_ATTRIBUTE)) == "string" then
+			warn(
+				"[jest-roblox] the play server did not start running within "
+					.. tostring(RUNNING_WAIT_SECONDS)
+					.. "s; this copy of the run-mode plugin stands down"
+			)
+		end
+		return
+	end
 end
 
 -- Plugin/CLI protocol version. Must match `STUDIO_PROTOCOL_VERSION` in
@@ -64,9 +97,6 @@ local HOST_READY_TIMEOUT_SECONDS = 10
 -- Set by each host once its `BindToMessage` is live. Mirrors
 -- `plugin/host/vm-host.server.luau`.
 local HOST_READY_ATTRIBUTE = "JestRobloxVmHostReady"
-
--- Mirrors `src/backends/studio-cli.ts`.
-local SIDE_CHANNEL_ATTRIBUTE = "JestRobloxRunSideChannel"
 
 -- Must exceed `NIL_RETURN_PLUGIN_WAIT_MS` in `src/backends/studio-cli.ts`.
 local NIL_RELAY_WAIT_SECONDS = 60

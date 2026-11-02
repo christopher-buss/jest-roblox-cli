@@ -1917,6 +1917,31 @@ describe(StudioCliBackend, () => {
 			expect(caught.message).toContain(`plugin ${PLUGIN_KEY}`);
 		});
 
+		it("should name a play server that never ran as a cause after a nil return", async () => {
+			expect.assertions(1);
+
+			const { fileSystem } = createMemoryFileSystem();
+			useResultDeadlineTimers();
+
+			const studio = earlyEndStudio(fileSystem);
+			const settled = makeBackend({
+				extra: { timeout: 600_000 },
+				fileSystem,
+				launch: studio.launch,
+			})
+				.runTestsAsync(singleJob)
+				.catch((err: unknown) => err);
+			await vi.advanceTimersByTimeAsync(0);
+			const bootstrap = studio.connect();
+			studio.send(bootstrap, "nilReturn");
+			await vi.advanceTimersByTimeAsync(30_000);
+			const caught: unknown = await settled;
+
+			assert(caught instanceof Error);
+
+			expect(caught.message).toContain("the play server never started running");
+		});
+
 		it("should name no plugin key after a nil return when none was installed", async () => {
 			expect.assertions(1);
 
