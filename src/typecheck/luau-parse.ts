@@ -1,12 +1,17 @@
 import assert from "node:assert";
 
-import type { RawErrorsMap, TypeTestDiagnostic } from "./types.ts";
+import type { RawErrorsMap, TypeTestDiagnostic } from "./typecheck-types.ts";
 
 const LINE_SPLIT = /\r?\n/;
 const LUAU_HEADER =
 	/^(?<filePath>.+?):(?<line>\d+):(?<column>\d+)-\d+(?::\d+)?: \(\w+\) (?<code>\w+): (?<message>.*)$/;
 const TYPE_FUNCTION_PREFIX = /^'[^']+' type function errored at runtime: \[string "[^"]*"\]:\d+: /;
 
+/**
+ * Parse the Luau type checker's output into diagnostics by file.
+ * @param stdout - The checker's standard output.
+ * @returns The diagnostics, grouped by file path.
+ */
 export function parseLuauOutput(stdout: string): RawErrorsMap {
 	const map: RawErrorsMap = new Map();
 	let previous: TypeTestDiagnostic | undefined;
@@ -47,11 +52,7 @@ function toDiagnostic({
 	message,
 }: Record<string, string | undefined>): TypeTestDiagnostic {
 	assert(
-		code !== undefined &&
-			column !== undefined &&
-			filePath !== undefined &&
-			line !== undefined &&
-			message !== undefined,
+		code !== undefined && filePath !== undefined && message !== undefined,
 		"LUAU_HEADER matched without every named group",
 	);
 	return {

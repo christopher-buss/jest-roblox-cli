@@ -7,6 +7,9 @@ import type { BuildManifestProject } from "../coverage-pipeline/build-manifest.t
  * the kernel resolves one project-root Instance per path. `setupFiles` /
  * `setupFilesAfterEnv` are already DataModel paths by the time projects
  * resolve.
+ *
+ * @param projects - Resolved project configs.
+ * @returns One manifest record per project DataModel path.
  */
 export function toBuildManifestProjects(
 	projects: Array<ResolvedProjectConfig>,

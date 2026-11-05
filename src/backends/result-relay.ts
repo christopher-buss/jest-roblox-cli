@@ -13,7 +13,8 @@ import { zstdDecompressSync } from "node:zlib";
 import relaySource from "../../luau/execution-result-relay.luau";
 import { countLinesThroughLastDirective } from "../luau/directive-header.ts";
 import { resolveStorageClient } from "../memory-store/sorted-map-page.ts";
-import { isUncertainTaskSubmit, UncertainSubmissionError } from "./uncertain-submission.ts";
+import { UncertainSubmissionError } from "./execution-recovery.ts";
+import { isUncertainTaskSubmit } from "./uncertain-submission.ts";
 
 const MAP_ID = "jest-roblox-result-relay-v1";
 const POLL_MS = 1000;
@@ -33,16 +34,32 @@ const relayValueSchema = type({
 });
 const outputsSchema = type("string[]").or({ error: "string" });
 
+/** Options for one task run whose result also comes back through the relay. */
 export interface ResultRelayOptions {
+	/** Open Cloud base URL for the storage client. */
 	baseUrl?: string;
-	credentials: { apiKey: string; universeId: string };
+	/** Credentials for the memory store the relay reads. */
+	credentials: {
+		/** Open Cloud API key. */
+		apiKey: string;
+		/** Universe that holds the memory store. */
+		universeId: string;
+	};
+	/** Runs the wrapped script as an Open Cloud task. */
 	executeAsync: (script: string, signal: AbortSignal) => Promise<ScriptResult>;
+	/** Current time in milliseconds. */
 	now?: () => number;
+	/** Run time before the task publishes, in ms. Defaults to `timeout`. */
 	runtimeBudget?: number;
+	/** Luau source to run. */
 	script: string;
+	/** Aborts the run. */
 	signal?: AbortSignal;
+	/** Builds the storage client the relay reads through. */
 	storageFactory?: () => StorageClient;
+	/** Run timeout, in milliseconds. */
 	timeout: number;
+	/** Waits between relay polls. */
 	waitAsync?: (ms: number, signal: AbortSignal) => Promise<void>;
 }
 
@@ -57,6 +74,16 @@ interface RelayProgress {
 
 class RelayedExecutionError extends Error {}
 
+/**
+ * Runs a script as a task and races its native result against the result the
+ * script relays through a memory store.
+ *
+ * @param options - Script, task runner, credentials, and timing.
+ * @returns The first result to arrive.
+ * @rejects UncertainSubmissionError when the submit outcome is unknown; its recovery reads the relay.
+ * @rejects ExecutionTimeoutError when the task times out; its recovery keeps reading the relay.
+ * @rejects Error from the task runner or relay in other cases.
+ */
 // eslint-disable-next-line flawless/max-lines-per-function -- owns both sides of one cancellation race.
 export async function executeWithResultRelayAsync(
 	options: ResultRelayOptions,

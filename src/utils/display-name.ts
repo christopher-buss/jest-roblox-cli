@@ -6,6 +6,9 @@
  * either the run has no packages (single-package and multi mode) or the
  * package publishes one project under its own name. Repeating the name either
  * side of the separator would read as two things where there is one.
+ * @param packageName - The owning package, if the run has packages.
+ * @param project - The project inside the package.
+ * @returns `package › project`, or the project alone.
  */
 export function composeEntryDisplayName(packageName: string | undefined, project: string): string {
 	return packageName === undefined || packageName === project

@@ -4,19 +4,15 @@ import process from "node:process";
 import type { BackendKind } from "../backends/interface.ts";
 import type { ResolvedProjectConfig } from "../config/projects.ts";
 import type { ResolvedConfig } from "../config/schema.ts";
-import {
-	cleanLeftoverStubs,
-	createStubBake,
-	generateProjectStubs,
-	hasUserAuthoredConfig,
-	STUB_FILENAME,
-} from "../config/stubs.ts";
+import { mountsWithoutUserConfig, STUB_FILENAME } from "../config/stub-files.ts";
+import { createStubBake } from "../config/stub-shadow-sync.ts";
+import { cleanLeftoverStubs, generateProjectStubs } from "../config/stubs.ts";
 import type { CoverageArtifacts } from "../coverage-pipeline/build-manifest.ts";
 import { resolveCoverageInclude } from "../coverage-pipeline/derive-coverage-from.ts";
-import type { PrepareCoverageResult } from "../coverage-pipeline/prepare.ts";
+import type { PrepareCoverageResult } from "../coverage-pipeline/prepare-types.ts";
 import { toCoverageArtifacts } from "../coverage-pipeline/prepare.ts";
-import type { CodeBundleArtifact } from "../staging/place-builder.ts";
-import type { StubMount } from "../staging/synthesizer.ts";
+import type { CodeBundleArtifact } from "../staging/code-bundle.ts";
+import type { StubMount } from "../staging/synthesizer-types.ts";
 import type { TimingCollector } from "../timing/orchestration-collector.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import type { PosixRoot } from "../utils/normalize-windows-path.ts";
@@ -30,6 +26,7 @@ import type { RunSeams } from "./seams.ts";
  * coverage rebuilt the place).
  */
 export interface StagedRun extends StagedCoverage {
+	/** Directory the generated `jest.config` stubs are written to. */
 	cacheRoot: string;
 	/**
 	 * Host time spent putting this run's inputs on disk: the stub sweep and
@@ -40,12 +37,17 @@ export interface StagedRun extends StagedCoverage {
 	stagingMs: number;
 }
 
+/** A coverage place build and its manifest record. */
 export interface BakedCoverage {
+	/** Producer record for the Build Manifest. */
 	artifacts: CoverageArtifacts;
+	/** The prepared coverage place and its timings. */
 	coverage: PrepareCoverageResult;
 }
 
+/** Inputs of {@link stageRunAsync}. */
 export interface StageRunOptions {
+	/** Backend the run dispatches to; decides whether stubs are baked. */
 	backendKind: BackendKind;
 	/**
 	 * Build a Harness Place, splitting the mounts inside these Code Roots into
@@ -53,17 +55,27 @@ export interface StageRunOptions {
 	 * Cloud run on an Exclusive Place ever gets any.
 	 */
 	codeRoots?: ReadonlyArray<PosixRoot> | undefined;
+	/** File system to stage on. */
 	fileSystem: FileSystem;
+	/** Resolved projects of the run. */
 	projects: Array<ResolvedProjectConfig>;
+	/** Root config of the run. */
 	rootConfig: ResolvedConfig;
+	/** Seams the run reaches outside itself through. */
 	seams: RunSeams;
+	/** Profiler of the run. */
 	timing: TimingCollector;
 }
 
+/** Inputs of {@link collectStubMounts}. */
 export interface StubMountOptions {
+	/** Directory that holds the generated stubs. */
 	cacheRoot: string;
+	/** File system to check for user-authored configs. */
 	fileSystem: FileSystem;
+	/** Projects whose mounts may need a stub. */
 	projects: Array<ResolvedProjectConfig>;
+	/** Root directory the mount paths resolve against. */
 	rootDir: string;
 }
 
@@ -96,6 +108,13 @@ interface StagedCoverageRun extends StagedCoverage {
  * rojo mount that lacks a user-authored config on disk, pointing at the cache
  * stub. Shared by the dispatch place build and `prepareArtifacts`'s Clean
  * Place.
+ *
+ * @param options - Cache root, file system, projects and root directory.
+ * @param options.cacheRoot - Directory that holds the generated stubs.
+ * @param options.fileSystem - File system to check for user-authored configs.
+ * @param options.projects - Projects whose mounts may need a stub.
+ * @param options.rootDir - Root directory the mount paths resolve against.
+ * @returns One stub mount per mount without a user-authored config.
  */
 export function collectStubMounts({
 	cacheRoot,
@@ -107,17 +126,16 @@ export function collectStubMounts({
 	// not have a compiled `.luau` at the mount yet — trust the filesystem rather
 	// than the entry shape.
 	return projects.flatMap((project) => {
-		return project.rojoMounts
-			.filter((mount) => {
-				const sourceMount = path.resolve(rootDirectory, mount.fsPath);
-				return !hasUserAuthoredConfig(sourceMount, fileSystem);
-			})
-			.map((mount) => {
-				return {
-					absStubPath: path.resolve(cacheRoot, mount.fsPath, STUB_FILENAME),
-					dataModelPath: mount.dataModelPath,
-				};
-			});
+		return mountsWithoutUserConfig({
+			fileSystem,
+			mounts: project.rojoMounts,
+			rootDirectory,
+		}).map((mount) => {
+			return {
+				absStubPath: path.resolve(cacheRoot, mount.fsPath, STUB_FILENAME),
+				dataModelPath: mount.dataModelPath,
+			};
+		});
 	});
 }
 
@@ -133,6 +151,17 @@ export function collectStubMounts({
  * mirrors those cache stubs into the shadow tree — the source tree is clean
  * (stubs land in `cacheRoot`, not `rootDir`), so without it the coverage place
  * would build with no `jest.config` ModuleScripts.
+ *
+ * @param options - Bake inputs.
+ * @param options.bakeStubs - Whether to bake the `jest.config` stubs into the place.
+ * @param options.cacheRoot - Directory that holds the generated stubs.
+ * @param options.codeRoots - Code Roots to split into a Code Bundle.
+ * @param options.config - Config to instrument and build.
+ * @param options.fileSystem - File system to build on.
+ * @param options.projects - Projects whose stubs are baked.
+ * @param options.seams - Seams that prepare coverage.
+ * @param options.timing - Profiler of the run, if any.
+ * @returns The prepared coverage and its manifest record.
  */
 export async function prepareBakedCoverageAsync({
 	bakeStubs,
@@ -182,6 +211,16 @@ export async function prepareBakedCoverageAsync({
  * stubs into the cache root, then instrument and build the coverage place when
  * `--coverage` is on. Runs before any backend exists, so nothing here can leak
  * one.
+ *
+ * @param options - Backend, projects, config, seams and profiler.
+ * @param options.backendKind - Backend the run dispatches to.
+ * @param options.codeRoots - Code Roots to split into a Code Bundle.
+ * @param options.fileSystem - File system to stage on.
+ * @param options.projects - Resolved projects of the run.
+ * @param options.rootConfig - Config whose `rootDir` holds the cache.
+ * @param options.seams - Seams the run reaches outside itself through.
+ * @param options.timing - Profiler of the run.
+ * @returns The staged run with its staging and coverage timings.
  */
 export async function stageRunAsync({
 	backendKind,

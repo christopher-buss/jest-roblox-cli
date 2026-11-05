@@ -1,83 +1,29 @@
 import { fromPartial } from "@total-typescript/shoehorn";
 
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
-import { getSourceSnippet, type SourceSnippet } from "../source-mapper/index.ts";
-import type { JestResult, TestCaseResult } from "../types/jest-result.ts";
 import {
 	EXEC_ERROR_RESULT,
-	FAILING_RESULT,
 	LOADSTRING_ERROR_RESULT,
-	MIXED_RESULT,
 	MIXED_WITH_EXEC_ERROR_RESULT,
+	TIMED_OUT_RESULT,
+} from "#test/mocks/format-error-results.ts";
+import {
+	createTestCase,
+	FAILING_RESULT,
+	MIXED_RESULT,
 	PASSING_RESULT,
 	SKIPPED_RESULT,
 	SNAPSHOT_FAILING_RESULT,
-	TIMED_OUT_RESULT,
-} from "./__fixtures__/results.ts";
-import {
-	type AgentOptions,
-	formatAgent,
-	formatAgentMultiProject,
-	type SourceSnippetReader,
-} from "./agent.ts";
-
-const mockedGetSourceSnippet = vi.fn<SourceSnippetReader>(getSourceSnippet);
-
-function createTestCase(overrides: Partial<TestCaseResult> = {}): TestCaseResult {
-	return {
-		ancestorTitles: ["TestSuite"],
-		duration: 10,
-		failureMessages: [],
-		fullName: "TestSuite should pass",
-		status: "passed",
-		title: "should pass",
-		...overrides,
-	};
-}
-
-function createResult(overrides: Partial<JestResult> = {}): JestResult {
-	return {
-		numFailedTests: 0,
-		numPassedTests: 1,
-		numPendingTests: 0,
-		numTotalTests: 1,
-		startTime: Date.now(),
-		success: true,
-		testResults: [
-			{
-				numFailingTests: 0,
-				numPassingTests: 1,
-				numPendingTests: 0,
-				testFilePath: "src/example.spec.ts",
-				testResults: [createTestCase()],
-			},
-		],
-		...overrides,
-	};
-}
-
-/**
- * Snippet stub routed by the requested file's extension: `getSourceSnippet` is
- * called once per language per failure, so a test that only stubs one of them
- * gets `undefined` for the other.
- */
-function snippetByExtension(
-	filePath: string,
-	snippets: { luau?: SourceSnippet; ts?: SourceSnippet },
-): SourceSnippet | undefined {
-	if (filePath.endsWith(".luau")) {
-		return snippets.luau;
-	}
-
-	return filePath.endsWith(".ts") ? snippets.ts : undefined;
-}
+} from "#test/mocks/format-results.ts";
+import { createSingleFileResult, failingFileResult } from "#test/mocks/spec-format.ts";
+import { type AgentOptions, formatAgent, formatAgentMultiProject } from "./agent.ts";
 
 describe("formatAgent summary", () => {
 	it("should show file and test counts when all tests pass", () => {
 		expect.assertions(1);
 
-		const result = createResult({ numPassedTests: 3, numTotalTests: 3 });
+		const result = createSingleFileResult({ numPassedTests: 3, numTotalTests: 3 });
 		const output = formatAgent(result, { maxFailures: 10, rootDir: "/project" });
 
 		expect(output).toBe(" Test Files  1 passed (1)\n      Tests  3 passed (3)");
@@ -86,7 +32,7 @@ describe("formatAgent summary", () => {
 	it("should show type errors line when typeErrorCount is 0", () => {
 		expect.assertions(1);
 
-		const result = createResult({ numPassedTests: 3, numTotalTests: 3 });
+		const result = createSingleFileResult({ numPassedTests: 3, numTotalTests: 3 });
 		const output = formatAgent(result, {
 			maxFailures: 10,
 			rootDir: "/project",
@@ -99,7 +45,7 @@ describe("formatAgent summary", () => {
 	it("should show failed count when typeErrorCount is 1", () => {
 		expect.assertions(1);
 
-		const result = createResult({ numPassedTests: 3, numTotalTests: 3 });
+		const result = createSingleFileResult({ numPassedTests: 3, numTotalTests: 3 });
 		const output = formatAgent(result, {
 			maxFailures: 10,
 			rootDir: "/project",
@@ -112,7 +58,7 @@ describe("formatAgent summary", () => {
 	it("should show type error count when typeErrorCount > 1", () => {
 		expect.assertions(1);
 
-		const result = createResult({ numPassedTests: 3, numTotalTests: 3 });
+		const result = createSingleFileResult({ numPassedTests: 3, numTotalTests: 3 });
 		const output = formatAgent(result, {
 			maxFailures: 10,
 			rootDir: "/project",
@@ -125,7 +71,7 @@ describe("formatAgent summary", () => {
 	it("should omit type errors line when typeErrorCount is undefined", () => {
 		expect.assertions(1);
 
-		const result = createResult({ numPassedTests: 3, numTotalTests: 3 });
+		const result = createSingleFileResult({ numPassedTests: 3, numTotalTests: 3 });
 		const output = formatAgent(result, { maxFailures: 10, rootDir: "/project" });
 
 		expect(output).not.toContain("Type Errors");
@@ -169,21 +115,7 @@ describe("formatAgent summary", () => {
 			status: "failed",
 			title: "should fail",
 		});
-		const result = createResult({
-			numFailedTests: 1,
-			numPassedTests: 0,
-			numTotalTests: 1,
-			success: false,
-			testResults: [
-				{
-					numFailingTests: 1,
-					numPassingTests: 0,
-					numPendingTests: 0,
-					testFilePath: "/project/src/test.spec.ts",
-					testResults: [failedTest],
-				},
-			],
-		});
+		const result = failingFileResult("/project/src/test.spec.ts", [failedTest]);
 
 		const output = formatAgent(result, { maxFailures: 10, rootDir: "/project" });
 
@@ -246,21 +178,7 @@ describe("formatAgent file headers", () => {
 			status: "failed",
 			title: "should work",
 		});
-		const result = createResult({
-			numFailedTests: 1,
-			numPassedTests: 0,
-			numTotalTests: 1,
-			success: false,
-			testResults: [
-				{
-					numFailingTests: 1,
-					numPassingTests: 0,
-					numPendingTests: 0,
-					testFilePath: "/project/src/test.spec.ts",
-					testResults: [failedTest],
-				},
-			],
-		});
+		const result = failingFileResult("/project/src/test.spec.ts", [failedTest]);
 
 		const output = formatAgent(result, { maxFailures: 10, rootDir: "/project" });
 
@@ -344,7 +262,7 @@ describe("formatAgent failure details", () => {
 	it("should use singular labels and preserve the full ancestor chain", () => {
 		expect.assertions(2);
 
-		const result = createResult({
+		const result = createSingleFileResult({
 			numFailedTests: 1,
 			numPassedTests: 0,
 			numTotalTests: 1,
@@ -377,7 +295,7 @@ describe("formatAgent failure details", () => {
 		(message) => {
 			expect.assertions(2);
 
-			const result = createResult({
+			const result = createSingleFileResult({
 				numFailedTests: 1,
 				numPassedTests: 0,
 				numTotalTests: 1,
@@ -417,7 +335,7 @@ describe("formatAgent failure details", () => {
 	it("should not duplicate source location in snapshot diff", () => {
 		expect.assertions(2);
 
-		const result = createResult({
+		const result = createSingleFileResult({
 			numFailedTests: 1,
 			numPassedTests: 0,
 			success: false,
@@ -504,21 +422,7 @@ describe("formatAgent failure details", () => {
 			title: "should respond within 5s",
 		});
 
-		const result = createResult({
-			numFailedTests: 1,
-			numPassedTests: 0,
-			numTotalTests: 1,
-			success: false,
-			testResults: [
-				{
-					numFailingTests: 1,
-					numPassingTests: 0,
-					numPendingTests: 0,
-					testFilePath: "/project/src/api.spec.ts",
-					testResults: [failedTest],
-				},
-			],
-		});
+		const result = failingFileResult("/project/src/api.spec.ts", [failedTest]);
 
 		const output = formatAgent(result, { maxFailures: 10, rootDir: "/project" });
 
@@ -536,20 +440,7 @@ describe("formatAgent failure details", () => {
 			});
 		});
 
-		const result = createResult({
-			numFailedTests: 5,
-			numPassedTests: 0,
-			success: false,
-			testResults: [
-				{
-					numFailingTests: 5,
-					numPassingTests: 0,
-					numPendingTests: 0,
-					testFilePath: "/project/src/test.spec.ts",
-					testResults: failures,
-				},
-			],
-		});
+		const result = failingFileResult("/project/src/test.spec.ts", failures);
 
 		const output = formatAgent(result, { maxFailures: 2, rootDir: "/project" });
 
@@ -578,536 +469,6 @@ describe("formatAgent failure details", () => {
 		});
 
 		expect(output).toContain("LoadStringEnabled");
-	});
-});
-
-describe("formatAgent snippets", () => {
-	it("should omit an unavailable Luau snippet after a mapped TypeScript snippet", () => {
-		expect.assertions(2);
-
-		mockedGetSourceSnippet.mockImplementation((options): SourceSnippet | undefined => {
-			return snippetByExtension(options.filePath, {
-				ts: { failureLine: 10, lines: [{ content: "expect(value).toBe(1);", num: 10 }] },
-			});
-		});
-		const output = formatAgent(FAILING_RESULT, {
-			getSourceSnippet: mockedGetSourceSnippet,
-			maxFailures: 10,
-			rootDir: "/project",
-			sourceMapper: fromPartial({
-				mapFailureWithLocations: () => {
-					return {
-						locations: [
-							{
-								luauLine: 15,
-								luauPath: "out/player.spec.luau",
-								tsLine: 10,
-								tsPath: "src/player.spec.ts",
-							},
-						],
-						message: "src/player.spec.ts:10",
-					};
-				},
-				resolveDisplayPath: (testFilePath: string) => testFilePath,
-				resolveTestFilePath: () => {},
-			}),
-		});
-
-		expect(output).toContain("TS  src/player.spec.ts:10");
-		expect(output).not.toContain("Luau  out/player.spec.luau:15");
-	});
-
-	it("should show TS and Luau snippets when 1-2 failures", () => {
-		expect.assertions(5);
-
-		const tsSnippet: SourceSnippet = {
-			failureLine: 10,
-			lines: [
-				{ content: "const health = getHealth();", num: 9 },
-				{ content: "expect(health).toBe(100);", num: 10 },
-				{ content: "});", num: 11 },
-			],
-		};
-		const luauSnippet: SourceSnippet = {
-			failureLine: 15,
-			lines: [
-				{ content: "local health = getHealth()", num: 14 },
-				{ content: "expect(health).toBe(100)", num: 15 },
-				{ content: "end)", num: 16 },
-			],
-		};
-
-		mockedGetSourceSnippet.mockImplementation((options): SourceSnippet | undefined => {
-			return snippetByExtension(options.filePath, { luau: luauSnippet, ts: tsSnippet });
-		});
-
-		const failedTest = createTestCase({
-			failureMessages: ["Expected: 100\nReceived: 0"],
-			status: "failed",
-			title: "should have health",
-		});
-
-		const result = createResult({
-			numFailedTests: 2,
-			numPassedTests: 0,
-			numTotalTests: 2,
-			success: false,
-			testResults: [
-				{
-					numFailingTests: 2,
-					numPassingTests: 0,
-					numPendingTests: 0,
-					testFilePath: "/project/src/player.spec.ts",
-					testResults: [
-						failedTest,
-						{
-							...failedTest,
-							fullName: "Player should stay healthy",
-							title: "should stay healthy",
-						},
-					],
-				},
-			],
-		});
-
-		const output = formatAgent(result, {
-			getSourceSnippet: mockedGetSourceSnippet,
-			maxFailures: 10,
-			rootDir: "/project",
-			sourceMapper: fromPartial({
-				mapFailureWithLocations: () => {
-					return {
-						locations: [
-							{
-								luauLine: 15,
-								luauPath: "out/player.spec.luau",
-								tsLine: 10,
-								tsPath: "src/player.spec.ts",
-							},
-						],
-						message: "fallback.spec.ts:999",
-					};
-				},
-				resolveDisplayPath: (testFilePath: string) => testFilePath,
-				resolveTestFilePath: () => {},
-			}),
-		});
-
-		expect(output).toContain("TS  src/player.spec.ts:10");
-		expect(output).toContain("> 10| expect(health).toBe(100);");
-		expect(output).toContain("Luau  out/player.spec.luau:15");
-		expect(output).toContain("> 15| expect(health).toBe(100)");
-		expect(output).toMatchSnapshot();
-	});
-
-	it("should use relative paths in snippet labels when source mapper returns absolute paths", () => {
-		expect.assertions(2);
-
-		const tsSnippet: SourceSnippet = {
-			failureLine: 10,
-			lines: [
-				{ content: "const x = 1;", num: 9 },
-				{ content: "expect(x).toBe(2);", num: 10 },
-				{ content: "});", num: 11 },
-			],
-		};
-		const luauSnippet: SourceSnippet = {
-			failureLine: 15,
-			lines: [
-				{ content: "local x = 1", num: 14 },
-				{ content: "expect(x).toBe(2)", num: 15 },
-				{ content: "end)", num: 16 },
-			],
-		};
-
-		mockedGetSourceSnippet.mockImplementation((options): SourceSnippet | undefined => {
-			return snippetByExtension(options.filePath, { luau: luauSnippet, ts: tsSnippet });
-		});
-
-		const failedTest = createTestCase({
-			failureMessages: ["Expected: 1\nReceived: 2"],
-			status: "failed",
-			title: "should work",
-		});
-
-		const result = createResult({
-			numFailedTests: 1,
-			numPassedTests: 0,
-			numTotalTests: 1,
-			success: false,
-			testResults: [
-				{
-					numFailingTests: 1,
-					numPassingTests: 0,
-					numPendingTests: 0,
-					testFilePath: "D:/project/src/test.spec.ts",
-					testResults: [failedTest],
-				},
-			],
-		});
-
-		const output = formatAgent(result, {
-			getSourceSnippet: mockedGetSourceSnippet,
-			maxFailures: 10,
-			rootDir: "D:\\project",
-			sourceMapper: fromPartial({
-				mapFailureWithLocations: () => {
-					return {
-						locations: [
-							{
-								luauLine: 15,
-								luauPath: "D:/project/out/test.spec.luau",
-								tsLine: 10,
-								tsPath: "D:/project/src/test.spec.ts",
-							},
-						],
-						message: "D:/project/src/test.spec.ts:10",
-					};
-				},
-				resolveDisplayPath: (testFilePath: string) => testFilePath,
-				resolveTestFilePath: () => {},
-			}),
-		});
-
-		expect(output).toContain("TS  src/test.spec.ts:10");
-		expect(output).toContain("Luau  out/test.spec.luau:15");
-	});
-
-	it("should show TS snippet only when 3-5 failures", () => {
-		expect.assertions(3);
-
-		const tsSnippet: SourceSnippet = {
-			failureLine: 10,
-			lines: [
-				{ content: "const x = 1;", num: 9 },
-				{ content: "expect(x).toBe(2);", num: 10 },
-				{ content: "});", num: 11 },
-			],
-		};
-		const luauSnippet: SourceSnippet = {
-			failureLine: 15,
-			lines: [{ content: "expect(x).toBe(2)", num: 15 }],
-		};
-
-		mockedGetSourceSnippet.mockImplementation((options): SourceSnippet | undefined => {
-			return snippetByExtension(options.filePath, { luau: luauSnippet, ts: tsSnippet });
-		});
-
-		const failures = Array.from({ length: 5 }, (_, index) => {
-			return createTestCase({
-				failureMessages: ["Expected: 1\nReceived: 2"],
-				status: "failed",
-				title: `test ${index}`,
-			});
-		});
-
-		const result = createResult({
-			numFailedTests: 5,
-			numPassedTests: 0,
-			numTotalTests: 5,
-			success: false,
-			testResults: [
-				{
-					numFailingTests: 5,
-					numPassingTests: 0,
-					numPendingTests: 0,
-					testFilePath: "/project/src/test.spec.ts",
-					testResults: failures,
-				},
-			],
-		});
-
-		const output = formatAgent(result, {
-			getSourceSnippet: mockedGetSourceSnippet,
-			maxFailures: 10,
-			rootDir: "/project",
-			sourceMapper: fromPartial({
-				mapFailureWithLocations: () => {
-					return {
-						locations: [
-							{
-								luauLine: 15,
-								luauPath: "out/test.spec.luau",
-								tsLine: 10,
-								tsPath: "src/test.spec.ts",
-							},
-						],
-						message: "src/test.spec.ts:10",
-					};
-				},
-				resolveDisplayPath: (testFilePath: string) => testFilePath,
-				resolveTestFilePath: () => {},
-			}),
-		});
-
-		expect(output).toContain("> 10| expect(x).toBe(2);");
-		expect(output).not.toContain("Luau");
-		expect(output).toMatchSnapshot();
-	});
-
-	it("should show no snippets when 6+ failures", () => {
-		expect.assertions(3);
-
-		const tsSnippet: SourceSnippet = {
-			failureLine: 10,
-			lines: [
-				{ content: "const x = 1;", num: 9 },
-				{ content: "expect(x).toBe(2);", num: 10 },
-				{ content: "});", num: 11 },
-			],
-		};
-
-		mockedGetSourceSnippet.mockReturnValue(tsSnippet);
-
-		const failures = Array.from({ length: 6 }, (_, index) => {
-			return createTestCase({
-				failureMessages: ["Expected: 1\nReceived: 2"],
-				status: "failed",
-				title: `test ${index}`,
-			});
-		});
-
-		const result = createResult({
-			numFailedTests: 6,
-			numPassedTests: 0,
-			numTotalTests: 6,
-			success: false,
-			testResults: [
-				{
-					numFailingTests: 6,
-					numPassingTests: 0,
-					numPendingTests: 0,
-					testFilePath: "/project/src/test.spec.ts",
-					testResults: failures,
-				},
-			],
-		});
-
-		const output = formatAgent(result, {
-			getSourceSnippet: mockedGetSourceSnippet,
-			maxFailures: 10,
-			rootDir: "/project",
-			sourceMapper: fromPartial({
-				mapFailureWithLocations: () => {
-					return {
-						locations: [
-							{
-								luauLine: 15,
-								luauPath: "out/test.spec.luau",
-								tsLine: 10,
-								tsPath: "src/test.spec.ts",
-							},
-						],
-						message: "src/test.spec.ts:10",
-					};
-				},
-				resolveDisplayPath: (testFilePath: string) => testFilePath,
-				resolveTestFilePath: () => {},
-			}),
-		});
-
-		expect(output).not.toContain("expect(x).toBe(2)");
-		expect(output).not.toContain("Luau");
-		expect(output).toMatchSnapshot();
-	});
-
-	it("should show luau snippet when mapped location has no tsPath", () => {
-		expect.assertions(1);
-
-		const luauSnippet: SourceSnippet = {
-			failureLine: 15,
-			lines: [
-				{ content: "local health = getHealth()", num: 14 },
-				{ content: "expect(health).toBe(100)", num: 15 },
-				{ content: "end)", num: 16 },
-			],
-		};
-
-		mockedGetSourceSnippet.mockReturnValue(luauSnippet);
-
-		const failedTest = createTestCase({
-			failureMessages: ["Expected: 100\nReceived: 0"],
-			status: "failed",
-			title: "should have health",
-		});
-
-		const result = createResult({
-			numFailedTests: 1,
-			numPassedTests: 0,
-			success: false,
-			testResults: [
-				{
-					numFailingTests: 1,
-					numPassingTests: 0,
-					numPendingTests: 0,
-					testFilePath: "/project/src/player.spec.ts",
-					testResults: [failedTest],
-				},
-			],
-		});
-
-		const output = formatAgent(result, {
-			getSourceSnippet: mockedGetSourceSnippet,
-			maxFailures: 10,
-			rootDir: "/project",
-			sourceMapper: fromPartial({
-				mapFailureWithLocations: () => {
-					return {
-						locations: [
-							{
-								luauLine: 15,
-								luauPath: "out/player.spec.luau",
-							},
-						],
-						message: "out/player.spec.luau:15",
-					};
-				},
-				resolveDisplayPath: (testFilePath: string) => testFilePath,
-				resolveTestFilePath: () => {},
-			}),
-		});
-
-		expect(output).toContain("> 15| expect(health).toBe(100)");
-	});
-
-	it("should show no snippet when luau-only source file is unreadable", () => {
-		expect.assertions(1);
-
-		mockedGetSourceSnippet.mockReturnValue(undefined);
-
-		const failedTest = createTestCase({
-			failureMessages: ["Expected: 100\nReceived: 0"],
-			status: "failed",
-			title: "should have health",
-		});
-
-		const result = createResult({
-			numFailedTests: 1,
-			numPassedTests: 0,
-			success: false,
-			testResults: [
-				{
-					numFailingTests: 1,
-					numPassingTests: 0,
-					numPendingTests: 0,
-					testFilePath: "/project/src/player.spec.ts",
-					testResults: [failedTest],
-				},
-			],
-		});
-
-		const output = formatAgent(result, {
-			getSourceSnippet: mockedGetSourceSnippet,
-			maxFailures: 10,
-			rootDir: "/project",
-			sourceMapper: fromPartial({
-				mapFailureWithLocations: () => {
-					return {
-						locations: [
-							{
-								luauLine: 15,
-								luauPath: "out/player.spec.luau",
-							},
-						],
-						message: "out/player.spec.luau:15",
-					};
-				},
-				resolveDisplayPath: (testFilePath: string) => testFilePath,
-				resolveTestFilePath: () => {},
-			}),
-		});
-
-		expect(output).toMatchSnapshot();
-	});
-
-	it("should show no snippet when fallback source file is unreadable", () => {
-		expect.assertions(1);
-
-		mockedGetSourceSnippet.mockReturnValue(undefined);
-
-		const failedTest = createTestCase({
-			failureMessages: ["Error: Expected 1 to equal 2\nsrc/math.spec.ts:10"],
-			status: "failed",
-			title: "should add numbers",
-		});
-
-		const result = createResult({
-			numFailedTests: 1,
-			numPassedTests: 0,
-			success: false,
-			testResults: [
-				{
-					numFailingTests: 1,
-					numPassingTests: 0,
-					numPendingTests: 0,
-					testFilePath: "/project/src/math.spec.ts",
-					testResults: [failedTest],
-				},
-			],
-		});
-
-		const output = formatAgent(result, {
-			getSourceSnippet: mockedGetSourceSnippet,
-			maxFailures: 10,
-			rootDir: "/project",
-			sourceMapper: fromPartial({
-				mapFailureWithLocations: (message: string) => ({ locations: [], message }),
-				resolveDisplayPath: (testFilePath: string) => testFilePath,
-				resolveTestFilePath: () => {},
-			}),
-		});
-
-		expect(output).toMatchSnapshot();
-	});
-
-	it("should show snippet from parsed location when no sourceMapper", () => {
-		expect.assertions(2);
-
-		const snippet: SourceSnippet = {
-			failureLine: 10,
-			lines: [
-				{ content: "const x = 1;", num: 9 },
-				{ content: "expect(x).toBe(2);", num: 10 },
-				{ content: "const y = 3;", num: 11 },
-			],
-		};
-
-		mockedGetSourceSnippet.mockReturnValueOnce(snippet);
-
-		const failedTest = createTestCase({
-			failureMessages: ["Error: Expected 1 to equal 2\nsrc/math.spec.ts:10"],
-			status: "failed",
-			title: "should add numbers",
-		});
-
-		const result = createResult({
-			numFailedTests: 1,
-			numPassedTests: 0,
-			success: false,
-			testResults: [
-				{
-					numFailingTests: 1,
-					numPassingTests: 0,
-					numPendingTests: 0,
-					testFilePath: "/project/src/math.spec.ts",
-					testResults: [failedTest],
-				},
-			],
-		});
-
-		const output = formatAgent(result, {
-			getSourceSnippet: mockedGetSourceSnippet,
-			maxFailures: 10,
-			rootDir: "/project",
-			sourceMapper: fromPartial({
-				mapFailureWithLocations: (message: string) => ({ locations: [], message }),
-				resolveDisplayPath: (testFilePath: string) => testFilePath,
-				resolveTestFilePath: () => {},
-			}),
-		});
-
-		expect(output).toContain("> 10| expect(x).toBe(2);");
-		expect(output).toContain("  9| const x = 1;");
 	});
 });
 
@@ -1202,20 +563,7 @@ describe("formatAgent source mapping", () => {
 			title: "should work",
 		});
 
-		const result = createResult({
-			numFailedTests: 1,
-			numPassedTests: 0,
-			success: false,
-			testResults: [
-				{
-					numFailingTests: 1,
-					numPassingTests: 0,
-					numPendingTests: 0,
-					testFilePath: "lib/test.spec.luau",
-					testResults: [failedTest],
-				},
-			],
-		});
+		const result = failingFileResult("lib/test.spec.luau", [failedTest]);
 
 		const output = formatAgent(result, {
 			maxFailures: 10,
@@ -1244,20 +592,9 @@ describe("formatAgent source mapping", () => {
 			title: "should compute correctly",
 		});
 
-		const result = createResult({
-			numFailedTests: 1,
-			numPassedTests: 0,
-			success: false,
-			testResults: [
-				{
-					numFailingTests: 1,
-					numPassingTests: 0,
-					numPendingTests: 0,
-					testFilePath: "ReplicatedStorage/client/example/test.spec",
-					testResults: [failedTest],
-				},
-			],
-		});
+		const result = failingFileResult("ReplicatedStorage/client/example/test.spec", [
+			failedTest,
+		]);
 
 		const output = formatAgent(result, {
 			maxFailures: 10,
@@ -1285,21 +622,7 @@ describe("formatAgent edge cases", () => {
 			title: "should work",
 		});
 
-		const result = createResult({
-			numFailedTests: 1,
-			numPassedTests: 0,
-			numTotalTests: 1,
-			success: false,
-			testResults: [
-				{
-					numFailingTests: 1,
-					numPassingTests: 0,
-					numPendingTests: 0,
-					testFilePath: "/project/src/test.spec.ts",
-					testResults: [failedTest],
-				},
-			],
-		});
+		const result = failingFileResult("/project/src/test.spec.ts", [failedTest]);
 
 		const output = formatAgent(result, { maxFailures: 10, rootDir: "/project" });
 
@@ -1315,21 +638,7 @@ describe("formatAgent edge cases", () => {
 			title: "should work",
 		});
 
-		const result = createResult({
-			numFailedTests: 1,
-			numPassedTests: 0,
-			numTotalTests: 1,
-			success: false,
-			testResults: [
-				{
-					numFailingTests: 1,
-					numPassingTests: 0,
-					numPendingTests: 0,
-					testFilePath: "other/path/test.spec.ts",
-					testResults: [failedTest],
-				},
-			],
-		});
+		const result = failingFileResult("other/path/test.spec.ts", [failedTest]);
 
 		const output = formatAgent(result, { maxFailures: 10, rootDir: "/project" });
 
@@ -1345,21 +654,7 @@ describe("formatAgent edge cases", () => {
 			title: "should work",
 		});
 
-		const result = createResult({
-			numFailedTests: 1,
-			numPassedTests: 0,
-			numTotalTests: 1,
-			success: false,
-			testResults: [
-				{
-					numFailingTests: 1,
-					numPassingTests: 0,
-					numPendingTests: 0,
-					testFilePath: "ReplicatedStorage/test",
-					testResults: [failedTest],
-				},
-			],
-		});
+		const result = failingFileResult("ReplicatedStorage/test", [failedTest]);
 
 		const output = formatAgent(result, {
 			maxFailures: 10,
@@ -1384,21 +679,7 @@ describe("formatAgent edge cases", () => {
 			title: "should work",
 		});
 
-		const result = createResult({
-			numFailedTests: 1,
-			numPassedTests: 0,
-			numTotalTests: 1,
-			success: false,
-			testResults: [
-				{
-					numFailingTests: 1,
-					numPassingTests: 0,
-					numPendingTests: 0,
-					testFilePath: "ReplicatedStorage/test",
-					testResults: [failedTest],
-				},
-			],
-		});
+		const result = failingFileResult("ReplicatedStorage/test", [failedTest]);
 
 		const output = formatAgent(result, {
 			maxFailures: 10,

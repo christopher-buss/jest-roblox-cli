@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import { sha256File } from "#test/mocks/coverage-hash.ts";
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
-import { hashFile } from "../utils/hash.ts";
 import { resolveTestFileHash } from "./test-file-hash.ts";
 
 function mapperResolving(diskPath: string | undefined) {
@@ -24,7 +24,7 @@ describe(resolveTestFileHash, () => {
 				sourceMapper: mapperResolving("/src/m.spec.ts"),
 				testFilePath: "ReplicatedStorage/m.spec",
 			}),
-		).toBe(hashFile("/src/m.spec.ts", fileSystem));
+		).toBe(sha256File("/src/m.spec.ts", fileSystem));
 	});
 
 	it("should return undefined when the resolved file is absent", () => {

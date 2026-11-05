@@ -12,10 +12,8 @@ import { setTimeout as delayAsync, setImmediate as nextTurn } from "node:timers/
 import { zstdCompressSync } from "node:zlib";
 import { assert, describe, expect, it, vi } from "vitest";
 
-import { EXECUTION_NOT_CLAIMED } from "../luau/execution-claim.ts";
-import { executeWithRecoveryAsync, type ExecutionAttemptContext } from "./execution-recovery.ts";
+import { EXECUTION_NOT_CLAIMED } from "#test/mocks/luau-execution-claim.ts";
 import { executeWithResultRelayAsync, type ResultRelayOptions } from "./result-relay.ts";
-import { UncertainSubmissionError } from "./uncertain-submission.ts";
 
 type Get = StorageClient["sortedMaps"]["get"];
 type Delete = StorageClient["sortedMaps"]["delete"];
@@ -95,6 +93,11 @@ function changingMetadata(field: "chunkCount" | "uncompressedLength") {
 	};
 }
 
+function assertUncertain(value: unknown): asserts value is ExecutionTimeoutError {
+	assert.instanceOf(value, ExecutionTimeoutError);
+	assert.strictEqual(value.constructor.name, "UncertainSubmissionError");
+}
+
 const credentials = { apiKey: "key", universeId: "universe" };
 const firstChunk = {
 	itemId: expect.stringMatching(/:1$/u),
@@ -126,7 +129,7 @@ describe("ambiguous submissions", () => {
 			storageFactory: () => storage(getAsync, relay.remove),
 			timeout: 1000,
 		}).catch((err: unknown) => err);
-		assert.instanceOf(outcome, UncertainSubmissionError);
+		assertUncertain(outcome);
 		const reading = outcome.readResultAsync().catch((err: unknown) => err);
 		await delayAsync(10);
 		publish.resolve();
@@ -134,37 +137,31 @@ describe("ambiguous submissions", () => {
 		await expect(reading).resolves.toMatchObject({ outputs: ["delayed full result"] });
 	});
 
-	it(
-		"should not restart the uncertainty deadline when recovery reads begin",
-		{ timeout: 500 },
-		async () => {
-			expect.assertions(1);
+	it("should not restart the uncertainty deadline when recovery reads begin", async () => {
+		expect.assertions(1);
 
-			let now = 1000;
-			const failure = new TaskSubmitError(
-				new ApiError("create unanswered", { statusCode: 500 }),
-			);
-			const outcome: unknown = await executeWithResultRelayAsync({
-				credentials,
-				executeAsync: async () => {
-					throw failure;
-				},
-				now: () => now,
-				script: "return 'x'",
-				storageFactory: () => {
-					return storage(
-						vi.fn<Get>(async () => new Promise(() => {})),
-						vi.fn<Delete>(),
-					);
-				},
-				timeout: 5000,
-			}).catch((err: unknown) => err);
-			assert.instanceOf(outcome, UncertainSubmissionError);
-			now = 6000;
+		let now = 1000;
+		const failure = new TaskSubmitError(new ApiError("create unanswered", { statusCode: 500 }));
+		const outcome: unknown = await executeWithResultRelayAsync({
+			credentials,
+			executeAsync: async () => {
+				throw failure;
+			},
+			now: () => now,
+			script: "return 'x'",
+			storageFactory: () => {
+				return storage(
+					vi.fn<Get>(async () => new Promise(() => {})),
+					vi.fn<Delete>(),
+				);
+			},
+			timeout: 5000,
+		}).catch((err: unknown) => err);
+		assertUncertain(outcome);
+		now = 6000;
 
-			await expect(outcome.readResultAsync()).rejects.toBe(failure);
-		},
-	);
+		await expect(outcome.readResultAsync()).rejects.toBe(failure);
+	});
 
 	it.for([
 		new TaskSubmitError(new ApiError("POST failed", { statusCode: 500 })),
@@ -193,21 +190,25 @@ describe("ambiguous submissions", () => {
 				publish.resolve();
 				return { durationMs: 1, outputs: [EXECUTION_NOT_CLAIMED] };
 			});
-		const result = await executeWithRecoveryAsync({
-			executeAsync: async ({ claim, observationSignal }) => {
-				return executeWithResultRelayAsync({
-					credentials,
-					executeAsync: submit,
-					script: claim,
-					signal: observationSignal,
-					storageFactory: () => storage(getAsync, relay.remove),
-					timeout: 1000,
-				});
-			},
-			timeout: 1000,
-		});
+		async function attemptAsync(): Promise<ScriptResult> {
+			return executeWithResultRelayAsync({
+				credentials,
+				executeAsync: submit,
+				script: "local claim\nlocal function original() end",
+				storageFactory: () => storage(getAsync, relay.remove),
+				timeout: 1000,
+			});
+		}
 
-		expect(result.outputs).toStrictEqual(["full original results", "coverage"]);
+		const outcome: unknown = await attemptAsync().catch((err: unknown) => err);
+		assertUncertain(outcome);
+		const declined = await attemptAsync();
+		const result = await outcome.readResultAsync();
+
+		expect([declined.outputs, result.outputs]).toStrictEqual([
+			[EXECUTION_NOT_CLAIMED],
+			["full original results", "coverage"],
+		]);
 		expect(submit).toHaveBeenCalledTimes(2);
 		expect(submit.mock.calls[0]![0].split("\n", 1)[0]).not.toBe(
 			submit.mock.calls[1]![0].split("\n", 1)[0],
@@ -248,7 +249,7 @@ describe("ambiguous submissions", () => {
 			storageFactory: () => storage(get, vi.fn<Delete>()),
 			timeout: 10,
 		}).catch((err: unknown) => err);
-		assert.instanceOf(outcome, UncertainSubmissionError);
+		assertUncertain(outcome);
 
 		await expect(outcome.readResultAsync()).rejects.toBe(failure);
 		expect(get.mock.calls[0]![1]!.signal!.aborted).toBeTrue();
@@ -267,7 +268,7 @@ describe("ambiguous submissions", () => {
 			storageFactory: () => storage(get, vi.fn<Delete>()),
 			timeout: 60_000,
 		}).catch((err: unknown) => err);
-		assert.instanceOf(outcome, UncertainSubmissionError);
+		assertUncertain(outcome);
 		const owner = new AbortController();
 		const reading = outcome.readResultAsync(owner.signal);
 		owner.abort();
@@ -301,7 +302,7 @@ describe("ambiguous submissions", () => {
 			storageFactory,
 			timeout: 1000,
 		}).catch((err: unknown) => err);
-		assert.instanceOf(error, UncertainSubmissionError);
+		assertUncertain(error);
 
 		await expect(error.readResultAsync().catch((err: unknown) => err)).resolves.toMatchObject(
 			expected,
@@ -343,7 +344,7 @@ describe("ambiguous submissions", () => {
 			storageFactory: () => relayStorage(["saved"]).value,
 			timeout: 1000,
 		}).catch((err: unknown) => err);
-		assert.instanceOf(outcome, UncertainSubmissionError);
+		assertUncertain(outcome);
 		const owner = new AbortController();
 		owner.abort(new Error("reader canceled"));
 
@@ -351,18 +352,17 @@ describe("ambiguous submissions", () => {
 	});
 });
 
-function recoveringRelay(relayAttempt: "original" | "replacement" = "original") {
+function retainedRelay() {
 	const clock = { now: 0 };
 	const outputs = [randomBytes(12_000).toString("base64"), "coverage"];
 	const relay = relayStorage(outputs);
 	const published = Promise.withResolvers<void>();
 	const firstAcknowledged = Promise.withResolvers<void>();
 	const fullyAcknowledged = Promise.withResolvers<void>();
-	const hedgeStarted = Promise.withResolvers<void>();
-	const original = Promise.withResolvers<ScriptResult>();
-	const hedge = Promise.withResolvers<ScriptResult>();
+	const native = Promise.withResolvers<ScriptResult>();
 	const nativeReread = Promise.withResolvers<ScriptResult>();
 	const rereadStarted = Promise.withResolvers<void>();
+	const observation = new AbortController();
 	const readResultAsync = vi.fn<(signal?: AbortSignal) => Promise<ScriptResult>>(async () => {
 		rereadStarted.resolve();
 		return nativeReread.promise;
@@ -386,64 +386,50 @@ function recoveringRelay(relayAttempt: "original" | "replacement" = "original") 
 
 		return result;
 	});
-	const submit = vi.fn<ResultRelayOptions["executeAsync"]>(async () => {
-		return relayAttempt === "original" ? original.promise : hedge.promise;
-	});
-	const executeAsync = vi.fn<(context: ExecutionAttemptContext) => Promise<ScriptResult>>(
-		async (context): Promise<ScriptResult> => {
-			context.submission.accepted();
-			const attempt = executeAsync.mock.calls.length > 1 ? "replacement" : "original";
-			if (attempt === "replacement") {
-				hedgeStarted.resolve();
-			}
-
-			if (attempt !== relayAttempt) {
-				return attempt === "original" ? original.promise : hedge.promise;
-			}
-
-			return executeWithResultRelayAsync({
-				credentials,
-				executeAsync: submit,
-				now: () => clock.now,
-				script: "return 'complete result'",
-				signal: context.observationSignal,
-				storageFactory: () => storage(get, remove),
-				timeout: 20_000,
-			});
-		},
-	);
-	const execution = executeWithRecoveryAsync({
-		bootWatchMs: 0,
-		executeAsync,
-		readClaimAsync: async () => ({ status: "missing" }),
+	const submit = vi.fn<ResultRelayOptions["executeAsync"]>(async () => native.promise);
+	const relayed = executeWithResultRelayAsync({
+		credentials,
+		executeAsync: submit,
+		now: () => clock.now,
+		script: "return 'complete result'",
+		signal: observation.signal,
+		storageFactory: () => storage(get, remove),
 		timeout: 20_000,
-		watchesSubmission: true,
-	});
-	const outcome = execution.catch((err: unknown) => err);
+	}).catch((err: unknown) => err);
 	const timeout = new ExecutionTimeoutError(
 		new Error("native poll expired", {
 			cause: new PollTimeoutError("pending", { timeoutMs: 1 }),
 		}),
 		readResultAsync,
 	);
+
+	async function retainAsync(): Promise<ExecutionTimeoutError> {
+		native.reject(timeout);
+		const failure = await relayed;
+		assert.instanceOf(failure, ExecutionTimeoutError);
+		return failure;
+	}
+
+	async function readRetainedAsync(): Promise<unknown> {
+		const failure = await retainAsync();
+		return failure.readResultAsync(observation.signal).catch((err: unknown) => err);
+	}
+
 	return {
 		clock,
-		executeAsync,
 		firstAcknowledged,
 		fullyAcknowledged,
 		get,
-		hedge,
-		hedgeStarted,
 		nativeReread,
-		original,
-		outcome,
+		observation,
 		outputs,
 		published,
 		readResultAsync,
+		readRetainedAsync,
 		remove,
 		rereadStarted,
+		retainAsync,
 		submit,
-		timeout,
 	};
 }
 
@@ -510,30 +496,20 @@ describe(executeWithResultRelayAsync, () => {
 		},
 	);
 
-	it("should recover the replacement relay when both native observers time out", async () => {
-		expect.assertions(4);
+	it("should recover the relay when the native observer times out", async () => {
+		expect.assertions(2);
 
-		const run = recoveringRelay("replacement");
+		const run = retainedRelay();
 		await run.firstAcknowledged.promise;
-		const originalReader = vi
-			.fn<() => Promise<ScriptResult>>()
-			.mockResolvedValue({ durationMs: 1, outputs: [EXECUTION_NOT_CLAIMED] });
-		run.original.reject(
-			new ExecutionTimeoutError(new Error("original expired"), originalReader),
-		);
-		run.hedge.reject(run.timeout);
+		const reading = run.readRetainedAsync();
 		await run.rereadStarted.promise;
 		run.published.resolve();
 
-		await expect(run.outcome).resolves.toMatchObject({ outputs: run.outputs });
-		expect(originalReader).toHaveBeenCalledExactlyOnceWith(expect.any(AbortSignal));
+		await expect(reading).resolves.toMatchObject({ outputs: run.outputs });
 		expect(run.submit).toHaveBeenCalledExactlyOnceWith(
 			expect.stringContaining("return 'complete result'"),
 			expect.any(AbortSignal),
 		);
-		expect(
-			run.executeAsync.mock.calls.map(([context]) => context.observationSignal.aborted),
-		).toStrictEqual([true, true]);
 	});
 
 	it("should resume an interrupted acknowledgement without fetching its chunk again", async () => {
@@ -614,12 +590,12 @@ describe(executeWithResultRelayAsync, () => {
 		expect(signal.aborted).toBeTrue();
 	});
 
-	it("should retain acknowledged chunks and drain the original while a refused hedge is pending", async () => {
-		expect.assertions(5);
+	it("should retain acknowledged chunks and drain the relay before rereading native output", async () => {
+		expect.assertions(4);
 
-		const run = recoveringRelay();
-		await Promise.all([run.firstAcknowledged.promise, run.hedgeStarted.promise]);
-		run.original.reject(run.timeout);
+		const run = retainedRelay();
+		await run.firstAcknowledged.promise;
+		const retained = await run.retainAsync();
 		await nextTurn();
 		run.clock.now = 1000;
 		run.published.resolve();
@@ -630,9 +606,10 @@ describe(executeWithResultRelayAsync, () => {
 		expect(run.readResultAsync).not.toHaveBeenCalled();
 
 		run.nativeReread.resolve({ durationMs: 1, outputs: ["truncated native output"] });
-		run.hedge.resolve({ durationMs: 1, outputs: [EXECUTION_NOT_CLAIMED] });
 
-		await expect(run.outcome).resolves.toMatchObject({ outputs: run.outputs });
+		await expect(retained.readResultAsync(run.observation.signal)).resolves.toMatchObject({
+			outputs: run.outputs,
+		});
 		expect(
 			run.remove.mock.calls.filter(([parameters]) => parameters.itemId.endsWith(":1")),
 		).toHaveLength(1);
@@ -640,15 +617,12 @@ describe(executeWithResultRelayAsync, () => {
 			expect.stringContaining("return 'complete result'"),
 			expect.any(AbortSignal),
 		);
-		expect(
-			run.executeAsync.mock.calls.map(([context]) => context.observationSignal.aborted),
-		).toStrictEqual([true, true]);
 	});
 
-	it("should receive the original relay after native recovery starts", async () => {
+	it("should receive the relay after native recovery starts", async () => {
 		expect.assertions(3);
 
-		const run = recoveringRelay();
+		const run = retainedRelay();
 		const stopped = Promise.withResolvers<void>();
 		run.readResultAsync.mockImplementationOnce(async (signal) => {
 			run.rereadStarted.resolve();
@@ -659,13 +633,12 @@ describe(executeWithResultRelayAsync, () => {
 				stopped.resolve();
 			}
 		});
-		await Promise.all([run.firstAcknowledged.promise, run.hedgeStarted.promise]);
-		run.original.reject(run.timeout);
-		run.hedge.resolve({ durationMs: 1, outputs: [EXECUTION_NOT_CLAIMED] });
+		await run.firstAcknowledged.promise;
+		const reading = run.readRetainedAsync();
 		await run.rereadStarted.promise;
 		run.published.resolve();
 
-		await expect(run.outcome).resolves.toMatchObject({ outputs: run.outputs });
+		await expect(reading).resolves.toMatchObject({ outputs: run.outputs });
 
 		await stopped.promise;
 
@@ -678,12 +651,12 @@ describe(executeWithResultRelayAsync, () => {
 		);
 	});
 
-	it("should resume buffered relay chunks when the hedge outlasts the retained reader", async () => {
+	it("should resume buffered relay chunks after the retained reader's deadline", async () => {
 		expect.assertions(4);
 
-		const run = recoveringRelay();
-		await Promise.all([run.firstAcknowledged.promise, run.hedgeStarted.promise]);
-		run.original.reject(run.timeout);
+		const run = retainedRelay();
+		await run.firstAcknowledged.promise;
+		const retained = await run.retainAsync();
 		await nextTurn();
 		run.clock.now = 30_000;
 		run.published.resolve();
@@ -691,9 +664,9 @@ describe(executeWithResultRelayAsync, () => {
 
 		expect(run.remove).toHaveBeenCalledTimes(2);
 
-		run.hedge.resolve({ durationMs: 1, outputs: [EXECUTION_NOT_CLAIMED] });
-
-		await expect(run.outcome).resolves.toMatchObject({ outputs: run.outputs });
+		await expect(retained.readResultAsync(run.observation.signal)).resolves.toMatchObject({
+			outputs: run.outputs,
+		});
 		expect(run.submit).toHaveBeenCalledExactlyOnceWith(
 			expect.stringContaining("return 'complete result'"),
 			expect.any(AbortSignal),
@@ -703,34 +676,30 @@ describe(executeWithResultRelayAsync, () => {
 		).toHaveLength(1);
 	});
 
-	it("should cancel a retained relay when the hedge wins without rereading native output", async () => {
-		expect.assertions(3);
+	it("should cancel a retained relay when its observer stops without rereading native output", async () => {
+		expect.assertions(2);
 
-		const run = recoveringRelay();
-		await Promise.all([run.firstAcknowledged.promise, run.hedgeStarted.promise]);
-		run.original.reject(run.timeout);
+		const run = retainedRelay();
+		await run.firstAcknowledged.promise;
+		await run.retainAsync();
 		await nextTurn();
-		run.hedge.resolve({ durationMs: 1, outputs: ["hedge result"] });
+		run.observation.abort(new Error("hedge won"));
+		await nextTurn();
 
-		await expect(run.outcome).resolves.toMatchObject({ outputs: ["hedge result"] });
 		expect(run.readResultAsync).not.toHaveBeenCalled();
 		expect(run.get.mock.calls.at(-1)![1]!.signal!.aborted).toBeTrue();
 	});
 
 	it("should cancel the retained relay after native recovery fails", async () => {
-		expect.assertions(3);
+		expect.assertions(2);
 
-		const run = recoveringRelay();
-		await Promise.all([run.firstAcknowledged.promise, run.hedgeStarted.promise]);
-		run.original.reject(run.timeout);
-		run.hedge.reject(new Error("replacement failed"));
+		const run = retainedRelay();
+		await run.firstAcknowledged.promise;
+		const reading = run.readRetainedAsync();
 		await run.rereadStarted.promise;
 		run.nativeReread.reject(new Error("native recovery expired"));
 
-		await expect(run.outcome).resolves.toBeInstanceOf(AggregateError);
-		expect(
-			run.executeAsync.mock.calls.map(([context]) => context.observationSignal.aborted),
-		).toStrictEqual([true, true]);
+		await expect(reading).resolves.toHaveProperty("message", "native recovery expired");
 		expect(run.get.mock.calls.at(-1)![1]!.signal!.aborted).toBeTrue();
 	});
 

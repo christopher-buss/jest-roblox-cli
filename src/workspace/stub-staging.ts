@@ -2,18 +2,21 @@ import * as path from "node:path";
 import process from "node:process";
 
 import type { ResolvedProjectConfig } from "../config/projects.ts";
-import {
-	cleanLeftoverStubs,
-	generateProjectStubs,
-	hasUserAuthoredConfig,
-	STUB_FILENAME,
-} from "../config/stubs.ts";
+import { mountsWithoutUserConfig, STUB_FILENAME } from "../config/stub-files.ts";
+import { cleanLeftoverStubs, generateProjectStubs } from "../config/stubs.ts";
 import type { WorkspacePackageCoverage } from "../coverage-pipeline/workspace-prepare.ts";
-import type { PackageDescriptor, StubMount } from "../staging/synthesizer.ts";
+import type { PackageDescriptor, StubMount } from "../staging/synthesizer-types.ts";
 import type { TimedPhase, TimingCollector } from "../timing/orchestration-collector.ts";
 import type { FileSystem } from "../utils/file-system.ts";
+import type { PendingEntry } from "./pending-entry.ts";
 import type { PackageContext } from "./project-contexts.ts";
-import type { PendingEntry } from "./test-selection.ts";
+
+/** Package contexts and the projects that stay live in each. */
+interface StubStagingOptions {
+	readonly contexts: Array<PackageContext>;
+	readonly fileSystem: FileSystem;
+	readonly liveProjects: Map<string, Set<string>>;
+}
 
 /**
  * Clears leftover stubs, writes each live project's `jest.config` stub into the
@@ -26,6 +29,13 @@ import type { PendingEntry } from "./test-selection.ts";
  * leftover sweep is a filesystem walk and gets a span of its own, under the
  * name multi opens for the same work — the `TIMING` waterfall then reads the
  * same in either mode.
+ * @param options - Contexts, coverage, pending entries and timing.
+ * @param options.contexts - Package contexts to stage.
+ * @param options.coverageByPackage - Coverage roots per instrumented package.
+ * @param options.fileSystem - File system to write through.
+ * @param options.pending - Live entries that decide which stubs to write.
+ * @param options.timing - Collector for the two phase spans.
+ * @returns The descriptors and the time each phase took.
  */
 export function stageWorkspaceStubs({
 	contexts,
@@ -93,20 +103,22 @@ function liveProjectsFor(
 	return ctx.projects.filter((project) => live.has(project.displayName));
 }
 
-// Pre-flight cleanup: walks live projects' known mount paths in each package
-// source tree and removes marker-bearing leftover stubs from pre-refactor
-// multi-project runs. Without this, the synthesizer's `assertNoSourceCollision`
-// would reject them and re-trigger the original cross-mode bug this refactor
-// exists to fix.
+/**
+ * Pre-flight cleanup: walks live projects' known mount paths in each package
+ * source tree and removes marker-bearing leftover stubs from pre-refactor
+ * multi-project runs. Without this, the synthesizer's `assertNoSourceCollision`
+ * would reject them and re-trigger the original cross-mode bug this refactor
+ * exists to fix.
+ * @param options - Contexts and the live projects.
+ * @param options.contexts - Package contexts to sweep.
+ * @param options.fileSystem - File system to delete through.
+ * @param options.liveProjects - Live project names per package.
+ */
 function cleanLeftoverWorkspaceStubs({
 	contexts,
 	fileSystem,
 	liveProjects,
-}: {
-	readonly contexts: Array<PackageContext>;
-	readonly fileSystem: FileSystem;
-	readonly liveProjects: Map<string, Set<string>>;
-}): void {
+}: StubStagingOptions): void {
 	for (const ctx of contexts) {
 		const cleaned = cleanLeftoverStubs({
 			fileSystem,
@@ -132,39 +144,38 @@ function collectLiveProjectStubMounts({
 	readonly fileSystem: FileSystem;
 	readonly project: ResolvedProjectConfig;
 }): Array<StubMount> {
-	const stubMounts: Array<StubMount> = [];
-	for (const mount of project.rojoMounts) {
-		const sourceMount = path.resolve(ctx.info.packageDirectory, mount.fsPath);
-		if (hasUserAuthoredConfig(sourceMount, fileSystem)) {
-			continue;
-		}
-
-		stubMounts.push({
+	return mountsWithoutUserConfig({
+		fileSystem,
+		mounts: project.rojoMounts,
+		rootDirectory: ctx.info.packageDirectory,
+	}).map((mount) => {
+		return {
 			absStubPath: path.resolve(ctx.cacheRoot, mount.fsPath, STUB_FILENAME),
 			dataModelPath: mount.dataModelPath,
-		});
-	}
-
-	return stubMounts;
+		};
+	});
 }
 
-// stubMounts inject `jest.config` at each rojoMount leaf. Projects whose
-// runtime discovery returned zero files are already dropped from `pending`, so
-// their stubs would never run. Emitting them anyway is worse than wasteful: a
-// project's `outDir` may legitimately not exist on disk when the compiler had
-// nothing to produce, and the synthesizer would fail walking that missing path
-// (e.g. `out-test/src` when no specs exist). Skip stub emission for non-live
-// projects; the package's own rojo tree still mounts so cross-package consumers
-// resolve normally.
+/**
+ * The `stubMounts` inject `jest.config` at each rojoMount leaf. Projects whose
+ * runtime discovery returned zero files are already dropped from `pending`, so
+ * their stubs would never run. Emitting them anyway is worse than wasteful: a
+ * project's `outDir` may legitimately not exist on disk when the compiler had
+ * nothing to produce, and the synthesizer would fail walking that missing path
+ * (such as `out-test/src` when no specs exist). Skip stub emission for non-live
+ * projects; the package's own rojo tree still mounts so cross-package consumers
+ * resolve normally.
+ * @param options - Contexts and the live projects.
+ * @param options.contexts - Package contexts to stage.
+ * @param options.fileSystem - File system to write through.
+ * @param options.liveProjects - Live project names per package.
+ * @returns One synthesizer descriptor per package.
+ */
 function writeStubsAndBuildDescriptors({
 	contexts,
 	fileSystem,
 	liveProjects,
-}: {
-	readonly contexts: Array<PackageContext>;
-	readonly fileSystem: FileSystem;
-	readonly liveProjects: Map<string, Set<string>>;
-}): Array<PackageDescriptor> {
+}: StubStagingOptions): Array<PackageDescriptor> {
 	return contexts.map((ctx) => {
 		const liveProjectsForPackage = liveProjectsFor(ctx, liveProjects);
 

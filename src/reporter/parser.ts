@@ -1,9 +1,12 @@
 import { type } from "arktype";
 
+import type { PerTestCoverageEntry, RawCoverageData } from "../coverage-pipeline/coverage-types.ts";
 import { normalizeRawCoverage } from "../coverage-pipeline/raw-coverage.ts";
-import type { PerTestCoverageEntry, RawCoverageData } from "../coverage-pipeline/types.ts";
-import type { JestResult, SnapshotSummary } from "../types/jest-result.ts";
+import type { JestResult, SnapshotSummary } from "../types/jest-result-types.ts";
+import { findJestJsonCandidate } from "./json-extraction.ts";
+import { LuauScriptError } from "./luau-script-error.ts";
 
+/** Snapshot file contents keyed by path, as the runner wrote them. */
 export type SnapshotWrites = Record<string, string>;
 
 interface ParseResult {
@@ -13,46 +16,6 @@ interface ParseResult {
 	result: JestResult;
 	setupSeconds?: number | undefined;
 	snapshotWrites?: SnapshotWrites | undefined;
-}
-
-const TASK_SCRIPT_PREFIX = /^TaskScript:\d+:\s*/;
-
-export class LuauScriptError extends Error {
-	/**
-	 * Jest's own process.stdout/stderr writes captured via InterceptWriteable.
-	 * Used by the CLI error banner to surface synchronous exit messages
-	 * (e.g. "No tests found, exiting with code 1"). Narrower than
-	 * {@link gameOutput}; see GLOSSARY.md for the split.
-	 */
-	public bannerOutput: string | undefined;
-	/**
-	 * Whether the runner installed its stdout/stderr interception before the
-	 * run that failed. Set from the envelope's own `runner.captureInstalled`,
-	 * and read by the exec-error report so "nothing was written" reads apart
-	 * from "nobody was listening". Undefined when the runner does not say.
-	 */
-	public captureInstalled: boolean | undefined;
-	/**
-	 * The LogService.MessageOut dump for the failed run. Propagated through
-	 * the exec-error path so `--gameOutput <path>` still receives the full
-	 * log when an entry's envelope decodes to a Luau-level script failure.
-	 */
-	public gameOutput: string | undefined;
-	/**
-	 * How far into the entry the runner got before it failed, as the Luau side
-	 * named the phase. Undefined when the runner names none.
-	 */
-	public phase: string | undefined;
-	/**
-	 * The run this failure came from was abandoned at its `projectTimeout`.
-	 * Set from the envelope's own `runner.abandon` block, and read by the
-	 * exec-error report so a timeout renders apart from a suite that threw.
-	 */
-	public timedOut: boolean | undefined;
-
-	constructor(rawMessage: string) {
-		super(rawMessage.replace(TASK_SCRIPT_PREFIX, ""));
-	}
 }
 
 const jestResultSchema = type({
@@ -128,40 +91,13 @@ const perTestCoverageSchema = type({
 	testCaseId: "string",
 	testFilePath: "string",
 }).array();
-
-export function extractJsonFromOutput(output: string): string | undefined {
-	const lines = output.split("\n");
-	let braceCount = 0;
-	let jsonLines: Array<string> | undefined;
-
-	for (const line of lines) {
-		if (jsonLines === undefined) {
-			if (!line.trimStart().startsWith("{")) {
-				continue;
-			}
-
-			braceCount = 0;
-			jsonLines = [];
-		}
-
-		jsonLines.push(line);
-		braceCount += countBraces(line);
-
-		if (braceCount !== 0) {
-			continue;
-		}
-
-		const candidate = jsonLines.join("\n").trim();
-		if (isValidJson(candidate)) {
-			return candidate;
-		}
-
-		jsonLines = undefined;
-	}
-
-	return undefined;
-}
-
+/**
+ * Parse the Jest result envelope out of raw runner output.
+ *
+ * @param output - Raw runner output.
+ * @returns The Jest result with coverage, timing and snapshot extras.
+ * @throws {Error} When the output holds no Jest result JSON.
+ */
 export function parseJestOutput(output: string): ParseResult {
 	const candidate = findJestJsonCandidate(output);
 	if (candidate === undefined) {
@@ -169,37 +105,6 @@ export function parseJestOutput(output: string): ParseResult {
 	}
 
 	return parseParsedOutput(jestEnvelopeSchema.assert(JSON.parse(candidate)));
-}
-
-function countBraces(line: string): number {
-	let count = 0;
-	for (const character of line) {
-		if (character === "{") {
-			count++;
-		} else if (character === "}") {
-			count--;
-		}
-	}
-
-	return count;
-}
-
-function isValidJson(text: string): boolean {
-	try {
-		JSON.parse(text);
-		return true;
-	} catch {
-		return false;
-	}
-}
-
-function findJestJsonCandidate(output: string): string | undefined {
-	const trimmed = output.trim();
-	if (trimmed.startsWith("{") && isValidJson(trimmed)) {
-		return trimmed;
-	}
-
-	return extractJsonFromOutput(output);
 }
 
 const PROMISE_TRACE_HEADER = /^-- Promise\.Error\(/;
@@ -216,6 +121,9 @@ const PROMISE_TRACE_CAUSE_LINE = /:\d+:\s*(\S.*)$/;
  * the stack. Returns undefined when no JSON candidate is found; mirrors
  * `parseJestOutput`'s assumption that a found candidate always parses (its
  * source, `findJestJsonCandidate`, only ever returns pre-validated JSON).
+ *
+ * @param jestOutput - Raw `jestOutput` of an envelope entry.
+ * @returns Luau phase durations, or `undefined` when absent.
  */
 export function extractLuauTimingFromOutput(
 	jestOutput: string,

@@ -34,6 +34,7 @@ import type { DeeplyAllowMatchers, MockInstance } from "vitest";
  * - `JSONValue`, what `JSON.parse` returns. It says only "some JSON", and a
  *   plain record is never assignable to `JSONObject` for want of an index
  *   signature, so every expectation against one would be a false positive.
+ * @template T - Type of the value under assertion.
  */
 type Subject<T> =
 	// Both tests are on the whole of `T`, hence the tuple wrappers: a bare
@@ -43,13 +44,17 @@ type Subject<T> =
 /** `AsymmetricMatcher` itself is not exported; recover it from one that is. */
 type AnyMatcher = Exclude<DeeplyAllowMatchers<symbol>, symbol>;
 
-/** `toBe` compares by identity, so only the whole value can be a matcher. */
+/**
+ * `toBe` compares by identity, so only the whole value can be a matcher.
+ * @template T - Type of the value under assertion.
+ */
 type Identical<T> = AnyMatcher | Subject<T>;
 
 /**
  * Vitest's own `DeeplyAllowMatchers`, except that an array position also takes
  * a `ReadonlyArray`. Deep equality ignores `readonly`, so refusing one is
  * noise.
+ * @template T - Type to accept matchers within.
  */
 type Deep<T> =
 	T extends ReadonlyArray<infer E>
@@ -64,6 +69,7 @@ type ArrayElement<T> = Subject<T> extends ReadonlyArray<infer E> ? E : unknown;
 
 /**
  * `toContain` walks a string by substring and any other iterable by element.
+ * @template T - Type of the value under assertion.
  */
 type Contained<T> =
 	Subject<T> extends string
@@ -93,6 +99,7 @@ type CallReturn<T> = Callable<T> extends (...args: Array<any>) => infer R ? R : 
 /**
  * Recursion stops at the built-ins whose shape is methods rather than data —
  * mapping over one drops those methods and would reject a valid argument.
+ * @template T - Type to make partial.
  */
 type DeepPartial<T> =
 	T extends ReadonlyArray<infer E>
@@ -108,6 +115,8 @@ type DeepPartial<T> =
  * that the name is absent, so rejecting a name the type does not declare would
  * outlaw the matcher's main use. Only the value narrows, and only when the name
  * does resolve to a declared property.
+ * @template T - Type of the value under assertion.
+ * @template K - Property name or path.
  */
 type PropertyValue<T, K> =
 	NonNullable<Subject<T>> extends infer S ? (K extends keyof S ? S[K] : unknown) : unknown;

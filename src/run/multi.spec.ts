@@ -8,26 +8,21 @@ import { assert, describe, expect, it, vi } from "vitest";
 import type { MemoryVolume } from "#test/mocks/memory-file-system.ts";
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { movableClockCollector } from "#test/mocks/movable-clock.ts";
+import { NOOP_PROGRESS } from "#test/mocks/noop-progress.ts";
 import { PLACE_INPUT_BY_KIND } from "#test/mocks/place-input.ts";
+import { posixPath } from "#test/mocks/posix-path.ts";
+import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
+import { configErrorLike } from "#test/mocks/run-config-error.ts";
+import { MANIFEST_VERSION, STUB_FILENAME } from "#test/mocks/run-constants.ts";
 import packageJson from "../../package.json" with { type: "json" };
 import type { Backend } from "../backends/interface.ts";
-import { ConfigError } from "../config/errors.ts";
 import type { ResolvedProjectConfig } from "../config/projects.ts";
-import {
-	type CliOptions,
-	DEFAULT_CONFIG,
-	type InlineProjectConfig,
-	type ResolvedConfig,
-} from "../config/schema.ts";
-import { STUB_FILENAME } from "../config/stubs.ts";
-import { MANIFEST_VERSION } from "../coverage-pipeline/manifest.ts";
+import type { CliOptions, InlineProjectConfig, ResolvedConfig } from "../config/schema.ts";
 import type { ShadowLayout } from "../coverage-pipeline/spine.ts";
 import type { ExecuteResult, ProjectInput } from "../executor.ts";
-import { NOOP_RUN_PROGRESS } from "../progress/reporter.ts";
 import type { TimingCollector } from "../timing/orchestration-collector.ts";
-import type { JestResult } from "../types/jest-result.ts";
+import type { JestResult } from "../types/jest-result-types.ts";
 import type { FileSystem } from "../utils/file-system.ts";
-import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import { runMultiProjectAsync } from "./multi.ts";
 import type { RunSeams } from "./seams.ts";
 
@@ -54,16 +49,18 @@ interface RunMocks {
 	tsconfigReader: Mock<RunSeams["tsconfigReader"]>;
 }
 
+type Seam<K extends keyof RunSeams> = RunSeams[K];
+
 function createRunMocks(): RunMocks {
 	return {
-		createSetupResolver: vi.fn<RunSeams["createSetupResolver"]>(),
+		createSetupResolver: vi.fn<Seam<"createSetupResolver">>(),
 		execFile: vi.fn<RojoExec>(),
-		prepareCoverage: vi.fn<RunSeams["prepareCoverage"]>(),
-		resolveAllProjects: vi.fn<RunSeams["resolveAllProjects"]>(),
-		resolveBackend: vi.fn<RunSeams["resolveBackend"]>(),
-		runProjects: vi.fn<RunSeams["runProjects"]>(),
-		runTypecheck: vi.fn<RunSeams["runTypecheck"]>(),
-		tsconfigReader: vi.fn<RunSeams["tsconfigReader"]>(),
+		prepareCoverage: vi.fn<Seam<"prepareCoverage">>(),
+		resolveAllProjects: vi.fn<Seam<"resolveAllProjects">>(),
+		resolveBackend: vi.fn<Seam<"resolveBackend">>(),
+		runProjects: vi.fn<Seam<"runProjects">>(),
+		runTypecheck: vi.fn<Seam<"runTypecheck">>(),
+		tsconfigReader: vi.fn<Seam<"tsconfigReader">>(),
 	};
 }
 
@@ -85,7 +82,7 @@ let seams: RunSeams = toSeams(mocks);
 
 function makeConfig(overrides: Partial<ResolvedConfig> = {}): ResolvedConfig {
 	return {
-		...DEFAULT_CONFIG,
+		...createResolvedConfig(),
 		rojoProject: "default.project.json",
 		rootDir: "/test",
 		testMatch: ["**/*.spec.ts"],
@@ -111,9 +108,15 @@ function makeJestResult(overrides: Partial<JestResult> = {}): JestResult {
 	};
 }
 
-// `runProjects` reports which projects its results are for, so a run that
-// bailed can come back short. No mock here bails, so every index is present —
-// stated once rather than in each mock body.
+/**
+ * `runProjects` reports which projects its results are for, so a run that
+ * bailed can come back short. No mock here bails, so every index is present —
+ * stated once rather than in each mock body.
+ *
+ * @param input - Dispatch input whose projects all ran.
+ * @param input.projects - Projects the run dispatched.
+ * @returns Every project index in order.
+ */
 function allProjectIndices(input: { projects: ReadonlyArray<unknown> }): Array<number> {
 	return input.projects.map((_project, index) => index);
 }
@@ -244,7 +247,7 @@ function recordingTimingCollector() {
 			asyncNames.push(name);
 			return { elapsedMs: 0, value: await func() };
 		},
-		progress: NOOP_RUN_PROGRESS,
+		progress: NOOP_PROGRESS,
 		record: (name, elapsedMs) => {
 			records.push({ name, elapsedMs });
 		},
@@ -269,6 +272,59 @@ function writtenSynthProject(volume: MemoryVolume): { name: string; tree: unknow
 
 function cacheStubPath(mount: string): string {
 	return path.resolve(CACHE_ROOT, mount, STUB_FILENAME);
+}
+
+function seedClientTypeTests(volume: MemoryVolume, { runtime = false } = {}): void {
+	volume.mkdirSync("/test/src/client", { recursive: true });
+	if (runtime) {
+		volume.writeFileSync("/test/src/client/a.spec.ts", "");
+	}
+
+	volume.writeFileSync("/test/src/client/a.spec-d.ts", "");
+	mocks.resolveAllProjects.mockResolvedValue([
+		makeResolvedProject({
+			displayName: "client",
+			include: [...(runtime ? ["src/client/**/*.spec.ts"] : []), "src/client/**/*.spec-d.ts"],
+		}),
+	]);
+}
+
+async function runClientAsync(
+	config: ResolvedConfig,
+	fileSystem: FileSystem,
+): ReturnType<typeof runMultiProjectAsync> {
+	return runMultiProjectAsync({
+		cli: makeCli(),
+		config,
+		fileSystem,
+		rawProjects: [makeProjectEntry("client")],
+		seams,
+	});
+}
+
+async function runClientServerAsync(
+	{ config, fileSystem }: { config: ResolvedConfig; fileSystem: FileSystem },
+	cli: CliOptions = makeCli(),
+): ReturnType<typeof runMultiProjectAsync> {
+	return runMultiProjectAsync({
+		cli,
+		config,
+		fileSystem,
+		rawProjects: [makeProjectEntry("client"), makeProjectEntry("server")],
+		seams,
+	});
+}
+
+function mockTaggedResults(build: (tag: string) => Partial<ExecuteResult>): void {
+	mocks.runProjects.mockImplementation(async (input) => {
+		return {
+			backendTiming: { executionMs: 100, uploadMs: 50 },
+			ranProjectIndices: allProjectIndices(input),
+			results: input.projects.map((project) => {
+				return makeExecuteResult(build(project.displayName!));
+			}),
+		};
+	});
 }
 
 function setupDefaults(configOverrides: Partial<ResolvedConfig> = {}) {
@@ -352,13 +408,7 @@ describe(runMultiProjectAsync, () => {
 		const { config, fileSystem, volume } = setupDefaults();
 		seedProjectFiles(volume);
 
-		const result = await runMultiProjectAsync({
-			cli: makeCli(),
-			config,
-			fileSystem,
-			rawProjects: [makeProjectEntry("client"), makeProjectEntry("server")],
-			seams,
-		});
+		const result = await runClientServerAsync({ config, fileSystem });
 
 		expect(result.mode).toBe("multi");
 		expect(result.projectResults).toHaveLength(2);
@@ -371,13 +421,7 @@ describe(runMultiProjectAsync, () => {
 		seedProjectFiles(volume);
 		const stdout = vi.spyOn(process.stdout, "write").mockReturnValue(true);
 
-		await runMultiProjectAsync({
-			cli: makeCli(),
-			config,
-			fileSystem,
-			rawProjects: [makeProjectEntry("client")],
-			seams,
-		});
+		await runClientAsync(config, fileSystem);
 
 		expect(stdout).toHaveBeenCalledWith(expect.stringContaining(" RUN "));
 	});
@@ -393,13 +437,7 @@ describe(runMultiProjectAsync, () => {
 		mocks.runTypecheck.mockResolvedValue(makeJestResult());
 		const stdout = vi.spyOn(process.stdout, "write").mockReturnValue(true);
 
-		await runMultiProjectAsync({
-			cli: makeCli(),
-			config,
-			fileSystem,
-			rawProjects: [makeProjectEntry("client")],
-			seams,
-		});
+		await runClientAsync(config, fileSystem);
 
 		expect(stdout).not.toHaveBeenCalledWith(expect.stringContaining(" RUN "));
 		expect(mocks.runProjects).not.toHaveBeenCalled();
@@ -415,13 +453,7 @@ describe(runMultiProjectAsync, () => {
 		const { config, fileSystem, volume } = setupDefaults();
 		seedProjectFiles(volume);
 
-		await runMultiProjectAsync({
-			cli: makeCli(),
-			config,
-			fileSystem,
-			rawProjects: [makeProjectEntry("client")],
-			seams,
-		});
+		await runClientAsync(config, fileSystem);
 
 		expect(mocks.resolveAllProjects).toHaveBeenCalledWith(
 			expect.objectContaining({ fileSystem }),
@@ -434,13 +466,10 @@ describe(runMultiProjectAsync, () => {
 		const { config, fileSystem, volume } = setupDefaults();
 		seedProjectFiles(volume);
 
-		const result = await runMultiProjectAsync({
-			cli: makeCli({ project: ["client"] }),
-			config,
-			fileSystem,
-			rawProjects: [makeProjectEntry("client"), makeProjectEntry("server")],
-			seams,
-		});
+		const result = await runClientServerAsync(
+			{ config, fileSystem },
+			makeCli({ project: ["client"] }),
+		);
 
 		expect(result.projectResults).toHaveLength(1);
 		expect(result.projectResults[0]!.displayName).toBe("client");
@@ -453,15 +482,12 @@ describe(runMultiProjectAsync, () => {
 			const { config, fileSystem, volume } = setupDefaults();
 			seedProjectFiles(volume);
 
-			const result = await runMultiProjectAsync({
-				cli: makeCli({ files: ["src/client/a.spec.ts"] }),
-				config,
-				fileSystem,
-				rawProjects: [makeProjectEntry("client"), makeProjectEntry("server")],
-				seams,
-			});
+			const result = await runClientServerAsync(
+				{ config, fileSystem },
+				makeCli({ files: ["src/client/a.spec.ts"] }),
+			);
 
-			const twin = normalizeWindowsPath(path.resolve("/test", "src/client/a.ts"));
+			const twin = posixPath(path.resolve("/test", "src/client/a.ts"));
 
 			expect(result.coverageDisplayFilter!(twin)).toBeTrue();
 		});
@@ -472,15 +498,9 @@ describe(runMultiProjectAsync, () => {
 			const { config, fileSystem, volume } = setupDefaults({ testPathPattern: "a" });
 			seedProjectFiles(volume);
 
-			const result = await runMultiProjectAsync({
-				cli: makeCli(),
-				config,
-				fileSystem,
-				rawProjects: [makeProjectEntry("client"), makeProjectEntry("server")],
-				seams,
-			});
+			const result = await runClientServerAsync({ config, fileSystem });
 
-			const twin = normalizeWindowsPath(path.resolve("/test", "src/client/a.ts"));
+			const twin = posixPath(path.resolve("/test", "src/client/a.ts"));
 
 			expect(result.coverageDisplayFilter!(twin)).toBeTrue();
 		});
@@ -491,13 +511,10 @@ describe(runMultiProjectAsync, () => {
 			const { config, fileSystem, volume } = setupDefaults();
 			seedProjectFiles(volume);
 
-			const result = await runMultiProjectAsync({
-				cli: makeCli({ project: ["client"] }),
-				config,
-				fileSystem,
-				rawProjects: [makeProjectEntry("client"), makeProjectEntry("server")],
-				seams,
-			});
+			const result = await runClientServerAsync(
+				{ config, fileSystem },
+				makeCli({ project: ["client"] }),
+			);
 
 			expect(result.coverageDisplayFilter).toBeTypeOf("function");
 		});
@@ -508,13 +525,7 @@ describe(runMultiProjectAsync, () => {
 			const { config, fileSystem, volume } = setupDefaults();
 			seedProjectFiles(volume);
 
-			const result = await runMultiProjectAsync({
-				cli: makeCli(),
-				config,
-				fileSystem,
-				rawProjects: [makeProjectEntry("client"), makeProjectEntry("server")],
-				seams,
-			});
+			const result = await runClientServerAsync({ config, fileSystem });
 
 			expect(result.coverageDisplayFilter).toBeUndefined();
 			expect(firstDispatchedProject().config.testPathPattern).toBeUndefined();
@@ -571,15 +582,7 @@ describe(runMultiProjectAsync, () => {
 			JSON.stringify({ tree: "not-an-object" }),
 		);
 
-		await expect(
-			runMultiProjectAsync({
-				cli: makeCli(),
-				config,
-				fileSystem,
-				rawProjects: [makeProjectEntry("client")],
-				seams,
-			}),
-		).rejects.toThrow(/Invalid Rojo project/);
+		await expect(runClientAsync(config, fileSystem)).rejects.toThrow(/Invalid Rojo project/);
 	});
 
 	it("should default rojoProject to default.project.json when not configured", async () => {
@@ -588,13 +591,7 @@ describe(runMultiProjectAsync, () => {
 		const { config, fileSystem, volume } = setupDefaults({ rojoProject: undefined });
 		seedProjectFiles(volume);
 
-		const result = await runMultiProjectAsync({
-			cli: makeCli(),
-			config,
-			fileSystem,
-			rawProjects: [makeProjectEntry("client")],
-			seams,
-		});
+		const result = await runClientAsync(config, fileSystem);
 
 		expect(result.mode).toBe("multi");
 	});
@@ -606,13 +603,7 @@ describe(runMultiProjectAsync, () => {
 		mocks.resolveBackend.mockResolvedValueOnce(makeBackend("open-cloud"));
 		seedProjectFiles(volume);
 
-		await runMultiProjectAsync({
-			cli: makeCli(),
-			config,
-			fileSystem,
-			rawProjects: [makeProjectEntry("client")],
-			seams,
-		});
+		await runClientAsync(config, fileSystem);
 
 		expect(writtenSynthProject(volume).tree).toStrictEqual(
 			expect.objectContaining({ $className: "DataModel" }),
@@ -623,6 +614,9 @@ describe(runMultiProjectAsync, () => {
 	 * The bundle path an open-cloud place build would write beside the place
 	 * it split from, which is `place-builder`'s rule rather than a path any
 	 * caller here names. No production run asks for one.
+	 *
+	 * @param config - Config whose `rootDir` holds the place.
+	 * @returns Absolute path of the Code Bundle file.
 	 */
 	function bundleFile(config: ResolvedConfig): string {
 		return path.resolve(config.rootDir, "game.code-bundle.json");
@@ -631,6 +625,8 @@ describe(runMultiProjectAsync, () => {
 	/**
 	 * One coverage run, whose place the coverage bake builds rather than the
 	 * run.
+	 *
+	 * @param kind - Backend the run resolves to.
 	 */
 	async function runCoverageAsync(kind: "open-cloud" | "studio"): Promise<void> {
 		const { config, fileSystem, volume } = setupDefaults({ collectCoverage: true });
@@ -638,13 +634,7 @@ describe(runMultiProjectAsync, () => {
 		mocks.resolveBackend.mockResolvedValueOnce(makeBackend(kind));
 		seedProjectFiles(volume);
 
-		await runMultiProjectAsync({
-			cli: makeCli(),
-			config,
-			fileSystem,
-			rawProjects: [makeProjectEntry("client")],
-			seams,
-		});
+		await runClientAsync(config, fileSystem);
 	}
 
 	async function runOpenCloudAsync(
@@ -654,13 +644,7 @@ describe(runMultiProjectAsync, () => {
 		mocks.resolveBackend.mockResolvedValueOnce(makeBackend("open-cloud"));
 		seedProjectFiles(volume);
 
-		await runMultiProjectAsync({
-			cli: makeCli(),
-			config,
-			fileSystem,
-			rawProjects: [makeProjectEntry("client")],
-			seams,
-		});
+		await runClientAsync(config, fileSystem);
 		return { config, volume };
 	}
 
@@ -797,13 +781,7 @@ describe(runMultiProjectAsync, () => {
 		mocks.resolveBackend.mockResolvedValueOnce(makeBackend("studio"));
 		seedProjectFiles(volume);
 
-		await runMultiProjectAsync({
-			cli: makeCli(),
-			config,
-			fileSystem,
-			rawProjects: [makeProjectEntry("client")],
-			seams,
-		});
+		await runClientAsync(config, fileSystem);
 
 		expect(mocks.execFile).not.toHaveBeenCalled();
 		expect(volume.existsSync(SYNTH_PROJECT)).toBeFalse();
@@ -819,13 +797,7 @@ describe(runMultiProjectAsync, () => {
 		});
 		seedProjectFiles(volume);
 
-		await runMultiProjectAsync({
-			cli: makeCli(),
-			config,
-			fileSystem,
-			rawProjects: [makeProjectEntry("client")],
-			seams,
-		});
+		await runClientAsync(config, fileSystem);
 
 		expect(mocks.execFile).toHaveBeenCalledExactlyOnceWith(
 			"rojo",
@@ -843,13 +815,7 @@ describe(runMultiProjectAsync, () => {
 		mocks.prepareCoverage.mockResolvedValue(fromAny(makeCoverageResult()));
 		seedProjectFiles(volume);
 
-		const result = await runMultiProjectAsync({
-			cli: makeCli(),
-			config,
-			fileSystem,
-			rawProjects: [makeProjectEntry("client")],
-			seams,
-		});
+		const result = await runClientAsync(config, fileSystem);
 
 		expect(mocks.execFile).not.toHaveBeenCalled();
 		expect(mocks.prepareCoverage).toHaveBeenCalledExactlyOnceWith(config, expect.anything());
@@ -955,13 +921,7 @@ describe(runMultiProjectAsync, () => {
 		const { config, fileSystem, volume } = setupDefaults({ collectCoverage: true });
 		seedProjectFiles(volume);
 
-		const result = await runMultiProjectAsync({
-			cli: makeCli(),
-			config,
-			fileSystem,
-			rawProjects: [makeProjectEntry("client")],
-			seams,
-		});
+		const result = await runClientAsync(config, fileSystem);
 
 		expect(result.coverageArtifacts!.projects).toStrictEqual(
 			expect.arrayContaining([
@@ -979,13 +939,7 @@ describe(runMultiProjectAsync, () => {
 		const { config, fileSystem, volume } = setupDefaults({ collectCoverage: true });
 		seedProjectFiles(volume);
 
-		await runMultiProjectAsync({
-			cli: makeCli(),
-			config,
-			fileSystem,
-			rawProjects: [makeProjectEntry("client")],
-			seams,
-		});
+		await runClientAsync(config, fileSystem);
 
 		const shadow = makeShadowLayout();
 		const { bake } = mocks.prepareCoverage.mock.calls[0]![1]!;
@@ -1008,13 +962,7 @@ describe(runMultiProjectAsync, () => {
 		const { config, fileSystem, volume } = setupDefaults({ collectCoverage: true });
 		seedProjectFiles(volume);
 
-		await runMultiProjectAsync({
-			cli: makeCli(),
-			config,
-			fileSystem,
-			rawProjects: [makeProjectEntry("client")],
-			seams,
-		});
+		await runClientAsync(config, fileSystem);
 
 		// The report narrows by the derived set whether or not the user set
 		// `collectCoverageFrom`; instrumentation has to see the same value, or
@@ -1045,13 +993,7 @@ describe(runMultiProjectAsync, () => {
 		mocks.prepareCoverage.mockResolvedValue(fromAny(makeCoverageResult()));
 		seedProjectFiles(volume);
 
-		await runMultiProjectAsync({
-			cli: makeCli(),
-			config,
-			fileSystem,
-			rawProjects: [makeProjectEntry("client")],
-			seams,
-		});
+		await runClientAsync(config, fileSystem);
 
 		// The absent bake *is* the contract: no hook, no stub in the place.
 		expect(mocks.prepareCoverage).toHaveBeenCalledExactlyOnceWith(
@@ -1066,13 +1008,7 @@ describe(runMultiProjectAsync, () => {
 		const { config, fileSystem } = setupDefaults();
 		// Don't seed any test files
 
-		const result = await runMultiProjectAsync({
-			cli: makeCli(),
-			config,
-			fileSystem,
-			rawProjects: [makeProjectEntry("client")],
-			seams,
-		});
+		const result = await runClientAsync(config, fileSystem);
 
 		expect(result.validationExitCode).toBe(2);
 		expect(result.validationMessage).toBe("No test files found in any project\n");
@@ -1085,13 +1021,7 @@ describe(runMultiProjectAsync, () => {
 		const { config, fileSystem } = setupDefaults({ passWithNoTests: true });
 		// Don't seed any test files
 
-		const result = await runMultiProjectAsync({
-			cli: makeCli(),
-			config,
-			fileSystem,
-			rawProjects: [makeProjectEntry("client")],
-			seams,
-		});
+		const result = await runClientAsync(config, fileSystem);
 
 		expect(result.validationExitCode).toBeUndefined();
 		expect(result.projectResults).toHaveLength(0);
@@ -1158,15 +1088,7 @@ describe(runMultiProjectAsync, () => {
 
 		const { config, fileSystem, volume } = setupDefaults({ typecheck: { enabled: true } });
 
-		volume.mkdirSync("/test/src/client", { recursive: true });
-		volume.writeFileSync("/test/src/client/a.spec.ts", "");
-		volume.writeFileSync("/test/src/client/a.spec-d.ts", "");
-		mocks.resolveAllProjects.mockResolvedValue([
-			makeResolvedProject({
-				displayName: "client",
-				include: ["src/client/**/*.spec.ts", "src/client/**/*.spec-d.ts"],
-			}),
-		]);
+		seedClientTypeTests(volume, { runtime: true });
 
 		// A rendezvous: each side proceeds only once the other has started, so
 		// the run completes solely when the two overlap. A strictly-after pass
@@ -1194,13 +1116,7 @@ describe(runMultiProjectAsync, () => {
 			return makeJestResult();
 		});
 
-		const result = await runMultiProjectAsync({
-			cli: makeCli(),
-			config,
-			fileSystem,
-			rawProjects: [makeProjectEntry("client")],
-			seams,
-		});
+		const result = await runClientAsync(config, fileSystem);
 
 		expect(result.typecheckResult).toBeDefined();
 		expect(result.projectResults).toHaveLength(1);
@@ -1212,27 +1128,16 @@ describe(runMultiProjectAsync, () => {
 		vi.stubEnv("JEST_ROBLOX_SEA", "true");
 		const { config, fileSystem, volume } = setupDefaults({ typecheck: { enabled: true } });
 
-		volume.mkdirSync("/test/src/client", { recursive: true });
-		volume.writeFileSync("/test/src/client/a.spec.ts", "");
-		volume.writeFileSync("/test/src/client/a.spec-d.ts", "");
-		mocks.resolveAllProjects.mockResolvedValue([
-			makeResolvedProject({
-				displayName: "client",
-				include: ["src/client/**/*.spec.ts", "src/client/**/*.spec-d.ts"],
-			}),
-		]);
+		seedClientTypeTests(volume, { runtime: true });
 
-		const error: unknown = await runMultiProjectAsync({
-			cli: makeCli(),
-			config,
-			fileSystem,
-			rawProjects: [makeProjectEntry("client")],
-			seams,
-		}).catch((err: unknown) => err);
+		const error: unknown = await runClientAsync(config, fileSystem).catch(
+			(err: unknown) => err,
+		);
 
 		expect(error).toStrictEqual(
-			new ConfigError(
+			configErrorLike(
 				"--typecheck is not available in the standalone binary. Install via npm instead.",
+				undefined,
 			),
 		);
 		expect(mocks.resolveBackend).not.toHaveBeenCalled();
@@ -1259,13 +1164,7 @@ describe(runMultiProjectAsync, () => {
 			}),
 		]);
 
-		await runMultiProjectAsync({
-			cli: makeCli(),
-			config,
-			fileSystem,
-			rawProjects: [makeProjectEntry("client")],
-			seams,
-		});
+		await runClientAsync(config, fileSystem);
 
 		expect(mocks.runTypecheck).toHaveBeenCalledOnce();
 	});
@@ -1295,13 +1194,7 @@ describe(runMultiProjectAsync, () => {
 			}),
 		]);
 
-		await runMultiProjectAsync({
-			cli: makeCli(),
-			config,
-			fileSystem,
-			rawProjects: [makeProjectEntry("client"), makeProjectEntry("server")],
-			seams,
-		});
+		await runClientServerAsync({ config, fileSystem });
 
 		expect(mocks.runTypecheck).toHaveBeenCalledTimes(2);
 		expect(mocks.runTypecheck).toHaveBeenCalledWith(
@@ -1334,13 +1227,7 @@ describe(runMultiProjectAsync, () => {
 			}),
 		]);
 
-		await runMultiProjectAsync({
-			cli: makeCli(),
-			config,
-			fileSystem,
-			rawProjects: [makeProjectEntry("client")],
-			seams,
-		});
+		await runClientAsync(config, fileSystem);
 
 		expect(mocks.runTypecheck).toHaveBeenCalledWith(
 			expect.objectContaining({
@@ -1388,14 +1275,7 @@ describe(runMultiProjectAsync, () => {
 
 		mocks.runTypecheck.mockResolvedValue(makeJestResult());
 		const recorded = recordingTimingCollector();
-		volume.mkdirSync("/test/src/client", { recursive: true });
-		volume.writeFileSync("/test/src/client/a.spec-d.ts", "");
-		mocks.resolveAllProjects.mockResolvedValue([
-			makeResolvedProject({
-				displayName: "client",
-				include: ["src/client/**/*.spec-d.ts"],
-			}),
-		]);
+		seedClientTypeTests(volume);
 
 		const result = await runMultiProjectAsync({
 			cli: makeCli(),
@@ -1457,22 +1337,9 @@ describe(runMultiProjectAsync, () => {
 		});
 
 		mocks.runTypecheck.mockResolvedValue(makeJestResult());
-		volume.mkdirSync("/test/src/client", { recursive: true });
-		volume.writeFileSync("/test/src/client/a.spec-d.ts", "");
-		mocks.resolveAllProjects.mockResolvedValue([
-			makeResolvedProject({
-				displayName: "client",
-				include: ["src/client/**/*.spec-d.ts"],
-			}),
-		]);
+		seedClientTypeTests(volume);
 
-		await runMultiProjectAsync({
-			cli: makeCli(),
-			config,
-			fileSystem,
-			rawProjects: [makeProjectEntry("client")],
-			seams,
-		});
+		await runClientAsync(config, fileSystem);
 
 		expect(mocks.runTypecheck).toHaveBeenCalledWith(
 			expect.objectContaining({ timeout: 900_000 }),
@@ -1491,13 +1358,7 @@ describe(runMultiProjectAsync, () => {
 			}),
 		]);
 
-		const result = await runMultiProjectAsync({
-			cli: makeCli(),
-			config,
-			fileSystem,
-			rawProjects: [makeProjectEntry("client")],
-			seams,
-		});
+		const result = await runClientAsync(config, fileSystem);
 
 		expect(result.validationExitCode).toBe(2);
 		expect(result.validationMessage).toBe("No test files found in any project\n");
@@ -1519,13 +1380,7 @@ describe(runMultiProjectAsync, () => {
 			}),
 		]);
 
-		const result = await runMultiProjectAsync({
-			cli: makeCli(),
-			config,
-			fileSystem,
-			rawProjects: [makeProjectEntry("client")],
-			seams,
-		});
+		const result = await runClientAsync(config, fileSystem);
 
 		expect(result.validationExitCode).toBeUndefined();
 		expect(result.projectResults).toHaveLength(0);
@@ -1539,22 +1394,9 @@ describe(runMultiProjectAsync, () => {
 		});
 
 		mocks.runTypecheck.mockResolvedValue(makeJestResult());
-		volume.mkdirSync("/test/src/client", { recursive: true });
-		volume.writeFileSync("/test/src/client/a.spec-d.ts", "");
-		mocks.resolveAllProjects.mockResolvedValue([
-			makeResolvedProject({
-				displayName: "client",
-				include: ["src/client/**/*.spec-d.ts"],
-			}),
-		]);
+		seedClientTypeTests(volume);
 
-		await runMultiProjectAsync({
-			cli: makeCli(),
-			config,
-			fileSystem,
-			rawProjects: [makeProjectEntry("client")],
-			seams,
-		});
+		await runClientAsync(config, fileSystem);
 
 		expect(mocks.runTypecheck).toHaveBeenCalledWith(
 			expect.objectContaining({ ignoreSourceErrors: true }),
@@ -1575,13 +1417,7 @@ describe(runMultiProjectAsync, () => {
 			makeResolvedProject({ displayName: "client", include: ["src/client/**/*.spec.ts"] }),
 		]);
 
-		await runMultiProjectAsync({
-			cli: makeCli(),
-			config,
-			fileSystem,
-			rawProjects: [makeProjectEntry("client")],
-			seams,
-		});
+		await runClientAsync(config, fileSystem);
 
 		expect(mocks.runTypecheck).not.toHaveBeenCalled();
 	});
@@ -1602,13 +1438,7 @@ describe(runMultiProjectAsync, () => {
 			makeResolvedProject({ displayName: "client", include: ["src/client/**/*.spec.ts"] }),
 		]);
 
-		await runMultiProjectAsync({
-			cli: makeCli(),
-			config,
-			fileSystem,
-			rawProjects: [makeProjectEntry("client")],
-			seams,
-		});
+		await runClientAsync(config, fileSystem);
 
 		expect(mocks.runTypecheck).toHaveBeenCalledWith(
 			expect.objectContaining({
@@ -1633,13 +1463,7 @@ describe(runMultiProjectAsync, () => {
 			makeResolvedProject({ displayName: "client", include: ["src/client/**/*.spec.ts"] }),
 		]);
 
-		await runMultiProjectAsync({
-			cli: makeCli(),
-			config,
-			fileSystem,
-			rawProjects: [makeProjectEntry("client")],
-			seams,
-		});
+		await runClientAsync(config, fileSystem);
 
 		const { files } = mocks.runTypecheck.mock.calls[0]![0];
 
@@ -1692,13 +1516,7 @@ describe(runMultiProjectAsync, () => {
 			}),
 		]);
 
-		await runMultiProjectAsync({
-			cli: makeCli(),
-			config,
-			fileSystem,
-			rawProjects: [makeProjectEntry("client")],
-			seams,
-		});
+		await runClientAsync(config, fileSystem);
 
 		const { projects } = mocks.runProjects.mock.calls[0]![0];
 
@@ -1726,13 +1544,7 @@ describe(runMultiProjectAsync, () => {
 			makeResolvedProject({ displayName: "client", include: ["src/client/**/*.spec.ts"] }),
 		]);
 
-		const result = await runMultiProjectAsync({
-			cli: makeCli(),
-			config,
-			fileSystem,
-			rawProjects: [makeProjectEntry("client")],
-			seams,
-		});
+		const result = await runClientAsync(config, fileSystem);
 
 		expect(result.mode).toBe("multi");
 		expect(result.typecheckResult).toBeDefined();
@@ -1744,37 +1556,24 @@ describe(runMultiProjectAsync, () => {
 		const { config, fileSystem, volume } = setupDefaults();
 		seedProjectFiles(volume);
 
-		mocks.runProjects.mockImplementation(async (input) => {
+		mockTaggedResults((tag) => {
 			return {
-				backendTiming: { executionMs: 100, uploadMs: 50 },
-				ranProjectIndices: allProjectIndices(input),
-				results: input.projects.map((project) => {
-					const tag = project.displayName!;
-					return makeExecuteResult({
-						coverageData: { [`${tag}.luau`]: { s: { "0": 1 } } },
-						sourceMapper: {
-							mapFailureWithLocations: (message) => {
-								return {
-									locations: [],
-									message: `[${tag}] ${message}`,
-								};
-							},
-							mapTestFileLine: () => {},
-							resolveDisplayPath: (testFilePath) => testFilePath,
-							resolveTestFilePath: () => {},
-						},
-					});
-				}),
+				coverageData: { [`${tag}.luau`]: { s: { "0": 1 } } },
+				sourceMapper: {
+					mapFailureWithLocations: (message) => {
+						return {
+							locations: [],
+							message: `[${tag}] ${message}`,
+						};
+					},
+					mapTestFileLine: () => {},
+					resolveDisplayPath: (testFilePath) => testFilePath,
+					resolveTestFilePath: () => {},
+				},
 			};
 		});
 
-		const result = await runMultiProjectAsync({
-			cli: makeCli(),
-			config,
-			fileSystem,
-			rawProjects: [makeProjectEntry("client"), makeProjectEntry("server")],
-			seams,
-		});
+		const result = await runClientServerAsync({ config, fileSystem });
 
 		expect(result.merged.coverageData).toBeDefined();
 		expect(result.merged.sourceMapper!.mapFailureWithLocations("hi").message).toContain("hi");
@@ -1786,37 +1585,24 @@ describe(runMultiProjectAsync, () => {
 		const { config, fileSystem, volume } = setupDefaults();
 		seedProjectFiles(volume);
 
-		mocks.runProjects.mockImplementation(async (input) => {
+		mockTaggedResults((tag) => {
 			return {
-				backendTiming: { executionMs: 100, uploadMs: 50 },
-				ranProjectIndices: allProjectIndices(input),
-				results: input.projects.map((project) => {
-					const tag = project.displayName!;
-					return makeExecuteResult({
-						attribution: {
-							coveringTestIds: { "shared.luau": { "1": [tag] } },
-							staticStatementIds: {},
-							tests: [
-								{
-									testCaseId: tag,
-									testFilePath: `${tag}.spec.luau`,
-									testFileSourceHash: "h",
-									testId: tag,
-								},
-							],
+				attribution: {
+					coveringTestIds: { "shared.luau": { "1": [tag] } },
+					staticStatementIds: {},
+					tests: [
+						{
+							testCaseId: tag,
+							testFilePath: `${tag}.spec.luau`,
+							testFileSourceHash: "h",
+							testId: tag,
 						},
-					});
-				}),
+					],
+				},
 			};
 		});
 
-		const result = await runMultiProjectAsync({
-			cli: makeCli(),
-			config,
-			fileSystem,
-			rawProjects: [makeProjectEntry("client"), makeProjectEntry("server")],
-			seams,
-		});
+		const result = await runClientServerAsync({ config, fileSystem });
 
 		expect(result.merged.attribution!.tests).toHaveLength(2);
 		expect(result.merged.attribution!.coveringTestIds["shared.luau"]).toStrictEqual({
@@ -1831,13 +1617,7 @@ describe(runMultiProjectAsync, () => {
 		mocks.resolveBackend.mockResolvedValueOnce(makeBackend("open-cloud"));
 		seedProjectFiles(volume);
 
-		await runMultiProjectAsync({
-			cli: makeCli(),
-			config,
-			fileSystem,
-			rawProjects: [makeProjectEntry("client")],
-			seams,
-		});
+		await runClientAsync(config, fileSystem);
 
 		const openCloudCall = mocks.runProjects.mock.calls[0];
 
@@ -1845,13 +1625,7 @@ describe(runMultiProjectAsync, () => {
 
 		mocks.runProjects.mockClear();
 		mocks.resolveBackend.mockResolvedValueOnce(makeBackend("studio"));
-		await runMultiProjectAsync({
-			cli: makeCli(),
-			config,
-			fileSystem,
-			rawProjects: [makeProjectEntry("client")],
-			seams,
-		});
+		await runClientAsync(config, fileSystem);
 
 		const studioCall = mocks.runProjects.mock.calls[0];
 
@@ -1864,13 +1638,7 @@ describe(runMultiProjectAsync, () => {
 		const { config, fileSystem, volume } = setupDefaults({ experimentalVmParallel: 2 });
 		seedProjectFiles(volume);
 
-		await runMultiProjectAsync({
-			cli: makeCli(),
-			config,
-			fileSystem,
-			rawProjects: [makeProjectEntry("client"), makeProjectEntry("server")],
-			seams,
-		});
+		await runClientServerAsync({ config, fileSystem });
 
 		expect(mocks.runProjects.mock.calls[0]![0].vmParallel).toBe(2);
 	});
@@ -1883,13 +1651,7 @@ describe(runMultiProjectAsync, () => {
 
 		// Without coverageData on any project, merged.coverageData stays
 		// undefined.
-		const result = await runMultiProjectAsync({
-			cli: makeCli(),
-			config,
-			fileSystem,
-			rawProjects: [makeProjectEntry("client")],
-			seams,
-		});
+		const result = await runClientAsync(config, fileSystem);
 
 		expect(result.merged.coverageData).toBeUndefined();
 	});
@@ -1935,13 +1697,7 @@ describe(runMultiProjectAsync, () => {
 		]);
 		seedProjectFiles(volume);
 
-		const result = await runMultiProjectAsync({
-			cli: makeCli(),
-			config,
-			fileSystem,
-			rawProjects: [makeProjectEntry("client")],
-			seams,
-		});
+		const result = await runClientAsync(config, fileSystem);
 
 		expect(result.projectResults).toHaveLength(1);
 	});
@@ -1959,15 +1715,7 @@ describe(runMultiProjectAsync, () => {
 		mocks.runProjects.mockRejectedValueOnce(error);
 		seedProjectFiles(volume);
 
-		await expect(
-			runMultiProjectAsync({
-				cli: makeCli(),
-				config,
-				fileSystem,
-				rawProjects: [makeProjectEntry("client")],
-				seams,
-			}),
-		).rejects.toBe(error);
+		await expect(runClientAsync(config, fileSystem)).rejects.toBe(error);
 	});
 
 	it("should resolve setupFilesAfterEnv paths via the setup resolver", async () => {
@@ -1983,13 +1731,7 @@ describe(runMultiProjectAsync, () => {
 		]);
 		seedProjectFiles(volume);
 
-		await runMultiProjectAsync({
-			cli: makeCli(),
-			config,
-			fileSystem,
-			rawProjects: [makeProjectEntry("client")],
-			seams,
-		});
+		await runClientAsync(config, fileSystem);
 
 		const { projects } = mocks.runProjects.mock.calls[0]![0];
 
@@ -2064,19 +1806,19 @@ describe(runMultiProjectAsync, () => {
 		expect(projects[0]!.config.testPathPattern).toBe("(a\\.spec)");
 	});
 
-	it("should call filterProjectsByFiles with cli files when --project is absent", async () => {
+	it.for([
+		"should call filterProjectsByFiles with cli files when --project is absent",
+		"should resolve a relative cli file against rootDir before matching",
+	])("%s", async () => {
 		expect.assertions(1);
 
 		const { config, fileSystem, volume } = setupDefaults();
 		seedProjectFiles(volume);
 
-		const result = await runMultiProjectAsync({
-			cli: makeCli({ files: ["src/server/b.spec.ts"] }),
-			config,
-			fileSystem,
-			rawProjects: [makeProjectEntry("client"), makeProjectEntry("server")],
-			seams,
-		});
+		const result = await runClientServerAsync(
+			{ config, fileSystem },
+			makeCli({ files: ["src/server/b.spec.ts"] }),
+		);
 
 		expect(result.projectResults.map((entry) => entry.displayName)).toStrictEqual(["server"]);
 	});
@@ -2087,35 +1829,15 @@ describe(runMultiProjectAsync, () => {
 		const { config, fileSystem, volume } = setupDefaults();
 		seedProjectFiles(volume);
 
-		await runMultiProjectAsync({
-			cli: makeCli({ files: ["src/client/a.spec.ts", "src/server/b.spec.ts"] }),
-			config,
-			fileSystem,
-			rawProjects: [makeProjectEntry("client"), makeProjectEntry("server")],
-			seams,
-		});
+		await runClientServerAsync(
+			{ config, fileSystem },
+			makeCli({ files: ["src/client/a.spec.ts", "src/server/b.spec.ts"] }),
+		);
 
 		const { projects } = mocks.runProjects.mock.calls[0]![0];
 
 		expect(projects[0]!.config.testPathPattern).toBe("(a\\.spec)");
 		expect(projects[1]!.config.testPathPattern).toBe("(b\\.spec)");
-	});
-
-	it("should resolve a relative cli file against rootDir before matching", async () => {
-		expect.assertions(1);
-
-		const { config, fileSystem, volume } = setupDefaults();
-		seedProjectFiles(volume);
-
-		const result = await runMultiProjectAsync({
-			cli: makeCli({ files: ["src/server/b.spec.ts"] }),
-			config,
-			fileSystem,
-			rawProjects: [makeProjectEntry("client"), makeProjectEntry("server")],
-			seams,
-		});
-
-		expect(result.projectResults.map((entry) => entry.displayName)).toStrictEqual(["server"]);
 	});
 
 	it("should propagate filterProjectsByFiles errors when no project owns the file", async () => {
@@ -2125,13 +1847,10 @@ describe(runMultiProjectAsync, () => {
 		seedProjectFiles(volume);
 
 		await expect(
-			runMultiProjectAsync({
-				cli: makeCli({ files: ["src/shared/x.spec.ts"] }),
-				config,
-				fileSystem,
-				rawProjects: [makeProjectEntry("client"), makeProjectEntry("server")],
-				seams,
-			}),
+			runClientServerAsync(
+				{ config, fileSystem },
+				makeCli({ files: ["src/shared/x.spec.ts"] }),
+			),
 		).rejects.toThrow(/No project contains the requested file/);
 	});
 
@@ -2141,13 +1860,10 @@ describe(runMultiProjectAsync, () => {
 		const { config, fileSystem, volume } = setupDefaults();
 		seedProjectFiles(volume);
 
-		const result = await runMultiProjectAsync({
-			cli: makeCli({ files: ["src/server/b.spec.ts"], project: ["client"] }),
-			config,
-			fileSystem,
-			rawProjects: [makeProjectEntry("client"), makeProjectEntry("server")],
-			seams,
-		});
+		const result = await runClientServerAsync(
+			{ config, fileSystem },
+			makeCli({ files: ["src/server/b.spec.ts"], project: ["client"] }),
+		);
 
 		expect(result.projectResults).toHaveLength(1);
 		expect(result.projectResults.map((entry) => entry.displayName)).toStrictEqual(["client"]);
@@ -2159,20 +1875,8 @@ describe(runMultiProjectAsync, () => {
 		const { config, fileSystem, volume } = setupDefaults();
 		seedProjectFiles(volume);
 
-		const bare = await runMultiProjectAsync({
-			cli: makeCli(),
-			config,
-			fileSystem,
-			rawProjects: [makeProjectEntry("client"), makeProjectEntry("server")],
-			seams,
-		});
-		const empty = await runMultiProjectAsync({
-			cli: makeCli({ files: [] }),
-			config,
-			fileSystem,
-			rawProjects: [makeProjectEntry("client"), makeProjectEntry("server")],
-			seams,
-		});
+		const bare = await runClientServerAsync({ config, fileSystem });
+		const empty = await runClientServerAsync({ config, fileSystem }, makeCli({ files: [] }));
 
 		expect([bare.projectResults.length, empty.projectResults.length]).toStrictEqual([2, 2]);
 	});
@@ -2191,13 +1895,7 @@ describe(runMultiProjectAsync, () => {
 		mocks.createSetupResolver.mockReturnValue((input) => `resolved:${input}`);
 		seedProjectFiles(volume);
 
-		await runMultiProjectAsync({
-			cli: makeCli(),
-			config,
-			fileSystem,
-			rawProjects: [makeProjectEntry("client")],
-			seams,
-		});
+		await runClientAsync(config, fileSystem);
 
 		const project = mocks.runProjects.mock.calls[0]![0].projects[0];
 
@@ -2214,15 +1912,7 @@ describe(runMultiProjectAsync, () => {
 		const error = new Error("backend failed");
 		mocks.runProjects.mockRejectedValueOnce(error);
 
-		await expect(
-			runMultiProjectAsync({
-				cli: makeCli(),
-				config,
-				fileSystem,
-				rawProjects: [makeProjectEntry("client")],
-				seams,
-			}),
-		).rejects.toBe(error);
+		await expect(runClientAsync(config, fileSystem)).rejects.toBe(error);
 		expect(backend.closeAsync).toHaveBeenCalledExactlyOnceWith();
 	});
 
@@ -2234,13 +1924,7 @@ describe(runMultiProjectAsync, () => {
 		const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
 		seedProjectFiles(volume);
 
-		await runMultiProjectAsync({
-			cli: makeCli(),
-			config,
-			fileSystem,
-			rawProjects: [makeProjectEntry("client")],
-			seams,
-		});
+		await runClientAsync(config, fileSystem);
 
 		expect(stderr).toHaveBeenCalledExactlyOnceWith(
 			`jest-roblox: cleaned 2 leftover stub(s):\n  ${leftover[0]}\n  ${leftover[1]}\n`,
@@ -2254,13 +1938,7 @@ describe(runMultiProjectAsync, () => {
 		const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
 		seedProjectFiles(volume);
 
-		await runMultiProjectAsync({
-			cli: makeCli(),
-			config,
-			fileSystem,
-			rawProjects: [makeProjectEntry("client")],
-			seams,
-		});
+		await runClientAsync(config, fileSystem);
 
 		expect(stderr).not.toHaveBeenCalled();
 	});
@@ -2271,13 +1949,7 @@ describe(runMultiProjectAsync, () => {
 		const { config, fileSystem, volume } = setupDefaults();
 		seedProjectFiles(volume);
 
-		await runMultiProjectAsync({
-			cli: makeCli(),
-			config,
-			fileSystem,
-			rawProjects: [makeProjectEntry("client")],
-			seams,
-		});
+		await runClientAsync(config, fileSystem);
 
 		const jobs = mocks.runProjects.mock.calls[0]![0].projects;
 
@@ -2293,13 +1965,7 @@ describe(runMultiProjectAsync, () => {
 		seedUserAuthoredConfigs(volume);
 		seedProjectFiles(volume);
 
-		await runMultiProjectAsync({
-			cli: makeCli(),
-			config,
-			fileSystem,
-			rawProjects: [makeProjectEntry("client")],
-			seams,
-		});
+		await runClientAsync(config, fileSystem);
 
 		const synth = writtenSynthProject(volume);
 

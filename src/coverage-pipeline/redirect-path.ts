@@ -18,6 +18,9 @@ export interface CoverageRoot {
  * The one containment rule the coverage path has: it decides which `$path`
  * mounts a redirect rewrites, and so — read the other way round — which
  * coverage roots the synthesized place can load at all.
+ * @param target - Candidate contained path.
+ * @param root - Candidate containing directory.
+ * @returns Whether `target` is within `root`.
  */
 export function isWithinRoot(target: string, root: string): boolean {
 	return target === root || target.startsWith(`${root}/`);
@@ -30,10 +33,13 @@ export function isWithinRoot(target: string, root: string): boolean {
  * Inputs must already be normalized (forward slashes, no trailing slash on
  * `luauRoot`). Callers handle their own fallback semantics.
  *
- * Lives in its own module so callers that only need the redirect (e.g. the
+ * Lives in its own module so callers that only need the redirect (for example the
  * synthesizer, which runs on every workspace invocation regardless of
- * `--coverage`) don't transitively load the instrumenter and its embedded
+ * `--coverage`) do not transitively load the instrumenter and its embedded
  * wasm parser via `shadow-root.ts`.
+ * @param target - Normalized path that may sit in a coverage root.
+ * @param coverageRoots - Source roots and their shadow directories.
+ * @returns The shadow path, or `undefined` when no root contains `target`.
  */
 export function redirectPathToShadow(
 	target: string,

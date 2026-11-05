@@ -21,7 +21,10 @@ const ROOT = path.resolve("/repo");
 
 type NxResolveResult = "non-json" | "not-found" | "schema-violation" | { root: string };
 
-/** A launcher whose `execFileSync` the test under way owns outright. */
+/**
+ * A launcher whose `execFileSync` the test under way owns outright.
+ * @returns A runner with a bare `execFileSync` mock.
+ */
 function createRunner(): ChildProcessRunner {
 	return fromAny({ execFileSync: vi.fn<ChildProcessRunner["execFileSync"]>() });
 }
@@ -51,11 +54,17 @@ function packageInfoFor(name: string, relativePath: string = packagePathFor(name
 	return { name, packageDirectory: path.join(ROOT, relativePath) };
 }
 
-// Route execFileSync mock calls between `nx show projects` and per-project
-// `nx show project <name>`. Linux platforms only — on Windows the args are
-// wrapped in `cmd /c "<command> <quoted args>"`, so `args[0]` is `/d`, not
-// `show`, and this helper's routing falls through. Any Windows nx test must
-// set up `execFileSync` manually and inspect the inner `/c` string.
+/**
+ * Route execFileSync mock calls between `nx show projects` and per-project
+ * `nx show project <name>`. Linux platforms only — on Windows the args are
+ * wrapped in `cmd /c "<command> <quoted args>"`, so `args[0]` is `/d`, not
+ * `show`, and this helper's routing falls through. Any Windows nx test must
+ * set up `execFileSync` manually and inspect the inner `/c` string.
+ * @param childProcess - Runner whose `execFileSync` mock gets the routing.
+ * @param responses - Canned nx output.
+ * @param responses.affected - Project names `nx show projects` returns.
+ * @param responses.responsesByName - `nx show project` output per project name.
+ */
 function mockNxResponses(
 	childProcess: ChildProcessRunner,
 	{
@@ -94,9 +103,13 @@ function mockNxResponses(
 	});
 }
 
-// Windows wraps the nx args in `cmd /c "<command> <quoted args>"`, so
-// `mockNxResponses`' arg-routing falls through — route on the inner `/c` string
-// instead.
+/**
+ * Windows wraps the nx args in `cmd /c "<command> <quoted args>"`, so
+ * `mockNxResponses`' arg-routing falls through — route on the inner `/c` string
+ * instead.
+ * @param childProcess - Runner whose `execFileSync` mock gets the routing.
+ * @param responses - Canned nx output.
+ */
 function mockWindowsNxResponses(
 	childProcess: ChildProcessRunner,
 	{
@@ -117,6 +130,38 @@ function mockWindowsNxResponses(
 
 		throw new Error(`unexpected inner: ${inner}`);
 	});
+}
+
+function windowsTurboArgs(ref: string): ReadonlyArray<string> | undefined {
+	const childProcess = createRunner();
+	const { fileSystem, volume } = createMemoryFileSystem();
+
+	stubPlatform("win32");
+
+	volume.fromJSON({ [path.join(ROOT, "turbo.json")]: "{}" });
+	vi.mocked(childProcess.execFileSync).mockReturnValue(
+		JSON.stringify({ packages: { items: [] } }),
+	);
+
+	getAffectedPackages({ childProcess, fileSystem, ref, workspaceRoot: ROOT });
+
+	return vi.mocked(childProcess.execFileSync).mock.calls[0]![1];
+}
+
+function affectedFromTurbo(
+	packageFiles: Record<string, string>,
+	items: Array<ReturnType<typeof turboItem>>,
+): ReturnType<typeof getAffectedPackages> {
+	const childProcess = createRunner();
+	const { fileSystem } = createMemoryFileSystem({
+		...packageFiles,
+		[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
+		[path.join(ROOT, "turbo.json")]: "{}",
+	});
+
+	vi.mocked(childProcess.execFileSync).mockReturnValue(JSON.stringify({ packages: { items } }));
+
+	return getAffectedPackages({ childProcess, fileSystem, ref: "main", workspaceRoot: ROOT });
 }
 
 describe(getAffectedPackages, () => {
@@ -477,19 +522,7 @@ describe(getAffectedPackages, () => {
 		// MODULE_NOT_FOUND. Command must stay unquoted; args stay quoted.
 		expect.assertions(1);
 
-		const childProcess = createRunner();
-		const { fileSystem, volume } = createMemoryFileSystem();
-
-		stubPlatform("win32");
-
-		volume.fromJSON({ [path.join(ROOT, "turbo.json")]: "{}" });
-		vi.mocked(childProcess.execFileSync).mockReturnValue(
-			JSON.stringify({ packages: { items: [] } }),
-		);
-
-		getAffectedPackages({ childProcess, fileSystem, ref: "main", workspaceRoot: ROOT });
-
-		const [, args] = vi.mocked(childProcess.execFileSync).mock.calls[0]!;
+		const args = windowsTurboArgs("main");
 
 		expect(args![3]).toStartWith('"turbo "');
 	});
@@ -497,19 +530,7 @@ describe(getAffectedPackages, () => {
 	it("should preserve cmd metacharacters like ^ inside double-quoted args on Windows", () => {
 		expect.assertions(1);
 
-		const childProcess = createRunner();
-		const { fileSystem, volume } = createMemoryFileSystem();
-
-		stubPlatform("win32");
-
-		volume.fromJSON({ [path.join(ROOT, "turbo.json")]: "{}" });
-		vi.mocked(childProcess.execFileSync).mockReturnValue(
-			JSON.stringify({ packages: { items: [] } }),
-		);
-
-		getAffectedPackages({ childProcess, fileSystem, ref: "HEAD^", workspaceRoot: ROOT });
-
-		const [, args] = vi.mocked(childProcess.execFileSync).mock.calls[0]!;
+		const args = windowsTurboArgs("HEAD^");
 
 		expect(args![3]).toContain('"--filter=...[HEAD^]"');
 	});
@@ -614,22 +635,14 @@ describe(getAffectedPackages, () => {
 	it("should return an empty list when every affected package lacks a jest.config.*", () => {
 		expect.assertions(1);
 
-		const childProcess = createRunner();
-		const { fileSystem } = createMemoryFileSystem({
-			[path.join(ROOT, "packages/bar/package.json")]: '{"name":"@org/bar"}',
-			[path.join(ROOT, "packages/foo/package.json")]: '{"name":"@org/foo"}',
-			[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
-			[path.join(ROOT, "turbo.json")]: "{}",
-		});
-
-		vi.mocked(childProcess.execFileSync).mockReturnValue(
-			JSON.stringify({
-				packages: { items: [turboItem("@org/foo"), turboItem("@org/bar")] },
-			}),
-		);
-
 		expect(
-			getAffectedPackages({ childProcess, fileSystem, ref: "main", workspaceRoot: ROOT }),
+			affectedFromTurbo(
+				{
+					[path.join(ROOT, "packages/bar/package.json")]: '{"name":"@org/bar"}',
+					[path.join(ROOT, "packages/foo/package.json")]: '{"name":"@org/foo"}',
+				},
+				[turboItem("@org/foo"), turboItem("@org/bar")],
+			),
 		).toStrictEqual([]);
 	});
 
@@ -908,64 +921,44 @@ describe(getAffectedPackages, () => {
 	it("should accept any jest.config.<ext> as the marker", () => {
 		expect.assertions(1);
 
-		const childProcess = createRunner();
-		const { fileSystem } = createMemoryFileSystem({
-			[path.join(ROOT, "packages/foo/jest.config.luau")]: "return {}",
-			[path.join(ROOT, "packages/foo/package.json")]: '{"name":"@org/foo"}',
-			[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
-			[path.join(ROOT, "turbo.json")]: "{}",
-		});
-
-		vi.mocked(childProcess.execFileSync).mockReturnValue(
-			JSON.stringify({ packages: { items: [turboItem("@org/foo")] } }),
-		);
-
 		expect(
-			getAffectedPackages({ childProcess, fileSystem, ref: "main", workspaceRoot: ROOT }),
+			affectedFromTurbo(
+				{
+					[path.join(ROOT, "packages/foo/jest.config.luau")]: "return {}",
+					[path.join(ROOT, "packages/foo/package.json")]: '{"name":"@org/foo"}',
+				},
+				[turboItem("@org/foo")],
+			),
 		).toStrictEqual([packageInfoFor("@org/foo")]);
 	});
 
 	it("should require the whole filename to be jest.config.<ext>", () => {
 		expect.assertions(1);
 
-		const childProcess = createRunner();
-		const { fileSystem } = createMemoryFileSystem({
-			[path.join(ROOT, "packages/foo/jest.config.ts.backup")]: "export default {};",
-			[path.join(ROOT, "packages/foo/not-jest.config.ts")]: "export default {};",
-			[path.join(ROOT, "packages/foo/package.json")]: '{"name":"@org/foo"}',
-			[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
-			[path.join(ROOT, "turbo.json")]: "{}",
-		});
-
-		vi.mocked(childProcess.execFileSync).mockReturnValue(
-			JSON.stringify({ packages: { items: [turboItem("@org/foo")] } }),
-		);
-
 		expect(
-			getAffectedPackages({ childProcess, fileSystem, ref: "main", workspaceRoot: ROOT }),
+			affectedFromTurbo(
+				{
+					[path.join(ROOT, "packages/foo/jest.config.ts.backup")]: "export default {};",
+					[path.join(ROOT, "packages/foo/not-jest.config.ts")]: "export default {};",
+					[path.join(ROOT, "packages/foo/package.json")]: '{"name":"@org/foo"}',
+				},
+				[turboItem("@org/foo")],
+			),
 		).toStrictEqual([]);
 	});
 
 	it("should drop affected packages that lack a jest.config.* marker", () => {
 		expect.assertions(1);
 
-		const childProcess = createRunner();
-		const { fileSystem } = createMemoryFileSystem({
-			[path.join(ROOT, "packages/bar/package.json")]: '{"name":"@org/bar"}',
-			[path.join(ROOT, "packages/foo/jest.config.ts")]: "export default {};",
-			[path.join(ROOT, "packages/foo/package.json")]: '{"name":"@org/foo"}',
-			[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
-			[path.join(ROOT, "turbo.json")]: "{}",
-		});
-
-		vi.mocked(childProcess.execFileSync).mockReturnValue(
-			JSON.stringify({
-				packages: { items: [turboItem("@org/foo"), turboItem("@org/bar")] },
-			}),
-		);
-
 		expect(
-			getAffectedPackages({ childProcess, fileSystem, ref: "main", workspaceRoot: ROOT }),
+			affectedFromTurbo(
+				{
+					[path.join(ROOT, "packages/bar/package.json")]: '{"name":"@org/bar"}',
+					[path.join(ROOT, "packages/foo/jest.config.ts")]: "export default {};",
+					[path.join(ROOT, "packages/foo/package.json")]: '{"name":"@org/foo"}',
+				},
+				[turboItem("@org/foo"), turboItem("@org/bar")],
+			),
 		).toStrictEqual([packageInfoFor("@org/foo")]);
 	});
 });

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { parseTscOutput } from "./parse.ts";
-import type { TypeTestDiagnostic } from "./types.ts";
+import type { TypeTestDiagnostic } from "./typecheck-types.ts";
 
 describe(parseTscOutput, () => {
 	it("should preserve exact paths, positions, codes, messages, and continuations", () => {

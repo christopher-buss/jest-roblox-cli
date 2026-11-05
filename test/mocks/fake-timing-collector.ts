@@ -2,7 +2,7 @@ import { fromAny } from "@total-typescript/shoehorn";
 
 import { vi } from "vitest";
 
-import { NOOP_RUN_PROGRESS } from "../../src/progress/reporter.ts";
+import { NOOP_PROGRESS } from "#test/mocks/noop-progress.ts";
 import type { TimingCollector } from "../../src/timing/orchestration-collector.ts";
 
 /**
@@ -13,6 +13,8 @@ import type { TimingCollector } from "../../src/timing/orchestration-collector.t
  *
  * One `elapsedMs` for every phase is the point: a spec that sums two phases
  * asserts `2 * elapsedMs` and so cannot pass by reading only one of them.
+ * @param elapsedMs - Duration every phase reports.
+ * @returns Collector whose phases are `vi.fn` mocks.
  */
 export function fakeTimingCollector(elapsedMs = 0): TimingCollector {
 	return fromAny<TimingCollector, unknown>({
@@ -32,7 +34,7 @@ export function fakeTimingCollector(elapsedMs = 0): TimingCollector {
 				value: await func(),
 			};
 		}),
-		progress: NOOP_RUN_PROGRESS,
+		progress: NOOP_PROGRESS,
 		record: vi.fn(),
 	});
 }
@@ -41,6 +43,8 @@ export function fakeTimingCollector(elapsedMs = 0): TimingCollector {
  * The phase names a {@link fakeTimingCollector} member was called with, in
  * order. Takes the member itself rather than a name so a typo names a member
  * that does not exist instead of one no call ever matched.
+ * @param member - Collector member to read.
+ * @returns Phase names, in call order.
  */
 export function phaseNamesOf(
 	member: (name: string, ...rest: Array<never>) => unknown,

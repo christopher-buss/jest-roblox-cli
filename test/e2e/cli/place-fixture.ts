@@ -1,9 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import os from "node:os";
-import path from "node:path";
-import { onTestFinished } from "vitest";
-
-import { buildPlaceAsync } from "../../../src/staging/place-builder.ts";
+import { buildRbxlx, synthesizeWorkspaceAsync } from "#test/e2e/cli/workspace-place.ts";
 
 /** One instance in a fixture model file. */
 export interface FixtureInstance {
@@ -31,6 +26,8 @@ export const FIXTURE_PACKAGE = "fixture";
  *
  * Referents are the child's path through the tree, which is unique without a
  * counter to thread through the walk.
+ * @param root - Root instance of the model.
+ * @returns The `.rbxmx` document text.
  */
 export function modelXml(root: FixtureInstance): string {
 	return [
@@ -41,49 +38,40 @@ export function modelXml(root: FixtureInstance): string {
 }
 
 /**
- * Build a place from a throwaway one-package project that mounts `files` under
- * one service, and report where it landed.
+ * Build a place from a throwaway one-package workspace that mounts `files`
+ * under one service, and report where it landed.
  *
- * A real `rojo build`, because that is the only thing that decides which
- * classes come out of a model file — the synthesizer sees the project, never
- * the file. The temp tree is removed when the test finishes.
+ * The CLI synthesizes the place project, and a real `rojo build` turns it into
+ * a place, because that is the only thing that decides which classes come out
+ * of a model file: the synthesizer sees the project, never the file.
+ * @param options - Files to mount and the service to mount them under.
+ * @returns Path of the built place.
  */
 export async function buildFixturePlaceAsync({
 	files,
 	service,
 }: FixturePlaceOptions): Promise<string> {
-	const root = mkdtempSync(path.join(os.tmpdir(), "place-fixture-"));
-	onTestFinished(() => {
-		rmSync(root, { force: true, recursive: true });
-	});
-
 	const mount = `game-assets/${service}`;
-	const assets = path.join(root, mount);
-	mkdirSync(assets, { recursive: true });
-	for (const [fileName, contents] of Object.entries(files)) {
-		writeFileSync(path.join(assets, fileName), contents);
-	}
-
-	const rojoProjectPath = path.join(root, "test.project.json");
-	writeFileSync(
-		rojoProjectPath,
-		JSON.stringify({
-			name: FIXTURE_PACKAGE,
-			tree: {
-				$className: "DataModel",
-				[service]: { $className: service, $path: mount },
+	const mounted = Object.entries(files).map(([fileName, contents]) => {
+		return [`${mount}/${fileName}`, contents] as const;
+	});
+	const { projectPath } = await synthesizeWorkspaceAsync({
+		packages: [
+			{
+				name: FIXTURE_PACKAGE,
+				files: { ...Object.fromEntries(mounted), "tests/probe.spec.luau": "return {}\n" },
+				tree: {
+					ServerScriptService: {
+						$className: "ServerScriptService",
+						Tests: { $path: "tests" },
+					},
+					[service]: { $className: service, $path: mount },
+				},
 			},
-		}),
-	);
-
-	const placeFile = path.join(root, "out/place.rbxlx");
-	await buildPlaceAsync({
-		packages: [{ name: FIXTURE_PACKAGE, packageDirectory: root, rojoProjectPath }],
-		placeFile,
-		projectFile: path.join(root, "cache/synth.project.json"),
+		],
 	});
 
-	return placeFile;
+	return buildRbxlx(projectPath);
 }
 
 function itemXml({

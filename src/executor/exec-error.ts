@@ -1,16 +1,34 @@
 import type { BackendTiming } from "../backends/interface.ts";
 import type { ResolvedConfig } from "../config/schema.ts";
-import type { LuauScriptError } from "../reporter/parser.ts";
-import type { GameOutputEntry } from "../types/game-output.ts";
-import { EXEC_ERROR_FILE_PATH } from "../types/jest-result.ts";
-import type { JestResult } from "../types/jest-result.ts";
-import type { TimingResult } from "../types/timing.ts";
+import type { LuauScriptError } from "../reporter/luau-script-error.ts";
+import { EXEC_ERROR_FILE_PATH } from "../types/exec-error-file.ts";
+import type { GameOutputEntry } from "../types/game-output-types.ts";
+import type { JestResult } from "../types/jest-result-types.ts";
+import type { TimingResult } from "../types/timing-types.ts";
 import { composeEntryDisplayName } from "../utils/display-name.ts";
 import { parseGameOutput } from "../utils/game-output.ts";
+import type { ExecuteResult } from "./executor-types.ts";
 import { formatExecuteOutput } from "./format-output.ts";
-import type { ExecuteResult } from "./types.ts";
 
 const EXIT_CODE_MESSAGE = /^Exited with code: \d+$/;
+
+/** Inputs for `buildExecutionErrorResult`. */
+export interface ExecutionErrorOptions {
+	/** Upload and execution timing the backend reported. */
+	backendTiming: BackendTiming;
+	/** Resolved config of the failed entry. */
+	config: ResolvedConfig;
+	/** When true, the result carries no formatted output. */
+	deferFormatting: boolean | undefined;
+	/** The entry that failed. */
+	entry: ExecErrorEntry;
+	/** The decoded Luau script failure. */
+	error: LuauScriptError;
+	/** Run start time, in epoch milliseconds. */
+	startTime: number;
+	/** CLI version shown in the formatted output. */
+	version: string;
+}
 
 /**
  * What the host knows about the entry a failure came back on, before anything
@@ -20,22 +38,13 @@ const EXIT_CODE_MESSAGE = /^Exited with code: \d+$/;
  * at all, so it is what the report falls back to rather than leaving the
  * reader with a bare exit code.
  */
-export interface ExecErrorEntry {
+interface ExecErrorEntry {
 	/** Workspace mode only: the package that owns the project. */
 	pkg?: string | undefined;
+	/** Display name of the project. */
 	project: string;
 	/** How many test files the host selected for this entry. */
 	testFileCount: number;
-}
-
-export interface ExecutionErrorOptions {
-	backendTiming: BackendTiming;
-	config: ResolvedConfig;
-	deferFormatting: boolean | undefined;
-	entry: ExecErrorEntry;
-	error: LuauScriptError;
-	startTime: number;
-	version: string;
 }
 
 /**
@@ -43,6 +52,9 @@ export interface ExecutionErrorOptions {
  * Luau-level script failure. Synthesizes a JestResult with a single
  * "exec-error" file so the failure shows up in formatted output and
  * per-package output files, without halting sibling processing.
+ *
+ * @param options - The failure, its entry, config and timing.
+ * @returns A failed result with one exec-error file.
  */
 export function buildExecutionErrorResult({
 	backendTiming,
@@ -92,6 +104,9 @@ const LABEL_WIDTH = 13;
  * Banner Output (Jest's process.stdout) is where the exit cause lives —
  * "No tests found, exiting with code 1" is written via Jest's reporter, not
  * via the native print/warn that only LogService would capture.
+ *
+ * @param error - The Luau script failure.
+ * @returns The trimmed banner text, or undefined when it is empty.
  */
 function bannerCause(error: LuauScriptError): string | undefined {
 	const entries = parseGameOutput(error.bannerOutput);
@@ -130,6 +145,9 @@ function gameOutputNote(entryCount: number): string {
  * Offered as what they are — the end of the log, not the cause — because the
  * capture window closes on the package's teardown, so the very last line is as
  * likely to be a stage reset as the message Jest exited on.
+ *
+ * @param entries - Parsed Game Output entries.
+ * @returns The trimmed, non-blank messages of the last entries.
  */
 function gameOutputTail(entries: Array<GameOutputEntry>): Array<string> {
 	const lines: Array<string> = [];
@@ -151,6 +169,10 @@ function gameOutputTail(entries: Array<GameOutputEntry>): Array<string> {
  * reports rather than concludes: an exit code alone does not say the run found
  * no tests, and naming one cause out of the several that exit this way would
  * send the reader after the wrong one.
+ *
+ * @param error - The Luau script failure.
+ * @param entry - The entry that failed.
+ * @returns The multi-line diagnostic report.
  */
 function buildDiagnosticReport(error: LuauScriptError, entry: ExecErrorEntry): string {
 	const gameEntries = parseGameOutput(error.gameOutput);
@@ -193,6 +215,10 @@ function buildDiagnosticReport(error: LuauScriptError, entry: ExecErrorEntry): s
  * message as a footer. When nothing was captured there is no cause to lead
  * with, and the report the host can always build takes that place instead —
  * see {@link buildDiagnosticReport}.
+ *
+ * @param error - The Luau script failure.
+ * @param entry - The entry that failed.
+ * @returns The failure message.
  */
 function composeExecErrorMessage(error: LuauScriptError, entry: ExecErrorEntry): string {
 	if (!EXIT_CODE_MESSAGE.test(error.message)) {

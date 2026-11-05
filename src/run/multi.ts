@@ -6,6 +6,7 @@ import * as path from "node:path";
 import type { Backend } from "../backends/interface.ts";
 import { filterProjectsByFiles } from "../config/filter-projects-by-files.ts";
 import type { ResolvedProjectConfig } from "../config/projects.ts";
+import { assertKnownProjectNames } from "../config/projects.ts";
 import type { TypecheckCliOptions } from "../config/resolve-typecheck-config.ts";
 import { resolveTypecheckConfig } from "../config/resolve-typecheck-config.ts";
 import type { ProjectEntry, ResolvedConfig } from "../config/schema.ts";
@@ -19,12 +20,12 @@ import type { PosixRoot } from "../utils/normalize-windows-path.ts";
 import { resolveAllSetupFilePaths } from "./discovery.ts";
 import { resolveRunBackendAsync, runTestPlanAsync, runTypecheckPassAsync } from "./execution.ts";
 import { buildMultiRunResult } from "./multi-result.ts";
+import type { MultiRunResult, RunOptions } from "./run-types.ts";
 import type { RunSeams } from "./seams.ts";
 import { nodeRunSeams } from "./seams.ts";
 import { stageRunAsync } from "./staging.ts";
 import type { EmptyRunPolicy, RunDiscovery, TestPlan } from "./test-plan.ts";
 import { bindTestPlanToPlace, buildTestPlan } from "./test-plan.ts";
-import type { MultiRunResult, RunOptions } from "./types.ts";
 
 const DEFAULT_ROJO_PROJECT = "default.project.json";
 /**
@@ -34,12 +35,17 @@ const DEFAULT_ROJO_PROJECT = "default.project.json";
  * invocation directory, the same place a multi run is invoked from.
  */
 const STAGING_DIRECTORY = ".jest-roblox";
+/** Inputs of {@link runMultiProjectAsync}. */
 export interface MultiRunOptions extends RunOptions {
+	/** Project entries as the config declares them. */
 	rawProjects: Array<ProjectEntry>;
 }
 
+/** Inputs of {@link runResolvedProjectsAsync}. */
 export interface ResolvedProjectsRunInput extends ResolvedRunInput {
+	/** Every resolved project, before `--project` or positional selection. */
 	allProjects: Array<ResolvedProjectConfig>;
+	/** Root config of the run. */
 	rootConfig: ResolvedConfig;
 }
 
@@ -67,6 +73,14 @@ interface SelectProjectsOptions {
 	rootDirectory: string;
 }
 
+/**
+ * Read and validate the Rojo project, then resolve its nested projects.
+ *
+ * @param config - Config whose `rootDir` and `rojoProject` locate the file.
+ * @param fileSystem - File system to read from; defaults to Node's.
+ * @returns The resolved Rojo tree.
+ * @throws {Error} When the file does not match the Rojo project schema.
+ */
 export function loadRojoTree(
 	config: ResolvedConfig,
 	fileSystem: FileSystem = nodeFileSystem,
@@ -92,6 +106,15 @@ export function loadRojoTree(
  * project from the config's luau roots and calls this), so both paths get
  * identical per-root `jest.config` stub injection, place rebuild, coverage, and
  * result shaping.
+ *
+ * @param input - Resolved projects, root config, CLI options, seams and profiler.
+ * @param input.allProjects - Every resolved project.
+ * @param input.cli - Parsed command-line options.
+ * @param input.fileSystem - Where the run reads and writes.
+ * @param input.rootConfig - Resolved config before per-project overrides.
+ * @param input.seams - Seams the run reaches outside itself through.
+ * @param input.timing - Profiler of the run.
+ * @returns The multi-run result.
  */
 export async function runResolvedProjectsAsync({
 	allProjects,
@@ -131,6 +154,12 @@ export async function runResolvedProjectsAsync({
 	}
 }
 
+/**
+ * Load the Rojo tree, resolve the configured projects and run them.
+ *
+ * @param options - Run options and the raw project entries.
+ * @returns The multi-run result.
+ */
 export async function runMultiProjectAsync(options: MultiRunOptions): Promise<MultiRunResult> {
 	const { cli, config: rootConfig, fileSystem = nodeFileSystem, rawProjects } = options;
 	const seams = { ...nodeRunSeams(), ...options.seams };
@@ -154,6 +183,12 @@ export async function runMultiProjectAsync(options: MultiRunOptions): Promise<Mu
 /**
  * The Code Roots this run's Code Bundle is split against, or none when it ships
  * the whole place.
+ *
+ * @param options - Backend, discovery and root config.
+ * @param options.backend - Backend the run dispatches to.
+ * @param options.discovery - Discovered projects, file system and seams.
+ * @param options.rootConfig - Config whose `rootDir` holds the staging directory.
+ * @returns The Code Roots, or `undefined` for a whole place.
  */
 function resolveRunCodeRoots({
 	backend,
@@ -176,6 +211,14 @@ function resolveRunCodeRoots({
 /**
  * Put the run's inputs on disk against a backend already in hand, then dispatch
  * against it.
+ *
+ * @param options - Backend, CLI options, discovery, plan and root config.
+ * @param options.backend - Backend already resolved for the run.
+ * @param options.cli - Parsed command-line options.
+ * @param options.discovery - Discovered projects, file system, seams and profiler.
+ * @param options.plan - Plan built before staging.
+ * @param options.rootConfig - Resolved config before per-project overrides.
+ * @returns The multi-run result.
  */
 async function stageAndExecuteAsync({
 	backend,
@@ -223,12 +266,7 @@ function filterProjectsByName(
 	names: Array<string>,
 ): Array<ResolvedProjectConfig> {
 	const available = new Set(projects.map((project) => project.displayName));
-	const unknown = names.filter((name) => !available.has(name));
-	if (unknown.length > 0) {
-		throw new Error(
-			`Unknown project name(s): ${unknown.join(", ")}. Available: ${[...available].join(", ")}`,
-		);
-	}
+	assertKnownProjectNames(names, available);
 
 	const nameSet = new Set(names);
 	return projects.filter((project) => nameSet.has(project.displayName));
@@ -264,6 +302,12 @@ function selectProjects({
 /**
  * Resolve the run's shared discovery inputs: the CLI typecheck layer, the
  * setup-file rewrite, and the `--project`/positional project selection.
+ *
+ * @param input - Resolved projects, root config, CLI options, seams and profiler.
+ * @param input.allProjects - Every resolved project; setup paths resolve in place.
+ * @param input.cli - Parsed command-line options.
+ * @param input.rootConfig - Resolved config before per-project overrides.
+ * @returns The discovery inputs of the selected projects.
  */
 function beginRun({
 	allProjects,
@@ -312,6 +356,12 @@ function beginRun({
  * backend, the place build, and coverage entirely. This is the cross-mode
  * `--typecheckOnly` invariant: no mode resolves a backend for a type-only run,
  * and the collapse path does not even require a Rojo project on disk.
+ *
+ * @param discovery - Selected projects, root config and CLI typecheck options.
+ * @param discovery.cliTypecheck - Typecheck options from the CLI.
+ * @param discovery.projects - Selected projects.
+ * @param discovery.rootConfig - Resolved config before per-project overrides.
+ * @returns `true` when every selected project is Type-Tests-only.
  */
 function isTypecheckOnlyRun({ cliTypecheck, projects, rootConfig }: RunDiscovery): boolean {
 	return projects.every((project) => {
@@ -329,6 +379,9 @@ function isTypecheckOnlyRun({ cliTypecheck, projects, rootConfig }: RunDiscovery
  * No coverage and no staging time, because a run that stops on an empty plan
  * has done neither: the plan is built before the backend so that nothing is
  * resolved, instrumented or written for a run with no tests to run.
+ *
+ * @param emptiness - Exit code and notice of the empty run.
+ * @returns A multi-run result with no projects and zero timings.
  */
 function emptyMultiResult(emptiness: EmptyRunPolicy): MultiRunResult {
 	return {
@@ -341,14 +394,19 @@ function emptyMultiResult(emptiness: EmptyRunPolicy): MultiRunResult {
 	};
 }
 
-// Runs the host-side Type Test pass alone — no staging, no backend, no place
-// build, no coverage. Discovery still goes through the shared `buildTestPlan`
-// (so `-d` derivation, per-project tsconfig grouping, and excludes match the
-// runtime path); the runtime jobs it returns are necessarily empty here.
-//
-// No run header either: a type-only run drives no Roblox jobs, matching
-// workspace mode and the prior behaviour (the header was gated on a non-empty
-// runtime job set).
+/**
+ * Runs the host-side Type Test pass alone — no staging, no backend, no place
+ * build, no coverage. Discovery still goes through the shared `buildTestPlan`
+ * (so `-d` derivation, per-project tsconfig grouping, and excludes match the
+ * runtime path); the runtime jobs it returns are necessarily empty here.
+ *
+ * No run header either: a type-only run drives no Roblox jobs, matching
+ * workspace mode and the prior behaviour (the header was gated on a non-empty
+ * runtime job set).
+ *
+ * @param discovery - Selected projects, root config, seams and profiler.
+ * @returns A multi-run result with only the Type Test result.
+ */
 async function runMultiTypecheckOnlyAsync(discovery: RunDiscovery): Promise<MultiRunResult> {
 	const plan = buildTestPlan(discovery);
 	if (plan.emptiness !== undefined) {

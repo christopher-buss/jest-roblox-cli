@@ -2,13 +2,13 @@ import * as path from "node:path";
 import process from "node:process";
 import { describe, expect, it } from "vitest";
 
-import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
+import { posixPath } from "#test/mocks/posix-path.ts";
 import {
 	createCoverageUniverseMatcher,
 	filterCoverageUniverse,
 	resolveUniverseAnchor,
 } from "./coverage-universe.ts";
-import type { MappedCoverageResult, MappedFileCoverage } from "./mapper.ts";
+import type { MappedCoverageResult, MappedFileCoverage } from "./mapper-types.ts";
 
 function mappedFile(filePath: string): MappedFileCoverage {
 	return {
@@ -279,7 +279,11 @@ describe(createCoverageUniverseMatcher, () => {
 });
 
 describe(resolveUniverseAnchor, () => {
-	/** The anchor as a plain string, so an assertion can name one. */
+	/**
+	 * The anchor as a plain string, so an assertion can name one.
+	 * @param rootDirectory - The configured rootDir, if any.
+	 * @returns The resolved anchor.
+	 */
 	function anchorFor(rootDirectory?: string): string {
 		return resolveUniverseAnchor(rootDirectory);
 	}
@@ -306,7 +310,7 @@ describe(resolveUniverseAnchor, () => {
 		expect.assertions(1);
 
 		expect(anchorFor("packages/foo")).toBe(
-			path.posix.join(normalizeWindowsPath(process.cwd()), "packages/foo"),
+			path.posix.join(posixPath(process.cwd()), "packages/foo"),
 		);
 	});
 });

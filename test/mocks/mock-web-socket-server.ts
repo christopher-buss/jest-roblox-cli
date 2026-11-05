@@ -12,8 +12,10 @@ import type { WebSocketServerOptions } from "../../src/backends/web-socket-serve
 const instances: Array<MockWebSocketServer> = [];
 
 export class MockWebSocketServer extends EventEmitter {
-	// Mirrors ws.WebSocketServer client tracking: sockets join on `connection`
-	// and leave on `close`, so close() can terminate live plugin sockets.
+	/**
+	 * Mirrors ws.WebSocketServer client tracking: sockets join on `connection`
+	 * and leave on `close`, so close() can terminate live plugin sockets.
+	 */
 	public readonly clients = new Set<MockWebSocket>();
 	public readonly close: Mock<() => void> = vi.fn();
 	public readonly port: number;

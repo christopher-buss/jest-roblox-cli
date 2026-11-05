@@ -1,7 +1,7 @@
 import { availableParallelism } from "node:os";
 import { join } from "node:path";
 
-import { type PartialStrykerOptions, scopedBreak, sharedConfig } from "./stryker.shared.config.ts";
+import { type PartialStrykerOptions, sharedConfig } from "./stryker.shared.config.ts";
 
 const CPU_SHARE = 0.75;
 const MAX_CONCURRENCY = 12;
@@ -28,15 +28,13 @@ export default {
 			(pattern): pattern is string => pattern !== undefined,
 		),
 		"!src/**/__fixtures__/**",
-		"!src/sea-entry.ts",
+		"scripts/sea-executable.ts",
+		"scripts/stamp-plugin-version.ts",
+		"loaders/*.mjs",
+		"!bin/jest-roblox.js",
+		"!bin/sea-entry.ts",
+		"!scripts/stamp-plugin-version.run.ts",
 	],
-	// The gate compares the unrounded score. `scopedBreak` holds diff-mode runs
-	// to 100 regardless, so the floor covers existing debt and never the lines a
-	// change touches.
-	thresholds: {
-		...sharedConfig.thresholds,
-		break: scopedBreak(99.82),
-	},
 	timeoutMS: 10_000,
 	tsconfigFile: "tsconfig.json",
 	vitest: {

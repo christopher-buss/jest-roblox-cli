@@ -29,6 +29,7 @@ const CACHE_DIR = path.join(".jest-roblox", "cache");
  * caller to copy to the run machine — it is never cleaned.
  */
 export interface CoveragePlaceBundle {
+	/** Build id shared by the place and its sibling manifests. */
 	buildId: string;
 	/** The always-on build record's path (`build-manifest.json`). */
 	buildManifestPath: string;
@@ -58,6 +59,10 @@ export interface CoveragePlaceBundle {
  * the `prepareBakedCoverage` seam with the run path but always bakes stubs
  * (the run path skips baking for studio-cli, which injects configs at
  * runtime), because a place handed to a foreign runner must be self-contained.
+ *
+ * @param config - Resolved config; coverage collection is forced on.
+ * @param options - Optional dispatch, file system and run seams.
+ * @returns The built place, its manifest paths and the baked projects.
  */
 export async function buildCoveragePlaceAsync(
 	config: ResolvedConfig,
@@ -112,6 +117,10 @@ export async function buildCoveragePlaceAsync(
  * `resolveAllProjects`; a bare config collapses to the single implicit project
  * derived from its luau roots. Type-only configs are irrelevant here — a build
  * always instruments.
+ *
+ * @param config - Resolved config to read the projects from.
+ * @param options - Dispatch, file system and run seams.
+ * @returns The resolved projects.
  */
 async function resolveProjectsAsync(
 	config: ResolvedConfig,

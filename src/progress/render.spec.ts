@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { createStyles } from "../formatters/styles.ts";
+import { createPlainStyles } from "#test/mocks/format-plain-styles.ts";
 import { formatStage } from "./render.ts";
 
-const PLAIN = createStyles(false);
+const PLAIN = createPlainStyles();
 /** The append-only shape: no spinner, so no frame. */
 const AS_LINE = { frame: undefined, styles: PLAIN };
 /** The repainting shape, mid-animation. */

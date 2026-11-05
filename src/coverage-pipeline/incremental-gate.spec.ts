@@ -1,9 +1,8 @@
 import { describe, expect, it } from "vitest";
 
+import { INSTRUMENTER_VERSION, MANIFEST_VERSION } from "#test/mocks/coverage-versions.ts";
 import { canReuseCoverageManifest } from "./incremental-gate.ts";
 import type { InstrumentUniverse } from "./instrument-universe.ts";
-import { INSTRUMENTER_VERSION } from "./instrumenter.ts";
-import { MANIFEST_VERSION } from "./manifest.ts";
 import type { CoverageManifest } from "./manifest.ts";
 
 function manifestWithUniverse(coverageUniverseHash: string): CoverageManifest {

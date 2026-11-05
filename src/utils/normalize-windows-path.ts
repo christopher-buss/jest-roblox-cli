@@ -11,6 +11,8 @@ const DRIVE_LETTER_PREFIX = /^[A-Za-z]:/;
  * resolved file and the root it came from can differ by nothing else. One
  * process cannot span two drives, which makes the letter carry no information
  * worth comparing.
+ * @param input - A normalized path.
+ * @returns The path without a leading drive letter.
  */
 export function dropDriveLetter(input: string): string {
 	return input.replace(DRIVE_LETTER_PREFIX, "");
@@ -24,6 +26,8 @@ export function dropDriveLetter(input: string): string {
  * reads as relative on Linux and CI diverges from a local run. This asks the
  * platform-independent question instead. Feed it `normalizeWindowsPath` output;
  * a backslash path is not recognized.
+ * @param input - A normalized path.
+ * @returns True for a `/` or drive-letter root.
  */
 export function isAbsolutePath(input: string): boolean {
 	return input.startsWith("/") || DRIVE_LETTER_START_REGEX.test(input);
@@ -63,6 +67,11 @@ interface NamespaceSplit {
 	stem: string;
 }
 
+/**
+ * Turn backslashes into `/` and upper-case a leading drive letter.
+ * @param input - The path to normalize; defaults to an empty string.
+ * @returns The `/`-separated path.
+ */
 export function normalizeWindowsPath(input = ""): string {
 	return input
 		.replace(/\\/g, "/")
@@ -80,6 +89,8 @@ export function normalizeWindowsPath(input = ""): string {
  * of them compares unequal to a path naming the same place, and two roots that
  * differ only in spelling both survive a dedupe. This is the package's only
  * answer to that, and a new consumer inherits it rather than growing its own.
+ * @param directoryPath - The directory as written.
+ * @returns Its canonical root.
  */
 export function toPosixRoot(directoryPath: string): PosixRoot {
 	const normalized = normalizeWindowsPath(directoryPath);
@@ -107,6 +118,8 @@ export function toPosixRoot(directoryPath: string): PosixRoot {
  * What {@link underRoot} puts in front of a name, and what
  * {@link relativeToRoot} takes off it. Hoistable: a caller naming many files
  * under one root pays the concatenation once.
+ * @param root - A canonical root.
+ * @returns The root with one trailing `/`, or `""` for `.`.
  */
 export function rootPrefix(root: PosixRoot): string {
 	// The current directory names its children by themselves, and a
@@ -124,6 +137,9 @@ export function rootPrefix(root: PosixRoot): string {
  * `${root}/${relativePath}` names a file nothing else does whenever the root is
  * all prefix — the current directory, a file-system root, a drive or share
  * root.
+ * @param root - A canonical root.
+ * @param relativePath - The name under it.
+ * @returns The path joined onto the root.
  */
 export function underRoot(root: PosixRoot, relativePath: string): string {
 	return rootPrefix(root) + relativePath;
@@ -133,6 +149,9 @@ export function underRoot(root: PosixRoot, relativePath: string): string {
  * The inverse of {@link underRoot}: what a key names relative to a root, or
  * `undefined` when it names something outside it. The `/` the prefix ends in
  * is what keeps `out-tsc/init.luau` from reading as a file under `out`.
+ * @param root - A canonical root.
+ * @param key - A path that may lie under the root.
+ * @returns The path relative to the root, or `undefined`.
  */
 export function relativeToRoot(root: PosixRoot, key: string): string | undefined {
 	const prefix = rootPrefix(root);
@@ -154,6 +173,8 @@ export function relativeToRoot(root: PosixRoot, key: string): string | undefined
  * segment, so `D:/../../out` climbs off the drive and comes back as the
  * relative `../out`, and it folds a UNC `//server/share` down to
  * `/server/share` — a directory on this host rather than the share.
+ * @param normalizedPath - A `/`-separated path.
+ * @returns The frame and the path under it, or `undefined`.
  */
 function splitNamespace(normalizedPath: string): NamespaceSplit | undefined {
 	const share = UNC_SHARE_REGEX.exec(normalizedPath)?.[0];
@@ -174,6 +195,8 @@ function splitNamespace(normalizedPath: string): NamespaceSplit | undefined {
  * The one place the brand is applied, so `toPosixRoot` is its only source. A
  * tag exists only in the type system, thus an assertion is how one is ever
  * attached.
+ * @param canonical - A path already in canonical form.
+ * @returns The same path, branded.
  */
 function asPosixRoot(canonical: string): PosixRoot {
 	// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- see above

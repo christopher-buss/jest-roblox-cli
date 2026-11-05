@@ -11,6 +11,9 @@
  * One encoder, not one per map: the two callers key the same pair, and a rule
  * added to only one of them would surface as a package silently unfiltered, or
  * written to another package's output file, rather than as an error.
+ * @param packageName - Name of the package that owns the project.
+ * @param project - Display name of the project within that package.
+ * @returns The JSON-encoded pair.
  */
 export function projectKey(packageName: string, project: string): string {
 	return JSON.stringify([packageName, project]);

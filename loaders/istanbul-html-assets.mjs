@@ -50,7 +50,7 @@ function readAssets(directory) {
 			// `.css`, `.js` and `.png` today, and a future one has to land in
 			// the right half without this list being remembered.
 			const text = content.toString("utf-8");
-			return Buffer.from(text, "utf-8").equals(content)
+			return Buffer.from(text).equals(content)
 				? { name, text }
 				: { name, base64: content.toString("base64") };
 		});

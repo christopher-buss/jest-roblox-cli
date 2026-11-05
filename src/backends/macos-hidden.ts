@@ -1,10 +1,9 @@
 import type { ChildProcess } from "node:child_process";
 import process from "node:process";
 
-import type { ChildProcessRunner } from "../utils/child-process.ts";
-import type { FileSystem } from "../utils/file-system.ts";
+import type { HiddenLaunchRequest } from "./hidden-helper.ts";
 import { launchThroughHelper } from "./hidden-helper.ts";
-import type { StudioCliProcess } from "./studio-cli.ts";
+import type { StudioCliProcess } from "./studio-cli-types.ts";
 
 const BUNDLE_ENV = "JEST_ROBLOX_MACOS_BUNDLE";
 const ARGS_ENV = "JEST_ROBLOX_MACOS_ARGS";
@@ -47,21 +46,25 @@ while (!app.isTerminated) {
 }
 `;
 
-export interface MacosHiddenLaunchRequest {
-	/** Studio argument vector, without the executable. */
-	args: Array<string>;
-	childProcess: ChildProcessRunner;
-	fileSystem: FileSystem;
-	placeFile: string;
-	studioPath: string;
-}
-
+/**
+ * Find the `.app` bundle that holds a Studio executable.
+ *
+ * @param studioPath - Path to the Studio executable.
+ * @returns The bundle path, or undefined when the path is not inside a bundle.
+ */
 export function findAppBundle(studioPath: string): string | undefined {
 	return APP_EXECUTABLE_PATTERN.exec(studioPath)?.groups?.["bundle"];
 }
 
+/**
+ * Launch Studio hidden on macOS.
+ *
+ * @param request - Studio path, arguments, place file, and process runner.
+ * @param bundle - The `.app` bundle to launch.
+ * @returns A handle that kills Studio and reports launch failures.
+ */
 export function launchHiddenOnMacos(
-	request: MacosHiddenLaunchRequest,
+	request: HiddenLaunchRequest,
 	bundle: string,
 ): StudioCliProcess {
 	return launchThroughHelper({
@@ -76,7 +79,7 @@ export function launchHiddenOnMacos(
 }
 
 function killStudio(
-	childProcess: ChildProcessRunner,
+	childProcess: HiddenLaunchRequest["childProcess"],
 	{ helper, pid }: { helper: ChildProcess; pid: number },
 ): void {
 	const target = pid.toString();
@@ -97,7 +100,7 @@ function killStudio(
 	);
 }
 
-function spawnHelper(request: MacosHiddenLaunchRequest, bundle: string): ChildProcess {
+function spawnHelper(request: HiddenLaunchRequest, bundle: string): ChildProcess {
 	return request.childProcess.spawn("osascript", ["-l", "JavaScript", "-e", HELPER_SCRIPT], {
 		env: {
 			...process.env,

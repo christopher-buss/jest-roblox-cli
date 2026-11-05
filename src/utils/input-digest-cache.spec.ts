@@ -1,9 +1,13 @@
+import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 
 import { ageFile, writeAgedFile } from "#test/mocks/aged-file.ts";
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
-import { hashString } from "./hash.ts";
 import { openInputDigestCache } from "./input-digest-cache.ts";
+
+function hashString(text: string): string {
+	return createHash("sha256").update(text).digest("hex");
+}
 
 const CACHE_FILE = "/project/.jest-roblox/input-digests";
 

@@ -1,4 +1,4 @@
-import type { RawErrorsMap, TypeTestDiagnostic } from "./types.ts";
+import type { RawErrorsMap, TypeTestDiagnostic } from "./typecheck-types.ts";
 
 const LINE_SPLIT = /\r?\n/;
 const TSC_ERROR_DETAIL = /^: error TS(?<code>\d+): (?<message>[\s\S]*)$/;
@@ -13,6 +13,11 @@ interface TscErrorDetail {
 	message: string;
 }
 
+/**
+ * Parse `tsc` output into diagnostics by file.
+ * @param stdout - The compiler's standard output.
+ * @returns The diagnostics, grouped by file path.
+ */
 export function parseTscOutput(stdout: string): RawErrorsMap {
 	const map: RawErrorsMap = new Map();
 	let previousError: TypeTestDiagnostic | undefined;
@@ -59,13 +64,11 @@ function parsePosition(rest: string, closeParenIndex: number): TscPosition | und
 
 function parseTscErrorDetail(afterParen: string): TscErrorDetail | undefined {
 	const groups = TSC_ERROR_DETAIL.exec(afterParen)?.groups;
-	const code = groups?.["code"];
-	const message = groups?.["message"];
-	if (code === undefined || message === undefined) {
+	if (groups === undefined) {
 		return undefined;
 	}
 
-	return { code: `TS${code}`, message: message.trim() };
+	return { code: `TS${String(groups["code"])}`, message: String(groups["message"]).trim() };
 }
 
 function parseTscErrorLine(line: string): TypeTestDiagnostic | undefined {

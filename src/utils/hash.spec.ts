@@ -2,7 +2,7 @@ import { Buffer } from "node:buffer";
 import { describe, expect, it } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
-import { hashBuffer, hashFile } from "./hash.ts";
+import { hashBuffer, hashFile, hashString } from "./hash.ts";
 
 describe(hashBuffer, () => {
 	it("should return consistent SHA256 hash for same input", () => {
@@ -31,6 +31,14 @@ describe(hashBuffer, () => {
 		const hash = hashBuffer(Buffer.from("test"));
 
 		expect(hash).toMatch(/^[0-9a-f]{64}$/);
+	});
+});
+
+describe(hashString, () => {
+	it("should hash the text's UTF-8 bytes identically to hashBuffer", () => {
+		expect.assertions(1);
+
+		expect(hashString("-- é")).toBe(hashBuffer(Buffer.from("-- é", "utf8")));
 	});
 });
 

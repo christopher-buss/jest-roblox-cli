@@ -2,6 +2,9 @@ import type { InstrumentUniverse } from "./instrument-universe.ts";
 import { INSTRUMENTER_VERSION } from "./instrumenter.ts";
 import type { CoverageManifest } from "./manifest.ts";
 
+/**
+ * Current run state a previous Coverage Manifest must match.
+ */
 export interface ReuseCoverageManifestOptions {
 	/** Digest of the copy-ignore list this run will mirror against. */
 	copyIgnoreHash: string;
@@ -27,6 +30,9 @@ export interface ReuseCoverageManifestOptions {
  * stays put, and a widened copy-ignore list demotes one from mirrored to absent
  * the same way — while the counts the warm path reasons about are drawn from a
  * manifest the old list wrote.
+ * @param previousManifest - Manifest the last run wrote, if any.
+ * @param options - Cache switch, copy-ignore digest and universe of this run.
+ * @returns `true` when the shadow tree can be reused.
  */
 export function canReuseCoverageManifest(
 	previousManifest: CoverageManifest | undefined,

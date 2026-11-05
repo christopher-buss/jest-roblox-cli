@@ -1,26 +1,31 @@
 import assert from "node:assert";
 
 import type { RojoProject } from "../types/rojo.ts";
-import type { TsconfigMapping } from "../types/tsconfig.ts";
+import type { TsconfigMapping } from "../types/tsconfig-types.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import { nodeFileSystem } from "../utils/file-system.ts";
 import { findExpectationColumn } from "./column-finder.ts";
 import { createFrameMapper, createLineMapper, type MappedFrame } from "./frame-mapper.ts";
 import { createPathResolver, luauInitToIndex } from "./path-resolver.ts";
+import type { StackFrame } from "./source-mapper-types.ts";
 import { parseStack } from "./stack-parser.ts";
-import type { StackFrame } from "./types.ts";
-import { createV3Mapper } from "./v3-mapper.ts";
-
-export type { RojoProject } from "../types/rojo.ts";
+import { createV3Mapper } from "./v-3-mapper.ts";
 
 const LEADING_SLASH = /^\//;
 
+/** One stack frame of a failure, with its TypeScript origin when mapped. */
 export interface MappedLocation {
+	/** The frame's Luau line. */
 	luauLine: number;
+	/** The frame's Luau file path. */
 	luauPath: string;
+	/** The TypeScript source embedded in the map, when present. */
 	sourceContent?: string | undefined;
+	/** The mapped TypeScript column. */
 	tsColumn?: number | undefined;
+	/** The mapped TypeScript line. */
 	tsLine?: number | undefined;
+	/** The mapped TypeScript file path. */
 	tsPath?: string | undefined;
 }
 
@@ -33,6 +38,7 @@ export interface MappedLocation {
  * and TS sources off disk too.
  */
 export interface SourceMapper {
+	/** Rewrite each resolvable frame in a failure message and list them. */
 	mapFailureWithLocations(message: string): MappedFailure;
 	/**
 	 * The line of the file `resolveTestFilePath` names that a Luau line of the
@@ -41,21 +47,35 @@ export interface SourceMapper {
 	 * does not resolve or the map has nothing on that line.
 	 */
 	mapTestFileLine(testFilePath: string, luauLine: number): number | undefined;
+	/** The path to show for a test file: its source path, else the input. */
 	resolveDisplayPath(testFilePath: string): string;
+	/** The on-disk file a Jest test path resolves to, if any. */
 	resolveTestFilePath(testFilePath: string): string | undefined;
 }
 
+/** Inputs for {@link createSourceMapper}. */
 export interface SourceMapperConfig {
 	/** Where sources and maps are read. Defaults to the real filesystem. */
 	fileSystem?: FileSystem;
+	/** The tsconfig source and output roots to map through. */
 	mappings: ReadonlyArray<TsconfigMapping>;
+	/** The Rojo project that places files in the DataModel. */
 	rojoProject: RojoProject;
 }
 
+/** Source lines around a failure, for display. */
 export interface SourceSnippet {
+	/** The 1-indexed failure column, when known. */
 	column?: number | undefined;
+	/** The 1-indexed failing line. */
 	failureLine: number;
-	lines: Array<{ content: string; num: number }>;
+	/** The lines shown, each with its 1-indexed number. */
+	lines: Array<{
+		/** The line text. */
+		content: string;
+		/** The 1-indexed line number. */
+		num: number;
+	}>;
 }
 
 interface MappedFailure {
@@ -63,6 +83,14 @@ interface MappedFailure {
 	message: string;
 }
 
+/**
+ * Build a source mapper for one project.
+ * @param config - The Rojo project, tsconfig mappings and filesystem.
+ * @param config.fileSystem - Where sources and maps are read.
+ * @param config.mappings - The tsconfig roots to map through.
+ * @param config.rojoProject - The Rojo project to resolve paths against.
+ * @returns A mapper that rewrites frames through this project's maps.
+ */
 export function createSourceMapper({
 	fileSystem = nodeFileSystem,
 	mappings,
@@ -106,6 +134,8 @@ export function createSourceMapper({
  * therefore safe: later mappers see the partially rewritten string and still
  * parse any remaining `[string "..."]` frames. Locations accumulate across
  * mappers; `resolveTestFilePath` returns the first child's hit.
+ * @param mappers - The child mappers, tried in order.
+ * @returns The sole child, a composite, or `undefined` for none.
  */
 export function combineSourceMappers(
 	mappers: ReadonlyArray<SourceMapper>,
@@ -142,6 +172,17 @@ export function combineSourceMappers(
 	};
 }
 
+/**
+ * Read the source lines around a failing line.
+ * @param options - The file, the line and how much context to show.
+ * @param options.column - The failure column; found from an `expect` if absent.
+ * @param options.context - Lines to show either side; defaults to 2.
+ * @param options.filePath - The source file to read.
+ * @param options.fileSystem - Where the file is read.
+ * @param options.line - The 1-indexed failing line.
+ * @param options.sourceContent - Source text to use in place of reading.
+ * @returns The snippet, or `undefined` when the file is absent.
+ */
 export function getSourceSnippet({
 	column,
 	context = 2,
@@ -189,6 +230,8 @@ export function getSourceSnippet({
 /**
  * Jest's slash-joined test path (optionally leading-slashed) as a DataModel
  * path.
+ * @param testFilePath - The Jest test path.
+ * @returns The dotted DataModel path.
  */
 function toDataModelPath(testFilePath: string): string {
 	return testFilePath.replace(LEADING_SLASH, "").replaceAll("/", ".");
@@ -268,7 +311,7 @@ function chainFailures(mappers: ReadonlyArray<SourceMapper>, message: string): M
 /**
  * Ownership gate: only let a child act on a path it can actually resolve.
  * Without this, a roblox-ts mapper would apply `init→index` to paths owned by
- * other projects (incl. pure-Luau projects whose on-disk file is genuinely
+ * other projects (including pure-Luau projects whose on-disk file is genuinely
  * `init.*`).
  *
  * @param mappers - The child mappers, tried in order.

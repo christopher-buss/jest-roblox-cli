@@ -1,45 +1,20 @@
 import { fromAny } from "@total-typescript/shoehorn";
 
-import { EventEmitter } from "node:events";
 import { Script } from "node:vm";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
+import { FakeHelper, type FakeHelperSpawnCall } from "#test/mocks/spec-fake-helper.ts";
 import type { ChildProcessRunner } from "../utils/child-process.ts";
 import { findAppBundle, launchHiddenOnMacos } from "./macos-hidden.ts";
 
 const PLACE_FILE = "/work/place.rbxl";
 const BUNDLE = "/Applications/RobloxStudio.app";
 
-interface SpawnCall {
-	args: Array<string>;
-	file: string;
-	options: { env: Record<string, string>; stdio: Array<string>; windowsHide: boolean };
-}
-
-class FakeHelper extends EventEmitter {
-	public readonly kill = vi.fn<() => boolean>(() => true);
-	public readonly stderr = makeStream();
-	public readonly stdout = makeStream();
-
-	public exitCode: null | number = null;
-	public signalCode: NodeJS.Signals | null = null;
-
-	public finish(code: number, stderr = ""): void {
-		this.exitCode = code;
-		this.stderr.emit("data", stderr);
-		this.emit("close", code);
-	}
-}
-
-function makeStream() {
-	return Object.assign(new EventEmitter(), { setEncoding: () => {} });
-}
-
 function makeLaunch(psOutput = "/Applications/RobloxStudio.app/Contents/MacOS/RobloxStudioBeta\n") {
 	const { fileSystem } = createMemoryFileSystem();
 	const helper = new FakeHelper();
-	const calls: Array<SpawnCall> = [];
+	const calls: Array<FakeHelperSpawnCall> = [];
 	const killCommands: Array<Array<string>> = [];
 	const childProcess: ChildProcessRunner = fromAny({
 		execFile: (
@@ -53,7 +28,9 @@ function makeLaunch(psOutput = "/Applications/RobloxStudio.app/Contents/MacOS/Ro
 			killCommands.push([file, ...args, `windowsHide=${String(options.windowsHide)}`]);
 			callback(null, file === "ps" ? psOutput : "");
 		},
-		spawn: (...[file, args, options]: [string, Array<string>, SpawnCall["options"]]) => {
+		spawn: (
+			...[file, args, options]: [string, Array<string>, FakeHelperSpawnCall["options"]]
+		) => {
 			calls.push({ args, file, options });
 			return helper;
 		},
@@ -207,7 +184,11 @@ describe(launchHiddenOnMacos, () => {
 		expect.assertions(1);
 
 		const { errors, helper } = makeLaunch();
-		helper.finish(1, "execution error: Error: The application cannot be opened. (-1)\n");
+		helper.exitCode = 1;
+		helper.finish({
+			code: 1,
+			stderr: "execution error: Error: The application cannot be opened. (-1)\n",
+		});
 
 		expect(errors.map((error) => error.message)).toStrictEqual([
 			"studio-cli: macOS hidden launch failed (exit 1): execution error: Error: The application cannot be opened. (-1)",

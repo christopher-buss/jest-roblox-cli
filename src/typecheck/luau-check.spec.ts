@@ -4,7 +4,6 @@ import type * as childProcess from "node:child_process";
 import * as path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
-import { ConfigError } from "../config/errors.ts";
 import type { ChildProcessRunner } from "../utils/child-process.ts";
 import { spawnLuauCheckAsync } from "./luau-check.ts";
 
@@ -93,8 +92,11 @@ describe(spawnLuauCheckAsync, () => {
 			(err: unknown) => err,
 		);
 
-		expect(error).toBeInstanceOf(ConfigError);
-		expect(error).toMatchObject({ hint: expect.stringContaining("Install") });
+		expect(error).toBeInstanceOf(Error);
+		expect(error).toMatchObject({
+			hint: expect.stringContaining("Install"),
+			message: "Luau Type Tests need `lute` on PATH, and it was not found.",
+		});
 	});
 
 	it("should rethrow any other spawn failure", async () => {
@@ -109,7 +111,7 @@ describe(spawnLuauCheckAsync, () => {
 			(err: unknown) => err,
 		);
 
-		expect(error).not.toBeInstanceOf(ConfigError);
+		expect(error).not.toHaveProperty("hint");
 		expect(error).toMatchObject({ cause: failure });
 	});
 

@@ -9,7 +9,7 @@ import {
 import { luauParser } from "../luau/parser.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import { nodeFileSystem } from "../utils/file-system.ts";
-import { configSchema } from "./schema.ts";
+import { configSchema } from "./config-validation.ts";
 
 const luauConfigTableSchema = type("object").as<LuauLiteralTable>();
 const testConfigSchema = configSchema.get("test").exclude("undefined");
@@ -27,7 +27,10 @@ const ARRAY_CONFIG_KEYS: ReadonlySet<string> = new Set(
  * Parse a .luau config file in process and evaluate its return expression.
  *
  * @param filePath - Path to the config file.
+ * @param fileSystem - File system to read the file from.
  * @returns The evaluated config table.
+ * @throws If the file does not parse, holds non-literal syntax or does not
+ *   return a table.
  */
 export function loadLuauConfig(
 	filePath: string,
@@ -58,8 +61,8 @@ export function loadLuauConfig(
  * Check if `<cwd>/<directoryOrFile>/jest.config.luau` exists. Returns the
  * resolved path if found, undefined otherwise.
  *
- * @param directoryOrFile - Project directory (or file) the config sits under.
- * @param cwd - Base directory for resolution.
+ * @param options - Base directory, project directory (or file) the config
+ *   sits under, and the file system to check.
  * @returns The resolved config path, or `undefined`.
  */
 export function findLuauConfigFile({

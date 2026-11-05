@@ -6,16 +6,17 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { MemoryVolume } from "#test/mocks/memory-file-system.ts";
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
+import { NOOP_PROGRESS } from "#test/mocks/noop-progress.ts";
+import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
+import { COVERAGE_BUILD_MANIFEST_PATH } from "#test/mocks/run-constants.ts";
+import { createRunSeams } from "#test/mocks/run-seams.ts";
 import type { ResolvedProjectConfig } from "./config/projects.ts";
-import { type CliOptions, DEFAULT_CONFIG, type ResolvedConfig } from "./config/schema.ts";
+import type { CliOptions, ResolvedConfig } from "./config/schema.ts";
 import type { CoverageArtifacts } from "./coverage-pipeline/build-manifest.ts";
-import { COVERAGE_BUILD_MANIFEST_PATH } from "./coverage-pipeline/prepare.ts";
-import { NOOP_RUN_PROGRESS } from "./progress/reporter.ts";
 import type { RunDispatch } from "./run.ts";
 import { runJestRobloxAsync } from "./run.ts";
+import type { MultiRunResult, WorkspaceRunResult } from "./run/run-types.ts";
 import type { RunSeams } from "./run/seams.ts";
-import { nodeRunSeams } from "./run/seams.ts";
-import type { MultiRunResult, WorkspaceRunResult } from "./run/types.ts";
 import type { ChildProcessRunner } from "./utils/child-process.ts";
 
 const COVERAGE_ARTIFACTS: CoverageArtifacts = {
@@ -46,7 +47,7 @@ const IMPLICIT_PROJECT: ResolvedProjectConfig = fromAny({ displayName: "implicit
 
 function makeConfig(overrides: Partial<ResolvedConfig> = {}): ResolvedConfig {
 	return {
-		...DEFAULT_CONFIG,
+		...createResolvedConfig(),
 		rootDir: "/test",
 		testMatch: ["**/*.spec.ts"],
 		testPathIgnorePatterns: [],
@@ -94,8 +95,8 @@ describe(runJestRobloxAsync, () => {
 
 		const dispatch = makeDispatch();
 		const progress = {
-			...NOOP_RUN_PROGRESS,
-			begin: vi.fn<typeof NOOP_RUN_PROGRESS.begin>(NOOP_RUN_PROGRESS.begin),
+			...NOOP_PROGRESS,
+			begin: vi.fn<typeof NOOP_PROGRESS.begin>(NOOP_PROGRESS.begin),
 		};
 
 		const result = await runJestRobloxAsync({
@@ -205,7 +206,7 @@ describe(runJestRobloxAsync, () => {
 			config: makeConfig(),
 			dispatch,
 			fileSystem,
-			seams: { ...nodeRunSeams(), childProcess },
+			seams: createRunSeams({ childProcess }),
 		});
 
 		const forwarded = vi.mocked(dispatch.runWorkspaceMode).mock.calls[0]![0].dependencies;
@@ -281,7 +282,7 @@ describe(runJestRobloxAsync, () => {
 			cli: makeCli({ typecheckOnly: true }),
 			config: makeConfig({ passWithNoTests: true }),
 			fileSystem,
-			seams: { ...nodeRunSeams(), runTypecheck },
+			seams: createRunSeams({ runTypecheck }),
 		});
 
 		expect(result.mode).toBe("multi");

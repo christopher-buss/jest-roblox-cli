@@ -2,22 +2,23 @@ import { fromAny } from "@total-typescript/shoehorn";
 
 import { describe, expect, it, vi } from "vitest";
 
+import { clockTimingCollector } from "#test/mocks/clock-timing-collector.ts";
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
+import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
+import { createRunSeams } from "#test/mocks/run-seams.ts";
 import type { BackendKind } from "../backends/interface.ts";
 import type { ResolvedProjectConfig } from "../config/projects.ts";
-import { DEFAULT_CONFIG, type ResolvedConfig } from "../config/schema.ts";
-import type { PrepareCoverageResult } from "../coverage-pipeline/prepare.ts";
-import { NOOP_TIMING_COLLECTOR } from "../timing/orchestration-collector.ts";
+import type { ResolvedConfig } from "../config/schema.ts";
+import type { PrepareCoverageResult } from "../coverage-pipeline/prepare-types.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import type { RunSeams } from "./seams.ts";
-import { nodeRunSeams } from "./seams.ts";
 import { stageRunAsync } from "./staging.ts";
 
 const COVERAGE_PLACE = "/test/.jest-roblox/coverage/game.rbxl";
 
 function makeConfig(overrides: Partial<ResolvedConfig> = {}): ResolvedConfig {
 	return {
-		...DEFAULT_CONFIG,
+		...createResolvedConfig(),
 		placeFile: "/test/game.rbxl",
 		rojoProject: "default.project.json",
 		rootDir: "/test",
@@ -46,10 +47,9 @@ function makeCoverageResult(): PrepareCoverageResult {
 }
 
 function makeSeams(): RunSeams {
-	return {
-		...nodeRunSeams(),
+	return createRunSeams({
 		prepareCoverage: vi.fn<RunSeams["prepareCoverage"]>(async () => makeCoverageResult()),
-	};
+	});
 }
 
 async function stageAsync({
@@ -69,7 +69,7 @@ async function stageAsync({
 		projects: [makeProject()],
 		rootConfig,
 		seams,
-		timing: NOOP_TIMING_COLLECTOR,
+		timing: clockTimingCollector(),
 	});
 }
 

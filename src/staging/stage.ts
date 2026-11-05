@@ -13,6 +13,8 @@ export const STAGE_KEY = "__pkg_stage";
  * every staging pass is a no-op for one, and this is where each of them says
  * so. Malformed shapes report the same way: a pass that cannot find the stage
  * hands its input back rather than failing the build.
+ * @param project - Project whose `tree` is searched.
+ * @returns The stage node, or `undefined` when the project has none.
  */
 export function findStage({ tree }: RojoTreeNode): RojoTreeNode | undefined {
 	if (!isRojoTreeNode(tree)) {

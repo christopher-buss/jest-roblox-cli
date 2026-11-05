@@ -1,16 +1,9 @@
-import { type } from "arktype";
-import type buffer from "node:buffer";
-import type { ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { once } from "node:events";
-import * as path from "node:path";
 import process from "node:process";
 import type { Except } from "type-fest";
-import type { WebSocket, WebSocketServer } from "ws";
+import type { WebSocketServer } from "ws";
 
-import { resolvePlaceFilePath } from "../config/schema.ts";
 import type { BuildManifestArtifact } from "../coverage-pipeline/build-manifest.ts";
-import { findRojoProject } from "../coverage-pipeline/prepare.ts";
 import type { RunProgress } from "../progress/reporter.ts";
 import { NOOP_RUN_PROGRESS } from "../progress/reporter.ts";
 import { describeProjectCount } from "../progress/stages.ts";
@@ -22,68 +15,35 @@ import type { ChildProcessRunner } from "../utils/child-process.ts";
 import { nodeChildProcessRunner } from "../utils/child-process.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import { nodeFileSystem } from "../utils/file-system.ts";
-import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
-import { decodeEnvelope } from "./envelope.ts";
 import { DEFAULT_BOOT_WATCH_MS } from "./execution-recovery.ts";
-import { launchOnHiddenDesktop } from "./hidden-desktop.ts";
-import {
-	type Backend,
-	type BackendOptions,
-	type BackendResult,
-	isWorkspaceRun,
-	type ProjectJob,
-} from "./interface.ts";
-import { findAppBundle, launchHiddenOnMacos } from "./macos-hidden.ts";
-import {
-	buildRunPayload,
-	pairPluginEntries,
-	type RunPayload,
-	type RunPayloadRequest,
-} from "./plugin-payload.ts";
+import type { Backend, BackendOptions, BackendResult, ProjectJob } from "./interface.ts";
+import type { RunPayloadRequest } from "./plugin-payload.ts";
 import type { ManagedPluginInstall, RunnerPluginInstallOptions } from "./runner-plugin.ts";
 import { installRunnerPluginAsync } from "./runner-plugin.ts";
+import { buildStudioArgs, type RunPlace, studioOutputFile } from "./studio-cli-bootstrap.ts";
+import { BOOT_TIMEOUT_ENV, type ResultDeadline } from "./studio-cli-deadlines.ts";
+import { prepareRunPlaceAsync } from "./studio-cli-place.ts";
+import {
+	hardTeardown,
+	launchStudioProcess,
+	resolveHiddenDesktop,
+	startGracefulTeardown,
+} from "./studio-cli-process.ts";
+import {
+	buildBackendResult,
+	serverPortAsync,
+	waitForResultAsync,
+} from "./studio-cli-result-wait.ts";
+import type { StudioCliLauncher, StudioCliProcess } from "./studio-cli-types.ts";
 import { configuredStudioPath, discoverStudioPath } from "./studio-discovery.ts";
-import { clearStaleLock, watchLockRelease } from "./studio-lock.ts";
 import { nodeWebSocketServerFactory } from "./web-socket-server-factory.ts";
 import type { WebSocketServerFactory } from "./web-socket-server-factory.ts";
 
 const DEFAULT_STUDIO_CLI_TIMEOUT = 300_000;
 
-/** Overrides how long Studio may take to start the run, in milliseconds. */
-const BOOT_TIMEOUT_ENV = "JEST_ROBLOX_STUDIO_BOOT_TIMEOUT";
-
 /**
  * Lowest-precedence Studio-executable override (below config key / CLI flag).
  */
-
-/**
- * Plugin/CLI protocol version, carried in the Run-mode payload. Matches
- * `STUDIO_PROTOCOL_VERSION` in the WebSocket `studio` backend and
- * `PROTOCOL_VERSION` in the plugin. The bootstrap echoes the version the
- * run-mode runner returns; {@link assertProtocolMatch} rejects a plugin that
- * omits the echo (a stale runner predating the handshake) or returns a
- * different number, surfacing a clean "update the plugin" error.
- */
-export const STUDIO_CLI_PROTOCOL_VERSION = 10;
-
-type StudioCliPayload = RunPayload & {
-	/**
-	 * The Managed Plugin that must serve the run; absent when none was
-	 * installed.
-	 */
-	pluginKey?: string;
-	protocolVersion: typeof STUDIO_CLI_PROTOCOL_VERSION;
-	test: true;
-};
-
-/**
- * Seconds the bootstrap keeps its result socket alive after sending, waiting
- * to be closed/killed by the host. A backstop only: the host kills Studio the
- * instant it receives the result, so the bootstrap is normally terminated
- * mid-wait. Long enough to never truncate a send, short enough that a host
- * that vanished doesn't wedge Studio open.
- */
-const SOCKET_LINGER_SECONDS = 30;
 
 /**
  * Default backstop for the graceful kill-on-lock-release: how long to wait for
@@ -94,191 +54,10 @@ const SOCKET_LINGER_SECONDS = 30;
  */
 const GRACEFUL_SHUTDOWN_CAP_MS = 15_000;
 
-const SIGTERM_GRACE_MS = 5000;
-
-const UNBUNDLED_WARNING =
-	"Warning: Studio is not inside an .app bundle, so it cannot launch hidden.\n";
-
-/** Splits Studio's log on either line ending — it writes CRLF on Windows. */
-const LOG_LINE_SPLIT_PATTERN = /\r?\n/u;
-
-/** Lines of Studio's engine log quoted when a run times out. */
-const STUDIO_LOG_TAIL = 15;
-
-/** Per-line cap on the quoted Studio log tail, in characters. */
-const STUDIO_LOG_LINE_LIMIT = 300;
-
-// Must stay below `NIL_RELAY_WAIT_SECONDS` and above `RUNNING_WAIT_SECONDS` in
-// `plugin/src/test-in-run-mode.server.luau`.
-const NIL_RETURN_PLUGIN_WAIT_MS = 30_000;
-
-const NIL_RETURN_HEADLINE =
-	"studio-cli: ExecuteRunModeAsync ended the test session early (it returned nil), " +
-	`and no run-mode plugin took the run over within ${NIL_RETURN_PLUGIN_WAIT_MS.toString()}ms.`;
-
-const RUN_SIDE_CHANNEL_ATTRIBUTE = "JestRobloxRunSideChannel";
-
-const BACKEND_NAME = "studio-cli";
-const WORK_DIR = path.join(".jest-roblox", BACKEND_NAME);
-const PLACE_FILE = "place.rbxl";
-const PLACE_PROJECT_FILE = "place.project.json";
-const BOOTSTRAP_FILE = "bootstrap.server.luau";
-const OUTPUT_FILE = "output.log";
-
 /**
- * Bootstrap epilogue: open the localhost result socket (`URL`) and push the
- * encoded frame, then keep the script — and the socket — alive until the host
- * receives it and kills us, or the linger backstop elapses. Static, so it is
- * built once: everything run-specific lives in the prologue this is appended
- * to. See {@link SOCKET_LINGER_SECONDS}.
+ * Options for {@link StudioCliBackend}; every seam defaults to the real
+ * implementation.
  */
-const BOOTSTRAP_SEND_LINES = [
-	"local encoded = HttpService:JSONEncode(message)",
-	"local connected, socket = pcall(function()",
-	"\treturn HttpService:CreateWebStreamClient(Enum.WebStreamClientType.WebSocket, { Url = URL })",
-	"end)",
-	"if not connected then",
-	'\tprint("studio-cli: failed to open result socket: " .. tostring(socket))',
-	"\treturn",
-	"end",
-	"local finished = false",
-	"socket.Opened:Once(function()",
-	"\tsocket:Send(encoded)",
-	"end)",
-	"socket.Error:Once(function(_statusCode, errorMessage)",
-	'\tprint("studio-cli: result socket error: " .. tostring(errorMessage))',
-	"\tfinished = true",
-	"end)",
-	"socket.Closed:Once(function()",
-	"\tfinished = true",
-	"end)",
-	"local start = os.clock()",
-	`while not finished and (keepAlive or os.clock() - start < ${SOCKET_LINGER_SECONDS.toString()}) do`,
-	"\ttask.wait(0.05)",
-	"end",
-];
-
-/**
- * Bootstrap hand-off of the payload to the play session, read when
- * `ExecuteRunModeAsync` returns nil. A failure is printed and the run goes on.
- */
-const BOOTSTRAP_SIDE_CHANNEL_LINES = [
-	"local sideChannelSet, sideChannelError = pcall(function()",
-	`\tReplicatedStorage:SetAttribute("${RUN_SIDE_CHANNEL_ATTRIBUTE}", HttpService:JSONEncode({ payload = payload, requestId = REQUEST_ID, url = URL }))`,
-	"end)",
-	"if not sideChannelSet then",
-	'\tprint("studio-cli: failed to set the run side channel: " .. tostring(sideChannelError))',
-	"end",
-];
-
-/**
- * Bootstrap start report: a `started` frame on its own socket, sent without
- * waiting. A failure is printed so the boot timeout's log tail names it.
- */
-const BOOTSTRAP_STARTED_LINES = [
-	"local startedOpened, startedSocket = pcall(function()",
-	"\treturn HttpService:CreateWebStreamClient(Enum.WebStreamClientType.WebSocket, { Url = URL })",
-	"end)",
-	"if startedOpened then",
-	"\tstartedSocket.Opened:Once(function()",
-	'\t\tstartedSocket:Send(HttpService:JSONEncode({ type = "started", requestId = REQUEST_ID }))',
-	"\tend)",
-	"\tstartedSocket.Error:Once(function(_statusCode, errorMessage)",
-	'\t\tprint("studio-cli: start socket error: " .. tostring(errorMessage))',
-	"\tend)",
-	"else",
-	'\tprint("studio-cli: failed to open start socket: " .. tostring(startedSocket))',
-	"end",
-];
-
-const startedMessageSchema = type({
-	requestId: "string",
-	type: "'started'",
-});
-
-/**
- * The result frame the bootstrap pushes back over the localhost WebSocket.
- * Same shape the plugin's `init.server.luau` sends the WebSocket `studio`
- * backend (`type: "results"` + `requestId` correlation), so the two result
- * channels stay wire-compatible. `protocolVersion` is optional here — a stale
- * run-mode runner omits it, and {@link assertProtocolMatch} turns that into a
- * clean "update the plugin" error rather than a schema rejection.
- */
-const resultMessageSchema = type({
-	"gameOutput?": "string",
-	"jestOutput": "string",
-	"pluginKey?": "string",
-	"pluginVersion?": "string",
-	"protocolVersion?": "number",
-	"requestId": "string",
-	"type": "'results'",
-});
-
-const nilReturnMessageSchema = type({ requestId: "string", type: "'nilReturn'" });
-
-const pluginReadyMessageSchema = type({ requestId: "string", type: "'pluginReady'" });
-
-const runFrameSchema = startedMessageSchema
-	.or(resultMessageSchema)
-	.or(nilReturnMessageSchema)
-	.or(pluginReadyMessageSchema);
-
-/**
- * A launched Studio the host can kill once the result arrives (or on timeout).
- * The injected seam: unit tests return a fake that drives a canned result
- * frame over the mock WebSocket server instead of launching Studio.
- */
-export interface StudioCliProcess {
-	/**
-	 * Terminate Studio now, skipping graceful shutdown: SIGTERM, then SIGKILL
-	 * if it is still alive after a short grace. Used on every
-	 * hung/error/timeout path.
-	 */
-	kill: () => void;
-	/**
-	 * Graceful teardown: wait for Studio to release `<place>.lock` — which
-	 * happens only after every edit-mode `BindToClose` handler ran and
-	 * `ClosePlace` finished — then terminate it, skipping Studio's ~30s
-	 * post-close telemetry drain. Hard-kills anyway after `graceCapMs` (a
-	 * long-yielding handler). Returns immediately; the watch runs in the
-	 * background, keeping node's event loop alive (the child handle + a poll
-	 * timer) until it fires, so the CLI prints results now and the process
-	 * exits once teardown completes. The caller closes the result server first,
-	 * which is what lets the bootstrap return and `--quitAfterExecution` begin
-	 * the graceful close.
-	 */
-	killOnLockRelease: (graceCapMs: number) => void;
-	/** Subscribe to a spawn failure (e.g. a bad `studioPath`). */
-	onError: (listener: (error: Error) => void) => void;
-}
-
-export interface StudioCliLaunchRequest {
-	/** Full Studio CLI argument vector (already absolute paths). */
-	args: Array<string>;
-	/** What launches Studio. Defaults to the real launcher. */
-	childProcess: ChildProcessRunner;
-	/** Where the lock file is watched. Defaults to the real filesystem. */
-	fileSystem: FileSystem;
-	/**
-	 * Show the Studio window during the run (`--headed`) instead of the
-	 * default hidden window. Maps to `windowsHide: !headed` in {@link
-	 * spawnStudio}.
-	 */
-	headed: boolean;
-	hiddenDesktop: boolean;
-	/**
-	 * Absolute path of the place Studio opens. Used only to clear a stale
-	 * `<place>.lock` a previously killed Studio could not remove itself.
-	 */
-	placeFile: string;
-	platform: NodeJS.Platform;
-	/** Absolute path to the Studio executable. */
-	studioPath: string;
-}
-
-/** Spawns Studio and returns the handle the host kills. */
-export type StudioCliLauncher = (request: StudioCliLaunchRequest) => StudioCliProcess;
-
 export interface StudioCliOptions {
 	/**
 	 * How long Studio may take from launch to starting the run, in
@@ -307,6 +86,10 @@ export interface StudioCliOptions {
 	 * read from config. Defaults to false (hidden window).
 	 */
 	headed?: boolean | undefined;
+	/**
+	 * Launch Studio on a hidden desktop; resolved against `platform` and
+	 * `headed`.
+	 */
 	hiddenDesktop?: boolean | undefined;
 	/**
 	 * Puts the Managed Plugin in the Studio plugins folder before launch, given
@@ -315,82 +98,21 @@ export interface StudioCliOptions {
 	installPluginAsync?:
 		| ((workDirectory: string) => Promise<ManagedPluginInstall | undefined>)
 		| undefined;
-	/** Process launcher seam; defaults to the real {@link spawnStudio}. */
+	/**
+	 * Process launcher seam; defaults to the real {@link launchStudioProcess}.
+	 */
 	launch?: StudioCliLauncher | undefined;
+	/** Host platform. Defaults to `process.platform`. */
 	platform?: NodeJS.Platform | undefined;
+	/** Studio plugins folder the Managed Plugin installs into. */
 	pluginsDirectory?: string | undefined;
 	/** Explicit Studio executable path (override from config / CLI / env). */
 	studioPath?: string | undefined;
 	/** Run timeout in milliseconds. Defaults to 300000. */
 	timeout?: number | undefined;
+	/** Result server seam; defaults to the real WebSocket server. */
 	webSocketServerFactory?: undefined | WebSocketServerFactory;
 }
-
-/** The place a run opens, plus where its scratch files are written. */
-interface RunPlace {
-	/** Whether this is a workspace run — picks the bootstrap payload shape. */
-	isWorkspace: boolean;
-	/** Absolute path of the place Studio opens. */
-	placeFile: string;
-	/** `.jest-roblox/studio-cli` scratch directory for this run. */
-	workDirectory: string;
-}
-
-interface StudioArgsOptions extends RunPayloadRequest, RunPlace {
-	fileSystem: FileSystem;
-	pluginKey: string | undefined;
-	port: number;
-	requestId: string;
-}
-
-type ResultMessage = typeof resultMessageSchema.infer;
-
-type RunFrame = typeof runFrameSchema.infer;
-
-interface NilReturnRelay {
-	clear: () => void;
-	onNilReturn: () => void;
-	onPluginReady: (socket: WebSocket) => void;
-}
-
-interface RunFrameRoute {
-	deadlines: { markStarted: () => void };
-	nilRelay: Except<NilReturnRelay, "clear">;
-	onResult: (message: ResultMessage) => void;
-	socket: WebSocket;
-}
-
-/** How long a run may go unanswered, and where to look when it does. */
-interface ResultDeadline {
-	/** Wall clock in milliseconds from launch to the run starting. */
-	bootTimeout: number;
-	/** Studio's engine log, quoted back when the run never answers. */
-	outputFile: string;
-	/** Wall clock in milliseconds from the run starting to its result. */
-	timeout: number;
-}
-
-interface NilReturnRelayOptions extends Pick<ResultDeadline, "outputFile"> {
-	fileSystem: FileSystem;
-	onExpired: (error: Error) => void;
-	pluginKey: string | undefined;
-	requestId: string;
-}
-
-interface StudioCliResultWait extends ResultDeadline {
-	child: StudioCliProcess;
-	fileSystem: FileSystem;
-	pluginKey: string | undefined;
-	reject: (error: Error) => void;
-	requestId: string;
-	resolve: (message: ResultMessage) => void;
-	server: WebSocketServer;
-}
-
-/**
- * The one run whose result frame is awaited: the socket, and the child on it.
- */
-type ResultChannel = Pick<StudioCliResultWait, "child" | "fileSystem" | "server">;
 
 /**
  * What one dispatch launches and waits on: the place it opens, the jobs it
@@ -421,6 +143,10 @@ interface StudioCliSession {
 	wasGracefulTeardownStarted: boolean;
 }
 
+/**
+ * Backend that builds a place, launches a local Studio on it, and waits for
+ * the result.
+ */
 export class StudioCliBackend implements Backend {
 	private readonly bootTimeout: number;
 	private readonly buildPlaceAsync: (
@@ -444,6 +170,11 @@ export class StudioCliBackend implements Backend {
 	public readonly kind = "studio-cli" as const;
 	public readonly placeInput = "own" as const;
 
+	/**
+	 * Resolves every option against its default.
+	 * @param options - Seams, timeouts and Studio location; omitted ones use defaults.
+	 * @throws {Error} When {@link BOOT_TIMEOUT_ENV} is not a positive integer.
+	 */
 	constructor(options: StudioCliOptions = {}) {
 		this.bootTimeout = options.bootTimeout ?? resolveBootTimeout();
 		this.buildPlaceAsync = options.buildPlaceAsync ?? defaultBuildPlace;
@@ -475,6 +206,17 @@ export class StudioCliBackend implements Backend {
 		this.webSocketServerFactory = options.webSocketServerFactory ?? nodeWebSocketServerFactory;
 	}
 
+	/**
+	 * Builds the place, installs the plugin, launches Studio, and waits for its result.
+	 * @param root0 - Jobs and run options.
+	 * @param root0.bail - Stop after this many failures.
+	 * @param root0.jobs - Jobs to run, in one Studio session.
+	 * @param root0.progress - Receives stage progress.
+	 * @param root0.vmParallel - VM parallelism to request.
+	 * @param root0.workStealing - Must not be `true`; this backend runs jobs serially.
+	 * @returns The per-job results and execution timing.
+	 * @rejects {Error} When there are no jobs, work-stealing is set, Studio is not found, or the run fails.
+	 */
 	public async runTestsAsync({
 		bail,
 		jobs,
@@ -483,7 +225,11 @@ export class StudioCliBackend implements Backend {
 		workStealing,
 	}: BackendOptions): Promise<BackendResult> {
 		assertSerialJobs({ jobs, workStealing });
-		const place = await this.prepareRunPlaceAsync(jobs);
+		const place = await prepareRunPlaceAsync({
+			buildPlaceAsync: this.buildPlaceAsync,
+			fileSystem: this.fileSystem,
+			jobs,
+		});
 		// Found before the plugin is installed: without Studio there is no run
 		// to install it for.
 		const studioPath = this.discover(this.studioPath);
@@ -509,38 +255,10 @@ export class StudioCliBackend implements Backend {
 	}
 
 	/**
-	 * Build the Clean Place for a normal (non-coverage) run and return its
-	 * path. `loadStringEnabled` is forced on so the Run-mode runner's
-	 * LoadString gate passes. Coverage runs skip this and open the instrumented
-	 * place instead.
+	 * Where a run's result lands, and how long Studio has to put it there.
+	 * @param workDirectory - Scratch directory of the run.
+	 * @returns The result deadline.
 	 */
-	private async buildCleanPlaceAsync({
-		primary,
-		rootDirectory,
-		workDirectory,
-	}: {
-		readonly primary: ProjectJob;
-		readonly rootDirectory: string;
-		readonly workDirectory: string;
-	}): Promise<string> {
-		const placeFile = path.join(workDirectory, PLACE_FILE);
-		await this.buildPlaceAsync({
-			loadStringEnabled: true,
-			packages: [
-				{
-					packageDirectory: rootDirectory,
-					rojoProjectPath: path.resolve(findRojoProject(primary.config)),
-				},
-			],
-			placeFile,
-			projectFile: path.join(workDirectory, PLACE_PROJECT_FILE),
-			wrap: false,
-		});
-
-		return placeFile;
-	}
-
-	/** Where a run's result lands, and how long Studio has to put it there. */
 	private deadlineFor(workDirectory: string): ResultDeadline {
 		return {
 			bootTimeout: this.bootTimeout,
@@ -554,6 +272,9 @@ export class StudioCliBackend implements Backend {
 	 *
 	 * Records the child and the teardown decision on `session` as it goes, so
 	 * the caller's `finally` can clean up after a throw from any point here.
+	 * @param session - Mutable record of the launched child and teardown state.
+	 * @param root0 - What the dispatch launches and waits on.
+	 * @returns The per-job results and execution timing.
 	 */
 	private async dispatchRunAsync(
 		session: StudioCliSession,
@@ -600,14 +321,22 @@ export class StudioCliBackend implements Backend {
 
 	/**
 	 * The Studio the run was pointed at, launched against the place it built.
+	 * @param root0 - Launch input.
+	 * @param root0.args - Studio command-line arguments.
+	 * @param root0.placeFile - Place file to open.
+	 * @param root0.studioPath - Studio executable.
+	 * @returns The launched Studio process.
 	 */
 	private launchStudio({
 		args,
 		placeFile,
 		studioPath,
 	}: {
+		/** Studio command-line arguments. */
 		readonly args: Array<string>;
+		/** Place file to open. */
 		readonly placeFile: string;
+		/** Studio executable. */
 		readonly studioPath: string;
 	}): StudioCliProcess {
 		return this.launch({
@@ -621,50 +350,13 @@ export class StudioCliBackend implements Backend {
 			studioPath,
 		});
 	}
-
-	/**
-	 * Resolve the place Studio opens for this run and the scratch directory its
-	 * bootstrap/output files live in, creating both as needed.
-	 */
-	private async prepareRunPlaceAsync(jobs: Array<ProjectJob>): Promise<RunPlace> {
-		// jobs[0] is the per-run knob source (rootDir, rojoProject, timeout).
-		// oxlint-disable-next-line typescript/no-non-null-assertion -- assertSerialJobs checked length
-		const primary = jobs[0]!;
-
-		const rootDirectory = path.resolve(primary.config.rootDir);
-		const workDirectory = path.join(rootDirectory, WORK_DIR);
-		this.fileSystem.mkdirSync(workDirectory, { recursive: true });
-
-		// Which place studio-cli drives, by run shape:
-		// - workspace: the synthesized mega-place the workspace runner already
-		//   built (with the `__pkg_stage` staging the materializer clones from);
-		// - coverage: the Coverage-Instrumented Place `prepareCoverage` built and
-		//   recorded in `config.placeFile` — a Clean Place here drops the
-		//   instrumentation and reports 0% for every file;
-		// - normal: a freshly built Clean Place.
-		// Only the normal path builds here; the others reuse `config.placeFile`,
-		// already built with LoadStringEnabled so the Run-mode gate passes.
-		const isWorkspace = isWorkspaceRun(jobs);
-		if (isWorkspace) {
-			return {
-				isWorkspace,
-				placeFile: path.resolve(primary.config.placeFile),
-				workDirectory,
-			};
-		}
-
-		if (primary.config.collectCoverage) {
-			return { isWorkspace, placeFile: resolvePlaceFilePath(primary.config), workDirectory };
-		}
-
-		return {
-			isWorkspace,
-			placeFile: await this.buildCleanPlaceAsync({ primary, rootDirectory, workDirectory }),
-			workDirectory,
-		};
-	}
 }
 
+/**
+ * Creates a Studio CLI backend.
+ * @param options - Seams, timeouts and Studio location; omitted ones use defaults.
+ * @returns The new backend.
+ */
 export function createStudioCliBackend(options: StudioCliOptions = {}): StudioCliBackend {
 	return new StudioCliBackend(options);
 }
@@ -672,6 +364,8 @@ export function createStudioCliBackend(options: StudioCliOptions = {}): StudioCl
 /**
  * The boot window {@link BOOT_TIMEOUT_ENV} asks for, else the default. Throws
  * on a value that is not a positive integer.
+ * @returns The boot window in milliseconds.
+ * @throws {Error} When the variable is set but is not a positive integer.
  */
 function resolveBootTimeout(): number {
 	const raw = process.env[BOOT_TIMEOUT_ENV];
@@ -689,6 +383,11 @@ function resolveBootTimeout(): number {
 	return parsed;
 }
 
+/**
+ * Binds the install options so only the scratch directory is left.
+ * @param install - Plugin install options without the work directory.
+ * @returns An installer that takes the run's scratch directory.
+ */
 function installPluginInto(
 	install: Except<RunnerPluginInstallOptions, "workDirectory">,
 ): (workDirectory: string) => Promise<ManagedPluginInstall | undefined> {
@@ -696,10 +395,12 @@ function installPluginInto(
 }
 
 /**
- * studio-cli drives one Studio instance serially, so reject a request it
+ * The studio-cli backend drives one Studio instance serially, so reject a request it
  * structurally cannot serve before anything is built or launched. A
  * `parallel` count is not such a request: the run is one session whatever
  * it asks for.
+ * @param root0 - Jobs and work-stealing flag.
+ * @throws {Error} When there are no jobs or work-stealing is requested.
  */
 function assertSerialJobs({
 	jobs,
@@ -712,697 +413,4 @@ function assertSerialJobs({
 	if (workStealing === true) {
 		throw new Error("studio-cli backend is serial and does not support work-stealing");
 	}
-}
-
-/** The rejection for a run Studio never returned a result frame for. */
-/** Where Studio is told to write its engine log for a run. */
-function studioOutputFile(workDirectory: string): string {
-	return path.join(workDirectory, OUTPUT_FILE);
-}
-
-function buildStudioCliPayload(
-	request: RunPayloadRequest,
-	pluginKey: string | undefined,
-): StudioCliPayload {
-	return {
-		...(pluginKey === undefined ? {} : { pluginKey }),
-		protocolVersion: STUDIO_CLI_PROTOCOL_VERSION,
-		test: true,
-		...buildRunPayload(request),
-	};
-}
-
-/**
- * Wrap `content` in a Luau long string, escalating the bracket level
- * (`[=[`, `[==[`, …) until the chosen `]=*]` terminator does not occur in the
- * content. Without this, a config string carrying the level-1 terminator
- * `]=]` (e.g. a `testNamePattern`) would close the string early and emit
- * syntactically invalid Luau — a silent no-result run.
- */
-function luauLongString(content: string): string {
-	let level = 1;
-	while (content.includes(`]${"=".repeat(level)}]`)) {
-		level += 1;
-	}
-
-	const eq = "=".repeat(level);
-	return `[${eq}[${content}]${eq}]`;
-}
-
-/**
- * Bootstrap prologue: decode the payload, drive the plugin's Run-mode runner
- * via `ExecuteRunModeAsync`, and assemble the `message` frame — a plugin
- * that threw or returned a non-result yields a `{ success = false }`
- * envelope, and a nil return sends `nilReturn` and keeps the socket alive.
- */
-function bootstrapRunLines({
-	payload,
-	port,
-	requestId,
-}: {
-	readonly payload: StudioCliPayload;
-	readonly port: number;
-	readonly requestId: string;
-}): Array<string> {
-	return [
-		'local HttpService = game:GetService("HttpService")',
-		'local ReplicatedStorage = game:GetService("ReplicatedStorage")',
-		'local StudioTestService = game:GetService("StudioTestService")',
-		`local payload = HttpService:JSONDecode(${luauLongString(JSON.stringify(payload))})`,
-		`local URL = "ws://localhost:${port.toString()}"`,
-		`local REQUEST_ID = ${luauLongString(requestId)}`,
-		...BOOTSTRAP_SIDE_CHANNEL_LINES,
-		...BOOTSTRAP_STARTED_LINES,
-		"local ok, result = pcall(function()",
-		"\treturn StudioTestService:ExecuteRunModeAsync(payload)",
-		"end)",
-		"local message",
-		"local keepAlive = false",
-		"if not ok then",
-		'\tmessage = { type = "results", requestId = REQUEST_ID, gameOutput = "[]", jestOutput = HttpService:JSONEncode({ err = tostring(result), success = false }) }',
-		"elseif result == nil then",
-		"\t-- Remove this keep-alive branch once Roblox fixes",
-		"\t-- https://devforum.roblox.com/t/executerunmodeasync-returns-nil-when-called-from-task-runscript-before-the-place-reaches-placeidle/4921336",
-		'\tmessage = { type = "nilReturn", requestId = REQUEST_ID }',
-		"\tkeepAlive = true",
-		'elseif typeof(result) ~= "table" or result.jestOutput == nil then',
-		'\tmessage = { type = "results", requestId = REQUEST_ID, gameOutput = "[]", jestOutput = HttpService:JSONEncode({ err = "studio-cli: the jest plugin produced no result. Install or update the jest-roblox Studio plugin.", success = false }) }',
-		"else",
-		'\tmessage = { type = "results", requestId = REQUEST_ID, protocolVersion = result.protocolVersion, pluginVersion = result.pluginVersion, gameOutput = result.gameOutput or "[]", jestOutput = result.jestOutput }',
-		"end",
-	];
-}
-
-/**
- * The `--runScriptFile` script. Runs at command-bar level in the edit
- * DataModel, drives the installed plugin's Run-mode runner via
- * `ExecuteRunModeAsync`, then pushes the result envelope back to the host over
- * a localhost WebSocket (`HttpService:CreateWebStreamClient`, the same client
- * API the plugin uses). `requestId` correlates the frame with this run. A
- * plugin that is absent or returns nothing sends a `{ success = false }`
- * envelope, so the host surfaces a clean error rather than hanging.
- */
-function buildBootstrap({
-	payload,
-	port,
-	requestId,
-}: {
-	readonly payload: StudioCliPayload;
-	readonly port: number;
-	readonly requestId: string;
-}): string {
-	return [...bootstrapRunLines({ payload, port, requestId }), ...BOOTSTRAP_SEND_LINES, ""].join(
-		"\n",
-	);
-}
-
-/**
- * Write the run's bootstrap script into the work directory and return the
- * Studio CLI argument vector that opens the place and runs it.
- */
-function buildStudioArgs({
-	bail,
-	fileSystem,
-	jobs,
-	placeFile,
-	pluginKey,
-	port,
-	requestId,
-	runBudgetMs,
-	vmParallel,
-	workDirectory,
-}: StudioArgsOptions): Array<string> {
-	const bootstrapFile = path.join(workDirectory, BOOTSTRAP_FILE);
-	const outputFile = studioOutputFile(workDirectory);
-	fileSystem.writeFileSync(
-		bootstrapFile,
-		buildBootstrap({
-			payload: buildStudioCliPayload({ bail, jobs, runBudgetMs, vmParallel }, pluginKey),
-			port,
-			requestId,
-		}),
-	);
-
-	return [
-		"--task",
-		"RunScript",
-		"--localPlaceFile",
-		normalizeWindowsPath(placeFile),
-		"--runScriptFile",
-		normalizeWindowsPath(bootstrapFile),
-		"--outputFile",
-		normalizeWindowsPath(outputFile),
-		"--quitAfterExecution",
-	];
-}
-
-/**
- * Reject a run-mode result whose echoed `protocolVersion` doesn't match the
- * CLI's. A stale plugin (run-mode runner predating the handshake) omits the
- * echo entirely (`undefined`); a divergent plugin echoes a different number.
- * Either way the user must update the plugin. Mirrors the WebSocket backend's
- * `version_mismatch` path.
- */
-function assertProtocolMatch(
-	{ pluginVersion, protocolVersion: actual }: ResultMessage,
-	manualPlugins: ReadonlyArray<string>,
-): void {
-	if (actual === STUDIO_CLI_PROTOCOL_VERSION) {
-		return;
-	}
-
-	const reported = actual === undefined ? "no version" : `v${actual.toString()}`;
-	// Names the release the answering copy came from where it reported one:
-	// several copies can be installed at once, and a protocol number alone
-	// does not say which file to remove.
-	const release = pluginVersion === undefined ? "" : ` from jest-roblox ${pluginVersion}`;
-	// With a Managed Plugin installed, only a Manual Plugin can answer wrong.
-	const remedy =
-		manualPlugins.length === 0
-			? "Update the jest-roblox Studio plugin to match this CLI version."
-			: `Remove or update these copies in the Studio plugins folder: ${manualPlugins.join(", ")}.`;
-	throw new Error(
-		"studio-cli: jest-roblox Studio plugin protocol version mismatch " +
-			`(plugin${release} reported ${reported}, CLI expects v${STUDIO_CLI_PROTOCOL_VERSION.toString()}). ${remedy}`,
-	);
-}
-
-/**
- * Decode the run-mode result frame into the backend result. Decode the
- * envelope before the version check: when the bootstrap reached the plugin but
- * got nothing back (ExecuteRunModeAsync threw, or returned no result) it sends
- * a `{success:false, err}` envelope with no protocolVersion, and that error
- * must win over assertProtocolMatch so the real cause surfaces instead of a
- * misleading version mismatch.
- */
-function buildBackendResult(
-	message: ResultMessage,
-	{
-		executionMs,
-		jobs,
-		manualPlugins,
-	}: { executionMs: number; jobs: Array<ProjectJob>; manualPlugins: ReadonlyArray<string> },
-): BackendResult {
-	const decoded = decodeEnvelope(message.jestOutput);
-	assertProtocolMatch(message, manualPlugins);
-
-	return {
-		...pairPluginEntries(decoded, {
-			backendName: "studio-cli backend",
-			gameOutput: message.gameOutput,
-			jobCount: jobs.length,
-		}),
-		timing: { executionMs },
-	};
-}
-
-/**
- * The port the result server bound. A real `ws` server started on port 0 binds
- * asynchronously, so wait for `listening` and read the assigned port; the test
- * mock reports its port synchronously and is returned without waiting.
- */
-async function serverPortAsync(server: WebSocketServer): Promise<number> {
-	const address = server.address();
-	if (address !== null && typeof address === "object") {
-		return address.port;
-	}
-
-	await once(server, "listening");
-	const bound = server.address();
-	if (bound === null || typeof bound === "string") {
-		throw new Error("studio-cli: result WebSocket server failed to bind a port.");
-	}
-
-	return bound.port;
-}
-
-function routeRunFrame(
-	message: RunFrame,
-	{ deadlines, nilRelay, onResult, socket }: RunFrameRoute,
-): void {
-	switch (message.type) {
-		case "nilReturn": {
-			deadlines.markStarted();
-			nilRelay.onNilReturn();
-			break;
-		}
-		case "pluginReady": {
-			nilRelay.onPluginReady(socket);
-			break;
-		}
-		case "results": {
-			onResult(message);
-			break;
-		}
-		case "started": {
-			deadlines.markStarted();
-			break;
-		}
-	}
-}
-
-function isOtherKeysResult(message: RunFrame, pluginKey: string | undefined): boolean {
-	return (
-		message.type === "results" &&
-		pluginKey !== undefined &&
-		message.pluginKey !== undefined &&
-		message.pluginKey !== pluginKey
-	);
-}
-
-/**
- * Forward this run's frames. Frames that aren't valid JSON, aren't a run
- * frame, belong to another run, or are a result from another key's plugin are
- * ignored (engine/plugin chatter).
- */
-function listenForRunFrames({
-	pluginKey,
-	requestId,
-	server,
-	...route
-}: Except<RunFrameRoute, "socket"> & {
-	pluginKey: string | undefined;
-	requestId: string;
-	server: WebSocketServer;
-}): void {
-	server.on("connection", (socket: WebSocket) => {
-		socket.on("message", (data: buffer.Buffer) => {
-			let raw: JSONValue;
-			try {
-				raw = JSON.parse(data.toString());
-			} catch {
-				return;
-			}
-
-			const message = runFrameSchema(raw);
-			if (
-				message instanceof type.errors ||
-				message.requestId !== requestId ||
-				isOtherKeysResult(message, pluginKey)
-			) {
-				return;
-			}
-
-			routeRunFrame(message, { ...route, socket });
-		});
-	});
-}
-
-/**
- * The tail of Studio's own engine log, or nothing when it holds nothing worth
- * printing.
- *
- * Studio's stdio is discarded (see {@link spawnStudio}), so `--outputFile` is
- * the only channel that survives a run the result socket never answered. It is
- * not a guarantee: a place Studio cannot open stops behind a modal dialog with
- * only the echoed bootstrap flushed, which is exactly why the timeout names the
- * file as well as quoting it.
- *
- * @param outputFile - Path Studio was told to log to.
- * @returns Trailing log lines, oldest first, or an empty array.
- */
-function readStudioLogTail(fileSystem: FileSystem, outputFile: string): Array<string> {
-	let contents;
-	try {
-		contents = fileSystem.readFileSync(outputFile, "utf-8");
-	} catch {
-		return [];
-	}
-
-	return contents
-		.split(LOG_LINE_SPLIT_PATTERN)
-		.map((line) => line.trim())
-		.filter((line) => line !== "")
-		.slice(-STUDIO_LOG_TAIL)
-		.map((line) => {
-			return line.length > STUDIO_LOG_LINE_LIMIT
-				? `${line.slice(0, STUDIO_LOG_LINE_LIMIT)}…`
-				: line;
-		});
-}
-
-/**
- * Names a run Studio never answered, and hands over whatever Studio did log.
- *
- * A bare "timed out" is the least useful thing the backend can say: the run
- * could have wedged in a test, failed to open the place, or died behind a
- * dialog, and Studio's engine log is the only place those read differently.
- *
- * @param headline - What ran out, and any probable cause, as the opening lines
- *   of the error.
- * @param outputFile - Path Studio was told to log to.
- * @returns The error to reject the run with.
- */
-function unansweredError({
-	fileSystem,
-	headline,
-	outputFile,
-}: {
-	fileSystem: FileSystem;
-	headline: string;
-	outputFile: string;
-}): Error {
-	const lines = [headline, `  Studio log: ${outputFile}`];
-	const tail = readStudioLogTail(fileSystem, outputFile);
-	if (tail.length > 0) {
-		lines.push("  Last lines Studio logged:");
-		for (const line of tail) {
-			lines.push(`    ${line}`);
-		}
-	}
-
-	return new Error(lines.join("\n"));
-}
-
-function bootTimeoutHeadline(bootTimeout: number): string {
-	return [
-		`studio-cli: Studio did not start the run within ${bootTimeout.toString()}ms and was terminated.`,
-		"  Probable cause: Studio is not logged in. Open Roblox Studio, log in, then run again.",
-		`  On a slow machine, set ${BOOT_TIMEOUT_ENV} to allow a slower boot.`,
-	].join("\n");
-}
-
-/**
- * The boot deadline runs from launch until the run starts; the run deadline
- * from then until the result. Either one expiring hands `onExpired` the
- * error.
- */
-function startRunDeadlines({
-	bootTimeout,
-	fileSystem,
-	onExpired,
-	outputFile,
-	timeout,
-}: ResultDeadline & {
-	fileSystem: FileSystem;
-	onExpired: (error: Error) => void;
-}): { clear: () => void; markStarted: () => void } {
-	function arm(ms: number, headline: string): NodeJS.Timeout {
-		return setTimeout(() => {
-			onExpired(unansweredError({ fileSystem, headline, outputFile }));
-		}, ms);
-	}
-
-	let isBooting = true;
-	let timer = arm(bootTimeout, bootTimeoutHeadline(bootTimeout));
-
-	return {
-		clear: () => {
-			isBooting = false;
-			clearTimeout(timer);
-		},
-		markStarted: () => {
-			if (!isBooting) {
-				return;
-			}
-
-			isBooting = false;
-			clearTimeout(timer);
-			timer = arm(
-				timeout,
-				`studio-cli: Studio run timed out after ${timeout.toString()}ms and was terminated.`,
-			);
-		},
-	};
-}
-
-function nilReturnError({
-	pluginKey,
-	...unanswered
-}: Except<NilReturnRelayOptions, "onExpired" | "requestId">): Error {
-	const headline =
-		pluginKey === undefined
-			? NIL_RETURN_HEADLINE
-			: `${NIL_RETURN_HEADLINE}\n  No copy of the Studio plugin ${pluginKey} answered: it did not load, Studio refused it a socket, or the play server never started running.`;
-	return unansweredError({ ...unanswered, headline });
-}
-
-function startNilReturnRelay({
-	onExpired,
-	requestId,
-	...unanswered
-}: NilReturnRelayOptions): NilReturnRelay {
-	// Remove the nil relay once Roblox fixes
-	// https://devforum.roblox.com/t/executerunmodeasync-returns-nil-when-called-from-task-runscript-before-the-place-reaches-placeidle/4921336
-	const pluginSockets = new Set<WebSocket>();
-	let timer: NodeJS.Timeout | undefined;
-
-	function relayTo(socket: WebSocket): void {
-		socket.send(JSON.stringify({ requestId, type: "nilRelay" }));
-		clearTimeout(timer);
-	}
-
-	return {
-		clear: () => {
-			clearTimeout(timer);
-		},
-		onNilReturn: () => {
-			if (timer !== undefined) {
-				return;
-			}
-
-			timer = setTimeout(() => {
-				onExpired(nilReturnError(unanswered));
-			}, NIL_RETURN_PLUGIN_WAIT_MS);
-			for (const socket of pluginSockets) {
-				relayTo(socket);
-			}
-		},
-		onPluginReady: (socket) => {
-			pluginSockets.add(socket);
-			if (timer !== undefined) {
-				relayTo(socket);
-			}
-		},
-	};
-}
-
-/**
- * Wire every settle source onto the Promise's one-shot resolve/reject pair and
- * clear the deadlines before forwarding it.
- */
-function awaitStudioCliResult({
-	child,
-	reject,
-	requestId,
-	resolve,
-	server,
-	...deadlineOptions
-}: StudioCliResultWait): void {
-	const deadlines = startRunDeadlines({ ...deadlineOptions, onExpired: bail });
-	const nilRelay = startNilReturnRelay({ ...deadlineOptions, onExpired: bail, requestId });
-
-	function settle(action: () => void): void {
-		deadlines.clear();
-		nilRelay.clear();
-		action();
-	}
-
-	function bail(error: Error): void {
-		settle(() => {
-			reject(error);
-		});
-	}
-
-	child.onError((error) => {
-		bail(new Error(error.message, { cause: error }));
-	});
-
-	listenForRunFrames({
-		deadlines,
-		nilRelay,
-		onResult: (result) => {
-			settle(() => {
-				resolve(result);
-			});
-		},
-		pluginKey: deadlineOptions.pluginKey,
-		requestId,
-		server,
-	});
-
-	server.on("error", bail);
-}
-
-/**
- * Resolve with the first `results` frame for this `requestId` — from the
- * bootstrap, or from the plugin after a nil return — or reject on timeout /
- * spawn failure. A stray frame never settles it with the wrong payload.
- */
-async function waitForResultAsync({
-	child,
-	deadline,
-	fileSystem,
-	pluginKey,
-	requestId,
-	server,
-}: ResultChannel & {
-	readonly deadline: ResultDeadline;
-	readonly pluginKey: string | undefined;
-	readonly requestId: string;
-}): Promise<ResultMessage> {
-	return new Promise<ResultMessage>((resolve, reject) => {
-		awaitStudioCliResult({
-			...deadline,
-			child,
-			fileSystem,
-			pluginKey,
-			reject,
-			requestId,
-			resolve,
-			server,
-		});
-	});
-}
-
-function resolveHiddenDesktop({
-	headed = false,
-	hiddenDesktop,
-	platform,
-}: Pick<StudioCliOptions, "headed" | "hiddenDesktop"> & {
-	readonly platform: NodeJS.Platform;
-}): boolean {
-	if (headed || hiddenDesktop === false) {
-		return false;
-	}
-
-	if (platform === "win32" || platform === "darwin") {
-		return true;
-	}
-
-	if (hiddenDesktop === true) {
-		process.stderr.write("Warning: hiddenDesktop is Windows and macOS only; ignoring it.\n");
-	}
-
-	return false;
-}
-
-/**
- * Terminate any live bootstrap socket and close the result server so a
- * lingering connection can't keep node's event loop running past the CLI's
- * exitCode-based shutdown (the same hazard the WebSocket `studio` backend
- * guards against).
- */
-function closeServer(server: WebSocketServer): void {
-	for (const client of server.clients) {
-		client.terminate();
-	}
-
-	server.close();
-}
-
-/**
- * Wind a run down the hard way: every error path before the graceful teardown
- * began (timeout, spawn failure, server error — a hung run gets no graceful
- * wait). Kills Studio so node's event loop can drain and the CLI exits, then
- * releases the result server. Not called once the graceful watch has started:
- * from then on the watch owns both the kill and the close.
- *
- * @param child - The Studio process, absent when the launch never happened.
- * @param server - The loopback result server for this run.
- */
-function hardTeardown(child: StudioCliProcess | undefined, server: WebSocketServer): void {
-	child?.kill();
-	closeServer(server);
-}
-
-/**
- * Wind a run down now that the result is in hand, decoupling teardown from it:
- * close the result server (so the bootstrap returns and `--quitAfterExecution`
- * begins a graceful `ClosePlace` that runs edit-mode `BindToClose` handlers and
- * frees the lock), then kill the instant the lock releases — skipping Studio's
- * ~30s telemetry drain. The watch is non-awaited, so results return now and the
- * process exits after teardown.
- *
- * @param child - The Studio process that answered.
- * @param server - The loopback result server for this run.
- * @param graceCapMs - Backstop before the watch hard-kills anyway.
- */
-function startGracefulTeardown({
-	child,
-	graceCapMs,
-	server,
-}: {
-	readonly child: StudioCliProcess;
-	readonly graceCapMs: number;
-	readonly server: WebSocketServer;
-}): void {
-	closeServer(server);
-	child.killOnLockRelease(graceCapMs);
-}
-
-/**
- * Studio in `--task RunScript` mode ignores SIGTERM on macOS, and a live child
- * holds node's event loop open, so the CLI would never exit.
- */
-function terminateStudio(child: ChildProcess): void {
-	const escalation = setTimeout(() => {
-		child.kill("SIGKILL");
-		child.unref();
-	}, SIGTERM_GRACE_MS);
-	escalation.unref();
-	child.once("exit", () => {
-		clearTimeout(escalation);
-	});
-	child.kill("SIGTERM");
-}
-
-/**
- * Real launcher: clear a stale `<place>.lock` (a previously killed Studio
- * can't remove its own, and a back-to-back run would otherwise open the place
- * onto it and crash), then spawn Studio and return the handle the host kills.
- * The result arrives over the WebSocket, not the process — the host kills this
- * Studio once it lands (instantly, or after a graceful close; see {@link
- * StudioCliProcess}).
- *
- * `stdio: "ignore"` because nothing is read from the pipes — an unconsumed
- * `stdout` pipe could backpressure-stall a chatty Studio.
- */
-function spawnStudio(request: StudioCliLaunchRequest): StudioCliProcess {
-	const { childProcess, fileSystem } = request;
-	const lockFile = clearStaleLock(fileSystem, request.placeFile);
-
-	// headed mode intentionally shows the Studio window; `!request.headed` is
-	// the deliberate lever, not an accidental terminal popup.
-	const child = childProcess.spawn(request.studioPath, request.args, {
-		stdio: "ignore",
-		windowsHide: !request.headed,
-	});
-
-	return {
-		kill: () => {
-			terminateStudio(child);
-		},
-		killOnLockRelease: (graceCapMs) => {
-			watchLockRelease({
-				fileSystem,
-				graceCapMs,
-				lockFile,
-				terminate: () => {
-					terminateStudio(child);
-				},
-			});
-		},
-		onError: (listener) => {
-			child.on("error", listener);
-		},
-	};
-}
-
-function launchStudioProcess(request: StudioCliLaunchRequest): StudioCliProcess {
-	if (!request.hiddenDesktop) {
-		return spawnStudio(request);
-	}
-
-	if (request.platform === "win32") {
-		return launchOnHiddenDesktop(request);
-	}
-
-	const bundle = findAppBundle(request.studioPath);
-	if (bundle === undefined) {
-		process.stderr.write(UNBUNDLED_WARNING);
-		return spawnStudio(request);
-	}
-
-	return launchHiddenOnMacos(request, bundle);
 }

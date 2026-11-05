@@ -9,6 +9,13 @@ export const NX_MARKER = "nx.json";
 
 const MARKERS = [PNPM_MARKER, TURBO_MARKER, NX_MARKER] as const;
 
+/**
+ * Walk up from `cwd` to the nearest directory with a pnpm, turbo or nx marker.
+ * @param cwd - Directory to start from.
+ * @param fileSystem - File system to probe.
+ * @returns The workspace root directory.
+ * @throws {Error} When no ancestor holds a marker.
+ */
 export function discoverWorkspaceRoot(
 	cwd: string,
 	fileSystem: FileSystem = nodeFileSystem,

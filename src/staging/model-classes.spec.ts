@@ -11,6 +11,7 @@ const FIXTURES = path.join(import.meta.dirname, "__fixtures__/pinned");
 
 /**
  * `<roblox!` plus signature, version, class count, instance count, reserved.
+ * @returns A 32-byte header with zero counts.
  */
 function binaryHeader(): Buffer {
 	const header = Buffer.alloc(32);
@@ -21,6 +22,9 @@ function binaryHeader(): Buffer {
 
 /**
  * One uncompressed chunk: name, compressed length 0, stored length, reserved.
+ * @param name - Four-character chunk name.
+ * @param payload - Chunk body.
+ * @returns Header and body.
  */
 function chunk(name: string, payload: Buffer): Buffer {
 	const header = Buffer.alloc(16);
@@ -30,7 +34,14 @@ function chunk(name: string, payload: Buffer): Buffer {
 	return Buffer.concat([header, payload]);
 }
 
-/** One compressed chunk with separate stored and decompressed lengths. */
+/**
+ * One compressed chunk with separate stored and decompressed lengths.
+ * @param options - Chunk name, compressed body and decompressed size.
+ * @param options.name - Four-character chunk name.
+ * @param options.compressed - Compressed body.
+ * @param options.decompressedBytes - Size written as the decompressed length.
+ * @returns Header and body.
+ */
 function compressedChunk({
 	name,
 	compressed,
@@ -47,7 +58,11 @@ function compressedChunk({
 	return Buffer.concat([header, compressed]);
 }
 
-/** An `INST` payload: class id, then the length-prefixed class name. */
+/**
+ * An `INST` payload: class id, then the length-prefixed class name.
+ * @param rootClass - Class name to write.
+ * @returns The payload bytes.
+ */
 function instancePayload(rootClass: string): Buffer {
 	const name = Buffer.from(rootClass, "utf-8");
 	const payload = Buffer.alloc(8 + name.length);
@@ -59,6 +74,8 @@ function instancePayload(rootClass: string): Buffer {
 
 /**
  * LZ4 for a class name made only of `A`, using an overlapping back-reference.
+ * @param length - Length of the class name.
+ * @returns The LZ4 block.
  */
 function repeatedClassLz4(length: number): Buffer {
 	const payload = instancePayload("A".repeat(length));

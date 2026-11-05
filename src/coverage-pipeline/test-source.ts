@@ -1,13 +1,14 @@
 import assert from "node:assert";
 
 import type { SourceMapper } from "../source-mapper/index.ts";
-import type { JestResult, TestFileResult } from "../types/jest-result.ts";
+import type { JestResult, TestFileResult } from "../types/jest-result-types.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import { nodeFileSystem } from "../utils/file-system.ts";
 import { hashString } from "../utils/hash.ts";
 import type { TestRecord } from "./manifest.ts";
 import { resolveTestFileHash } from "./test-file-hash.ts";
 
+/** Answers what the harvester records about one test's source. */
 export type TestSourceResolver = (testFilePath: string, testCaseId: string) => TestSource;
 
 /** What the harvester records about one test's source, keyed off its file. */
@@ -33,6 +34,8 @@ interface FileSources {
  * the file `testFileSourceHash` hashes, and a hash of its own range of that
  * file. A test without one (the runtime could not read its call site) is
  * keyed on the whole file, as before.
+ * @param options - File system, Jest result and source mapper.
+ * @returns Resolver that caches its work per test file.
  */
 export function createTestSourceResolver({
 	fileSystem = nodeFileSystem,
@@ -99,6 +102,8 @@ function findFileResult({
 /**
  * Each located test's line in the resolved file, by full name. A name that
  * occurs twice (the rows of an `each` table) keeps its first line.
+ * @param options - Jest file result, source mapper and test file path.
+ * @returns Line by full test name.
  */
 function locateTests({
 	fileResult,

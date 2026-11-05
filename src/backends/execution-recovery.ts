@@ -11,38 +11,47 @@ import {
 	type ExecutionClaimObservation,
 } from "../luau/execution-claim.ts";
 import { isPollTimeout } from "../utils/error-chain.ts";
-import { UncertainSubmissionError } from "./uncertain-submission.ts";
+import { createBootWatch, type SubmissionLifecycle } from "./execution-boot-watch.ts";
+import {
+	type AttemptOutcome,
+	type ObservedAttempt,
+	type ReadResult,
+	requireClaim,
+	resolveHedgeAsync,
+	resolveRecoveryAsync,
+	settleAsync,
+} from "./execution-hedge.ts";
 
+/**
+ * The create may have succeeded; its relay remains observable without a task
+ * ref.
+ */
+export class UncertainSubmissionError extends ExecutionTimeoutError {}
+
+/** Milliseconds a task has to claim execution before a hedge starts. */
 export const DEFAULT_BOOT_WATCH_MS = 45_000;
 
-export interface ExecutionAttemptContext {
+/** What one execution attempt receives. */
+interface ExecutionAttemptContext {
+	/** Luau source of the execution claim the task must take. */
 	claim: string;
+	/** Aborts when the attempt is no longer observed. */
 	observationSignal: AbortSignal;
+	/** Lifecycle hooks of the task submission. */
 	submission: SubmissionLifecycle;
 }
 
-interface SubmissionLifecycle {
-	accepted(): void;
-}
-
 type ExecuteAttempt = (context: ExecutionAttemptContext) => Promise<ScriptResult>;
-type ReadResult = (error: ExecutionTimeoutError, signal: AbortSignal) => Promise<ScriptResult>;
-
-type AttemptOutcome =
-	| { failure: unknown; status: "rejected" }
-	| { result: ScriptResult; status: "fulfilled" };
-
-type BootObservation = { status: "failed" | "missing" } | { status: "found" };
-type WatchedObservation = BootObservation & { generation: object };
-
-interface ObservedAttempt {
-	cancel: () => void;
-	outcome: Promise<AttemptOutcome>;
-}
 
 /**
  * A stalled observer gets one hedge and an ambiguous create gets one rescue;
  * every submission shares the claim that admits only one execution.
+ *
+ * @param options - Attempt runner, timeout, and the clock, key, and claim
+ *   reader to use.
+ * @returns The result of the one execution the claim admitted.
+ * @rejects The first non-timeout failure, or the recovery failure when every
+ *   attempt fails.
  */
 // eslint-disable-next-line flawless/max-lines-per-function -- outcome routing stays with its race
 export async function executeWithRecoveryAsync({
@@ -142,129 +151,6 @@ export async function executeWithRecoveryAsync({
 	}
 }
 
-function requireClaim(result: ScriptResult): ScriptResult {
-	if (result.outputs[0] === EXECUTION_NOT_CLAIMED) {
-		throw new Error("Test execution was already claimed; refusing to run tests twice.");
-	}
-
-	if (result.outputs[0] === EXECUTION_START_EXPIRED) {
-		throw new Error(
-			"Test execution's start window expired; check the client clock and Open Cloud queue delay.",
-		);
-	}
-
-	return result;
-}
-
-async function resolveRecoveryAsync({
-	firstFailure,
-	readResultAsync,
-	replacementFailure,
-}: {
-	firstFailure: unknown;
-	readResultAsync: ReadResult;
-	replacementFailure: unknown;
-}): Promise<ScriptResult> {
-	const failures = [firstFailure, replacementFailure];
-	const observation = new AbortController();
-	const readers = failures
-		.filter((failure) => failure instanceof ExecutionTimeoutError)
-		.map(async (failure) => {
-			try {
-				return requireClaim(await readResultAsync(failure, observation.signal));
-			} catch (err) {
-				failures.push(err);
-				throw err;
-			}
-		});
-	try {
-		return await Promise.any(readers);
-	} catch {
-		// Each failed reader contributes its cause above.
-	} finally {
-		observation.abort();
-	}
-
-	// Recovery errors must retain the original uncertain execution as cause.
-	throw new AggregateError(
-		failures,
-		`Open Cloud recovery failed: ${failures.map(String).join("\n")}`,
-		{ cause: firstFailure },
-	);
-}
-
-function claimedResult(outcome: AttemptOutcome): ScriptResult | undefined {
-	if (outcome.status === "rejected") {
-		return undefined;
-	}
-
-	// Expiry refuses a late start; the other task can already own the claim.
-	return outcome.result.outputs[0] === EXECUTION_NOT_CLAIMED ||
-		outcome.result.outputs[0] === EXECUTION_START_EXPIRED
-		? undefined
-		: outcome.result;
-}
-
-function failureFrom(outcome: AttemptOutcome): unknown {
-	if (outcome.status === "fulfilled") {
-		try {
-			return requireClaim(outcome.result);
-		} catch (err) {
-			return err;
-		}
-	}
-
-	return outcome.failure;
-}
-
-async function resolveHedgeAsync({
-	original,
-	readResultAsync,
-	replacement,
-}: {
-	readonly original: ObservedAttempt;
-	readonly readResultAsync: ReadResult;
-	readonly replacement: ObservedAttempt;
-}): Promise<ScriptResult> {
-	try {
-		const taggedOriginal = original.outcome.then((outcome) => {
-			return { attempt: "original" as const, outcome };
-		});
-		const taggedReplacement = replacement.outcome.then((outcome) => {
-			return { attempt: "replacement" as const, outcome };
-		});
-		const first = await Promise.race([taggedOriginal, taggedReplacement]);
-		const firstResult = claimedResult(first.outcome);
-		if (firstResult !== undefined) {
-			return firstResult;
-		}
-
-		const second = await (first.attempt === "original" ? taggedReplacement : taggedOriginal);
-		const secondResult = claimedResult(second.outcome);
-		if (secondResult !== undefined) {
-			return secondResult;
-		}
-
-		const originalOutcome = first.attempt === "original" ? first.outcome : second.outcome;
-		const replacementOutcome = first.attempt === "replacement" ? first.outcome : second.outcome;
-		return await resolveRecoveryAsync({
-			firstFailure: failureFrom(originalOutcome),
-			readResultAsync,
-			replacementFailure: failureFrom(replacementOutcome),
-		});
-	} finally {
-		replacement.cancel();
-	}
-}
-
-async function settleAsync(promise: Promise<ScriptResult>): Promise<AttemptOutcome> {
-	try {
-		return { result: await promise, status: "fulfilled" };
-	} catch (err) {
-		return { failure: err, status: "rejected" };
-	}
-}
-
 async function rescueSubmissionAsync({
 	context,
 	error,
@@ -358,92 +244,6 @@ function createObservedAttempt({
 		outcome: settleAsync(
 			executeAsync({ claim, observationSignal: observation.signal, submission }),
 		),
-	};
-}
-
-// eslint-disable-next-line flawless/max-lines-per-function -- timer generation and claim read form one lifecycle
-function createBootWatch({
-	key,
-	bootWatchMs,
-	readClaimAsync,
-	watchesSubmission,
-}: {
-	bootWatchMs: number;
-	key: string;
-	readClaimAsync:
-		| ((key: string, signal: AbortSignal) => Promise<ExecutionClaimObservation>)
-		| undefined;
-	watchesSubmission: boolean;
-}): {
-	cancel: () => void;
-	isCurrent: (observed: WatchedObservation) => boolean;
-	promise: Promise<WatchedObservation>;
-	submission: SubmissionLifecycle;
-} {
-	let generation = {};
-	let observation: AbortController | undefined;
-	let timer: ReturnType<typeof setTimeout> | undefined;
-	let isCanceled = false;
-	let settled = Promise.withResolvers<WatchedObservation>();
-	let hasResolved = false;
-
-	function invalidate(): object {
-		generation = {};
-		clearTimeout(timer);
-		observation?.abort();
-		observation = undefined;
-		if (hasResolved) {
-			settled = Promise.withResolvers<WatchedObservation>();
-			hasResolved = false;
-		}
-
-		return generation;
-	}
-
-	function arm(): void {
-		if (isCanceled) {
-			return;
-		}
-
-		const armedGeneration = invalidate();
-		timer = setTimeout(() => {
-			void observeAsync(armedGeneration);
-		}, bootWatchMs);
-	}
-
-	async function observeAsync(armedGeneration: object): Promise<void> {
-		observation = new AbortController();
-		let result: BootObservation;
-		try {
-			const claim =
-				readClaimAsync === undefined
-					? ({ status: "found" } satisfies BootObservation)
-					: await readClaimAsync(key, observation.signal);
-			result = { status: claim.status };
-		} catch {
-			result = { status: "failed" };
-		}
-
-		if (!isCanceled && generation === armedGeneration) {
-			hasResolved = true;
-			settled.resolve({ ...result, generation: armedGeneration });
-		}
-	}
-
-	if (!watchesSubmission) {
-		arm();
-	}
-
-	return {
-		cancel: () => {
-			isCanceled = true;
-			invalidate();
-		},
-		isCurrent: (observed) => observed.generation === generation,
-		get promise() {
-			return settled.promise;
-		},
-		submission: { accepted: arm },
 	};
 }
 

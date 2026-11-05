@@ -29,6 +29,14 @@ const levelStyles = {
 	{ badge: (text: string) => string; separator: (text: string) => string }
 >;
 
+/**
+ * Render a separator bar with a colored title badge centered in it.
+ * @param options - The level, title and terminal width.
+ * @param options.level - Picks the colors.
+ * @param options.termWidth - Bar width; defaults to stderr's columns or 80.
+ * @param options.title - The badge text.
+ * @returns The colored bar.
+ */
 export function formatBannerBar({ level, termWidth, title }: BannerBarOptions): string {
 	const width = termWidth ?? getDefaultWidth();
 	const styles = levelStyles[level];
@@ -41,6 +49,15 @@ export function formatBannerBar({ level, termWidth, title }: BannerBarOptions): 
 	return `${styles.separator(SEPARATOR.repeat(leftWidth))}${badge}${styles.separator(SEPARATOR.repeat(rightWidth))}`;
 }
 
+/**
+ * Render a titled bar, the body lines and a closing separator.
+ * @param options - The level, title, body and terminal width.
+ * @param options.body - The lines between the bars.
+ * @param options.level - Picks the colors.
+ * @param options.termWidth - Bar width; defaults to stderr's columns or 80.
+ * @param options.title - The badge text.
+ * @returns The banner, with surrounding blank lines.
+ */
 export function formatBanner({ body, level, termWidth, title }: BannerOptions): string {
 	const width = termWidth ?? getDefaultWidth();
 	const styles = levelStyles[level];

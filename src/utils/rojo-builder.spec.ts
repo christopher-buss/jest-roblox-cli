@@ -13,6 +13,7 @@ type ExecCallback = (cause: Error | null, stdout: string, stderr: string) => voi
  *
  * @param cause - What the child failed with, or `null` for a clean exit.
  * @param stderr - What the child wrote to stderr.
+ * @returns The stub launcher.
  */
 function answeringWith(cause: Error | null, stderr = ""): ChildProcessRunner {
 	return fromAny({

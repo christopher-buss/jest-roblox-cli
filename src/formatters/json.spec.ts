@@ -1,9 +1,9 @@
 import * as path from "node:path";
 import { describe, expect, it } from "vitest";
 
+import { MINIMAL_RESULT } from "#test/mocks/format-results.ts";
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
-import type { JestResult } from "../types/jest-result.ts";
-import { MINIMAL_RESULT } from "./__fixtures__/results.ts";
+import type { JestResult } from "../types/jest-result-types.ts";
 import { formatJson, writeJsonFileAsync } from "./json.ts";
 
 describe(formatJson, () => {

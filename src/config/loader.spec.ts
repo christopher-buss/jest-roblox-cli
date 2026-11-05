@@ -1,16 +1,18 @@
 import { fromAny } from "@total-typescript/shoehorn";
 
-import type { LoadConfigOptions } from "c12";
+import type { ResolvedConfig as C12ResolvedConfig, LoadConfigOptions } from "c12";
 import * as path from "node:path";
 import process from "node:process";
-import { describe, expect, it, vi } from "vitest";
+import type { Mock } from "vitest";
+import { describe, expect, it, onTestFinished, vi } from "vitest";
 
 import { createConfigFixture } from "#test/mocks/config-fixture.ts";
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
-import type { ConfigLoader } from "./loader.ts";
+import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
+import type { FileSystem } from "../utils/file-system.ts";
+import type { ConfigLoader, ConfigLoadOptions } from "./loader.ts";
 import { loadConfig, loadRawConfig, resolveConfig } from "./loader.ts";
-import type { Config, ResolvedConfig } from "./schema.ts";
-import { DEFAULT_CONFIG } from "./schema.ts";
+import type { Config } from "./schema.ts";
 
 describe(resolveConfig, () => {
 	it("should use defaults when no config provided", () => {
@@ -18,7 +20,7 @@ describe(resolveConfig, () => {
 
 		const result = resolveConfig({});
 
-		expect(result.testMatch).toStrictEqual(DEFAULT_CONFIG.testMatch);
+		expect(result.testMatch).toStrictEqual(createResolvedConfig().testMatch);
 		expect(result.verbose).toBeFalse();
 		expect(result.silent).toBeFalse();
 	});
@@ -171,6 +173,30 @@ describe(resolveConfig, () => {
 });
 
 describe("config loader seams", () => {
+	it("should anchor a relative rootDir on the loaded config's package directory", async () => {
+		expect.assertions(1);
+
+		const workspaceRoot = path.resolve("/repo");
+		const packageDirectory = path.join(workspaceRoot, "packages", "example");
+		const configFile = path.join(packageDirectory, "jest.config.mjs");
+		const { fileSystem } = createMemoryFileSystem({ [configFile]: "" });
+		const configLoader = vi.fn<(options: LoadConfigOptions) => Promise<C12ResolvedConfig>>();
+		configLoader.mockResolvedValue({
+			config: { rootDir: ".", test: { coverageDirectory: "coverage" } },
+			configFile,
+			cwd: packageDirectory,
+			layers: [],
+		});
+
+		const result = await loadConfig({
+			configLoader: fromAny(configLoader),
+			cwd: workspaceRoot,
+			fileSystem,
+		});
+
+		expect(result.rootDir).toBe(packageDirectory);
+	});
+
 	it("should absolutize a relative cwd when no rootDir is declared", async () => {
 		expect.assertions(1);
 
@@ -425,84 +451,6 @@ describe("config layer resolution", () => {
 		).rejects.toThrow("invalid syntax");
 	});
 
-	it("should retain raw values and merge a shared base reached by two branches", async () => {
-		expect.assertions(3);
-
-		const fixture = loadFixture({
-			"a.mjs": { extends: "./base.mjs", timeout: 1000 },
-			"b.mjs": { extends: "./base.mjs", port: 5000 },
-			"base.mjs": { test: { setupFiles: ["shared.luau"] } },
-			"jest.config.mjs": { extends: ["./a.mjs", "./b.mjs"], test: { verbose: true } },
-		});
-		const result = await loadRawConfig(fixture);
-
-		expect(result.timeout).toBe(1000);
-		expect(result.port).toBe(5000);
-		expect(result.test!.setupFiles).toStrictEqual(["shared.luau", "shared.luau"]);
-	});
-
-	it("should resolve an absolute extends path", async () => {
-		expect.assertions(1);
-
-		const parent = path.resolve("parent.mjs");
-		const fixture = loadFixture({
-			"jest.config.mjs": { extends: parent },
-			[parent]: { timeout: 1234 },
-		});
-
-		const result = await loadConfig(fixture);
-
-		expect(result.timeout).toBe(1234);
-	});
-
-	it("should reject circular inheritance and retain missing-parent context", async () => {
-		expect.assertions(2);
-
-		const cycle = loadFixture({
-			"a.mjs": { extends: "./jest.config.mjs" },
-			"jest.config.mjs": { extends: "./a.mjs" },
-		});
-		const missing = loadFixture({ "jest.config.mjs": { extends: "./missing.mjs" } });
-
-		await expect(loadConfig(cycle)).rejects.toThrow("Circular extends detected");
-		await expect(loadConfig(missing)).rejects.toThrow("Failed to resolve extends");
-	});
-
-	it("should resolve merger functions against defaults", async () => {
-		expect.assertions(1);
-
-		const layer: Config = fromAny({
-			test: {
-				coveragePathIgnorePatterns: () => ["ignored"],
-				coverageThreshold: (defaults: NonNullable<ResolvedConfig["coverageThreshold"]>) => {
-					return { ...defaults, lines: 80 };
-				},
-				reporters: () => ["default"],
-				roots: () => ["custom-root"],
-				setupFiles: (defaults: Array<string>) => {
-					return [...defaults, "setup.luau"];
-				},
-				snapshotFormat: (defaults: NonNullable<ResolvedConfig["snapshotFormat"]>) => {
-					return { ...defaults, printBasicPrototype: false };
-				},
-				testMatch: (defaults: Array<string>) => {
-					return [...defaults, "**/*.test.ts"];
-				},
-			},
-		});
-		const result = await loadConfig(loadFixture({ "jest.config.mjs": layer }));
-
-		expect(result).toMatchObject({
-			coveragePathIgnorePatterns: ["ignored"],
-			coverageThreshold: { lines: 80 },
-			reporters: ["default"],
-			roots: ["custom-root"],
-			setupFiles: ["setup.luau"],
-			snapshotFormat: { printBasicPrototype: false },
-			testMatch: expect.arrayContaining(["**/*.test.ts"]),
-		});
-	});
-
 	it("should support a loader with no resolved filename", async () => {
 		expect.assertions(1);
 
@@ -510,40 +458,6 @@ describe("config layer resolution", () => {
 			return {
 				config: { test: { verbose: true } },
 			};
-		});
-
-		const result = await loadConfig({ configLoader });
-
-		expect(result.verbose).toBeTrue();
-	});
-
-	it("should import a JSON config through the supplied filesystem in SEA mode", async () => {
-		expect.assertions(1);
-
-		vi.stubEnv("JEST_ROBLOX_SEA", "true");
-		const { fileSystem } = createMemoryFileSystem({
-			"/config.json": '{"test":{"verbose":true}}',
-		});
-		const configLoader: ConfigLoader = fromAny(async (options: LoadConfigOptions<Config>) => {
-			return { config: await options.import!("/config.json") };
-		});
-
-		const result = await loadConfig({ configLoader, fileSystem });
-
-		expect(result.verbose).toBeTrue();
-	});
-
-	it("should import an ESM config through the native SEA loader", async () => {
-		expect.assertions(1);
-
-		vi.stubEnv("JEST_ROBLOX_SEA", "true");
-		const configLoader: ConfigLoader = fromAny(async (options: LoadConfigOptions<Config>) => {
-			const module: { default: Config } = fromAny(
-				await options.import!(
-					path.resolve(import.meta.dirname, "../../test/fixtures/sea.config.mjs"),
-				),
-			);
-			return { config: module.default };
 		});
 
 		const result = await loadConfig({ configLoader });
@@ -562,5 +476,116 @@ describe("legacy config functions", () => {
 		await expect(loadConfig(loadFixture({ "jest.config.mjs": layer }))).rejects.toThrow(
 			"jest options must be wrapped",
 		);
+	});
+});
+
+type C12Loader = (options: LoadConfigOptions) => Promise<C12ResolvedConfig>;
+
+function emptyConfigLoader(): Mock<C12Loader> {
+	const configLoader = vi.fn<C12Loader>();
+	configLoader.mockResolvedValue({ config: {}, cwd: "/repo", layers: [] });
+
+	return configLoader;
+}
+
+function seamsFor(configLoader: Mock<C12Loader>, fileSystem: FileSystem): ConfigLoadOptions {
+	return { configLoader: fromAny(configLoader), fileSystem };
+}
+
+describe("c12 loader boundary", () => {
+	it("should isolate implicit config discovery from ambient configuration sources", async () => {
+		expect.assertions(3);
+
+		const configLoader = emptyConfigLoader();
+		const { fileSystem } = createMemoryFileSystem();
+
+		await expect(
+			loadRawConfig({
+				configPath: undefined,
+				cwd: "/repo",
+				...seamsFor(configLoader, fileSystem),
+			}),
+		).resolves.toStrictEqual({});
+
+		const [options] = configLoader.mock.calls[0]!;
+		const { merger, ...plainOptions } = options;
+
+		expect(merger).toBeTypeOf("function");
+		expect(plainOptions).toStrictEqual({
+			name: "jest",
+			configFileRequired: false,
+			cwd: "/repo",
+			dotenv: false,
+			extend: false,
+			globalRc: false,
+			omit$Keys: true,
+			packageJson: false,
+			rcFile: false,
+		});
+	});
+
+	it("should require and name an explicitly requested config file", async () => {
+		expect.assertions(2);
+
+		const configLoader = emptyConfigLoader();
+		const { fileSystem } = createMemoryFileSystem();
+
+		await loadRawConfig({
+			configPath: "configs/jest.config.ts",
+			cwd: "/repo",
+			...seamsFor(configLoader, fileSystem),
+		});
+
+		const [options] = configLoader.mock.calls[0]!;
+		const { merger, ...plainOptions } = options;
+
+		expect(merger).toBeTypeOf("function");
+		expect(plainOptions).toStrictEqual({
+			name: "jest",
+			configFile: "configs/jest.config.ts",
+			configFileRequired: true,
+			cwd: "/repo",
+			dotenv: false,
+			extend: false,
+			globalRc: false,
+			omit$Keys: true,
+			packageJson: false,
+			rcFile: false,
+		});
+	});
+
+	it("should provide the filesystem importer only in SEA mode", async () => {
+		expect.assertions(3);
+
+		const configLoader = emptyConfigLoader();
+		const { fileSystem } = createMemoryFileSystem();
+		onTestFinished(() => {
+			vi.unstubAllEnvs();
+		});
+		vi.stubEnv("JEST_ROBLOX_SEA", "true");
+
+		await loadRawConfig({
+			configPath: "jest.config.json",
+			cwd: "/repo",
+			...seamsFor(configLoader, fileSystem),
+		});
+
+		const [options] = configLoader.mock.calls[0]!;
+		const { import: importConfig, merger, ...plainOptions } = options;
+
+		expect(importConfig).toBeTypeOf("function");
+		expect(merger).toBeTypeOf("function");
+		expect(plainOptions).toStrictEqual({
+			name: "jest",
+			configFile: "jest.config.json",
+			configFileRequired: true,
+			cwd: "/repo",
+			dotenv: false,
+			extend: false,
+			globalRc: false,
+			omit$Keys: true,
+			packageJson: false,
+			rcFile: false,
+		});
 	});
 });

@@ -1,19 +1,21 @@
 import { type } from "arktype";
-import istanbulCoverage from "istanbul-lib-coverage";
+import type istanbulCoverage from "istanbul-lib-coverage";
 import istanbulReport from "istanbul-lib-report";
 import assert from "node:assert";
-import * as path from "node:path";
 import process from "node:process";
 import color from "tinyrainbow";
 
+import { isCoverageReporter } from "../config/option-values.ts";
 import type { CoverageReporter } from "../config/schema.ts";
-import { isCoverageReporter } from "../config/schema.ts";
 import { type CoverageDisplayPredicate, narrowMappedForAgentTable } from "./agent-table-filter.ts";
 import { filterCoverageUniverse } from "./coverage-universe.ts";
-import type { MappedCoverageResult, MappedFileCoverage } from "./mapper.ts";
+import { buildCoverageMap } from "./istanbul-coverage-map.ts";
+import type { MappedCoverageResult } from "./mapper-types.ts";
 import { createReporter } from "./reporter-registry.ts";
 
+/** Inputs of {@link generateReports}. */
 export interface CoverageReportOptions {
+	/** Use the flat summarizer and agent-only output. */
 	agentMode?: boolean | undefined;
 	/**
 	 * Display-only narrowing for the agent **text table** on a filtered run
@@ -23,16 +25,27 @@ export interface CoverageReportOptions {
 	 * agent mode and on a full run (`undefined`).
 	 */
 	agentTextFilter?: CoverageDisplayPredicate | undefined;
+	/** Include globs that bound the reported universe. */
 	collectCoverageFrom?: Array<string> | undefined;
+	/** Directory the file reporters write into. */
 	coverageDirectory: string;
+	/** Ignore globs that bound the reported universe. */
 	coveragePathIgnorePatterns?: Array<string> | undefined;
+	/** Istanbul context factory; defaults to istanbul's own. */
 	createContext?: typeof istanbulReport.createContext | undefined;
+	/** Reporter factory; defaults to the bundled registry. */
+	createReporter?: typeof createReporter | undefined;
+	/** Coverage mapped onto source files. */
 	mapped: MappedCoverageResult;
+	/** Reporters to run, in order. */
 	reporters: Array<CoverageReporter>;
 }
 
+/** Outcome of {@link checkThresholds}. */
 export interface ThresholdResult {
+	/** Metrics below their threshold, in reported order. */
 	failures: Array<{ actual: number; metric: string; threshold: number }>;
+	/** No metric fell below its threshold. */
 	passed: boolean;
 }
 
@@ -46,10 +59,13 @@ const summarySchema = type({
  */
 const THRESHOLD_METRICS = ["statements", "functions", "branches", "lines"] as const;
 
-type FileCoverageData = istanbulCoverage.FileCoverageData;
 type CoverageMap = ReturnType<typeof istanbulCoverage.createCoverageMap>;
 type CoverageSummaryData = typeof summarySchema.infer;
 
+/**
+ * Print the coverage report header to stdout.
+ * @param agentMode - Print it without colors.
+ */
 export function printCoverageHeader(agentMode = false): void {
 	const header = agentMode
 		? " % Coverage report from istanbul"
@@ -67,6 +83,12 @@ interface TextTableView {
 	isEmpty: boolean;
 }
 
+/**
+ * Run the configured reporters over the coverage universe.
+ * @param options - Mapped coverage, universe globs, reporters and output
+ *   directory.
+ * @throws {Error} When a reporter name is unknown.
+ */
 export function generateReports(options: CoverageReportOptions): void {
 	const filtered = filterCoverageUniverse(options.mapped, {
 		ignore: options.coveragePathIgnorePatterns,
@@ -101,20 +123,29 @@ export function generateReports(options: CoverageReportOptions): void {
 		coverageMap,
 		fullContext: context,
 		isAgentMode,
-		reporters: options.reporters,
+		options,
 		textTable,
 	});
 }
 
+/**
+ * Compare the universe's coverage summary with the configured thresholds.
+ * @param options - Mapped coverage, universe globs and thresholds.
+ * @returns Failed metrics and whether all passed.
+ */
 export function checkThresholds({
 	collectCoverageFrom,
 	coveragePathIgnorePatterns,
 	mapped,
 	thresholds,
 }: {
+	/** Include globs that bound the universe. */
 	collectCoverageFrom?: Array<string> | undefined;
+	/** Ignore globs that bound the universe. */
 	coveragePathIgnorePatterns?: Array<string> | undefined;
+	/** Coverage mapped onto source files. */
 	mapped: MappedCoverageResult;
+	/** Minimum percentage per metric. */
 	thresholds: { branches?: number; functions?: number; lines?: number; statements?: number };
 }): ThresholdResult {
 	const filtered = filterCoverageUniverse(mapped, {
@@ -135,66 +166,16 @@ export function checkThresholds({
 	};
 }
 
-/** Restate our branch entries in Istanbul's shape (it also wants `line`). */
-function toIstanbulBranchMap(
-	branchMap: MappedFileCoverage["branchMap"],
-): FileCoverageData["branchMap"] {
-	return Object.fromEntries(
-		Object.entries(branchMap).map(([id, entry]) => {
-			return [
-				id,
-				{
-					line: entry.loc.start.line,
-					loc: entry.loc,
-					locations: entry.locations,
-					type: entry.type,
-				},
-			];
-		}),
-	);
-}
-
-/** Restate our function entries in Istanbul's shape (it also wants `decl`). */
-function toIstanbulFuncMap(funcMap: MappedFileCoverage["fnMap"]): FileCoverageData["fnMap"] {
-	return Object.fromEntries(
-		Object.entries(funcMap).map(([id, entry]) => {
-			return [
-				id,
-				{
-					name: entry.name,
-					decl: entry.loc,
-					line: entry.loc.start.line,
-					loc: entry.loc,
-				},
-			];
-		}),
-	);
-}
-
-function buildCoverageMap(mapped: MappedCoverageResult): CoverageMap {
-	const coverageMap = istanbulCoverage.createCoverageMap({});
-
-	for (const [filePath, fileCoverage] of Object.entries(mapped.files)) {
-		const fileCoverageData = {
-			b: fileCoverage.b,
-			branchMap: toIstanbulBranchMap(fileCoverage.branchMap),
-			f: fileCoverage.f,
-			fnMap: toIstanbulFuncMap(fileCoverage.fnMap),
-			path: path.resolve(filePath),
-			s: fileCoverage.s,
-			statementMap: fileCoverage.statementMap,
-		} satisfies FileCoverageData;
-		coverageMap.addFileCoverage(fileCoverageData);
-	}
-
-	return coverageMap;
-}
-
-// Picks the context the `text` reporter renders against. With a filter present
-// (agent + filtered run) it narrows to the matched source files, layered on
-// `filtered`; otherwise it falls back to the full-universe context. The
-// narrowing never reaches `text-summary`, the other reporters, the totals line,
-// or the threshold path — all of those keep the full universe.
+/**
+ * Picks the context the `text` reporter renders against. With a filter present
+ * (agent + filtered run) it narrows to the matched source files, layered on
+ * `filtered`; otherwise it falls back to the full-universe context. The
+ * narrowing never reaches `text-summary`, the other reporters, the totals line,
+ * or the threshold path — all of those keep the full universe.
+ * @param options - Filter, output directory, context factory, summarizer,
+ *   fallback context and filtered coverage.
+ * @returns Context for the `text` reporter and whether it matched nothing.
+ */
 function resolveTextTableView({
 	agentTextFilter,
 	coverageDirectory,
@@ -228,14 +209,19 @@ function unknownReporterError(name: string): Error {
 	return new Error(`Unknown coverage reporter: ${name}`);
 }
 
-// Runs each configured reporter against its context. The `text` reporter renders
-// against the (possibly narrowed) `textTable` context; every other reporter uses
-// the full-universe `fullContext`. A fully-covered agent run skips the text
-// reporters (the compact summary already printed); an empty narrowed table skips
-// `text` so only the totals line prints.
+/**
+ * Runs each configured reporter against its context. The `text` reporter
+ * renders against the (possibly narrowed) `textTable` context; every other
+ * reporter uses the full-universe `fullContext`. A fully-covered agent run skips
+ * the text reporters (the compact summary already printed); an empty narrowed
+ * table skips `text` so only the totals line prints.
+ * @param options - Reporters, contexts, agent flags and terminal width.
+ * @throws {Error} When a reporter name is unknown.
+ */
 function runReporters({
 	agentMode,
 	allFilesFull,
+	createReporter: create,
 	fullContext,
 	reporters,
 	terminalColumns,
@@ -243,6 +229,7 @@ function runReporters({
 }: {
 	agentMode: boolean;
 	allFilesFull: boolean;
+	createReporter: typeof createReporter;
 	fullContext: ReturnType<typeof istanbulReport.createContext>;
 	reporters: Array<CoverageReporter>;
 	terminalColumns: number | undefined;
@@ -267,7 +254,7 @@ function runReporters({
 			continue;
 		}
 
-		const report = createReporter(reporterName, optionsByReporter[reporterName] ?? {});
+		const report = create(reporterName, optionsByReporter[reporterName] ?? {});
 		report.execute(reporterName === "text" ? textTable.context : fullContext);
 	}
 }
@@ -326,18 +313,19 @@ function isAllFilesFull(coverageMap: CoverageMap): boolean {
  * Render the configured reporters plus the two agent-only extras that bracket
  * them: the compact one-liner a fully-covered run collapses to, and the totals
  * line that tells an agent how much `skipFull` hid.
+ * @param options - Coverage map, contexts, agent flag and reporters.
  */
 function emitReports({
 	coverageMap,
 	fullContext,
 	isAgentMode,
-	reporters,
+	options: { createReporter: create = createReporter, reporters },
 	textTable,
 }: {
 	coverageMap: CoverageMap;
 	fullContext: ReturnType<typeof istanbulReport.createContext>;
 	isAgentMode: boolean;
-	reporters: Array<CoverageReporter>;
+	options: Pick<CoverageReportOptions, "createReporter" | "reporters">;
 	textTable: TextTableView;
 }): void {
 	const terminalColumns = getTerminalColumns();
@@ -354,6 +342,7 @@ function emitReports({
 	runReporters({
 		agentMode: isAgentMode,
 		allFilesFull: areAllFilesFull,
+		createReporter: create,
 		fullContext,
 		reporters,
 		terminalColumns,
@@ -373,6 +362,9 @@ function emitReports({
  * Collect the metrics whose measured percentage falls below a configured
  * threshold. A metric with no configured threshold, or whose summary pct is
  * Istanbul's non-numeric "Unknown", is skipped rather than failed.
+ * @param summaryData - Validated coverage summary.
+ * @param thresholds - Minimum percentage per metric.
+ * @returns Failed metrics in reported order.
  */
 function collectThresholdFailures(
 	summaryData: CoverageSummaryData,

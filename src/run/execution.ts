@@ -9,11 +9,8 @@ import type { ResolvedConfig } from "../config/schema.ts";
 import { resolvePlaceFilePath } from "../config/schema.ts";
 import type { ProjectInput } from "../executor.ts";
 import { describePlaceFile } from "../progress/stages.ts";
-import type {
-	CodeBundleArtifact,
-	PlaceBuildResult,
-	PlaceReuseOptions,
-} from "../staging/place-builder.ts";
+import type { CodeBundleArtifact } from "../staging/code-bundle.ts";
+import type { PlaceBuildResult, PlaceReuseOptions } from "../staging/place-builder.ts";
 import { buildPlaceAsync } from "../staging/place-builder.ts";
 import type { TimingCollector } from "../timing/orchestration-collector.ts";
 import type { TypecheckGroupEntry, TypecheckPassOutcome } from "../typecheck/typecheck-groups.ts";
@@ -22,11 +19,11 @@ import type { ChildProcessRunner } from "../utils/child-process.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import type { PosixRoot } from "../utils/normalize-windows-path.ts";
 import { emitRunHeader } from "./run-header.ts";
+import type { ProjectResult, RunOptions } from "./run-types.ts";
 import type { RunSeams } from "./seams.ts";
 import type { StagedRun } from "./staging.ts";
 import { collectStubMounts } from "./staging.ts";
 import type { PendingJob, RunDiscovery, TestPlan } from "./test-plan.ts";
-import type { ProjectResult, RunOptions } from "./types.ts";
 
 const DEFAULT_ROJO_PROJECT = "default.project.json";
 /** Where the last non-coverage build's key and place hash are recorded. */
@@ -39,8 +36,11 @@ const PLACE_REUSE_FILE = "synth.place-cache.json";
 const INPUT_DIGEST_FILE = "synth.input-digests";
 const VERSION = packageJson.version;
 
+/** Inputs of {@link runTestPlanAsync}. */
 export interface ExecutionInput {
+	/** Backend the caller resolved and owns. */
 	backend: Backend;
+	/** Parsed command-line options. */
 	cli: RunOptions["cli"];
 	/**
 	 * Build a Harness Place, splitting the mounts inside these Code Roots into
@@ -49,11 +49,15 @@ export interface ExecutionInput {
 	 * place was.
 	 */
 	codeRoots: ReadonlyArray<PosixRoot> | undefined;
+	/** Discovered projects, filters, seams and profiler. */
 	discovery: RunDiscovery;
+	/** The plan to run. */
 	plan: TestPlan;
+	/** Staging products and timings. */
 	staged: StagedRun;
 }
 
+/** What {@link runTestPlanAsync} ran and what it cost. */
 export interface ExecutionOutcome {
 	/**
 	 * Host time spent building the place this run dispatches against, 0 when
@@ -61,14 +65,21 @@ export interface ExecutionOutcome {
 	 * before the backend resolved, so the two sum to the run's staging cost.
 	 */
 	placeBuildMs: number;
+	/** Per-project results in job order. */
 	projectResults: Array<ProjectResult>;
+	/** Outcome of the Type Test pass. */
 	typecheck: TypecheckPassOutcome;
 }
 
+/** Inputs of {@link runTypecheckPassAsync}. */
 export interface RunTypecheckPassOptions {
+	/** Typecheck options from the CLI. */
 	cliTypecheck: TypecheckCliOptions;
+	/** Type Test entries to group into passes. */
 	entries: Array<TypecheckGroupEntry>;
+	/** Root config whose `typecheck` and `timeout` apply. */
 	rootConfig: ResolvedConfig;
+	/** Runs one tsgo pass. */
 	runTypecheck: RunSeams["runTypecheck"];
 }
 
@@ -96,6 +107,13 @@ interface PlaceBuildOutcome {
  * `spawnTimeout` are run-wide reporting policy, resolved from root
  * `test.typecheck` + CLI (the per-project tsconfig drives grouping, not the
  * source-error decision), then applied to every group's pass.
+ *
+ * @param options - Entries, root config, CLI options and the tsgo runner.
+ * @param options.cliTypecheck - Typecheck options from the CLI.
+ * @param options.entries - Type Test entries to group into passes.
+ * @param options.rootConfig - Root config whose `typecheck` and `timeout` apply.
+ * @param options.runTypecheck - Runs one tsgo pass.
+ * @returns The merged outcome of every pass.
  */
 export async function runTypecheckPassAsync({
 	cliTypecheck,
@@ -122,6 +140,13 @@ export async function runTypecheckPassAsync({
  * Staging decides whether the place holds the run's code, and only the backend
  * says whether it may be taken out — so the resolution comes first and the
  * caller's close guard widens to cover everything after it.
+ *
+ * @param options - CLI options, config, seams and profiler.
+ * @param options.cli - Parsed command-line options.
+ * @param options.config - Resolved config of the run.
+ * @param options.seams - Seams that resolve the backend.
+ * @param options.timing - Profiler of the run.
+ * @returns The resolved backend.
  */
 export async function resolveRunBackendAsync({
 	cli,
@@ -141,6 +166,9 @@ export async function resolveRunBackendAsync({
  * Run a `TestPlan` against a backend the caller resolved and owns: build the
  * dispatch place when the backend takes one, then run the Roblox jobs and the
  * host-side tsgo pass concurrently.
+ *
+ * @param input - Backend, plan, discovery and staging products.
+ * @returns Per-project results, the Type Test outcome and the place build time.
  */
 export async function runTestPlanAsync(input: ExecutionInput): Promise<ExecutionOutcome> {
 	const { backend, discovery, plan, staged } = input;
@@ -256,6 +284,9 @@ async function runJobsAsync({
  * takes, so every input is walked off disk. On a harness build what is left to
  * walk is what stayed — which is the whole point, and what lets a code-only
  * edit skip the rojo build as well as the upload.
+ *
+ * @param cacheRoot - Cache directory that holds the reuse files.
+ * @returns Paths of the reuse record and the input digest cache.
  */
 function placeReuseFor(cacheRoot: string): PlaceReuseOptions {
 	return {
@@ -309,6 +340,13 @@ async function buildDispatchPlaceAsync({
  * coverage run builds nothing here — `prepareCoverage` already built the
  * instrumented place, and `stageRun` charged that build to staging too, so the
  * two paths report the same phase under the same name.
+ *
+ * @param input - Backend, Code Roots, discovery and staging products.
+ * @param input.backend - Backend whose `placeInput` decides the build.
+ * @param input.codeRoots - Code Roots to split into a Code Bundle.
+ * @param input.discovery - Discovered projects, config, seams and profiler.
+ * @param input.staged - Staging products; holds the cache root.
+ * @returns The Code Bundle, if any, and the build time.
  */
 async function buildPlaceForBackendAsync({
 	backend,
@@ -353,6 +391,10 @@ function effectiveParallelForBackend(
  * The per-run knobs a dispatch carries, each already narrowed to the backend
  * that can serve it: `parallel` shards Open Cloud sessions, and `vmParallel`
  * splits one Studio session across Luau VMs.
+ *
+ * @param config - Resolved config of the run.
+ * @param backend - Backend the run dispatches to.
+ * @returns The `parallel` and `vmParallel` options.
  */
 function resolveDispatchOptions(
 	config: ResolvedConfig,
@@ -364,7 +406,12 @@ function resolveDispatchOptions(
 	};
 }
 
-/** The run header, with every field it prints taken off the resolved config. */
+/**
+ * The run header, with every field it prints taken off the resolved config.
+ *
+ * @param rootConfig - Config that supplies every header field.
+ * @param timing - Profiler whose progress the header reveals.
+ */
 function emitConfiguredRunHeader(rootConfig: ResolvedConfig, timing: TimingCollector): void {
 	emitRunHeader({
 		collectCoverage: rootConfig.collectCoverage,

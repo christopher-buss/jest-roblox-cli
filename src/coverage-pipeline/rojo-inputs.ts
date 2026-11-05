@@ -2,14 +2,13 @@ import type { RojoTreeNode } from "@isentinel/rojo-utils";
 import { collectPaths, resolveMountPath, resolveNestedProjectSources } from "@isentinel/rojo-utils";
 
 import { type } from "arktype";
-import type { Stats } from "node:fs";
 import * as path from "node:path";
 import process from "node:process";
 
 import { rojoProjectSchema } from "../types/rojo.ts";
 import { mapWithLimitAsync } from "../utils/concurrency.ts";
 import { errorMessage } from "../utils/error-message.ts";
-import type { FileSystem } from "../utils/file-system.ts";
+import type { FileSystem, Stats } from "../utils/file-system.ts";
 import { nodeFileSystem } from "../utils/file-system.ts";
 import { hashString } from "../utils/hash.ts";
 import type { InputDigestCache } from "../utils/input-digest-cache.ts";
@@ -17,6 +16,7 @@ import { openInputDigestCache } from "../utils/input-digest-cache.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import { isWithinRoot } from "./redirect-path.ts";
 
+/** What the rojo build input hash reads. */
 export interface RojoInputsOptions {
 	/**
 	 * Where this walk keeps a digest per file. See `openInputDigestCache` for
@@ -37,7 +37,9 @@ export interface RojoInputsOptions {
 	 * being written.
 	 */
 	projectJson?: string | undefined;
+	/** Path of the rojo project file. */
 	rojoProjectPath: string;
+	/** Directory input paths are hashed relative to. */
 	rootDirectory: string;
 }
 
@@ -66,18 +68,127 @@ interface ProjectDigest {
 }
 
 /**
+ * {@link computeRojoInputsHashAsync}, degrading to `undefined` instead of
+ * throwing.
+ *
+ * A project too malformed to hash is also too malformed to build, so every
+ * caller wants the same answer — warn, then treat the inputs as changed and let
+ * the build report the real fault. Shared so both callers say the same thing.
+ * @param options - Project, roots, digest cache and file system.
+ * @returns Hex digest of the inputs, or undefined after a warning.
+ */
+export async function tryComputeRojoInputsHashAsync(
+	options: RojoInputsOptions,
+): Promise<string | undefined> {
+	try {
+		return await computeRojoInputsHashAsync(options);
+	} catch (err) {
+		process.stderr.write(`Warning: could not hash rojo build inputs: ${errorMessage(err)}
+`);
+		return undefined;
+	}
+}
+
+function toKey(filePath: string): string {
+	return normalizeWindowsPath(filePath);
+}
+
+/**
+ * Every file the tree's `$path` mounts reach, added to the walk's file set.
+ * @param options - Project directory, tree and walk state.
+ */
+async function walkMountedInputsAsync({
+	projectDirectory,
+	tree,
+	walk,
+}: {
+	projectDirectory: string;
+	tree: RojoTreeNode;
+	walk: InputWalk;
+}): Promise<void> {
+	const mounts: Array<string> = [];
+	collectPaths(tree, mounts);
+	// Deduped: one `$path` can appear at several places in the tree, and each
+	// mention would otherwise be entered — and stat'd — on its own.
+	const distinctMounts = new Set(mounts);
+	for (const mount of distinctMounts) {
+		// Normalized here and nowhere below, so a child path is the parent's
+		// plus a name.
+		await collectInputFilesAsync(toKey(resolveMountPath(projectDirectory, mount)), walk);
+	}
+}
+
+/**
+ * Reads the project's tree as the build will see it. `loadRojoProject` hands
+ * back a nested-resolved tree, which has already erased the inlined project
+ * files this hash has to cover, so the text is parsed here instead.
+ * @param rojoProjectPath - Names the project in the error.
+ * @param raw - Project JSON text.
+ * @returns The unresolved project tree.
+ * @throws {Error} When the text fails the rojo project schema.
+ */
+function parseRawTree(rojoProjectPath: string, raw: string): RojoTreeNode {
+	const parsed: JSONValue = JSON.parse(raw);
+	const result = rojoProjectSchema(parsed);
+	if (result instanceof type.errors) {
+		throw new Error(`Invalid Rojo project ${rojoProjectPath}: ${result.summary}`);
+	}
+
+	return result.tree;
+}
+
+/**
+ * One sorted line per input — its path relative to `rootDirectory`, then its
+ * content hash.
+ *
+ * The project file is the one input whose hash the caller already holds: it was
+ * digested from the text this call read the project as, which need not be the
+ * bytes at the path naming it, and need not be on disk at all.
+ * @param options - Digest cache, files, project digest and root directory.
+ * @returns Hash of the sorted lines.
+ */
+async function digestFilesAsync({
+	digests,
+	files,
+	project,
+	rootDirectory,
+}: {
+	digests: InputDigestCache;
+	files: Set<string>;
+	project: ProjectDigest;
+	rootDirectory: string;
+}): Promise<string> {
+	const lines = await mapWithLimitAsync({
+		func: async (file) => {
+			const relativePath = toKey(path.relative(rootDirectory, file));
+			const hash = file === project.key ? project.hash : await digests.hashOfAsync(file);
+			return `${relativePath}\0${hash}`;
+		},
+		items: [...files],
+		limit: HASH_CONCURRENCY,
+	});
+
+	lines.sort();
+	return hashString(lines.join("\n"));
+}
+
+/**
  * SHA-256 over every rojo build input that lives OUTSIDE the instrumented
- * luauRoots: non-luauRoot `$path` mounts (e.g. `include/RuntimeLib.lua`,
+ * luauRoots: non-luauRoot `$path` mounts (for example `include/RuntimeLib.lua`,
  * vendored `@rbxts`, game assets) plus the rojo project file(s) themselves.
  * The incremental coverage cache folds a mismatch into its rebuild decision so
  * an edit to any of these — which the per-luauRoot shadow diff never observes
  * — still forces a fresh place build instead of silently reusing a stale one.
  *
- * luauRoot files are skipped: the shadow diff already content-hashes them, so
+ * Files under a luauRoot are skipped: the shadow diff already content-hashes them, so
  * re-reading the compiled output here would be wasted work. Throws on a
  * malformed or circular rojo project; the caller degrades to a rebuild.
+ * @param options - Project, roots, digest cache and file system.
+ * @returns Hex digest of the inputs.
+ * @rejects When the project is malformed or circular, or an input cannot be
+ *   read.
  */
-export async function computeRojoInputsHashAsync({
+async function computeRojoInputsHashAsync({
 	digestCacheFile,
 	fileSystem = nodeFileSystem,
 	luauRoots,
@@ -124,103 +235,6 @@ export async function computeRojoInputsHashAsync({
 	return hash;
 }
 
-/**
- * {@link computeRojoInputsHashAsync}, degrading to `undefined` instead of
- * throwing.
- *
- * A project too malformed to hash is also too malformed to build, so every
- * caller wants the same answer — warn, then treat the inputs as changed and let
- * the build report the real fault. Shared so both callers say the same thing.
- */
-export async function tryComputeRojoInputsHashAsync(
-	options: RojoInputsOptions,
-): Promise<string | undefined> {
-	try {
-		return await computeRojoInputsHashAsync(options);
-	} catch (err) {
-		process.stderr.write(`Warning: could not hash rojo build inputs: ${errorMessage(err)}
-`);
-		return undefined;
-	}
-}
-
-function toKey(filePath: string): string {
-	return normalizeWindowsPath(filePath);
-}
-
-/** Every file the tree's `$path` mounts reach, added to the walk's file set. */
-async function walkMountedInputsAsync({
-	projectDirectory,
-	tree,
-	walk,
-}: {
-	projectDirectory: string;
-	tree: RojoTreeNode;
-	walk: InputWalk;
-}): Promise<void> {
-	const mounts: Array<string> = [];
-	collectPaths(tree, mounts);
-	// Deduped: one `$path` can appear at several places in the tree, and each
-	// mention would otherwise be entered — and stat'd — on its own.
-	const distinctMounts = new Set(mounts);
-	for (const mount of distinctMounts) {
-		// Normalized here and nowhere below, so a child path is the parent's
-		// plus a name.
-		await collectInputFilesAsync(toKey(resolveMountPath(projectDirectory, mount)), walk);
-	}
-}
-
-/**
- * Reads the project's tree as the build will see it. `loadRojoProject` hands
- * back a nested-resolved tree, which has already erased the inlined project
- * files this hash has to cover, so the text is parsed here instead.
- */
-function parseRawTree(rojoProjectPath: string, raw: string): RojoTreeNode {
-	const parsed: JSONValue = JSON.parse(raw);
-	const result = rojoProjectSchema(parsed);
-	if (result instanceof type.errors) {
-		throw new Error(`Invalid Rojo project ${rojoProjectPath}: ${result.summary}`);
-	}
-
-	return result.tree;
-}
-
-/**
- * One sorted line per input — its path relative to `rootDirectory`, then its
- * content hash.
- *
- * The project file is the one input whose hash the caller already holds: it was
- * digested from the text this call read the project as, which need not be the
- * bytes at the path naming it, and need not be on disk at all.
- */
-async function digestFilesAsync({
-	digests,
-	files,
-	project,
-	rootDirectory,
-}: {
-	digests: InputDigestCache;
-	files: Set<string>;
-	project: ProjectDigest;
-	rootDirectory: string;
-}): Promise<string> {
-	const lines: Array<string> = [];
-	// Unordered on purpose: the sort below is what makes the digest stable,
-	// so the reads are free to settle in whatever order the disk answers in.
-	await mapWithLimitAsync({
-		func: async (file) => {
-			const relativePath = toKey(path.relative(rootDirectory, file));
-			const hash = file === project.key ? project.hash : await digests.hashOfAsync(file);
-			lines.push(`${relativePath}\0${hash}`);
-		},
-		items: [...files],
-		limit: HASH_CONCURRENCY,
-	});
-
-	lines.sort();
-	return hashString(lines.join("\n"));
-}
-
 function coveredByLuauRoot(directoryKey: string, luauRootKeys: Array<string>): boolean {
 	return luauRootKeys.some((root) => isWithinRoot(directoryKey, root));
 }
@@ -229,6 +243,8 @@ function coveredByLuauRoot(directoryKey: string, luauRootKeys: Array<string>): b
  * Enter a path nothing above has already answered for: a mount, which may not
  * exist on disk at all, or a symlink, which `readdir` reports as a link rather
  * than as whatever it points at.
+ * @param target - Canonical path to enter.
+ * @param walk - Walk state that receives the files.
  */
 async function collectInputFilesAsync(target: string, walk: InputWalk): Promise<void> {
 	let stats: Stats;
@@ -259,6 +275,7 @@ async function collectInputFilesAsync(target: string, walk: InputWalk): Promise<
  * a whole instrumented subtree here is the work narrowing exists to avoid.
  * Directories only — a root is one, and a file under a root is reached solely
  * by descending through it.
+ * @param options - Directory, its inherited real path, and walk state.
  */
 async function descendAsync({
 	directory,

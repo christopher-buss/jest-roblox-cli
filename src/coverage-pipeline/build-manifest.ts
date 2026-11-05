@@ -27,19 +27,35 @@ export const BUILD_MANIFEST_VERSION = 2 as const;
  */
 export const BUILD_MANIFEST_FILE = "build-manifest.json";
 
+/**
+ * One Jest project the built place carries, as the kernel consumes it.
+ */
 export interface BuildManifestProject {
+	/** Project name shown in test output. */
 	displayName: string;
+	/** DataModel path of the Jest module, when the project names one. */
 	jestDataModelPath?: string;
+	/** DataModel path of the project's test root. */
 	projectDataModelPath: string;
+	/** Modules the kernel runs before the test framework loads. */
 	setupFiles: Array<string>;
+	/** Modules the kernel runs after the test framework loads. */
 	setupFilesAfterEnv: Array<string>;
+	/** Globs that select the project's test files. */
 	testMatch: Array<string>;
 }
 
+/**
+ * Recorded state of one compiled source file.
+ */
 export interface BuildManifestFileRecord {
+	/** SHA-256 of the file when the place was built. */
 	sourceHash: string;
 }
 
+/**
+ * One place file the build produced.
+ */
 export interface BuildManifestArtifact {
 	/**
 	 * The Place Content Id stamped inside this place, when one was. Unlike
@@ -50,10 +66,15 @@ export interface BuildManifestArtifact {
 	 * a caller that asked for none.
 	 */
 	contentId?: string;
+	/** SHA-256 of the place file. */
 	hash: string;
+	/** Place file path, relative to the manifest root. */
 	path: string;
 }
 
+/**
+ * Producer-side record of one build, verified by consumers before reuse.
+ */
 export interface BuildManifest {
 	/** Shared UUID linking this manifest to its sibling `CoverageManifest`. */
 	buildId: string;
@@ -71,11 +92,20 @@ export interface BuildManifest {
 	 * SHA-256 of each compiled `.luau`, keyed by package-relative POSIX path.
 	 */
 	files: Record<string, BuildManifestFileRecord>;
+	/** ISO timestamp of the build. */
 	generatedAt: string;
+	/** Jest projects the place carries. */
 	projects: Array<BuildManifestProject>;
+	/** On-disk format version. */
 	version: typeof BUILD_MANIFEST_VERSION;
 }
 
+/**
+ * Outcome of reading a Build Manifest: the verified manifest, or the first
+ * reason to refuse it. In mismatch variants `actual` is the value found on disk
+ * or in the file and `expected` is the value the manifest or caller requires;
+ * `path` is the recorded path or source key that failed.
+ */
 export type ReadBuildManifestResult =
 	| { actual: string; expected: string; kind: "buildid-mismatch" }
 	| { actual: string; expected: string; kind: "clean-place-hash-mismatch"; path: string }
@@ -88,14 +118,23 @@ export type ReadBuildManifestResult =
 	| { kind: "missing-referenced-artifact"; path: string }
 	| { kind: "ok"; manifest: BuildManifest };
 
+/**
+ * Inputs to {@link emitBuildManifest}.
+ */
 export interface EmitBuildManifestOptions {
+	/** Build record of the coverage run. */
 	artifacts: Except<CoverageArtifacts, "rebuilt">;
 	/** The uninstrumented place, when the caller built one. */
 	cleanPlace?: BuildManifestArtifact;
+	/** Destination of the manifest file. */
 	filePath: string;
+	/** Filesystem the manifest is written to. */
 	fileSystem: FileSystem;
 }
 
+/**
+ * Checks {@link readBuildManifest} applies beyond the shape and version.
+ */
 export interface ReadBuildManifestOptions {
 	/** When set, refuse if the manifest's `buildId` differs from this value. */
 	expectedBuildId?: string;
@@ -138,9 +177,13 @@ export const buildManifestSchema: type<BuildManifest> = type({
  * each write the Build Manifest with the place set they actually have.
  */
 export interface CoverageArtifacts {
+	/** UUID shared with the sibling Coverage Manifest. */
 	buildId: string;
+	/** The coverage-instrumented place. */
 	coveragePlace: BuildManifestArtifact;
+	/** Source hash of each compiled `.luau`, keyed by package-relative path. */
 	files: Record<string, BuildManifestFileRecord>;
+	/** ISO timestamp of the build. */
 	generatedAt: string;
 	/**
 	 * Per-project DataModel paths the kernel consumes, resolved by the run path
@@ -153,27 +196,13 @@ export interface CoverageArtifacts {
 
 type VerifyResult = { actual: string; kind: "mismatch" } | { kind: "missing" } | { kind: "ok" };
 
-export function writeBuildManifest({
-	filePath,
-	fileSystem = nodeFileSystem,
-	manifest,
-}: {
-	filePath: string;
-	fileSystem?: FileSystem;
-	manifest: BuildManifest;
-}): void {
-	atomicWrite({
-		contents: JSON.stringify(manifest, undefined, "\t"),
-		fileSystem,
-		targetPath: filePath,
-	});
-}
-
 /**
  * Project a coverage file map down to the Build Manifest's `{ sourceHash }`
  * records, dropping the instrumentation metadata only the coverage pipeline
  * needs. The input is structural so both the single/multi and workspace
  * coverage paths can feed their richer per-file records.
+ * @param files - Per-file coverage records keyed by package-relative path.
+ * @returns The same keys mapped to their source hash only.
  */
 export function toBuildManifestFiles(
 	files: Record<string, { sourceHash: string }>,
@@ -188,6 +217,7 @@ export function toBuildManifestFiles(
  * `coveragePlace` is always recorded; `cleanPlace` is added only when the
  * caller (`prepareArtifacts`) actually built one — so the producer can never
  * record a place it didn't build.
+ * @param options - Build record, optional clean place and destination.
  */
 export function emitBuildManifest({
 	artifacts,
@@ -210,6 +240,12 @@ export function emitBuildManifest({
 	writeBuildManifest({ filePath, fileSystem, manifest });
 }
 
+/**
+ * Read a Build Manifest and re-hash every place and source file it records.
+ * @param filePath - Where the manifest JSON is read from.
+ * @param options - Expected build id, filesystem and resolution root.
+ * @returns The verified manifest, or the first reason to refuse it.
+ */
 export function readBuildManifest(
 	filePath: string,
 	{
@@ -247,6 +283,29 @@ export function readBuildManifest(
 	return { kind: "ok", manifest };
 }
 
+/**
+ * Write a Build Manifest as tab-indented JSON in one atomic write.
+ * @param options - Destination, filesystem and manifest.
+ */
+function writeBuildManifest({
+	filePath,
+	fileSystem = nodeFileSystem,
+	manifest,
+}: {
+	/** Destination of the manifest file. */
+	filePath: string;
+	/** Filesystem to write to. Defaults to the real filesystem. */
+	fileSystem?: FileSystem;
+	/** Manifest to serialize. */
+	manifest: BuildManifest;
+}): void {
+	atomicWrite({
+		contents: JSON.stringify(manifest, undefined, "\t"),
+		fileSystem,
+		targetPath: filePath,
+	});
+}
+
 function verifyArtifact({
 	expectedHash,
 	fileSystem,
@@ -274,7 +333,9 @@ function verifyArtifact({
 
 /**
  * Re-hash one place artifact, mapping a missing file or hash drift to the
- * matching refuse variant. Returns `undefined` when the place is intact.
+ * matching refuse variant.
+ * @param options - Place artifact, refusal kind, filesystem and root.
+ * @returns The refusal, or `undefined` when the place is intact.
  */
 function verifyPlace({
 	artifact,
@@ -314,6 +375,8 @@ function verifyPlace({
  * checked first: a drifted instrumented place poisons the coverage hit data
  * every consumer relies on. The clean place is optional (only
  * `prepareArtifacts` emits it), so it is re-hashed only when present.
+ * @param options - Manifest, filesystem and root.
+ * @returns The first refusal, or `undefined` when both places are intact.
  */
 function verifyPlaces({
 	fileSystem,
@@ -349,6 +412,8 @@ function verifyPlaces({
 /**
  * Re-hash every recorded source file. Iterating in the manifest's recorded key
  * order keeps "report the first mismatch" deterministic without a comparator.
+ * @param options - Manifest, filesystem and root.
+ * @returns The first refusal, or `undefined` when every file is intact.
  */
 function verifySourceFiles({
 	fileSystem,

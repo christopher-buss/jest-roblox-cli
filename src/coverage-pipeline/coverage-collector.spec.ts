@@ -1,8 +1,9 @@
 import type { LuauSpan } from "@isentinel/luau-ast/ast";
+import { loadLuauParser } from "@isentinel/luau-ast/parser";
 
 import { assert, describe, expect, it } from "vitest";
 
-import { luauParser } from "../luau/parser.ts";
+import { COLLECTED_FIXTURES } from "#test/mocks/coverage-collected-fixtures.ts";
 import type { CollectorResult } from "./coverage-collector.ts";
 import { collectCoverage } from "./coverage-collector.ts";
 
@@ -20,12 +21,18 @@ function span({
 	return { beginColumn, beginLine, endColumn, endLine };
 }
 
-/** Parse real source and run the collector over it. */
+/**
+ * Parse real source and run the collector over it.
+ * @param source - Luau source text.
+ * @returns The collected coverage records.
+ */
 function collect(source: string): CollectorResult<LuauSpan> {
 	const parsed = luauParser.parse(source);
 	assert(parsed.ok);
 	return collectCoverage(parsed, source);
 }
+
+const luauParser = loadLuauParser();
 
 describe(collectCoverage, () => {
 	describe("statements", () => {
@@ -447,5 +454,15 @@ describe(collectCoverage, () => {
 			expect(result.branches).toBeEmpty();
 			expect(result.statements).toHaveLength(1);
 		});
+	});
+});
+
+describe("collected fixtures", () => {
+	it.for(Object.keys(COLLECTED_FIXTURES))("should collect %s as recorded", (name) => {
+		expect.assertions(1);
+
+		const fixture = COLLECTED_FIXTURES[name]!;
+
+		expect(collect(fixture.source)).toStrictEqual(fixture.result);
 	});
 });

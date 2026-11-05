@@ -2,7 +2,7 @@ import type { Mount } from "@isentinel/rojo-utils";
 
 import * as path from "node:path";
 
-import type { TsconfigMapping } from "../types/tsconfig.ts";
+import type { TsconfigMapping } from "../types/tsconfig-types.ts";
 import { isTsSource, stripTsExtension } from "../utils/extensions.ts";
 import {
 	dropDriveLetter,
@@ -20,6 +20,7 @@ const INDEX_STEM = /(^|\/)index(\.[^/]*)?$/;
  */
 export type InstancePathResolver = (file: string) => string | undefined;
 
+/** Inputs for building an `InstancePathResolver`. */
 export interface InstancePathOptions {
 	/**
 	 * Base the mounts and the tsconfig mappings are relative to — the directory
@@ -32,6 +33,7 @@ export interface InstancePathOptions {
 	 * has to keep the two coordinate systems in step by hand.
 	 */
 	mountBase: string;
+	/** Rojo mounts that map filesystem directories to Instances. */
 	mounts: ReadonlyArray<Mount>;
 	/**
 	 * Base discovery relativized its files against (the config's `rootDir`).
@@ -56,7 +58,7 @@ interface MountPrefix {
  * Strip the language extension and apply the roblox-ts `index` → `init` rename,
  * leaving the name the Roblox Instance carries.
  *
- * roblox-ts renames a filename stem of exactly `index` to `init`
+ * The roblox-ts compiler renames a filename stem of exactly `index` to `init`
  * (PathTranslator), so the Instance — and thus the path Jest matches against —
  * is named `init`, never `index`. The rename is scoped to TS sources: a
  * hand-authored Luau `index` file keeps its name through Rojo, so renaming it
@@ -64,7 +66,10 @@ interface MountPrefix {
  *
  * Not the exact inverse of `luauInitToIndex` in the source mapper, which
  * rewrites an `init` segment anywhere in a path. This one rewrites the filename
- * stem only, because a *directory* named `index` is not renamed by roblox-ts.
+ * stem only, because a _directory_ named `index` is not renamed by roblox-ts.
+ *
+ * @param filePath - Source file path.
+ * @returns The path with its extension stripped and an `index` stem renamed.
  */
 export function toInstanceStem(filePath: string): string {
 	const stripped = stripTsExtension(filePath);
@@ -89,6 +94,10 @@ export function toInstanceStem(filePath: string): string {
  * `getRelativePath(script, rootDir)` otherwise, which starts at the project
  * mount's own name. Both forms contain `<mountName>/<pathBelowMount>`, so this
  * narrows identically whichever one Jest reports.
+ *
+ * @param options - Mounts, bases and tsconfig mappings.
+ * @returns A resolver that gives the Instance path of a file, or undefined
+ *   when no mount owns it.
  */
 export function createInstancePathResolver({
 	mountBase,
@@ -141,6 +150,10 @@ export function createInstancePathResolver({
  * path under the base — so rebasing one would prepend the outDir a second time
  * (`out/out/shared/…`) and, under a mount at the outDir root, hand back a path
  * that matches nothing on the Luau side.
+ *
+ * @param absoluteFile - Absolute source file path.
+ * @param mappings - Tsconfig `rootDir`→`outDir` rewrites.
+ * @returns Candidate output paths, the unmapped stem last.
  */
 function toOutputCandidates(
 	absoluteFile: string,
@@ -171,14 +184,24 @@ function toComparablePath(filePath: string): string {
  * cwd's drive onto a drive-less root — so a file and the root it came from can
  * disagree about the prefix. One process cannot span two drives, which makes
  * the letter carry no information worth comparing.
+ *
+ * @param filePath - Path to resolve.
+ * @param base - Absolute base for a relative path.
+ * @returns The absolute, drive-letter-free path.
  */
 function toAbsolute(filePath: string, base: string): string {
 	const normalized = toComparablePath(filePath);
 	return isAbsolutePath(normalized) ? normalized : path.posix.join(base, normalized);
 }
 
-// Deepest mount first, so one nested inside another wins the prefix test.
-// `base` is already canonical.
+/**
+ * Deepest mount first, so one nested inside another wins the prefix test.
+ * `base` is already canonical.
+ *
+ * @param mounts - Rojo mounts.
+ * @param base - Canonical base for relative mount paths.
+ * @returns Mount prefixes sorted deepest first.
+ */
 function toMountPrefixes(mounts: ReadonlyArray<Mount>, base: string): Array<MountPrefix> {
 	return mounts
 		.map((mount) => {

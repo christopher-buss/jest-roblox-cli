@@ -4,7 +4,9 @@
  * name accumulate into one node rather than replacing it or piling up lines.
  */
 export interface SpanNode {
+	/** The span name, unique among its siblings. */
 	name: string;
+	/** Child spans by name, in first-seen order. */
 	children: Map<string, SpanNode>;
 	/**
 	 * Whether an `open` on this node has ever closed. Distinguishes a span the
@@ -12,10 +14,13 @@ export interface SpanNode {
 	 * only ever arrived by `record`, which has no close and so reports nowhere.
 	 */
 	closed: boolean;
+	/** How many opens, closes or records landed on this node. */
 	count: number;
+	/** Summed duration of every landing, in milliseconds. */
 	elapsedMs: number;
 }
 
+/** Callbacks a span tree reports opens and closes through. */
 export interface CreateSpanTreeOptions {
 	/**
 	 * Called as any span closes, with `isRoot` true for a top-level one. That
@@ -39,6 +44,7 @@ export interface CreateSpanTreeOptions {
 	onSpanOpen: (node: SpanNode, isRoot: boolean) => void;
 }
 
+/** A tree of named spans timed against one shared stack. */
 export interface SpanTree {
 	/**
 	 * Opens a span under the current frame and pushes it; the returned closer
@@ -59,6 +65,11 @@ export interface SpanTree {
  * reports in: one shared stack, one root map, the two ways a span lands in
  * them, and the renderer that turns any of it into text. Carries no
  * enabled/disabled policy and owns no sink — the collector owns both.
+ * @param clock - The time source for span durations.
+ * @param options - The open and close callbacks.
+ * @param options.onSpanClose - Called as any span closes.
+ * @param options.onSpanOpen - Called as any span opens.
+ * @returns The `open` and `record` entry points over a fresh root map.
  */
 export function createSpanTree(
 	clock: { now: () => number },
@@ -67,7 +78,11 @@ export function createSpanTree(
 	const roots = new Map<string, SpanNode>();
 	const stack: Array<SpanNode> = [];
 
-	/** The node this name refers to right now: a child of the open frame. */
+	/**
+	 * The node this name refers to right now: a child of the open frame.
+	 * @param name - The span name.
+	 * @returns The existing or newly created node.
+	 */
 	function nodeFor(name: string): SpanNode {
 		const top = stack.at(-1);
 		return childOf(top === undefined ? roots : top.children, name);
@@ -94,6 +109,8 @@ export function createSpanTree(
  * and any parent whose children do not account for its own elapsed time gets an
  * `(unmeasured)` line for the difference — the gap is usually where a slow
  * phase actually went, since only instrumented work has a name.
+ * @param node - The span to write.
+ * @param sink - Receives each line.
  */
 export function emitSpanNode(node: SpanNode, sink: (line: string) => void): void {
 	emitIndented(node, { depth: 0, sink });
@@ -104,6 +121,8 @@ export function emitSpanNode(node: SpanNode, sink: (line: string) => void): void
  * closed — a `record` outside every phase, whose "no more can land" moment
  * never arrives — and then the host total. Each root contributes its own
  * rounded value, so the total matches the sum of the root lines on screen.
+ * @param roots - The tree's top-level spans.
+ * @param sink - Receives each line.
  */
 export function emitFinalReport(roots: Map<string, SpanNode>, sink: (line: string) => void): void {
 	let total = 0;
@@ -118,7 +137,11 @@ export function emitFinalReport(roots: Map<string, SpanNode>, sink: (line: strin
 	sink(formatSpanLine("TOTAL (host)", total));
 }
 
-/** The line that announces a phase, before it has a duration to report. */
+/**
+ * The line that announces a phase, before it has a duration to report.
+ * @param name - The span that just opened.
+ * @returns The `[TIMING]` start line.
+ */
 export function formatPhaseStart(name: string): string {
 	return `[TIMING] ${name}: start`;
 }
@@ -127,6 +150,12 @@ export function formatPhaseStart(name: string): string {
  * Starts `node`'s clock and hands back the closer that stops it, pops the
  * frame, reports the finished subtree for a top-level phase, and returns how
  * long this frame took.
+ * @param options - The span, its stack, clock and close callback.
+ * @param options.clock - The time source.
+ * @param options.node - The span being opened.
+ * @param options.onSpanClose - Called once the frame is popped.
+ * @param options.stack - The shared open-span stack.
+ * @returns The closer, which returns this frame's elapsed milliseconds.
  */
 function createCloser({
 	clock,
@@ -154,7 +183,14 @@ function createCloser({
 	};
 }
 
-/** Pushes `node` onto the stack and announces it. */
+/**
+ * Pushes `node` onto the stack and announces it.
+ * @param options - The span, its stack and open callback.
+ * @param options.node - The span being opened.
+ * @param options.onSpanOpen - Called once the frame is pushed.
+ * @param options.stack - The shared open-span stack.
+ * @throws {unknown} Whatever `onSpanOpen` throws, after popping the frame.
+ */
 function pushSpan({
 	node,
 	onSpanOpen,
@@ -186,7 +222,12 @@ function childOf(parent: Map<string, SpanNode>, name: string): SpanNode {
 	return node;
 }
 
-/** The single line shape every `[TIMING]` duration line is built from. */
+/**
+ * The single line shape every `[TIMING]` duration line is built from.
+ * @param label - The span label, with any indent.
+ * @param elapsedMs - The duration, rounded to whole milliseconds.
+ * @returns The `[TIMING]` duration line.
+ */
 function formatSpanLine(label: string, elapsedMs: number): string {
 	return `[TIMING] ${label}: ${String(Math.round(elapsedMs))}ms`;
 }
@@ -197,6 +238,8 @@ function formatSpanLine(label: string, elapsedMs: number): string {
  * children overlap or measure wall time the parent only partly spans (the
  * in-Roblox `luau.*` records sit inside `backend.runTests`); the caller drops
  * those rather than printing a negative duration.
+ * @param node - The span to measure.
+ * @returns Rounded milliseconds no child claims; 0 for a leaf.
  */
 function unmeasuredTimeOf(node: SpanNode): number {
 	if (node.children.size === 0) {

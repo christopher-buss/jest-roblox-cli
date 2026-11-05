@@ -5,22 +5,75 @@ import { type } from "arktype";
 import { atomicWrite } from "../utils/atomic-write.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import { nodeFileSystem } from "../utils/file-system.ts";
+import { readUnlessMissing } from "./manifest-parse.ts";
 
+/**
+ * A span in the source, with UTF-16 columns.
+ */
 export interface SourceLocation {
-	end: { column: Utf16Column; line: number };
-	start: { column: Utf16Column; line: number };
+	/** Where the span ends. */
+	end: {
+		/** UTF-16 column of the end. */
+		column: Utf16Column;
+		/** Line of the end. */
+		line: number;
+	};
+	/** Where the span starts. */
+	start: {
+		/** UTF-16 column of the start. */
+		column: Utf16Column;
+		/** Line of the start. */
+		line: number;
+	};
 }
 
+/**
+ * Istanbul-shaped statement, function and branch locations of one file, keyed
+ * by counter index.
+ */
 export interface CoverageMap {
-	branchMap?: Record<string, { locations: Array<SourceLocation>; type: string }>;
-	functionMap?: Record<string, { location: SourceLocation; name: string }>;
+	/** Arm locations and branch type of each branch. */
+	branchMap?: Record<
+		string,
+		{
+			/** Span of each arm, in arm order. */
+			locations: Array<SourceLocation>;
+			/** Istanbul branch type. */
+			type: string;
+		}
+	>;
+	/** Span and name of each function. */
+	functionMap?: Record<
+		string,
+		{
+			/** Span of the function. */
+			location: SourceLocation;
+			/** Function name, or `(anonymous)`. */
+			name: string;
+		}
+	>;
+	/** Span of each statement. */
 	statementMap: Record<string, SourceLocation>;
 }
 
+/**
+ * Outcome of reading a coverage map file.
+ */
 export type ReadCoverageMapResult =
-	| { kind: "invalid" }
-	| { kind: "missing" }
-	| { kind: "ok"; map: CoverageMap };
+	| {
+			/** No file exists at the path. */
+			kind: "missing";
+	  }
+	| {
+			/** The file exists but is not a valid coverage map. */
+			kind: "invalid";
+	  }
+	| {
+			/** The file parsed. */
+			kind: "ok";
+			/** The parsed coverage map. */
+			map: CoverageMap;
+	  };
 
 const positionSchema = type({ column: "number", line: "number" });
 const spanSchema = type({ end: positionSchema, start: positionSchema });
@@ -40,14 +93,18 @@ const coverageMapSchema = type({
  * tens of microseconds each, where its caller in `instrumenter.ts` already
  * declines to spend microseconds. A stray left here belongs to a tree the next
  * instrumentation run rebuilds.
+ * @param options - Destination, filesystem and map.
  */
 export function writeCoverageMap({
 	filePath,
 	fileSystem = nodeFileSystem,
 	map,
 }: {
+	/** Destination of the map file. */
 	filePath: string;
+	/** Filesystem to write to. Defaults to the real filesystem. */
 	fileSystem?: FileSystem;
+	/** Map to serialize. */
 	map: CoverageMap;
 }): void {
 	atomicWrite({
@@ -64,22 +121,18 @@ export function writeCoverageMap({
  * `CoverageMapMalformedError` in mapper.ts). Folding both into `undefined`
  * forces a second `existsSync` to recover the distinction, which races against
  * the read.
+ * @param filePath - Where the map JSON is read from.
+ * @param fileSystem - Filesystem to read. Defaults to the real filesystem.
+ * @returns The parsed map, or why it could not be read.
+ * @throws When reading fails for a reason other than a missing file.
  */
 export function readCoverageMap(
 	filePath: string,
 	fileSystem: FileSystem = nodeFileSystem,
 ): ReadCoverageMapResult {
-	let contents: string;
-	try {
-		contents = fileSystem.readFileSync(filePath, "utf-8");
-	} catch (err) {
-		if (err instanceof Error && "code" in err && err.code === "ENOENT") {
-			return { kind: "missing" };
-		}
-
-		// Any other IO error (EACCES, EISDIR, etc.) is unexpected — propagate
-		// rather than misreport it as missing.
-		throw err;
+	const contents = readUnlessMissing(filePath, fileSystem);
+	if (contents === undefined) {
+		return { kind: "missing" };
 	}
 
 	let parsed: JSONValue;

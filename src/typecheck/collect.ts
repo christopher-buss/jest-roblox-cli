@@ -10,12 +10,17 @@ import type {
 import { parseSync, Visitor } from "oxc-parser";
 
 import { buildAncestorChain } from "./ancestor-chain.ts";
-import type { RawTestDefinition, TestDefinition } from "./types.ts";
+import type { RawTestDefinition, TestDefinition } from "./typecheck-types.ts";
 
 const TEST_FUNCTIONS = new Set(["it", "test"]);
 const SUITE_FUNCTIONS = new Set(["describe", "suite"]);
 const ALL_FUNCTIONS = new Set([...SUITE_FUNCTIONS, ...TEST_FUNCTIONS]);
 
+/**
+ * Find every `describe`, `suite`, `it` and `test` call in a TypeScript source.
+ * @param source - The TypeScript type-test source.
+ * @returns The definitions, in source order, with their ancestor names.
+ */
 export function collectTestDefinitions(source: string): Array<TestDefinition> {
 	const result = parseSync("test.ts", source);
 	const raw: Array<RawTestDefinition> = [];
@@ -43,8 +48,8 @@ function isTemplateLiteral(node: Expression): node is TemplateLiteral {
 	return node.type === "TemplateLiteral";
 }
 
-// cspell:ignore quasis
 function extractStringArgument(node: Expression, source: string): string {
+	// cspell:ignore quasis
 	if (isStringLiteral(node)) {
 		return node.value;
 	}

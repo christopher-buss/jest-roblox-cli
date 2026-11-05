@@ -1,11 +1,8 @@
 import { isRojoTreeNode } from "@isentinel/rojo-utils";
 
 import { Buffer } from "node:buffer";
-import type { Dirent } from "node:fs";
 import * as path from "node:path";
 
-import { ConfigError } from "../config/errors.ts";
-import type { RojoTreeNode } from "../types/rojo.ts";
 import type { ChildProcessRunner } from "../utils/child-process.ts";
 import { nodeChildProcessRunner } from "../utils/child-process.ts";
 import type { FileSystem } from "../utils/file-system.ts";
@@ -13,17 +10,15 @@ import { nodeFileSystem } from "../utils/file-system.ts";
 import { hashBuffer } from "../utils/hash.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import { buildWithRojoAsync } from "../utils/rojo-builder.ts";
-import { createIgnoreMatcher, readGlobIgnorePaths } from "./glob-ignore.ts";
-import {
-	isModelFile,
-	META_JSON_FILE,
-	MODEL_EXTENSIONS,
-	readDeclaredClasses,
-} from "./model-classes.ts";
+import { readGlobIgnorePaths } from "./glob-ignore.ts";
+import type { PinnedMount } from "./pinned-mount-scan.ts";
+import { findPinnedMounts } from "./pinned-mount-scan.ts";
 import { PINNED_PARENT_CLASSES } from "./pinned-parent-classes.ts";
 import { findStage } from "./stage.ts";
 
+/** Inputs to {@link demotePinnedMountsAsync}. */
 export interface DemotePinnedMountsOptions {
+	/** Runs rojo. Defaults to the real child-process runner. */
 	childProcess?: ChildProcessRunner;
 	/**
 	 * Where the stand-ins are read and written. Defaults to the real
@@ -32,36 +27,10 @@ export interface DemotePinnedMountsOptions {
 	fileSystem?: FileSystem;
 	/** The directory the synthesized project file is written to. */
 	projectDirectory: string;
+	/** The synthesized project, serialized. */
 	projectJson: string;
 	/** Where the rewritten stand-in models are written. */
 	shadowDirectory: string;
-}
-
-/** A model a staged `$path` would mount with a class the engine pins. */
-interface PinnedMount {
-	/**
-	 * Name rojo would give the mounted instance, or `undefined` when the
-	 * mount's own `$path` is the offender and the node already names it.
-	 */
-	childName: string | undefined;
-	/** Absolute path to the offending file or directory. */
-	source: string;
-	/** The tree node whose `$path` reaches it. */
-	target: RojoTreeNode;
-}
-
-/**
- * What the tree walk threads through every level: where to collect offenders,
- * which paths the project already drops, and which have been scanned already.
- * A node may carry both a `$path` and explicit children mounting paths inside
- * it, so without `scanned` one source is reached twice — and rebuilt twice,
- * with two rojo builds racing on one stand-in file.
- */
-interface Walk {
-	fileSystem: FileSystem;
-	ignored: (absolutePath: string) => boolean;
-	pinned: Array<PinnedMount>;
-	scanned: Set<string>;
 }
 
 /**
@@ -114,6 +83,9 @@ const INSTANCE_PROPERTIES = new Set(["AttributesSerialize", "Name", "Tags"]);
  * A change to what this emits from unchanged sources needs
  * {@link PINNED_MOUNT_PASS_VERSION} bumped with it; the place-reuse key reads
  * this pass through that number and through nothing else.
+ * @param options - Project text, directories and adapters.
+ * @returns The rewritten project text, or the input unchanged when nothing is pinned.
+ * @rejects When a scan finds a buried pinned class or a rojo build fails.
  */
 export async function demotePinnedMountsAsync({
 	childProcess = nodeChildProcessRunner,
@@ -133,9 +105,7 @@ export async function demotePinnedMountsAsync({
 	}
 
 	const declaredIgnores = readGlobIgnorePaths(project);
-	const pinned: Array<PinnedMount> = [];
-	const ignored = createIgnoreMatcher(declaredIgnores);
-	collectPinnedMounts(stage, { fileSystem, ignored, pinned, scanned: new Set() });
+	const pinned = findPinnedMounts({ fileSystem, globIgnorePaths: declaredIgnores, stage });
 	if (pinned.length === 0) {
 		return projectJson;
 	}
@@ -155,14 +125,11 @@ export async function demotePinnedMountsAsync({
 	return JSON.stringify(project, undefined, 2);
 }
 
-/** The name rojo gives a mounted entry: its basename, less the extension. */
-function mountedName(entryName: string): string {
-	const lower = entryName.toLowerCase();
-	const extension = MODEL_EXTENSIONS.find((candidate) => lower.endsWith(candidate));
-	return extension === undefined ? entryName : entryName.slice(0, -extension.length);
-}
-
-/** Enough of a hash of the source path to keep two stand-in names apart. */
+/**
+ * Enough of a hash of the source path to keep two stand-in names apart.
+ * @param source - Source path to hash.
+ * @returns The first eight hex digits of the normalized path's hash.
+ */
 function sourceDigest(source: string): string {
 	return hashBuffer(Buffer.from(normalizeWindowsPath(source), "utf-8")).slice(0, 8);
 }
@@ -178,6 +145,8 @@ function sourceDigest(source: string): string {
  * properties instead would hand rojo a `Folder` carrying `Gravity` or
  * `Decoration`, which rojo writes into the place as an unknown property rather
  * than rejecting.
+ * @param xml - Built `.rbxmx` text.
+ * @returns The text with pinned classes folded to `Folder`.
  */
 function foldPinnedClasses(xml: string): string {
 	const stripped = xml.replaceAll(
@@ -216,6 +185,14 @@ function foldPinnedClasses(xml: string): string {
  * the instances the engine would reject changes. The materializer clones the
  * stand-in's children into the live service by name and never reads its class,
  * so a Folder in that position costs the package nothing.
+ * @param options - The mount and where its stand-in goes.
+ * @param options.childProcess - Runs rojo.
+ * @param options.fileSystem - Writes the project and stand-in files.
+ * @param options.globIgnorePaths - The consumer's own ignore patterns.
+ * @param options.mount - Offending mount to rebuild.
+ * @param options.shadowDirectory - Directory the stand-in is written to.
+ * @returns Path of the written stand-in.
+ * @rejects When the rojo build fails.
  */
 async function writeFolderShadowAsync({
 	childProcess,
@@ -230,7 +207,7 @@ async function writeFolderShadowAsync({
 	mount: PinnedMount;
 	shadowDirectory: string;
 }): Promise<string> {
-	const name = mount.childName ?? mountedName(path.basename(mount.source));
+	const { name } = mount;
 	// Named for the instance, disambiguated by a digest of the source path: two
 	// mounts can build a `StarterPlayerScripts`, and the digest keeps the name
 	// stable across runs so an unchanged tree rebuilds byte-identical bytes and
@@ -264,6 +241,15 @@ async function writeFolderShadowAsync({
  * project now has to ignore — none when the node already names the instance,
  * and the replaced original when the stand-in joins a directory auto-mount that
  * would otherwise re-add it alongside.
+ * @param mount - Offending mount; its target node is mutated.
+ * @param options - Adapters, ignore patterns and directories.
+ * @param options.childProcess - Runs rojo.
+ * @param options.declaredIgnores - The consumer's own ignore patterns.
+ * @param options.fileSystem - Writes the stand-in files.
+ * @param options.projectDirectory - Frame the returned ignore paths are relative to.
+ * @param options.shadowDirectory - Directory the stand-in is written to.
+ * @returns Paths the project must now ignore.
+ * @rejects When the rojo build fails.
  */
 async function standInForAsync(
 	mount: PinnedMount,
@@ -309,6 +295,10 @@ async function standInForAsync(
  * replaced. Serial rather than concurrent: two mounts can build the same
  * instance name, and the digest that keeps their files apart is no help if two
  * rojo runs write the shadow directory at once.
+ * @param pinned - Offending mounts.
+ * @param options - Adapters, declared ignores and directories.
+ * @returns The full ignore list.
+ * @rejects When a rojo build fails.
  */
 async function buildStandInsAsync(
 	pinned: Array<PinnedMount>,
@@ -329,188 +319,4 @@ async function buildStandInsAsync(
 	}
 
 	return ignores;
-}
-
-function pinnedClassesOf(fileSystem: FileSystem, filePath: string): Array<string> {
-	return readDeclaredClasses(filePath, fileSystem).filter((declared) => {
-		return PINNED_PARENT_CLASSES.has(declared);
-	});
-}
-
-/** A directory entry as an absolute posix path, the frame every scan uses. */
-function entryPathOf(directory: string, entryName: string): string {
-	return path.posix.join(normalizeWindowsPath(directory), entryName);
-}
-
-/**
- * Whether a directory's own `init.meta.json` gives the instance rojo mounts for
- * it a class the engine pins.
- */
-function declaresPinnedClass({
-	directory,
-	entries,
-	fileSystem,
-}: {
-	directory: string;
-	entries: ReadonlyArray<Dirent>;
-	fileSystem: FileSystem;
-}): boolean {
-	const meta = entries.find((child) => child.name === META_JSON_FILE);
-	if (meta === undefined || meta.isDirectory()) {
-		return false;
-	}
-
-	return pinnedClassesOf(fileSystem, entryPathOf(directory, META_JSON_FILE)).length > 0;
-}
-
-/**
- * A class the engine pins is legal only directly under the one parent it is
- * pinned to, so a source tree that mirrors a working place always sits such a
- * file directly inside the mount for that parent. One buried deeper already
- * sits under the wrong parent in the consumer's own place, and no stand-in
- * this module writes would make it load — so it is reported rather than
- * rebuilt.
- */
-function assertNoDeeperPinnedClass({
-	directory,
-	entries,
-	mountRoot,
-	walk,
-}: {
-	directory: string;
-	entries: ReadonlyArray<Dirent>;
-	mountRoot: string;
-	walk: Walk;
-}): void {
-	for (const entry of entries) {
-		const entryPath = entryPathOf(directory, entry.name);
-		if (walk.ignored(entryPath)) {
-			continue;
-		}
-
-		if (entry.isDirectory()) {
-			assertNoDeeperPinnedClass({
-				directory: entryPath,
-				entries: walk.fileSystem.readdirSync(entryPath, { withFileTypes: true }),
-				mountRoot,
-				walk,
-			});
-			continue;
-		}
-
-		const [buried] = pinnedClassesOf(walk.fileSystem, entryPath);
-		if (buried !== undefined) {
-			throw new ConfigError(
-				`"${entryPath}" declares ${buried}, which the engine parents only under one service, but it is nested inside the mount at "${mountRoot}" rather than sitting directly in it. ` +
-					"Roblox rejects it wherever that mount lands, so move the file up to the directory mounted at its own service, or drop it from the project with `globIgnorePaths`.",
-			);
-		}
-	}
-}
-
-/**
- * One entry of an auto-mounted directory: a model file, or a directory whose
- * `init.meta.json` names the class. A directory that names none is walked only
- * to report a pinned class buried below it.
- */
-function collectDirectoryEntry({
-	entry,
-	mountPath,
-	target,
-	walk,
-}: {
-	entry: Dirent;
-	mountPath: string;
-	target: RojoTreeNode;
-	walk: Walk;
-}): PinnedMount | undefined {
-	const entryPath = entryPathOf(mountPath, entry.name);
-	if (walk.ignored(entryPath)) {
-		return undefined;
-	}
-
-	if (!entry.isDirectory()) {
-		// `init.meta.json` gives the class to the directory holding it, which the
-		// caller has already asked about. Mounting it as a child of its own would
-		// hand rojo a lone descriptor it cannot turn into an Instance.
-		if (
-			entry.name === META_JSON_FILE ||
-			pinnedClassesOf(walk.fileSystem, entryPath).length === 0
-		) {
-			return undefined;
-		}
-
-		return { childName: mountedName(entry.name), source: entryPath, target };
-	}
-
-	// One listing answers both questions — whether this directory declares a
-	// class of its own, and what a deeper scan would walk. Probing for the meta
-	// file by opening it would miss for nearly every directory in the tree, and
-	// a failed open plus a thrown Error is the expensive way to ask.
-	const entries = walk.fileSystem.readdirSync(entryPath, { withFileTypes: true });
-	if (declaresPinnedClass({ directory: entryPath, entries, fileSystem: walk.fileSystem })) {
-		return { childName: mountedName(entry.name), source: entryPath, target };
-	}
-
-	assertNoDeeperPinnedClass({ directory: entryPath, entries, mountRoot: mountPath, walk });
-	return undefined;
-}
-
-function collectMountEntries({
-	mountPath,
-	target,
-	walk,
-}: {
-	mountPath: string;
-	target: RojoTreeNode;
-	walk: Walk;
-}): void {
-	const key = normalizeWindowsPath(mountPath);
-	if (walk.ignored(mountPath) || walk.scanned.has(key)) {
-		return;
-	}
-
-	walk.scanned.add(key);
-
-	if (isModelFile(mountPath)) {
-		if (pinnedClassesOf(walk.fileSystem, mountPath).length > 0) {
-			walk.pinned.push({ childName: undefined, source: mountPath, target });
-		}
-
-		return;
-	}
-
-	const stats = walk.fileSystem.statSync(mountPath, { throwIfNoEntry: false });
-	if (stats?.isDirectory() !== true) {
-		return;
-	}
-
-	const entries = walk.fileSystem.readdirSync(mountPath, { withFileTypes: true });
-	// The mount's own `init.meta.json` classes the instance rojo builds for the
-	// whole mount, so a pinned one makes the mount itself the offender — the
-	// node already names it, and no child stands in.
-	if (declaresPinnedClass({ directory: mountPath, entries, fileSystem: walk.fileSystem })) {
-		walk.pinned.push({ childName: undefined, source: mountPath, target });
-		return;
-	}
-
-	for (const entry of entries) {
-		const mount = collectDirectoryEntry({ entry, mountPath, target, walk });
-		if (mount !== undefined) {
-			walk.pinned.push(mount);
-		}
-	}
-}
-
-function collectPinnedMounts(node: RojoTreeNode, walk: Walk): void {
-	const mountPath = node.$path;
-	if (typeof mountPath === "string") {
-		collectMountEntries({ mountPath, target: node, walk });
-	}
-
-	for (const [key, value] of Object.entries(node)) {
-		if (!key.startsWith("$") && isRojoTreeNode(value)) {
-			collectPinnedMounts(value, walk);
-		}
-	}
 }

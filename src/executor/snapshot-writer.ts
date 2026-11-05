@@ -10,23 +10,32 @@ import type { SnapshotWrites } from "../reporter/parser.ts";
 import { createSnapshotPathResolver } from "../snapshot/path-resolver.ts";
 import type { RojoProject } from "../types/rojo.ts";
 import { rojoProjectSchema } from "../types/rojo.ts";
-import type { TsconfigMapping } from "../types/tsconfig.ts";
+import type { TsconfigMapping } from "../types/tsconfig-types.ts";
 import { formatBanner } from "../utils/banner.ts";
 import { errorMessage } from "../utils/error-message.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import { nodeFileSystem } from "../utils/file-system.ts";
 import { replacePrefix } from "../utils/tsconfig-mapping.ts";
 
+/** Snapshot write tallies for one batch. */
 export interface SnapshotWriteCounts {
+	/** Snapshots the Luau run asked to write. */
 	attempted: number;
+	/** Snapshots that could not be written. */
 	failed: number;
+	/** Snapshots written to disk. */
 	written: number;
 }
 
+/** Inputs for `writeSnapshots`. */
 export interface WriteSnapshotsOptions {
+	/** Resolved config of the project. */
 	config: ResolvedConfig;
+	/** File system to write to; defaults to Node's. */
 	fileSystem?: FileSystem | undefined;
+	/** Snapshot contents keyed by virtual path. */
 	snapshotWrites: SnapshotWrites;
+	/** Mappings that translate output paths back to source paths. */
 	tsconfigMappings: ReadonlyArray<TsconfigMapping>;
 }
 
@@ -41,6 +50,12 @@ interface SnapshotDestination {
 	resolver: SnapshotPathResolver;
 }
 
+/**
+ * Find the rojo project file in a directory.
+ * @param rootDirectory - Directory to search.
+ * @param fileSystem - File system to read.
+ * @returns `default.project.json` when present, else the first `*.project.json`, else undefined.
+ */
 export function findRojoProject(
 	rootDirectory: string,
 	fileSystem: FileSystem = nodeFileSystem,
@@ -60,6 +75,9 @@ export function findRojoProject(
  * location. Resolver construction is the fragile half — a missing, unreadable,
  * malformed, or unresolvable rojo project all mean "no snapshot can land", and
  * every one of those counts the whole batch as failed.
+ *
+ * @param options - Config, snapshots and tsconfig mappings.
+ * @returns Attempted, written and failed counts.
  */
 export function writeSnapshots({
 	config,

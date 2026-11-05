@@ -1,4 +1,4 @@
-import type { RawCoverageData, RawFileCoverage } from "./types.ts";
+import type { RawCoverageData, RawFileCoverage } from "./coverage-types.ts";
 
 /**
  * Normalize a raw coverage table into typed {@link RawCoverageData}. The input
@@ -11,6 +11,8 @@ import type { RawCoverageData, RawFileCoverage } from "./types.ts";
  * verbatim (it is the byte-identical join key the static maps are also keyed
  * to). Returns `undefined` when the input is not an object or carries no file
  * with a statement map.
+ * @param coverage - Runtime hit table.
+ * @returns Normalized coverage, or undefined when no file has a statement map.
  */
 export function normalizeRawCoverage(coverage: JSONValue | undefined): RawCoverageData | undefined {
 	// The table is keyed by fileKey, so a JSON array is never a coverage table
@@ -41,6 +43,8 @@ export function normalizeRawCoverage(coverage: JSONValue | undefined): RawCovera
  * A multi-project result (`{ entries: [{ jestOutput }, …] }`) carries one
  * envelope per project; parse each `entries[i].jestOutput` and combine with
  * `mergeRawCoverage`.
+ * @param output - Envelope JSON string, parsed envelope or bare hit table.
+ * @returns Normalized coverage, or undefined when none is found.
  */
 export function parseCoverageEnvelope(output: JSONValue): RawCoverageData | undefined {
 	const parsed = typeof output === "string" ? parseJson(output) : output;
@@ -92,6 +96,8 @@ function coerceArms(value: JSONValue): Array<number> {
  * Normalize branch hit counts from Luau's nested array format. Luau serializes
  * `__cov_b` as an array of arrays: `[[0,0,0], [0,0]]`. Convert the outer array
  * to a string-keyed Record with 1-based keys, coercing each arm.
+ * @param data - Branch counts as an array of arrays or a keyed object.
+ * @returns Arm counts by branch key; empty for any other input.
  */
 function normalizeBranchCounts(data: JSONValue): NonNullable<RawFileCoverage["b"]> {
 	if (Array.isArray(data)) {
@@ -119,6 +125,8 @@ function normalizeBranchCounts(data: JSONValue): NonNullable<RawFileCoverage["b"
  * Convert one file's counter table. Returns `undefined` for an entry with no
  * statement map — a JSON array carries no named counters, so it is skipped for
  * the same reason.
+ * @param value - One file's counter table.
+ * @returns Normalized counters, or undefined when there is no statement map.
  */
 function normalizeFileEntry(value: JSONValue): RawFileCoverage | undefined {
 	if (typeof value !== "object" || value === null || Array.isArray(value)) {
@@ -144,7 +152,11 @@ function normalizeFileEntry(value: JSONValue): RawFileCoverage | undefined {
 	return file;
 }
 
-/** Returns `undefined` for malformed JSON rather than throwing. */
+/**
+ * Parse JSON without throwing.
+ * @param text - Text that may not be valid JSON.
+ * @returns Parsed value, or undefined for malformed JSON.
+ */
 function parseJson(text: string): JSONValue | undefined {
 	try {
 		return JSON.parse(text);

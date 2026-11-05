@@ -50,8 +50,11 @@ const WORKSPACE_ONLY_FLAGS: ReadonlyArray<{
 	{ name: "--bail", isPresent: (cli) => cli.bail === true },
 ];
 
+/** Inputs of {@link resolveWorkspacePackages}. */
 export interface ResolveWorkspacePackagesOptions extends WorkspacePackageSelection {
+	/** Parsed command-line options. */
 	cli: CliOptions;
+	/** Absolute workspace root directory. */
 	workspaceRoot: string;
 }
 
@@ -61,6 +64,9 @@ export interface ResolveWorkspacePackagesOptions extends WorkspacePackageSelecti
  * `--workspace` says so outright; the workspace-only flags say so by being
  * present without it, which is what lets the validation below reject them by
  * name rather than leaving them silently inert on a single-package run.
+ *
+ * @param cli - Parsed command-line options.
+ * @returns `true` when the run takes the workspace path.
  */
 export function isWorkspaceInvocation(cli: CliOptions): boolean {
 	return cli.workspace === true || WORKSPACE_ONLY_FLAGS.some((flag) => flag.isPresent(cli));
@@ -69,6 +75,9 @@ export function isWorkspaceInvocation(cli: CliOptions): boolean {
 /**
  * Pure CLI-shape checks — runs before package resolution or config loading.
  * Catches mutually-exclusive flag combos and the missing --workspace.
+ *
+ * @param cli - Parsed command-line options.
+ * @returns Ok, or exit code `2` with the error message.
  */
 export function validateBasicWorkspaceFlags(cli: CliOptions): WorkspaceValidationResult {
 	if (cli.packages !== undefined && cli.affectedSince !== undefined) {
@@ -104,6 +113,15 @@ export function validateBasicWorkspaceFlags(cli: CliOptions): WorkspaceValidatio
  *
  * The `--affected-since` branch already carries directory +
  * `package.json#name` from turbo/nx, so it skips enumeration entirely.
+ *
+ * @param options - CLI options, workspace root and enumeration inputs.
+ * @param options.childProcess - Runs the change detector for `--affected-since`.
+ * @param options.cli - Parsed command-line options.
+ * @param options.exclude - Package globs to exclude.
+ * @param options.fileSystem - File system to enumerate.
+ * @param options.patterns - Package globs to enumerate.
+ * @param options.workspaceRoot - Absolute workspace root directory.
+ * @returns The selected packages.
  */
 export function resolveWorkspacePackages({
 	childProcess,
@@ -143,6 +161,14 @@ export function resolveWorkspacePackages({
 	});
 }
 
+/**
+ * Resolve Open Cloud credentials from CLI flags, `JEST_` environment variables
+ * and the workspace run options.
+ *
+ * @param cli - Parsed command-line options.
+ * @param runOptions - Workspace run options with default IDs.
+ * @returns The resolved credentials.
+ */
 export function buildWorkspaceCredentials(
 	cli: CliOptions,
 	runOptions: WorkspaceRunOptions,
@@ -156,6 +182,9 @@ export function buildWorkspaceCredentials(
 
 /**
  * Which workspace-only flag routed this invocation here without `--workspace`.
+ *
+ * @param cli - Parsed command-line options.
+ * @returns The first present workspace-only flag, as the error names it.
  */
 function namePresentWorkspaceFlag(cli: CliOptions): string {
 	const present = WORKSPACE_ONLY_FLAGS.find((flag) => flag.isPresent(cli));

@@ -18,6 +18,23 @@ function makeProject(overrides: Partial<ResolvedProjectConfig> = {}): ResolvedPr
 	};
 }
 
+function filterClientServerAcrossFiles(): ReturnType<typeof filterProjectsByFiles> {
+	const client = makeProject({
+		displayName: "client",
+		include: ["src/client/**/*.spec.ts"],
+	});
+	const server = makeProject({
+		displayName: "server",
+		include: ["src/server/**/*.spec.ts"],
+	});
+
+	return filterProjectsByFiles({
+		files: ["src/client/a.spec.ts", "src/server/b.spec.ts"],
+		projects: [client, server],
+		rootDirectory: "/repo",
+	});
+}
+
 describe(filterProjectsByFiles, () => {
 	it("should return only the project whose include root contains the file", () => {
 		expect.assertions(2);
@@ -44,20 +61,7 @@ describe(filterProjectsByFiles, () => {
 	it("should return projects matching across multiple positional files", () => {
 		expect.assertions(2);
 
-		const client = makeProject({
-			displayName: "client",
-			include: ["src/client/**/*.spec.ts"],
-		});
-		const server = makeProject({
-			displayName: "server",
-			include: ["src/server/**/*.spec.ts"],
-		});
-
-		const result = filterProjectsByFiles({
-			files: ["src/client/a.spec.ts", "src/server/b.spec.ts"],
-			projects: [client, server],
-			rootDirectory: "/repo",
-		});
+		const result = filterClientServerAcrossFiles();
 
 		expect(result).toHaveLength(2);
 		expect(result.map((match) => match.project.displayName)).toStrictEqual([
@@ -69,20 +73,7 @@ describe(filterProjectsByFiles, () => {
 	it("should pair each project with only the cli files its roots contain", () => {
 		expect.assertions(2);
 
-		const client = makeProject({
-			displayName: "client",
-			include: ["src/client/**/*.spec.ts"],
-		});
-		const server = makeProject({
-			displayName: "server",
-			include: ["src/server/**/*.spec.ts"],
-		});
-
-		const result = filterProjectsByFiles({
-			files: ["src/client/a.spec.ts", "src/server/b.spec.ts"],
-			projects: [client, server],
-			rootDirectory: "/repo",
-		});
+		const result = filterClientServerAcrossFiles();
 
 		expect(result[0]!.matchingFiles).toStrictEqual(["src/client/a.spec.ts"]);
 		expect(result[1]!.matchingFiles).toStrictEqual(["src/server/b.spec.ts"]);

@@ -1,15 +1,11 @@
 import { assert, describe, expect, it } from "vitest";
 
-import { DEFAULT_CONFIG } from "../config/schema.ts";
-import type { RawCoverageData } from "../coverage-pipeline/types.ts";
-import { LuauScriptError, type SnapshotWrites } from "../reporter/parser.ts";
-import type { JestResult } from "../types/jest-result.ts";
-import {
-	buildProjectResult,
-	decodeEnvelope,
-	isEnvelopeDeferred,
-	parseEnvelope,
-} from "./envelope.ts";
+import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
+import type { RawCoverageData } from "../coverage-pipeline/coverage-types.ts";
+import { LuauScriptError } from "../reporter/luau-script-error.ts";
+import type { SnapshotWrites } from "../reporter/parser.ts";
+import type { JestResult } from "../types/jest-result-types.ts";
+import { buildProjectResult, decodeEnvelope, isEnvelopeDeferred } from "./envelope.ts";
 import type { EnvelopeEntry, ProjectJob } from "./interface.ts";
 
 interface RunnerFieldOverrides {
@@ -36,7 +32,7 @@ function successJest(overrides: JestPayloadOverrides = {}): string {
 
 function job(displayName: string, overrides: Partial<ProjectJob> = {}): ProjectJob {
 	return {
-		config: DEFAULT_CONFIG,
+		config: createResolvedConfig(),
 		displayColor: `${displayName}-color`,
 		displayName,
 		testFiles: [`${displayName}/test.spec.ts`],
@@ -62,13 +58,13 @@ function captureThrown(action: () => void): Error {
 	throw new Error("Expected the action to throw");
 }
 
-describe(parseEnvelope, () => {
+describe("envelope entries", () => {
 	it("should return the entries array for a valid single-entry envelope", () => {
 		expect.assertions(1);
 
 		const envelope = JSON.stringify({ entries: [{ jestOutput: '{"some":"payload"}' }] });
 
-		const result = parseEnvelope(envelope);
+		const result = decodeEnvelope(envelope).entries;
 
 		expect(result).toStrictEqual([{ jestOutput: '{"some":"payload"}' }]);
 	});
@@ -83,7 +79,7 @@ describe(parseEnvelope, () => {
 			],
 		});
 
-		const result = parseEnvelope(envelope);
+		const result = decodeEnvelope(envelope).entries;
 
 		expect(result).toStrictEqual([
 			{ elapsedMs: 12, jestOutput: '{"a":1}' },
@@ -101,7 +97,7 @@ describe(parseEnvelope, () => {
 			],
 		});
 
-		const result = parseEnvelope(envelope);
+		const result = decodeEnvelope(envelope).entries;
 
 		expect(result).toStrictEqual([
 			{ jestOutput: '{"a":1}', pkg: "@halcyon/foo", project: "client" },
@@ -124,7 +120,7 @@ describe(parseEnvelope, () => {
 			],
 		});
 
-		const result = parseEnvelope(envelope);
+		const result = decodeEnvelope(envelope).entries;
 
 		expect(result).toStrictEqual([
 			{
@@ -142,7 +138,7 @@ describe(parseEnvelope, () => {
 
 		const barePayload = successJest();
 
-		const result = parseEnvelope(barePayload);
+		const result = decodeEnvelope(barePayload).entries;
 
 		expect(result).toStrictEqual([{ jestOutput: barePayload }]);
 	});
@@ -156,7 +152,7 @@ describe(parseEnvelope, () => {
 		const errorPayload = JSON.stringify({ err: "boom", success: false });
 
 		const thrown = captureThrown(() => {
-			parseEnvelope(errorPayload);
+			decodeEnvelope(errorPayload).entries;
 		});
 
 		assert(thrown instanceof LuauScriptError);
@@ -177,7 +173,7 @@ describe(parseEnvelope, () => {
 		const errorPayload = JSON.stringify({ err: promiseTrace, success: false });
 
 		const thrown = captureThrown(() => {
-			parseEnvelope(errorPayload);
+			decodeEnvelope(errorPayload).entries;
 		});
 
 		assert(thrown instanceof LuauScriptError);
@@ -188,7 +184,7 @@ describe(parseEnvelope, () => {
 	it("should propagate JSON.parse errors when the input is not valid JSON", () => {
 		expect.assertions(1);
 
-		expect(() => parseEnvelope("{not valid json")).toThrow(SyntaxError);
+		expect(() => decodeEnvelope("{not valid json").entries).toThrow(SyntaxError);
 	});
 });
 

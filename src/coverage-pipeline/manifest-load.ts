@@ -15,6 +15,9 @@ type ManifestFailure = Exclude<ReadManifestResult, { kind: "ok" }>;
  * that is recoverable by re-instrumenting says so on stderr first. A missing
  * manifest is silent: that is the ordinary "coverage was never instrumented"
  * case, not a fault.
+ * @param rootDirectory - Project root holding `.jest-roblox/`.
+ * @param fileSystem - File system to read through.
+ * @returns The manifest, or `undefined` when it cannot be used.
  */
 export function loadCoverageManifest(
 	rootDirectory: string,

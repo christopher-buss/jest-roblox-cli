@@ -1,7 +1,6 @@
-import { isRojoTreeNode, unwrapPath } from "@isentinel/rojo-utils";
-
-import type { RojoProject, RojoTreeNode } from "../types/rojo.ts";
-import type { TsconfigMapping } from "../types/tsconfig.ts";
+import type { RojoProject } from "../types/rojo.ts";
+import { listDataModelMounts } from "../types/rojo.ts";
+import type { TsconfigMapping } from "../types/tsconfig-types.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import { nodeFileSystem } from "../utils/file-system.ts";
 import { findMapping, replacePrefix } from "../utils/tsconfig-mapping.ts";
@@ -10,6 +9,7 @@ const INIT_SEGMENT = /(^|\/)(init)(\.|\/)/;
 const LEADING_DOT_SLASH = /^\.\//;
 const LUA_EXTENSION = /\.luau?$/;
 
+/** Maps DataModel paths to the files on disk that produced them. */
 export interface PathResolver {
 	/** Probes disk (`.luau` then `.lua`) for paths with no tsconfig mapping. */
 	resolve(dataModelPath: string): ResolvedPath | undefined;
@@ -26,17 +26,28 @@ interface PathResolverConfig {
 	mappings?: ReadonlyArray<TsconfigMapping>;
 }
 
-/** roblox-ts compiles index.ts → init.luau; reverse the rename for TS paths. */
+/**
+ * The roblox-ts compiler turns index.ts into init.luau; reverse the rename.
+ * @param filePath - A resolved file path.
+ * @returns The path with an `init` segment renamed to `index`.
+ */
 export function luauInitToIndex(filePath: string): string {
 	return filePath.replace(INIT_SEGMENT, "$1index$3");
 }
 
+/**
+ * Build a resolver from a Rojo project and tsconfig mappings.
+ * @param rojoProject - The Rojo project whose tree places files.
+ * @param config - The mappings and the filesystem to probe.
+ * @param config.fileSystem - Where unmapped paths are probed.
+ * @param config.mappings - The tsconfig roots to map through.
+ * @returns A resolver over the Rojo tree and tsconfig roots.
+ */
 export function createPathResolver(
 	rojoProject: RojoProject,
 	{ fileSystem = nodeFileSystem, mappings }: PathResolverConfig = {},
 ): PathResolver {
-	const rojoMappings = new Map<string, string>();
-	collectRojoMappings({ into: rojoMappings, prefix: "", tree: rojoProject.tree });
+	const rojoMappings = new Map(listDataModelMounts(rojoProject.tree, "."));
 
 	const tsconfigMappings = mappings ?? [];
 	const sortedRojoMappings = [...rojoMappings].sort(([a], [b]) => b.length - a.length);
@@ -70,31 +81,6 @@ function mapTypeScriptPath(filePath: string, mapping: TsconfigMapping): string {
 		.replace(LEADING_DOT_SLASH, "")
 		.replace(LUA_EXTENSION, "");
 	return luauInitToIndex(`${mapped}.ts`);
-}
-
-function collectRojoMappings({
-	into,
-	prefix,
-	tree,
-}: {
-	into: Map<string, string>;
-	prefix: string;
-	tree: RojoTreeNode;
-}): void {
-	for (const [key, value] of Object.entries(tree)) {
-		if (!isRojoTreeNode(value) || key.startsWith("$")) {
-			continue;
-		}
-
-		const dataModelPath = prefix ? `${prefix}.${key}` : key;
-
-		const mountPath = unwrapPath(value.$path);
-		if (mountPath !== undefined) {
-			into.set(dataModelPath, mountPath);
-		}
-
-		collectRojoMappings({ into, prefix: dataModelPath, tree: value });
-	}
 }
 
 function convertToFilePath(suffix: string): string {

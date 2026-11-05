@@ -2,16 +2,16 @@ import * as path from "node:path";
 import process from "node:process";
 import { describe, expect, it } from "vitest";
 
-import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
+import { posixPath } from "#test/mocks/posix-path.ts";
 import {
 	narrowMappedForAgentTable,
 	projectRootFilter,
 	sourceTwinFilter,
 } from "./agent-table-filter.ts";
-import type { MappedCoverageResult, MappedFileCoverage } from "./mapper.ts";
+import type { MappedCoverageResult, MappedFileCoverage } from "./mapper-types.ts";
 
 function abs(relative: string): string {
-	return normalizeWindowsPath(path.resolve("/repo", relative));
+	return posixPath(path.resolve("/repo", relative));
 }
 
 function createMappedFile(filePath: string): MappedFileCoverage {

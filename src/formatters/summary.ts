@@ -1,13 +1,23 @@
-import { hasExecError, type JestResult, type SnapshotSummary } from "../types/jest-result.ts";
-import type { TimingResult } from "../types/timing.ts";
+import { hasExecError } from "../types/exec-error-file.ts";
+import type { JestResult, SnapshotSummary } from "../types/jest-result-types.ts";
+import type { TimingResult } from "../types/timing-types.ts";
 import { formatBannerBar } from "../utils/banner.ts";
 import { type BailSummary, type FormatOptions, getTerminalWidth } from "./shared.ts";
 import { type ColorFunc, createStyles, type Styles } from "./styles.ts";
 
 /** The three buckets a summary row counts, whatever it is counting. */
 export interface SummaryCounts {
+	/**
+	 * Files or tests that failed.
+	 */
 	failed: number;
+	/**
+	 * Files or tests that passed.
+	 */
 	passed: number;
+	/**
+	 * Files or tests that were skipped.
+	 */
 	skipped: number;
 }
 
@@ -17,25 +27,70 @@ export interface SummaryCounts {
  * three, and the row cannot derive it the way the file row can.
  */
 export interface TestRowCounts {
+	/**
+	 * Failed, passed and skipped tests.
+	 */
 	counts: SummaryCounts;
+	/**
+	 * Jest's `numTotalTests`.
+	 */
 	total: number;
 }
 
+/**
+ * Inputs of `formatTestSummary`.
+ */
 export interface TestSummaryOptions {
+	/**
+	 * Adds the Bailed row when set.
+	 */
 	bail?: BailSummary | undefined;
+	/**
+	 * Result to total.
+	 */
 	result: JestResult;
+	/**
+	 * Snapshots that failed to write; defaults to 0.
+	 */
 	snapshotWriteFailures?: number | undefined;
+	/**
+	 * Palette to render with; colored when absent.
+	 */
 	styles?: Styles | undefined;
+	/**
+	 * Run timing for the Start at and Duration rows.
+	 */
 	timing: TimingResult;
+	/**
+	 * Type errors found; adds the Type Errors row when set.
+	 */
 	typeErrors?: number | undefined;
 }
 
+/**
+ * Inputs of `formatLogHints`.
+ */
 export interface FormatLogHintsOptions {
+	/**
+	 * Format options naming the written output files.
+	 */
 	options: FormatOptions;
+	/**
+	 * Snapshot totals; unmatched snapshots add the update hint.
+	 */
 	snapshot?: SnapshotSummary | undefined;
+	/**
+	 * Palette to render with.
+	 */
 	styles: Styles;
 }
 
+/**
+ * Render the RUN header with the version and root, plus a coverage line when coverage is on.
+ * @param options - Version, root, color and coverage switch.
+ * @param styles - Palette to render with; built from `options.color` when absent.
+ * @returns The newline-wrapped header.
+ */
 export function formatRunHeader(
 	options: Pick<FormatOptions, "collectCoverage" | "color" | "rootDir" | "version">,
 	styles?: Styles,
@@ -54,6 +109,12 @@ export function formatRunHeader(
 	return `${header}\n`;
 }
 
+/**
+ * Render the terminal-wide `Failed Tests N` banner.
+ * @param failCount - Failures shown in the title.
+ * @param _styles - Unused.
+ * @returns The banner.
+ */
 export function formatFailedTestsHeader(failCount: number, _styles?: Styles): string {
 	return formatBannerBar({
 		level: "error",
@@ -66,6 +127,9 @@ export function formatFailedTestsHeader(failCount: number, _styles?: Styles): st
  * The `Type Errors  …` row, byte-for-byte vitest's typecheck summary line:
  * an 11-column right-aligned label, two spaces, then a bold-red `N failed` or a
  * dim `no errors`. Shared with the agent formatter so both reporters agree.
+ * @param typeErrors - Type errors found.
+ * @param styles - Palette to render with.
+ * @returns The row.
  */
 export function formatTypeErrorsLine(typeErrors: number, styles: Styles): string {
 	const typeErrorLabel = styles.dim("Type Errors");
@@ -74,7 +138,11 @@ export function formatTypeErrorsLine(typeErrors: number, styles: Styles): string
 	return `${typeErrorLabel}  ${typeErrorValue}`;
 }
 
-/** The trailing block of totals: snapshots, files, tests, timings. */
+/**
+ * The trailing block of totals: snapshots, files, tests, timings.
+ * @param options - Result, timing, optional counts and palette.
+ * @returns The block's rows joined by newlines.
+ */
 export function formatTestSummary({
 	bail,
 	result,
@@ -108,6 +176,11 @@ export function formatTestSummary({
 	return lines.join("\n");
 }
 
+/**
+ * Render the hints after a failed run: the snapshot update hint and where the written outputs are.
+ * @param options - Format options, snapshot totals and palette.
+ * @returns The hint lines, or empty when none apply.
+ */
 export function formatLogHints({ options, snapshot, styles }: FormatLogHintsOptions): string {
 	const lines: Array<string> = [];
 
@@ -144,6 +217,9 @@ function collectSnapshotLines({
 	writeFailures,
 }: {
 	snapshot: SnapshotSummary | undefined;
+	/**
+	 * Palette to render with.
+	 */
 	styles: Styles;
 	writeFailures: number;
 }): Array<string> {
@@ -173,9 +249,13 @@ const SNAPSHOT_COUNTS: Array<{
 		tone: (styles) => styles.summary.failed,
 	},
 	{
-		// `unchecked` is Jest's "obsolete" count — orphaned snapshot keys inside
-		// still-present `.snap.luau` files. `filesRemoved` is a separate count
-		// (whole files removed); mixing the two units would over-report.
+		/**
+		 * `unchecked` is Jest's "obsolete" count — orphaned snapshot keys inside
+		 * still-present `.snap.luau` files. `filesRemoved` is a separate count
+		 * (whole files removed); mixing the two units would over-report.
+		 * @param snapshot - Snapshot totals.
+		 * @returns The obsolete count, 0 when Jest omits it.
+		 */
 		count: (snapshot) => snapshot.unchecked ?? 0,
 		label: "obsolete",
 		tone: (styles) => styles.summary.pending,
@@ -202,6 +282,9 @@ const SNAPSHOT_COUNTS: Array<{
  * `getStateString` puts failed first, then passed, then skipped. Each bucket is
  * omitted when zero, so a clean run reads `2 passed (2)` rather than carrying
  * two empty counts.
+ * @param counts - Bucket counts.
+ * @param styles - Palette to render with.
+ * @returns The non-zero buckets, styled.
  */
 export function formatSummaryParts(counts: SummaryCounts, styles: Styles): Array<string> {
 	const parts: Array<string> = [];
@@ -223,12 +306,19 @@ export function formatSummaryParts(counts: SummaryCounts, styles: Styles): Array
 /**
  * The `      Tests  …` row: the counts vitest reports for every run, type
  * pass included.
+ * @param counts - Test buckets and Jest's total.
+ * @param styles - Palette to render with.
+ * @returns The row.
  */
 export function formatTestsLine({ counts, total }: TestRowCounts, styles: Styles): string {
 	return formatCountRow({ counts, label: "      Tests", total }, styles);
 }
 
-/** The test-level numbers of one run, paired so no caller can mismatch them. */
+/**
+ * The test-level numbers of one run, paired so no caller can mismatch them.
+ * @param result - Run result.
+ * @returns The test buckets and Jest's total.
+ */
 export function countTestBuckets(result: JestResult): TestRowCounts {
 	return {
 		counts: {
@@ -243,6 +333,9 @@ export function countTestBuckets(result: JestResult): TestRowCounts {
 /**
  * The ` Test Files  …` row. Every file lands in exactly one bucket, so the
  * total is the sum and the caller has nothing else to pass.
+ * @param counts - File buckets.
+ * @param styles - Palette to render with.
+ * @returns The row.
  */
 export function formatTestFilesLine(counts: SummaryCounts, styles: Styles): string {
 	const total = counts.failed + counts.passed + counts.skipped;
@@ -259,6 +352,8 @@ export function formatTestFilesLine(counts: SummaryCounts, styles: Styles): stri
  * on a tally of what ran inside it: `skipped` is vitest's `mode: "skip"`, which
  * it sets only when a file has tasks and every one of them is skipped. A file
  * that collected nothing keeps `mode: "run"` and passes, so it does here too.
+ * @param result - Jest result whose files to bucket.
+ * @returns How many files failed, passed and skipped.
  */
 export function countFileBuckets(result: JestResult): SummaryCounts {
 	let failed = 0;
@@ -278,6 +373,9 @@ export function countFileBuckets(result: JestResult): SummaryCounts {
 /**
  * The `     Bailed  …` row, shown when `--bail` cut the run short. Without it
  * the totals read as the whole selection when they are a prefix of it.
+ * @param bail - Packages reached and not run.
+ * @param styles - Palette to render with.
+ * @returns The row.
  */
 export function formatBailLine(bail: BailSummary, styles: Styles): string {
 	const reached = `after ${bail.ran} ${bail.ran === 1 ? "package" : "packages"}`;
@@ -327,12 +425,16 @@ function formatStartAtLine(startTime: number, styles: Styles): string {
 	return `${styles.dim("   Start at")}  ${startAtStr}`;
 }
 
-// `environment` and `cli` are the two residuals — whatever the measured phases
-// leave unaccounted for — so both are clamped at zero. `environment` is what
-// the execution window has left after the phases inside it; `cli` is what the
-// total has left after the window and every phase measured outside it, so a new
-// outside-the-window phase belongs in `outsideExecutionMs` as well as in its
-// own segment.
+/**
+ * `environment` and `cli` are the two residuals — whatever the measured phases
+ * leave unaccounted for — so both are clamped at zero. `environment` is what
+ * the execution window has left after the phases inside it; `cli` is what the
+ * total has left after the window and every phase measured outside it, so a new
+ * outside-the-window phase belongs in `outsideExecutionMs` as well as in its
+ * own segment.
+ * @param timing - Run timing.
+ * @returns The `<phase> <n>ms` segments of the Duration row.
+ */
 function buildDurationBreakdown(timing: TimingResult): Array<string> {
 	const setupMs = timing.setupMs ?? 0;
 	const environmentMs = Math.max(0, timing.executionMs - timing.testsMs - setupMs);

@@ -1,15 +1,15 @@
 // cspell:ignore LOCALAPPDATA mtimes
 import { type } from "arktype";
-import type { Dirent } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import process from "node:process";
 
-import { absolutePathSchema } from "../config/schema.ts";
-import type { FileSystem } from "../utils/file-system.ts";
+import { absolutePathSchema } from "../config/config-validation.ts";
+import type { Dirent, FileSystem } from "../utils/file-system.ts";
 import { nodeFileSystem } from "../utils/file-system.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 
+/** Inputs for finding the Studio executable. */
 export interface StudioDiscoveryOptions {
 	/**
 	 * Environment to read discovery hints from (Windows `LOCALAPPDATA`,
@@ -46,6 +46,7 @@ const NOT_FOUND_HINT =
 	"Install Roblox Studio, or set studioPath (config key, --studioPath, or " +
 	"JEST_ROBLOX_STUDIO_PATH).";
 
+/** Inputs for finding the per-user Studio folders. */
 export interface UserDirectoryOptions {
 	/** Defaults to `process.env`. */
 	environment?: NodeJS.ProcessEnv | undefined;
@@ -53,9 +54,11 @@ export interface UserDirectoryOptions {
 	homeDirectory?: string | undefined;
 	/** Defaults to `process.platform`. */
 	platform?: NodeJS.Platform | undefined;
+	/** Configured plugins folder; overrides the environment and the default. */
 	pluginsDirectory?: string | undefined;
 }
 
+/** Per-user folders the CLI uses. */
 export interface UserDirectories {
 	/** The folder Studio loads local plugins from. */
 	readonly plugins: string;
@@ -66,6 +69,10 @@ export interface UserDirectories {
 /**
  * The Studio path the user named: the `studioPath` setting, else
  * `JEST_ROBLOX_STUDIO_PATH`. An empty variable names nothing.
+ *
+ * @param studioPath - The `studioPath` setting.
+ * @param environment - Environment to read the variable from.
+ * @returns The named path, or undefined when none is named.
  */
 export function configuredStudioPath(
 	studioPath: string | undefined,
@@ -74,6 +81,13 @@ export function configuredStudioPath(
 	return studioPath ?? fromEnvironment(environment, STUDIO_PATH_ENV);
 }
 
+/**
+ * Reads whether Studio discovery is on from `JEST_ROBLOX_STUDIO_DISCOVERY`.
+ *
+ * @param environment - Environment to read the variable from.
+ * @returns False only when the variable is `off`.
+ * @throws Error when the variable is set to a value other than `on` or `off`.
+ */
 export function isStudioDiscoveryOn(environment: NodeJS.ProcessEnv = process.env): boolean {
 	const value = fromEnvironment(environment, DISCOVERY_ENV);
 	if (value === undefined || value === "on") {
@@ -93,6 +107,10 @@ export function isStudioDiscoveryOn(environment: NodeJS.ProcessEnv = process.env
  * the newest `RobloxStudioBeta.exe` on Windows. Throws a clear, actionable
  * error when no executable can be found so the CLI surfaces "install Studio or
  * set studioPath" rather than a downstream spawn failure.
+ *
+ * @param options - Override, environment, file system, and platform.
+ * @returns The normalized Studio executable path.
+ * @throws Error when no Studio executable is found or discovery is off.
  */
 export function discoverStudioPath({
 	environment = process.env,
@@ -139,6 +157,9 @@ export function discoverStudioPath({
 /**
  * The per-user folders the Managed Plugin lives in and is tracked from, or
  * undefined where this OS has no known plugins folder.
+ *
+ * @param options - Environment, home folder, platform, and plugins folder.
+ * @returns The plugins and state folders, or undefined.
  */
 export function discoverUserDirectories({
 	environment = process.env,
@@ -171,6 +192,9 @@ function notFound(): Error {
  * The most recently modified `RobloxStudioBeta.exe` across the version
  * directories, normalized. Undefined when no version directory holds one —
  * `Versions` exists but every entry is a stale/partial install.
+ *
+ * @param options - Version folder entries, their parent, and the file system.
+ * @returns The newest executable path, or undefined.
  */
 function findNewestStudioExecutable({
 	entries,

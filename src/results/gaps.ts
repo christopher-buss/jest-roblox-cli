@@ -1,10 +1,14 @@
 import type { GapRecord, GapTally } from "../backends/interface.ts";
-import type { JestResult, TestCaseResult, TestFileResult } from "../types/jest-result.ts";
+import type { JestResult, TestCaseResult, TestFileResult } from "../types/jest-result-types.ts";
+import { MissingGapRecordError } from "../utils/infrastructure-failure.ts";
 
 /** A test or file whose result is no evidence, because a gap reached it. */
 export interface BlockedEntry {
+	/** File that holds the entry. */
 	file: TestFileResult;
+	/** Gaps of the test and its file, or of the file alone. */
 	gaps: GapTally;
+	/** Blocked test; absent when the file has gaps but no test. */
 	test?: TestCaseResult;
 }
 
@@ -20,17 +24,14 @@ interface FileGaps {
 
 const RAN: ReadonlySet<TestCaseResult["status"]> = new Set(["failed", "passed"]);
 
-/**
- * A run whose gap record does not cover its results, so no test of it can be
- * called clean.
- */
-export class MissingGapRecordError extends Error {}
+export { MissingGapRecordError } from "../utils/infrastructure-failure.ts";
 
 /**
  * Every Blocked test with the gaps that block it, its own and its file's, and
  * every file with gaps but no test.
  *
  * @param result - A result that carries gaps.
+ * @returns Blocked tests, and files with gaps but no test.
  */
 export function listBlocked(result: JestResult): Array<BlockedEntry> {
 	return result.testResults.flatMap((file) => {

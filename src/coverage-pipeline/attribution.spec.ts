@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
+import { MANIFEST_VERSION } from "#test/mocks/coverage-versions.ts";
 import { applyAttribution, harvestAttribution, mergeAttribution } from "./attribution.ts";
 import type { CoverageManifest } from "./manifest.ts";
-import { MANIFEST_VERSION } from "./manifest.ts";
 
 function exampleManifest(): CoverageManifest {
 	return {
@@ -30,6 +30,7 @@ function exampleManifest(): CoverageManifest {
 /**
  * A manifest as a warm run reads it: the shadow found `out/m.luau` unchanged
  * and carried the previous run's record forward verbatim, attribution included.
+ * @returns Manifest whose `out/m.luau` record holds stale attribution.
  */
 function warmManifest(): CoverageManifest {
 	const manifest = exampleManifest();

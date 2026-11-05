@@ -38,6 +38,7 @@ function failRenameTimes(fileSystem: FileSystem, failures: number): void {
  * `restoreMocks` puts the original back after each test.
  *
  * @param fileSystem - The volume whose rename primitive to stand in for.
+ * @returns The temp file names, filled in as writes rename.
  */
 function captureTemporaryNames(fileSystem: FileSystem): Array<string> {
 	const names: Array<string> = [];
@@ -92,6 +93,7 @@ function reportDeadOwners(dead: ReadonlyArray<number>): void {
  * nonce.
  *
  * @param name - A temp file's basename, as the rename saw it.
+ * @returns The target, the owner pid and the nonce.
  */
 function splitStamp(name: string | undefined): [string, string, string] {
 	const parts = (name ?? "").split(".tmp.");

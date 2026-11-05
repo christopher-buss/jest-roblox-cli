@@ -1,11 +1,14 @@
+import { loadLuauParser } from "@isentinel/luau-ast/parser";
+
 import assert from "node:assert";
 import { describe, expect, it } from "vitest";
 
-import { luauParser } from "../luau/parser.ts";
 import { applyLuauExpectErrors } from "./luau-expect-error.ts";
-import type { TypeTestDiagnostic } from "./types.ts";
+import type { TypeTestDiagnostic } from "./typecheck-types.ts";
 
 const FILE = "a.spec-d.luau";
+
+const luauParser = loadLuauParser();
 
 function apply({
 	diagnostics,
@@ -162,5 +165,47 @@ describe(applyLuauExpectErrors, () => {
 			diagnostic(2),
 			unused(3),
 		]);
+	});
+
+	it("should target the next statement for a directive trailing code", () => {
+		expect.assertions(1);
+
+		const source = [
+			"--!strict",
+			"local _a: number = 1 -- @expect-error",
+			'local _b: number = "x"',
+		].join("\n");
+
+		expect(apply({ diagnostics: [diagnostic(3)], filePath: FILE, source })).toStrictEqual([]);
+	});
+
+	it("should consume a diagnostic only inside the target statement", () => {
+		expect.assertions(1);
+
+		const source = [
+			"--!strict",
+			"-- @expect-error",
+			"\tlocal _x = {",
+			"\t\t1,",
+			"\t}",
+			"local _y = 2",
+		].join("\n");
+		const positions = [
+			[2, 5],
+			[3, 1],
+			[3, 2],
+			[4, 1],
+			[4, 9],
+			[5, 2],
+			[5, 3],
+			[6, 1],
+		] as const;
+
+		expect(
+			positions.map(([line, column]) => {
+				return apply({ diagnostics: [diagnostic(line, column)], filePath: FILE, source })
+					.length;
+			}),
+		).toStrictEqual([2, 2, 0, 0, 0, 0, 2, 2]);
 	});
 });

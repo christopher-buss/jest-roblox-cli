@@ -3,7 +3,9 @@ import color from "tinyrainbow";
 import type { StreamingResultEntry } from "../memory-store/sorted-map-client.ts";
 import { composeEntryDisplayName } from "../utils/display-name.ts";
 
+/** Options of {@link formatStreamingProgressLine}. */
 export interface ProgressLineOptions {
+	/** Whether to colorize the line. */
 	color: boolean;
 }
 
@@ -21,6 +23,10 @@ interface PushPartOptions {
  * The line is intentionally narrow — it lands mid-task while siblings are
  * still running; the full project section (failures, snippets, summary)
  * still renders at task end through the existing batched output path.
+ *
+ * @param entry - Streamed result entry of one package.
+ * @param options - Whether to colorize.
+ * @returns The status line.
  */
 export function formatStreamingProgressLine(
 	entry: StreamingResultEntry,

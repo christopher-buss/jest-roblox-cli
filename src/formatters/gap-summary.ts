@@ -1,6 +1,6 @@
 import { listBlocked } from "../results/gaps.ts";
 import type { SourceMapper } from "../source-mapper/index.ts";
-import type { JestResult, TestCaseResult, TestFileResult } from "../types/jest-result.ts";
+import type { JestResult, TestCaseResult, TestFileResult } from "../types/jest-result-types.ts";
 import { resolveDisplayPath } from "./shared.ts";
 
 const COLLATOR = new Intl.Collator();
@@ -11,6 +11,7 @@ const COLLATOR = new Intl.Collator();
  *
  * @param result - The run's result, with gaps on its tests and files.
  * @param sourceMapper - Maps each test file to the path it is shown by.
+ * @returns The Blocked list, or undefined when no test is Blocked.
  */
 export function formatGapSummary(
 	result: JestResult,

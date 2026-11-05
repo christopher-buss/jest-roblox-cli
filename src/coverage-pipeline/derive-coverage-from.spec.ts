@@ -1,13 +1,19 @@
 import { describe, expect, it } from "vitest";
 
 import type { ResolvedProjectConfig } from "../config/projects.ts";
-import { deriveCoverageFromIncludes, resolveCoverageInclude } from "./derive-coverage-from.ts";
+import { resolveCoverageInclude } from "./derive-coverage-from.ts";
 
 const COVERAGE_PROJECTS: Array<Pick<ResolvedProjectConfig, "include">> = [
 	{ include: ["src/**/*.spec.ts"] },
 ];
 
-describe(deriveCoverageFromIncludes, () => {
+function deriveCoverageFromIncludes(
+	projects: ReadonlyArray<Pick<ResolvedProjectConfig, "include">>,
+): Array<string> | undefined {
+	return resolveCoverageInclude({ collectCoverage: true }, projects);
+}
+
+describe("derived coverage include", () => {
 	it("should derive coverage patterns from project include roots", () => {
 		expect.assertions(1);
 
@@ -201,7 +207,13 @@ describe(resolveCoverageInclude, () => {
 		// instrumentation narrows to the same universe the report renders.
 		const result = resolveCoverageInclude({ collectCoverage: true }, COVERAGE_PROJECTS);
 
-		expect(result).toStrictEqual(deriveCoverageFromIncludes(COVERAGE_PROJECTS));
+		expect(result).toStrictEqual([
+			"src/**/*.ts",
+			"!**/*.spec.ts",
+			"!**/*.test.ts",
+			"!**/*.client.ts",
+			"!**/*.server.ts",
+		]);
 	});
 
 	it("should not derive anything when coverage is off", () => {

@@ -19,6 +19,9 @@ import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
  * A target on another drive has no relative form. `path.relative` returns it
  * absolute, which is exactly what gets emitted — that one mount keeps the old
  * behavior rather than failing the build.
+ * @param projectJson - Serialized project with absolute `$path` values.
+ * @param projectDirectory - Directory the project file is written to.
+ * @returns The project re-serialized with relative `$path` values.
  */
 export function relativizeProjectPaths(projectJson: string, projectDirectory: string): string {
 	const rewritten = rewrite(JSON.parse(projectJson), projectDirectory);

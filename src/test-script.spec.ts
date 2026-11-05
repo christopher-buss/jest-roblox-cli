@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
 import type { ResolvedConfig } from "./config/schema.ts";
-import { DEFAULT_CONFIG } from "./config/schema.ts";
 import { buildJestArgv, generateTestScript, type JestArgvInput } from "./test-script.ts";
 
 function createConfig(overrides: Partial<ResolvedConfig> = {}): ResolvedConfig {
-	return { ...DEFAULT_CONFIG, ...overrides };
+	return { ...createResolvedConfig(), ...overrides };
 }
 
 function createOptions(overrides?: {
@@ -386,5 +386,18 @@ describe(generateTestScript, () => {
 		expect(script).toStartWith("--!strict\n");
 		expect(script).toMatch(/^local __WELD_MODULES = \{/mu);
 		expect(script).not.toContain("__CONFIG_JSON__");
+	});
+
+	it("should embed one argv per config of a bucket", () => {
+		expect.assertions(1);
+
+		const first = createOptions({ testFiles: ["src/a.spec.ts"] });
+		const second = createOptions({ testFiles: ["src/b.spec.ts"] });
+
+		const script = generateTestScript([first, second]);
+
+		expect(script).toContain(
+			JSON.stringify({ configs: [buildJestArgv(first), buildJestArgv(second)] }),
+		);
 	});
 });

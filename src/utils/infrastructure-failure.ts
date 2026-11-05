@@ -3,7 +3,6 @@ import { TaskQuotaError, TaskStallError } from "@isentinel/roblox-runner";
 
 import color from "tinyrainbow";
 
-import { MissingGapRecordError } from "../results/gaps.ts";
 import { formatBanner } from "./banner.ts";
 
 /**
@@ -12,8 +11,20 @@ import { formatBanner } from "./banner.ts";
  */
 export const INFRASTRUCTURE_EXIT_CODE = 3;
 
+/** An error that means Roblox infrastructure, not the tests, failed the run. */
 export type InfrastructureFailure = MissingGapRecordError | TaskQuotaError | TaskStallError;
 
+/**
+ * A run whose gap record does not cover its results, so no test of it can be
+ * called clean.
+ */
+export class MissingGapRecordError extends Error {}
+
+/**
+ * Whether a thrown value is an infrastructure failure.
+ * @param err - The thrown value.
+ * @returns True for a task stall, task quota or missing gap record error.
+ */
 export function isInfrastructureFailure(err: unknown): err is InfrastructureFailure {
 	return (
 		err instanceof TaskStallError ||
@@ -22,6 +33,11 @@ export function isInfrastructureFailure(err: unknown): err is InfrastructureFail
 	);
 }
 
+/**
+ * Render the error banner for an infrastructure failure, with its evidence.
+ * @param err - The infrastructure failure.
+ * @returns The banner text.
+ */
 export function formatInfrastructureBanner(err: InfrastructureFailure): string {
 	if (err instanceof MissingGapRecordError) {
 		return formatBanner({
@@ -62,7 +78,11 @@ function listFields(
 	];
 }
 
-/** One line per field, in the order a Roblox bug report reads them. */
+/**
+ * One line per field, in the order a Roblox bug report reads them.
+ * @param evidence - What the runner recorded about the failure.
+ * @returns The indented evidence lines.
+ */
 function describeEvidence(evidence: InfrastructureEvidence): Array<string> {
 	const lines = [`    kind: ${evidence.kind}`];
 	for (const [name, value] of listFields(evidence)) {

@@ -2,15 +2,15 @@ import { Buffer } from "node:buffer";
 import { describe, expect, it } from "vitest";
 
 // cspell:ignore turbofish
-import { collectLuauTestDefinitions, createByteLocationsIndexMap } from "./luau-collect.ts";
+import { collectLuauTestDefinitions } from "./luau-collect.ts";
 
 const FILE = "a.spec-d.luau";
 
-describe(createByteLocationsIndexMap, () => {
+describe("collectLuauTestDefinitions locations", () => {
 	it("should map UTF-8 byte columns to byte offsets", () => {
 		expect.assertions(3);
 
-		const locations = createByteLocationsIndexMap('a"é"\nb');
+		const { locations } = collectLuauTestDefinitions('a"é"\nb', FILE);
 
 		expect(locations.get("1:3")).toBe(2);
 		expect(locations.get("1:5")).toBe(4);
@@ -120,6 +120,14 @@ describe(collectLuauTestDefinitions, () => {
 		expect(result.resolve([])).toHaveLength(1);
 	});
 
+	it("should report a file whose --!strict trails the first statement", () => {
+		expect.assertions(1);
+
+		const result = collectLuauTestDefinitions("local _x = 1 --!strict", FILE);
+
+		expect(result.resolve([])).toHaveLength(1);
+	});
+
 	it("should report a file whose first mode directive is not --!strict", () => {
 		expect.assertions(1);
 
@@ -146,5 +154,13 @@ describe(collectLuauTestDefinitions, () => {
 			code: "SyntaxError",
 			message: expect.stringContaining("Expected"),
 		});
+	});
+
+	it("should report every parse error on its own line", () => {
+		expect.assertions(1);
+
+		const result = collectLuauTestDefinitions("--!strict\nlocal = 1\nlocal = 2", FILE);
+
+		expect(result.resolve([])[0]!.message.split("\n")).toHaveLength(2);
 	});
 });

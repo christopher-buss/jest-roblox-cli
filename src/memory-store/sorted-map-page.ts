@@ -46,6 +46,8 @@ export function resolveStorageClient(options: {
  * @param options - The map to read, the client to read it through, what to
  *   call the channel in a failure, and how to decode one item.
  * @returns Every item in the map, decoded, in the order the pages arrived.
+ * @template T - Decoded item type.
+ * @rejects When a page request fails.
  */
 export async function listSortedMapItemsAsync<T>({
 	decode,

@@ -6,6 +6,10 @@ import { matchesGlobPattern } from "../utils/glob.ts";
  * namespace: the globs must be written to match the same relative paths
  * discovery returns. Returns the input untouched when `excludeGlobs` is
  * undefined or empty.
+ *
+ * @param files - Paths to filter.
+ * @param excludeGlobs - Globs whose matches are dropped.
+ * @returns The files that match no exclude glob.
  */
 export function applyExcludes(
 	files: Array<string>,

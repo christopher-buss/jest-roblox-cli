@@ -1,12 +1,9 @@
-import { Buffer } from "node:buffer";
 import * as path from "node:path";
 import { isDefined, pickBy } from "remeda";
 import type { Except } from "type-fest";
 
-import { ConfigError } from "../config/errors.ts";
 import type { BuildManifestArtifact } from "../coverage-pipeline/build-manifest.ts";
 import type { CoverageManifest } from "../coverage-pipeline/manifest.ts";
-import { formatBytes } from "../progress/stages.ts";
 import type { ChildProcessRunner } from "../utils/child-process.ts";
 import { nodeChildProcessRunner } from "../utils/child-process.ts";
 import type { FileSystem } from "../utils/file-system.ts";
@@ -14,7 +11,8 @@ import { nodeFileSystem } from "../utils/file-system.ts";
 import { hashFileAsync } from "../utils/hash.ts";
 import type { PosixRoot } from "../utils/normalize-windows-path.ts";
 import { buildWithRojoAsync } from "../utils/rojo-builder.ts";
-import type { CodeSplit } from "./code-split.ts";
+import type { CodeBundleArtifact } from "./code-bundle.ts";
+import { MAX_CODE_BUNDLE_BYTES, writeCodeBundle } from "./code-bundle.ts";
 import { CODE_SPLIT_PASS_VERSION, splitCodeMounts } from "./code-split.ts";
 import { demotePinnedMountsAsync, PINNED_MOUNT_PASS_VERSION } from "./pinned-mounts.ts";
 import {
@@ -24,7 +22,7 @@ import {
 } from "./place-reuse.ts";
 import { relativizeProjectPaths } from "./relativize-paths.ts";
 import { poolSharedMounts, SHARED_POOL_PASS_VERSION } from "./shared-pool.ts";
-import type { PackageSynthesisInput, UnwrappedPackageSynthesisInput } from "./synthesizer.ts";
+import type { PackageSynthesisInput, UnwrappedPackageSynthesisInput } from "./synthesizer-types.ts";
 import { synthesize } from "./synthesizer.ts";
 
 /** Where {@link demotePinnedMountsAsync} parks its Folder-rooted stand-ins. */
@@ -37,17 +35,13 @@ const PINNED_SHADOW_DIR = "pinned-shadow";
  * and hands out a place built by its previous rule.
  */
 const STAGING_PASS_VERSIONS = [PINNED_MOUNT_PASS_VERSION, SHARED_POOL_PASS_VERSION];
-/**
- * Open Cloud refuses a binary input larger than this, and a run that learns so
- * from the wire has already paid for the place and the bundle.
- */
-const MAX_CODE_BUNDLE_BYTES = 100 * 1024 * 1024;
-/** What a Code Bundle is called, beside the place it was split from. */
-const CODE_BUNDLE_SUFFIX = ".code-bundle.json";
 
+/** Where a build records its reuse key and what the key may skip walking. */
 export interface PlaceReuseOptions {
 	/** Where the previous build's key and place hash are recorded. */
 	cacheFile: string;
+	/** Computes the reuse key. Defaults to `computePlaceInputsKeyAsync`. */
+	computeInputsKey?: typeof computePlaceInputsKeyAsync | undefined;
 	/** Forwarded to `openInputDigestCache`, which says what it claims. */
 	digestCacheFile: string;
 	/**
@@ -61,21 +55,6 @@ export interface PlaceReuseOptions {
 }
 
 /** What a run needs to know about the Code Bundle a build wrote. */
-export interface CodeBundleArtifact {
-	/** Size on disk, for the bundle stage line and the upload. */
-	byteLength: number;
-	/** How many source files it carries, for the same line. */
-	fileCount: number;
-	path: string;
-	/**
-	 * DataModel paths of the Code Mounts that had to stay in the harness, in
-	 * the order the project declares them. A notice rather than an error: the
-	 * run is correct either way, and this is the only thing that names what to
-	 * move to get the rest of the speedup.
-	 */
-	stayedMounts: Array<string>;
-}
-
 export interface PlaceBuildResult extends BuildManifestArtifact {
 	/**
 	 * Present only when the caller asked for one, so the place is a harness.
@@ -83,9 +62,12 @@ export interface PlaceBuildResult extends BuildManifestArtifact {
 	codeBundle?: CodeBundleArtifact;
 }
 
+/** Inputs to {@link buildPlaceAsync}. */
 export type BuildPlaceOptions = BuildPlaceOptionsBase & PackageSynthesisInput;
 
+/** {@link BuildPlaceOptions} for packages synthesized without a wrap. */
 export type UnwrappedBuildPlaceOptions = BuildPlaceOptionsBase & UnwrappedPackageSynthesisInput;
+/** Inputs to {@link buildCodeBundle}. */
 export type BuildCodeBundleOptions = BuildCodeBundleOptionsBase & PackageSynthesisInput;
 
 interface BuildPlaceOptionsBase {
@@ -179,6 +161,9 @@ interface PlaceArtifactOptions {
  * `BuildManifestArtifact`. The single seam every place build routes through: a
  * Clean Place and a Coverage-Instrumented Place differ only in whether the
  * descriptors carry `coverageRoots`.
+ * @param options - Packages, place and project paths, and optional split and reuse.
+ * @returns The place path and hash, with the Code Bundle when one was written.
+ * @rejects When the code is over the bundle cap, a buried pinned class is found, or rojo fails.
  */
 export async function buildPlaceAsync(options: BuildPlaceOptions): Promise<PlaceBuildResult> {
 	const {
@@ -221,6 +206,9 @@ export async function buildPlaceAsync(options: BuildPlaceOptions): Promise<Place
  * split as {@link buildPlaceAsync} runs, over the same synthesized project, so
  * the two cannot disagree about which mounts travel — the harness project it
  * also produces is what a build would have used, and is dropped here.
+ * @param options - Packages, Code Roots and the place the bundle sits beside.
+ * @returns The written Code Bundle.
+ * @throws When the bundle exceeds the Open Cloud cap.
  */
 export function buildCodeBundle(options: BuildCodeBundleOptions): CodeBundleArtifact {
 	const { codeRoots, fileSystem = nodeFileSystem, placeFile, projectFile } = options;
@@ -234,60 +222,15 @@ export function buildCodeBundle(options: BuildCodeBundleOptions): CodeBundleArti
 }
 
 /**
- * Where the Code Bundle for a place goes: beside it, named after it.
- *
- * Named after the place rather than fixed, so two places built into one
- * directory cannot land on one bundle, and so a reader who found the place
- * knows which bundle answers for it.
- */
-function codeBundleFileFor(placeFile: string): string {
-	const name = path.basename(placeFile, path.extname(placeFile));
-	return path.join(path.dirname(placeFile), `${name}${CODE_BUNDLE_SUFFIX}`);
-}
-
-/**
- * Write the Code Bundle and report what a run has to say about it.
- *
- * The cap is checked before the file lands and before the place is built, so
- * a run too big for Open Cloud's binary input fails on a message naming the
- * cap rather than on a transport error several stages later.
- */
-function writeCodeBundle({
-	bundleFile,
-	fileSystem,
-	split,
-}: {
-	bundleFile: string;
-	fileSystem: FileSystem;
-	split: CodeSplit;
-}): CodeBundleArtifact {
-	// Encoded once and written as bytes: the size and the file are the same
-	// buffer, and a run's bundle is tens of megabytes to encode twice.
-	const bytes = Buffer.from(split.bundleJson, "utf-8");
-	if (bytes.length > MAX_CODE_BUNDLE_BYTES) {
-		throw new ConfigError(
-			`The run's code comes to ${formatBytes(bytes.length)}, over the ${formatBytes(MAX_CODE_BUNDLE_BYTES)} cap Open Cloud puts on a binary input.`,
-			"Upload the code inside the place instead.",
-		);
-	}
-
-	fileSystem.mkdirSync(path.dirname(bundleFile), { recursive: true });
-	fileSystem.writeFileSync(bundleFile, bytes);
-	return {
-		byteLength: bytes.length,
-		fileCount: split.fileCount,
-		path: bundleFile,
-		stayedMounts: split.stayedMounts,
-	};
-}
-
-/**
  * The Harness Place's project, and the Code Bundle written beside it — or
  * nothing at all for a caller building the whole place.
  *
  * Both come out of one split, so the project that no longer mounts a path and
  * the bundle that now carries it can never disagree about which mounts those
  * were.
+ * @param input - Synthesized project, its directory, the place file and Code Roots.
+ * @returns The written bundle and the harness project text.
+ * @throws When the bundle exceeds the Open Cloud cap.
  */
 function buildHarness({
 	codeRoots,
@@ -302,8 +245,9 @@ function buildHarness({
 	const split = splitCodeMounts({ codeRoots, fileSystem, projectDirectory, projectJson });
 	return {
 		bundle: writeCodeBundle({
-			bundleFile: codeBundleFileFor(placeFile),
 			fileSystem,
+			maximumBytes: MAX_CODE_BUNDLE_BYTES,
+			placeFile,
 			split,
 		}),
 		projectJson: split.harnessProjectJson,
@@ -343,6 +287,8 @@ function preparePlaceProject(
  * after it, so the project text the key covers is already its output — but a
  * rule that changed which files the bundle carries out of a mount that travels
  * would move neither, and this is what stands for that half.
+ * @param isHarness - Whether the build splits off a Code Bundle.
+ * @returns The staging pass versions the key folds.
  */
 function stagingVersionsFor(isHarness: boolean): ReadonlyArray<number> {
 	return isHarness ? [...STAGING_PASS_VERSIONS, CODE_SPLIT_PASS_VERSION] : STAGING_PASS_VERSIONS;
@@ -360,6 +306,9 @@ function stagingVersionsFor(isHarness: boolean): ReadonlyArray<number> {
  * The shared pool runs before the pinned-mount pass, so the pinned pass sees
  * one copy of each offending mount and builds one stand-in for it rather than
  * one per package.
+ * @param options - Project text, paths, adapters and the reuse plan.
+ * @returns The built place's path and hash.
+ * @rejects When a buried pinned class is found or rojo fails.
  */
 async function stageAndBuildAsync({
 	childProcess,
@@ -422,6 +371,11 @@ async function hashPlaceAsync(
  * the run before it: an existence check would match the key and hand that
  * truncated place out, with the previous hash riding along into every Build
  * Manifest. Reading it back costs a fraction of building it again.
+ * @param options - The place file and the plan to check it against.
+ * @param options.fileSystem - Reads the record and the place.
+ * @param options.placeFile - Place from the previous build.
+ * @param options.plan - Cache file and the key it must hold.
+ * @returns The reused place's path and hash, or `undefined` to rebuild.
  */
 async function tryReuseAsync({
 	fileSystem,
@@ -449,6 +403,9 @@ async function tryReuseAsync({
  *
  * The two are one decision rather than two steps, because a reuse that misses
  * has to build — so nothing between them can act on a place that is not there.
+ * @param options - Project text, paths, adapters and the reuse plan.
+ * @returns The reused or built place's path and hash.
+ * @rejects When a build is needed and it fails.
  */
 async function reuseOrBuildPlaceAsync(
 	options: PlaceArtifactOptions,
@@ -466,6 +423,13 @@ async function reuseOrBuildPlaceAsync(
  * when this build has no cache to work with — reuse was not asked for, or the
  * inputs would not hash. Pairing the two means a caller never holds a key
  * without somewhere to put it.
+ * @param options - The project, reuse options and pass versions to key.
+ * @param options.fileSystem - Reads the inputs to hash.
+ * @param options.projectFile - Path the project file is written to.
+ * @param options.projectJson - Relativized project text the key covers.
+ * @param options.reuse - Reuse options, or `undefined` when reuse is off.
+ * @param options.stagingVersions - Pass versions folded into the key.
+ * @returns The plan, or `undefined` without reuse or a key.
  */
 async function planReuseAsync({
 	fileSystem,
@@ -484,12 +448,14 @@ async function planReuseAsync({
 		return undefined;
 	}
 
-	const inputsKey = await computePlaceInputsKeyAsync({
+	const { computeInputsKey = computePlaceInputsKeyAsync } = reuse;
+	const inputsKey = await computeInputsKey({
 		digestCacheFile: reuse.digestCacheFile,
 		fileSystem,
 		manifests: reuse.manifests ?? [],
 		projectFile,
 		projectJson,
+		// Stryker disable next-line ArrayDeclaration: names no mount
 		shadowRoots: reuse.shadowRoots ?? [],
 		// The path rewrite is not among them: it is already applied to the text
 		// this key is computed over, so a change to that rule moves the key on

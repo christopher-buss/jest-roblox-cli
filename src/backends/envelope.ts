@@ -1,6 +1,7 @@
 import { type } from "arktype";
 
-import { LuauScriptError, parseJestOutput } from "../reporter/parser.ts";
+import { LuauScriptError } from "../reporter/luau-script-error.ts";
+import { parseJestOutput } from "../reporter/parser.ts";
 import type { EnvelopeEntry, ProjectBackendResult, ProjectJob } from "./interface.ts";
 
 const envelopeSchema = type({
@@ -36,6 +37,7 @@ export interface DecodedEnvelope {
 	 * The return envelope filled up, so another task should collect the rest.
 	 */
 	deferred: boolean;
+	/** Entries the task returned, one per package or project it ran. */
 	entries: Array<EnvelopeEntry>;
 	/**
 	 * `"batch"` when the runner captured game output once for the whole run
@@ -44,9 +46,13 @@ export interface DecodedEnvelope {
 	gameOutputScope?: "batch" | undefined;
 }
 
+/** One envelope entry plus the job it belongs to. */
 export interface ProjectResultInput extends EnvelopeEntry {
+	/** Game output to use when the entry has none of its own. */
 	readonly fallbackGameOutput: string | undefined;
+	/** `"batch"` when the game output belongs to the whole run. */
 	readonly gameOutputScope?: "batch" | undefined;
+	/** Job the entry ran. */
 	readonly job: ProjectJob;
 }
 
@@ -57,6 +63,10 @@ export interface ProjectResultInput extends EnvelopeEntry {
  * the whole Jest output of every package the task ran — up to Open Cloud's
  * 4 MiB cap — and reading a flag through its own `JSON.parse` would walk all
  * of it a second time.
+ *
+ * @param jestOutput - Raw task output.
+ * @returns The stop flags, entries, and game output scope.
+ * @throws {@link LuauScriptError} When the output is a whole-run error.
  */
 export function decodeEnvelope(jestOutput: string): DecodedEnvelope {
 	const raw = JSON.parse(jestOutput);
@@ -84,10 +94,6 @@ export function decodeEnvelope(jestOutput: string): DecodedEnvelope {
 	};
 }
 
-export function parseEnvelope(jestOutput: string): Array<EnvelopeEntry> {
-	return decodeEnvelope(jestOutput).entries;
-}
-
 /**
  * Whether a task stopped with queued work still outstanding.
  *
@@ -95,6 +101,9 @@ export function parseEnvelope(jestOutput: string): Array<EnvelopeEntry> {
  * This runs while the task pool is still deciding whether to launch more work,
  * so throwing here would be swallowed by the pool's per-task error handling;
  * the strict parse that surfaces a broken task runs once the pool settles.
+ *
+ * @param jestOutput - Raw task output.
+ * @returns True when the task deferred queued work.
  */
 export function isEnvelopeDeferred(jestOutput: string): boolean {
 	try {
@@ -104,6 +113,14 @@ export function isEnvelopeDeferred(jestOutput: string): boolean {
 	}
 }
 
+/**
+ * Parse one envelope entry into a project result.
+ *
+ * @param options - The entry and the job it belongs to.
+ * @returns The parsed project result.
+ * @throws {@link LuauScriptError} When the Jest output is a script error; the
+ *   error carries the entry's banner and game output.
+ */
 export function buildProjectResult({
 	bannerOutput,
 	elapsedMs,

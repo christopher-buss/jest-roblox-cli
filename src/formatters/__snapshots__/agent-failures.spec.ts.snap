@@ -1,0 +1,106 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`formatFailures > should show TS and Luau snippets when 1-2 failures 1`] = `
+" FAIL src/player.spec.ts:10 > TestSuite > should have health
+Expected: 100
+Received: 0
+TS  src/player.spec.ts:10
+  9| const health = getHealth();
+> 10| expect(health).toBe(100);
+  11| });
+Luau  out/player.spec.luau:15
+  14| local health = getHealth()
+> 15| expect(health).toBe(100)
+  16| end)
+
+ FAIL src/player.spec.ts:10 > TestSuite > should stay healthy
+Expected: 100
+Received: 0
+TS  src/player.spec.ts:10
+  9| const health = getHealth();
+> 10| expect(health).toBe(100);
+  11| });
+Luau  out/player.spec.luau:15
+  14| local health = getHealth()
+> 15| expect(health).toBe(100)
+  16| end)
+"
+`;
+
+exports[`formatFailures > should show TS snippet only when 3-5 failures 1`] = `
+" FAIL src/test.spec.ts:10 > TestSuite > test 0
+Expected: 1
+Received: 2
+  9| const x = 1;
+> 10| expect(x).toBe(2);
+  11| });
+
+ FAIL src/test.spec.ts:10 > TestSuite > test 1
+Expected: 1
+Received: 2
+  9| const x = 1;
+> 10| expect(x).toBe(2);
+  11| });
+
+ FAIL src/test.spec.ts:10 > TestSuite > test 2
+Expected: 1
+Received: 2
+  9| const x = 1;
+> 10| expect(x).toBe(2);
+  11| });
+
+ FAIL src/test.spec.ts:10 > TestSuite > test 3
+Expected: 1
+Received: 2
+  9| const x = 1;
+> 10| expect(x).toBe(2);
+  11| });
+
+ FAIL src/test.spec.ts:10 > TestSuite > test 4
+Expected: 1
+Received: 2
+  9| const x = 1;
+> 10| expect(x).toBe(2);
+  11| });
+"
+`;
+
+exports[`formatFailures > should show no snippet when fallback source file is unreadable 1`] = `
+" FAIL src/math.spec.ts:10 > TestSuite > should add numbers
+Error: Expected 1 to equal 2
+"
+`;
+
+exports[`formatFailures > should show no snippet when luau-only source file is unreadable 1`] = `
+" FAIL out/player.spec.luau:15 > TestSuite > should have health
+Expected: 100
+Received: 0
+"
+`;
+
+exports[`formatFailures > should show no snippets when 6+ failures 1`] = `
+" FAIL src/test.spec.ts:10 > TestSuite > test 0
+Expected: 1
+Received: 2
+
+ FAIL src/test.spec.ts:10 > TestSuite > test 1
+Expected: 1
+Received: 2
+
+ FAIL src/test.spec.ts:10 > TestSuite > test 2
+Expected: 1
+Received: 2
+
+ FAIL src/test.spec.ts:10 > TestSuite > test 3
+Expected: 1
+Received: 2
+
+ FAIL src/test.spec.ts:10 > TestSuite > test 4
+Expected: 1
+Received: 2
+
+ FAIL src/test.spec.ts:10 > TestSuite > test 5
+Expected: 1
+Received: 2
+"
+`;

@@ -11,6 +11,7 @@ export const IS_BINARY_INPUT = process.env["BINARY_INPUT"] === "true";
  * rather than read from `process.env` by the child, because `runCliAsync`
  * builds the child's environment from an allow-list that deliberately excludes
  * them — a spec that wants the live wire has to say so.
+ * @returns Live credential variables from the host environment.
  */
 export function liveEnvironment(): Record<string, string | undefined> {
 	return {

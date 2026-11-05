@@ -3,7 +3,10 @@ import { describe, expectTypeOf, it } from "vitest";
 import type { PosixRoot } from "./normalize-windows-path.ts";
 import { toPosixRoot } from "./normalize-windows-path.ts";
 
-/** Stands in for any consumer that requires a canonical root. */
+/**
+ * Stands in for any consumer that requires a canonical root.
+ * @param _root - A canonical root.
+ */
 function consume(_root: PosixRoot): void {}
 
 describe(toPosixRoot, () => {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { TsconfigMapping } from "../types/tsconfig.ts";
+import type { TsconfigMapping } from "../types/tsconfig-types.ts";
 import { findMapping, replacePrefix } from "./tsconfig-mapping.ts";
 
 describe(findMapping, () => {

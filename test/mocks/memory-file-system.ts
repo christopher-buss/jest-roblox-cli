@@ -28,6 +28,7 @@ export interface MemoryFileSystem {
  *
  *   Windows hides a mismatch here: memfs strips the drive from `C:/foo`, so a
  *   fixture written that way is absolute there and relative everywhere else.
+ * @returns File system over a fresh memfs volume.
  */
 export function createMemoryFileSystem(
 	seed?: Record<string, string>,

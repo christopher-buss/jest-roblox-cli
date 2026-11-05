@@ -20,6 +20,7 @@ import "vitest";
 /**
  * A direct assertion on a Promise has no settled subject. `.resolves` supplies
  * Vitest's awaited subject type; `.rejects` deliberately supplies `unknown`.
+ * @template T - Type of the value under assertion.
  */
 type Subject<T> = T extends Promise<unknown> ? unknown : T;
 

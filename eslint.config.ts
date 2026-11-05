@@ -1,5 +1,9 @@
 import { isentinel } from "@isentinel/eslint-config";
 
+const SOURCE_FILES = ["src/**/*.ts"];
+const MODULE_MOCK_MESSAGE =
+	"vi.mock breaks `isolate: false` for the whole unit project. Take the dependency as a parameter instead — see 'Testing patterns' in AGENTS.md.";
+
 export default isentinel(
 	{
 		name: "tools/jest-roblox-cli",
@@ -16,11 +20,22 @@ export default isentinel(
 			"reports/stryker-incremental.json",
 			"spike/**/*",
 		],
-		jsdoc: false,
+		jsdoc: true,
 		namedConfigs: true,
 		naming: true,
 		oxlint: "native",
 		pnpm: false,
+		projectStructure: {
+			files: SOURCE_FILES,
+			ignores: [
+				"src/**/*.spec.ts",
+				"src/**/*.spec-d.ts",
+				"src/**/*.d.ts",
+				"src/**/*-types.ts",
+			],
+			projectRoot: import.meta.dirname,
+			structureRoot: "src",
+		},
 		roblox: false,
 		rules: {
 			"flawless/no-redundant-type-annotation": "off",
@@ -45,6 +60,47 @@ export default isentinel(
 		// name.
 		unicorn: {
 			nameReplacements: { configuration: false, expr: false, stmt: false, stmts: false },
+		},
+	},
+	{
+		name: "project/src-max-params",
+		files: SOURCE_FILES,
+		rules: { "better-max-params/better-max-params": ["error", { func: 2 }] },
+	},
+	{
+		name: "project/no-module-mocks",
+		files: ["**/*.bench.ts", "**/*.spec.ts", "test/mocks/**/*.ts", "test/setup/**/*.ts"],
+		rules: {
+			"vitest/no-restricted-vi-methods": [
+				"error",
+				{ doMock: MODULE_MOCK_MESSAGE, mock: MODULE_MOCK_MESSAGE },
+			],
+		},
+	},
+	{
+		name: "project/jsdoc",
+		files: SOURCE_FILES,
+		rules: {
+			"jsdoc/require-jsdoc": [
+				"error",
+				{
+					contexts: [
+						"TSInterfaceDeclaration",
+						"TSTypeAliasDeclaration",
+						"TSEnumDeclaration",
+						"TSMethodSignature",
+						"TSPropertySignature",
+					],
+					publicOnly: { ancestorsOnly: true },
+					require: {
+						ArrowFunctionExpression: true,
+						ClassDeclaration: true,
+						FunctionDeclaration: true,
+						FunctionExpression: true,
+						MethodDefinition: true,
+					},
+				},
+			],
 		},
 	},
 	{

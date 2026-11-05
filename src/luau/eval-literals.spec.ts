@@ -1,10 +1,12 @@
 import type { AstStatBlock } from "@isentinel/luau-ast/ast";
+import { loadLuauParser } from "@isentinel/luau-ast/parser";
 
 import { assert, describe, expect, it } from "vitest";
 
 import type { LuauLiteral, LuauStaticEvaluation } from "./eval-literals.ts";
 import { evalLuauReturnLiterals } from "./eval-literals.ts";
-import { luauParser } from "./parser.ts";
+
+const luauParser = loadLuauParser();
 
 function parseBlock(source: string): AstStatBlock {
 	const parsed = luauParser.parse(source);

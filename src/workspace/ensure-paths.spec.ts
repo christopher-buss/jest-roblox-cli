@@ -4,7 +4,7 @@ import * as path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
-import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
+import { posixPath } from "#test/mocks/posix-path.ts";
 import { ensurePackageDirectories } from "./ensure-paths.ts";
 import type { PackageDescriptor } from "./preflight.ts";
 
@@ -67,11 +67,11 @@ describe(ensurePackageDirectories, () => {
 			plain: true,
 			withExtension: true,
 		});
-		expect(mkdirSync).toHaveBeenCalledWith(normalizeWindowsPath(packagePath("src/plain")), {
+		expect(mkdirSync).toHaveBeenCalledWith(posixPath(packagePath("src/plain")), {
 			recursive: true,
 		});
 		expect(mkdirSync).not.toHaveBeenCalledWith(
-			normalizeWindowsPath(packagePath("src/existing")),
+			posixPath(packagePath("src/existing")),
 			expect.anything(),
 		);
 		expect(readFileSync.mock.calls.map(([file]) => file)).not.toContain(missingProject);

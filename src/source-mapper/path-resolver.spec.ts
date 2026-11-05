@@ -4,6 +4,15 @@ import { describe, expect, it } from "vitest";
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { createPathResolver, luauInitToIndex } from "./path-resolver.ts";
 
+function createSharedOutResolver(): ReturnType<typeof createPathResolver> {
+	const { fileSystem } = createMemoryFileSystem();
+
+	return createPathResolver(
+		{ name: "test", tree: { ReplicatedStorage: { $path: "out/shared" } } },
+		{ fileSystem, mappings: [{ outDir: "out", rootDir: "src" }] },
+	);
+}
+
 describe(createPathResolver, () => {
 	it.for(["lua", "luau"])("should preserve a directly mounted %s file", (extension) => {
 		expect.assertions(1);
@@ -177,21 +186,7 @@ describe(createPathResolver, () => {
 	it("should map outDir to rootDir for TypeScript source", () => {
 		expect.assertions(1);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		const rojoProject = {
-			name: "test",
-			tree: {
-				ReplicatedStorage: {
-					$path: "out/shared",
-				},
-			},
-		};
-
-		const resolver = createPathResolver(rojoProject, {
-			fileSystem,
-			mappings: [{ outDir: "out", rootDir: "src" }],
-		});
+		const resolver = createSharedOutResolver();
 
 		expect(resolver.resolve("ReplicatedStorage.foo")!.filePath).toBe("src/shared/foo.ts");
 	});
@@ -360,21 +355,7 @@ describe(createPathResolver, () => {
 	it("should map init back to index for TypeScript paths", () => {
 		expect.assertions(1);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		const rojoProject = {
-			name: "test",
-			tree: {
-				ReplicatedStorage: {
-					$path: "out/shared",
-				},
-			},
-		};
-
-		const resolver = createPathResolver(rojoProject, {
-			fileSystem,
-			mappings: [{ outDir: "out", rootDir: "src" }],
-		});
+		const resolver = createSharedOutResolver();
 
 		expect(resolver.resolve("ReplicatedStorage.init.spec")!.filePath).toBe(
 			"src/shared/index.spec.ts",

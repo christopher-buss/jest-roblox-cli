@@ -22,7 +22,10 @@ export function buildVirtualModule(id) {
 	return VIRTUAL_MODULES[id]();
 }
 
-/** The same modules as a Rolldown/Vite plugin. */
+/**
+ * The same modules as a Rolldown/Vite plugin.
+ * @returns Plugin that resolves and loads the virtual modules.
+ */
 export function virtualModulesPlugin() {
 	return {
 		name: "virtual-modules",

@@ -1,128 +1,28 @@
 import { assert, describe, expect, it } from "vitest";
 
-import type { JestResult } from "../types/jest-result.ts";
-import {
-	extractJsonFromOutput,
-	extractLuauTimingFromOutput,
-	LuauScriptError,
-	parseJestOutput,
-} from "./parser.ts";
+import type { JestResult } from "../types/jest-result-types.ts";
+import { LuauScriptError } from "./luau-script-error.ts";
+import { extractLuauTimingFromOutput, parseJestOutput } from "./parser.ts";
 
-describe(LuauScriptError, () => {
-	it.for([
-		["TaskScript:7: failed", "failed"],
-		["TaskScript:123:failed", "failed"],
-		[" TaskScript:7: failed", " TaskScript:7: failed"],
-		["TaskScript:x: failed", "TaskScript:x: failed"],
-		["TaskScript:7 failed", "TaskScript:7 failed"],
-	] as const)(
-		"should normalize only a leading numeric TaskScript frame in %j",
-		([raw, expected]) => {
-			expect.assertions(1);
+type ParsedFileCoverage = NonNullable<ReturnType<typeof parseJestOutput>["coverageData"]>[string];
 
-			const error = new LuauScriptError(raw);
-
-			expect(error.message).toBe(expected);
-		},
-	);
-});
-
-describe(extractJsonFromOutput, () => {
-	it("should extract JSON from output with surrounding text", () => {
-		expect.assertions(1);
-
-		const output = `
-Some log output here
-{"success":true,"numTotalTests":1}
-More logs after
-`;
-		const json = extractJsonFromOutput(output);
-
-		expect(json).toBe('{"success":true,"numTotalTests":1}');
-	});
-
-	it("should extract multi-line JSON object", () => {
-		expect.assertions(1);
-
-		const output = `
-{
-  "success": true,
-  "numTotalTests": 2
-}
-`;
-		const json = extractJsonFromOutput(output);
-
-		expect(JSON.parse(json!)).toStrictEqual({
-			numTotalTests: 2,
+function parseLuauCoverage(fileCoverage: object): ParsedFileCoverage {
+	const output = JSON.stringify({
+		runner: { coverage: { "file.luau": fileCoverage } },
+		success: true,
+		value: {
+			numFailedTests: 0,
+			numPassedTests: 1,
+			numPendingTests: 0,
+			numTotalTests: 1,
+			startTime: 1000,
 			success: true,
-		});
+			testResults: [],
+		},
 	});
 
-	it("should return undefined when no JSON found", () => {
-		expect.assertions(1);
-
-		const output = "Just plain text output";
-		const json = extractJsonFromOutput(output);
-
-		expect(json).toBeUndefined();
-	});
-
-	it("should skip brace-balanced but invalid JSON", () => {
-		expect.assertions(1);
-
-		const output = "{foo}\nmore text";
-		const json = extractJsonFromOutput(output);
-
-		expect(json).toBeUndefined();
-	});
-
-	it("should reset after an invalid candidate and return the next valid object", () => {
-		expect.assertions(1);
-
-		const output = ["prefix", "  {notJson}", "between", '  {"success":true}', "suffix"].join(
-			"\n",
-		);
-
-		expect(extractJsonFromOutput(output)).toBe('{"success":true}');
-	});
-
-	it("should ignore a line that parses as JSON but opens no object", () => {
-		expect.assertions(1);
-
-		// Valid json, and balanced, so only the `{` gate rejects it.
-		const output = ['"hello"', '{"a":1}'].join("\n");
-
-		expect(extractJsonFromOutput(output)).toBe('{"a":1}');
-	});
-
-	it("should not restart the scan at a nested object already inside the envelope", () => {
-		expect.assertions(1);
-
-		// The gate applies only while the scan is idle, or the nested object
-		// becomes the candidate and the envelope around it is lost.
-		const output = ['{"a":', '{"b":1}', "}"].join("\n");
-
-		expect(extractJsonFromOutput(output)).toBe(output);
-	});
-
-	it("should collect every line until a nested object is balanced", () => {
-		expect.assertions(1);
-
-		const output = [
-			"prefix",
-			"  {",
-			'    "nested": {',
-			'      "value": true',
-			"    }",
-			"  }",
-			"suffix",
-		].join("\n");
-
-		expect(extractJsonFromOutput(output)).toBe(
-			["{", '    "nested": {', '      "value": true', "    }", "  }"].join("\n"),
-		);
-	});
-});
+	return parseJestOutput(output).coverageData!["file.luau"]!;
+}
 
 describe(extractLuauTimingFromOutput, () => {
 	it("should extract the runner.timing phases from a raw jestOutput string", () => {
@@ -1239,59 +1139,23 @@ End of output
 	it("should normalize array-format coverage hit counts from Luau", () => {
 		expect.assertions(1);
 
-		const output = JSON.stringify({
-			runner: {
-				coverage: {
-					"file.luau": { s: [1, 0, 3] },
-				},
-			},
-			success: true,
-			value: {
-				numFailedTests: 0,
-				numPassedTests: 1,
-				numPendingTests: 0,
-				numTotalTests: 1,
-				startTime: 1000,
-				success: true,
-				testResults: [],
-			},
-		});
+		const fileCoverage = parseLuauCoverage({ s: [1, 0, 3] });
 
-		const { coverageData } = parseJestOutput(output);
-
-		expect(coverageData!["file.luau"]!.s).toStrictEqual({ "1": 1, "2": 0, "3": 3 });
+		expect(fileCoverage.s).toStrictEqual({ "1": 1, "2": 0, "3": 3 });
 	});
 
 	it("should normalize array-of-arrays branch counts from Luau", () => {
 		expect.assertions(1);
 
-		const output = JSON.stringify({
-			runner: {
-				coverage: {
-					"file.luau": {
-						b: [
-							[1, 0],
-							[3, 2, 1],
-						],
-						s: { "1": 1 },
-					},
-				},
-			},
-			success: true,
-			value: {
-				numFailedTests: 0,
-				numPassedTests: 1,
-				numPendingTests: 0,
-				numTotalTests: 1,
-				startTime: 1000,
-				success: true,
-				testResults: [],
-			},
+		const fileCoverage = parseLuauCoverage({
+			b: [
+				[1, 0],
+				[3, 2, 1],
+			],
+			s: { "1": 1 },
 		});
 
-		const { coverageData } = parseJestOutput(output);
-
-		expect(coverageData!["file.luau"]!.b).toStrictEqual({
+		expect(fileCoverage.b).toStrictEqual({
 			"1": [1, 0],
 			"2": [3, 2, 1],
 		});
@@ -1300,27 +1164,9 @@ End of output
 	it("should handle non-array inner branch counts gracefully", () => {
 		expect.assertions(1);
 
-		const output = JSON.stringify({
-			runner: {
-				coverage: {
-					"file.luau": { b: ["not-array", null], s: { "1": 1 } },
-				},
-			},
-			success: true,
-			value: {
-				numFailedTests: 0,
-				numPassedTests: 1,
-				numPendingTests: 0,
-				numTotalTests: 1,
-				startTime: 1000,
-				success: true,
-				testResults: [],
-			},
-		});
+		const fileCoverage = parseLuauCoverage({ b: ["not-array", null], s: { "1": 1 } });
 
-		const { coverageData } = parseJestOutput(output);
-
-		expect(coverageData!["file.luau"]!.b).toStrictEqual({
+		expect(fileCoverage.b).toStrictEqual({
 			"1": [],
 			"2": [],
 		});
@@ -1329,27 +1175,9 @@ End of output
 	it("should normalize array-format function hit counts", () => {
 		expect.assertions(1);
 
-		const output = JSON.stringify({
-			runner: {
-				coverage: {
-					"file.luau": { f: [5, 0, 2], s: { "1": 1 } },
-				},
-			},
-			success: true,
-			value: {
-				numFailedTests: 0,
-				numPassedTests: 1,
-				numPendingTests: 0,
-				numTotalTests: 1,
-				startTime: 1000,
-				success: true,
-				testResults: [],
-			},
-		});
+		const fileCoverage = parseLuauCoverage({ f: [5, 0, 2], s: { "1": 1 } });
 
-		const { coverageData } = parseJestOutput(output);
-
-		expect(coverageData!["file.luau"]!.f).toStrictEqual({ "1": 5, "2": 0, "3": 2 });
+		expect(fileCoverage.f).toStrictEqual({ "1": 5, "2": 0, "3": 2 });
 	});
 
 	it("should filter non-number values from runner.timing", () => {
@@ -1615,82 +1443,28 @@ End of output
 	it("should return empty record when s is non-array non-object", () => {
 		expect.assertions(1);
 
-		const output = JSON.stringify({
-			runner: {
-				coverage: {
-					"file.luau": { s: "string" },
-				},
-			},
-			success: true,
-			value: {
-				numFailedTests: 0,
-				numPassedTests: 1,
-				numPendingTests: 0,
-				numTotalTests: 1,
-				startTime: 1000,
-				success: true,
-				testResults: [],
-			},
-		});
+		const fileCoverage = parseLuauCoverage({ s: "string" });
 
-		const { coverageData } = parseJestOutput(output);
-
-		expect(coverageData!["file.luau"]!.s).toBeEmptyObject();
+		expect(fileCoverage.s).toBeEmptyObject();
 	});
 
 	it("should return empty record when b is non-array non-object", () => {
 		expect.assertions(1);
 
-		const output = JSON.stringify({
-			runner: {
-				coverage: {
-					"file.luau": { b: 42, s: { "1": 1 } },
-				},
-			},
-			success: true,
-			value: {
-				numFailedTests: 0,
-				numPassedTests: 1,
-				numPendingTests: 0,
-				numTotalTests: 1,
-				startTime: 1000,
-				success: true,
-				testResults: [],
-			},
-		});
+		const fileCoverage = parseLuauCoverage({ b: 42, s: { "1": 1 } });
 
-		const { coverageData } = parseJestOutput(output);
-
-		expect(coverageData!["file.luau"]!.b).toBeEmptyObject();
+		expect(fileCoverage.b).toBeEmptyObject();
 	});
 
 	it("should pass through object-format branch counts", () => {
 		expect.assertions(1);
 
-		const output = JSON.stringify({
-			runner: {
-				coverage: {
-					"file.luau": {
-						b: { "1": [1, 0], "2": [3, 2] },
-						s: { "1": 1 },
-					},
-				},
-			},
-			success: true,
-			value: {
-				numFailedTests: 0,
-				numPassedTests: 1,
-				numPendingTests: 0,
-				numTotalTests: 1,
-				startTime: 1000,
-				success: true,
-				testResults: [],
-			},
+		const fileCoverage = parseLuauCoverage({
+			b: { "1": [1, 0], "2": [3, 2] },
+			s: { "1": 1 },
 		});
 
-		const { coverageData } = parseJestOutput(output);
-
-		expect(coverageData!["file.luau"]!.b).toStrictEqual({
+		expect(fileCoverage.b).toStrictEqual({
 			"1": [1, 0],
 			"2": [3, 2],
 		});
@@ -1699,53 +1473,17 @@ End of output
 	it("should coerce non-number elements to 0 in array-format statement counts", () => {
 		expect.assertions(1);
 
-		const output = JSON.stringify({
-			runner: {
-				coverage: {
-					"file.luau": { s: ["not-a-number", 5] },
-				},
-			},
-			success: true,
-			value: {
-				numFailedTests: 0,
-				numPassedTests: 1,
-				numPendingTests: 0,
-				numTotalTests: 1,
-				startTime: 1000,
-				success: true,
-				testResults: [],
-			},
-		});
+		const fileCoverage = parseLuauCoverage({ s: ["not-a-number", 5] });
 
-		const { coverageData } = parseJestOutput(output);
-
-		expect(coverageData!["file.luau"]!.s).toStrictEqual({ "1": 0, "2": 5 });
+		expect(fileCoverage.s).toStrictEqual({ "1": 0, "2": 5 });
 	});
 
 	it("should coerce non-number values to 0 inside branch inner arrays", () => {
 		expect.assertions(1);
 
-		const output = JSON.stringify({
-			runner: {
-				coverage: {
-					"file.luau": { b: [["not-a-number", 1]], s: { "1": 1 } },
-				},
-			},
-			success: true,
-			value: {
-				numFailedTests: 0,
-				numPassedTests: 1,
-				numPendingTests: 0,
-				numTotalTests: 1,
-				startTime: 1000,
-				success: true,
-				testResults: [],
-			},
-		});
+		const fileCoverage = parseLuauCoverage({ b: [["not-a-number", 1]], s: { "1": 1 } });
 
-		const { coverageData } = parseJestOutput(output);
-
-		expect(coverageData!["file.luau"]!.b).toStrictEqual({ "1": [0, 1] });
+		expect(fileCoverage.b).toStrictEqual({ "1": [0, 1] });
 	});
 
 	it("should return undefined snapshotWrites when all values are non-strings", () => {
@@ -1850,8 +1588,13 @@ describe("promise trace boundaries", () => {
 	});
 });
 
-// The failure a `{success:false, err}` envelope throws, for the dimensions
-// that only ever ride on one.
+/**
+ * The failure a `{success:false, err}` envelope throws, for the dimensions
+ * that only ever ride on one.
+ *
+ * @param output - Raw runner output that holds a failure envelope.
+ * @returns The thrown error.
+ */
 function thrownFrom(output: string): LuauScriptError {
 	try {
 		parseJestOutput(output);

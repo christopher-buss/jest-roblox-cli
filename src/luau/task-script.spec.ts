@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { CODE_BUNDLE_REBUILD_SOURCE } from "./code-bundle-rebuild.ts";
+import CODE_BUNDLE_REBUILD_SOURCE from "../../luau/code-bundle-rebuild.luau";
 import { prepareTaskScript } from "./task-script.ts";
 
 describe(prepareTaskScript, () => {

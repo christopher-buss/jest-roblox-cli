@@ -38,6 +38,10 @@ Run your roblox-ts and Luau tests inside Roblox, get results in your terminal.
 npm install @isentinel/jest-roblox
 ```
 
+The npm package needs Node.js 24.12 or later. Each run also needs a backend:
+Roblox Studio with [rojo](https://rojo.space) on `PATH`, or Open Cloud
+credentials (see [Backends](#backends)).
+
 Type tests need TypeScript 7, an optional peer dependency. Install it only if
 you run `--typecheck` or `--typecheckOnly`; runtime tests do not use it.
 
@@ -151,6 +155,24 @@ jest-roblox --gameOutput game-logs.txt
 jest-roblox --project client
 jest-roblox --project client --project server
 ```
+
+### Programmatic API
+
+The package exports the run the CLI makes. `loadConfig` reads the same config
+files, and `runJestRobloxAsync` takes the parsed CLI options as an object:
+
+```typescript
+import { loadConfig, runJestRobloxAsync } from "@isentinel/jest-roblox";
+
+const config = await loadConfig();
+const result = await runJestRobloxAsync({
+	cli: { collectCoverage: true },
+	config,
+});
+```
+
+It renders no report: the result holds the per-project results, for the exported
+formatters (`formatResult`, `formatJson`) to render.
 
 ## Configuration
 
@@ -1214,6 +1236,24 @@ Source consumers of `@isentinel/jest-roblox/artifacts` can register the
 synchronous Node hooks exported by `@isentinel/jest-roblox/loader` before
 dynamically importing that API. These hooks load raw Luau and the CLI's virtual
 asset modules.
+
+### Quality checks
+
+Run each check from the repository root:
+
+```bash
+pnpm lint            # oxlint, then ESLint
+pnpm typecheck       # TypeScript project build
+pnpm test            # Typecheck, then the test suite with coverage
+pnpm test-unit       # Unit tests, without coverage
+pnpm test-type       # Type tests
+pnpm integration     # Integration tests
+pnpm test-luau       # Luau harness tests in lute
+pnpm boundaries      # Import boundaries (dependency-cruiser)
+pnpm cpd             # Duplicate code (jscpd), production then specs
+pnpm knip            # Unused files, exports and dependencies
+pnpm mutation        # Mutation testing (Stryker)
+```
 
 ### Recover missing release binaries
 

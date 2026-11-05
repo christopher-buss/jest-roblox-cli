@@ -37,6 +37,7 @@ const NONCE_BYTES = 4;
 /** An owner pid and its write's nonce, and nothing else, close the name. */
 const OWNER_STAMP_REGEX = /^(\d+)\.[\da-f]+$/;
 
+/** Inputs for one atomic file write. */
 export interface AtomicWriteOptions {
 	/** The bytes to publish. */
 	readonly contents: Buffer | string;
@@ -121,7 +122,11 @@ function pause(milliseconds: number): void {
 	Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds);
 }
 
-/** The one `process.kill` failure that means the pid names nothing. */
+/**
+ * The one `process.kill` failure that means the pid names nothing.
+ * @param err - What `process.kill` threw.
+ * @returns True for an `ESRCH` error.
+ */
 function isNoSuchProcessError(err: unknown): boolean {
 	return err instanceof Error && "code" in err && err.code === "ESRCH";
 }
@@ -136,6 +141,7 @@ function isNoSuchProcessError(err: unknown): boolean {
  * left behind, so the only mistake available is keeping a stray a while longer.
  *
  * @param pid - The owner pid read off a temp file's name.
+ * @returns False only when the pid names no process.
  */
 function isProcessAlive(pid: number): boolean {
 	try {
@@ -154,6 +160,10 @@ function isProcessAlive(pid: number): boolean {
  * writer from before the nonce existed makes one, and that writer is the one
  * case where a recycled pid can put a live write behind a name this sweep has
  * already judged abandoned.
+ * @param options - The target name, its directory and the filesystem.
+ * @param options.basename - The target file's name.
+ * @param options.directory - The directory holding the target and its temps.
+ * @param options.fileSystem - The filesystem to list and delete through.
  */
 function sweepAbandonedTemporaries({
 	basename,

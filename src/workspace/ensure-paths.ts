@@ -7,6 +7,11 @@ import type { FileSystem } from "../utils/file-system.ts";
 import { nodeFileSystem } from "../utils/file-system.ts";
 import type { PackageDescriptor } from "./preflight.ts";
 
+/**
+ * Create the directories each package descriptor mounts.
+ * @param descriptors - Packages whose mount directories to create.
+ * @param fileSystem - File system to write through.
+ */
 export function ensurePackageDirectories(
 	descriptors: Array<PackageDescriptor>,
 	fileSystem: FileSystem = nodeFileSystem,

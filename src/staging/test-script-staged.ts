@@ -2,13 +2,19 @@ import type { ResolvedConfig } from "../config/schema.ts";
 import template from "../materializer.bundled.luau";
 import { buildJestArgv, type JestArgv } from "../test-script.ts";
 
+/** One project run the materializer script carries. */
 export interface MaterializerInput {
+	/** Config the Jest argv is built from. */
 	config: ResolvedConfig;
+	/** Staged package the materializer materializes for this run. */
 	pkg: string;
+	/** Project display name the result is reported under. */
 	project: string;
+	/** Test files the run selects. */
 	testFiles: Array<string>;
 }
 
+/** Bail, budget and streaming options shared by both script modes. */
 export interface ScriptOptions {
 	/**
 	 * Stop the task as soon as a package fails, leaving the rest of the batch
@@ -37,6 +43,7 @@ export interface ScriptOptions {
 	 * needing megabytes of real Jest output.
 	 */
 	resultBudgetBytes?: number;
+	/** Publish each package result to a SortedMap as it finishes. */
 	streaming?: StreamingOptions;
 }
 
@@ -84,6 +91,13 @@ interface WorkStealingPayload extends BailPayloadFields, StreamingPayloadFields 
 	resultBudgetBytes?: number | undefined;
 }
 
+/**
+ * Generate the materializer script that walks the inputs in order.
+ * @param inputs - Project runs to embed.
+ * @param options - Bail and streaming options.
+ * @returns The Luau script with the payload substituted.
+ * @throws {Error} When the payload contains `]==]`.
+ */
 export function generateMaterializerScript(
 	inputs: Array<MaterializerInput>,
 	options: ScriptOptions = {},
@@ -107,6 +121,9 @@ export function generateMaterializerScript(
  * published to `MemoryStoreService:GetSortedMap(sortedMapId):SetAsync(...)`
  * immediately after the package's `Jest.runCLI` returns, so the CLI can
  * stream output without waiting for the whole task envelope.
+ * @param options - Inputs, queue id and window, and shared script options.
+ * @returns The Luau script with the payload substituted.
+ * @throws {Error} When the payload contains `]==]`.
  */
 export function generateWorkStealingScript(options: WorkStealingOptions): string {
 	const payload: WorkStealingPayload = {
@@ -121,9 +138,13 @@ export function generateWorkStealingScript(options: WorkStealingOptions): string
 	return substitutePayload(payload);
 }
 
-// Emitted only when set, so a run without --bail leaves the payload
-// byte-for-byte what it was — the synthesized place and its script stay
-// cache-comparable.
+/**
+ * Emitted only when set, so a run without --bail leaves the payload
+ * byte-for-byte what it was — the synthesized place and its script stay
+ * cache-comparable.
+ * @param options - Script options holding the bail settings.
+ * @returns The bail payload fields, empty without `bail`.
+ */
 function bailFields(options: ScriptOptions): BailPayloadFields {
 	if (options.bail !== true) {
 		return {};

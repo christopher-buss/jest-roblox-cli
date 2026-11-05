@@ -9,10 +9,13 @@ import {
 	rootPrefix,
 	toPosixRoot,
 } from "../utils/normalize-windows-path.ts";
-import type { MappedCoverageResult } from "./mapper.ts";
+import type { MappedCoverageResult } from "./mapper-types.ts";
 
 // cspell:ignore nonegate
 
+/**
+ * Include globs and ignore patterns that decide the coverage universe.
+ */
 export interface CoverageUniverseFilter {
 	/**
 	 * `coveragePathIgnorePatterns` — matched against the TS source path with
@@ -50,6 +53,8 @@ export interface CoverageUniverseFilter {
  * `D:/repo/packages/foo` as a relative filename off Linux and would hang the
  * whole universe under `<cwd>/D:/...` — an anchor no candidate path starts
  * with, so nothing matches and the digest names a directory that never existed.
+ * @param rootDirectory - The config's `rootDir`; defaults to cwd.
+ * @returns Canonical POSIX anchor directory.
  */
 export function resolveUniverseAnchor(rootDirectory?: string): PosixRoot {
 	const cwd = normalizeWindowsPath(process.cwd());
@@ -60,21 +65,18 @@ export function resolveUniverseAnchor(rootDirectory?: string): PosixRoot {
  * The universe decision for one source path, split out so instrumentation can
  * ask the same question ahead of the run that the report asks after it — see
  * `instrument-universe.ts`. Accepts absolute or cwd-relative paths.
+ * @param filter - Include globs, ignore patterns and their anchor.
+ * @returns Predicate that is true for a source path in the universe.
  */
 export function createCoverageUniverseMatcher(
 	filter: CoverageUniverseFilter,
 ): (filePath: string) => boolean {
 	const include = filter.include ?? [];
 
-	const includePatterns: Array<string> = [];
-	const excludePatterns: Array<string> = [];
-	for (const pattern of include) {
-		if (pattern.startsWith("!")) {
-			excludePatterns.push(pattern.slice(1));
-		} else {
-			includePatterns.push(pattern);
-		}
-	}
+	const includePatterns = include.filter((pattern) => !pattern.startsWith("!"));
+	const excludePatterns = include
+		.filter((pattern) => pattern.startsWith("!"))
+		.map((pattern) => pattern.slice(1));
 
 	const isIncluded = includePatterns.length > 0 ? createGlobMatcher(includePatterns) : undefined;
 	const isExcluded = createGlobMatcher(excludePatterns);
@@ -93,6 +95,7 @@ export function createCoverageUniverseMatcher(
 	const cwd = normalizeWindowsPath(process.cwd());
 	return (filePath) => {
 		const absolute = toAnchorNamespace(filePath, cwd);
+		// Stryker disable next-line MethodExpression: same path
 		const relativePath = absolute.startsWith(anchorPrefix)
 			? absolute.slice(anchorPrefix.length)
 			: normalizeWindowsPath(path.relative(anchor, absolute));
@@ -112,6 +115,9 @@ export function createCoverageUniverseMatcher(
  * include globs and ignore patterns cannot drift across call sites. A file
  * survives when it is included by `collectCoverageFrom` AND not matched by any
  * `coveragePathIgnorePatterns` entry.
+ * @param mapped - Mapped coverage keyed by source path.
+ * @param filter - Include globs, ignore patterns and their anchor.
+ * @returns `mapped` itself when the filter is empty, else the surviving files.
  */
 export function filterCoverageUniverse(
 	mapped: MappedCoverageResult,
@@ -136,6 +142,9 @@ export function filterCoverageUniverse(
  * A candidate path in the anchor's namespace. A relative one is still
  * cwd-relative — single mode's manifest keys its files that way — so it is
  * joined onto cwd rather than read as if it were already anchored.
+ * @param filePath - Absolute or cwd-relative candidate path.
+ * @param cwd - Normalized working directory.
+ * @returns Normalized absolute POSIX path.
  */
 function toAnchorNamespace(filePath: string, cwd: string): string {
 	const normalized = normalizeWindowsPath(filePath);

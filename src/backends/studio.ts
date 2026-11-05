@@ -45,7 +45,7 @@ interface StudioOptions {
  * `version_mismatch` is now only reachable from a plugin whose announcement
  * and request handling disagree.
  */
-export const STUDIO_PROTOCOL_VERSION = 10;
+const STUDIO_PROTOCOL_VERSION = 10;
 
 const pluginResultSchema = type({
 	"gameOutput?": "string",
@@ -91,6 +91,7 @@ interface PluginSocketAttachment {
 	timer: NodeJS.Timeout;
 }
 
+/** Runs tests through the Studio plugin over a local WebSocket server. */
 export class StudioBackend implements Backend {
 	private readonly port: number;
 	private readonly timeout: number;
@@ -102,12 +103,20 @@ export class StudioBackend implements Backend {
 	public readonly kind = "studio" as const;
 	public readonly placeInput = "none" as const;
 
+	/**
+	 * Stores the options; the server opens on the first run.
+	 * @param options - Port, run timeout and server factory.
+	 */
 	constructor(options: StudioOptions) {
 		this.port = options.port;
 		this.timeout = options.timeout ?? DEFAULT_STUDIO_TIMEOUT;
 		this.webSocketServerFactory = options.webSocketServerFactory ?? nodeWebSocketServerFactory;
 	}
 
+	/**
+	 * Ends any in-flight plugin selection and closes the server and its
+	 * sockets.
+	 */
 	public closeAsync(): void {
 		const server = this.wss;
 		// Abort before dropping the reference: closing the server does not stop
@@ -123,6 +132,12 @@ export class StudioBackend implements Backend {
 		closePluginServer(server);
 	}
 
+	/**
+	 * Opens the server if needed, dispatches the jobs to a compatible plugin, and waits for its results.
+	 * @param options - Jobs and run options.
+	 * @returns The per-job results and execution timing.
+	 * @rejects {Error} When no compatible plugin connects, the plugin fails, or the run times out.
+	 */
 	public async runTestsAsync(options: BackendOptions): Promise<BackendResult> {
 		this.wss ??= this.webSocketServerFactory({ port: this.port });
 
@@ -175,6 +190,9 @@ export class StudioBackend implements Backend {
 	 * Several installed plugin copies each open their own socket, so this is
 	 * where "a Studio is listening" narrows to "this Studio can serve the run".
 	 * Failing here means failing before the place is built, rather than after.
+	 * @param wss - Plugin server to select from.
+	 * @returns The selected socket.
+	 * @rejects {Error} When only incompatible plugins connect, or none connects in time.
 	 */
 	private async selectSocketAsync(wss: WebSocketServer): Promise<WebSocket> {
 		// Assigned before the first await of this chain, so a plugin connecting
@@ -201,8 +219,11 @@ export class StudioBackend implements Backend {
 		requestMessage,
 		wss,
 	}: {
+		/** Correlation ID of the request. */
 		readonly requestId: string;
+		/** Message to send to the plugin. */
 		readonly requestMessage: RunTestsMessage;
+		/** Plugin server. */
 		readonly wss: WebSocketServer;
 	}): Promise<PluginMessage> {
 		return new Promise((resolve, reject) => {
@@ -227,6 +248,11 @@ export class StudioBackend implements Backend {
 	}
 }
 
+/**
+ * Creates a Studio backend.
+ * @param options - Port, run timeout and server factory.
+ * @returns The new backend.
+ */
 export function createStudioBackend(options: StudioOptions): StudioBackend {
 	return new StudioBackend(options);
 }
@@ -239,6 +265,8 @@ export function createStudioBackend(options: StudioOptions): StudioBackend {
  * plus the filtered `runtimeStubMounts` (parallel to `configs`) so the runner
  * injects `jest.config` only where Rojo doesn't already sync a user-authored
  * one.
+ * @param root0 - Run payload request and its correlation ID.
+ * @returns The `run_tests` message.
  */
 function buildRunTestsMessage({
 	requestId,
@@ -252,7 +280,12 @@ function buildRunTestsMessage({
 	};
 }
 
-/** The per-job entries a `results` frame carries, in request order. */
+/**
+ * The per-job entries a `results` frame carries, in request order.
+ * @param message - The `results` frame.
+ * @param jobCount - Number of jobs in the request.
+ * @returns The raw per-job results and the indices of bailed jobs.
+ */
 function pairResults(
 	message: Extract<PluginMessage, { type: "results" }>,
 	jobCount: number,
@@ -269,6 +302,7 @@ function pairResults(
  * plugin's reply — resolving the correlated `results`/`version_mismatch`
  * message, or rejecting on a message that fails validation, a disconnect, or a
  * socket error.
+ * @param root0 - Socket, request, settle callbacks and run timer.
  */
 function attachPluginSocket({
 	reject,
@@ -315,6 +349,7 @@ function attachPluginSocket({
  * what let a second, stale plugin decide the run: it refuses the version the
  * instant it is asked, while the plugin actually running the suite answers
  * minutes later.
+ * @param root0 - Socket, request, settle callbacks and run timeout.
  */
 function awaitPluginMessage({
 	reject,

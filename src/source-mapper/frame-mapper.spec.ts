@@ -4,14 +4,18 @@ import * as path from "node:path";
 import { assert, describe, expect, it, vi } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
+import { posixPath } from "#test/mocks/posix-path.ts";
 import type { FileSystem } from "../utils/file-system.ts";
-import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import type { FrameMapperContext } from "./frame-mapper.ts";
 import { createFrameMapper, createLineMapper } from "./frame-mapper.ts";
 import type { PathResolver } from "./path-resolver.ts";
-import type { V3Mapper } from "./v3-mapper.ts";
+import type { V3Mapper } from "./v-3-mapper.ts";
 
-/** A resolver that always answers with a roblox-ts mapping for `filePath`. */
+/**
+ * A resolver that always answers with a roblox-ts mapping for `filePath`.
+ * @param filePath - The path every resolve returns.
+ * @returns The stub resolver.
+ */
 function resolvingTo(filePath: string): PathResolver {
 	return fromAny({
 		resolve: () => ({ filePath, mapping: { outDir: "out", rootDir: "src" } }),
@@ -24,6 +28,7 @@ function resolvingTo(filePath: string): PathResolver {
  *
  * @param parts - The resolver, the source-map answers, and the filesystem a
  *   disk read would reach.
+ * @returns The frame-mapper context.
  */
 function contextWith(parts: {
 	fileSystem?: FileSystem;
@@ -85,7 +90,7 @@ describe(createFrameMapper, () => {
 			source: {
 				column: 15,
 				line: 2,
-				path: normalizeWindowsPath(path.resolve("out", "../src/example.ts")),
+				path: posixPath(path.resolve("out", "../src/example.ts")),
 				sourceContent: "const value = 1;\nexpect(value).toBe(1);",
 			},
 		});
@@ -94,7 +99,7 @@ describe(createFrameMapper, () => {
 	it("should read source from disk only when the source map has no embedded content", () => {
 		expect.assertions(1);
 
-		const resolvedSourcePath = normalizeWindowsPath(path.resolve("out", "../src/example.ts"));
+		const resolvedSourcePath = posixPath(path.resolve("out", "../src/example.ts"));
 		const { fileSystem } = createMemoryFileSystem({
 			[resolvedSourcePath]: "expect(value).toBe(1);",
 		});

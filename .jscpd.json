@@ -1,0 +1,25 @@
+{
+	"path": [
+		"src",
+		"scripts",
+		"loaders",
+		"bin",
+		"test/mocks",
+		"test/setup",
+		"test/e2e",
+		"test/integration",
+		"test/luau"
+	],
+	"format": ["typescript", "javascript"],
+	"ignore": [
+		"**/*.spec.ts",
+		"**/*.spec-d.ts",
+		"**/__fixtures__/**",
+		"test/fixtures/**",
+		"test/e2e/fixtures/**",
+		"**/.tmp/**"
+	],
+	"minTokens": 40,
+	"reporters": ["console"],
+	"exitCode": 1
+}

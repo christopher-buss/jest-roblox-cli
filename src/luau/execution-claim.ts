@@ -12,14 +12,37 @@ export const EXECUTION_START_EXPIRED = "__JEST_ROBLOX_EXECUTION_START_EXPIRED__"
 
 const executionClaimSchema = type({ claimedAt: "number", owner: "string" });
 
+/** The result of one read of an execution claim. */
 export type ExecutionClaimObservation =
-	| { claim: { claimedAt: number; owner: string }; status: "found" }
-	| { error: Error; status: "failed" }
+	| {
+			/** The read failure or an invalid stored claim. */
+			error: Error;
+			status: "failed";
+	  }
+	| {
+			/** The stored claim. */
+			claim: {
+				/** When the claim was taken. */
+				claimedAt: number;
+				/** The identity that took the claim. */
+				owner: string;
+			};
+			status: "found";
+	  }
 	| { status: "missing" };
 
+/** Open Cloud access for an {@link ExecutionClaimObserver}. */
 export interface ExecutionClaimObserverOptions {
+	/** Override for the Open Cloud base URL. */
 	baseUrl?: string | undefined;
-	credentials: { apiKey: string; universeId: string };
+	/** The Open Cloud API key and the universe that holds the claim map. */
+	credentials: {
+		/** The Open Cloud API key. */
+		apiKey: string;
+		/** The universe that holds the claim map. */
+		universeId: string;
+	};
+	/** Override that builds the storage client. */
 	storageFactory?: () => StorageClient;
 }
 
@@ -28,11 +51,22 @@ export class ExecutionClaimObserver {
 	private readonly storage: StorageClient;
 	private readonly universeId: string;
 
+	/**
+	 * Bind the observer to one universe's claim map.
+	 * @param options - Credentials and optional client overrides.
+	 */
 	constructor(options: ExecutionClaimObserverOptions) {
 		this.storage = resolveStorageClient(options);
 		this.universeId = options.credentials.universeId;
 	}
 
+	/**
+	 * Read the claim stored under one key.
+	 * @param key - The item ID in the claim map.
+	 * @param signal - Cancels the pending request.
+	 * @returns The found claim, its absence, or the read failure.
+	 * @rejects When the read is aborted.
+	 */
 	public async readAsync(key: string, signal?: AbortSignal): Promise<ExecutionClaimObservation> {
 		const result = await this.storage.sortedMaps.get(
 			{

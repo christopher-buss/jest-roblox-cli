@@ -29,6 +29,9 @@ import { nodeFileSystem } from "../utils/file-system.ts";
  *
  * One level only. Callers walk parent-first, so the chain above is already
  * judged by the time this reaches any level of it.
+ * @param shadowPath - Directory to create in the shadow.
+ * @param fileSystem - Shadow filesystem. Defaults to the real filesystem.
+ * @returns `true` when the directory did not exist before.
  */
 export function createShadowDirectory(
 	shadowPath: string,
@@ -55,6 +58,8 @@ export function createShadowDirectory(
  * The subtree goes with it. Every entry below a directory the source no longer
  * has is orphaned by definition, and leaving one behind would only re-block the
  * path. `force` covers the entry going away between the `stat` and the `rm`.
+ * @param shadowPath - Path the shadow file will take.
+ * @param fileSystem - Shadow filesystem. Defaults to the real filesystem.
  */
 export function clearDirectoryAtFilePath(
 	shadowPath: string,
@@ -72,6 +77,9 @@ export function clearDirectoryAtFilePath(
  * kind leaves a directory on the path a record still claims, and keeping that
  * record hands rojo a Folder under the name a file should have — silently,
  * because nothing on that path throws.
+ * @param shadowPath - Path to check in the shadow.
+ * @param fileSystem - Shadow filesystem. Defaults to the real filesystem.
+ * @returns `true` only when a regular file is at the path.
  */
 export function shadowHoldsFile(
 	shadowPath: string,

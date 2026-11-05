@@ -3,7 +3,7 @@ import { fromPartial } from "@total-typescript/shoehorn";
 import { describe, expect, it } from "vitest";
 
 import type { GapRecord } from "../backends/interface.ts";
-import type { JestResult, TestCaseResult, TestFileResult } from "../types/jest-result.ts";
+import type { JestResult, TestCaseResult, TestFileResult } from "../types/jest-result-types.ts";
 import { applyFailureGaps, applyGapRecord, listBlocked, MissingGapRecordError } from "./gaps.ts";
 
 const FILE = "ServerScriptService/PkgLute/gap.spec";

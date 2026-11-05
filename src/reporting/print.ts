@@ -3,8 +3,8 @@ import process from "node:process";
 
 import packageJson from "../../package.json" with { type: "json" };
 import type { ResolvedConfig } from "../config/schema.ts";
+import type { ExecuteResult } from "../executor/executor-types.ts";
 import { formatExecuteOutput } from "../executor/format-output.ts";
-import type { ExecuteResult } from "../executor/types.ts";
 import { formatAgentMultiProject } from "../formatters/agent.ts";
 import { toFormatOptions } from "../formatters/format-options.ts";
 import {
@@ -20,35 +20,47 @@ import {
 	hasFormatter,
 	usesAgentFormatter,
 } from "../formatters/utils.ts";
-import type { PreDispatchTiming, ProjectResult } from "../run/types.ts";
-import type { JestResult } from "../types/jest-result.ts";
-import type { TimingResult } from "../types/timing.ts";
+import type { PreDispatchTiming, ProjectResult } from "../run/run-types.ts";
+import type { JestResult } from "../types/jest-result-types.ts";
+import type { TimingResult } from "../types/timing-types.ts";
 
+/** The formatters the print functions render through, injectable for tests. */
 export interface ResultRenderer {
+	/** Renders a multi-project run for the agent formatter. */
 	formatAgentMultiProject: typeof formatAgentMultiProject;
+	/** Renders one runtime result with the default formatter. */
 	formatExecuteOutput: typeof formatExecuteOutput;
+	/** Renders a multi-project run with the default formatter. */
 	formatMultiProjectResult: typeof formatMultiProjectResult;
+	/** Renders one result with the configured formatter. */
 	formatResult: typeof formatResult;
+	/** Renders the type-test report. */
 	formatTypecheckReport: typeof formatTypecheckReport;
 }
 
+/** What {@link printMultiResults} renders for a multi or workspace run. */
 export interface MultiOutputContext extends PreDispatchTiming {
 	/** Workspace `--bail` only: how far the run got before it stopped. */
 	bail?: BailSummary | undefined;
+	/** The resolved run config. */
 	config: ResolvedConfig;
 	/**
 	 * Resolved Game Output path for "View …" hints (workspace consensus or
 	 * config).
 	 */
 	gameOutputHint?: string | undefined;
+	/** The projects' results merged into one. */
 	merged: ExecuteResult;
 	/**
 	 * Resolved result-file path for "View …" hints (workspace consensus or
 	 * config).
 	 */
 	outputFileHint?: string | undefined;
+	/** The result of each project. */
 	projectResults: Array<ProjectResult>;
+	/** The formatters to render through. */
 	renderer: ResultRenderer;
+	/** The type-test pass result, when one ran. */
 	typecheckResult?: JestResult | undefined;
 }
 
@@ -94,9 +106,13 @@ export const defaultResultRenderer: ResultRenderer = {
 	formatTypecheckReport,
 };
 
-// Prints the run results for `single`, honouring `config.silent` and folding
-// the two pre-dispatch phases into the reported timing. The multi/workspace
-// twin is `printMultiResults`.
+/**
+ * Prints the run results for `single`, honouring `config.silent` and folding
+ * the two pre-dispatch phases into the reported timing. The multi/workspace
+ * twin is `printMultiResults`.
+ * @param config - The resolved run config.
+ * @param options - The results, renderer and pre-dispatch timing.
+ */
 export function printSingleResults(config: ResolvedConfig, options: SingleResultsOptions): void {
 	const { mergedResult, renderer, runtimeResult, typecheckResult } = options;
 	if (config.silent) {
@@ -117,9 +133,12 @@ export function printSingleResults(config: ResolvedConfig, options: SingleResult
 	});
 }
 
-// Prints the run results for `multi`/`workspace`, honouring the same
-// formatter precedence as the single-run path: agent, then json, then the
-// default multi-project renderer.
+/**
+ * Prints the run results for `multi`/`workspace`, honouring the same
+ * formatter precedence as the single-run path: agent, then json, then the
+ * default multi-project renderer.
+ * @param context - The run's results, config and renderer.
+ */
 export function printMultiResults(context: MultiOutputContext): void {
 	const { config, renderer, typecheckResult } = context;
 	if (config.silent) {
@@ -133,9 +152,16 @@ export function printMultiResults(context: MultiOutputContext): void {
 	}
 }
 
-// Folds a run's {@link PreDispatchTiming} into the timing the formatters
-// render: both phases sit outside the window `totalMs` measures, so each is
-// added onto it rather than found inside it.
+/**
+ * Folds a run's {@link PreDispatchTiming} into the timing the formatters
+ * render: both phases sit outside the window `totalMs` measures, so each is
+ * added onto it rather than found inside it.
+ * @param timing - The run's timing.
+ * @param preDispatch - The pre-dispatch phase durations.
+ * @param preDispatch.coverageMs - Time spent instrumenting coverage.
+ * @param preDispatch.stagingMs - Time spent staging the place.
+ * @returns The timing with both phases set and added to `totalMs`.
+ */
 function addPreDispatchTiming(
 	timing: TimingResult,
 	{ coverageMs, stagingMs }: PreDispatchTiming,
@@ -170,8 +196,12 @@ function formatRuntimeOutput(
 	});
 }
 
-// The agent formatter is plain text throughout, so the type report beside it
-// drops colour too rather than being the one block that carries escapes.
+/**
+ * The agent formatter is plain text throughout, so the type report beside it
+ * drops colour too rather than being the one block that carries escapes.
+ * @param config - The resolved run config.
+ * @returns Whether the type report uses colour.
+ */
 function typecheckReportColor(config: ResolvedConfig): boolean {
 	return config.color && !usesAgentFormatter(config.formatters, config.verbose);
 }

@@ -1,13 +1,16 @@
+import type { RawCoverageData } from "./coverage-types.ts";
 import { filterCoverageUniverse } from "./coverage-universe.ts";
 import type { CoverageManifest } from "./manifest.ts";
-import {
-	type CoverageMapper,
-	mapCoverageToTypeScript,
-	type MappedCoverageResult,
-} from "./mapper.ts";
-import type { RawCoverageData } from "./types.ts";
+import type { MappedCoverageResult } from "./mapper-types.ts";
+import { type CoverageMapper, mapCoverageToTypeScript } from "./mapper.ts";
 
+/**
+ * One package's raw coverage and the settings that map and filter it.
+ */
 export interface WorkspacePackageCoverageEntry {
+	/**
+	 * Raw hit counts, or `undefined` when the package reported none.
+	 */
 	coverageData: RawCoverageData | undefined;
 	/**
 	 * This package's effective `coveragePathIgnorePatterns`. Matched against
@@ -20,7 +23,13 @@ export interface WorkspacePackageCoverageEntry {
 	 * universe.
 	 */
 	includePatterns?: Array<string> | undefined;
+	/**
+	 * The package's coverage manifest, used to map its hits.
+	 */
 	manifest: CoverageManifest;
+	/**
+	 * Package name.
+	 */
 	pkg: string;
 	/**
 	 * The package's own `rootDir` — what `includePatterns` is written relative
@@ -32,7 +41,13 @@ export interface WorkspacePackageCoverageEntry {
 	rootDir: string;
 }
 
+/**
+ * One package's mapped, filtered coverage.
+ */
 export interface WorkspacePackageUniverse {
+	/**
+	 * Package name.
+	 */
 	pkg: string;
 	/** This package's mapped coverage after its own filters applied. */
 	universe: MappedCoverageResult;
@@ -47,8 +62,11 @@ export interface WorkspacePackageUniverse {
  * works per package, and a cross-package pool would let one package's coverage
  * mask another's.
  *
- * Packages without coverageData (e.g. the materializer never reset `_G` for
+ * Packages without coverageData (for example when the materializer never reset `_G` for
  * them) are skipped silently. Empty input returns an empty list.
+ * @param entries - Per-package coverage and settings.
+ * @param mapCoverage - Maps raw coverage to TypeScript sources.
+ * @returns One universe per package that reported coverage.
  */
 export function aggregateWorkspaceCoverage(
 	entries: ReadonlyArray<WorkspacePackageCoverageEntry>,

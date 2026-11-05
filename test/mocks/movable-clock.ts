@@ -1,7 +1,5 @@
-import {
-	createTimingCollector,
-	type TimingCollector,
-} from "../../src/timing/orchestration-collector.ts";
+import { clockTimingCollector } from "#test/mocks/clock-timing-collector.ts";
+import type { TimingCollector } from "../../src/timing/orchestration-collector.ts";
 
 export interface MovableClockCollector {
 	/** Moves the clock forward, from inside the phase under measurement. */
@@ -17,6 +15,8 @@ export interface MovableClockCollector {
  * Synchronous phases have no other way to acquire a duration: nothing yields,
  * so a real clock reads the same value at both ends. Move this one from inside
  * the mock the phase calls.
+ * @param startMs - Initial clock reading.
+ * @returns Collector with an `advance` control.
  */
 export function movableClockCollector(startMs: number): MovableClockCollector {
 	let now = startMs;
@@ -24,7 +24,7 @@ export function movableClockCollector(startMs: number): MovableClockCollector {
 		advance: (byMs: number) => {
 			now += byMs;
 		},
-		timing: createTimingCollector({ clock: { now: () => now }, enabled: false }),
+		timing: clockTimingCollector({ now: () => now }),
 	};
 }
 
@@ -32,17 +32,17 @@ export function movableClockCollector(startMs: number): MovableClockCollector {
  * {@link movableClockCollector} for a phase with nothing to move the clock
  * from: every reading advances it by `stepMs`, so any phase at all reports a
  * duration above zero. Use where the assertion is that a phase costs
- * *something*, never where it is what the phase costs.
+ * some time, never where it is what the phase costs.
+ * @param startMs - Initial clock reading.
+ * @param stepMs - Advance per reading.
+ * @returns Collector whose clock steps on each reading.
  */
 export function tickingClockCollector(startMs: number, stepMs: number): TimingCollector {
 	let now = startMs;
-	return createTimingCollector({
-		clock: {
-			now: () => {
-				now += stepMs;
-				return now;
-			},
+	return clockTimingCollector({
+		now: () => {
+			now += stepMs;
+			return now;
 		},
-		enabled: false,
 	});
 }

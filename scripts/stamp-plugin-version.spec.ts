@@ -8,6 +8,7 @@ import { stampPluginVersion } from "./stamp-plugin-version.ts";
  * A volume holding a package whose plugin is waiting for its stamp.
  *
  * @param version - What the package manifest declares.
+ * @returns Volume with the manifest and an unstamped plugin.
  */
 function seed(version: string): MemoryFileSystem {
 	return createMemoryFileSystem({

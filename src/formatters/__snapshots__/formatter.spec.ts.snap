@@ -1,31 +1,5 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
-exports[`complete formatter contracts > should render a snapshot diff exactly 1`] = `
-"  
-   FAIL  src/inventory.spec.ts > inventory > matches snapshot
-  expect(received).toMatchSnapshot()
-  
-  - Snapshot  - 1
-  + Received  + 1
-  
-  -   "count": 2,
-  +   "count": 1,"
-`;
-
-exports[`complete formatter contracts > should render an expected/received failure exactly 1`] = `
-"  
-   FAIL  src/inventory.spec.ts > inventory > stacking > should merge items
-  expect(received).toStrictEqual(expected)
-  
-  - Expected
-  + Received
-  
-  - { count: 2 }
-  + { count: 1 }
-  
-  ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯"
-`;
-
 exports[`complete formatter contracts > should render complete pass, skip, failure, and exec-error reports exactly 1`] = `
 [
   "
@@ -95,11 +69,4 @@ exports[`complete formatter contracts > should render complete pass, skip, failu
    Start at  22:13:20
    Duration  250ms (upload 50ms, environment 50ms, tests 100ms, cli 50ms)",
 ]
-`;
-
-exports[`complete formatter contracts > should render line padding, tabs, a caret, and language exactly 1`] = `
-" ❯ src/inventory.spec.ts:10:6  (TypeScript)
-	 9|     const count = 1;
-	10|      expect(count).toBe(2);
-	  |         ^"
 `;

@@ -3,9 +3,9 @@ import type { ChildProcess } from "node:child_process";
 import process from "node:process";
 
 import type { ChildProcessRunner } from "../utils/child-process.ts";
-import type { FileSystem } from "../utils/file-system.ts";
+import type { HiddenLaunchRequest } from "./hidden-helper.ts";
 import { launchThroughHelper } from "./hidden-helper.ts";
-import type { StudioCliProcess } from "./studio-cli.ts";
+import type { StudioCliProcess } from "./studio-cli-types.ts";
 
 const HIDDEN_DESKTOP_NAME = "jest-roblox-studio";
 
@@ -81,16 +81,13 @@ Remove-Item Env:${DESKTOP_ENV}, Env:${APPLICATION_ENV}, Env:${COMMAND_LINE_ENV}
 
 const NEEDS_QUOTES_PATTERN = /[\s"]/u;
 
-export interface HiddenDesktopLaunchRequest {
-	/** Studio argument vector, without the executable. */
-	args: Array<string>;
-	childProcess: ChildProcessRunner;
-	fileSystem: FileSystem;
-	placeFile: string;
-	studioPath: string;
-}
-
-export function launchOnHiddenDesktop(request: HiddenDesktopLaunchRequest): StudioCliProcess {
+/**
+ * Launch Studio on a hidden Windows desktop.
+ *
+ * @param request - Studio path, arguments, place file, and process runner.
+ * @returns A handle that kills Studio and reports launch failures.
+ */
+export function launchOnHiddenDesktop(request: HiddenLaunchRequest): StudioCliProcess {
 	return launchThroughHelper({
 		fileSystem: request.fileSystem,
 		killStudio: (pid) => {
@@ -116,6 +113,9 @@ function killStudio(childProcess: ChildProcessRunner, pid: number): void {
 /**
  * Quote one argument so `CommandLineToArgvW` (the MSVC CRT rules Studio
  * parses with) reads it back unchanged.
+ *
+ * @param argument - One argument.
+ * @returns The argument, quoted when it holds whitespace or a quote.
  */
 function quoteWindowsArgument(argument: string): string {
 	if (argument !== "" && !NEEDS_QUOTES_PATTERN.test(argument)) {
@@ -142,7 +142,7 @@ function buildWindowsCommandLine(argv: ReadonlyArray<string>): string {
 	return argv.map(quoteWindowsArgument).join(" ");
 }
 
-function spawnHelper(request: HiddenDesktopLaunchRequest): ChildProcess {
+function spawnHelper(request: HiddenLaunchRequest): ChildProcess {
 	return request.childProcess.spawn(
 		"powershell.exe",
 		[

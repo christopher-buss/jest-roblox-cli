@@ -1,8 +1,10 @@
 import { collectPaths, resolveMountPath } from "@isentinel/rojo-utils";
 
+import * as path from "node:path";
 import process from "node:process";
 
 import type { RojoTreeNode } from "../types/rojo.ts";
+import type { FileSystem } from "../utils/file-system.ts";
 import {
 	normalizeWindowsPath,
 	relativeToRoot,
@@ -38,12 +40,45 @@ export interface MountFrame {
 }
 
 /**
+ * Whether a directory tree holds a file whose name `matches` accepts.
+ *
+ * @param fileSystem - File system to walk.
+ * @param search - Directory to walk and the file-name test.
+ * @param search.directoryPath - Directory to walk.
+ * @param search.matches - Accepts a file name.
+ * @returns True when some file under the directory matches.
+ */
+export function containsMatchingFile(
+	fileSystem: FileSystem,
+	{ directoryPath, matches }: { directoryPath: string; matches: (name: string) => boolean },
+): boolean {
+	const entries = fileSystem.readdirSync(directoryPath, { withFileTypes: true });
+	return entries.some((entry) => {
+		if (entry.isFile() && matches(entry.name)) {
+			return true;
+		}
+
+		if (entry.isDirectory()) {
+			return containsMatchingFile(fileSystem, {
+				directoryPath: path.join(directoryPath, entry.name),
+				matches,
+			});
+		}
+
+		return false;
+	});
+}
+
+/**
  * Every `$path` mount in a rojo tree, absolute. Rojo resolves a `$path`
  * against the project's own directory, and so does synthesis, so a mount set
  * built against anything else would describe a place we do not build.
  *
  * Takes the loaded tree rather than a path so a caller that already read the
  * project does not read it twice.
+ * @param tree - Loaded rojo project tree.
+ * @param rojoDirectory - Directory holding the rojo project.
+ * @returns Normalized absolute mount paths.
  */
 export function collectRojoMounts(tree: RojoTreeNode, rojoDirectory: string): Set<string> {
 	const collected: Array<string> = [];
@@ -68,6 +103,9 @@ export function collectRojoMounts(tree: RojoTreeNode, rojoDirectory: string): Se
  * that mount's `$path` moves onto a spine copy and the root hangs underneath
  * as an explicit child. Either direction of containment reaches the root, so
  * only one standing off the tree altogether reports nothing.
+ * @param reachability - The root, its base, the mounts and the declaring
+ * subject.
+ * @returns Warning text, or `undefined` when a mount reaches the root.
  */
 export function unreachableRootWarning({
 	base,
@@ -101,6 +139,10 @@ export function unreachableRootWarning({
  *
  * Judged on the resolved path, not the spelling — `src/..` names the frame and
  * a directory honestly called `..cache` does not escape it.
+ * @param rawPath - The `$path` as written in the project.
+ * @param mountFrame - The frame and the rojo project directory.
+ * @returns Root relative to the frame, or `undefined` when outside it or equal
+ * to it.
  */
 export function resolveMountWithin(
 	rawPath: string,
@@ -126,6 +168,8 @@ export function resolveMountWithin(
  * that is relative too, so it could never sit inside an absolute frame and the
  * whole project would report no roots. The cwd is what a relative one is
  * written against, and `resolveMountPath` leaves an absolute one alone.
+ * @param directory - Absolute or cwd-relative directory.
+ * @returns Absolute directory.
  */
 function inCwdFrame(directory: string): string {
 	return resolveMountPath(normalizeWindowsPath(process.cwd()), directory);

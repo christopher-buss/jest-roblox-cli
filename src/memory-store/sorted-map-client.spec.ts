@@ -10,11 +10,7 @@ import { StorageClient } from "@bedrock-rbx/ocale/storage";
 
 import { describe, expect, it, vi } from "vitest";
 
-import {
-	decodeStreamingResult,
-	StreamingResultClient,
-	type StreamingResultEntry,
-} from "./sorted-map-client.ts";
+import { StreamingResultClient, type StreamingResultEntry } from "./sorted-map-client.ts";
 
 interface SortedMapStub {
 	createdRequests: Array<CreateSortedMapItemParameters>;
@@ -397,20 +393,32 @@ describe(StreamingResultClient, () => {
 	});
 });
 
-describe(decodeStreamingResult, () => {
-	it("should throw when wire payload is missing required fields", () => {
+describe("streaming result decoding", () => {
+	async function readOneAsync(value: SortedMapItem["value"]): Promise<unknown> {
+		const stub = createSortedMapStub({
+			listPages: [{ items: [makeItem({ id: "a::b", value })], nextPageToken: undefined }],
+		});
+		const client = new StreamingResultClient({
+			credentials: CREDENTIALS,
+			mapId: "m",
+			storageFactory: () => stub.storage,
+		});
+		return client.readAllAsync();
+	}
+
+	it("should throw when wire payload is missing required fields", async () => {
 		expect.assertions(1);
 
-		expect(() => decodeStreamingResult({ elapsedMs: 0, pkg: "a", project: "b" })).toThrow(
+		await expect(readOneAsync({ elapsedMs: 0, pkg: "a", project: "b" })).rejects.toThrow(
 			"numFailedTests must be a number",
 		);
 	});
 
-	it("should throw when wire payload field has wrong type", () => {
+	it("should throw when wire payload field has wrong type", async () => {
 		expect.assertions(1);
 
-		expect(() => {
-			return decodeStreamingResult({
+		await expect(
+			readOneAsync({
 				elapsedMs: "fast",
 				numFailedTests: 0,
 				numPassedTests: 1,
@@ -418,13 +426,13 @@ describe(decodeStreamingResult, () => {
 				pkg: "a",
 				project: "b",
 				success: true,
-			});
-		}).toThrow("elapsedMs must be a number");
+			}),
+		).rejects.toThrow("elapsedMs must be a number");
 	});
 
-	it("should throw when wire payload is not an object", () => {
+	it("should throw when wire payload is not an object", async () => {
 		expect.assertions(1);
 
-		expect(() => decodeStreamingResult("not-an-object")).toThrow("must be an object");
+		await expect(readOneAsync("not-an-object")).rejects.toThrow("must be an object");
 	});
 });

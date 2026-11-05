@@ -1,6 +1,6 @@
 import * as path from "node:path";
 
-import type { StubMount } from "../staging/synthesizer.ts";
+import type { StubMount } from "../staging/synthesizer-types.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import { nodeFileSystem } from "../utils/file-system.ts";
 import type { PosixRoot } from "../utils/normalize-windows-path.ts";
@@ -10,8 +10,9 @@ import type { NonInstrumentedFileRecord } from "./manifest.ts";
 import type { NarrowedMount } from "./narrow-roots.ts";
 import type { CoverageRoot } from "./redirect-path.ts";
 import { isWithinRoot } from "./redirect-path.ts";
-import type { BakeOwnershipMatcher } from "./shadow-root.ts";
-import { syncOneFile, tryRemove } from "./shadow-root.ts";
+import { syncOneFile } from "./shadow-mirror.ts";
+import type { BakeOwnershipMatcher } from "./shadow-reconcile.ts";
+import { tryRemove } from "./shadow-reconcile.ts";
 
 /**
  * Where a shadow tree keeps the copies it mounts for the levels it demoted.
@@ -47,6 +48,7 @@ const SPINE_LEAF = ".self";
  * assumed the mirror would land its file somewhere nothing mounts.
  */
 export interface ShadowLayout {
+	/** True when the place reads `sourceRelative` from the shadow. */
 	isShadowed: (sourceRelative: string) => boolean;
 	/** The directory the place mounts in `sourceRelative`'s place. */
 	mountedDirectory: (sourceRelative: string) => string;
@@ -77,12 +79,15 @@ export interface ShadowBake {
 
 /** What the spine pass produced for one shadow tree. */
 export interface PreparedSpine {
+	/** A spine file was copied or removed. */
 	changed: boolean;
 	/** Every demoted level, paired with the copy the place mounts for it. */
 	directories: Array<CoverageRoot>;
+	/** Records for the mirrored files, by source path. */
 	files: Record<string, NonInstrumentedFileRecord>;
 }
 
+/** Inputs of {@link prepareSpine}. */
 export interface PrepareSpineOptions {
 	/** Where the mirror reads and writes. Defaults to the real filesystem. */
 	fileSystem?: FileSystem;
@@ -94,7 +99,9 @@ export interface PrepareSpineOptions {
 	isBakeOwned?: BakeOwnershipMatcher | undefined;
 	/** Paths the shadow never carries, relative to the level's own mount. */
 	isCopyIgnored: CopyIgnoreMatcher;
+	/** Narrowed mounts whose spine levels to mirror. */
 	narrowed: ReadonlyArray<NarrowedMount>;
+	/** Records from the previous run, for unchanged-file reuse. */
 	previousNonInstrumented: Record<string, NonInstrumentedFileRecord> | undefined;
 	/** The shadow tree the spine hangs off. */
 	shadowRoot: string;
@@ -159,6 +166,9 @@ interface MirrorLevelOptions extends MirrorSpineOptions {
  * A root that is itself a mount needs none of this, and neither does one no
  * mount contains: the first is redirected outright, the second is unreachable
  * whatever the tree says.
+ * @param roots - Canonical coverage roots.
+ * @param mounts - Rojo `$path` mounts.
+ * @returns Sorted spine levels.
  */
 export function resolveSpineDirectories(
 	roots: ReadonlyArray<PosixRoot>,
@@ -188,6 +198,8 @@ export function resolveSpineDirectories(
  * Both prepare modes route through here so the shadow layout has one owner —
  * the `.spine` directory name, the source frame each level is keyed in, and
  * the record shape the manifest carries are all decided once.
+ * @param options - Narrowed mounts, shadow root, source frame and prior records.
+ * @returns Change flag, mounted spine directories and file records.
  */
 export function prepareSpine({
 	fileSystem = nodeFileSystem,
@@ -233,6 +245,9 @@ export function prepareSpine({
 /**
  * Where each source directory is read from once the place is built. A demoted
  * one answers with its spine copy; everything else with its own mirror.
+ * @param shadowRoot - The shadow tree.
+ * @param narrowed - Narrowed mounts and their spine levels.
+ * @returns Layout over the shadow tree.
  */
 export function createShadowLayout(
 	shadowRoot: string,
@@ -258,7 +273,12 @@ export function createShadowLayout(
 	};
 }
 
-/** Every directory from `mount` down to the root's parent, deepest last. */
+/**
+ * Every directory from `mount` down to the root's parent, deepest last.
+ * @param mount - Mount above `root`.
+ * @param root - Coverage root.
+ * @returns Directories from the mount to the root's parent.
+ */
 function chainTo(mount: string, root: string): Array<string> {
 	const chain: Array<string> = [];
 	let cursor = normalizeWindowsPath(path.posix.dirname(root));
@@ -275,6 +295,9 @@ function chainTo(mount: string, root: string): Array<string> {
  * The deepest mount strictly above `root`. Deepest wins because a shallower
  * mount is not the one the place reads this root through — two mounts above
  * one root nest, so "deeper" is "inside the incumbent".
+ * @param root - Coverage root.
+ * @param mounts - Rojo `$path` mounts.
+ * @returns The mount, or undefined when none contains the root.
  */
 function containingMount(root: string, mounts: ReadonlySet<string>): string | undefined {
 	let containing: string | undefined;
@@ -291,7 +314,12 @@ function containingMount(root: string, mounts: ReadonlySet<string>): string | un
 	return containing;
 }
 
-/** The shadow copy that stands in for one demoted source directory. */
+/**
+ * The shadow copy that stands in for one demoted source directory.
+ * @param shadowRoot - The shadow tree.
+ * @param relativePath - Demoted directory, relative to the source frame.
+ * @returns Path of the spine leaf.
+ */
 function toSpineDirectory(shadowRoot: string, relativePath: string): string {
 	return normalizeWindowsPath(path.join(shadowRoot, SPINE_DIR, relativePath, SPINE_LEAF));
 }
@@ -307,6 +335,8 @@ function toSpineDirectory(shadowRoot: string, relativePath: string): string {
  *
  * What the bake writes here the mirror never produces, so it is exempt — see
  * {@link BakeOwnershipMatcher}.
+ * @param options - Spine directory, mirrored names and bake ownership.
+ * @returns True when an entry was removed.
  */
 function pruneSpineDirectory({
 	fileSystem,
@@ -336,6 +366,8 @@ function pruneSpineDirectory({
 
 /**
  * One spine directory: its own files copied in, everything else cleared out.
+ * @param options - Source and spine directory, and mirror settings.
+ * @returns Change flag and file records for the level.
  */
 function mirrorOneLevel({
 	fileSystem,
@@ -391,6 +423,8 @@ function mirrorOneLevel({
  *
  * The directory is created even when it holds nothing, because the demote
  * names it either way and rojo fails on a `$path` that is not there.
+ * @param options - Spine directories by source directory, and mirror settings.
+ * @returns Change flag and file records over all levels.
  */
 function mirrorSpineFiles(options: MirrorSpineOptions): SpineMirrorResult {
 	const files: Record<string, NonInstrumentedFileRecord> = {};

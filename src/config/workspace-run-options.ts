@@ -141,6 +141,13 @@ const CONVERGENCE_GUARD_SPECS = [
 	},
 ] satisfies Array<ConsensusSpec<unknown>>;
 
+/**
+ * Resolve the run-wide options a workspace run shares across its packages.
+ *
+ * @param options - CLI flags, package configs, platform and workspace root.
+ * @returns The resolved settings shared by every package in the run.
+ * @throws If packages disagree on a uniform field.
+ */
 export function buildWorkspaceRunOptions({
 	cli,
 	perPackageConfigs,
@@ -231,9 +238,14 @@ function resolveFormatters(
 	return defaultFormatters();
 }
 
-// `true` expands to `defaultName`; relative paths (including that default)
-// anchor at the workspace root so the aggregate lands there regardless of the
-// directory the CLI was invoked from.
+/**
+ * `true` expands to `defaultName`; relative paths (including that default)
+ * anchor at the workspace root so the aggregate lands there regardless of the
+ * directory the CLI was invoked from.
+ *
+ * @param options - Default file name, declared value and workspace root.
+ * @returns The artifact path, or `undefined` when no value is declared.
+ */
 function resolveAggregateArtifactPath({
 	defaultName,
 	value,
@@ -251,10 +263,16 @@ function resolveAggregateArtifactPath({
 	return path.isAbsolute(target) ? target : path.join(workspaceRoot, target);
 }
 
-// `formatters` rides along here rather than with the defaulted fields: it has
-// no `DEFAULT_CONFIG` entry either, but falls back to an env-probed list rather
-// than to nothing. The two aggregate sinks resolve to a path on the way out;
-// the rest pass through untouched.
+/**
+ * `formatters` rides along here rather than with the defaulted fields: it has
+ * no `DEFAULT_CONFIG` entry either, but falls back to an env-probed list
+ * rather than to nothing. The two aggregate sinks resolve to a path on the way
+ * out; the rest pass through untouched.
+ *
+ * @param options - Field sources, platform and workspace root.
+ * @returns The optional fields, `undefined` where unset.
+ * @throws If packages disagree on a field.
+ */
 function resolveOptionalFields({
 	platform,
 	workspaceRoot,
@@ -290,5 +308,3 @@ function resolveOptionalFields({
 		universeId: resolveOptionalField({ ...sources, spec: OPTIONAL_FIELD_SPECS.universeId }),
 	};
 }
-
-export { WorkspaceConsensusError } from "./workspace-consensus.ts";

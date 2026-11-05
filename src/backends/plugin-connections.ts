@@ -24,10 +24,14 @@ const PLUGIN_HELLO_GRACE_MS = 750;
  * optional because a plugin built without the version stamp still reports a
  * usable protocol.
  */
-export interface PluginHello {
+interface PluginHello {
+	/** Name of the plugin copy, for diagnostics. */
 	pluginName?: string | undefined;
+	/** Version stamp of the plugin copy, for diagnostics. */
 	pluginVersion?: string | undefined;
+	/** Protocol version the plugin speaks. */
 	protocolVersion: number;
+	/** Frame discriminator. */
 	type: "hello";
 }
 
@@ -40,21 +44,40 @@ const pluginHelloSchema = type({
 
 /** A connected plugin, and what it said about itself (nothing, if stale). */
 export interface PluginCandidate {
+	/** Announcement of the plugin, or `undefined` before or without one. */
 	hello: PluginHello | undefined;
+	/** Socket of the connection. */
 	socket: WebSocket;
 }
 
+/** Input to {@link PluginConnectionPool.selectAsync}. */
 export interface PluginSelectionRequest {
 	/** How long to wait for the first connection before giving up entirely. */
 	connectTimeoutMs: number;
+	/** Protocol version a connection must announce to be selected. */
 	expectedVersion: number;
+	/** How long to keep collecting announcements after the first connection. */
 	graceMs?: number | undefined;
 }
 
+/** Outcome of a plugin selection. */
 export type PluginSelection =
-	| { candidates: Array<PluginCandidate>; kind: "incompatible" }
-	| { kind: "no-connection" }
-	| { kind: "selected"; socket: WebSocket };
+	| {
+			/** A connection announced the expected protocol. */
+			kind: "selected";
+			/** Socket of the selected connection. */
+			socket: WebSocket;
+	  }
+	| {
+			/** Connections open when the window closed; none is compatible. */
+			candidates: Array<PluginCandidate>;
+			/** No connection announced the expected protocol. */
+			kind: "incompatible";
+	  }
+	| {
+			/** Nothing connected before the window closed. */
+			kind: "no-connection";
+	  };
 
 /**
  * Every plugin socket on one port, and which of them can serve this CLI.
@@ -80,6 +103,7 @@ export class PluginConnectionPool {
 	 * the server. An announcement arrives once per socket, at open: a pool
 	 * built over a server that already has clients would see those clients but
 	 * never learn what they are, and read a working plugin as a stale one.
+	 * @param wss - Plugin server whose connections the pool tracks.
 	 */
 	constructor(wss: WebSocketServer) {
 		wss.on("connection", (socket: WebSocket) => {
@@ -100,6 +124,11 @@ export class PluginConnectionPool {
 	/**
 	 * Resolve once a connection announces the expected protocol, or once the
 	 * grace window closes over connections that cannot serve it.
+	 * @param root0 - Selection request.
+	 * @param root0.connectTimeoutMs - How long to wait for the first connection.
+	 * @param root0.expectedVersion - Protocol version a connection must announce.
+	 * @param root0.graceMs - How long to collect announcements after the first connection.
+	 * @returns The selected socket, the incompatible connections, or no connection.
 	 */
 	public async selectAsync({
 		connectTimeoutMs,
@@ -142,14 +171,21 @@ export class PluginConnectionPool {
 	 * The connect timeout covers "is anything there at all"; once something is,
 	 * the grace window covers "does any of it fit", and it opens once rather
 	 * than restarting on each connection.
+	 * @param root0 - Selection state.
+	 * @param root0.expectedVersion - Protocol version a connection must announce.
+	 * @param root0.graceMs - Length of the grace window.
+	 * @param root0.settle - Ends the selection with an outcome.
 	 */
 	private checkSelection({
 		expectedVersion,
 		graceMs,
 		settle,
 	}: {
+		/** Protocol version a connection must announce. */
 		expectedVersion: number;
+		/** Length of the grace window. */
 		graceMs: number;
+		/** Ends the selection with an outcome. */
 		settle: (selection: PluginSelection) => void;
 	}): void {
 		const matched = this.findMatch(expectedVersion);
@@ -177,6 +213,7 @@ export class PluginConnectionPool {
 	 * What a closed window means: the connections still open, or that there are
 	 * none — a socket that connected and dropped again leaves nothing to name
 	 * and nothing to run on.
+	 * @returns The open connections as incompatible, or no connection.
 	 */
 	private closedWindowOutcome(): PluginSelection {
 		const candidates = [...this.candidates.values()];
@@ -238,6 +275,7 @@ export class PluginConnectionPool {
  * alive, and a live plugin socket keeps the Node event loop running — which
  * hangs the CLI's `process.exitCode`-based shutdown. Every path that abandons
  * the server has to terminate its clients first.
+ * @param wss - Plugin server to close.
  */
 export function closePluginServer(wss: WebSocketServer): void {
 	for (const client of wss.clients) {
@@ -254,6 +292,9 @@ export function closePluginServer(wss: WebSocketServer): void {
  * Names every connection rather than just the first, because the case this
  * exists for is several installed copies — knowing only that "a plugin is
  * stale" does not say which file to delete.
+ * @param candidates - Connections that cannot serve the run.
+ * @param expectedVersion - Protocol version this CLI speaks.
+ * @returns The multi-line error message.
  */
 export function describePluginMismatch(
 	candidates: Array<PluginCandidate>,
@@ -276,6 +317,8 @@ export function describePluginMismatch(
  * Every frame on a plugin socket reaches the pool's listener — results,
  * version_mismatch, and whatever a plugin from a future protocol sends — so an
  * unreadable one is ordinary traffic rather than a fault.
+ * @param data - Raw frame.
+ * @returns The parsed JSON, or `undefined` when the frame is not JSON.
  */
 function decodeFrame(data: buffer.Buffer): JSONValue | undefined {
 	try {

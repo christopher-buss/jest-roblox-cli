@@ -1,98 +1,210 @@
 import { fromPartial } from "@total-typescript/shoehorn";
 
-import { describe, expect, it } from "vitest";
+import { assert, describe, expect, it } from "vitest";
 
+import { EXEC_ERROR_RESULT, TIMED_OUT_RESULT } from "#test/mocks/format-error-results.ts";
+import { FAILING_RESULT, MIXED_RESULT, PASSING_RESULT } from "#test/mocks/format-results.ts";
+import { posixRoot } from "#test/mocks/posix-path.ts";
 import type { SourceMapper } from "../source-mapper/index.ts";
-import type { JestResult } from "../types/jest-result.ts";
-import { toPosixRoot } from "../utils/normalize-windows-path.ts";
+import type { JestResult } from "../types/jest-result-types.ts";
 import {
-	EXEC_ERROR_RESULT,
-	FAILING_RESULT,
-	MIXED_RESULT,
-	PASSING_RESULT,
-	TIMED_OUT_RESULT,
-} from "./__fixtures__/results.ts";
-import {
-	collectAnnotations,
-	escapeData,
-	escapeProperty,
-	formatAnnotation,
 	formatAnnotations,
 	formatJobSummary,
 	resolveGitHubActionsOptions,
 } from "./github-actions.ts";
 
-describe(escapeData, () => {
-	it("should encode percent, carriage return, and newline", () => {
+const ANNOTATION_LINE = /^::error (?<properties>[^:]*)::(?<message>.*)$/;
+
+interface DecodedAnnotation {
+	col?: number;
+	file: string;
+	line?: number;
+	message: string;
+	title: string;
+}
+
+function decode(value: string): string {
+	return value
+		.replaceAll("%0D", "\r")
+		.replaceAll("%0A", "\n")
+		.replaceAll("%3A", ":")
+		.replaceAll("%2C", ",")
+		.replaceAll("%25", "%");
+}
+
+function collectAnnotations(
+	...args: Parameters<typeof formatAnnotations>
+): Array<DecodedAnnotation> {
+	const output = formatAnnotations(...args);
+	if (output === "") {
+		return [];
+	}
+
+	return output.split("\n").map((command) => {
+		const groups = ANNOTATION_LINE.exec(command)?.groups;
+		assert(groups?.["properties"] !== undefined && groups["message"] !== undefined);
+		const properties = new Map(
+			groups["properties"].split(",").map((pair) => {
+				const index = pair.indexOf("=");
+				return [pair.slice(0, index), decode(pair.slice(index + 1))] as const;
+			}),
+		);
+		const line = properties.get("line");
+		const col = properties.get("col");
+		return {
+			...(col === undefined ? {} : { col: Number(col) }),
+			file: properties.get("file") ?? "",
+			...(line === undefined ? {} : { line: Number(line) }),
+			message: decode(groups["message"]),
+			title: properties.get("title") ?? "",
+		};
+	});
+}
+
+function singleFailure({
+	fullName,
+	message,
+	testFilePath,
+}: {
+	fullName: string;
+	message: string;
+	testFilePath: string;
+}): JestResult {
+	return {
+		numFailedTests: 1,
+		numPassedTests: 0,
+		numPendingTests: 0,
+		numTotalTests: 1,
+		startTime: 0,
+		success: false,
+		testResults: [
+			{
+				numFailingTests: 1,
+				numPassingTests: 0,
+				numPendingTests: 0,
+				testFilePath,
+				testResults: [
+					{
+						ancestorTitles: [],
+						failureMessages: [message],
+						fullName,
+						status: "failed",
+						title: fullName,
+					},
+				],
+			},
+		],
+	};
+}
+
+describe("formatAnnotations workflow commands", () => {
+	it("should percent-encode percent, CR and LF in the message", () => {
 		expect.assertions(1);
 
-		expect(escapeData("100% done\r\nNext line")).toBe("100%25 done%0D%0ANext line");
+		expect(
+			formatAnnotations(
+				singleFailure({
+					fullName: "t",
+					message: "100% done\r\nNext line",
+					testFilePath: "src/test.ts",
+				}),
+				{},
+			),
+		).toBe("::error file=src/test.ts,title=t::100%25 done%0D%0ANext line");
 	});
 
-	it("should pass through normal text unchanged", () => {
+	it("should percent-encode percent, CR, LF, colon and comma in properties", () => {
 		expect.assertions(1);
 
-		expect(escapeData("hello world")).toBe("hello world");
+		expect(
+			formatAnnotations(
+				singleFailure({
+					fullName: "a%b\r\nc:d,e",
+					message: "x",
+					testFilePath: "a%b\r\nc:d,e",
+				}),
+				{},
+			),
+		).toBe("::error file=a%25b%0D%0Ac%3Ad%2Ce,title=a%25b%0D%0Ac%3Ad%2Ce::x");
 	});
-});
 
-describe(escapeProperty, () => {
-	it("should encode percent, CR, LF, colon, and comma", () => {
+	it("should pass normal text through unchanged", () => {
 		expect.assertions(1);
 
-		expect(escapeProperty("a%b\r\nc:d,e")).toBe("a%25b%0D%0Ac%3Ad%2Ce");
+		expect(
+			formatAnnotations(
+				singleFailure({
+					fullName: "hello world",
+					message: "hello world",
+					testFilePath: "src/test.ts",
+				}),
+				{},
+			),
+		).toBe("::error file=src/test.ts,title=hello world::hello world");
 	});
 
-	it("should pass through normal text unchanged", () => {
-		expect.assertions(1);
-
-		expect(escapeProperty("hello world")).toBe("hello world");
-	});
-});
-
-describe(formatAnnotation, () => {
 	it("should produce ::error workflow command with file, line, col, and title", () => {
 		expect.assertions(1);
 
-		const result = formatAnnotation({
-			col: 5,
-			file: "src/test.ts",
-			line: 10,
-			message: "Expected 1 to be 2",
-			title: "TestSuite > should work",
+		const sourceMapper: SourceMapper = fromPartial({
+			mapFailureWithLocations: () => {
+				return {
+					locations: [
+						{
+							luauLine: 1,
+							luauPath: "x.luau",
+							tsColumn: 5,
+							tsLine: 10,
+							tsPath: "src/test.ts",
+						},
+					],
+					message: "mapped",
+				};
+			},
 		});
 
-		expect(result).toBe(
+		expect(
+			formatAnnotations(
+				singleFailure({
+					fullName: "TestSuite > should work",
+					message: "Expected 1 to be 2",
+					testFilePath: "src/test.spec.ts",
+				}),
+				{ sourceMapper },
+			),
+		).toBe(
 			"::error file=src/test.ts,line=10,col=5,title=TestSuite > should work::Expected 1 to be 2",
 		);
 	});
 
-	it("should omit line and col when not provided", () => {
+	it("should omit col when only a line is known", () => {
 		expect.assertions(1);
 
-		const result = formatAnnotation({
-			file: "src/test.ts",
-			message: "Suite failed to run",
-			title: "Exec error",
+		const sourceMapper: SourceMapper = fromPartial({
+			mapFailureWithLocations: () => {
+				return {
+					locations: [{ luauLine: 5, luauPath: "src/test.luau" }],
+					message: "mapped",
+				};
+			},
 		});
 
-		expect(result).toBe("::error file=src/test.ts,title=Exec error::Suite failed to run");
-	});
-
-	it("should omit title when not provided", () => {
-		expect.assertions(1);
-
-		const result = formatAnnotation({
-			file: "src/test.ts",
-			line: 5,
-			message: "Error occurred",
-		});
-
-		expect(result).toBe("::error file=src/test.ts,line=5::Error occurred");
+		expect(
+			formatAnnotations(
+				singleFailure({
+					fullName: "t",
+					message: "Error occurred",
+					testFilePath: "src/test.spec.ts",
+				}),
+				{
+					sourceMapper,
+				},
+			),
+		).toBe("::error file=src/test.luau,line=5,title=t::Error occurred");
 	});
 });
 
-describe(collectAnnotations, () => {
+describe("formatAnnotations annotations", () => {
 	it("should return empty array for passing results", () => {
 		expect.assertions(1);
 
@@ -285,7 +397,7 @@ describe(collectAnnotations, () => {
 		};
 
 		const annotations = collectAnnotations(result, {
-			workspace: toPosixRoot("/home/runner/work/project"),
+			workspace: posixRoot("/home/runner/work/project"),
 		});
 
 		expect(annotations[0]!.file).toBe("src/test.spec.ts");
@@ -399,7 +511,7 @@ describe(formatJobSummary, () => {
 			repository: "owner/repo",
 			serverUrl: "https://github.com",
 			sha: "abc123",
-			workspace: toPosixRoot("/work"),
+			workspace: posixRoot("/work"),
 		});
 
 		expect(summary).toContain("https://github.com/owner/repo/blob/abc123/src/player.spec.ts");
@@ -614,7 +726,7 @@ describe(resolveGitHubActionsOptions, () => {
 		expect(result.repository).toBe("owner/repo");
 		expect(result.serverUrl).toBe("https://github.com");
 		expect(result.sha).toBe("abc123");
-		expect(result.workspace).toBe(toPosixRoot("/home/runner/work"));
+		expect(result.workspace).toBe(posixRoot("/home/runner/work"));
 	});
 
 	it("should override env vars with user options", () => {
@@ -637,7 +749,7 @@ describe(resolveGitHubActionsOptions, () => {
 		});
 
 		expect(result.repository).toBe("custom/repo");
-		expect(result.workspace).toBe(toPosixRoot("/custom/path"));
+		expect(result.workspace).toBe(posixRoot("/custom/path"));
 	});
 
 	it("should pass through sourceMapper", () => {

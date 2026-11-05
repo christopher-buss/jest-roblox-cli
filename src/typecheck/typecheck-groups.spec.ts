@@ -1,9 +1,9 @@
 import { performance } from "node:perf_hooks";
 import { describe, expect, it, vi } from "vitest";
 
-import type { JestResult } from "../types/jest-result.ts";
+import type { JestResult } from "../types/jest-result-types.ts";
 import type { RunTypecheckGroup } from "./typecheck-groups.ts";
-import { groupTypecheckPassesAsync, runTypecheckPassAsync } from "./typecheck-groups.ts";
+import { assertTypecheckAvailable, runTypecheckPassAsync } from "./typecheck-groups.ts";
 
 interface Deferred {
 	promise: Promise<JestResult>;
@@ -23,7 +23,11 @@ function makeResult(overrides: Partial<JestResult> = {}): JestResult {
 	};
 }
 
-/** One group fails, so the merge is exercised over a mixed pass/fail pair. */
+/**
+ * One group fails, so the merge is exercised over a mixed pass/fail pair.
+ * @param tsconfig - The group's tsconfig; `b.json` fails.
+ * @returns The group's result.
+ */
 function resultForTsconfig(tsconfig?: string): JestResult {
 	const isFailing = tsconfig === "b.json";
 	return makeResult({
@@ -34,7 +38,11 @@ function resultForTsconfig(tsconfig?: string): JestResult {
 	});
 }
 
-/** Out-of-order start times, so the merge has to take the earliest. */
+/**
+ * Out-of-order start times, so the merge has to take the earliest.
+ * @param cwd - The group's working directory.
+ * @returns The group's start time.
+ */
 function startTimeForCwd(cwd: string): number {
 	return cwd === "/a" ? 50 : 20;
 }
@@ -47,7 +55,14 @@ function deferred(): Deferred {
 	return { promise, resolve: resolveResult };
 }
 
-describe(groupTypecheckPassesAsync, () => {
+async function passResultAsync(
+	...args: Parameters<typeof runTypecheckPassAsync>
+): Promise<JestResult | undefined> {
+	const pass = await runTypecheckPassAsync(...args);
+	return pass.result;
+}
+
+describe("runTypecheckPassAsync grouping", () => {
 	it("should run one pass for a single project entry", async () => {
 		expect.assertions(2);
 
@@ -55,7 +70,7 @@ describe(groupTypecheckPassesAsync, () => {
 			return makeResult({ numPassedTests: 1, numTotalTests: 1 });
 		});
 
-		const result = await groupTypecheckPassesAsync(
+		const result = await passResultAsync(
 			[{ cwd: "/root", files: ["a.spec-d.ts"], tsconfig: "tsconfig.json" }],
 			run,
 		);
@@ -73,7 +88,7 @@ describe(groupTypecheckPassesAsync, () => {
 
 		const run = vi.fn<RunTypecheckGroup>(async (group) => resultForTsconfig(group.tsconfig));
 
-		const result = await groupTypecheckPassesAsync(
+		const result = await passResultAsync(
 			[
 				{ cwd: "/r", files: ["a.spec-d.ts"], tsconfig: "a.json" },
 				{ cwd: "/r", files: ["b.spec-d.ts"], tsconfig: "b.json" },
@@ -98,7 +113,7 @@ describe(groupTypecheckPassesAsync, () => {
 
 		const run = vi.fn<RunTypecheckGroup>(async () => makeResult());
 
-		await groupTypecheckPassesAsync(
+		await passResultAsync(
 			[
 				{ cwd: "/r", files: ["a.spec-d.ts", "shared.spec-d.ts"], tsconfig: "t.json" },
 				{ cwd: "/r", files: ["shared.spec-d.ts", "b.spec-d.ts"], tsconfig: "t.json" },
@@ -118,7 +133,7 @@ describe(groupTypecheckPassesAsync, () => {
 
 		const run = vi.fn<RunTypecheckGroup>(async () => makeResult());
 
-		await groupTypecheckPassesAsync(
+		await passResultAsync(
 			[
 				{ cwd: "/a", files: ["x.spec-d.ts"], tsconfig: "t.json" },
 				{ cwd: "/b", files: ["y.spec-d.ts"], tsconfig: "t.json" },
@@ -134,7 +149,7 @@ describe(groupTypecheckPassesAsync, () => {
 
 		const run = vi.fn<RunTypecheckGroup>(async () => makeResult());
 
-		await groupTypecheckPassesAsync(
+		await passResultAsync(
 			[
 				{ cwd: "/a b", files: ["x.spec-d.ts"], tsconfig: "c" },
 				{ cwd: "/a", files: ["y.spec-d.ts"], tsconfig: "b c" },
@@ -152,7 +167,7 @@ describe(groupTypecheckPassesAsync, () => {
 			return makeResult({ startTime: startTimeForCwd(group.cwd) });
 		});
 
-		const result = await groupTypecheckPassesAsync(
+		const result = await passResultAsync(
 			[
 				{ cwd: "/a", files: ["x.spec-d.ts"] },
 				{ cwd: "/b", files: ["y.spec-d.ts"] },
@@ -169,7 +184,7 @@ describe(groupTypecheckPassesAsync, () => {
 
 		const run = vi.fn<RunTypecheckGroup>(async () => makeResult());
 
-		await groupTypecheckPassesAsync(
+		await passResultAsync(
 			[
 				{ cwd: "/r", files: ["a.spec-d.luau"], tsconfig: "a.json" },
 				{ cwd: "/r", files: ["b.spec-d.luau"], tsconfig: "b.json" },
@@ -189,7 +204,7 @@ describe(groupTypecheckPassesAsync, () => {
 
 		const run = vi.fn<RunTypecheckGroup>(async () => makeResult());
 
-		await groupTypecheckPassesAsync(
+		await passResultAsync(
 			[{ cwd: "/r", files: ["a.spec-d.ts", "b.spec-d.luau"], tsconfig: "a.json" }],
 			run,
 		);
@@ -208,7 +223,7 @@ describe(groupTypecheckPassesAsync, () => {
 
 		const run = vi.fn<RunTypecheckGroup>(async () => makeResult());
 
-		await groupTypecheckPassesAsync(
+		await passResultAsync(
 			[
 				{ cwd: "/a", files: ["a.spec-d.luau"] },
 				{ cwd: "/b", files: ["b.spec-d.luau"] },
@@ -219,12 +234,12 @@ describe(groupTypecheckPassesAsync, () => {
 		expect(run).toHaveBeenCalledTimes(2);
 	});
 
-	it("should return undefined when no entries are given", async () => {
+	it("should return undefined when no entry carries files", async () => {
 		expect.assertions(2);
 
 		const run = vi.fn<RunTypecheckGroup>(async () => makeResult());
 
-		const result = await groupTypecheckPassesAsync([], run);
+		const result = await passResultAsync([{ cwd: "/r", files: [], tsconfig: "t.json" }], run);
 
 		expect(result).toBeUndefined();
 		expect(run).not.toHaveBeenCalled();
@@ -235,7 +250,7 @@ describe(groupTypecheckPassesAsync, () => {
 
 		const run = vi.fn<RunTypecheckGroup>(async () => makeResult());
 
-		await groupTypecheckPassesAsync(
+		await passResultAsync(
 			[
 				{ cwd: "/r", files: [], tsconfig: "unused.json" },
 				{ cwd: "/r", files: ["a.spec-d.ts"], tsconfig: "t.json" },
@@ -260,7 +275,7 @@ describe(groupTypecheckPassesAsync, () => {
 			.mockReturnValueOnce(first.promise)
 			.mockReturnValueOnce(second.promise);
 
-		const pending = groupTypecheckPassesAsync(
+		const pending = passResultAsync(
 			[
 				{ cwd: "/r", files: ["a.spec-d.ts"], tsconfig: "a.json" },
 				{ cwd: "/r", files: ["b.spec-d.ts"], tsconfig: "b.json" },
@@ -306,5 +321,31 @@ describe(runTypecheckPassAsync, () => {
 			result,
 		});
 		expect(run).toHaveBeenCalledExactlyOnceWith(entry);
+	});
+});
+
+describe(assertTypecheckAvailable, () => {
+	it.for<[string, Array<Array<string>>]>([
+		["a later entry", [["a.spec-d.luau"], ["b.spec-d.ts"]]],
+		["a later file", [["a.spec-d.luau", "b.spec-d.ts"]]],
+	])("should reject TypeScript Type Tests in %s under the standalone binary", ([, groups]) => {
+		expect.assertions(1);
+
+		vi.stubEnv("JEST_ROBLOX_SEA", "true");
+		const entries = groups.map((files) => ({ cwd: "/project", files }));
+
+		expect(() => {
+			assertTypecheckAvailable(entries);
+		}).toThrow("--typecheck is not available in the standalone binary");
+	});
+
+	it("should allow Luau Type Tests under the standalone binary", () => {
+		expect.assertions(1);
+
+		vi.stubEnv("JEST_ROBLOX_SEA", "true");
+
+		expect(() => {
+			assertTypecheckAvailable([{ cwd: "/project", files: ["a.spec-d.luau"] }]);
+		}).not.toThrow();
 	});
 });

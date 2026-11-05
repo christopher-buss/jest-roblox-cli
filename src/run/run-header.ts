@@ -5,17 +5,27 @@ import { formatRunHeader } from "../formatters/formatter.ts";
 import { isDefaultHumanFormatter } from "../formatters/utils.ts";
 import type { RunProgress } from "../progress/reporter.ts";
 
+/** Inputs of {@link emitRunHeader}. */
 export interface RunHeaderInput {
+	/** Whether the header shows that coverage is on. */
 	collectCoverage?: boolean | undefined;
+	/** Whether output is colorized. */
 	color: boolean;
+	/**
+	 * Formatters of the run; the header prints only for the default human one.
+	 */
 	formatters: Array<FormatterEntry> | undefined;
 	/**
 	 * Revealed here: the header is the first line the stage block may follow.
 	 */
 	progress: RunProgress;
+	/** Root directory the header names. */
 	rootDir: string;
+	/** Whether to suppress output. */
 	silent: boolean | undefined;
+	/** Whether to print verbose output. */
 	verbose: boolean | undefined;
+	/** CLI version the header names. */
 	version: string;
 }
 
@@ -31,6 +41,8 @@ export interface RunHeaderInput {
  * Self-gates to the default human formatter: nothing is written under
  * `--silent`, `--formatters json`, or `--formatters agent` (without
  * `--verbose`), which produce machine-readable output that must stay clean.
+ *
+ * @param input - Header fields, formatter gate and the progress to reveal.
  */
 export function emitRunHeader(input: RunHeaderInput): void {
 	if (!isDefaultHumanFormatter(input)) {

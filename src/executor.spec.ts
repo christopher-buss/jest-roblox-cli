@@ -5,32 +5,24 @@ import process from "node:process";
 import { stripVTControlCharacters } from "node:util";
 import { describe, expect, it, vi } from "vitest";
 
+import {
+	createFailingResult,
+	createMixedResult,
+	createPassingResult,
+} from "#test/mocks/executor-spec-results.ts";
+import { fakeTimingCollector, phaseNamesOf } from "#test/mocks/fake-timing-collector.ts";
 import type { MemoryFileSystem, MemoryVolume } from "#test/mocks/memory-file-system.ts";
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
+import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
 import type { Backend, BackendOptions, BackendResult } from "./backends/interface.ts";
 import type { ResolvedConfig } from "./config/schema.ts";
-import { DEFAULT_CONFIG } from "./config/schema.ts";
-import { executorTsconfigSchema } from "./config/tsconfig-schema.ts";
-import { MANIFEST_VERSION } from "./coverage-pipeline/manifest.ts";
-import type { PerTestCoverageEntry, RawCoverageData } from "./coverage-pipeline/types.ts";
-import {
-	type ExecuteResult,
-	isLuauProject,
-	loadCoverageManifest,
-	readTsconfigMapping,
-	resolveAllTsconfigMappings,
-	resolveTsconfigDirectories,
-	runProjectsAsync,
-} from "./executor.ts";
+import type { PerTestCoverageEntry, RawCoverageData } from "./coverage-pipeline/coverage-types.ts";
+import { type ExecuteResult, runProjectsAsync } from "./executor.ts";
 import type { TsconfigReader } from "./executor/tsconfig-mappings.ts";
-import { createTsconfigMappingCache } from "./executor/tsconfig-mappings.ts";
 import type { SnapshotWrites } from "./reporter/parser.ts";
-import { parseJestOutput } from "./reporter/parser.ts";
-import * as parserModule from "./reporter/parser.ts";
-import { createTimingCollector, type TimingCollector } from "./timing/orchestration-collector.ts";
-import type { JestResult } from "./types/jest-result.ts";
+import type { TimingCollector } from "./timing/orchestration-collector.ts";
+import type { JestResult } from "./types/jest-result-types.ts";
 import type { FileSystem } from "./utils/file-system.ts";
-import { nodeFileSystem } from "./utils/file-system.ts";
 
 interface ExecuteOptions {
 	backend: Backend;
@@ -45,6 +37,8 @@ interface ExecuteOptions {
  * A tsconfig reader over one volume. `get-tsconfig` reads through a `node:fs`
  * binding of its own, so a run under an in-memory volume is handed this
  * instead — the same seam production hands the real reader.
+ * @param fileSystem - Volume to read from.
+ * @returns A reader that returns null when the file is missing or invalid.
  */
 function readingVolume(fileSystem: FileSystem): TsconfigReader {
 	return fromAny((searchPath: string, configName = "tsconfig.json") => {
@@ -52,7 +46,7 @@ function readingVolume(fileSystem: FileSystem): TsconfigReader {
 		try {
 			const content = fileSystem.readFileSync(filePath, "utf-8");
 			return {
-				config: executorTsconfigSchema.assert(JSON.parse(content)),
+				config: JSON.parse(content),
 				path: filePath,
 			};
 		} catch {
@@ -64,6 +58,7 @@ function readingVolume(fileSystem: FileSystem): TsconfigReader {
 /**
  * A volume of its own, with the working directory already made: a run resolves
  * relative paths against it before it writes anything.
+ * @returns The memory filesystem.
  */
 function memoryFileSystem(): MemoryFileSystem {
 	const memory = createMemoryFileSystem();
@@ -71,8 +66,28 @@ function memoryFileSystem(): MemoryFileSystem {
 	return memory;
 }
 
+async function runTimedAsync({
+	backend,
+	fileSystem,
+	timing,
+}: {
+	backend: Backend;
+	fileSystem: FileSystem;
+	timing: TimingCollector;
+}): ReturnType<typeof runProjectsAsync> {
+	return runProjectsAsync({
+		backend,
+		fileSystem,
+		projects: [{ config: createResolvedConfig(), testFiles: ["src/test.spec.ts"] }],
+		startTime: Date.now(),
+		timing,
+		tsconfigReader: readingVolume(fileSystem),
+		version: "0.0.0-test",
+	});
+}
+
 async function executeSingleAsync(options: ExecuteOptions): Promise<ExecuteResult> {
-	const fileSystem = options.fileSystem ?? nodeFileSystem;
+	const fileSystem = options.fileSystem ?? memoryFileSystem().fileSystem;
 	const { results } = await runProjectsAsync({
 		backend: options.backend,
 		deferFormatting: options.deferFormatting,
@@ -86,41 +101,133 @@ async function executeSingleAsync(options: ExecuteOptions): Promise<ExecuteResul
 	return results[0]!;
 }
 
-function createFailingResult(): JestResult {
-	return {
-		numFailedTests: 1,
-		numPassedTests: 1,
-		numPendingTests: 0,
-		numTotalTests: 2,
+async function luauTimingStderrAsync({
+	deferFormatting,
+}: {
+	deferFormatting?: boolean;
+}): Promise<Array<string>> {
+	const { fileSystem } = memoryFileSystem();
+	const stderrSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+	await executeSingleAsync({
+		backend: fakeStudioBackend(() => {
+			return singleEntryResult({
+				luauTiming: { findJest: 0.1 },
+				result: createPassingResult(),
+			});
+		}),
+		config: createResolvedConfig(),
+		deferFormatting,
+		fileSystem,
+		testFiles: ["src/test.spec.ts"],
+		version: "0.0.0-test",
+	});
+
+	return stderrSpy.mock.calls.map(([chunk]) => String(chunk));
+}
+
+async function executeInRootAsync(
+	backend: Backend,
+	{ fileSystem, rootDirectory }: { fileSystem: FileSystem; rootDirectory: string },
+): Promise<ExecuteResult> {
+	return executeSingleAsync({
+		backend,
+		config: { ...createResolvedConfig(), rootDir: rootDirectory },
+		fileSystem,
+		testFiles: ["src/test.spec.ts"],
+		version: "0.0.0-test",
+	});
+}
+
+function writtenText(spy: { mock: { calls: Array<Array<unknown>> } }): string {
+	return spy.mock.calls.map(([message]) => String(message)).join("");
+}
+
+function writeRojoProject(
+	{ fileSystem, rootDirectory }: { fileSystem: FileSystem; rootDirectory: string },
+	project: Record<string, unknown>,
+): void {
+	fileSystem.writeFileSync(
+		path.join(rootDirectory, "default.project.json"),
+		JSON.stringify(project),
+	);
+}
+
+function twoProjects(
+	first: string,
+	second: string,
+): Array<{ config: ResolvedConfig; displayName: string; testFiles: Array<string> }> {
+	return [
+		{ config: createResolvedConfig(), displayName: first, testFiles: ["src/a.spec.ts"] },
+		{ config: createResolvedConfig(), displayName: second, testFiles: ["src/b.spec.ts"] },
+	];
+}
+
+async function runTwoProjectsAsync(
+	backend: Backend,
+	fileSystem: FileSystem,
+): ReturnType<typeof runProjectsAsync> {
+	return runProjectsAsync({
+		backend,
+		fileSystem,
+		projects: twoProjects("first", "second"),
 		startTime: Date.now(),
-		success: false,
-		testResults: [
-			{
-				numFailingTests: 1,
-				numPassingTests: 1,
-				numPendingTests: 0,
-				testFilePath: "src/test.spec.ts",
-				testResults: [
-					{
-						ancestorTitles: ["Test"],
-						duration: 10,
-						failureMessages: [],
-						fullName: "Test passes",
-						status: "passed",
-						title: "passes",
-					},
-					{
-						ancestorTitles: ["Test"],
-						duration: 5,
-						failureMessages: ["Expected true, got false"],
-						fullName: "Test fails",
-						status: "failed",
-						title: "fails",
-					},
-				],
+		tsconfigReader: readingVolume(fileSystem),
+		version: "0.0.0-test",
+	});
+}
+
+async function executeSilentAsync(
+	backend: Backend,
+	{ fileSystem, rootDirectory }: { fileSystem: FileSystem; rootDirectory: string },
+): Promise<void> {
+	await executeSingleAsync({
+		backend,
+		config: { ...createResolvedConfig(), rootDir: rootDirectory, silent: true },
+		fileSystem,
+		testFiles: [],
+		version: "0.0.0-test",
+	});
+}
+
+function writeOutDirectoryProject(fileSystem: FileSystem, rootDirectory: string): void {
+	fileSystem.writeFileSync(
+		path.join(rootDirectory, "tsconfig.json"),
+		JSON.stringify({ compilerOptions: { outDir: "./out-tsc/test", rootDir: "./src" } }),
+	);
+	writeRojoProject(
+		{ fileSystem, rootDirectory },
+		{
+			name: "test",
+			tree: { ReplicatedStorage: { $path: "out-tsc/test" } },
+		},
+	);
+}
+
+function writeNestedPackageProject(fileSystem: FileSystem, rootDirectory: string): void {
+	writeRojoProject(
+		{ fileSystem, rootDirectory },
+		{
+			name: "test",
+			tree: {
+				ReplicatedStorage: {
+					"uuid-generator": { $path: "packages/uuid-generator/default.project.json" },
+				},
 			},
-		],
-	};
+		},
+	);
+	const nestedDirectory = path.join(rootDirectory, "packages/uuid-generator");
+	fileSystem.mkdirSync(nestedDirectory, { recursive: true });
+	writeRojoProject(
+		{ fileSystem, rootDirectory: nestedDirectory },
+		{
+			name: "uuid-generator",
+			tree: { $path: "src" },
+		},
+	);
+}
+
+function playerCoverage(): RawCoverageData {
+	return { "shared/player.luau": { s: { "0": 3, "1": 0, "2": 1 } } };
 }
 
 const DEFAULT_TIMING: BackendResult["timing"] = {
@@ -184,6 +291,20 @@ function multiEntryResult(
 	};
 }
 
+function fakeStudioBackend(build: () => BackendResult): Backend {
+	return {
+		kind: "studio",
+		placeInput: "none",
+		runTestsAsync: async () => build(),
+	};
+}
+
+function snapshotBackend(snapshotWrites: SnapshotWrites): Backend {
+	return fakeStudioBackend(() => {
+		return singleEntryResult({ result: createPassingResult(), snapshotWrites });
+	});
+}
+
 function createMockBackend(result: JestResult, gameOutput?: string): Backend {
 	return {
 		kind: "studio",
@@ -204,104 +325,6 @@ function createMockBackendWithCoverage(result: JestResult, coverageData: RawCove
 	};
 }
 
-function createMixedResult(): JestResult {
-	return {
-		numFailedTests: 1,
-		numPassedTests: 3,
-		numPendingTests: 0,
-		numTotalTests: 4,
-		startTime: Date.now(),
-		success: false,
-		testResults: [
-			{
-				numFailingTests: 0,
-				numPassingTests: 2,
-				numPendingTests: 0,
-				testFilePath: "src/utils.spec.ts",
-				testResults: [
-					{
-						ancestorTitles: ["Utils"],
-						duration: 10,
-						failureMessages: [],
-						fullName: "Utils adds",
-						status: "passed",
-						title: "adds",
-					},
-					{
-						ancestorTitles: ["Utils"],
-						duration: 5,
-						failureMessages: [],
-						fullName: "Utils subs",
-						status: "passed",
-						title: "subs",
-					},
-				],
-			},
-			{
-				numFailingTests: 1,
-				numPassingTests: 1,
-				numPendingTests: 0,
-				testFilePath: "src/test.spec.ts",
-				testResults: [
-					{
-						ancestorTitles: ["Test"],
-						duration: 10,
-						failureMessages: [],
-						fullName: "Test passes",
-						status: "passed",
-						title: "passes",
-					},
-					{
-						ancestorTitles: ["Test"],
-						duration: 5,
-						failureMessages: ["Expected true, got false"],
-						fullName: "Test fails",
-						status: "failed",
-						title: "fails",
-					},
-				],
-			},
-		],
-	};
-}
-
-function createPassingResult(): JestResult {
-	return {
-		numFailedTests: 0,
-		numPassedTests: 2,
-		numPendingTests: 0,
-		numTotalTests: 2,
-		startTime: Date.now(),
-		success: true,
-		testResults: [
-			{
-				numFailingTests: 0,
-				numPassingTests: 2,
-				numPendingTests: 0,
-				testFilePath: "src/test.spec.ts",
-				testResults: [
-					{
-						ancestorTitles: ["Test"],
-						duration: 10,
-						failureMessages: [],
-						fullName: "Test passes",
-						status: "passed",
-						title: "passes",
-					},
-					{
-						ancestorTitles: ["Test"],
-						duration: 5,
-						failureMessages: [],
-						fullName: "Test also passes",
-						status: "passed",
-						title: "also passes",
-					},
-				],
-			},
-		],
-	};
-}
-
 let temporaryDirectoryCounter = 0;
 
 /**
@@ -309,6 +332,7 @@ let temporaryDirectoryCounter = 0;
  *
  * @param volume - Where the directory is made.
  * @param prefix - What its name starts with.
+ * @returns Absolute path of the directory.
  */
 function createTemporaryDirectory(volume: MemoryVolume, prefix: string): string {
 	const directory = path.resolve(`/tmp/${prefix}${temporaryDirectoryCounter}`);
@@ -326,7 +350,7 @@ describe("execute single-project helper", () => {
 		const backend = createMockBackend(createPassingResult());
 		const options: ExecuteOptions = {
 			backend,
-			config: DEFAULT_CONFIG,
+			config: createResolvedConfig(),
 			fileSystem,
 			testFiles: ["src/test.spec.ts"],
 			version: "0.0.0-test",
@@ -372,7 +396,7 @@ describe("execute single-project helper", () => {
 		const backend = createMockBackend(resultWithoutDuration);
 		const options: ExecuteOptions = {
 			backend,
-			config: DEFAULT_CONFIG,
+			config: createResolvedConfig(),
 			fileSystem,
 			testFiles: ["src/test.spec.ts"],
 			version: "0.0.0-test",
@@ -391,7 +415,7 @@ describe("execute single-project helper", () => {
 		const backend = createMockBackend(createFailingResult());
 		const options: ExecuteOptions = {
 			backend,
-			config: DEFAULT_CONFIG,
+			config: createResolvedConfig(),
 			fileSystem,
 			testFiles: ["src/test.spec.ts"],
 			version: "0.0.0-test",
@@ -418,7 +442,10 @@ describe("execute single-project helper", () => {
 			},
 		};
 
-		const config: ResolvedConfig = { ...DEFAULT_CONFIG, testNamePattern: "should pass" };
+		const config: ResolvedConfig = {
+			...createResolvedConfig(),
+			testNamePattern: "should pass",
+		};
 		const options: ExecuteOptions = {
 			backend,
 			config,
@@ -440,7 +467,7 @@ describe("execute single-project helper", () => {
 		const backend = createMockBackend(createPassingResult());
 		const options: ExecuteOptions = {
 			backend,
-			config: DEFAULT_CONFIG,
+			config: createResolvedConfig(),
 			fileSystem,
 			testFiles: ["src/test.spec.ts"],
 			version: "0.0.0-test",
@@ -458,7 +485,7 @@ describe("execute single-project helper", () => {
 		const { fileSystem } = memoryFileSystem();
 
 		const backend = createMockBackend(createPassingResult());
-		const config: ResolvedConfig = { ...DEFAULT_CONFIG, formatters: ["json"] };
+		const config: ResolvedConfig = { ...createResolvedConfig(), formatters: ["json"] };
 		const options: ExecuteOptions = {
 			backend,
 			config,
@@ -469,10 +496,10 @@ describe("execute single-project helper", () => {
 
 		const result = await executeSingleAsync(options);
 
-		const parsed = parseJestOutput(result.output);
+		const parsed = fromAny<JestResult, JSONValue>(JSON.parse(result.output));
 
-		expect(parsed.result.success).toBeTrue();
-		expect(parsed.result.numTotalTests).toBe(2);
+		expect(parsed.success).toBeTrue();
+		expect(parsed.numTotalTests).toBe(2);
 	});
 
 	it("should pass through gameOutput from backend", async () => {
@@ -484,7 +511,7 @@ describe("execute single-project helper", () => {
 		const backend = createMockBackend(createPassingResult(), rawGameOutput);
 		const options: ExecuteOptions = {
 			backend,
-			config: DEFAULT_CONFIG,
+			config: createResolvedConfig(),
 			fileSystem,
 			testFiles: ["src/test.spec.ts"],
 			version: "0.0.0-test",
@@ -502,7 +529,7 @@ describe("execute single-project helper", () => {
 
 		const backend = createMockBackend(createMixedResult());
 		const config: ResolvedConfig = {
-			...DEFAULT_CONFIG,
+			...createResolvedConfig(),
 			formatters: ["agent"],
 			verbose: true,
 		};
@@ -528,7 +555,7 @@ describe("execute single-project helper", () => {
 
 		const backend = createMockBackend(createPassingResult());
 		const config: ResolvedConfig = {
-			...DEFAULT_CONFIG,
+			...createResolvedConfig(),
 			gameOutput: "./game-output.json",
 			outputFile: "./results.json",
 		};
@@ -552,7 +579,7 @@ describe("execute single-project helper", () => {
 		const { fileSystem } = memoryFileSystem();
 
 		const backend = createMockBackend(createPassingResult());
-		const config: ResolvedConfig = { ...DEFAULT_CONFIG, silent: true };
+		const config: ResolvedConfig = { ...createResolvedConfig(), silent: true };
 		const options: ExecuteOptions = {
 			backend,
 			config,
@@ -574,7 +601,7 @@ describe("execute single-project helper", () => {
 		const backend = createMockBackend(createPassingResult());
 		const options: ExecuteOptions = {
 			backend,
-			config: DEFAULT_CONFIG,
+			config: createResolvedConfig(),
 			fileSystem,
 			testFiles: ["src/test.spec.ts"],
 			version: "0.0.0-test",
@@ -599,7 +626,7 @@ describe("execute single-project helper", () => {
 			fileSystem,
 			projects: [
 				{
-					config: { ...DEFAULT_CONFIG, sourceMap: false },
+					config: { ...createResolvedConfig(), sourceMap: false },
 					testFiles: ["src/test.spec.ts"],
 				},
 			],
@@ -615,18 +642,9 @@ describe("execute single-project helper", () => {
 		expect.assertions(1);
 
 		const { fileSystem } = memoryFileSystem();
-		const backend: Backend = {
-			kind: "studio",
-			placeInput: "none",
-			runTestsAsync: async () => {
-				return singleEntryResult({
-					result: createPassingResult(),
-					snapshotWrites: {
-						"ReplicatedStorage/shared/__snapshots__/test.snap.luau": "snapshot content",
-					},
-				});
-			},
-		};
+		const backend = snapshotBackend({
+			"ReplicatedStorage/shared/__snapshots__/test.snap.luau": "snapshot content",
+		});
 
 		const profileNames: Array<string> = [];
 		const timing: TimingCollector = fromAny({
@@ -648,7 +666,7 @@ describe("execute single-project helper", () => {
 			fileSystem,
 			projects: [
 				{
-					config: { ...DEFAULT_CONFIG, sourceMap: true },
+					config: { ...createResolvedConfig(), sourceMap: true },
 					testFiles: ["src/test.spec.ts"],
 				},
 			],
@@ -675,29 +693,15 @@ describe("execute single-project helper", () => {
 
 		const { fileSystem } = memoryFileSystem();
 
-		const lines: Array<string> = [];
-		const timing = createTimingCollector({
-			enabled: true,
-			sink: (line) => {
-				lines.push(line);
-			},
-		});
+		const timing = fakeTimingCollector();
 
 		const backend = createMockBackend(createPassingResult());
-		await runProjectsAsync({
-			backend,
-			fileSystem,
-			projects: [{ config: DEFAULT_CONFIG, testFiles: ["src/test.spec.ts"] }],
-			startTime: Date.now(),
-			timing,
-			tsconfigReader: readingVolume(fileSystem),
-			version: "0.0.0-test",
-		});
+		await runTimedAsync({ backend, fileSystem, timing });
 
 		timing.flushTimingReport();
 
-		expect(lines).toContain("[TIMING]   uploadMs: 50ms");
-		expect(lines).toContain("[TIMING]   executionMs: 100ms");
+		expect(timing.record).toHaveBeenCalledWith("uploadMs", 50);
+		expect(timing.record).toHaveBeenCalledWith("executionMs", 100);
 	});
 
 	it("should skip uploadMs span when backend did not measure an upload", async () => {
@@ -705,29 +709,19 @@ describe("execute single-project helper", () => {
 
 		const { fileSystem } = memoryFileSystem();
 
-		const lines: Array<string> = [];
-		const timing = createTimingCollector({
-			enabled: true,
-			sink: (line) => {
-				lines.push(line);
-			},
-		});
+		const timing = fakeTimingCollector();
 
 		// Studio backend never uploads — uploadMs is omitted from BackendTiming.
 		// The orchestrator must skip the span instead of recording a 0ms or
 		// emitting an "undefined ms" line.
-		const studioBackend: Backend = {
-			kind: "studio",
-			placeInput: "none",
-			runTestsAsync: async () => {
-				return singleEntryResult({ result: createPassingResult() }, { executionMs: 100 });
-			},
-		};
+		const studioBackend = fakeStudioBackend(() => {
+			return singleEntryResult({ result: createPassingResult() }, { executionMs: 100 });
+		});
 
 		await runProjectsAsync({
 			backend: studioBackend,
 			fileSystem,
-			projects: [{ config: DEFAULT_CONFIG, testFiles: ["src/test.spec.ts"] }],
+			projects: [{ config: createResolvedConfig(), testFiles: ["src/test.spec.ts"] }],
 			startTime: Date.now(),
 			timing,
 			tsconfigReader: readingVolume(fileSystem),
@@ -736,8 +730,8 @@ describe("execute single-project helper", () => {
 
 		timing.flushTimingReport();
 
-		expect(lines).toContain("[TIMING]   executionMs: 100ms");
-		expect(lines.some((line) => line.includes("uploadMs"))).toBeFalse();
+		expect(timing.record).toHaveBeenCalledWith("executionMs", 100);
+		expect(phaseNamesOf(timing.record)).not.toContain("uploadMs");
 	});
 
 	it("should record luau phase timings nested under backend.runTests", async () => {
@@ -745,39 +739,21 @@ describe("execute single-project helper", () => {
 
 		const { fileSystem } = memoryFileSystem();
 
-		const lines: Array<string> = [];
-		const timing = createTimingCollector({
-			enabled: true,
-			sink: (line) => {
-				lines.push(line);
-			},
+		const timing = fakeTimingCollector();
+
+		const backend = fakeStudioBackend(() => {
+			return singleEntryResult({
+				luauTiming: { findJest: 0.1, jestRunCLI: 2.5 },
+				result: createPassingResult(),
+			});
 		});
 
-		const backend: Backend = {
-			kind: "studio",
-			placeInput: "none",
-			runTestsAsync: async () => {
-				return singleEntryResult({
-					luauTiming: { findJest: 0.1, jestRunCLI: 2.5 },
-					result: createPassingResult(),
-				});
-			},
-		};
-
-		await runProjectsAsync({
-			backend,
-			fileSystem,
-			projects: [{ config: DEFAULT_CONFIG, testFiles: ["src/test.spec.ts"] }],
-			startTime: Date.now(),
-			timing,
-			tsconfigReader: readingVolume(fileSystem),
-			version: "0.0.0-test",
-		});
+		await runTimedAsync({ backend, fileSystem, timing });
 
 		timing.flushTimingReport();
 
-		expect(lines).toContain("[TIMING]   luau.findJest: 100ms");
-		expect(lines).toContain("[TIMING]   luau.jestRunCLI: 2500ms");
+		expect(timing.record).toHaveBeenCalledWith("luau.findJest", 100);
+		expect(timing.record).toHaveBeenCalledWith("luau.jestRunCLI", 2500);
 	});
 
 	it("should skip the raw luau total phase to avoid a second host total", async () => {
@@ -785,39 +761,21 @@ describe("execute single-project helper", () => {
 
 		const { fileSystem } = memoryFileSystem();
 
-		const lines: Array<string> = [];
-		const timing = createTimingCollector({
-			enabled: true,
-			sink: (line) => {
-				lines.push(line);
-			},
+		const timing = fakeTimingCollector();
+
+		const backend = fakeStudioBackend(() => {
+			return singleEntryResult({
+				luauTiming: { findJest: 0.1, total: 3 },
+				result: createPassingResult(),
+			});
 		});
 
-		const backend: Backend = {
-			kind: "studio",
-			placeInput: "none",
-			runTestsAsync: async () => {
-				return singleEntryResult({
-					luauTiming: { findJest: 0.1, total: 3 },
-					result: createPassingResult(),
-				});
-			},
-		};
-
-		await runProjectsAsync({
-			backend,
-			fileSystem,
-			projects: [{ config: DEFAULT_CONFIG, testFiles: ["src/test.spec.ts"] }],
-			startTime: Date.now(),
-			timing,
-			tsconfigReader: readingVolume(fileSystem),
-			version: "0.0.0-test",
-		});
+		await runTimedAsync({ backend, fileSystem, timing });
 
 		timing.flushTimingReport();
 
-		expect(lines).toContain("[TIMING]   luau.findJest: 100ms");
-		expect(lines.some((line) => line.includes("luau.total"))).toBeFalse();
+		expect(timing.record).toHaveBeenCalledWith("luau.findJest", 100);
+		expect(phaseNamesOf(timing.record)).not.toContain("luau.total");
 	});
 
 	it("should accumulate luau phase timings across multiple projects", async () => {
@@ -825,31 +783,21 @@ describe("execute single-project helper", () => {
 
 		const { fileSystem } = memoryFileSystem();
 
-		const lines: Array<string> = [];
-		const timing = createTimingCollector({
-			enabled: true,
-			sink: (line) => {
-				lines.push(line);
-			},
-		});
+		const timing = fakeTimingCollector();
 
-		const backend: Backend = {
-			kind: "studio",
-			placeInput: "none",
-			runTestsAsync: async () => {
-				return multiEntryResult([
-					{ luauTiming: { findJest: 0.10025 }, result: createPassingResult() },
-					{ luauTiming: { findJest: 0.20035 }, result: createPassingResult() },
-				]);
-			},
-		};
+		const backend = fakeStudioBackend(() => {
+			return multiEntryResult([
+				{ luauTiming: { findJest: 0.10025 }, result: createPassingResult() },
+				{ luauTiming: { findJest: 0.20035 }, result: createPassingResult() },
+			]);
+		});
 
 		await runProjectsAsync({
 			backend,
 			fileSystem,
 			projects: [
-				{ config: DEFAULT_CONFIG, testFiles: ["src/a.spec.ts"] },
-				{ config: DEFAULT_CONFIG, testFiles: ["src/b.spec.ts"] },
+				{ config: createResolvedConfig(), testFiles: ["src/a.spec.ts"] },
+				{ config: createResolvedConfig(), testFiles: ["src/b.spec.ts"] },
 			],
 			startTime: Date.now(),
 			timing,
@@ -861,7 +809,12 @@ describe("execute single-project helper", () => {
 
 		// 100.25ms + 200.35ms = 300.6ms — sub-ms fractions must survive until
 		// the emit-time round, not be rounded away per project.
-		expect(lines).toContain("[TIMING]   luau.findJest: 301ms (×2)");
+		expect(
+			vi
+				.mocked(timing.record)
+				.mock.calls.filter(([name]) => name === "luau.findJest")
+				.map(([, ms]) => ms),
+		).toStrictEqual([0.10025 * 1000, 0.20035 * 1000]);
 	});
 
 	it("should skip luau timing extraction entirely when the collector is disabled", async () => {
@@ -869,33 +822,19 @@ describe("execute single-project helper", () => {
 
 		const { fileSystem } = memoryFileSystem();
 
-		const extractSpy = vi.spyOn(parserModule, "extractLuauTimingFromOutput");
+		const timing: TimingCollector = { ...fakeTimingCollector(), enabled: false };
 
-		const timing = createTimingCollector({ enabled: false });
-
-		const backend: Backend = {
-			kind: "studio",
-			placeInput: "none",
-			runTestsAsync: async () => {
-				return singleEntryResult({
-					luauTiming: { findJest: 0.1 },
-					result: createPassingResult(),
-				});
-			},
-		};
-
-		const { results } = await runProjectsAsync({
-			backend,
-			fileSystem,
-			projects: [{ config: DEFAULT_CONFIG, testFiles: ["src/test.spec.ts"] }],
-			startTime: Date.now(),
-			timing,
-			tsconfigReader: readingVolume(fileSystem),
-			version: "0.0.0-test",
+		const backend = fakeStudioBackend(() => {
+			return singleEntryResult({
+				luauTiming: { findJest: 0.1 },
+				result: createPassingResult(),
+			});
 		});
 
+		const { results } = await runTimedAsync({ backend, fileSystem, timing });
+
 		expect(results[0]!.exitCode).toBe(0);
-		expect(extractSpy).not.toHaveBeenCalled();
+		expect(phaseNamesOf(timing.record).filter((name) => name.startsWith("luau."))).toBeEmpty();
 	});
 
 	it("should return empty output when deferFormatting is true", async () => {
@@ -906,7 +845,7 @@ describe("execute single-project helper", () => {
 		const backend = createMockBackend(createPassingResult());
 		const options: ExecuteOptions = {
 			backend,
-			config: DEFAULT_CONFIG,
+			config: createResolvedConfig(),
 			deferFormatting: true,
 			fileSystem,
 			testFiles: ["src/test.spec.ts"],
@@ -922,29 +861,7 @@ describe("execute single-project helper", () => {
 	it("should flat-print luau timing when deferFormatting is not set", async () => {
 		expect.assertions(1);
 
-		const { fileSystem } = memoryFileSystem();
-
-		const stderrSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
-		const backend: Backend = {
-			kind: "studio",
-			placeInput: "none",
-			runTestsAsync: async () => {
-				return singleEntryResult({
-					luauTiming: { findJest: 0.1 },
-					result: createPassingResult(),
-				});
-			},
-		};
-
-		await executeSingleAsync({
-			backend,
-			config: DEFAULT_CONFIG,
-			fileSystem,
-			testFiles: ["src/test.spec.ts"],
-			version: "0.0.0-test",
-		});
-
-		const written = stderrSpy.mock.calls.map(([chunk]) => String(chunk));
+		const written = await luauTimingStderrAsync({});
 
 		expect(written).toContain("[TIMING] findJest: 100ms\n");
 	});
@@ -952,30 +869,7 @@ describe("execute single-project helper", () => {
 	it("should not flat-print luau timing when deferFormatting is true", async () => {
 		expect.assertions(1);
 
-		const { fileSystem } = memoryFileSystem();
-
-		const stderrSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
-		const backend: Backend = {
-			kind: "studio",
-			placeInput: "none",
-			runTestsAsync: async () => {
-				return singleEntryResult({
-					luauTiming: { findJest: 0.1 },
-					result: createPassingResult(),
-				});
-			},
-		};
-
-		await executeSingleAsync({
-			backend,
-			config: DEFAULT_CONFIG,
-			deferFormatting: true,
-			fileSystem,
-			testFiles: ["src/test.spec.ts"],
-			version: "0.0.0-test",
-		});
-
-		const written = stderrSpy.mock.calls.map(([chunk]) => String(chunk));
+		const written = await luauTimingStderrAsync({ deferFormatting: true });
 
 		expect(written.some((chunk) => chunk.includes("[TIMING]"))).toBeFalse();
 	});
@@ -985,13 +879,11 @@ describe("execute single-project helper", () => {
 
 		const { fileSystem } = memoryFileSystem();
 
-		const coverageData: RawCoverageData = {
-			"shared/player.luau": { s: { "0": 3, "1": 0, "2": 1 } },
-		};
+		const coverageData = playerCoverage();
 
 		const backend = createMockBackendWithCoverage(createPassingResult(), coverageData);
 		const config: ResolvedConfig = {
-			...DEFAULT_CONFIG,
+			...createResolvedConfig(),
 			collectCoverage: true,
 		};
 		const options: ExecuteOptions = {
@@ -1014,12 +906,10 @@ describe("execute single-project helper", () => {
 
 		const { fileSystem } = memoryFileSystem();
 
-		const coverageData: RawCoverageData = {
-			"shared/player.luau": { s: { "0": 3, "1": 0, "2": 1 } },
-		};
+		const coverageData = playerCoverage();
 
 		const backend = createMockBackendWithCoverage(createPassingResult(), coverageData);
-		const config: ResolvedConfig = { ...DEFAULT_CONFIG, collectCoverage: false };
+		const config: ResolvedConfig = { ...createResolvedConfig(), collectCoverage: false };
 		const options: ExecuteOptions = {
 			backend,
 			config,
@@ -1045,7 +935,7 @@ describe("execute single-project helper", () => {
 
 		const result = await executeSingleAsync({
 			backend: createMockBackend(createPassingResult()),
-			config: { ...DEFAULT_CONFIG, collectPerTestCoverage: true },
+			config: { ...createResolvedConfig(), collectPerTestCoverage: true },
 			fileSystem,
 			testFiles: ["src/test.spec.ts"],
 			version: "0.0.0-test",
@@ -1066,16 +956,12 @@ describe("execute single-project helper", () => {
 				testFilePath: "out/m.spec.luau",
 			},
 		];
-		const backend: Backend = {
-			kind: "studio",
-			placeInput: "none",
-			runTestsAsync: async (): Promise<BackendResult> => {
-				return singleEntryResult({ perTestCoverage, result: createPassingResult() });
-			},
-		};
+		const backend = fakeStudioBackend(() => {
+			return singleEntryResult({ perTestCoverage, result: createPassingResult() });
+		});
 		const options: ExecuteOptions = {
 			backend,
-			config: { ...DEFAULT_CONFIG, collectCoverage: true },
+			config: { ...createResolvedConfig(), collectCoverage: true },
 			fileSystem,
 			testFiles: ["src/test.spec.ts"],
 			version: "0.0.0-test",
@@ -1115,20 +1001,16 @@ describe("execute single-project helper", () => {
 		const coverageData: RawCoverageData = {
 			"out/m.luau": { s: { "0": 1, "1": 2 } },
 		};
-		const backend: Backend = {
-			kind: "studio",
-			placeInput: "none",
-			runTestsAsync: async (): Promise<BackendResult> => {
-				return singleEntryResult({
-					coverageData,
-					perTestCoverage,
-					result: createPassingResult(),
-				});
-			},
-		};
+		const backend = fakeStudioBackend(() => {
+			return singleEntryResult({
+				coverageData,
+				perTestCoverage,
+				result: createPassingResult(),
+			});
+		});
 		const options: ExecuteOptions = {
 			backend,
-			config: { ...DEFAULT_CONFIG, collectCoverage: true },
+			config: { ...createResolvedConfig(), collectCoverage: true },
 			fileSystem,
 			testFiles: ["src/test.spec.ts"],
 			version: "0.0.0-test",
@@ -1149,16 +1031,16 @@ describe("execute single-project helper", () => {
 		const coverageData: RawCoverageData = {
 			"out/m.luau": { s: { "0": 1, "1": 1 } },
 		};
-		const backend: Backend = {
-			kind: "studio",
-			placeInput: "none",
-			runTestsAsync: async (): Promise<BackendResult> => {
-				return singleEntryResult({ coverageData, result: createPassingResult() });
-			},
-		};
+		const backend = fakeStudioBackend(() => {
+			return singleEntryResult({ coverageData, result: createPassingResult() });
+		});
 		const options: ExecuteOptions = {
 			backend,
-			config: { ...DEFAULT_CONFIG, collectCoverage: true, collectPerTestCoverage: true },
+			config: {
+				...createResolvedConfig(),
+				collectCoverage: true,
+				collectPerTestCoverage: true,
+			},
 			fileSystem,
 			testFiles: ["src/test.spec.ts"],
 			version: "0.0.0-test",
@@ -1174,13 +1056,11 @@ describe("execute single-project helper", () => {
 
 		const { fileSystem } = memoryFileSystem();
 
-		const coverageData: RawCoverageData = {
-			"shared/player.luau": { s: { "0": 3, "1": 0, "2": 1 } },
-		};
+		const coverageData = playerCoverage();
 
 		const backend = createMockBackendWithCoverage(createPassingResult(), coverageData);
 		const config: ResolvedConfig = {
-			...DEFAULT_CONFIG,
+			...createResolvedConfig(),
 			collectCoverage: true,
 			coverageThreshold: { statements: 80 },
 		};
@@ -1204,7 +1084,7 @@ describe("execute single-project helper", () => {
 		const { fileSystem } = memoryFileSystem();
 
 		const backend = createMockBackend(createPassingResult());
-		const config: ResolvedConfig = { ...DEFAULT_CONFIG, sourceMap: false };
+		const config: ResolvedConfig = { ...createResolvedConfig(), sourceMap: false };
 		const options: ExecuteOptions = {
 			backend,
 			config,
@@ -1224,7 +1104,7 @@ describe("execute single-project helper", () => {
 		const { fileSystem } = memoryFileSystem();
 
 		const backend = createMockBackend(createFailingResult());
-		const config: ResolvedConfig = { ...DEFAULT_CONFIG, formatters: ["agent"] };
+		const config: ResolvedConfig = { ...createResolvedConfig(), formatters: ["agent"] };
 		const options: ExecuteOptions = {
 			backend,
 			config,
@@ -1247,7 +1127,7 @@ describe("execute single-project helper", () => {
 
 		const backend = createMockBackend(createFailingResult());
 		const config: ResolvedConfig = {
-			...DEFAULT_CONFIG,
+			...createResolvedConfig(),
 			formatters: [["agent", { maxFailures: 1 }]],
 		};
 		const options: ExecuteOptions = {
@@ -1268,23 +1148,19 @@ describe("execute single-project helper", () => {
 
 		const { fileSystem } = memoryFileSystem();
 
-		const backend: Backend = {
-			kind: "studio",
-			placeInput: "none",
-			runTestsAsync: async (): Promise<BackendResult> => {
-				return singleEntryResult(
-					{
-						luauTiming: { requireJest: 1.5 },
-						result: createPassingResult(),
-					},
-					{ executionMs: 100, uploadMs: 50 },
-				);
-			},
-		};
+		const backend = fakeStudioBackend(() => {
+			return singleEntryResult(
+				{
+					luauTiming: { requireJest: 1.5 },
+					result: createPassingResult(),
+				},
+				{ executionMs: 100, uploadMs: 50 },
+			);
+		});
 
 		const options: ExecuteOptions = {
 			backend,
-			config: DEFAULT_CONFIG,
+			config: createResolvedConfig(),
 			fileSystem,
 			testFiles: ["src/test.spec.ts"],
 			version: "0.0.0-test",
@@ -1302,9 +1178,9 @@ describe("execute single-project helper", () => {
 		const { fileSystem, volume } = memoryFileSystem();
 
 		const temporaryDirectory = createTemporaryDirectory(volume, "executor-test-");
-		fileSystem.writeFileSync(
-			path.join(temporaryDirectory, "default.project.json"),
-			JSON.stringify({
+		writeRojoProject(
+			{ fileSystem, rootDirectory: temporaryDirectory },
+			{
 				name: "test-game",
 				tree: {
 					$className: "DataModel",
@@ -1313,7 +1189,7 @@ describe("execute single-project helper", () => {
 						Client: { $path: "src/client" },
 					},
 				},
-			}),
+			},
 		);
 
 		const dataModelPath = "ReplicatedStorage/Client/lib/test.spec";
@@ -1341,7 +1217,7 @@ describe("execute single-project helper", () => {
 
 		const backend = createMockBackend(result);
 		const config: ResolvedConfig = {
-			...DEFAULT_CONFIG,
+			...createResolvedConfig(),
 			rootDir: temporaryDirectory,
 			sourceMap: true,
 		};
@@ -1366,26 +1242,13 @@ describe("execute single-project helper", () => {
 
 		const { fileSystem } = memoryFileSystem();
 
-		const backend: Backend = {
-			kind: "studio",
-			placeInput: "none",
-			runTestsAsync: async (): Promise<BackendResult> => {
-				return singleEntryResult(
-					{
-						result: createPassingResult(),
-						snapshotWrites: {
-							"ReplicatedStorage/shared/__snapshots__/test.snap.luau":
-								"snapshot content",
-						},
-					},
-					{ executionMs: 100, uploadMs: 50 },
-				);
-			},
-		};
+		const backend = snapshotBackend({
+			"ReplicatedStorage/shared/__snapshots__/test.snap.luau": "snapshot content",
+		});
 
 		const options: ExecuteOptions = {
 			backend,
-			config: DEFAULT_CONFIG,
+			config: createResolvedConfig(),
 			fileSystem,
 			testFiles: ["src/test.spec.ts"],
 			version: "0.0.0-test",
@@ -1404,42 +1267,23 @@ describe("execute single-project helper", () => {
 
 		const temporaryDirectory = createTemporaryDirectory(volume, "exec-snap-");
 
-		const rojoProject = {
-			name: "test",
-			tree: { ReplicatedStorage: { $path: "src/shared" } },
-		};
-		fileSystem.writeFileSync(
-			path.join(temporaryDirectory, "default.project.json"),
-			JSON.stringify(rojoProject),
+		writeRojoProject(
+			{ fileSystem, rootDirectory: temporaryDirectory },
+			{
+				name: "test",
+				tree: { ReplicatedStorage: { $path: "src/shared" } },
+			},
 		);
 
-		const backend: Backend = {
-			kind: "studio",
-			placeInput: "none",
-			runTestsAsync: async (): Promise<BackendResult> => {
-				return singleEntryResult(
-					{
-						result: createPassingResult(),
-						snapshotWrites: {
-							"ReplicatedStorage/__snapshots__/a.snap.luau": "snap a",
-							"ReplicatedStorage/__snapshots__/b.snap.luau": "snap b",
-						},
-					},
-					{ executionMs: 100, uploadMs: 50 },
-				);
-			},
-		};
+		const backend = snapshotBackend({
+			"ReplicatedStorage/__snapshots__/a.snap.luau": "snap a",
+			"ReplicatedStorage/__snapshots__/b.snap.luau": "snap b",
+		});
 
-		const config: ResolvedConfig = { ...DEFAULT_CONFIG, rootDir: temporaryDirectory };
-		const options: ExecuteOptions = {
-			backend,
-			config,
+		const result = await executeInRootAsync(backend, {
 			fileSystem,
-			testFiles: ["src/test.spec.ts"],
-			version: "0.0.0-test",
-		};
-
-		const result = await executeSingleAsync(options);
+			rootDirectory: temporaryDirectory,
+		});
 
 		expect(result.exitCode).toBe(0);
 
@@ -1457,43 +1301,24 @@ describe("execute single-project helper", () => {
 
 		const temporaryDirectory = createTemporaryDirectory(volume, "exec-snap-partial-");
 
-		fileSystem.writeFileSync(
-			path.join(temporaryDirectory, "default.project.json"),
-			JSON.stringify({
+		writeRojoProject(
+			{ fileSystem, rootDirectory: temporaryDirectory },
+			{
 				name: "test",
 				tree: { ReplicatedStorage: { $path: "src/shared" } },
-			}),
+			},
 		);
 
 		const stderrSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
 
-		const backend: Backend = {
-			kind: "studio",
-			placeInput: "none",
-			runTestsAsync: async (): Promise<BackendResult> => {
-				return singleEntryResult(
-					{
-						result: createPassingResult(),
-						snapshotWrites: {
-							"ReplicatedStorage/__snapshots__/a.snap.luau": "snap a",
-							"UnknownService/__snapshots__/b.snap.luau": "snap b",
-						},
-					},
-					{ executionMs: 100, uploadMs: 50 },
-				);
-			},
-		};
-
-		const config: ResolvedConfig = { ...DEFAULT_CONFIG, rootDir: temporaryDirectory };
-		await executeSingleAsync({
-			backend,
-			config,
-			fileSystem,
-			testFiles: ["src/test.spec.ts"],
-			version: "0.0.0-test",
+		const backend = snapshotBackend({
+			"ReplicatedStorage/__snapshots__/a.snap.luau": "snap a",
+			"UnknownService/__snapshots__/b.snap.luau": "snap b",
 		});
 
-		const output = stderrSpy.mock.calls.map(([message]) => String(message)).join("");
+		await executeInRootAsync(backend, { fileSystem, rootDirectory: temporaryDirectory });
+
+		const output = writtenText(stderrSpy);
 
 		expect(output).toMatch(/Wrote 1 of 2 snapshot files/);
 	});
@@ -1505,34 +1330,22 @@ describe("execute single-project helper", () => {
 
 		const temporaryDirectory = createTemporaryDirectory(volume, "exec-snap-silent-");
 
-		fileSystem.writeFileSync(
-			path.join(temporaryDirectory, "default.project.json"),
-			JSON.stringify({
+		writeRojoProject(
+			{ fileSystem, rootDirectory: temporaryDirectory },
+			{
 				name: "test",
 				tree: { ReplicatedStorage: { $path: "src/shared" } },
-			}),
+			},
 		);
 
 		const stderrSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
 
-		const backend: Backend = {
-			kind: "studio",
-			placeInput: "none",
-			runTestsAsync: async (): Promise<BackendResult> => {
-				return singleEntryResult(
-					{
-						result: createPassingResult(),
-						snapshotWrites: {
-							"ReplicatedStorage/__snapshots__/a.snap.luau": "snap a",
-						},
-					},
-					{ executionMs: 100, uploadMs: 50 },
-				);
-			},
-		};
+		const backend = snapshotBackend({
+			"ReplicatedStorage/__snapshots__/a.snap.luau": "snap a",
+		});
 
 		const config: ResolvedConfig = {
-			...DEFAULT_CONFIG,
+			...createResolvedConfig(),
 			rootDir: temporaryDirectory,
 			silent: true,
 		};
@@ -1544,7 +1357,7 @@ describe("execute single-project helper", () => {
 			version: "0.0.0-test",
 		});
 
-		const output = stderrSpy.mock.calls.map(([message]) => String(message)).join("");
+		const output = writtenText(stderrSpy);
 
 		expect(output).not.toMatch(/Wrote \d+ snapshot/);
 	});
@@ -1565,32 +1378,14 @@ describe("execute single-project helper", () => {
 			JSON.stringify(rojoProject),
 		);
 
-		const backend: Backend = {
-			kind: "studio",
-			placeInput: "none",
-			runTestsAsync: async (): Promise<BackendResult> => {
-				return singleEntryResult(
-					{
-						result: createPassingResult(),
-						snapshotWrites: {
-							"ReplicatedStorage/__snapshots__/test.snap.luau": "snap",
-						},
-					},
-					{ executionMs: 100, uploadMs: 50 },
-				);
-			},
-		};
+		const backend = snapshotBackend({
+			"ReplicatedStorage/__snapshots__/test.snap.luau": "snap",
+		});
 
-		const config: ResolvedConfig = { ...DEFAULT_CONFIG, rootDir: temporaryDirectory };
-		const options: ExecuteOptions = {
-			backend,
-			config,
+		const result = await executeInRootAsync(backend, {
 			fileSystem,
-			testFiles: ["src/test.spec.ts"],
-			version: "0.0.0-test",
-		};
-
-		const result = await executeSingleAsync(options);
+			rootDirectory: temporaryDirectory,
+		});
 
 		expect(result.exitCode).toBe(0);
 	});
@@ -1623,24 +1418,12 @@ describe("execute single-project helper", () => {
 
 		const stderrSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
 
-		const backend: Backend = {
-			kind: "studio",
-			placeInput: "none",
-			runTestsAsync: async (): Promise<BackendResult> => {
-				return singleEntryResult(
-					{
-						result: createPassingResult(),
-						snapshotWrites: {
-							"ReplicatedStorage/__snapshots__/test.snap.luau": "snap content",
-						},
-					},
-					{ executionMs: 100, uploadMs: 50 },
-				);
-			},
-		};
+		const backend = snapshotBackend({
+			"ReplicatedStorage/__snapshots__/test.snap.luau": "snap content",
+		});
 
 		const config: ResolvedConfig = {
-			...DEFAULT_CONFIG,
+			...createResolvedConfig(),
 			rojoProject: "test.project.json",
 			rootDir: temporaryDirectory,
 		};
@@ -1652,7 +1435,7 @@ describe("execute single-project helper", () => {
 			version: "0.0.0-test",
 		});
 
-		const output = stderrSpy.mock.calls.map(([message]) => String(message)).join("");
+		const output = writtenText(stderrSpy);
 		cwdSpy.mockRestore();
 
 		// CWD-relative misresolution would land here and falsely "exist".
@@ -1674,43 +1457,21 @@ describe("execute single-project helper", () => {
 
 		const temporaryDirectory = createTemporaryDirectory(volume, "exec-snap-");
 
-		const rojoProject = {
-			name: "test",
-			tree: { ReplicatedStorage: { $path: "out/shared" } },
-		};
-		fileSystem.writeFileSync(
-			path.join(temporaryDirectory, "default.project.json"),
-			JSON.stringify(rojoProject),
+		writeRojoProject(
+			{ fileSystem, rootDirectory: temporaryDirectory },
+			{
+				name: "test",
+				tree: { ReplicatedStorage: { $path: "out/shared" } },
+			},
 		);
 
 		const stderrSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
 
-		const backend: Backend = {
-			kind: "studio",
-			placeInput: "none",
-			runTestsAsync: async (): Promise<BackendResult> => {
-				return singleEntryResult(
-					{
-						result: createPassingResult(),
-						snapshotWrites: {
-							"UnknownService/__snapshots__/test.snap.luau": "snap content",
-						},
-					},
-					{ executionMs: 100, uploadMs: 50 },
-				);
-			},
-		};
+		const backend = snapshotBackend({
+			"UnknownService/__snapshots__/test.snap.luau": "snap content",
+		});
 
-		const config: ResolvedConfig = { ...DEFAULT_CONFIG, rootDir: temporaryDirectory };
-		const options: ExecuteOptions = {
-			backend,
-			config,
-			fileSystem,
-			testFiles: ["src/test.spec.ts"],
-			version: "0.0.0-test",
-		};
-
-		await executeSingleAsync(options);
+		await executeInRootAsync(backend, { fileSystem, rootDirectory: temporaryDirectory });
 
 		expect(stderrSpy).toHaveBeenCalledWith(
 			expect.stringContaining("Cannot resolve snapshot path"),
@@ -1724,39 +1485,15 @@ describe("execute single-project helper", () => {
 
 		const temporaryDirectory = createTemporaryDirectory(volume, "exec-snap-");
 
-		fileSystem.writeFileSync(
-			path.join(temporaryDirectory, "default.project.json"),
-			JSON.stringify({ invalid: "schema" }),
-		);
+		writeRojoProject({ fileSystem, rootDirectory: temporaryDirectory }, { invalid: "schema" });
 
 		const stderrSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
 
-		const backend: Backend = {
-			kind: "studio",
-			placeInput: "none",
-			runTestsAsync: async (): Promise<BackendResult> => {
-				return singleEntryResult(
-					{
-						result: createPassingResult(),
-						snapshotWrites: {
-							"ReplicatedStorage/__snapshots__/test.snap.luau": "snap",
-						},
-					},
-					{ executionMs: 100, uploadMs: 50 },
-				);
-			},
-		};
+		const backend = snapshotBackend({
+			"ReplicatedStorage/__snapshots__/test.snap.luau": "snap",
+		});
 
-		const config: ResolvedConfig = { ...DEFAULT_CONFIG, rootDir: temporaryDirectory };
-		const options: ExecuteOptions = {
-			backend,
-			config,
-			fileSystem,
-			testFiles: ["src/test.spec.ts"],
-			version: "0.0.0-test",
-		};
-
-		await executeSingleAsync(options);
+		await executeInRootAsync(backend, { fileSystem, rootDirectory: temporaryDirectory });
 
 		expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining("invalid rojo project"));
 	});
@@ -1775,32 +1512,13 @@ describe("execute single-project helper", () => {
 
 		const stderrSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
 
-		const backend: Backend = {
-			kind: "studio",
-			placeInput: "none",
-			runTestsAsync: async (): Promise<BackendResult> => {
-				return singleEntryResult(
-					{
-						result: createPassingResult(),
-						snapshotWrites: {
-							"ReplicatedStorage/__snapshots__/test.snap.luau": "snap",
-						},
-					},
-					{ executionMs: 100, uploadMs: 50 },
-				);
-			},
-		};
-
-		const config: ResolvedConfig = { ...DEFAULT_CONFIG, rootDir: temporaryDirectory };
-		await executeSingleAsync({
-			backend,
-			config,
-			fileSystem,
-			testFiles: ["src/test.spec.ts"],
-			version: "0.0.0-test",
+		const backend = snapshotBackend({
+			"ReplicatedStorage/__snapshots__/test.snap.luau": "snap",
 		});
 
-		const output = stderrSpy.mock.calls.map(([message]) => String(message)).join("");
+		await executeInRootAsync(backend, { fileSystem, rootDirectory: temporaryDirectory });
+
+		const output = writtenText(stderrSpy);
 
 		expect(output).toContain("Cannot read rojo project");
 		expect(output).toContain("default.project.json");
@@ -1817,42 +1535,26 @@ describe("execute single-project helper", () => {
 		// A nested $path pointing at a non-existent file makes
 		// resolveNestedProjects throw. This must surface as a write failure, not
 		// abort the run.
-		fileSystem.writeFileSync(
-			path.join(temporaryDirectory, "default.project.json"),
-			JSON.stringify({
+		writeRojoProject(
+			{ fileSystem, rootDirectory: temporaryDirectory },
+			{
 				name: "test",
 				tree: { $path: "nested.project.json" },
-			}),
+			},
 		);
 
 		const stderrSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
 
-		const backend: Backend = {
-			kind: "studio",
-			placeInput: "none",
-			runTestsAsync: async (): Promise<BackendResult> => {
-				return singleEntryResult(
-					{
-						result: createPassingResult(),
-						snapshotWrites: {
-							"ReplicatedStorage/__snapshots__/test.snap.luau": "snap",
-						},
-					},
-					{ executionMs: 100, uploadMs: 50 },
-				);
-			},
-		};
-
-		const config: ResolvedConfig = { ...DEFAULT_CONFIG, rootDir: temporaryDirectory };
-		const result = await executeSingleAsync({
-			backend,
-			config,
-			fileSystem,
-			testFiles: ["src/test.spec.ts"],
-			version: "0.0.0-test",
+		const backend = snapshotBackend({
+			"ReplicatedStorage/__snapshots__/test.snap.luau": "snap",
 		});
 
-		const output = stderrSpy.mock.calls.map(([message]) => String(message)).join("");
+		const result = await executeInRootAsync(backend, {
+			fileSystem,
+			rootDirectory: temporaryDirectory,
+		});
+
+		const output = writtenText(stderrSpy);
 
 		expect(output).toContain("Cannot resolve rojo project tree");
 		expect(result.snapshotWriteFailures).toBe(1);
@@ -1873,34 +1575,13 @@ describe("execute single-project helper", () => {
 
 		const stderrSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
 
-		const backend: Backend = {
-			kind: "studio",
-			placeInput: "none",
-			runTestsAsync: async (): Promise<BackendResult> => {
-				return singleEntryResult(
-					{
-						result: createPassingResult(),
-						snapshotWrites: {
-							"ReplicatedStorage/__snapshots__/test.snap.luau": "snap",
-						},
-					},
-					{ executionMs: 100, uploadMs: 50 },
-				);
-			},
-		};
+		const backend = snapshotBackend({
+			"ReplicatedStorage/__snapshots__/test.snap.luau": "snap",
+		});
 
-		const config: ResolvedConfig = { ...DEFAULT_CONFIG, rootDir: temporaryDirectory };
-		const options: ExecuteOptions = {
-			backend,
-			config,
-			fileSystem,
-			testFiles: ["src/test.spec.ts"],
-			version: "0.0.0-test",
-		};
+		await executeInRootAsync(backend, { fileSystem, rootDirectory: temporaryDirectory });
 
-		await executeSingleAsync(options);
-
-		const output = stderrSpy.mock.calls.map(([message]) => String(message)).join("");
+		const output = writtenText(stderrSpy);
 
 		expect(output).toContain("Snapshot Warning");
 		expect(output).toContain("Failed to parse rojo project");
@@ -1914,13 +1595,12 @@ describe("execute single-project helper", () => {
 
 		const temporaryDirectory = createTemporaryDirectory(volume, "exec-snap-");
 
-		const rojoProject = {
-			name: "test",
-			tree: { ReplicatedStorage: { $path: "out/shared" } },
-		};
-		fileSystem.writeFileSync(
-			path.join(temporaryDirectory, "default.project.json"),
-			JSON.stringify(rojoProject),
+		writeRojoProject(
+			{ fileSystem, rootDirectory: temporaryDirectory },
+			{
+				name: "test",
+				tree: { ReplicatedStorage: { $path: "out/shared" } },
+			},
 		);
 
 		// Create a file where mkdirSync expects a directory, causing a
@@ -1931,23 +1611,11 @@ describe("execute single-project helper", () => {
 
 		const stderrSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
 
-		const backend: Backend = {
-			kind: "studio",
-			placeInput: "none",
-			runTestsAsync: async (): Promise<BackendResult> => {
-				return singleEntryResult(
-					{
-						result: createPassingResult(),
-						snapshotWrites: {
-							"ReplicatedStorage/__snapshots__/test.snap.luau": "snap",
-						},
-					},
-					{ executionMs: 100, uploadMs: 50 },
-				);
-			},
-		};
+		const backend = snapshotBackend({
+			"ReplicatedStorage/__snapshots__/test.snap.luau": "snap",
+		});
 
-		const config: ResolvedConfig = { ...DEFAULT_CONFIG, rootDir: temporaryDirectory };
+		const config: ResolvedConfig = { ...createResolvedConfig(), rootDir: temporaryDirectory };
 		const options: ExecuteOptions = {
 			backend,
 			config,
@@ -1958,7 +1626,7 @@ describe("execute single-project helper", () => {
 
 		await executeSingleAsync(options);
 
-		const output = stderrSpy.mock.calls.map(([message]) => String(message)).join("");
+		const output = writtenText(stderrSpy);
 
 		expect(output).toMatch(
 			/Failed to write snapshot ReplicatedStorage\/__snapshots__\/test\.snap\.luau/,
@@ -1972,34 +1640,21 @@ describe("execute single-project helper", () => {
 
 		const temporaryDirectory = createTemporaryDirectory(volume, "exec-snap-write-fail-");
 
-		fileSystem.writeFileSync(
-			path.join(temporaryDirectory, "default.project.json"),
-			JSON.stringify({ name: "test", tree: { ReplicatedStorage: { $path: "src/shared" } } }),
+		writeRojoProject(
+			{ fileSystem, rootDirectory: temporaryDirectory },
+			{
+				name: "test",
+				tree: { ReplicatedStorage: { $path: "src/shared" } },
+			},
 		);
 
-		const backend: Backend = {
-			kind: "studio",
-			placeInput: "none",
-			runTestsAsync: async (): Promise<BackendResult> => {
-				return singleEntryResult(
-					{
-						result: createPassingResult(),
-						snapshotWrites: {
-							"UnknownService/__snapshots__/a.snap.luau": "snap a",
-						},
-					},
-					{ executionMs: 100, uploadMs: 50 },
-				);
-			},
-		};
+		const backend = snapshotBackend({
+			"UnknownService/__snapshots__/a.snap.luau": "snap a",
+		});
 
-		const config: ResolvedConfig = { ...DEFAULT_CONFIG, rootDir: temporaryDirectory };
-		const result = await executeSingleAsync({
-			backend,
-			config,
+		const result = await executeInRootAsync(backend, {
 			fileSystem,
-			testFiles: ["src/test.spec.ts"],
-			version: "0.0.0-test",
+			rootDirectory: temporaryDirectory,
 		});
 
 		expect(stripVTControlCharacters(result.output)).toMatch(/Snapshot Write\s+1 failed/);
@@ -2012,49 +1667,13 @@ describe("execute single-project helper", () => {
 
 		const temporaryDirectory = createTemporaryDirectory(volume, "exec-snap-tsconfig-");
 
-		fileSystem.writeFileSync(
-			path.join(temporaryDirectory, "tsconfig.json"),
-			JSON.stringify({
-				compilerOptions: { outDir: "./out-tsc/test", rootDir: "./src" },
-			}),
-		);
-		fileSystem.writeFileSync(
-			path.join(temporaryDirectory, "default.project.json"),
-			JSON.stringify({
-				name: "test",
-				tree: { ReplicatedStorage: { $path: "out-tsc/test" } },
-			}),
-		);
+		writeOutDirectoryProject(fileSystem, temporaryDirectory);
 
-		const backend: Backend = {
-			kind: "studio",
-			placeInput: "none",
-			runTestsAsync: async (): Promise<BackendResult> => {
-				return singleEntryResult(
-					{
-						result: createPassingResult(),
-						snapshotWrites: {
-							"ReplicatedStorage/__snapshots__/test.spec.snap.luau": "-- snapshot",
-						},
-					},
-					{ executionMs: 100, uploadMs: 50 },
-				);
-			},
-		};
-
-		const config: ResolvedConfig = {
-			...DEFAULT_CONFIG,
-			rootDir: temporaryDirectory,
-			silent: true,
-		};
-
-		await executeSingleAsync({
-			backend,
-			config,
-			fileSystem,
-			testFiles: [],
-			version: "0.0.0-test",
+		const backend = snapshotBackend({
+			"ReplicatedStorage/__snapshots__/test.spec.snap.luau": "-- snapshot",
 		});
+
+		await executeSilentAsync(backend, { fileSystem, rootDirectory: temporaryDirectory });
 
 		const sourceSnapshot = path.join(
 			temporaryDirectory,
@@ -2071,49 +1690,13 @@ describe("execute single-project helper", () => {
 
 		const temporaryDirectory = createTemporaryDirectory(volume, "exec-snap-dual-");
 
-		fileSystem.writeFileSync(
-			path.join(temporaryDirectory, "tsconfig.json"),
-			JSON.stringify({
-				compilerOptions: { outDir: "./out-tsc/test", rootDir: "./src" },
-			}),
-		);
-		fileSystem.writeFileSync(
-			path.join(temporaryDirectory, "default.project.json"),
-			JSON.stringify({
-				name: "test",
-				tree: { ReplicatedStorage: { $path: "out-tsc/test" } },
-			}),
-		);
+		writeOutDirectoryProject(fileSystem, temporaryDirectory);
 
-		const backend: Backend = {
-			kind: "studio",
-			placeInput: "none",
-			runTestsAsync: async (): Promise<BackendResult> => {
-				return singleEntryResult(
-					{
-						result: createPassingResult(),
-						snapshotWrites: {
-							"ReplicatedStorage/__snapshots__/test.spec.snap.luau": "-- snapshot",
-						},
-					},
-					{ executionMs: 100, uploadMs: 50 },
-				);
-			},
-		};
-
-		const config: ResolvedConfig = {
-			...DEFAULT_CONFIG,
-			rootDir: temporaryDirectory,
-			silent: true,
-		};
-
-		await executeSingleAsync({
-			backend,
-			config,
-			fileSystem,
-			testFiles: [],
-			version: "0.0.0-test",
+		const backend = snapshotBackend({
+			"ReplicatedStorage/__snapshots__/test.spec.snap.luau": "-- snapshot",
 		});
+
+		await executeSilentAsync(backend, { fileSystem, rootDirectory: temporaryDirectory });
 
 		const sourceSnapshot = path.join(
 			temporaryDirectory,
@@ -2146,46 +1729,21 @@ describe("execute single-project helper", () => {
 				compilerOptions: { outDir: "out-test", rootDirs: ["src", "test"] },
 			}),
 		);
-		fileSystem.writeFileSync(
-			path.join(temporaryDirectory, "default.project.json"),
-			JSON.stringify({
+		writeRojoProject(
+			{ fileSystem, rootDirectory: temporaryDirectory },
+			{
 				name: "test",
 				tree: {
 					ReplicatedStorage: { "shared-tests": { $path: "out-test/src/shared" } },
 				},
-			}),
+			},
 		);
 
-		const backend: Backend = {
-			kind: "studio",
-			placeInput: "none",
-			runTestsAsync: async (): Promise<BackendResult> => {
-				return singleEntryResult(
-					{
-						result: createPassingResult(),
-						snapshotWrites: {
-							"ReplicatedStorage/shared-tests/foo/__snapshots__/Bar.spec.snap.luau":
-								"-- snapshot",
-						},
-					},
-					{ executionMs: 100, uploadMs: 50 },
-				);
-			},
-		};
-
-		const config: ResolvedConfig = {
-			...DEFAULT_CONFIG,
-			rootDir: temporaryDirectory,
-			silent: true,
-		};
-
-		await executeSingleAsync({
-			backend,
-			config,
-			fileSystem,
-			testFiles: [],
-			version: "0.0.0-test",
+		const backend = snapshotBackend({
+			"ReplicatedStorage/shared-tests/foo/__snapshots__/Bar.spec.snap.luau": "-- snapshot",
 		});
+
+		await executeSilentAsync(backend, { fileSystem, rootDirectory: temporaryDirectory });
 
 		const sourceSnapshot = path.join(
 			temporaryDirectory,
@@ -2212,43 +1770,19 @@ describe("execute single-project helper", () => {
 
 		const temporaryDirectory = createTemporaryDirectory(volume, "exec-snap-no-tsconfig-");
 
-		fileSystem.writeFileSync(
-			path.join(temporaryDirectory, "default.project.json"),
-			JSON.stringify({
+		writeRojoProject(
+			{ fileSystem, rootDirectory: temporaryDirectory },
+			{
 				name: "test",
 				tree: { ReplicatedStorage: { $path: "out-tsc/test" } },
-			}),
+			},
 		);
 
-		const backend: Backend = {
-			kind: "studio",
-			placeInput: "none",
-			runTestsAsync: async (): Promise<BackendResult> => {
-				return singleEntryResult(
-					{
-						result: createPassingResult(),
-						snapshotWrites: {
-							"ReplicatedStorage/__snapshots__/test.spec.snap.luau": "-- snapshot",
-						},
-					},
-					{ executionMs: 100, uploadMs: 50 },
-				);
-			},
-		};
-
-		const config: ResolvedConfig = {
-			...DEFAULT_CONFIG,
-			rootDir: temporaryDirectory,
-			silent: true,
-		};
-
-		await executeSingleAsync({
-			backend,
-			config,
-			fileSystem,
-			testFiles: [],
-			version: "0.0.0-test",
+		const backend = snapshotBackend({
+			"ReplicatedStorage/__snapshots__/test.spec.snap.luau": "-- snapshot",
 		});
+
+		await executeSilentAsync(backend, { fileSystem, rootDirectory: temporaryDirectory });
 
 		// No tsconfig → no outDir/rootDir rewriting → lands at rojo-resolved path
 		const outSnapshot = path.join(
@@ -2271,18 +1805,17 @@ describe("execute single-project helper", () => {
 
 		const temporaryDirectory = createTemporaryDirectory(volume, "exec-sm-");
 
-		const rojoProject = {
-			name: "test",
-			tree: { ReplicatedStorage: { $path: "out/shared" } },
-		};
-		fileSystem.writeFileSync(
-			path.join(temporaryDirectory, "default.project.json"),
-			JSON.stringify(rojoProject),
+		writeRojoProject(
+			{ fileSystem, rootDirectory: temporaryDirectory },
+			{
+				name: "test",
+				tree: { ReplicatedStorage: { $path: "out/shared" } },
+			},
 		);
 
 		const backend = createMockBackend(createFailingResult());
 		const config: ResolvedConfig = {
-			...DEFAULT_CONFIG,
+			...createResolvedConfig(),
 			rootDir: temporaryDirectory,
 			sourceMap: true,
 		};
@@ -2308,33 +1841,7 @@ describe("execute single-project helper", () => {
 
 		const temporaryDirectory = createTemporaryDirectory(volume, "exec-nested-rojo-");
 
-		// Root project references a nested package via default.project.json
-		const rootProject = {
-			name: "test",
-			tree: {
-				ReplicatedStorage: {
-					"uuid-generator": {
-						$path: "packages/uuid-generator/default.project.json",
-					},
-				},
-			},
-		};
-		fileSystem.writeFileSync(
-			path.join(temporaryDirectory, "default.project.json"),
-			JSON.stringify(rootProject),
-		);
-
-		// Nested package project points to src/
-		const nestedProject = {
-			name: "uuid-generator",
-			tree: { $path: "src" },
-		};
-		const nestedDirectory = path.join(temporaryDirectory, "packages/uuid-generator");
-		fileSystem.mkdirSync(nestedDirectory, { recursive: true });
-		fileSystem.writeFileSync(
-			path.join(nestedDirectory, "default.project.json"),
-			JSON.stringify(nestedProject),
-		);
+		writeNestedPackageProject(fileSystem, temporaryDirectory);
 
 		// Backend returns DataModel path as Jest would
 		const result = createPassingResult();
@@ -2342,7 +1849,7 @@ describe("execute single-project helper", () => {
 		const backend = createMockBackend(result);
 
 		const config: ResolvedConfig = {
-			...DEFAULT_CONFIG,
+			...createResolvedConfig(),
 			rootDir: temporaryDirectory,
 			sourceMap: true,
 		};
@@ -2368,50 +1875,13 @@ describe("execute single-project helper", () => {
 
 		const temporaryDirectory = createTemporaryDirectory(volume, "exec-nested-snap-");
 
-		const rootProject = {
-			name: "test",
-			tree: {
-				ReplicatedStorage: {
-					"uuid-generator": {
-						$path: "packages/uuid-generator/default.project.json",
-					},
-				},
-			},
-		};
-		fileSystem.writeFileSync(
-			path.join(temporaryDirectory, "default.project.json"),
-			JSON.stringify(rootProject),
-		);
+		writeNestedPackageProject(fileSystem, temporaryDirectory);
 
-		const nestedProject = {
-			name: "uuid-generator",
-			tree: { $path: "src" },
-		};
-		const nestedDirectory = path.join(temporaryDirectory, "packages/uuid-generator");
-		fileSystem.mkdirSync(nestedDirectory, { recursive: true });
-		fileSystem.writeFileSync(
-			path.join(nestedDirectory, "default.project.json"),
-			JSON.stringify(nestedProject),
-		);
+		const backend = snapshotBackend({
+			"ReplicatedStorage/uuid-generator/__snapshots__/init.spec.snap.luau": "-- snapshot",
+		});
 
-		const backend: Backend = {
-			kind: "studio",
-			placeInput: "none",
-			runTestsAsync: async (): Promise<BackendResult> => {
-				return singleEntryResult(
-					{
-						result: createPassingResult(),
-						snapshotWrites: {
-							"ReplicatedStorage/uuid-generator/__snapshots__/init.spec.snap.luau":
-								"-- snapshot",
-						},
-					},
-					{ executionMs: 100, uploadMs: 50 },
-				);
-			},
-		};
-
-		const config: ResolvedConfig = { ...DEFAULT_CONFIG, rootDir: temporaryDirectory };
+		const config: ResolvedConfig = { ...createResolvedConfig(), rootDir: temporaryDirectory };
 		await executeSingleAsync({
 			backend,
 			config,
@@ -2435,14 +1905,11 @@ describe("execute single-project helper", () => {
 
 		const temporaryDirectory = createTemporaryDirectory(volume, "exec-sm-");
 
-		fileSystem.writeFileSync(
-			path.join(temporaryDirectory, "default.project.json"),
-			JSON.stringify({ invalid: "schema" }),
-		);
+		writeRojoProject({ fileSystem, rootDirectory: temporaryDirectory }, { invalid: "schema" });
 
 		const backend = createMockBackend(createPassingResult());
 		const config: ResolvedConfig = {
-			...DEFAULT_CONFIG,
+			...createResolvedConfig(),
 			rootDir: temporaryDirectory,
 			sourceMap: true,
 		};
@@ -2460,503 +1927,6 @@ describe("execute single-project helper", () => {
 	});
 });
 
-describe(readTsconfigMapping, () => {
-	it("should return mapping from tsconfig with compilerOptions", () => {
-		expect.assertions(1);
-
-		const { fileSystem, volume } = memoryFileSystem();
-
-		const temporaryDirectory = createTemporaryDirectory(volume, "read-tsconfig-");
-		const tsconfigPath = path.join(temporaryDirectory, "tsconfig.json");
-		fileSystem.writeFileSync(
-			tsconfigPath,
-			JSON.stringify({ compilerOptions: { outDir: "out", rootDir: "src" } }),
-		);
-
-		const result = readTsconfigMapping(tsconfigPath, fileSystem);
-
-		expect(result).toStrictEqual({ outDir: "out", rootDir: "src" });
-	});
-
-	it("should return undefined when compilerOptions is missing", () => {
-		expect.assertions(1);
-
-		const { fileSystem, volume } = memoryFileSystem();
-
-		const temporaryDirectory = createTemporaryDirectory(volume, "read-tsconfig-no-opts-");
-		const tsconfigPath = path.join(temporaryDirectory, "tsconfig.json");
-		fileSystem.writeFileSync(tsconfigPath, JSON.stringify({ include: ["src/**/*"] }));
-
-		const result = readTsconfigMapping(tsconfigPath, fileSystem);
-
-		expect(result).toBeUndefined();
-	});
-
-	it("should return undefined when file does not exist", () => {
-		expect.assertions(1);
-
-		const { fileSystem } = memoryFileSystem();
-
-		const result = readTsconfigMapping("/nonexistent/tsconfig.json", fileSystem);
-
-		expect(result).toBeUndefined();
-	});
-
-	it("should handle rootDirs with no common prefix", () => {
-		expect.assertions(1);
-
-		const { fileSystem, volume } = memoryFileSystem();
-
-		const temporaryDirectory = createTemporaryDirectory(volume, "read-tsconfig-no-prefix-");
-		const tsconfigPath = path.join(temporaryDirectory, "tsconfig.json");
-		fileSystem.writeFileSync(
-			tsconfigPath,
-			JSON.stringify({
-				compilerOptions: { outDir: "out-test", rootDirs: ["src", "test"] },
-			}),
-		);
-
-		const result = readTsconfigMapping(tsconfigPath, fileSystem);
-
-		expect(result).toStrictEqual({ outDir: "out-test", rootDir: "." });
-	});
-
-	it("should handle rootDirs with common ancestor", () => {
-		expect.assertions(1);
-
-		const { fileSystem, volume } = memoryFileSystem();
-
-		const temporaryDirectory = createTemporaryDirectory(volume, "read-tsconfig-ancestor-");
-		const tsconfigPath = path.join(temporaryDirectory, "tsconfig.json");
-		fileSystem.writeFileSync(
-			tsconfigPath,
-			JSON.stringify({
-				compilerOptions: {
-					outDir: "out",
-					rootDirs: ["packages/core/src", "packages/core/test"],
-				},
-			}),
-		);
-
-		const result = readTsconfigMapping(tsconfigPath, fileSystem);
-
-		expect(result).toStrictEqual({ outDir: "out", rootDir: "packages/core" });
-	});
-
-	it("should default outDir to 'out' and rootDir to 'src' when omitted", () => {
-		expect.assertions(1);
-
-		const { fileSystem, volume } = memoryFileSystem();
-
-		const temporaryDirectory = createTemporaryDirectory(volume, "read-tsconfig-defaults-");
-		const tsconfigPath = path.join(temporaryDirectory, "tsconfig.json");
-		fileSystem.writeFileSync(
-			tsconfigPath,
-			JSON.stringify({ compilerOptions: { strict: true } }),
-		);
-
-		const result = readTsconfigMapping(tsconfigPath, fileSystem);
-
-		expect(result).toStrictEqual({ outDir: "out", rootDir: "src" });
-	});
-
-	it("should return empty when rootDir is null", () => {
-		expect.assertions(1);
-
-		const { fileSystem, volume } = memoryFileSystem();
-
-		const temporaryDirectory = createTemporaryDirectory(volume, "read-tsconfig-null-");
-		const tsconfigPath = path.join(temporaryDirectory, "tsconfig.json");
-		fileSystem.writeFileSync(
-			tsconfigPath,
-			JSON.stringify({ compilerOptions: { outDir: "out", rootDir: null } }),
-		);
-
-		const result = readTsconfigMapping(tsconfigPath, fileSystem);
-
-		expect(result).toBeUndefined();
-	});
-});
-
-describe(resolveAllTsconfigMappings, () => {
-	it("should return mappings from multiple tsconfig*.json files", () => {
-		expect.assertions(2);
-
-		const { fileSystem, volume } = memoryFileSystem();
-
-		const temporaryDirectory = createTemporaryDirectory(volume, "tsconfig-multi-");
-		fileSystem.writeFileSync(
-			path.join(temporaryDirectory, "tsconfig.lib.json"),
-			JSON.stringify({ compilerOptions: { outDir: "out", rootDir: "src" } }),
-		);
-		fileSystem.writeFileSync(
-			path.join(temporaryDirectory, "tsconfig.spec.json"),
-			JSON.stringify({ compilerOptions: { outDir: "out-test", rootDir: "src" } }),
-		);
-
-		const result = resolveAllTsconfigMappings({
-			fileSystem,
-			projectRoot: temporaryDirectory,
-			tsconfigReader: readingVolume(fileSystem),
-		});
-
-		expect(result).toHaveLength(2);
-		expect(result).toContainEqual({ outDir: "out-test", rootDir: "src" });
-	});
-
-	it("should return single mapping when only tsconfig.json exists", () => {
-		expect.assertions(1);
-
-		const { fileSystem, volume } = memoryFileSystem();
-
-		const temporaryDirectory = createTemporaryDirectory(volume, "tsconfig-single-");
-		fileSystem.writeFileSync(
-			path.join(temporaryDirectory, "tsconfig.json"),
-			JSON.stringify({ compilerOptions: { outDir: "out", rootDir: "src" } }),
-		);
-
-		const result = resolveAllTsconfigMappings({
-			fileSystem,
-			projectRoot: temporaryDirectory,
-			tsconfigReader: readingVolume(fileSystem),
-		});
-
-		expect(result).toStrictEqual([{ outDir: "out", rootDir: "src" }]);
-	});
-
-	it("should return empty array when no tsconfigs exist", () => {
-		expect.assertions(1);
-
-		const { fileSystem, volume } = memoryFileSystem();
-
-		const temporaryDirectory = createTemporaryDirectory(volume, "tsconfig-none-");
-
-		const result = resolveAllTsconfigMappings({
-			fileSystem,
-			projectRoot: temporaryDirectory,
-			tsconfigReader: readingVolume(fileSystem),
-		});
-
-		expect(result).toBeEmpty();
-	});
-
-	it("should skip tsconfigs without compilerOptions", () => {
-		expect.assertions(1);
-
-		const { fileSystem, volume } = memoryFileSystem();
-
-		const temporaryDirectory = createTemporaryDirectory(volume, "tsconfig-no-opts-");
-		fileSystem.writeFileSync(
-			path.join(temporaryDirectory, "tsconfig.json"),
-			JSON.stringify({ include: ["src/**/*"] }),
-		);
-
-		const result = resolveAllTsconfigMappings({
-			fileSystem,
-			projectRoot: temporaryDirectory,
-			tsconfigReader: readingVolume(fileSystem),
-		});
-
-		expect(result).toBeEmpty();
-	});
-
-	it("should return empty array when directory does not exist", () => {
-		expect.assertions(1);
-
-		const { fileSystem } = memoryFileSystem();
-
-		const result = resolveAllTsconfigMappings({
-			fileSystem,
-			projectRoot: "/nonexistent/path/xyz",
-			tsconfigReader: readingVolume(fileSystem),
-		});
-
-		expect(result).toBeEmpty();
-	});
-
-	// Every project in a package resolves against the one package rootDir, so
-	// the run-level cache is what keeps that a single directory scan.
-	it("should answer a repeated rootDir from the cache", () => {
-		expect.assertions(2);
-
-		const { fileSystem, volume } = memoryFileSystem();
-
-		const temporaryDirectory = createTemporaryDirectory(volume, "tsconfig-cache-");
-		const tsconfigPath = path.join(temporaryDirectory, "tsconfig.json");
-		fileSystem.writeFileSync(
-			tsconfigPath,
-			JSON.stringify({ compilerOptions: { outDir: "out", rootDir: "src" } }),
-		);
-		const cache = createTsconfigMappingCache();
-
-		const first = resolveAllTsconfigMappings({
-			cache,
-			fileSystem,
-			projectRoot: temporaryDirectory,
-			tsconfigReader: readingVolume(fileSystem),
-		});
-		fileSystem.rmSync(tsconfigPath);
-		const second = resolveAllTsconfigMappings({
-			cache,
-			fileSystem,
-			projectRoot: temporaryDirectory,
-			tsconfigReader: readingVolume(fileSystem),
-		});
-
-		expect(first).toStrictEqual([{ outDir: "out", rootDir: "src" }]);
-		expect(second).toStrictEqual(first);
-	});
-
-	it("should deduplicate identical mappings across tsconfig files", () => {
-		expect.assertions(1);
-
-		const { fileSystem, volume } = memoryFileSystem();
-
-		const temporaryDirectory = createTemporaryDirectory(volume, "tsconfig-dup-");
-		fileSystem.writeFileSync(
-			path.join(temporaryDirectory, "tsconfig.lib.json"),
-			JSON.stringify({ compilerOptions: { outDir: "out", rootDir: "src" } }),
-		);
-		fileSystem.writeFileSync(
-			path.join(temporaryDirectory, "tsconfig.spec.json"),
-			JSON.stringify({ compilerOptions: { outDir: "out", rootDir: "src" } }),
-		);
-
-		const result = resolveAllTsconfigMappings({
-			fileSystem,
-			projectRoot: temporaryDirectory,
-			tsconfigReader: readingVolume(fileSystem),
-		});
-
-		expect(result).toStrictEqual([{ outDir: "out", rootDir: "src" }]);
-	});
-
-	it("should skip malformed tsconfig JSON files", () => {
-		expect.assertions(1);
-
-		const { fileSystem, volume } = memoryFileSystem();
-
-		const temporaryDirectory = createTemporaryDirectory(volume, "tsconfig-bad-");
-		fileSystem.writeFileSync(path.join(temporaryDirectory, "tsconfig.json"), "not json {{{");
-
-		const result = resolveAllTsconfigMappings({
-			fileSystem,
-			projectRoot: temporaryDirectory,
-			tsconfigReader: readingVolume(fileSystem),
-		});
-
-		expect(result).toBeEmpty();
-	});
-});
-
-describe(resolveTsconfigDirectories, () => {
-	it("should return undefined outDir/rootDir when no tsconfig exists", () => {
-		expect.assertions(2);
-
-		// Use a directory that has no tsconfig.json
-		const result = resolveTsconfigDirectories("/nonexistent/project/dir");
-
-		expect(result.outDir).toBeUndefined();
-		expect(result.rootDir).toBeUndefined();
-	});
-
-	it("should default outDir to 'out' and rootDir to 'src' when compilerOptions omits them", () => {
-		expect.assertions(2);
-
-		const { fileSystem, volume } = memoryFileSystem();
-
-		const temporaryDirectory = createTemporaryDirectory(volume, "tsconfig-test-");
-		fileSystem.writeFileSync(
-			path.join(temporaryDirectory, "tsconfig.json"),
-			JSON.stringify({ compilerOptions: { strict: true } }),
-		);
-
-		const result = resolveTsconfigDirectories(temporaryDirectory, readingVolume(fileSystem));
-
-		expect(result.outDir).toBe("out");
-		expect(result.rootDir).toBe("src");
-	});
-});
-
-describe(isLuauProject, () => {
-	it("should return false when mappings exist", () => {
-		expect.assertions(1);
-
-		expect(isLuauProject(["x.spec.ts"], [{ outDir: "out/", rootDir: "src/" }])).toBeFalse();
-	});
-
-	it("should return true when no mappings and luau test files", () => {
-		expect.assertions(1);
-
-		expect(isLuauProject(["x.spec.luau"], [])).toBeTrue();
-	});
-
-	it("should return false when no mappings but ts test files", () => {
-		expect.assertions(1);
-
-		expect(isLuauProject(["x.spec.ts"], [])).toBeFalse();
-	});
-
-	it("should return false when no mappings but tsx test files", () => {
-		expect.assertions(1);
-
-		expect(isLuauProject(["x.spec.tsx"], [])).toBeFalse();
-	});
-
-	it("should return true when testFiles is empty and no mappings", () => {
-		expect.assertions(1);
-
-		expect(isLuauProject([], [])).toBeTrue();
-	});
-
-	it("should return false when mixed ts and luau test files", () => {
-		expect.assertions(1);
-
-		expect(isLuauProject(["a.spec.luau", "b.spec.ts"], [])).toBeFalse();
-	});
-});
-
-describe(loadCoverageManifest, () => {
-	it("should return undefined when manifest file does not exist", () => {
-		expect.assertions(1);
-
-		const result = loadCoverageManifest("/nonexistent/dir");
-
-		expect(result).toBeUndefined();
-	});
-
-	it("should warn and return undefined for malformed manifest JSON", () => {
-		expect.assertions(2);
-
-		const { fileSystem, volume } = memoryFileSystem();
-
-		const temporaryDirectory = createTemporaryDirectory(volume, "cov-test-");
-		const coverageDirectory = path.join(temporaryDirectory, ".jest-roblox/coverage");
-		fileSystem.mkdirSync(coverageDirectory, { recursive: true });
-		fileSystem.writeFileSync(
-			path.join(coverageDirectory, "coverage-manifest.json"),
-			"not json",
-		);
-		const spy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
-
-		expect(loadCoverageManifest(temporaryDirectory, fileSystem)).toBeUndefined();
-		expect(spy).toHaveBeenCalledWith(expect.stringContaining("malformed JSON"));
-	});
-
-	it("should warn and return undefined for schema-invalid manifest", () => {
-		expect.assertions(2);
-
-		const { fileSystem, volume } = memoryFileSystem();
-
-		const temporaryDirectory = createTemporaryDirectory(volume, "cov-test-");
-		const coverageDirectory = path.join(temporaryDirectory, ".jest-roblox/coverage");
-		fileSystem.mkdirSync(coverageDirectory, { recursive: true });
-		fileSystem.writeFileSync(
-			path.join(coverageDirectory, "coverage-manifest.json"),
-			JSON.stringify({ version: MANIFEST_VERSION, wrong: "schema" }),
-		);
-		const spy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
-
-		expect(loadCoverageManifest(temporaryDirectory, fileSystem)).toBeUndefined();
-		expect(spy).toHaveBeenCalledWith(expect.stringContaining("manifest is invalid"));
-	});
-
-	it("should warn and return undefined for version-mismatched manifest", () => {
-		expect.assertions(2);
-
-		const { fileSystem, volume } = memoryFileSystem();
-
-		const temporaryDirectory = createTemporaryDirectory(volume, "cov-test-");
-		const coverageDirectory = path.join(temporaryDirectory, ".jest-roblox/coverage");
-		fileSystem.mkdirSync(coverageDirectory, { recursive: true });
-		fileSystem.writeFileSync(
-			path.join(coverageDirectory, "coverage-manifest.json"),
-			JSON.stringify({ version: 99 }),
-		);
-		const spy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
-
-		expect(loadCoverageManifest(temporaryDirectory, fileSystem)).toBeUndefined();
-		expect(spy).toHaveBeenCalledWith(expect.stringContaining("version 99"));
-	});
-
-	it("should load valid manifest", () => {
-		expect.assertions(2);
-
-		const { fileSystem, volume } = memoryFileSystem();
-
-		const temporaryDirectory = createTemporaryDirectory(volume, "cov-test-");
-		const coverageDirectory = path.join(temporaryDirectory, ".jest-roblox/coverage");
-		fileSystem.mkdirSync(coverageDirectory, { recursive: true });
-		const manifest = {
-			buildId: "test-build-id",
-			files: {
-				"shared/player.luau": {
-					key: "shared/player.luau",
-					coverageMapPath: "shared/player.cov-map.json",
-					instrumentedLuauPath: "shared/player.luau",
-					originalLuauPath: "out/shared/player.luau",
-					sourceHash: "abc123",
-					sourceMapPath: "out/shared/player.luau.map",
-					statementCount: 10,
-				},
-			},
-			generatedAt: "2026-01-01T00:00:00Z",
-			instrumenterVersion: 1,
-			luauRoots: ["out"],
-			nonInstrumentedFiles: {},
-			shadowDir: ".jest-roblox/coverage/out",
-			version: MANIFEST_VERSION,
-		};
-		fileSystem.writeFileSync(
-			path.join(coverageDirectory, "coverage-manifest.json"),
-			JSON.stringify(manifest),
-		);
-		const result = loadCoverageManifest(temporaryDirectory, fileSystem);
-
-		expect(result).toBeDefined();
-		expect(result!.files["shared/player.luau"]!.statementCount).toBe(10);
-	});
-
-	it("should reject the whole manifest when any file record fails validation", () => {
-		expect.assertions(2);
-
-		const { fileSystem, volume } = memoryFileSystem();
-
-		const temporaryDirectory = createTemporaryDirectory(volume, "cov-test-");
-		const coverageDirectory = path.join(temporaryDirectory, ".jest-roblox/coverage");
-		fileSystem.mkdirSync(coverageDirectory, { recursive: true });
-		const manifest = {
-			buildId: "test-build-id",
-			files: {
-				"shared/invalid.luau": { bad: "record" },
-				"shared/valid.luau": {
-					key: "shared/valid.luau",
-					coverageMapPath: "shared/valid.cov-map.json",
-					instrumentedLuauPath: "shared/valid.luau",
-					originalLuauPath: "out/shared/valid.luau",
-					sourceHash: "abc123",
-					sourceMapPath: "out/shared/valid.luau.map",
-					statementCount: 5,
-				},
-			},
-			generatedAt: "2026-01-01T00:00:00Z",
-			instrumenterVersion: 1,
-			luauRoots: ["out"],
-			nonInstrumentedFiles: {},
-			shadowDir: ".jest-roblox/coverage/out",
-			version: MANIFEST_VERSION,
-		};
-		fileSystem.writeFileSync(
-			path.join(coverageDirectory, "coverage-manifest.json"),
-			JSON.stringify(manifest),
-		);
-		const spy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
-
-		expect(loadCoverageManifest(temporaryDirectory, fileSystem)).toBeUndefined();
-		expect(spy).toHaveBeenCalledWith(expect.stringContaining("manifest is invalid"));
-	});
-});
-
 describe(runProjectsAsync, () => {
 	it("should return one processed result for a single project", async () => {
 		expect.assertions(3);
@@ -2968,7 +1938,7 @@ describe(runProjectsAsync, () => {
 		const { backendTiming, results } = await runProjectsAsync({
 			backend,
 			fileSystem,
-			projects: [{ config: DEFAULT_CONFIG, testFiles: ["src/test.spec.ts"] }],
+			projects: [{ config: createResolvedConfig(), testFiles: ["src/test.spec.ts"] }],
 			startTime: Date.now(),
 			tsconfigReader: readingVolume(fileSystem),
 			version: "0.0.0-test",
@@ -2984,36 +1954,14 @@ describe(runProjectsAsync, () => {
 
 		const { fileSystem } = memoryFileSystem();
 
-		const backend: Backend = {
-			kind: "studio",
-			placeInput: "none",
-			runTestsAsync: async () => {
-				return multiEntryResult([
-					{ result: createPassingResult() },
-					{ result: createFailingResult() },
-				]);
-			},
-		};
-
-		const { results } = await runProjectsAsync({
-			backend,
-			fileSystem,
-			projects: [
-				{
-					config: DEFAULT_CONFIG,
-					displayName: "first",
-					testFiles: ["src/a.spec.ts"],
-				},
-				{
-					config: DEFAULT_CONFIG,
-					displayName: "second",
-					testFiles: ["src/b.spec.ts"],
-				},
-			],
-			startTime: Date.now(),
-			tsconfigReader: readingVolume(fileSystem),
-			version: "0.0.0-test",
+		const backend = fakeStudioBackend(() => {
+			return multiEntryResult([
+				{ result: createPassingResult() },
+				{ result: createFailingResult() },
+			]);
 		});
+
+		const { results } = await runTwoProjectsAsync(backend, fileSystem);
 
 		expect(results).toHaveLength(2);
 		expect(results[0]!.exitCode).toBe(0);
@@ -3039,7 +1987,7 @@ describe(runProjectsAsync, () => {
 			backend,
 			fileSystem,
 			parallel: 3,
-			projects: [{ config: DEFAULT_CONFIG, testFiles: ["src/test.spec.ts"] }],
+			projects: [{ config: createResolvedConfig(), testFiles: ["src/test.spec.ts"] }],
 			startTime: Date.now(),
 			tsconfigReader: readingVolume(fileSystem),
 			version: "0.0.0-test",
@@ -3071,7 +2019,7 @@ describe(runProjectsAsync, () => {
 		await runProjectsAsync({
 			backend,
 			fileSystem,
-			projects: [{ config: DEFAULT_CONFIG, testFiles: ["src/test.spec.ts"] }],
+			projects: [{ config: createResolvedConfig(), testFiles: ["src/test.spec.ts"] }],
 			scriptOverride: "-- staged materializer",
 			startTime: Date.now(),
 			streaming,
@@ -3104,7 +2052,7 @@ describe(runProjectsAsync, () => {
 			backend,
 			bail: true,
 			fileSystem,
-			projects: [{ config: DEFAULT_CONFIG, testFiles: ["src/test.spec.ts"] }],
+			projects: [{ config: createResolvedConfig(), testFiles: ["src/test.spec.ts"] }],
 			startTime: Date.now(),
 			tsconfigReader: readingVolume(fileSystem),
 			version: "0.0.0-test",
@@ -3118,28 +2066,24 @@ describe(runProjectsAsync, () => {
 
 		const { fileSystem } = memoryFileSystem();
 
-		const backend: Backend = {
-			kind: "studio",
-			placeInput: "none",
-			runTestsAsync: async () => {
-				return multiEntryResult([
-					{ result: createPassingResult() },
-					{ result: createPassingResult() },
-				]);
-			},
-		};
+		const backend = fakeStudioBackend(() => {
+			return multiEntryResult([
+				{ result: createPassingResult() },
+				{ result: createPassingResult() },
+			]);
+		});
 
 		const { results } = await runProjectsAsync({
 			backend,
 			fileSystem,
 			projects: [
 				{
-					config: { ...DEFAULT_CONFIG, silent: true },
+					config: { ...createResolvedConfig(), silent: true },
 					displayName: "silent",
 					testFiles: ["src/a.spec.ts"],
 				},
 				{
-					config: DEFAULT_CONFIG,
+					config: createResolvedConfig(),
 					displayName: "loud",
 					testFiles: ["src/b.spec.ts"],
 				},
@@ -3169,17 +2113,7 @@ describe(runProjectsAsync, () => {
 			},
 		};
 
-		const { backendTiming, results } = await runProjectsAsync({
-			backend,
-			fileSystem,
-			projects: [
-				{ config: DEFAULT_CONFIG, displayName: "first", testFiles: ["src/a.spec.ts"] },
-				{ config: DEFAULT_CONFIG, displayName: "second", testFiles: ["src/b.spec.ts"] },
-			],
-			startTime: Date.now(),
-			tsconfigReader: readingVolume(fileSystem),
-			version: "0.0.0-test",
-		});
+		const { backendTiming, results } = await runTwoProjectsAsync(backend, fileSystem);
 
 		expect(backendTiming.executionMs).toBe(250);
 		expect(results[0]!.timing.executionMs).toBe(250);
@@ -3202,8 +2136,8 @@ describe(runProjectsAsync, () => {
 			backend,
 			fileSystem,
 			projects: [
-				{ config: DEFAULT_CONFIG, testFiles: ["src/a.spec.ts"] },
-				{ config: DEFAULT_CONFIG, testFiles: ["src/b.spec.ts"] },
+				{ config: createResolvedConfig(), testFiles: ["src/a.spec.ts"] },
+				{ config: createResolvedConfig(), testFiles: ["src/b.spec.ts"] },
 			],
 			startTime: Date.now(),
 			tsconfigReader: readingVolume(fileSystem),
@@ -3223,11 +2157,14 @@ describe(runProjectsAsync, () => {
 		const { fileSystem, volume } = memoryFileSystem();
 
 		const temporaryDirectory = createTemporaryDirectory(volume, "exec-bail-");
-		fileSystem.writeFileSync(
-			path.join(temporaryDirectory, "default.project.json"),
-			JSON.stringify({ name: "test", tree: { ReplicatedStorage: { $path: "src/shared" } } }),
+		writeRojoProject(
+			{ fileSystem, rootDirectory: temporaryDirectory },
+			{
+				name: "test",
+				tree: { ReplicatedStorage: { $path: "src/shared" } },
+			},
 		);
-		const mappedConfig = { ...DEFAULT_CONFIG, rootDir: temporaryDirectory };
+		const mappedConfig = { ...createResolvedConfig(), rootDir: temporaryDirectory };
 
 		const backend: Backend = {
 			kind: "open-cloud",
@@ -3244,8 +2181,8 @@ describe(runProjectsAsync, () => {
 			backend,
 			fileSystem,
 			projects: [
-				{ config: DEFAULT_CONFIG, testFiles: ["src/a.spec.ts"] },
-				{ config: DEFAULT_CONFIG, testFiles: ["src/b.spec.ts"] },
+				{ config: createResolvedConfig(), testFiles: ["src/a.spec.ts"] },
+				{ config: createResolvedConfig(), testFiles: ["src/b.spec.ts"] },
 				{ config: mappedConfig, testFiles: ["src/c.spec.ts"] },
 			],
 			startTime: Date.now(),
@@ -3266,23 +2203,19 @@ describe(runProjectsAsync, () => {
 
 		const { fileSystem } = memoryFileSystem();
 
-		const backend: Backend = {
-			kind: "studio",
-			placeInput: "none",
-			runTestsAsync: async () => {
-				return multiEntryResult([
-					{ result: createPassingResult() },
-					{ result: createPassingResult() },
-				]);
-			},
-		};
+		const backend = fakeStudioBackend(() => {
+			return multiEntryResult([
+				{ result: createPassingResult() },
+				{ result: createPassingResult() },
+			]);
+		});
 
 		const { ranProjectIndices } = await runProjectsAsync({
 			backend,
 			fileSystem,
 			projects: [
-				{ config: DEFAULT_CONFIG, testFiles: ["src/a.spec.ts"] },
-				{ config: DEFAULT_CONFIG, testFiles: ["src/b.spec.ts"] },
+				{ config: createResolvedConfig(), testFiles: ["src/a.spec.ts"] },
+				{ config: createResolvedConfig(), testFiles: ["src/b.spec.ts"] },
 			],
 			startTime: Date.now(),
 			tsconfigReader: readingVolume(fileSystem),
@@ -3308,7 +2241,7 @@ describe(runProjectsAsync, () => {
 		const promise = runProjectsAsync({
 			backend,
 			fileSystem,
-			projects: [{ config: DEFAULT_CONFIG, testFiles: ["src/test.spec.ts"] }],
+			projects: [{ config: createResolvedConfig(), testFiles: ["src/test.spec.ts"] }],
 			startTime: Date.now(),
 			tsconfigReader: readingVolume(fileSystem),
 			version: "0.0.0-test",
@@ -3337,7 +2270,7 @@ describe(runProjectsAsync, () => {
 			fileSystem,
 			projects: [
 				{
-					config: DEFAULT_CONFIG,
+					config: createResolvedConfig(),
 					displayColor: "green",
 					displayName: "client",
 					pkg: "@halcyon/client",
@@ -3372,7 +2305,7 @@ describe(runProjectsAsync, () => {
 		const { results } = await runProjectsAsync({
 			backend,
 			fileSystem,
-			projects: [{ config: DEFAULT_CONFIG, testFiles: ["src/a.spec.ts"] }],
+			projects: [{ config: createResolvedConfig(), testFiles: ["src/a.spec.ts"] }],
 			startTime: Date.now(),
 			tsconfigReader: readingVolume(fileSystem),
 			version: "0.0.0-test",
@@ -3405,12 +2338,12 @@ describe(runProjectsAsync, () => {
 			fileSystem,
 			projects: [
 				{
-					config: DEFAULT_CONFIG,
+					config: createResolvedConfig(),
 					displayName: "luau",
 					testFiles: ["src/a.spec.luau"],
 				},
 				{
-					config: DEFAULT_CONFIG,
+					config: createResolvedConfig(),
 					displayName: "ts",
 					testFiles: ["src/b.spec.ts"],
 				},
@@ -3462,10 +2395,7 @@ describe(runProjectsAsync, () => {
 				backend: backendReturning(backendResult),
 				deferFormatting: true,
 				fileSystem,
-				projects: [
-					{ config: DEFAULT_CONFIG, displayName: "ok", testFiles: ["src/a.spec.ts"] },
-					{ config: DEFAULT_CONFIG, displayName: "boom", testFiles: ["src/b.spec.ts"] },
-				],
+				projects: twoProjects("ok", "boom"),
 				startTime: Date.now(),
 				tsconfigReader: readingVolume(fileSystem),
 				version: "0.0.0-test",
@@ -3474,391 +2404,6 @@ describe(runProjectsAsync, () => {
 			expect(results).toHaveLength(2);
 			expect(results[0]!.exitCode).toBe(0);
 			expect(results[1]!.exitCode).toBe(1);
-		});
-
-		it("should put each entry's gaps on its tests and files, parsed or recovered", async () => {
-			expect.assertions(5);
-
-			const { fileSystem } = memoryFileSystem();
-
-			const passingPayload = buildJestOutputPayload({ result: createPassingResult() });
-			const file = "src/test.spec.ts";
-			const backendResult: BackendResult = {
-				rawResults: [
-					{
-						entry: { jestOutput: passingPayload },
-						gaps: {
-							attributed: [
-								{ file, gaps: {} },
-								{
-									file,
-									gaps: { "Sound.Pitch": 1 },
-									position: 1,
-									test: "Test passes",
-								},
-								{ file, gaps: {}, position: 2, test: "Test also passes" },
-							],
-							unattributed: {},
-						},
-					},
-					{
-						entry: { jestOutput: failureEnvelope },
-						gaps: { attributed: [], unattributed: { script: 2 } },
-					},
-					{ entry: { jestOutput: passingPayload } },
-				],
-				timing: DEFAULT_TIMING,
-			};
-
-			const { results } = await runProjectsAsync({
-				backend: backendReturning(backendResult),
-				deferFormatting: true,
-				fileSystem,
-				projects: [
-					{ config: DEFAULT_CONFIG, displayName: "ok", testFiles: ["src/a.spec.ts"] },
-					{ config: DEFAULT_CONFIG, displayName: "boom", testFiles: ["src/b.spec.ts"] },
-					{ config: DEFAULT_CONFIG, displayName: "plain", testFiles: ["src/c.spec.ts"] },
-				],
-				startTime: Date.now(),
-				tsconfigReader: readingVolume(fileSystem),
-				version: "0.0.0-test",
-			});
-
-			const [blocked, recovered, plain] = results;
-
-			expect(
-				blocked!.result.testResults[0]!.testResults.map((test) => test.gaps),
-			).toStrictEqual([{ "Sound.Pitch": 1 }, {}]);
-			expect(blocked!.exitCode).toBe(1);
-			expect(recovered!.result.testResults[0]!.gaps).toStrictEqual({ script: 2 });
-			expect(plain!.result.testResults[0]).not.toHaveProperty("gaps");
-			expect(plain!.exitCode).toBe(0);
-		});
-
-		it("should use the exec-error result contract on the synthetic failure (failureMessage + empty testResults, counts stay 0)", async () => {
-			expect.assertions(4);
-
-			const { fileSystem } = memoryFileSystem();
-
-			const backendResult: BackendResult = {
-				rawResults: [{ entry: { jestOutput: failureEnvelope } }],
-				timing: DEFAULT_TIMING,
-			};
-
-			const { results } = await runProjectsAsync({
-				backend: backendReturning(backendResult),
-				deferFormatting: true,
-				fileSystem,
-				projects: [
-					{ config: DEFAULT_CONFIG, displayName: "boom", testFiles: ["src/b.spec.ts"] },
-				],
-				startTime: Date.now(),
-				tsconfigReader: readingVolume(fileSystem),
-				version: "0.0.0-test",
-			});
-
-			// `hasExecError` is true when failureMessage is set AND testResults
-			// is empty. Aggregate `numFailedTests` is 0 because no tests ran.
-			expect(results[0]!.result.success).toBeFalse();
-			expect(results[0]!.result.numFailedTests).toBe(0);
-			expect(results[0]!.result.testResults[0]!.failureMessage).toContain(
-				"Exited with code: 1",
-			);
-			expect(results[0]!.result.testResults[0]!.testResults).toHaveLength(0);
-		});
-
-		it("should format the failure's human output when deferFormatting is not set", async () => {
-			expect.assertions(2);
-
-			const { fileSystem } = memoryFileSystem();
-
-			const backendResult: BackendResult = {
-				rawResults: [{ entry: { jestOutput: failureEnvelope } }],
-				timing: DEFAULT_TIMING,
-			};
-
-			const { results } = await runProjectsAsync({
-				backend: backendReturning(backendResult),
-				fileSystem,
-				projects: [
-					{ config: DEFAULT_CONFIG, displayName: "boom", testFiles: ["src/b.spec.ts"] },
-				],
-				startTime: Date.now(),
-				tsconfigReader: readingVolume(fileSystem),
-				version: "0.0.0-test",
-			});
-
-			// Without deferFormatting, the recovered failure still emits
-			// formatted output so single-mode callers see the human banner.
-			expect(results[0]!.output.length).toBeGreaterThan(0);
-			expect(results[0]!.output).toContain("Exited with code: 1");
-		});
-
-		it("should keep the raw error message when it is not an exit-code transport error", async () => {
-			expect.assertions(1);
-
-			const { fileSystem } = memoryFileSystem();
-
-			// `{success:false, err:"..."}` envelopes whose message does NOT
-			// match `^Exited with code: \d+$` should pass through unchanged —
-			// bannerOutput compose only applies to the exit-code-only case
-			// because that's where the real cause is hidden.
-			const customFailure = JSON.stringify({
-				err: "Resolver crashed: invalid jest path",
-				success: false,
-			});
-			const backendResult: BackendResult = {
-				rawResults: [
-					{
-						entry: {
-							bannerOutput: JSON.stringify([
-								{ message: "noise", messageType: 0, timestamp: 0 },
-							]),
-							jestOutput: customFailure,
-						},
-					},
-				],
-				timing: DEFAULT_TIMING,
-			};
-
-			const { results } = await runProjectsAsync({
-				backend: backendReturning(backendResult),
-				deferFormatting: true,
-				fileSystem,
-				projects: [
-					{ config: DEFAULT_CONFIG, displayName: "boom", testFiles: ["src/b.spec.ts"] },
-				],
-				startTime: Date.now(),
-				tsconfigReader: readingVolume(fileSystem),
-				version: "0.0.0-test",
-			});
-
-			expect(results[0]!.result.testResults[0]!.failureMessage).toBe(
-				"Resolver crashed: invalid jest path",
-			);
-		});
-
-		it("should fall back to the host's own report when bannerOutput entries are all blank", async () => {
-			expect.assertions(2);
-
-			const { fileSystem } = memoryFileSystem();
-
-			// Edge case: bannerOutput parses to entries but every message is
-			// whitespace/empty. Don't compose a "(blank)\n\nExited with..."
-			// monstrosity — report what the host knows and keep the exit code
-			// as the footer.
-			const backendResult: BackendResult = {
-				rawResults: [
-					{
-						entry: {
-							bannerOutput: JSON.stringify([
-								{ message: "  ", messageType: 0, timestamp: 0 },
-							]),
-							jestOutput: failureEnvelope,
-						},
-					},
-				],
-				timing: DEFAULT_TIMING,
-			};
-
-			const { results } = await runProjectsAsync({
-				backend: backendReturning(backendResult),
-				deferFormatting: true,
-				fileSystem,
-				projects: [
-					{ config: DEFAULT_CONFIG, displayName: "boom", testFiles: ["src/b.spec.ts"] },
-				],
-				startTime: Date.now(),
-				tsconfigReader: readingVolume(fileSystem),
-				version: "0.0.0-test",
-			});
-
-			const failureMessage = results[0]!.result.testResults[0]!.failureMessage!;
-
-			expect(failureMessage).toStartWith(
-				"Jest exited before returning a result, and no cause was captured.",
-			);
-			expect(failureMessage).toEndWith("Exited with code: 1");
-		});
-
-		// The job the host dispatched is the one thing a run that came back
-		// with nothing cannot take away, so the report is built from it.
-		it("should name the package, project and selected test files the host dispatched", async () => {
-			expect.assertions(2);
-
-			const { fileSystem } = memoryFileSystem();
-
-			const backendResult: BackendResult = {
-				rawResults: [{ entry: { jestOutput: failureEnvelope } }],
-				timing: DEFAULT_TIMING,
-			};
-
-			const { results } = await runProjectsAsync({
-				backend: backendReturning(backendResult),
-				deferFormatting: true,
-				fileSystem,
-				projects: [
-					{
-						config: DEFAULT_CONFIG,
-						displayName: "unit",
-						pkg: "@scope/boom",
-						testFiles: ["src/a.spec.ts", "src/b.spec.ts"],
-					},
-				],
-				startTime: Date.now(),
-				tsconfigReader: readingVolume(fileSystem),
-				version: "0.0.0-test",
-			});
-
-			const failureMessage = results[0]!.result.testResults[0]!.failureMessage!;
-
-			expect(failureMessage).toContain("Project      @scope/boom › unit");
-			expect(failureMessage).toContain("Test files   2 selected by the host");
-		});
-
-		it("should carry the runner's phase and capture state into the report", async () => {
-			expect.assertions(2);
-
-			const { fileSystem } = memoryFileSystem();
-
-			const phasedFailure = JSON.stringify({
-				err: "Exited with code: 1",
-				runner: { captureInstalled: false, phase: "resolveJest" },
-				success: false,
-			});
-			const backendResult: BackendResult = {
-				rawResults: [{ entry: { jestOutput: phasedFailure } }],
-				timing: DEFAULT_TIMING,
-			};
-
-			const { results } = await runProjectsAsync({
-				backend: backendReturning(backendResult),
-				deferFormatting: true,
-				fileSystem,
-				projects: [
-					{ config: DEFAULT_CONFIG, displayName: "boom", testFiles: ["src/b.spec.ts"] },
-				],
-				startTime: Date.now(),
-				tsconfigReader: readingVolume(fileSystem),
-				version: "0.0.0-test",
-			});
-
-			const failureMessage = results[0]!.result.testResults[0]!.failureMessage!;
-
-			expect(failureMessage).toContain("Phase        resolving the Jest module");
-			expect(failureMessage).toContain(
-				"Capture      stdout/stderr interception could not be installed",
-			);
-		});
-
-		// When Jest's exit(1) fires for "no tests found", the underlying
-		// rejection message is just "Exited with code: 1" — the real cause
-		// (`No tests found in <pkg>`, passWithNoTests guidance, etc.) lives
-		// in the captured banner output (Jest's process.stdout). The
-		// synthetic exec-error must surface that cause; otherwise users see
-		// only the opaque transport error.
-		it("should compose failureMessage from bannerOutput when error is exit-code-only", async () => {
-			expect.assertions(3);
-
-			const { fileSystem } = memoryFileSystem();
-
-			const bannerOutput = JSON.stringify([
-				{
-					message: "No tests found in /repo/packages/foo",
-					messageType: 0,
-					timestamp: 0,
-				},
-			]);
-			const backendResult: BackendResult = {
-				rawResults: [
-					{
-						entry: { bannerOutput, jestOutput: failureEnvelope },
-					},
-				],
-				timing: DEFAULT_TIMING,
-			};
-
-			const { results } = await runProjectsAsync({
-				backend: backendReturning(backendResult),
-				deferFormatting: true,
-				fileSystem,
-				projects: [
-					{ config: DEFAULT_CONFIG, displayName: "boom", testFiles: ["src/b.spec.ts"] },
-				],
-				startTime: Date.now(),
-				tsconfigReader: readingVolume(fileSystem),
-				version: "0.0.0-test",
-			});
-
-			const failureMessage = results[0]!.result.testResults[0]!.failureMessage!;
-
-			// Meaningful cause leads so `cleanExecErrorMessage` picks it.
-			expect(failureMessage).toContain("No tests found in /repo/packages/foo");
-			// Exit code still present as a footer for diagnostic completeness.
-			expect(failureMessage).toContain("Exited with code: 1");
-			expect(failureMessage.indexOf("No tests found")).toBeLessThan(
-				failureMessage.indexOf("Exited with code: 1"),
-			);
-		});
-
-		it("should attach the rawResult's fallbackGameOutput to the synthetic failure", async () => {
-			expect.assertions(1);
-
-			const { fileSystem } = memoryFileSystem();
-
-			const backendResult: BackendResult = {
-				rawResults: [
-					{
-						entry: { jestOutput: failureEnvelope },
-						fallbackGameOutput: "captured-game-output",
-					},
-				],
-				timing: DEFAULT_TIMING,
-			};
-
-			const { results } = await runProjectsAsync({
-				backend: backendReturning(backendResult),
-				fileSystem,
-				projects: [
-					{ config: DEFAULT_CONFIG, displayName: "boom", testFiles: ["src/b.spec.ts"] },
-				],
-				startTime: Date.now(),
-				tsconfigReader: readingVolume(fileSystem),
-				version: "0.0.0-test",
-			});
-
-			expect(results[0]!.gameOutput).toBe("captured-game-output");
-		});
-
-		it("should rethrow non-LuauScriptError failures so unexpected internal errors still surface", async () => {
-			expect.assertions(1);
-
-			const { fileSystem } = memoryFileSystem();
-
-			// `{}` parses as JSON but fails validateJestResult (no
-			// testResults etc.), which throws a plain Error (not
-			// LuauScriptError). That path should not be silently swallowed.
-			const backendResult: BackendResult = {
-				rawResults: [{ entry: { jestOutput: "{}" } }],
-				timing: DEFAULT_TIMING,
-			};
-
-			await expect(
-				runProjectsAsync({
-					backend: backendReturning(backendResult),
-					fileSystem,
-					projects: [
-						{
-							config: DEFAULT_CONFIG,
-							displayName: "boom",
-							testFiles: ["src/b.spec.ts"],
-						},
-					],
-					startTime: Date.now(),
-					tsconfigReader: readingVolume(fileSystem),
-					version: "0.0.0-test",
-				}),
-			).rejects.toThrow(/Invalid Jest result/);
 		});
 	});
 });

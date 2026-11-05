@@ -21,10 +21,14 @@ import type { WebSocketServerFactory } from "./web-socket-server-factory.ts";
 
 const ENV_PREFIX = "JEST_";
 
+/** Reports whether Roblox Studio is installed on this machine. */
 export type StudioInstalledCheck = () => boolean;
 
+/** Inputs that pick and build the backend for a run. */
 export interface BackendResolutionRequest extends BackendResolutionOptions {
+	/** Parsed command-line options. */
 	readonly cli: CliOptions;
+	/** Resolved project configuration. */
 	readonly config: ResolvedConfig;
 }
 
@@ -34,6 +38,12 @@ interface BackendResolutionOptions {
 	webSocketServerFactory?: WebSocketServerFactory;
 }
 
+/**
+ * Reports whether Studio discovery finds a Studio install.
+ *
+ * @param discover - Finds the Studio path, or throws when there is none.
+ * @returns True when `discover` does not throw.
+ */
 export function isStudioDiscoverable(discover: () => string = discoverStudioPath): boolean {
 	isStudioDiscoveryOn();
 	try {
@@ -48,6 +58,10 @@ export function isStudioDiscoverable(discover: () => string = discoverStudioPath
  * The Auto Backend: `studio-cli` when Roblox Studio is installed, otherwise
  * `open-cloud`. A configured Studio path counts as installed, so a wrong path
  * fails at launch instead of silently moving the run to Open Cloud.
+ *
+ * @param options - Configured backend and Studio path.
+ * @param isStudioInstalled - Reports whether Studio is installed.
+ * @returns The configured backend, or the backend `auto` resolves to.
  */
 export function resolveAutoBackend(
 	{ backend, studioPath }: Pick<ResolvedConfig, "backend" | "studioPath">,
@@ -72,6 +86,10 @@ export function resolveAutoBackend(
  * Against the *resolved* backend, so `--backend auto` landing on Open Cloud is
  * rejected the same way an explicit `--backend open-cloud` is, rather than
  * running with the flag silently ignored.
+ *
+ * @param kind - Resolved backend.
+ * @param vmParallel - Requested in-session VM parallelism.
+ * @throws Error when `kind` cannot serve `vmParallel`.
  */
 export function assertVmParallel(kind: BackendKind, vmParallel: ParallelOption): void {
 	if (vmParallel === undefined) {
@@ -104,6 +122,13 @@ export function assertVmParallel(kind: BackendKind, vmParallel: ParallelOption):
 	}
 }
 
+/**
+ * Resolves the backend kind and builds that backend.
+ *
+ * @param request - CLI options, config, and injectable seams.
+ * @returns The backend for the run.
+ * @rejects Error when the backend cannot serve the requested VM parallelism.
+ */
 // oxlint-disable-next-line typescript/require-await -- Async so a bad config rejects rather than throws: `RunSeams.resolveBackend` is awaited, and its fakes resolve.
 export async function resolveBackendAsync({
 	cli,

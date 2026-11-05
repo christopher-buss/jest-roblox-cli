@@ -32,6 +32,10 @@ export const VM_HOST_POOL_SIZE = 4;
  *
  * The plugin clamps again against the hosts it ships, so this is a request
  * rather than a promise.
+ *
+ * @param vmParallel - Requested VM count, `"auto"`, or unset.
+ * @param configCount - Number of projects in the run.
+ * @returns The VM count, or undefined for a sequential run.
  */
 export function resolveVmHostCount(
 	vmParallel: ParallelOption,

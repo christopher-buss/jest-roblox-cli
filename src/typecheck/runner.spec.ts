@@ -6,17 +6,11 @@ import process from "node:process";
 import { assert, describe, expect, it, onTestFinished, vi } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
+import { posixPath } from "#test/mocks/posix-path.ts";
 import { ConfigError } from "../config/errors.ts";
 import type { ChildProcessRunner } from "../utils/child-process.ts";
 import type { FileSystem } from "../utils/file-system.ts";
-import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
-import {
-	createLocationsIndexMap,
-	isCompositeProject,
-	mapErrorsToTests,
-	runTypecheckAsync,
-} from "./runner.ts";
-import type { RawErrorsMap, TestDefinition } from "./types.ts";
+import { runTypecheckAsync } from "./runner.ts";
 
 const LUAU_SPEC = path.resolve("/project/src/a.spec-d.luau");
 const LUAU_SOURCE = [
@@ -30,619 +24,6 @@ const LUAU_SOURCE = [
 ].join("\n");
 
 const TSC_7_MANIFEST = JSON.stringify({ bin: { tsc: "./bin/tsc" }, version: "7.0.2" });
-
-interface FileInfo {
-	definitions: Array<TestDefinition>;
-	locations: Map<string, number>;
-}
-
-describe(createLocationsIndexMap, () => {
-	it("should map line:column pairs to character indices", () => {
-		expect.assertions(3);
-
-		const source = "abc\ndef\n";
-		const indexMap = createLocationsIndexMap(source);
-
-		expect(indexMap.get("1:1")).toBe(0);
-		expect(indexMap.get("1:3")).toBe(2);
-		expect(indexMap.get("2:1")).toBe(4);
-	});
-});
-
-describe(mapErrorsToTests, () => {
-	it("should mark all tests as passed when no errors exist", () => {
-		expect.assertions(2);
-
-		const errors: RawErrorsMap = new Map();
-		const files = new Map<string, FileInfo>([
-			[
-				"/test.ts",
-				{
-					definitions: [
-						{ name: "should pass", ancestorNames: [], end: 27, start: 0, type: "test" },
-					],
-					locations: createLocationsIndexMap('it("should pass", () => {});'),
-				},
-			],
-		]);
-
-		const result = mapErrorsToTests({ errors, files, startTime: Date.now() });
-
-		expect(result.success).toBeTrue();
-		expect(result.testResults[0]!.testResults[0]!.status).toBe("passed");
-	});
-
-	it("should fail the test containing the error", () => {
-		expect.assertions(4);
-
-		const source =
-			'describe("suite", () => {\n  it("should fail", () => {\n    bad;\n  });\n});';
-		const errors: RawErrorsMap = new Map([
-			[
-				"/test.ts",
-				[
-					{
-						code: "TS2322",
-						column: 5,
-						filePath: "/test.ts",
-						line: 3,
-						message: "Type mismatch",
-					},
-				],
-			],
-		]);
-
-		const definitions: Array<TestDefinition> = [
-			{ name: "suite", ancestorNames: [], end: source.length - 1, start: 0, type: "suite" },
-			{ name: "should fail", ancestorNames: ["suite"], end: 64, start: 26, type: "test" },
-		];
-		const files = new Map<string, FileInfo>([
-			["/test.ts", { definitions, locations: createLocationsIndexMap(source) }],
-		]);
-
-		const result = mapErrorsToTests({ errors, files, startTime: 123 });
-
-		expect(result.success).toBeFalse();
-		expect(result.testResults[0]!.testResults[0]!.status).toBe("failed");
-		expect(result.testResults[0]!.testResults[0]!.failureMessages).toHaveLength(1);
-		expect(result).toMatchSnapshot();
-	});
-
-	it("should attribute error outside test blocks to file-level failure", () => {
-		expect.assertions(3);
-
-		const source = 'const x: number = "bad";\nit("should pass", () => {});';
-		const errors: RawErrorsMap = new Map([
-			[
-				"/test.ts",
-				[
-					{
-						code: "TS2322",
-						column: 7,
-						filePath: "/test.ts",
-						line: 1,
-						message: "Type mismatch",
-					},
-				],
-			],
-		]);
-
-		const definitions: Array<TestDefinition> = [
-			{ name: "should pass", ancestorNames: [], end: 52, start: 25, type: "test" },
-		];
-		const files = new Map<string, FileInfo>([
-			["/test.ts", { definitions, locations: createLocationsIndexMap(source) }],
-		]);
-
-		const result = mapErrorsToTests({ errors, files, startTime: 123 });
-
-		expect(result.success).toBeFalse();
-		expect(result.numFailedTests).toBePositive();
-		expect(result).toMatchSnapshot();
-	});
-
-	it("should attribute an error after a finished test to the file, not that test", () => {
-		expect.assertions(1);
-
-		const source = 'it("should pass", () => {});\nconst x: number = "bad";';
-		const errors: RawErrorsMap = new Map([
-			[
-				"/test.ts",
-				[
-					{
-						code: "TS2322",
-						column: 7,
-						filePath: "/test.ts",
-						line: 2,
-						message: "Type mismatch",
-					},
-				],
-			],
-		]);
-		const definitions: Array<TestDefinition> = [
-			{ name: "should pass", ancestorNames: [], end: 27, start: 0, type: "test" },
-		];
-		const files = new Map<string, FileInfo>([
-			["/test.ts", { definitions, locations: createLocationsIndexMap(source) }],
-		]);
-
-		const result = mapErrorsToTests({ errors, files, startTime: 123 });
-
-		const test = result.testResults[0]!.testResults.find((tc) => tc.title === "should pass");
-
-		expect(test!.status).toBe("passed");
-	});
-
-	it("should collect multiple errors in the same test", () => {
-		expect.assertions(1);
-
-		const source = 'it("should fail", () => {\n  a;\n  b;\n});';
-		const errors: RawErrorsMap = new Map([
-			[
-				"/test.ts",
-				[
-					{
-						code: "TS2322",
-						column: 3,
-						filePath: "/test.ts",
-						line: 2,
-						message: "Error one",
-					},
-					{
-						code: "TS2322",
-						column: 3,
-						filePath: "/test.ts",
-						line: 3,
-						message: "Error two",
-					},
-				],
-			],
-		]);
-
-		const definitions: Array<TestDefinition> = [
-			{ name: "should fail", ancestorNames: [], end: 39, start: 0, type: "test" },
-		];
-		const files = new Map<string, FileInfo>([
-			["/test.ts", { definitions, locations: createLocationsIndexMap(source) }],
-		]);
-
-		const result = mapErrorsToTests({ errors, files, startTime: Date.now() });
-
-		expect(result.testResults[0]!.testResults[0]!.failureMessages).toHaveLength(2);
-	});
-
-	it("should handle mixed files with and without errors", () => {
-		expect.assertions(4);
-
-		const errors: RawErrorsMap = new Map([
-			[
-				"/fail.ts",
-				[
-					{
-						code: "TS2322",
-						column: 1,
-						filePath: "/fail.ts",
-						line: 1,
-						message: "Error",
-					},
-				],
-			],
-		]);
-
-		const files = new Map<string, FileInfo>([
-			[
-				"/fail.ts",
-				{
-					definitions: [
-						{ name: "should fail", ancestorNames: [], end: 27, start: 0, type: "test" },
-					],
-					locations: createLocationsIndexMap('it("should fail", () => {});'),
-				},
-			],
-			[
-				"/pass.ts",
-				{
-					definitions: [
-						{ name: "should pass", ancestorNames: [], end: 27, start: 0, type: "test" },
-					],
-					locations: createLocationsIndexMap('it("should pass", () => {});'),
-				},
-			],
-		]);
-
-		const result = mapErrorsToTests({ errors, files, startTime: 123 });
-
-		// The result crosses the Jest reporter boundary. Pin its complete shape
-		// alongside the aggregate counts below.
-		expect(result).toMatchSnapshot();
-
-		expect(result.numFailedTests).toBe(1);
-		expect(result.numPassedTests).toBe(1);
-		expect(result.numTotalTests).toBe(2);
-	});
-
-	it("should surface errors for non-test source files as source-level failures", () => {
-		expect.assertions(5);
-
-		const errors: RawErrorsMap = new Map([
-			[
-				"src/source.ts",
-				[
-					{
-						code: "TS2322",
-						column: 7,
-						filePath: "src/source.ts",
-						line: 1,
-						message: "Type 'string' is not assignable to type 'number'.",
-					},
-				],
-			],
-		]);
-		const files = new Map<string, FileInfo>([
-			[
-				"src/test.test-d.ts",
-				{
-					definitions: [
-						{ name: "should pass", ancestorNames: [], end: 27, start: 0, type: "test" },
-					],
-					locations: createLocationsIndexMap('it("should pass", () => {});'),
-				},
-			],
-		]);
-
-		const result = mapErrorsToTests({
-			errors,
-			files,
-			ignoreSourceErrors: false,
-			startTime: 123,
-		});
-
-		const sourceResult = result.testResults.find(
-			(file) => file.testFilePath === "src/source.ts",
-		);
-
-		expect(result.success).toBeFalse();
-		expect(result.numFailedTests).toBe(1);
-		expect(sourceResult).toBeDefined();
-		expect(sourceResult!.testResults[0]!.failureMessages[0]).toContain("TS2322");
-		expect(result).toMatchSnapshot();
-	});
-
-	it("should suppress non-test source file errors when ignoreSourceErrors is true", () => {
-		expect.assertions(4);
-
-		const errors: RawErrorsMap = new Map([
-			[
-				"src/source.ts",
-				[
-					{
-						code: "TS2322",
-						column: 7,
-						filePath: "src/source.ts",
-						line: 1,
-						message: "Type 'string' is not assignable to type 'number'.",
-					},
-				],
-			],
-		]);
-		const files = new Map<string, FileInfo>([
-			[
-				"src/test.test-d.ts",
-				{
-					definitions: [
-						{ name: "should pass", ancestorNames: [], end: 27, start: 0, type: "test" },
-					],
-					locations: createLocationsIndexMap('it("should pass", () => {});'),
-				},
-			],
-		]);
-
-		const result = mapErrorsToTests({
-			errors,
-			files,
-			ignoreSourceErrors: true,
-			startTime: 123,
-		});
-
-		expect(result.success).toBeTrue();
-		expect(result.numFailedTests).toBe(0);
-		expect(
-			result.testResults.find((file) => file.testFilePath === "src/source.ts"),
-		).toBeUndefined();
-		expect(result).toMatchSnapshot();
-	});
-
-	it("should produce correct JestResult counts", () => {
-		expect.assertions(4);
-
-		const errors: RawErrorsMap = new Map();
-		const files = new Map<string, FileInfo>([
-			[
-				"/test.ts",
-				{
-					definitions: [
-						{ name: "should a", ancestorNames: [], end: 23, start: 0, type: "test" },
-						{ name: "should b", ancestorNames: [], end: 48, start: 25, type: "test" },
-					],
-					locations: createLocationsIndexMap(
-						'it("should a", () => {});\nit("should b", () => {});',
-					),
-				},
-			],
-		]);
-
-		const result = mapErrorsToTests({ errors, files, startTime: Date.now() });
-
-		expect(result.numTotalTests).toBe(2);
-		expect(result.numPassedTests).toBe(2);
-		expect(result.numFailedTests).toBe(0);
-		expect(result.success).toBeTrue();
-	});
-
-	it("should treat error with out-of-bounds position as file-level failure", () => {
-		expect.assertions(1);
-
-		const source = 'it("should pass", () => {});';
-		const errors: RawErrorsMap = new Map([
-			[
-				"/test.ts",
-				[
-					{
-						code: "TS2322",
-						column: 1,
-						filePath: "/test.ts",
-						line: 999,
-						message: "Out of bounds",
-					},
-				],
-			],
-		]);
-
-		const files = new Map<string, FileInfo>([
-			[
-				"/test.ts",
-				{
-					definitions: [
-						{ name: "should pass", ancestorNames: [], end: 27, start: 0, type: "test" },
-					],
-					locations: createLocationsIndexMap(source),
-				},
-			],
-		]);
-
-		const result = mapErrorsToTests({ errors, files, startTime: Date.now() });
-
-		expect(result.numFailedTests).toBe(1);
-	});
-
-	it("should attribute an end-boundary diagnostic to the innermost overlapping test", () => {
-		expect.assertions(1);
-
-		const source = 'it("outer", () => { it("inner", () => { bad; }); });';
-		const badIndex = source.indexOf("bad");
-		const innerStart = source.indexOf('it("inner"');
-		const errors: RawErrorsMap = new Map([
-			[
-				"src/nested.spec.ts",
-				[
-					{
-						code: "TS2322",
-						column: badIndex + 1,
-						filePath: "src/nested.spec.ts",
-						line: 1,
-						message: "Nested mismatch",
-					},
-				],
-			],
-		]);
-		const files = new Map<string, FileInfo>([
-			[
-				"src/nested.spec.ts",
-				{
-					definitions: [
-						{
-							name: "outer",
-							ancestorNames: [],
-							end: source.length,
-							start: 0,
-							type: "test",
-						},
-						{
-							name: "inner",
-							ancestorNames: ["outer"],
-							end: badIndex,
-							start: innerStart,
-							type: "test",
-						},
-					],
-					locations: createLocationsIndexMap(source),
-				},
-			],
-		]);
-
-		const result = mapErrorsToTests({ errors, files, startTime: 123 });
-
-		expect(result.testResults[0]!.testResults).toStrictEqual([
-			{
-				ancestorTitles: [],
-				failureMessages: [],
-				fullName: "outer",
-				status: "passed",
-				title: "outer",
-			},
-			{
-				ancestorTitles: ["outer"],
-				failureMessages: ["TS2322: Nested mismatch"],
-				fullName: "outer > inner",
-				status: "failed",
-				title: "inner",
-			},
-		]);
-	});
-});
-
-/**
- * A filesystem whose every read answers with `contents`.
- *
- * @param contents - What a read returns.
- */
-function readingText(contents: string): FileSystem {
-	return fromAny({ readFileSync: () => contents });
-}
-
-/**
- * A filesystem whose every read fails.
- *
- * @param failure - What the read throws.
- */
-function throwingOnRead(failure: unknown): FileSystem {
-	return fromAny({
-		readFileSync: () => {
-			throw failure;
-		},
-	});
-}
-
-describe(isCompositeProject, () => {
-	it("should return true when compilerOptions.composite is true", () => {
-		expect.assertions(1);
-
-		const fileSystem = readingText(JSON.stringify({ compilerOptions: { composite: true } }));
-
-		expect(isCompositeProject({ fileSystem, rootDirectory: "/project" })).toBeTrue();
-	});
-
-	it("should return false when composite is absent", () => {
-		expect.assertions(1);
-
-		const fileSystem = readingText(JSON.stringify({ compilerOptions: { strict: true } }));
-
-		expect(isCompositeProject({ fileSystem, rootDirectory: "/project" })).toBeFalse();
-	});
-
-	it("should return false when compilerOptions is absent", () => {
-		expect.assertions(1);
-
-		const fileSystem = readingText(JSON.stringify({ include: ["src"] }));
-
-		expect(isCompositeProject({ fileSystem, rootDirectory: "/project" })).toBeFalse();
-	});
-
-	it("should return false when compilerOptions is null", () => {
-		expect.assertions(1);
-
-		const fileSystem = readingText('{ "compilerOptions": null }');
-
-		expect(isCompositeProject({ fileSystem, rootDirectory: "/project" })).toBeFalse();
-	});
-
-	it("should return false when compilerOptions is an array", () => {
-		expect.assertions(1);
-
-		const fileSystem = readingText('{ "compilerOptions": [] }');
-
-		expect(isCompositeProject({ fileSystem, rootDirectory: "/project" })).toBeFalse();
-	});
-
-	it("should return false when tsconfig does not exist", () => {
-		expect.assertions(1);
-
-		const fileSystem = throwingOnRead(new Error("ENOENT"));
-
-		expect(isCompositeProject({ fileSystem, rootDirectory: "/project" })).toBeFalse();
-	});
-
-	it("should return false on malformed JSON", () => {
-		expect.assertions(1);
-
-		const fileSystem = readingText("not json{{{");
-
-		expect(isCompositeProject({ fileSystem, rootDirectory: "/project" })).toBeFalse();
-	});
-
-	it("should detect composite in tsconfig with comments", () => {
-		expect.assertions(1);
-
-		const fileSystem = readingText(
-			'// this is a comment\n{ "compilerOptions": { "composite": true } }',
-		);
-
-		expect(isCompositeProject({ fileSystem, rootDirectory: "/project" })).toBeTrue();
-	});
-
-	it("should detect composite in tsconfig with trailing commas", () => {
-		expect.assertions(1);
-
-		const fileSystem = readingText('{ "compilerOptions": { "composite": true, }, }');
-
-		expect(isCompositeProject({ fileSystem, rootDirectory: "/project" })).toBeTrue();
-	});
-
-	it("should warn when custom tsconfig cannot be read", () => {
-		expect.assertions(2);
-
-		const stderrSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
-
-		const fileSystem = throwingOnRead(new Error("ENOENT"));
-
-		const isComposite = isCompositeProject({
-			fileSystem,
-			rootDirectory: "/project",
-			tsconfig: "tsconfig.build.json",
-		});
-
-		expect(isComposite).toBeFalse();
-		expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining("tsconfig.build.json"));
-	});
-
-	it("should warn with stringified error when thrown value is not an Error", () => {
-		expect.assertions(2);
-
-		const stderrSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
-
-		const fileSystem = throwingOnRead("raw string error");
-
-		const isComposite = isCompositeProject({
-			fileSystem,
-			rootDirectory: "/project",
-			tsconfig: "tsconfig.build.json",
-		});
-
-		expect(isComposite).toBeFalse();
-		expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining("raw string error"));
-	});
-
-	it("should not warn when default tsconfig does not exist", () => {
-		expect.assertions(2);
-
-		const stderrSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
-
-		const fileSystem = throwingOnRead(new Error("ENOENT"));
-
-		const isComposite = isCompositeProject({ fileSystem, rootDirectory: "/project" });
-
-		expect(isComposite).toBeFalse();
-		expect(stderrSpy).not.toHaveBeenCalled();
-	});
-
-	it("should resolve custom tsconfig path against root directory", () => {
-		expect.assertions(1);
-
-		const fileSystem = readingText(JSON.stringify({ compilerOptions: { composite: true } }));
-		const readFile = vi.spyOn(fileSystem, "readFileSync");
-
-		isCompositeProject({
-			fileSystem,
-			rootDirectory: "/project",
-			tsconfig: "tsconfig.build.json",
-		});
-
-		expect(readFile).toHaveBeenCalledWith(
-			path.resolve("/project", "tsconfig.build.json"),
-			"utf-8",
-		);
-	});
-});
 
 describe(runTypecheckAsync, () => {
 	interface TsgoSpawnError extends Error {
@@ -659,12 +40,16 @@ describe(runTypecheckAsync, () => {
 		options: { timeout?: number };
 	}
 
-	// `spawnTsgo` drives `execFile` in callback form and listens once for the
-	// child `spawn` event to clear its launch timer. `stubTsgo` returns the
-	// recorded invocations plus a fake child (`emitSpawn` fires the registered
-	// `spawn` listener, `kill` is the spy `spawnTsgo` calls on a launch timeout)
-	// and lets a test simulate tsgo finishing (exit 0), exiting non-zero with
-	// diagnostics, failing to spawn, or never launching.
+	/**
+	 * `spawnTsgo` drives `execFile` in callback form and listens once for the
+	 * child `spawn` event to clear its launch timer. `stubTsgo` returns the
+	 * recorded invocations plus a fake child (`emitSpawn` fires the registered
+	 * `spawn` listener, `kill` is the spy `spawnTsgo` calls on a launch timeout)
+	 * and lets a test simulate tsgo finishing (exit 0), exiting non-zero with
+	 * diagnostics, failing to spawn, or never launching.
+	 * @param respond - Answers each `execFile` call through its callback.
+	 * @returns The stub runner, `emitSpawn`, the invocations and the spies.
+	 */
 	function stubTsgo(respond: (callback: TsgoCallback) => void) {
 		let spawnListener: (() => void) | undefined;
 		const invocations: Array<TsgoInvocation> = [];
@@ -713,6 +98,7 @@ describe(runTypecheckAsync, () => {
 	 *
 	 * @param tsconfigContent - What a tsconfig read returns.
 	 * @param testFileContent - What every other read returns.
+	 * @returns The stub filesystem.
 	 */
 	function readingFiles(tsconfigContent: string, testFileContent: string): FileSystem {
 		return fromAny({
@@ -727,6 +113,54 @@ describe(runTypecheckAsync, () => {
 					? tsconfigContent
 					: testFileContent;
 			},
+		});
+	}
+
+	type TypecheckOverrides = Partial<Parameters<typeof runTypecheckAsync>[0]>;
+
+	async function compileAsync(
+		overrides: TypecheckOverrides = {},
+	): Promise<Array<TsgoInvocation>> {
+		const { childProcess, invocations } = stubTsgo((callback) => {
+			callback(null, "", "");
+		});
+		const fileSystem = readingFiles(
+			JSON.stringify({ compilerOptions: {} }),
+			'it("should pass", () => {});',
+		);
+
+		await runTypecheckAsync({
+			childProcess,
+			files: ["src/test.spec.ts"],
+			fileSystem,
+			rootDir: "/project",
+			...overrides,
+		});
+		return invocations;
+	}
+
+	async function typecheckWithSourceErrorAsync(
+		overrides: TypecheckOverrides = {},
+	): ReturnType<typeof runTypecheckAsync> {
+		const filePath = "src/test.spec.ts";
+		const { childProcess } = stubTsgo((callback) => {
+			callback(
+				exitWith(2),
+				"other.ts(1,7): error TS2322: Type 'string' is not assignable to type 'number'.",
+				"",
+			);
+		});
+		const fileSystem = readingFiles(
+			JSON.stringify({ compilerOptions: {} }),
+			'it("should pass", () => {});',
+		);
+
+		return runTypecheckAsync({
+			childProcess,
+			files: [filePath],
+			fileSystem,
+			rootDir: path.dirname(path.resolve(filePath)),
+			...overrides,
 		});
 	}
 
@@ -753,7 +187,7 @@ describe(runTypecheckAsync, () => {
 
 		const [tsgoScript, ...callArgs] = invocations[0]!.arguments;
 
-		expect(normalizeWindowsPath(tsgoScript)).toEndWith("/bin/tsc");
+		expect(posixPath(tsgoScript!)).toEndWith("/bin/tsc");
 		expect(callArgs).toStrictEqual([
 			"--noEmit",
 			"--pretty",
@@ -866,27 +300,14 @@ describe(runTypecheckAsync, () => {
 		});
 
 		expect(result.testResults[0]!.testFilePath).toBe(
-			normalizeWindowsPath(path.relative("/project", path.resolve("src/test.spec.ts"))),
+			posixPath(path.relative("/project", path.resolve("src/test.spec.ts"))),
 		);
 	});
 
 	it("should bound the tsgo compile with the default run timeout", async () => {
 		expect.assertions(1);
 
-		const { childProcess, invocations } = stubTsgo((callback) => {
-			callback(null, "", "");
-		});
-		const fileSystem = readingFiles(
-			JSON.stringify({ compilerOptions: {} }),
-			'it("should pass", () => {});',
-		);
-
-		await runTypecheckAsync({
-			childProcess,
-			files: ["src/test.spec.ts"],
-			fileSystem,
-			rootDir: "/project",
-		});
+		const invocations = await compileAsync();
 
 		expect(invocations[0]!.options.timeout).toBe(300_000);
 	});
@@ -894,21 +315,7 @@ describe(runTypecheckAsync, () => {
 	it("should bound the tsgo compile with a custom run timeout", async () => {
 		expect.assertions(1);
 
-		const { childProcess, invocations } = stubTsgo((callback) => {
-			callback(null, "", "");
-		});
-		const fileSystem = readingFiles(
-			JSON.stringify({ compilerOptions: {} }),
-			'it("should pass", () => {});',
-		);
-
-		await runTypecheckAsync({
-			childProcess,
-			files: ["src/test.spec.ts"],
-			fileSystem,
-			rootDir: "/project",
-			timeout: 250,
-		});
+		const invocations = await compileAsync({ timeout: 250 });
 
 		expect(invocations[0]!.options.timeout).toBe(250);
 	});
@@ -1155,6 +562,7 @@ describe(runTypecheckAsync, () => {
 	 * reads as not installed.
 	 *
 	 * @param manifests - Manifest path per `<package>/package.json` specifier.
+	 * @returns A resolver that throws `MODULE_NOT_FOUND` for unlisted specifiers.
 	 */
 	function resolvingManifests(manifests: Record<string, string>): (specifier: string) => string {
 		return (specifier) => {
@@ -1191,7 +599,7 @@ describe(runTypecheckAsync, () => {
 			rootDir: "/project",
 		});
 
-		expect(normalizeWindowsPath(invocations[0]!.arguments[0])).toBe("/native/bin/tsc");
+		expect(posixPath(invocations[0]!.arguments[0]!)).toBe("/native/bin/tsc");
 	});
 
 	it("should fall back to 'typescript' when it is TypeScript 7", async () => {
@@ -1219,7 +627,7 @@ describe(runTypecheckAsync, () => {
 			rootDir: "/project",
 		});
 
-		expect(normalizeWindowsPath(invocations[0]!.arguments[0])).toBe("/typescript/bin/tsc");
+		expect(posixPath(invocations[0]!.arguments[0]!)).toBe("/typescript/bin/tsc");
 	});
 
 	it("should fall back to '@typescript/native-preview'", async () => {
@@ -1252,7 +660,7 @@ describe(runTypecheckAsync, () => {
 			rootDir: "/project",
 		});
 
-		expect(normalizeWindowsPath(invocations[0]!.arguments[0])).toBe("/preview/bin/tsgo");
+		expect(posixPath(invocations[0]!.arguments[0]!)).toBe("/preview/bin/tsgo");
 	});
 
 	it("should not run a 'typescript' older than 7", async () => {
@@ -1274,7 +682,13 @@ describe(runTypecheckAsync, () => {
 				}),
 				rootDir: "/project",
 			}),
-		).rejects.toThrow(ConfigError);
+		).rejects.toThrow(
+			expect.objectContaining({
+				hint: "npm install -D typescript@7 — or run without --typecheck/--typecheckOnly.",
+				message:
+					"Type tests need TypeScript 7 ('typescript' 7+, or '@typescript/native' beside TypeScript 6), an optional peer dependency that is not installed.",
+			}),
+		);
 	});
 
 	// Only a missing module means "not installed". Relabelling every failure
@@ -1380,28 +794,7 @@ describe(runTypecheckAsync, () => {
 	it("should surface tsgo errors in non-test source files by default", async () => {
 		expect.assertions(2);
 
-		const filePath = "src/test.spec.ts";
-		const resolvedFile = path.resolve(filePath);
-		const rootDirectory = path.dirname(resolvedFile);
-
-		const { childProcess } = stubTsgo((callback) => {
-			callback(
-				exitWith(2),
-				"other.ts(1,7): error TS2322: Type 'string' is not assignable to type 'number'.",
-				"",
-			);
-		});
-		const fileSystem = readingFiles(
-			JSON.stringify({ compilerOptions: {} }),
-			'it("should pass", () => {});',
-		);
-
-		const result = await runTypecheckAsync({
-			childProcess,
-			files: [filePath],
-			fileSystem,
-			rootDir: rootDirectory,
-		});
+		const result = await typecheckWithSourceErrorAsync();
 
 		const sourceResult = result.testResults.find((file) => file.testFilePath === "other.ts");
 
@@ -1412,29 +805,7 @@ describe(runTypecheckAsync, () => {
 	it("should suppress non-test source file errors when ignoreSourceErrors is true", async () => {
 		expect.assertions(1);
 
-		const filePath = "src/test.spec.ts";
-		const resolvedFile = path.resolve(filePath);
-		const rootDirectory = path.dirname(resolvedFile);
-
-		const { childProcess } = stubTsgo((callback) => {
-			callback(
-				exitWith(2),
-				"other.ts(1,7): error TS2322: Type 'string' is not assignable to type 'number'.",
-				"",
-			);
-		});
-		const fileSystem = readingFiles(
-			JSON.stringify({ compilerOptions: {} }),
-			'it("should pass", () => {});',
-		);
-
-		const result = await runTypecheckAsync({
-			childProcess,
-			files: [filePath],
-			fileSystem,
-			ignoreSourceErrors: true,
-			rootDir: rootDirectory,
-		});
+		const result = await typecheckWithSourceErrorAsync({ ignoreSourceErrors: true });
 
 		expect(result.success).toBeTrue();
 	});

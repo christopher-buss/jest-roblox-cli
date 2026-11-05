@@ -1,5 +1,3 @@
-import * as path from "node:path";
-
 import { applyExcludes } from "../config/apply-excludes.ts";
 import { deriveTypecheckInclude } from "../config/derive-typecheck-include.ts";
 import type { InstancePathResolver } from "../config/instance-path.ts";
@@ -12,25 +10,32 @@ import type {
 } from "../config/resolve-typecheck-config.ts";
 import { resolveTypecheckConfig } from "../config/resolve-typecheck-config.ts";
 import type { ResolvedConfig } from "../config/schema.ts";
-import { hasUserAuthoredConfig } from "../config/stubs.ts";
+import { mountsWithoutUserConfig } from "../config/stub-files.ts";
 import { resolveAllTsconfigMappings } from "../executor/tsconfig-mappings.ts";
 import type { TimingCollector } from "../timing/orchestration-collector.ts";
 import {
 	assertTypecheckAvailable,
 	type TypecheckGroupEntry,
 } from "../typecheck/typecheck-groups.ts";
-import type { TsconfigMapping } from "../types/tsconfig.ts";
+import type { TsconfigMapping } from "../types/tsconfig-types.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import { classifyTestFiles, discoverTestFiles } from "./discovery.ts";
 import type { RunSeams } from "./seams.ts";
 
+/** One project's runtime test job. */
 export interface PendingJob {
+	/** Project config narrowed to the job's files. */
 	config: ResolvedConfig;
+	/** Color of the project label; absent for the default. */
 	displayColor?: string | undefined;
+	/** Label the project prints under. */
 	displayName: string;
+	/** Runtime test files of the job. */
 	runtimeFiles: Array<string>;
-	// Mount paths the Studio runner should inject `jest.config` into; empty
-	// when every mount already has a user-authored config on disk.
+	/**
+	 * Mount paths the Studio runner should inject `jest.config` into; empty
+	 * when every mount already has a user-authored config on disk.
+	 */
 	runtimeInjectionPaths: Array<string>;
 }
 
@@ -41,21 +46,26 @@ export interface PendingJob {
  * into its result.
  */
 export interface EmptyRunPolicy {
+	/** Exit code `2` when an empty run fails. */
 	validationExitCode?: 2 | undefined;
+	/** Notice for stderr when an empty run fails. */
 	validationMessage?: string | undefined;
 }
 
+/** The work a run does, before any place is bound. */
 export interface TestPlan {
 	/**
 	 * Present exactly when the plan selected nothing to do. The run must stop
 	 * here — before a backend is resolved or a place is built.
 	 */
 	emptiness?: EmptyRunPolicy | undefined;
+	/** Runtime test jobs, one per project with runtime files. */
 	jobs: Array<PendingJob>;
 	/**
 	 * Every runtime file across every job — the coverage display-filter input.
 	 */
 	matchedRuntimeFiles: Array<string>;
+	/** Type Test entries, one per project with Type Tests. */
 	typeTestEntries: Array<TypecheckGroupEntry>;
 }
 
@@ -64,8 +74,11 @@ export interface TestPlan {
  * `buildTestPlan` adds the place the jobs will execute against.
  */
 export interface RunDiscovery extends DiscoveryFilters {
+	/** File system to discover on. */
 	fileSystem: FileSystem;
+	/** Seams the run reaches outside itself through. */
 	seams: RunSeams;
+	/** Profiler of the run. */
 	timing: TimingCollector;
 }
 
@@ -142,6 +155,10 @@ interface ProjectSelectionInput {
  * the whole rojo tree, so one pass over every project shares that work (see
  * `resolveAllSetupFilePaths`). Setup paths must already be resolved when this
  * runs — the plan reads them off each project's config as-is.
+ *
+ * @param input - Projects, filters, seams and profiler.
+ * @param input.timing - Profiler of the run.
+ * @returns The jobs, Type Test entries and the empty-run policy.
  */
 export function buildTestPlan({ timing, ...discovery }: TestPlanInput): TestPlan {
 	const { jobs, typeTestEntries } = timing.profile("collectPendingJobs", () => {
@@ -175,6 +192,10 @@ export function buildTestPlan({ timing, ...discovery }: TestPlanInput): TestPlan
  * point, and the place reaches a job through its config and nowhere else — so
  * this is the only writer of it, and aiming the jobs afterwards is the whole of
  * the difference.
+ *
+ * @param plan - Plan built before staging.
+ * @param placeFile - Place the jobs execute against.
+ * @returns The plan with each job's config pointed at the place.
  */
 export function bindTestPlanToPlace(plan: TestPlan, placeFile: string): TestPlan {
 	return {
@@ -183,21 +204,29 @@ export function bindTestPlanToPlace(plan: TestPlan, placeFile: string): TestPlan
 	};
 }
 
-// Type Tests are discovered by `-d` globs derived from the Runtime `include`
-// (or an explicit `test.typecheck.include`). These stay in the local discovery
-// `testMatch` only — never folded into `project.include` — so coverage-source
-// derivation (which reads `project.include`) never sees a `-d` glob.
+/**
+ * Type Tests are discovered by `-d` globs derived from the Runtime `include`
+ * (or an explicit `test.typecheck.include`). These stay in the local discovery
+ * `testMatch` only — never folded into `project.include` — so coverage-source
+ * derivation (which reads `project.include`) never sees a `-d` glob.
+ *
+ * @param project - Resolved project.
+ * @param typecheck - Resolved typecheck config of the project.
+ * @returns The project config with the discovery `testMatch`.
+ */
 function buildDiscoveryConfig(
 	project: ResolvedProjectConfig,
 	typecheck: ResolvedTypecheckConfig,
 ): ResolvedConfig {
-	const typecheckInclude = typecheck.enabled
-		? (typecheck.include ?? deriveTypecheckInclude(project.include))
-		: [];
 	return {
 		...project.config,
 		projects: project.projects,
-		testMatch: [...project.include, ...typecheckInclude],
+		testMatch: typecheck.enabled
+			? [
+					...project.include,
+					...(typecheck.include ?? deriveTypecheckInclude(project.include)),
+				]
+			: project.include,
 	};
 }
 
@@ -246,9 +275,17 @@ function selectProjectFiles({
 	};
 }
 
-// Same per-mount FS filter as the synthesizer's stubMounts loop: drop mounts
-// where a user-authored `jest.config.luau` already exists. The runtime injector
-// mustn't parent a duplicate `jest.config` over a Rojo-synced user file.
+/**
+ * Same per-mount FS filter as the synthesizer's stubMounts loop: drop mounts
+ * where a user-authored `jest.config.luau` already exists. The runtime injector
+ * mustn't parent a duplicate `jest.config` over a Rojo-synced user file.
+ *
+ * @param options - File system, project and root directory.
+ * @param options.fileSystem - File system to check for user-authored configs.
+ * @param options.project - Project whose mounts are checked.
+ * @param options.rootDirectory - Root directory the mount paths resolve against.
+ * @returns DataModel paths of the mounts without a user-authored config.
+ */
 function collectRuntimeInjectionPaths({
 	fileSystem,
 	project,
@@ -258,26 +295,28 @@ function collectRuntimeInjectionPaths({
 	project: ResolvedProjectConfig;
 	rootDirectory: string;
 }): Array<string> {
-	const runtimeInjectionPaths: Array<string> = [];
-	for (const mount of project.rojoMounts) {
-		const sourceMount = path.resolve(rootDirectory, mount.fsPath);
-		if (hasUserAuthoredConfig(sourceMount, fileSystem)) {
-			continue;
-		}
-
-		runtimeInjectionPaths.push(mount.dataModelPath);
-	}
-
-	return runtimeInjectionPaths;
+	return mountsWithoutUserConfig({ fileSystem, mounts: project.rojoMounts, rootDirectory }).map(
+		(mount) => mount.dataModelPath,
+	);
 }
 
-// Turn one project's selected files into the work it contributes: a type-test
-// entry, a runtime job, either, or neither.
-//
-// Each project carries its own effective `(tsconfig, cwd)` into the type pass;
-// `groupTypecheckPassesAsync` collapses projects sharing one and checks distinct
-// tsconfigs separately. cwd is always the workspace root in projects mode (all
-// projects build from one tree).
+/**
+ * Turn one project's selected files into the work it contributes: a type-test
+ * entry, a runtime job, either, or neither.
+ *
+ * Each project carries its own effective `(tsconfig, cwd)` into the type pass;
+ * `groupTypecheckPassesAsync` collapses projects sharing one and checks
+ * distinct tsconfigs separately. The cwd is always the workspace root in
+ * projects mode (all projects build from one tree).
+ *
+ * @param input - Project, selection, typecheck config and root config.
+ * @param input.fileSystem - File system to check for user-authored configs.
+ * @param input.project - Resolved project.
+ * @param input.rootConfig - Root config of the run.
+ * @param input.selection - Files the project selected.
+ * @param input.typecheck - Resolved typecheck config of the project.
+ * @returns The project's job and Type Test entry, when present.
+ */
 function toPlannedProject({
 	fileSystem,
 	project,

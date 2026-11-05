@@ -72,6 +72,9 @@ const requireFromConfig = createRequire(import.meta.url);
 /**
  * Digs `exports[<subpath>].source` out of a package.json, narrowing as it
  * goes.
+ * @param packageJsonPath - Absolute path of a package manifest.
+ * @param subpath - Export subpath.
+ * @returns The `source` entry, or `undefined`.
  */
 function readSourceEntry(packageJsonPath: string, subpath: string): string | undefined {
 	const parsed = JSON.parse(readFileSync(packageJsonPath, "utf-8"));
@@ -101,7 +104,11 @@ function readSourceEntry(packageJsonPath: string, subpath: string): string | und
 	return typeof subpathExport["source"] === "string" ? subpathExport["source"] : undefined;
 }
 
-/** Reads the export subpaths a package.json declares. */
+/**
+ * Reads the export subpaths a package.json declares.
+ * @param packageJsonPath - Absolute path of a package manifest.
+ * @returns Keys of the manifest `exports` map.
+ */
 function readExportSubpaths(packageJsonPath: string): Array<string> {
 	const parsed = JSON.parse(readFileSync(packageJsonPath, "utf-8"));
 	if (typeof parsed !== "object" || parsed === null || !("exports" in parsed)) {
@@ -119,6 +126,8 @@ function readExportSubpaths(packageJsonPath: string): Array<string> {
 /**
  * One alias per source-conditioned export subpath, longest specifier first so
  * `<pkg>/parser` wins over the bare `<pkg>` prefix.
+ * @param packageName - Package to alias.
+ * @returns Aliases from specifier to source entry.
  */
 function sourceAliases(packageName: string) {
 	const packageJsonPath = requireFromConfig.resolve(`${packageName}/package.json`);
@@ -152,21 +161,24 @@ const workspaceSourceAliases = [
 	...sourceAliases("@isentinel/roblox-runner"),
 ];
 
-// The `config`/`executor` integration tests load a `jest.config.ts` fixture
-// through the real config loader (c12 → jiti). The fixture imports
-// `@isentinel/jest-roblox`, and that load happens inside jiti's own resolver —
-// not Vitest's module graph — so the `resolve.alias` above does not reach it
-// and plain resolution lands on `dist/index.mjs`, forcing a prior `build`.
-// Point jiti at the package's own `source` export via its `JITI_ALIAS` env
-// contract so the fixture load resolves to source, keeping `test` build-free.
-//
-// These tests live in a dedicated `integration` project run WITHOUT coverage,
-// kept out of the coverage-measured `unit` project on purpose: jiti executes
-// the package's real source files in-process, and `@vitest/coverage-v8`'s
-// process-wide V8 data then attributes jiti's import-only execution (module
-// top level ran, but the functions were never called) to those same `src`
-// files, shadowing the genuine `unit` coverage down from 100%. A separate
-// no-coverage run sidesteps the collision entirely.
+/**
+ * The `config`/`executor` integration tests load a `jest.config.ts` fixture
+ * through the real config loader (c12 → jiti). The fixture imports
+ * `@isentinel/jest-roblox`, and that load happens inside jiti's own resolver —
+ * not Vitest's module graph — so the `resolve.alias` above does not reach it
+ * and plain resolution lands on `dist/index.mjs`, forcing a prior `build`.
+ * Point jiti at the package's own `source` export via its `JITI_ALIAS` env
+ * contract so the fixture load resolves to source, keeping `test` build-free.
+ *
+ * These tests live in a dedicated `integration` project run WITHOUT coverage,
+ * kept out of the coverage-measured `unit` project on purpose: jiti executes
+ * the package's real source files in-process, and `@vitest/coverage-v8`'s
+ * process-wide V8 data then attributes jiti's import-only execution (module
+ * top level ran, but the functions were never called) to those same `src`
+ * files, shadowing the genuine `unit` coverage down from 100%. A separate
+ * no-coverage run sidesteps the collision entirely.
+ * @returns Absolute path of this package's `source` entry.
+ */
 function selfSourceEntry(): string {
 	const sourceEntry = readSourceEntry(resolve(import.meta.dirname, "package.json"), ".");
 	if (sourceEntry === undefined) {
@@ -195,14 +207,14 @@ export const sharedViteOptions = {
 export const unitProject = {
 	test: {
 		name: "unit",
-		// `*.bench.ts` benchmarks live beside the unit specs. Scope
+		// `test/bench/*.bench.ts` benchmarks belong to this project. Scope
 		// them to this project so the e2e/live projects — the latter
 		// has a network globalSetup — never pick them up. `vitest
 		// bench` derives a separate project per entry, so this one's
 		// benchmarks run as `unit (bench)`; that is the name the
 		// `bench` package script filters on.
 		benchmark: {
-			include: ["src/**/*.bench.ts"],
+			include: ["test/bench/**/*.bench.ts"],
 		},
 		clearMocks: true,
 		deps: sharedUnitProject.test.deps,
@@ -216,30 +228,21 @@ export const unitProject = {
 			// Integration tests run in the `integration` project
 			// (no coverage) — see the JITI_ALIAS note above.
 			"test/integration/**",
-			"test/**/*.integration.spec.ts",
-			"**/src/types/**",
+			"test/luau/**",
 			"./src/cli.ts",
 			"**/*.luau",
 		],
-		include: ["src/**/*.spec.ts", "test/**/*.spec.ts", "scripts/**/*.spec.ts"],
+		include: [
+			"src/**/*.spec.ts",
+			"test/**/*.spec.ts",
+			"scripts/**/*.spec.ts",
+			"loaders/**/*.spec.ts",
+		],
 		// Vitest clears the mock registry and the module cache between files
 		// only when `isolate` is true.
 		isolate: false,
 		restoreMocks: true,
 		setupFiles,
-		typecheck: {
-			// Resolves `tsconfig.spec.json`'s reference to
-			// `tsconfig.lib.json` by building it. Without this the checker
-			// runs `--noEmit -p`, which reads the reference's emitted
-			// declarations and fails TS6305 until some earlier
-			// `tsc --build` has produced them — which is what this
-			// target used to inline.
-			build: true,
-			checker: "tsc",
-			enabled: true,
-			include: ["src/**/*.spec-d.ts"],
-			tsconfig: "./tsconfig.spec.json",
-		},
 		unstubEnvs: true,
 	},
 } satisfies TestProjectInlineConfiguration;
@@ -249,14 +252,20 @@ export default defineConfig({
 	test: {
 		coverage: {
 			exclude: [
-				"dist/**",
-				"packages/**",
-				"src/**/*.bench.ts",
-				"src/**/*.luau",
+				"src/**/*.spec.ts",
 				"src/**/*.spec-d.ts",
-				"test/e2e/**",
-				"test/mocks/**",
-				"package.json",
+				"src/**/*-types.ts",
+				"src/**/*.d.ts",
+				"src/**/__fixtures__/**",
+				"bin/jest-roblox.js",
+				"bin/sea-entry.ts",
+				"scripts/stamp-plugin-version.run.ts",
+			],
+			include: [
+				"src/**/*.ts",
+				"scripts/sea-executable.ts",
+				"scripts/stamp-plugin-version.ts",
+				"loaders/*.mjs",
 			],
 			thresholds: {
 				branches: 100,
@@ -269,6 +278,29 @@ export default defineConfig({
 			{
 				...unitProject,
 				test: { ...unitProject.test, maxWorkers: 4, sequence: { groupOrder: 1 } },
+			},
+			{
+				test: {
+					name: "type",
+					benchmark: {
+						include: [],
+					},
+					clearMocks: true,
+					include: [],
+					restoreMocks: true,
+					// Resolves `tsconfig.spec.json`'s reference to
+					// `tsconfig.lib.json` by building it; `--noEmit -p` reads
+					// the reference's emitted declarations and fails TS6305.
+					typecheck: {
+						build: true,
+						checker: "tsc",
+						enabled: true,
+						include: ["src/**/*.spec-d.ts", "loaders/**/*.spec-d.ts"],
+						only: true,
+						tsconfig: "./tsconfig.spec.json",
+					},
+					unstubEnvs: true,
+				},
 			},
 			{
 				test: {
@@ -286,17 +318,25 @@ export default defineConfig({
 						GITHUB_ACTIONS: "",
 						JITI_ALIAS: JITI_SOURCE_ALIAS,
 					},
-					// `test/**` reaches the sandbox root as readily as the `e2e`
-					// glob does, and this project builds sandboxes there too. The
-					// `unit` and `live` projects need no such line — one already
-					// subtracts `test/e2e/**` whole, the other globs only `live/`.
-					exclude: [...defaultExclude, ...SANDBOX_EXCLUDE],
-					include: ["test/integration/**/*.spec.ts", "test/**/*.integration.spec.ts"],
+					include: ["test/integration/**/*.spec.ts"],
 					restoreMocks: true,
 					setupFiles,
 					// Fixture-sandbox pipelines and specs that spawn a real
 					// tsgo cross the 5s default under parallel hook load.
 					testTimeout: 15_000,
+					unstubEnvs: true,
+				},
+			},
+			{
+				test: {
+					name: "luau",
+					benchmark: {
+						include: [],
+					},
+					clearMocks: true,
+					include: ["test/luau/**/*.spec.ts"],
+					restoreMocks: true,
+					setupFiles,
 					unstubEnvs: true,
 				},
 			},
@@ -318,8 +358,8 @@ export default defineConfig({
 					env: {
 						JEST_ROBLOX_LIVE: "",
 					},
-					// `*.spec.ts`, not `*.e2e.spec.ts`, so no file under
-					// `test/e2e/` can miss both projects. The price is two
+					// Every `*.spec.ts` under `test/e2e/`, so no file there
+					// can miss both projects. The price is two
 					// excludes of its own: `fixtures/**` holds Jest-on-Roblox
 					// specs, which are inputs rather than tests, and
 					// `defaultExclude` must be spread back in rather than

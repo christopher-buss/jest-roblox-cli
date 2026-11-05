@@ -12,14 +12,43 @@ import { buildWithRojoAsync } from "../utils/rojo-builder.ts";
 import type { UserDirectoryOptions } from "./studio-discovery.ts";
 import { discoverUserDirectories } from "./studio-discovery.ts";
 
-export interface ManagedPluginOptions {
+/** What the CLI installed, and the jest-roblox plugins it found beside it. */
+export interface ManagedPluginInstall {
+	/** The Plugin Key the run must ask for. */
+	readonly key: string;
+	/** File names of the jest-roblox plugins the CLI does not manage. */
+	readonly manualPlugins: ReadonlyArray<string>;
+}
+
+/** What a run needs to install the runner plugin. */
+export interface RunnerPluginInstallOptions extends UserDirectoryOptions {
+	/** Runs rojo. */
+	readonly childProcess: ChildProcessRunner;
+	/** File system the plugin is written to. */
+	readonly fileSystem: FileSystem;
+	/** Wall clock in milliseconds. Defaults to `Date.now()`. */
+	readonly now?: number | undefined;
+	/** Plugin source files the build reads. Defaults to the bundled sources. */
+	readonly sources?: ReadonlyArray<RunnerPluginSource> | undefined;
+	/** The CLI's release version. Defaults to the package version. */
+	readonly version?: string | undefined;
+	/** The run's scratch directory; the plugin is built beneath it. */
+	readonly workDirectory: string;
+}
+
+type RunnerPluginSource = (typeof runnerPluginSources)[number];
+
+/** What a Managed Plugin install needs. */
+interface ManagedPluginOptions {
 	/** Builds a rojo project to an `.rbxm`. */
 	readonly buildAsync: (projectPath: string, outputPath: string) => Promise<void>;
+	/** File system the plugin and its marks are written to. */
 	readonly fileSystem: FileSystem;
 	/** Wall clock in milliseconds. */
 	readonly now: number;
 	/** The Studio plugins folder. */
 	readonly pluginsDirectory: string;
+	/** Plugin source files the build reads. */
 	readonly sources: ReadonlyArray<RunnerPluginSource>;
 	/** Scratch directory the plugin is built in. */
 	readonly stagingDirectory: string;
@@ -31,23 +60,6 @@ export interface ManagedPluginOptions {
 	/** The CLI's release version. */
 	readonly version: string;
 }
-
-/** What the CLI installed, and the jest-roblox plugins it found beside it. */
-export interface ManagedPluginInstall {
-	/** The Plugin Key the run must ask for. */
-	readonly key: string;
-	/** File names of the jest-roblox plugins the CLI does not manage. */
-	readonly manualPlugins: ReadonlyArray<string>;
-}
-
-export interface RunnerPluginInstallOptions extends UserDirectoryOptions {
-	readonly childProcess: ChildProcessRunner;
-	readonly fileSystem: FileSystem;
-	/** The run's scratch directory; the plugin is built beneath it. */
-	readonly workDirectory: string;
-}
-
-type RunnerPluginSource = (typeof runnerPluginSources)[number];
 
 const PLUGIN_DIRECTORY = "plugin";
 const MANUAL_PROJECT_FILE = "plugin/plugin.project.json";
@@ -76,37 +88,18 @@ const IDLE_SWEEP_MS = 24 * 60 * 60 * 1000;
 const rojoProjectSchema = type({ name: "string", tree: "Record<string, unknown>" });
 
 /**
- * Put the Managed Plugin for this CLI's Plugin Key in the plugins folder,
- * building it only when it is missing.
- *
- * @param options - Where the plugin goes, and what it is built from.
- * @returns The key to ask the run for, and the Manual Plugins beside it.
- */
-export async function installManagedPluginAsync(
-	options: ManagedPluginOptions,
-): Promise<ManagedPluginInstall> {
-	const project = managedProject(options.sources);
-	const key = pluginKey({ project, sources: options.sources, version: options.version });
-	const fileName = managedPluginFileName(key);
-	const target = path.join(options.pluginsDirectory, fileName);
-	if (!options.fileSystem.existsSync(target)) {
-		await buildManagedPluginAsync(options, { key, project, target });
-	}
-
-	markUsed(options, fileName);
-	sweepStaleManagedPlugins(options);
-	return { key, manualPlugins: listManualPlugins(options) };
-}
-
-/**
  * Install this CLI's Managed Plugin with rojo, or nothing where the OS has no
  * known plugins folder.
  *
  * @param options - The run's seams and scratch directory.
+ * @returns The install, or undefined when the OS has no known plugins folder.
  */
 export async function installRunnerPluginAsync({
 	childProcess,
 	fileSystem,
+	now = Date.now(),
+	sources = runnerPluginSources,
+	version = packageJson.version,
 	workDirectory,
 	...discovery
 }: RunnerPluginInstallOptions): Promise<ManagedPluginInstall | undefined> {
@@ -120,12 +113,12 @@ export async function installRunnerPluginAsync({
 			return buildWithRojoAsync({ childProcess, outputPath, projectPath });
 		},
 		fileSystem,
-		now: Date.now(),
+		now,
 		pluginsDirectory: directories.plugins,
-		sources: runnerPluginSources,
+		sources,
 		stagingDirectory: path.join(workDirectory, "plugin"),
 		usageDirectory: path.join(directories.state, "managed-plugins"),
-		version: packageJson.version,
+		version,
 	});
 }
 
@@ -148,6 +141,10 @@ function pluginKey({
  * The Manual Plugin's rojo project with its root swapped for a Folder holding
  * the Run-mode runner alone: the edit-mode client would load in every Studio
  * the user opens and dial the `studio` backend.
+ *
+ * @param sources - Plugin source files.
+ * @returns The managed rojo project, as JSON.
+ * @throws {@link Error} When the sources hold no Manual Plugin project.
  */
 function managedProject(sources: ReadonlyArray<RunnerPluginSource>): string {
 	const manual = sources.find((source) => source.path === MANUAL_PROJECT_FILE);
@@ -225,6 +222,8 @@ function managedGeneration(entry: string): number {
  * Delete other keys' Managed Plugins that have sat idle or come from an older
  * generation, and the marks of plugins already gone. A plugin with no mark was
  * last used when it was written.
+ *
+ * @param options - Plugins and usage folders, file system, and clock.
  */
 function sweepStaleManagedPlugins({
 	fileSystem,
@@ -253,9 +252,37 @@ function sweepStaleManagedPlugins({
 	}
 }
 
-/** Every jest-roblox plugin in the folder the CLI does not manage. */
+/**
+ * Every jest-roblox plugin in the folder the CLI does not manage.
+ *
+ * @param options - Plugins folder and file system.
+ * @returns The plugin file names.
+ */
 function listManualPlugins({ fileSystem, pluginsDirectory }: ManagedPluginOptions): Array<string> {
 	return fileSystem.readdirSync(pluginsDirectory).filter((entry) => {
 		return !isManagedPlugin(entry) && JEST_PLUGIN_PATTERN.test(entry);
 	});
+}
+
+/**
+ * Put the Managed Plugin for this CLI's Plugin Key in the plugins folder,
+ * building it only when it is missing.
+ *
+ * @param options - Where the plugin goes, and what it is built from.
+ * @returns The key to ask the run for, and the Manual Plugins beside it.
+ */
+async function installManagedPluginAsync(
+	options: ManagedPluginOptions,
+): Promise<ManagedPluginInstall> {
+	const project = managedProject(options.sources);
+	const key = pluginKey({ project, sources: options.sources, version: options.version });
+	const fileName = managedPluginFileName(key);
+	const target = path.join(options.pluginsDirectory, fileName);
+	if (!options.fileSystem.existsSync(target)) {
+		await buildManagedPluginAsync(options, { key, project, target });
+	}
+
+	markUsed(options, fileName);
+	sweepStaleManagedPlugins(options);
+	return { key, manualPlugins: listManualPlugins(options) };
 }

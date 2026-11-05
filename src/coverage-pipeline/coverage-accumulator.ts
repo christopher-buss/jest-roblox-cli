@@ -6,24 +6,34 @@ import type { LuauSpan, Utf16Span } from "@isentinel/luau-ast/ast";
  * `toUtf16Columns` before returning it. A new column-bearing field that is not
  * a span needs adding there too — the spread that copies each record would
  * otherwise carry it through in bytes.
+ * @template Span - Column unit of every span.
  */
 export interface CollectorResult<Span extends LuauSpan = Utf16Span> {
+	/** Branch records, in index order. */
 	branches: Array<BranchInfo<Span>>;
+	/** Function records, in index order. */
 	functions: Array<FunctionInfo<Span>>;
+	/** Probes for the synthetic arm of each `if` with no `else`. */
 	implicitElseProbes: Array<ImplicitElseProbe>;
+	/** Statement records, in index order. */
 	statements: Array<StatementInfo<Span>>;
+	/** Operand expressions to wrap with `__cov_br`. */
 	wrapProbes: Array<WrapProbe<Span>>;
 }
 
 /** A line/column pair in the original Luau source. */
 export interface SourcePosition {
+	/** Column on that line. */
 	column: number;
+	/** Source line. */
 	line: number;
 }
 
 /** One arm of a statement branch, carrying the real position of its body. */
 export interface StatementBranchArm {
+	/** Start of the arm's body, where its point probe goes. */
 	bodyFirst: SourcePosition;
+	/** Span of the whole arm. */
 	location: LuauSpan;
 }
 
@@ -49,6 +59,7 @@ interface FunctionInfo<Span extends LuauSpan> {
  * point probes for any arm with `bodyFirstLine === 0`. Both `binary-expr`
  * (`and`/`or`) and `expr-if` arms use this convention; statement-`if` arms
  * carry real body positions.
+ * @template Span - Column unit of the span.
  */
 interface BranchArmInfo<Span extends LuauSpan> {
 	bodyFirstColumn: number;
@@ -74,6 +85,7 @@ interface ImplicitElseProbe {
  * expression-`if` arms and `and`/`or` operands — both are instrumented by
  * wrapping the original expression so its value flows through unchanged while a
  * branch counter is bumped, preserving short-circuit semantics.
+ * @template Span - Column unit of the span.
  */
 interface WrapProbe<Span extends LuauSpan> {
 	armIndex: number;
@@ -197,6 +209,10 @@ class CoverageAccumulator {
 
 export type { CoverageAccumulator };
 
+/**
+ * Start an empty accumulator for one file.
+ * @returns An accumulator with every counter at index zero.
+ */
 export function createCoverageAccumulator(): CoverageAccumulator {
 	return new CoverageAccumulator();
 }

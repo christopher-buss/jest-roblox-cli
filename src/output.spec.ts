@@ -2,35 +2,32 @@ import { fromAny } from "@total-typescript/shoehorn";
 
 import * as path from "node:path";
 import process from "node:process";
-import type { MockInstance } from "vitest";
+import { stripVTControlCharacters } from "node:util";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 
 import { createMemoryFileSystem, type MemoryVolume } from "#test/mocks/memory-file-system.ts";
-import { DEFAULT_CONFIG, type ResolvedConfig } from "./config/schema.ts";
-import type { loadCoverageManifest } from "./coverage-pipeline/manifest-load.ts";
+import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
+import { mappedFile } from "#test/mocks/spec-coverage.ts";
 import {
-	CoverageMapMalformedError,
-	type mapCoverageToTypeScript,
-	type MappedCoverageResult,
-} from "./coverage-pipeline/mapper.ts";
+	makeBlockedResult,
+	makeExecuteResult,
+	makeJestResult,
+	makeOutputConfig,
+	setupOutputSpies,
+} from "#test/mocks/spec-results.ts";
+import type { ResolvedConfig } from "./config/schema.ts";
+import type { loadCoverageManifest } from "./coverage-pipeline/manifest-load.ts";
+import type { MappedCoverageResult } from "./coverage-pipeline/mapper-types.ts";
+import type { mapCoverageToTypeScript } from "./coverage-pipeline/mapper.ts";
 import type { checkThresholds, generateReports } from "./coverage-pipeline/reporter.ts";
 import type { formatExecuteOutput } from "./executor/format-output.ts";
-import type { ExecuteResult } from "./executor/types.ts";
 import type { formatAgentMultiProject } from "./formatters/agent.ts";
 import type {
 	formatMultiProjectResult,
 	formatResult,
 	formatTypecheckReport,
 } from "./formatters/formatter.ts";
-import {
-	mergeProjectResults,
-	mergeResults,
-	type OutputDependencies,
-	outputMultiResultAsync,
-	outputSingleResultAsync,
-	writeResultFileAsync,
-} from "./output.ts";
-import { mergeSnapshotSummaries } from "./results/merge.ts";
+import { outputMultiResultAsync } from "./output.ts";
 import type {
 	MultiRunResult,
 	ProjectResult,
@@ -38,20 +35,12 @@ import type {
 	WorkspacePackageCoverageGate,
 	WorkspaceReportOptions,
 	WorkspaceRunResult,
-} from "./run/types.ts";
-import type { GameOutputEntry } from "./types/game-output.ts";
-import type { JestResult, TestFileResult } from "./types/jest-result.ts";
+} from "./run/run-types.ts";
+import type { GameOutputEntry } from "./types/game-output-types.ts";
+import type { JestResult, TestCaseResult } from "./types/jest-result-types.ts";
 import type { FileSystem } from "./utils/file-system.ts";
 
-type MockedWrite = MockInstance<typeof process.stderr.write>;
-type MockedConsole = MockInstance<typeof console.log>;
-
-interface OutputSpies {
-	consoleError: MockedConsole;
-	consoleLog: MockedConsole;
-	stderr: MockedWrite;
-	stdout: MockedWrite;
-}
+type OutputDependencies = NonNullable<Parameters<typeof outputMultiResultAsync>[0]["dependencies"]>;
 
 interface OutputHarness {
 	dependencies: OutputDependencies;
@@ -78,56 +67,6 @@ const renderer = {
 	formatTypecheckReport: vi.fn<typeof formatTypecheckReport>(),
 };
 
-function makeConfig(overrides: Partial<ResolvedConfig> = {}): ResolvedConfig {
-	return {
-		...DEFAULT_CONFIG,
-		formatters: ["default"],
-		rootDir: "/test",
-		testMatch: ["**/*.spec.ts"],
-		testPathIgnorePatterns: [],
-		...overrides,
-	};
-}
-
-function makeJestResult(overrides: Partial<JestResult> = {}): JestResult {
-	return {
-		numFailedTests: 0,
-		numPassedTests: 1,
-		numPendingTests: 0,
-		numTodoTests: 0,
-		numTotalTests: 1,
-		startTime: 1000,
-		success: true,
-		testResults: [],
-		...overrides,
-	};
-}
-
-function makeBlockedResult(testFilePath: string, fullName: string): JestResult {
-	return makeJestResult({
-		success: false,
-		testResults: [
-			{
-				gaps: {},
-				numFailingTests: 0,
-				numPassingTests: 1,
-				numPendingTests: 0,
-				testFilePath,
-				testResults: [
-					{
-						ancestorTitles: [],
-						failureMessages: [],
-						fullName,
-						gaps: { script: 1 },
-						status: "passed",
-						title: fullName,
-					},
-				],
-			},
-		],
-	});
-}
-
 function makeFailingResult(): JestResult {
 	return makeJestResult({
 		numFailedTests: 1,
@@ -152,22 +91,6 @@ function makeFailingResult(): JestResult {
 			},
 		],
 	});
-}
-
-function makeExecuteResult(overrides: Partial<ExecuteResult> = {}): ExecuteResult {
-	return {
-		exitCode: 0,
-		output: "",
-		result: makeJestResult(),
-		timing: {
-			executionMs: 100,
-			startTime: 1000,
-			testsMs: 50,
-			totalMs: 200,
-			uploadMs: 50,
-		},
-		...overrides,
-	};
 }
 
 function makeSingleResult(overrides: Partial<SingleRunResult> = {}): SingleRunResult {
@@ -196,6 +119,31 @@ function makeMultiResult(overrides: Partial<MultiRunResult> = {}): MultiRunResul
 		stagingMs: 0,
 		...overrides,
 	};
+}
+
+async function outputOneProjectAsync({
+	config,
+	dependencies,
+	result,
+}: {
+	config: ResolvedConfig;
+	dependencies: OutputDependencies;
+	result: SingleRunResult;
+}): Promise<number> {
+	const { coverageMs, runtimeResult, stagingMs, typecheckResult } = result;
+	return outputMultiResultAsync({
+		dependencies,
+		result: makeMultiResult({
+			coverageMs,
+			projectResults:
+				runtimeResult === undefined
+					? []
+					: [{ displayName: "client", result: runtimeResult }],
+			stagingMs,
+			typecheckResult,
+		}),
+		rootConfig: config,
+	});
 }
 
 function makeReportOptions(
@@ -235,16 +183,12 @@ function makeWorkspaceResult(overrides: Partial<WorkspaceRunResult> = {}): Works
 	};
 }
 
-function setupOutputSpies(): OutputSpies {
-	return {
-		consoleError: vi.spyOn(console, "error").mockImplementation(() => {}),
-		consoleLog: vi.spyOn(console, "log").mockImplementation(() => {}),
-		stderr: vi.spyOn(process.stderr, "write").mockReturnValue(true),
-		stdout: vi.spyOn(process.stdout, "write").mockReturnValue(true),
-	};
-}
-
-// On Windows a bare "/tmp/x" and its resolved form are two different volume keys.
+/**
+ * On Windows a bare "/tmp/x" and its resolved form are two different volume keys.
+ * @param volume - Volume to read from.
+ * @param filePath - Sink path as the code under test named it.
+ * @returns The file contents.
+ */
 function readSink(volume: MemoryVolume, filePath: string): string {
 	return String(volume.readFileSync(path.resolve(filePath), "utf8"));
 }
@@ -275,32 +219,15 @@ function setupOutput(): OutputHarness {
 	};
 }
 
-describe(outputSingleResultAsync, () => {
-	it("should print formatted runtime output and return 0 when runtime succeeds", async () => {
-		expect.assertions(2);
-
-		const { dependencies } = setupOutput();
-		const spies = setupOutputSpies();
-		const config = makeConfig();
-
-		const code = await outputSingleResultAsync({
-			config,
-			dependencies,
-			result: makeSingleResult(),
-		});
-
-		expect(code).toBe(0);
-		expect(spies.consoleLog).toHaveBeenCalledWith("formatted-execute");
-	});
-
+describe("a one-project run", () => {
 	it("should print the gap summary on stderr", async () => {
 		expect.assertions(1);
 
 		const { dependencies } = setupOutput();
 		const spies = setupOutputSpies();
 
-		await outputSingleResultAsync({
-			config: makeConfig(),
+		await outputOneProjectAsync({
+			config: makeOutputConfig(),
 			dependencies,
 			result: makeSingleResult({
 				runtimeResult: makeExecuteResult({
@@ -320,8 +247,8 @@ describe(outputSingleResultAsync, () => {
 		const { dependencies } = setupOutput();
 		const spies = setupOutputSpies();
 
-		await outputSingleResultAsync({
-			config: makeConfig({ silent: true }),
+		await outputOneProjectAsync({
+			config: makeOutputConfig({ silent: true }),
 			dependencies,
 			result: makeSingleResult({
 				runtimeResult: makeExecuteResult({
@@ -339,8 +266,8 @@ describe(outputSingleResultAsync, () => {
 		const { dependencies } = setupOutput();
 		setupOutputSpies();
 
-		const code = await outputSingleResultAsync({
-			config: makeConfig(),
+		const code = await outputOneProjectAsync({
+			config: makeOutputConfig(),
 			dependencies,
 			result: makeSingleResult({
 				runtimeResult: makeExecuteResult({ result: makeJestResult({ success: false }) }),
@@ -356,8 +283,8 @@ describe(outputSingleResultAsync, () => {
 		const { dependencies } = setupOutput();
 		setupOutputSpies();
 
-		const code = await outputSingleResultAsync({
-			config: makeConfig(),
+		const code = await outputOneProjectAsync({
+			config: makeOutputConfig(),
 			dependencies,
 			result: makeSingleResult({
 				runtimeResult: makeExecuteResult({ snapshotWriteFailures: 2 }),
@@ -373,8 +300,8 @@ describe(outputSingleResultAsync, () => {
 		const { dependencies } = setupOutput();
 		setupOutputSpies();
 
-		const code = await outputSingleResultAsync({
-			config: makeConfig(),
+		const code = await outputOneProjectAsync({
+			config: makeOutputConfig(),
 			dependencies,
 			result: makeSingleResult({
 				runtimeResult: makeExecuteResult({
@@ -395,25 +322,6 @@ describe(outputSingleResultAsync, () => {
 		expect(code).toBe(1);
 	});
 
-	it("should propagate snapshotWriteFailures into deferred runtime output", async () => {
-		expect.assertions(1);
-
-		const { dependencies } = setupOutput();
-		setupOutputSpies();
-
-		await outputSingleResultAsync({
-			config: makeConfig(),
-			dependencies,
-			result: makeSingleResult({
-				runtimeResult: makeExecuteResult({ snapshotWriteFailures: 3 }),
-			}),
-		});
-
-		expect(renderer.formatExecuteOutput).toHaveBeenCalledWith(
-			expect.objectContaining({ snapshotWriteFailures: 3 }),
-		);
-	});
-
 	// A bail is a test failure that ended the run early, not a run-level error,
 	// so it exits the same 1 an ordinary failing package does.
 	it("should return 1 when a bail stopped the run on a failing package", async () => {
@@ -432,7 +340,7 @@ describe(outputSingleResultAsync, () => {
 					}),
 				],
 			}),
-			rootConfig: makeConfig(),
+			rootConfig: makeOutputConfig(),
 		});
 
 		expect(code).toBe(1);
@@ -450,7 +358,7 @@ describe(outputSingleResultAsync, () => {
 				bail: { notRun: 2, ran: 1 },
 				reportOptions: { ...makeReportOptions(), formatters: ["agent"] },
 			}),
-			rootConfig: makeConfig({ formatters: ["agent"] }),
+			rootConfig: makeOutputConfig({ formatters: ["agent"] }),
 		});
 
 		expect(renderer.formatAgentMultiProject).toHaveBeenCalledWith(
@@ -468,7 +376,7 @@ describe(outputSingleResultAsync, () => {
 		await outputMultiResultAsync({
 			dependencies,
 			result: makeWorkspaceResult({ stagingMs: 400 }),
-			rootConfig: makeConfig(),
+			rootConfig: makeOutputConfig(),
 		});
 
 		expect(renderer.formatMultiProjectResult).toHaveBeenCalledWith(
@@ -487,7 +395,7 @@ describe(outputSingleResultAsync, () => {
 		await outputMultiResultAsync({
 			dependencies,
 			result: makeMultiResult({ coverageMs: 120, stagingMs: 300 }),
-			rootConfig: makeConfig(),
+			rootConfig: makeOutputConfig(),
 		});
 
 		expect(renderer.formatMultiProjectResult).toHaveBeenCalledWith(
@@ -506,7 +414,7 @@ describe(outputSingleResultAsync, () => {
 		await outputMultiResultAsync({
 			dependencies,
 			result: makeWorkspaceResult({ bail: { notRun: 2, ran: 1 } }),
-			rootConfig: makeConfig(),
+			rootConfig: makeOutputConfig(),
 		});
 
 		expect(renderer.formatMultiProjectResult).toHaveBeenCalledWith(
@@ -522,8 +430,8 @@ describe(outputSingleResultAsync, () => {
 		const { dependencies } = setupOutput();
 		const spies = setupOutputSpies();
 
-		await outputSingleResultAsync({
-			config: makeConfig({ silent: true }),
+		await outputOneProjectAsync({
+			config: makeOutputConfig({ silent: true }),
 			dependencies,
 			result: makeSingleResult(),
 		});
@@ -537,8 +445,8 @@ describe(outputSingleResultAsync, () => {
 		const { dependencies } = setupOutput();
 		const spies = setupOutputSpies();
 
-		await outputSingleResultAsync({
-			config: makeConfig({ collectCoverage: true, silent: true }),
+		await outputOneProjectAsync({
+			config: makeOutputConfig({ collectCoverage: true, silent: true }),
 			dependencies,
 			result: makeSingleResult(),
 		});
@@ -552,8 +460,8 @@ describe(outputSingleResultAsync, () => {
 		const { dependencies, volume } = setupOutput();
 		setupOutputSpies();
 
-		await outputSingleResultAsync({
-			config: makeConfig({ outputFile: "/tmp/results.json" }),
+		await outputOneProjectAsync({
+			config: makeOutputConfig({ outputFile: "/tmp/results.json" }),
 			dependencies,
 			result: makeSingleResult(),
 		});
@@ -563,36 +471,14 @@ describe(outputSingleResultAsync, () => {
 		);
 	});
 
-	it("should write game output when config.gameOutput is set and runtime present", async () => {
-		expect.assertions(2);
-
-		const { dependencies, volume } = setupOutput();
-		const spies = setupOutputSpies();
-
-		await outputSingleResultAsync({
-			config: makeConfig({ gameOutput: "/tmp/game.json" }),
-			dependencies,
-			result: makeSingleResult({
-				runtimeResult: makeExecuteResult({ gameOutput: RAW_GAME_OUTPUT }),
-			}),
-		});
-
-		expect(readSink(volume, "/tmp/game.json")).toBe(
-			JSON.stringify([GAME_OUTPUT_ENTRY], null, 2),
-		);
-		expect(spies.consoleError).toHaveBeenCalledExactlyOnceWith(
-			"Game output (1 entries) written to /tmp/game.json",
-		);
-	});
-
 	it("should print typecheck-only when typecheckResult is present and runtime is undefined", async () => {
 		expect.assertions(1);
 
 		const { dependencies } = setupOutput();
 		const spies = setupOutputSpies();
 
-		await outputSingleResultAsync({
-			config: makeConfig(),
+		await outputOneProjectAsync({
+			config: makeOutputConfig(),
 			dependencies,
 			result: makeSingleResult({
 				runtimeResult: undefined,
@@ -609,8 +495,8 @@ describe(outputSingleResultAsync, () => {
 		const { dependencies } = setupOutput();
 		setupOutputSpies();
 
-		await outputSingleResultAsync({
-			config: makeConfig({ color }),
+		await outputOneProjectAsync({
+			config: makeOutputConfig({ color }),
 			dependencies,
 			result: makeSingleResult({
 				runtimeResult: undefined,
@@ -623,71 +509,14 @@ describe(outputSingleResultAsync, () => {
 		});
 	});
 
-	it("should merge typecheck + runtime via default formatter", async () => {
-		expect.assertions(1);
-
-		const { dependencies } = setupOutput();
-		const spies = setupOutputSpies();
-
-		await outputSingleResultAsync({
-			config: makeConfig(),
-			dependencies,
-			result: makeSingleResult({
-				typecheckResult: makeJestResult({ numFailedTests: 1, success: false }),
-			}),
-		});
-
-		expect(spies.consoleLog).toHaveBeenCalledWith("formatted-result");
-	});
-
-	it("should print runtime + typecheck-summary separately for non-default formatter", async () => {
-		expect.assertions(2);
-
-		const { dependencies } = setupOutput();
-		const spies = setupOutputSpies();
-
-		await outputSingleResultAsync({
-			config: makeConfig({ formatters: ["json"] }),
-			dependencies,
-			result: makeSingleResult({ typecheckResult: makeJestResult() }),
-		});
-
-		expect(spies.consoleLog).toHaveBeenCalledWith("formatted-execute");
-		expect(spies.stderr).toHaveBeenCalledWith("typecheck-summary");
-	});
-
-	it("should route the type error count through the agent formatter", async () => {
-		expect.assertions(3);
-
-		const { dependencies } = setupOutput();
-		const spies = setupOutputSpies();
-
-		await outputSingleResultAsync({
-			config: makeConfig({ formatters: ["agent"] }),
-			dependencies,
-			result: makeSingleResult({
-				typecheckResult: makeJestResult({ numFailedTests: 2, success: false }),
-			}),
-		});
-
-		expect(renderer.formatExecuteOutput).toHaveBeenCalledWith(
-			expect.objectContaining({ typeErrorCount: 2 }),
-		);
-		expect(spies.stderr).toHaveBeenCalledWith("typecheck-summary");
-		expect(renderer.formatTypecheckReport).toHaveBeenCalledWith(
-			expect.anything(),
-			expect.objectContaining({ includeSummaryRows: false }),
-		);
-	});
-
 	it("should print final PASS status when coverage enabled and passed", async () => {
 		expect.assertions(1);
 
 		const { dependencies } = setupOutput();
 		const spies = setupOutputSpies();
 
-		await outputSingleResultAsync({
-			config: makeConfig({ collectCoverage: true }),
+		await outputOneProjectAsync({
+			config: makeOutputConfig({ collectCoverage: true }),
 			dependencies,
 			result: makeSingleResult(),
 		});
@@ -701,8 +530,8 @@ describe(outputSingleResultAsync, () => {
 		const { dependencies } = setupOutput();
 		const spies = setupOutputSpies();
 
-		await outputSingleResultAsync({
-			config: makeConfig({ collectCoverage: true }),
+		await outputOneProjectAsync({
+			config: makeOutputConfig({ collectCoverage: true }),
 			dependencies,
 			result: makeSingleResult({
 				runtimeResult: makeExecuteResult({ result: makeJestResult({ success: false }) }),
@@ -723,7 +552,7 @@ describe(outputMultiResultAsync, () => {
 		const code = await outputMultiResultAsync({
 			dependencies,
 			result: makeMultiResult(),
-			rootConfig: makeConfig(),
+			rootConfig: makeOutputConfig(),
 		});
 
 		expect(code).toBe(0);
@@ -757,7 +586,7 @@ describe(outputMultiResultAsync, () => {
 					},
 				],
 			}),
-			rootConfig: makeConfig(),
+			rootConfig: makeOutputConfig(),
 		});
 
 		expect(spies.consoleError).toHaveBeenCalledWith(
@@ -787,7 +616,7 @@ describe(outputMultiResultAsync, () => {
 					},
 				],
 			}),
-			rootConfig: makeConfig(),
+			rootConfig: makeOutputConfig(),
 		});
 
 		expect(code).toBe(1);
@@ -813,7 +642,7 @@ describe(outputMultiResultAsync, () => {
 					},
 				],
 			}),
-			rootConfig: makeConfig(),
+			rootConfig: makeOutputConfig(),
 		});
 
 		expect(code).toBe(1);
@@ -850,7 +679,7 @@ describe(outputMultiResultAsync, () => {
 					},
 				],
 			}),
-			rootConfig: makeConfig(),
+			rootConfig: makeOutputConfig(),
 		});
 
 		expect(code).toBe(1);
@@ -876,7 +705,7 @@ describe(outputMultiResultAsync, () => {
 					},
 				],
 			}),
-			rootConfig: makeConfig(),
+			rootConfig: makeOutputConfig(),
 		});
 
 		expect(renderer.formatMultiProjectResult).toHaveBeenCalledWith(
@@ -906,7 +735,7 @@ describe(outputMultiResultAsync, () => {
 					},
 				],
 			}),
-			rootConfig: makeConfig(),
+			rootConfig: makeOutputConfig(),
 		});
 
 		expect(renderer.formatMultiProjectResult).toHaveBeenCalledWith(
@@ -928,7 +757,7 @@ describe(outputMultiResultAsync, () => {
 		await outputMultiResultAsync({
 			dependencies,
 			result: makeMultiResult(),
-			rootConfig: makeConfig({ silent: true }),
+			rootConfig: makeOutputConfig({ silent: true }),
 		});
 
 		expect(spies.consoleLog).not.toHaveBeenCalled();
@@ -943,7 +772,7 @@ describe(outputMultiResultAsync, () => {
 		await outputMultiResultAsync({
 			dependencies,
 			result: makeMultiResult(),
-			rootConfig: makeConfig({ outputFile: "/tmp/results.json" }),
+			rootConfig: makeOutputConfig({ outputFile: "/tmp/results.json" }),
 		});
 
 		expect(readSink(volume, "/tmp/results.json")).toBe(
@@ -960,7 +789,7 @@ describe(outputMultiResultAsync, () => {
 		await outputMultiResultAsync({
 			dependencies,
 			result: makeWorkspaceResult(),
-			rootConfig: makeConfig({ outputFile: "/tmp/results.json" }),
+			rootConfig: makeOutputConfig({ outputFile: "/tmp/results.json" }),
 		});
 
 		expect(hasSink(volume, "/tmp/results.json")).toBeFalse();
@@ -977,7 +806,7 @@ describe(outputMultiResultAsync, () => {
 			result: makeMultiResult({
 				projectResults: [makeProjectResult("client", { gameOutput: RAW_GAME_OUTPUT })],
 			}),
-			rootConfig: makeConfig({ gameOutput: "/tmp/game.json" }),
+			rootConfig: makeOutputConfig({ gameOutput: "/tmp/game.json" }),
 		});
 
 		expect(readSink(volume, "/tmp/game.json")).toBe(
@@ -1002,7 +831,10 @@ describe(outputMultiResultAsync, () => {
 					makeProjectResult("server"),
 				],
 			}),
-			rootConfig: makeConfig({ experimentalVmParallel: 2, gameOutput: "/tmp/game.json" }),
+			rootConfig: makeOutputConfig({
+				experimentalVmParallel: 2,
+				gameOutput: "/tmp/game.json",
+			}),
 		});
 
 		expect(readSink(volume, "/tmp/game.json")).toBe(
@@ -1036,7 +868,10 @@ describe(outputMultiResultAsync, () => {
 					makeProjectResult("server", { gameOutputScope: "batch" }),
 				],
 			}),
-			rootConfig: makeConfig({ experimentalVmParallel: 2, gameOutput: "/tmp/game.json" }),
+			rootConfig: makeOutputConfig({
+				experimentalVmParallel: 2,
+				gameOutput: "/tmp/game.json",
+			}),
 		});
 
 		expect(readSink(volume, "/tmp/game.json")).toBe(
@@ -1065,7 +900,10 @@ describe(outputMultiResultAsync, () => {
 			result: makeMultiResult({
 				projectResults: [makeProjectResult("client"), makeProjectResult("server")],
 			}),
-			rootConfig: makeConfig({ experimentalVmParallel: 1, gameOutput: "/tmp/game.json" }),
+			rootConfig: makeOutputConfig({
+				experimentalVmParallel: 1,
+				gameOutput: "/tmp/game.json",
+			}),
 		});
 
 		expect(readSink(volume, "/tmp/game.json")).toBe(
@@ -1089,7 +927,7 @@ describe(outputMultiResultAsync, () => {
 		await outputMultiResultAsync({
 			dependencies,
 			result: makeWorkspaceResult(),
-			rootConfig: makeConfig({ gameOutput: "/tmp/game.json" }),
+			rootConfig: makeOutputConfig({ gameOutput: "/tmp/game.json" }),
 		});
 
 		expect(hasSink(volume, "/tmp/game.json")).toBeFalse();
@@ -1107,7 +945,7 @@ describe(outputMultiResultAsync, () => {
 				projectResults: [],
 				typecheckResult: makeJestResult(),
 			}),
-			rootConfig: makeConfig(),
+			rootConfig: makeOutputConfig(),
 		});
 
 		expect(spies.stdout).toHaveBeenCalledWith("typecheck-summary");
@@ -1122,7 +960,7 @@ describe(outputMultiResultAsync, () => {
 		await outputMultiResultAsync({
 			dependencies,
 			result: makeMultiResult(),
-			rootConfig: makeConfig({ formatters: ["agent"] }),
+			rootConfig: makeOutputConfig({ formatters: ["agent"] }),
 		});
 
 		expect(spies.consoleLog).toHaveBeenCalledWith("formatted-agent");
@@ -1137,7 +975,7 @@ describe(outputMultiResultAsync, () => {
 		await outputMultiResultAsync({
 			dependencies,
 			result: makeMultiResult(),
-			rootConfig: makeConfig({ formatters: [["agent", { maxFailures: 5 }]] }),
+			rootConfig: makeOutputConfig({ formatters: [["agent", { maxFailures: 5 }]] }),
 		});
 
 		expect(renderer.formatAgentMultiProject).toHaveBeenCalledWith(
@@ -1159,7 +997,7 @@ describe(outputMultiResultAsync, () => {
 				outputFile: "/ws/jest-output.log",
 				reportOptions: makeReportOptions({ formatters: ["agent"] }),
 			}),
-			rootConfig: makeConfig({
+			rootConfig: makeOutputConfig({
 				gameOutput: "/root/cfg.log",
 				outputFile: "/root/cfg.json",
 			}),
@@ -1183,7 +1021,7 @@ describe(outputMultiResultAsync, () => {
 		await outputMultiResultAsync({
 			dependencies,
 			result: makeMultiResult(),
-			rootConfig: makeConfig({
+			rootConfig: makeOutputConfig({
 				formatters: ["agent"],
 				gameOutput: "/root/cfg.log",
 				outputFile: "/root/cfg.json",
@@ -1205,7 +1043,7 @@ describe(outputMultiResultAsync, () => {
 		await outputMultiResultAsync({
 			dependencies,
 			result: makeMultiResult(),
-			rootConfig: makeConfig({ formatters: ["json"] }),
+			rootConfig: makeOutputConfig({ formatters: ["json"] }),
 		});
 
 		expect(spies.consoleLog).toHaveBeenCalledWith("formatted-execute");
@@ -1220,7 +1058,7 @@ describe(outputMultiResultAsync, () => {
 		await outputMultiResultAsync({
 			dependencies,
 			result: makeMultiResult({ typecheckResult: makeJestResult() }),
-			rootConfig: makeConfig({ formatters: ["json"] }),
+			rootConfig: makeOutputConfig({ formatters: ["json"] }),
 		});
 
 		expect(spies.stderr).toHaveBeenCalledWith("typecheck-summary");
@@ -1237,7 +1075,7 @@ describe(outputMultiResultAsync, () => {
 			result: makeMultiResult({
 				typecheckResult: makeJestResult({ numFailedTests: 2, success: false }),
 			}),
-			rootConfig: makeConfig({ formatters: ["agent"] }),
+			rootConfig: makeOutputConfig({ formatters: ["agent"] }),
 		});
 
 		expect(spies.stderr).toHaveBeenCalledWith("typecheck-summary");
@@ -1257,7 +1095,7 @@ describe(outputMultiResultAsync, () => {
 		await outputMultiResultAsync({
 			dependencies,
 			result: makeMultiResult({ typecheckResult: makeJestResult() }),
-			rootConfig: makeConfig({ formatters: ["agent"] }),
+			rootConfig: makeOutputConfig({ formatters: ["agent"] }),
 		});
 
 		expect(spies.stderr).not.toHaveBeenCalled();
@@ -1282,7 +1120,7 @@ describe(outputMultiResultAsync, () => {
 					},
 				],
 			}),
-			rootConfig: makeConfig({ collectCoverage: true }),
+			rootConfig: makeOutputConfig({ collectCoverage: true }),
 		});
 
 		expect(pipeline.generateReports).toHaveBeenCalledWith(
@@ -1308,7 +1146,10 @@ describe(outputMultiResultAsync, () => {
 					},
 				],
 			}),
-			rootConfig: makeConfig({ collectCoverage: true, collectCoverageFrom: ["src/**/*.ts"] }),
+			rootConfig: makeOutputConfig({
+				collectCoverage: true,
+				collectCoverageFrom: ["src/**/*.ts"],
+			}),
 		});
 
 		expect(pipeline.generateReports).toHaveBeenCalledWith(
@@ -1325,7 +1166,7 @@ describe(outputMultiResultAsync, () => {
 		const code = await outputMultiResultAsync({
 			dependencies,
 			result: makeWorkspaceResult(),
-			rootConfig: makeConfig(),
+			rootConfig: makeOutputConfig(),
 		});
 
 		expect(code).toBe(0);
@@ -1355,7 +1196,7 @@ describe(outputMultiResultAsync, () => {
 					},
 				],
 			}),
-			rootConfig: makeConfig({ collectCoverage: true }),
+			rootConfig: makeOutputConfig({ collectCoverage: true }),
 		});
 
 		expect(pipeline.generateReports).toHaveBeenCalledWith(
@@ -1378,7 +1219,7 @@ describe("workspace output ignores the bootstrap config", () => {
 		await outputMultiResultAsync({
 			dependencies,
 			result: makeWorkspaceResult(),
-			rootConfig: makeConfig({ formatters: ["agent"] }),
+			rootConfig: makeOutputConfig({ formatters: ["agent"] }),
 		});
 
 		expect(spies.consoleLog).toHaveBeenCalledWith("formatted-multi");
@@ -1394,7 +1235,7 @@ describe("workspace output ignores the bootstrap config", () => {
 		await outputMultiResultAsync({
 			dependencies,
 			result: makeWorkspaceResult(),
-			rootConfig: makeConfig({ silent: true }),
+			rootConfig: makeOutputConfig({ silent: true }),
 		});
 
 		expect(spies.consoleLog).toHaveBeenCalledWith("formatted-multi");
@@ -1411,7 +1252,7 @@ describe("workspace output ignores the bootstrap config", () => {
 			result: makeWorkspaceResult({
 				reportOptions: makeReportOptions({ formatters: ["agent"] }),
 			}),
-			rootConfig: makeConfig({ rootDir: "/bootstrap" }),
+			rootConfig: makeOutputConfig({ rootDir: "/bootstrap" }),
 		});
 
 		expect(renderer.formatAgentMultiProject).toHaveBeenCalledWith(
@@ -1429,7 +1270,7 @@ describe("workspace output ignores the bootstrap config", () => {
 		await outputMultiResultAsync({
 			dependencies,
 			result: makeWorkspaceResult({ projectResults: [], typecheckResult: makeJestResult() }),
-			rootConfig: makeConfig({ outputFile: "/root/cfg.json" }),
+			rootConfig: makeOutputConfig({ outputFile: "/root/cfg.json" }),
 		});
 
 		expect(hasSink(volume, "/root/cfg.json")).toBeFalse();
@@ -1448,7 +1289,7 @@ describe("workspace output ignores the bootstrap config", () => {
 					makeProjectResult("@halcyon/foo", { result: makeFailingResult() }),
 				],
 			}),
-			rootConfig: makeConfig({ formatters: ["default", "github-actions"] }),
+			rootConfig: makeOutputConfig({ formatters: ["default", "github-actions"] }),
 		});
 
 		expect(spies.stderr).not.toHaveBeenCalledWith(expect.stringContaining("::error"));
@@ -1463,7 +1304,7 @@ describe("workspace output ignores the bootstrap config", () => {
 		await outputMultiResultAsync({
 			dependencies,
 			result: makeWorkspaceResult({ coveragePackages: [makeCoverageGate()] }),
-			rootConfig: makeConfig({
+			rootConfig: makeOutputConfig({
 				collectCoverage: true,
 				collectCoverageFrom: ["src/server/**/ecs/**"],
 				coverageDirectory: "bootstrap-coverage",
@@ -1490,7 +1331,10 @@ describe("workspace output ignores the bootstrap config", () => {
 		const code = await outputMultiResultAsync({
 			dependencies,
 			result: makeWorkspaceResult({ coveragePackages: [makeCoverageGate()] }),
-			rootConfig: makeConfig({ collectCoverage: true, coverageThreshold: { lines: 80 } }),
+			rootConfig: makeOutputConfig({
+				collectCoverage: true,
+				coverageThreshold: { lines: 80 },
+			}),
 		});
 
 		expect(pipeline.checkThresholds).not.toHaveBeenCalled();
@@ -1515,7 +1359,7 @@ describe("workspace output ignores the bootstrap config", () => {
 					},
 				],
 			}),
-			rootConfig: makeConfig({ collectCoverage: true }),
+			rootConfig: makeOutputConfig({ collectCoverage: true }),
 		});
 
 		expect(pipeline.loadCoverageManifest).not.toHaveBeenCalled();
@@ -1523,15 +1367,15 @@ describe("workspace output ignores the bootstrap config", () => {
 	});
 });
 
-describe("processCoverage via outputSingleResult", () => {
+describe("processCoverage via a one-project run", () => {
 	it("should be a no-op when collectCoverage is false", async () => {
 		expect.assertions(1);
 
 		const { dependencies } = setupOutput();
 		setupOutputSpies();
 
-		await outputSingleResultAsync({
-			config: makeConfig(),
+		await outputOneProjectAsync({
+			config: makeOutputConfig(),
 			dependencies,
 			result: makeSingleResult(),
 		});
@@ -1545,8 +1389,8 @@ describe("processCoverage via outputSingleResult", () => {
 		const { dependencies } = setupOutput();
 		const spies = setupOutputSpies();
 
-		await outputSingleResultAsync({
-			config: makeConfig({ collectCoverage: true }),
+		await outputOneProjectAsync({
+			config: makeOutputConfig({ collectCoverage: true }),
 			dependencies,
 			result: makeSingleResult(),
 		});
@@ -1562,8 +1406,8 @@ describe("processCoverage via outputSingleResult", () => {
 		const { dependencies } = setupOutput();
 		const spies = setupOutputSpies();
 
-		await outputSingleResultAsync({
-			config: makeConfig({ collectCoverage: true, silent: true }),
+		await outputOneProjectAsync({
+			config: makeOutputConfig({ collectCoverage: true, silent: true }),
 			dependencies,
 			result: makeSingleResult(),
 		});
@@ -1577,8 +1421,8 @@ describe("processCoverage via outputSingleResult", () => {
 		const { dependencies } = setupOutput();
 		const spies = setupOutputSpies();
 
-		await outputSingleResultAsync({
-			config: makeConfig({ collectCoverage: true }),
+		await outputOneProjectAsync({
+			config: makeOutputConfig({ collectCoverage: true }),
 			dependencies,
 			result: makeSingleResult({
 				runtimeResult: makeExecuteResult({ coverageData: fromAny({ "x.luau": {} }) }),
@@ -1596,8 +1440,8 @@ describe("processCoverage via outputSingleResult", () => {
 		const { dependencies } = setupOutput();
 		const spies = setupOutputSpies();
 
-		await outputSingleResultAsync({
-			config: makeConfig({ collectCoverage: true, silent: true }),
+		await outputOneProjectAsync({
+			config: makeOutputConfig({ collectCoverage: true, silent: true }),
 			dependencies,
 			result: makeSingleResult({
 				runtimeResult: makeExecuteResult({ coverageData: fromAny({ "x.luau": {} }) }),
@@ -1616,8 +1460,8 @@ describe("processCoverage via outputSingleResult", () => {
 		pipeline.mapCoverageToTypeScript.mockReturnValue(mapped);
 		const spies = setupOutputSpies();
 
-		await outputSingleResultAsync({
-			config: makeConfig({ collectCoverage: true }),
+		await outputOneProjectAsync({
+			config: makeOutputConfig({ collectCoverage: true }),
 			dependencies,
 			result: makeSingleResult({
 				runtimeResult: makeExecuteResult({ coverageData: fromAny({ "x.luau": {} }) }),
@@ -1640,8 +1484,8 @@ describe("processCoverage via outputSingleResult", () => {
 		pipeline.mapCoverageToTypeScript.mockReturnValue(mapped);
 		const spies = setupOutputSpies();
 
-		await outputSingleResultAsync({
-			config: makeConfig({ collectCoverage: true, silent: true }),
+		await outputOneProjectAsync({
+			config: makeOutputConfig({ collectCoverage: true, silent: true }),
 			dependencies,
 			result: makeSingleResult({
 				runtimeResult: makeExecuteResult({ coverageData: fromAny({ "x.luau": {} }) }),
@@ -1666,8 +1510,8 @@ describe("processCoverage via outputSingleResult", () => {
 		});
 		const spies = setupOutputSpies();
 
-		const code = await outputSingleResultAsync({
-			config: makeConfig({
+		const code = await outputOneProjectAsync({
+			config: makeOutputConfig({
 				collectCoverage: true,
 				coverageThreshold: { lines: 100 },
 			}),
@@ -1688,14 +1532,15 @@ describe("processCoverage via outputSingleResult", () => {
 
 		const { dependencies } = setupOutput();
 		pipeline.loadCoverageManifest.mockReturnValue(fromAny({}));
+		const malformed = new Error("Coverage map at out/foo.luau.cov-map.json is malformed");
 		pipeline.mapCoverageToTypeScript.mockImplementation(() => {
-			throw new CoverageMapMalformedError("out/foo.luau.cov-map.json");
+			throw malformed;
 		});
 		setupOutputSpies();
 
 		await expect(
-			outputSingleResultAsync({
-				config: makeConfig({
+			outputOneProjectAsync({
+				config: makeOutputConfig({
 					collectCoverage: true,
 					coverageThreshold: { lines: 100 },
 				}),
@@ -1706,149 +1551,10 @@ describe("processCoverage via outputSingleResult", () => {
 					}),
 				}),
 			}),
-		).rejects.toThrow(CoverageMapMalformedError);
+		).rejects.toBe(malformed);
 
 		expect(pipeline.generateReports).not.toHaveBeenCalled();
 		expect(pipeline.checkThresholds).not.toHaveBeenCalled();
-	});
-});
-
-describe("agent-mode summary ordering vs coverage", () => {
-	it("should print coverage before the single-project agent summary so trimming keeps it", async () => {
-		expect.assertions(2);
-
-		const { dependencies } = setupOutput();
-		pipeline.loadCoverageManifest.mockReturnValue(fromAny({}));
-		pipeline.mapCoverageToTypeScript.mockReturnValue(fromAny({}));
-		const spies = setupOutputSpies();
-
-		await outputSingleResultAsync({
-			config: makeConfig({ collectCoverage: true, formatters: ["agent"] }),
-			dependencies,
-			result: makeSingleResult({
-				runtimeResult: makeExecuteResult({ coverageData: fromAny({ "x.luau": {} }) }),
-			}),
-		});
-
-		expect(spies.consoleLog).toHaveBeenCalledWith("formatted-execute");
-
-		const coverageOrder = pipeline.generateReports.mock.invocationCallOrder[0]!;
-		const summaryOrder = spies.consoleLog.mock.invocationCallOrder[0]!;
-
-		expect(coverageOrder).toBeLessThan(summaryOrder);
-	});
-
-	it("should keep the summary before coverage for the default formatter", async () => {
-		expect.assertions(2);
-
-		const { dependencies } = setupOutput();
-		pipeline.loadCoverageManifest.mockReturnValue(fromAny({}));
-		pipeline.mapCoverageToTypeScript.mockReturnValue(fromAny({}));
-		const spies = setupOutputSpies();
-
-		await outputSingleResultAsync({
-			config: makeConfig({ collectCoverage: true }),
-			dependencies,
-			result: makeSingleResult({
-				runtimeResult: makeExecuteResult({ coverageData: fromAny({ "x.luau": {} }) }),
-			}),
-		});
-
-		expect(spies.consoleLog).toHaveBeenCalledExactlyOnceWith("formatted-execute");
-
-		const coverageOrder = pipeline.generateReports.mock.invocationCallOrder[0]!;
-		const summaryOrder = spies.consoleLog.mock.invocationCallOrder[0]!;
-
-		expect(summaryOrder).toBeLessThan(coverageOrder);
-	});
-
-	it("should keep the summary before coverage when verbose opts out of the agent formatter", async () => {
-		expect.assertions(2);
-
-		const { dependencies } = setupOutput();
-		pipeline.loadCoverageManifest.mockReturnValue(fromAny({}));
-		pipeline.mapCoverageToTypeScript.mockReturnValue(fromAny({}));
-		const spies = setupOutputSpies();
-
-		await outputSingleResultAsync({
-			config: makeConfig({ collectCoverage: true, formatters: ["agent"], verbose: true }),
-			dependencies,
-			result: makeSingleResult({
-				runtimeResult: makeExecuteResult({ coverageData: fromAny({ "x.luau": {} }) }),
-			}),
-		});
-
-		expect(spies.consoleLog).toHaveBeenCalledWith("formatted-execute");
-
-		const coverageOrder = pipeline.generateReports.mock.invocationCallOrder[0]!;
-		const summaryOrder = spies.consoleLog.mock.invocationCallOrder[0]!;
-
-		expect(summaryOrder).toBeLessThan(coverageOrder);
-	});
-
-	it("should defer the multi-project agent summary until after the coverage report", async () => {
-		expect.assertions(2);
-
-		const { dependencies } = setupOutput();
-		pipeline.loadCoverageManifest.mockReturnValue(fromAny({}));
-		pipeline.mapCoverageToTypeScript.mockReturnValue(fromAny({}));
-		const spies = setupOutputSpies();
-
-		await outputMultiResultAsync({
-			dependencies,
-			result: makeMultiResult({
-				projectResults: [
-					makeProjectResult("client", { coverageData: fromAny({ "x.luau": {} }) }),
-				],
-			}),
-			rootConfig: makeConfig({ collectCoverage: true, formatters: ["agent"] }),
-		});
-
-		expect(spies.consoleLog).toHaveBeenCalledWith("formatted-agent");
-
-		const coverageOrder = pipeline.generateReports.mock.invocationCallOrder[0]!;
-		const summaryOrder = spies.consoleLog.mock.invocationCallOrder[0]!;
-
-		expect(coverageOrder).toBeLessThan(summaryOrder);
-	});
-
-	it("should keep the agent summary inline when coverage is disabled", async () => {
-		expect.assertions(2);
-
-		const { dependencies } = setupOutput();
-		const spies = setupOutputSpies();
-
-		await outputSingleResultAsync({
-			config: makeConfig({ formatters: ["agent"] }),
-			dependencies,
-			result: makeSingleResult(),
-		});
-
-		expect(spies.consoleLog).toHaveBeenCalledWith("formatted-execute");
-		expect(pipeline.generateReports).not.toHaveBeenCalled();
-	});
-
-	it("should still print the deferred agent summary when coverage mapping throws", async () => {
-		expect.assertions(2);
-
-		const { dependencies } = setupOutput();
-		pipeline.loadCoverageManifest.mockReturnValue(fromAny({}));
-		pipeline.mapCoverageToTypeScript.mockImplementation(() => {
-			throw new CoverageMapMalformedError("out/foo.luau.cov-map.json");
-		});
-		const spies = setupOutputSpies();
-
-		await expect(
-			outputSingleResultAsync({
-				config: makeConfig({ collectCoverage: true, formatters: ["agent"] }),
-				dependencies,
-				result: makeSingleResult({
-					runtimeResult: makeExecuteResult({ coverageData: fromAny({ "x.luau": {} }) }),
-				}),
-			}),
-		).rejects.toThrow(CoverageMapMalformedError);
-
-		expect(spies.consoleLog).toHaveBeenCalledWith("formatted-execute");
 	});
 });
 
@@ -1865,7 +1571,7 @@ describe("per-package coverage reports via outputMultiResult", () => {
 			result: makeWorkspaceResult({
 				coveragePackages: [makeCoverageGate({ universe: fooUniverse })],
 			}),
-			rootConfig: makeConfig({ collectCoverage: true }),
+			rootConfig: makeOutputConfig({ collectCoverage: true }),
 		});
 
 		expect(pipeline.loadCoverageManifest).not.toHaveBeenCalled();
@@ -1887,7 +1593,7 @@ describe("per-package coverage reports via outputMultiResult", () => {
 			result: makeWorkspaceResult({
 				coveragePackages: [makeCoverageGate({ universe: fooUniverse })],
 			}),
-			rootConfig: makeConfig(),
+			rootConfig: makeOutputConfig(),
 		});
 
 		expect(pipeline.generateReports).toHaveBeenCalledWith(
@@ -1907,7 +1613,7 @@ describe("per-package coverage reports via outputMultiResult", () => {
 				coveragePackages: [makeCoverageGate()],
 				reportOptions: makeReportOptions({ silent: true }),
 			}),
-			rootConfig: makeConfig(),
+			rootConfig: makeOutputConfig(),
 		});
 
 		expect(spies.stdout).not.toHaveBeenCalled();
@@ -1940,7 +1646,7 @@ describe("per-package coverage reports via outputMultiResult", () => {
 					}),
 				],
 			}),
-			rootConfig: makeConfig(),
+			rootConfig: makeOutputConfig(),
 		});
 
 		expect(pipeline.generateReports).toHaveBeenCalledTimes(2);
@@ -1967,7 +1673,7 @@ describe("per-package coverage reports via outputMultiResult", () => {
 		await outputMultiResultAsync({
 			dependencies,
 			result: makeWorkspaceResult({ coveragePackages: [makeCoverageGate()] }),
-			rootConfig: makeConfig(),
+			rootConfig: makeOutputConfig(),
 		});
 
 		expect(pipeline.generateReports).toHaveBeenCalledWith(
@@ -1987,7 +1693,7 @@ describe("per-package coverage reports via outputMultiResult", () => {
 		await outputMultiResultAsync({
 			dependencies,
 			result: makeWorkspaceResult({ coveragePackages: [makeCoverageGate()] }),
-			rootConfig: makeConfig(),
+			rootConfig: makeOutputConfig(),
 		});
 
 		expect(spies.stdout).toHaveBeenCalledWith("\n@halcyon/foo\n");
@@ -2002,7 +1708,7 @@ describe("per-package coverage reports via outputMultiResult", () => {
 		await outputMultiResultAsync({
 			dependencies,
 			result: makeWorkspaceResult({ coveragePackages: [] }),
-			rootConfig: makeConfig({ collectCoverage: true }),
+			rootConfig: makeOutputConfig({ collectCoverage: true }),
 		});
 
 		expect(spies.stdout).not.toHaveBeenCalledWith(expect.stringContaining(COVERAGE_HEADER));
@@ -2024,7 +1730,7 @@ describe("per-package coverage reports via outputMultiResult", () => {
 			result: makeWorkspaceResult({
 				coveragePackages: [makeCoverageGate({ coverageThreshold: { lines: 100 } })],
 			}),
-			rootConfig: makeConfig(),
+			rootConfig: makeOutputConfig(),
 		});
 
 		expect(code).toBe(1);
@@ -2049,7 +1755,7 @@ describe("per-package threshold gates via outputMultiResult", () => {
 					makeCoverageGate({ coverageThreshold: { lines: 70 }, universe: fooUniverse }),
 				],
 			}),
-			rootConfig: makeConfig(),
+			rootConfig: makeOutputConfig(),
 		});
 
 		// One call only: the pooled merged-universe check is replaced by the
@@ -2078,7 +1784,7 @@ describe("per-package threshold gates via outputMultiResult", () => {
 					}),
 				],
 			}),
-			rootConfig: makeConfig(),
+			rootConfig: makeOutputConfig(),
 		});
 
 		expect(pipeline.checkThresholds).toHaveBeenCalledWith({
@@ -2096,7 +1802,7 @@ describe("per-package threshold gates via outputMultiResult", () => {
 		const code = await outputMultiResultAsync({
 			dependencies,
 			result: makeWorkspaceResult({ coveragePackages: [makeCoverageGate()] }),
-			rootConfig: makeConfig(),
+			rootConfig: makeOutputConfig(),
 		});
 
 		expect(pipeline.checkThresholds).not.toHaveBeenCalled();
@@ -2123,7 +1829,7 @@ describe("per-package threshold gates via outputMultiResult", () => {
 					makeCoverageGate({ coverageThreshold: { lines: 80 }, pkg: "@halcyon/bar" }),
 				],
 			}),
-			rootConfig: makeConfig(),
+			rootConfig: makeOutputConfig(),
 		});
 
 		expect(code).toBe(1);
@@ -2136,7 +1842,7 @@ describe("per-package threshold gates via outputMultiResult", () => {
 // `GITHUB_WORKSPACE` is set on CI and rewrites an annotation's `file=` path.
 const FAILURE_ANNOTATION = "title=player explodes::boom\n";
 
-describe("runGitHubActionsFormatter via outputSingleResult", () => {
+describe("runGitHubActionsFormatter via a one-project run", () => {
 	it("should be a no-op when formatter not configured", async () => {
 		expect.assertions(2);
 
@@ -2145,8 +1851,8 @@ describe("runGitHubActionsFormatter via outputSingleResult", () => {
 		process.env["GITHUB_STEP_SUMMARY"] = "/tmp/summary.md";
 		volume.mkdirSync("/tmp", { recursive: true });
 
-		await outputSingleResultAsync({
-			config: makeConfig(),
+		await outputOneProjectAsync({
+			config: makeOutputConfig(),
 			dependencies,
 			result: makeSingleResult({
 				runtimeResult: makeExecuteResult({ result: makeFailingResult() }),
@@ -2163,8 +1869,8 @@ describe("runGitHubActionsFormatter via outputSingleResult", () => {
 		const { dependencies } = setupOutput();
 		const spies = setupOutputSpies();
 
-		await outputSingleResultAsync({
-			config: makeConfig({ formatters: ["default", "github-actions"] }),
+		await outputOneProjectAsync({
+			config: makeOutputConfig({ formatters: ["default", "github-actions"] }),
 			dependencies,
 			result: makeSingleResult({
 				runtimeResult: makeExecuteResult({ result: makeFailingResult() }),
@@ -2185,7 +1891,7 @@ describe("runGitHubActionsFormatter via outputSingleResult", () => {
 			result: makeMultiResult({
 				projectResults: [makeProjectResult("client", { result: makeFailingResult() })],
 			}),
-			rootConfig: makeConfig({ formatters: ["default", "github-actions"] }),
+			rootConfig: makeOutputConfig({ formatters: ["default", "github-actions"] }),
 		});
 
 		expect(spies.stderr).toHaveBeenCalledWith(expect.stringContaining(FAILURE_ANNOTATION));
@@ -2197,8 +1903,8 @@ describe("runGitHubActionsFormatter via outputSingleResult", () => {
 		const { dependencies } = setupOutput();
 		const spies = setupOutputSpies();
 
-		await outputSingleResultAsync({
-			config: makeConfig({
+		await outputOneProjectAsync({
+			config: makeOutputConfig({
 				formatters: ["default", ["github-actions", { displayAnnotations: false }]],
 			}),
 			dependencies,
@@ -2216,8 +1922,8 @@ describe("runGitHubActionsFormatter via outputSingleResult", () => {
 		const { dependencies } = setupOutput();
 		const spies = setupOutputSpies();
 
-		await outputSingleResultAsync({
-			config: makeConfig({ formatters: ["default", "github-actions"] }),
+		await outputOneProjectAsync({
+			config: makeOutputConfig({ formatters: ["default", "github-actions"] }),
 			dependencies,
 			result: makeSingleResult(),
 		});
@@ -2234,8 +1940,8 @@ describe("runGitHubActionsFormatter via outputSingleResult", () => {
 		process.env["GITHUB_STEP_SUMMARY"] = "/tmp/summary.md";
 		volume.mkdirSync("/tmp", { recursive: true });
 
-		await outputSingleResultAsync({
-			config: makeConfig({ formatters: ["default", "github-actions"] }),
+		await outputOneProjectAsync({
+			config: makeOutputConfig({ formatters: ["default", "github-actions"] }),
 			dependencies,
 			result: makeSingleResult(),
 		});
@@ -2252,8 +1958,8 @@ describe("runGitHubActionsFormatter via outputSingleResult", () => {
 
 		setupOutputSpies();
 
-		await outputSingleResultAsync({
-			config: makeConfig({
+		await outputOneProjectAsync({
+			config: makeOutputConfig({
 				formatters: [
 					"default",
 					["github-actions", { jobSummary: { outputPath: "/tmp/explicit.md" } }],
@@ -2274,8 +1980,8 @@ describe("runGitHubActionsFormatter via outputSingleResult", () => {
 		process.env["GITHUB_STEP_SUMMARY"] = "/tmp/summary.md";
 		volume.mkdirSync("/tmp", { recursive: true });
 
-		await outputSingleResultAsync({
-			config: makeConfig({
+		await outputOneProjectAsync({
+			config: makeOutputConfig({
 				formatters: ["default", ["github-actions", { jobSummary: { enabled: false } }]],
 			}),
 			dependencies,
@@ -2291,8 +1997,8 @@ describe("runGitHubActionsFormatter via outputSingleResult", () => {
 		const { dependencies, volume } = setupOutput();
 		setupOutputSpies();
 
-		await outputSingleResultAsync({
-			config: makeConfig({ formatters: ["default", "github-actions"] }),
+		await outputOneProjectAsync({
+			config: makeOutputConfig({ formatters: ["default", "github-actions"] }),
 			dependencies,
 			result: makeSingleResult(),
 		});
@@ -2302,62 +2008,6 @@ describe("runGitHubActionsFormatter via outputSingleResult", () => {
 });
 
 describe("writeGameOutput integration", () => {
-	it("should print notice when game output written and not under silent", async () => {
-		expect.assertions(1);
-
-		const { dependencies } = setupOutput();
-		const spies = setupOutputSpies();
-
-		await outputSingleResultAsync({
-			config: makeConfig({ gameOutput: "/tmp/game.json" }),
-			dependencies,
-			result: makeSingleResult({
-				runtimeResult: makeExecuteResult({ gameOutput: RAW_GAME_OUTPUT }),
-			}),
-		});
-
-		expect(spies.consoleError).toHaveBeenCalledExactlyOnceWith(
-			"Game output (1 entries) written to /tmp/game.json",
-		);
-	});
-
-	it("should suppress notice when run failed (hintsShown true)", async () => {
-		expect.assertions(2);
-
-		const { dependencies, volume } = setupOutput();
-		const spies = setupOutputSpies();
-
-		await outputSingleResultAsync({
-			config: makeConfig({ gameOutput: "/tmp/game.json" }),
-			dependencies,
-			result: makeSingleResult({
-				runtimeResult: makeExecuteResult({
-					gameOutput: RAW_GAME_OUTPUT,
-					result: makeJestResult({ success: false }),
-				}),
-			}),
-		});
-
-		expect(hasSink(volume, "/tmp/game.json")).toBeTrue();
-		expect(spies.consoleError).not.toHaveBeenCalled();
-	});
-
-	it("should suppress notice when notice string is empty", async () => {
-		expect.assertions(2);
-
-		const { dependencies, volume } = setupOutput();
-		const spies = setupOutputSpies();
-
-		await outputSingleResultAsync({
-			config: makeConfig({ gameOutput: "/tmp/game.json" }),
-			dependencies,
-			result: makeSingleResult(),
-		});
-
-		expect(readSink(volume, "/tmp/game.json")).toBe("[]");
-		expect(spies.consoleError).not.toHaveBeenCalled();
-	});
-
 	it("should print aggregated notice for multi-project mode", async () => {
 		expect.assertions(1);
 
@@ -2369,7 +2019,7 @@ describe("writeGameOutput integration", () => {
 			result: makeMultiResult({
 				projectResults: [makeProjectResult("client", { gameOutput: RAW_GAME_OUTPUT })],
 			}),
-			rootConfig: makeConfig({ gameOutput: "/tmp/game.json" }),
+			rootConfig: makeOutputConfig({ gameOutput: "/tmp/game.json" }),
 		});
 
 		expect(spies.consoleError).toHaveBeenCalledExactlyOnceWith(
@@ -2396,7 +2046,7 @@ describe("writeGameOutput integration", () => {
 					},
 				],
 			}),
-			rootConfig: makeConfig({ gameOutput: "/tmp/game.json" }),
+			rootConfig: makeOutputConfig({ gameOutput: "/tmp/game.json" }),
 		});
 
 		expect(hasSink(volume, "/tmp/game.json")).toBeTrue();
@@ -2412,7 +2062,7 @@ describe("writeGameOutput integration", () => {
 		await outputMultiResultAsync({
 			dependencies,
 			result: makeMultiResult(),
-			rootConfig: makeConfig({ gameOutput: "/tmp/game.json" }),
+			rootConfig: makeOutputConfig({ gameOutput: "/tmp/game.json" }),
 		});
 
 		expect(readSink(volume, "/tmp/game.json")).toBe(
@@ -2422,149 +2072,12 @@ describe("writeGameOutput integration", () => {
 	});
 });
 
-describe(mergeResults, () => {
-	it("should reject when neither result dimension is present", () => {
-		expect.assertions(1);
-
-		expect(() => mergeResults(undefined, undefined)).toThrow(
-			"mergeResults requires at least one result",
-		);
-	});
-
-	it("should combine every aggregate field and preserve runtime snapshots", () => {
-		expect.assertions(1);
-
-		const typecheckFile = fromAny<TestFileResult, { testFilePath: string }>({
-			testFilePath: "typecheck",
-		});
-		const runtimeFile = fromAny<TestFileResult, { testFilePath: string }>({
-			testFilePath: "runtime",
-		});
-		const runtimeSnapshot = {
-			added: 1,
-			matched: 2,
-			total: 4,
-			unmatched: 1,
-			updated: 0,
-		};
-		const typecheck = makeJestResult({
-			numFailedTests: 1,
-			numPassedTests: 2,
-			numPendingTests: 3,
-			numTodoTests: undefined,
-			numTotalTests: 6,
-			startTime: 1000,
-			testResults: [typecheckFile],
-		});
-		const runtime = makeJestResult({
-			numFailedTests: 4,
-			numPassedTests: 5,
-			numPendingTests: 6,
-			numTodoTests: 7,
-			numTotalTests: 22,
-			snapshot: runtimeSnapshot,
-			startTime: 2000,
-			success: false,
-			testResults: [runtimeFile],
-		});
-
-		expect(mergeResults(typecheck, runtime)).toStrictEqual({
-			numFailedTests: 5,
-			numPassedTests: 7,
-			numPendingTests: 9,
-			numTodoTests: 7,
-			numTotalTests: 28,
-			snapshot: runtimeSnapshot,
-			startTime: 1000,
-			success: false,
-			testResults: [typecheckFile, runtimeFile],
-		});
-	});
-});
-
-describe(writeResultFileAsync, () => {
-	it("should serialize the shared mergeResults output to the given path", async () => {
-		expect.assertions(1);
-
-		const { fileSystem, volume } = setupOutput();
-		setupOutputSpies();
-
-		const typecheck = makeJestResult({ numPassedTests: 1, numTotalTests: 1 });
-		const runtime = makeJestResult({ numPassedTests: 2, numTotalTests: 2 });
-
-		await writeResultFileAsync({
-			fileSystem,
-			outputFile: "/tmp/results.json",
-			runtime,
-			typecheck,
-		});
-
-		expect(readSink(volume, "/tmp/results.json")).toBe(
-			JSON.stringify(mergeResults(typecheck, runtime), null, 2),
-		);
-	});
-
-	it("should be a no-op when outputFile is undefined", async () => {
-		expect.assertions(1);
-
-		const { fileSystem, volume } = setupOutput();
-		setupOutputSpies();
-
-		await writeResultFileAsync({
-			fileSystem,
-			outputFile: undefined,
-			runtime: makeJestResult(),
-			typecheck: makeJestResult(),
-		});
-
-		expect(volume.toJSON()).toStrictEqual({});
-	});
-
-	it("should collapse to the present side when only one result is given", async () => {
-		expect.assertions(1);
-
-		const { fileSystem, volume } = setupOutput();
-		setupOutputSpies();
-
-		const typecheck = makeJestResult({ numFailedTests: 1, success: false });
-
-		await writeResultFileAsync({
-			fileSystem,
-			outputFile: "/tmp/results.json",
-			runtime: undefined,
-			typecheck,
-		});
-
-		expect(readSink(volume, "/tmp/results.json")).toBe(JSON.stringify(typecheck, null, 2));
-	});
-
+describe("result file sink", () => {
 	// Single AND multi serialize *exactly* the shared `mergeResults` output, so a
 	// new result dimension reaches the file in every mode by a one-line change to
 	// that merge — no per-writer / per-branch hunt. (The workspace mode's
 	// identical guarantee is asserted in `workspace-runner.spec.ts` against the
 	// real on-disk file.)
-	it("should write exactly the shared mergeResults output for single mode", async () => {
-		expect.assertions(1);
-
-		const { dependencies, volume } = setupOutput();
-		setupOutputSpies();
-
-		const typecheckResult = makeJestResult({ numFailedTests: 1, success: false });
-		const runtime = makeJestResult({ numPassedTests: 3, numTotalTests: 3 });
-
-		await outputSingleResultAsync({
-			config: makeConfig({ outputFile: "/tmp/results.json" }),
-			dependencies,
-			result: makeSingleResult({
-				runtimeResult: makeExecuteResult({ result: runtime }),
-				typecheckResult,
-			}),
-		});
-
-		expect(readSink(volume, "/tmp/results.json")).toBe(
-			JSON.stringify(mergeResults(typecheckResult, runtime), null, 2),
-		);
-	});
 
 	it("should write exactly the shared mergeResults output for multi mode", async () => {
 		expect.assertions(1);
@@ -2581,327 +2094,24 @@ describe(writeResultFileAsync, () => {
 				projectResults: [makeProjectResult("client", { result: runtime })],
 				typecheckResult,
 			}),
-			rootConfig: makeConfig({ outputFile: "/tmp/results.json" }),
+			rootConfig: makeOutputConfig({ outputFile: "/tmp/results.json" }),
 		});
 
 		expect(readSink(volume, "/tmp/results.json")).toBe(
-			JSON.stringify(mergeResults(typecheckResult, runtime), null, 2),
-		);
-	});
-});
-
-describe(mergeProjectResults, () => {
-	it("should reject an empty project result set", () => {
-		expect.assertions(1);
-
-		expect(() => mergeProjectResults([])).toThrow(
-			"mergeProjectResults requires at least one result",
-		);
-	});
-
-	it("should fail otherwise successful projects when snapshot writes failed", () => {
-		expect.assertions(2);
-
-		const merged = mergeProjectResults([
-			makeExecuteResult(),
-			makeExecuteResult({ snapshotWriteFailures: 2 }),
-		]);
-
-		expect(merged.exitCode).toBe(1);
-		expect(merged.snapshotWriteFailures).toBe(2);
-	});
-
-	it("should omit a zero snapshot-write count from successful projects", () => {
-		expect.assertions(2);
-
-		const merged = mergeProjectResults([
-			makeExecuteResult({ snapshotWriteFailures: 0 }),
-			makeExecuteResult({ snapshotWriteFailures: 0 }),
-		]);
-
-		expect(merged.exitCode).toBe(0);
-		expect(merged.snapshotWriteFailures).toBeUndefined();
-	});
-
-	it("should preserve every merged result and timing dimension", () => {
-		expect.assertions(1);
-
-		const snapshot = { added: 1, matched: 2, total: 4, unmatched: 1, updated: 0 };
-		const first = makeExecuteResult({
-			result: makeJestResult({
-				numFailedTests: 1,
-				numPassedTests: 2,
-				numPendingTests: 3,
-				numTodoTests: 4,
-				numTotalTests: 10,
-				snapshot,
-				startTime: 3000,
-				success: true,
-			}),
-			timing: {
-				coverageMs: 11,
-				executionMs: 22,
-				setupMs: 5,
-				startTime: 3000,
-				testsMs: 33,
-				totalMs: 44,
-				uploadMs: 55,
-			},
-		});
-		const second = makeExecuteResult({
-			result: makeJestResult({
-				numFailedTests: 5,
-				numPassedTests: 6,
-				numPendingTests: 7,
-				numTodoTests: 8,
-				numTotalTests: 26,
-				startTime: 1000,
-				success: false,
-			}),
-			snapshotWriteFailures: 2,
-			timing: {
-				coverageMs: 66,
-				executionMs: 77,
-				setupMs: 7,
-				startTime: 1000,
-				testsMs: 88,
-				totalMs: 99,
-				uploadMs: 111,
-			},
-		});
-
-		expect(mergeProjectResults([first, second])).toStrictEqual({
-			coverageData: undefined,
-			exitCode: 1,
-			output: "",
-			result: {
-				numFailedTests: 6,
-				numPassedTests: 8,
-				numPendingTests: 10,
-				numTodoTests: 12,
-				numTotalTests: 36,
-				snapshot,
-				startTime: 1000,
-				success: false,
-				testResults: [],
-			},
-			snapshotWriteFailures: 2,
-			sourceMapper: undefined,
-			timing: {
-				coverageMs: 11,
-				executionMs: 22,
-				setupMs: 12,
-				startTime: 1000,
-				testsMs: 121,
-				totalMs: 99,
-				uploadMs: 55,
-			},
-		});
-	});
-
-	it("should keep the gaps of each named test across projects", () => {
-		expect.assertions(1);
-
-		const merged = mergeProjectResults([
-			makeExecuteResult({ result: makeBlockedResult("src/client.spec.ts", "a") }),
-			makeExecuteResult(),
-			makeExecuteResult({ result: makeBlockedResult("src/server.spec.ts", "b") }),
-		]);
-
-		expect(
-			merged.result.testResults.flatMap((file) => {
-				return file.testResults.map((test) => {
-					return [file.testFilePath, test.fullName, test.gaps];
-				});
-			}),
-		).toStrictEqual([
-			["src/client.spec.ts", "a", { script: 1 }],
-			["src/server.spec.ts", "b", { script: 1 }],
-		]);
-	});
-
-	it("should return the single result unchanged", () => {
-		expect.assertions(1);
-
-		const single = makeExecuteResult();
-
-		expect(mergeProjectResults([single])).toBe(single);
-	});
-
-	it("should aggregate counts across multiple results", () => {
-		expect.assertions(3);
-
-		const a = makeExecuteResult({
-			result: makeJestResult({
-				numFailedTests: 1,
-				numPassedTests: 2,
-				numTotalTests: 3,
-				success: false,
-			}),
-		});
-		const b = makeExecuteResult({
-			result: makeJestResult({
-				numFailedTests: 0,
-				numPassedTests: 4,
-				numTotalTests: 4,
-				success: true,
-			}),
-		});
-
-		const merged = mergeProjectResults([a, b]);
-
-		expect(merged.result.numFailedTests).toBe(1);
-		expect(merged.result.numPassedTests).toBe(6);
-		expect(merged.result.success).toBeFalse();
-	});
-
-	it("should merge coverage data across results", () => {
-		expect.assertions(1);
-
-		const a = makeExecuteResult({ coverageData: fromAny({ "a.luau": { s: { "0": 1 } } }) });
-		const b = makeExecuteResult({ coverageData: fromAny({ "b.luau": { s: { "0": 1 } } }) });
-
-		const merged = mergeProjectResults([a, b]);
-
-		expect(merged.coverageData).toBeDefined();
-	});
-
-	it("should leave coverage undefined when no result has coverage", () => {
-		expect.assertions(1);
-
-		const a = makeExecuteResult();
-		const b = makeExecuteResult();
-
-		expect(mergeProjectResults([a, b]).coverageData).toBeUndefined();
-	});
-
-	it("should sum testsMs across results", () => {
-		expect.assertions(1);
-
-		const a = makeExecuteResult({
-			timing: {
-				executionMs: 100,
-				startTime: 1000,
-				testsMs: 50,
-				totalMs: 200,
-				uploadMs: 50,
-			},
-		});
-		const b = makeExecuteResult({
-			timing: {
-				executionMs: 100,
-				startTime: 2000,
-				testsMs: 75,
-				totalMs: 200,
-				uploadMs: 50,
-			},
-		});
-
-		expect(mergeProjectResults([a, b]).timing.testsMs).toBe(125);
-	});
-
-	it("should sum setupMs when present on any result", () => {
-		expect.assertions(1);
-
-		const a = makeExecuteResult({
-			timing: {
-				executionMs: 100,
-				setupMs: 25,
-				startTime: 1000,
-				testsMs: 50,
-				totalMs: 200,
-				uploadMs: 50,
-			},
-		});
-		const b = makeExecuteResult({
-			timing: {
-				executionMs: 100,
-				setupMs: 35,
-				startTime: 1000,
-				testsMs: 50,
-				totalMs: 200,
-				uploadMs: 50,
-			},
-		});
-
-		expect(mergeProjectResults([a, b]).timing.setupMs).toBe(60);
-	});
-
-	it("should leave setupMs undefined when no result has any setup time", () => {
-		expect.assertions(1);
-
-		expect(
-			mergeProjectResults([makeExecuteResult(), makeExecuteResult()]).timing.setupMs,
-		).toBeUndefined();
-	});
-
-	it("should combine source mappers across results", () => {
-		expect.assertions(1);
-
-		const sourceMapper = {
-			mapFailureWithLocations: (message: string) => ({ locations: [], message }),
-			mapTestFileLine: (): undefined => undefined,
-			resolveDisplayPath: (testFilePath: string) => testFilePath,
-			resolveTestFilePath: (): undefined => undefined,
-		};
-		const a = makeExecuteResult({ sourceMapper });
-		const b = makeExecuteResult({ sourceMapper });
-
-		expect(mergeProjectResults([a, b]).sourceMapper).toBeDefined();
-	});
-
-	it("should yield exitCode 0 when all results succeeded", () => {
-		expect.assertions(1);
-
-		expect(mergeProjectResults([makeExecuteResult(), makeExecuteResult()]).exitCode).toBe(0);
-	});
-
-	it("should yield exitCode 1 when any result failed", () => {
-		expect.assertions(1);
-
-		const failing = makeExecuteResult({
-			result: makeJestResult({ success: false }),
-		});
-
-		expect(mergeProjectResults([makeExecuteResult(), failing]).exitCode).toBe(1);
-	});
-
-	it("should sum numTodoTests across results when present", () => {
-		expect.assertions(1);
-
-		const a = makeExecuteResult({
-			result: makeJestResult({ numTodoTests: 2 }),
-		});
-		const b = makeExecuteResult({
-			result: makeJestResult({ numTodoTests: 3 }),
-		});
-
-		expect(mergeProjectResults([a, b]).result.numTodoTests).toBe(5);
-	});
-
-	it("should default numTodoTests to 0 when undefined on results", () => {
-		expect.assertions(1);
-
-		const a = makeExecuteResult({
-			result: { ...makeJestResult(), numTodoTests: undefined },
-		});
-		const b = makeExecuteResult({
-			result: { ...makeJestResult(), numTodoTests: undefined },
-		});
-
-		expect(mergeProjectResults([a, b]).result.numTodoTests).toBe(0);
-	});
-
-	it("should fold every project's snapshot summary into the merged one", () => {
-		expect.assertions(1);
-
-		const first = { added: 1, matched: 2, total: 3, unmatched: 0, updated: 0 };
-		const second = { added: 0, matched: 4, total: 5, unmatched: 1, updated: 0 };
-		const a = makeExecuteResult({ result: { ...makeJestResult(), snapshot: first } });
-		const b = makeExecuteResult({ result: { ...makeJestResult(), snapshot: second } });
-
-		expect(mergeProjectResults([a, b]).result.snapshot).toStrictEqual(
-			mergeSnapshotSummaries([first, second]),
+			JSON.stringify(
+				{
+					numFailedTests: 1,
+					numPassedTests: 4,
+					numPendingTests: 0,
+					numTodoTests: 0,
+					numTotalTests: 4,
+					startTime: 1000,
+					success: false,
+					testResults: [],
+				},
+				null,
+				2,
+			),
 		);
 	});
 });
@@ -2913,8 +2123,8 @@ describe("merged typecheck + runtime branches", () => {
 		const { dependencies } = setupOutput();
 		setupOutputSpies();
 
-		const code = await outputSingleResultAsync({
-			config: makeConfig(),
+		const code = await outputOneProjectAsync({
+			config: makeOutputConfig(),
 			dependencies,
 			result: makeSingleResult({
 				runtimeResult: makeExecuteResult({
@@ -2928,24 +2138,6 @@ describe("merged typecheck + runtime branches", () => {
 	});
 });
 
-describe("printOutput empty branch", () => {
-	it("should not call console.log when formatter returns empty string", async () => {
-		expect.assertions(1);
-
-		const { dependencies } = setupOutput();
-		renderer.formatExecuteOutput.mockReturnValue("");
-		const spies = setupOutputSpies();
-
-		await outputSingleResultAsync({
-			config: makeConfig(),
-			dependencies,
-			result: makeSingleResult(),
-		});
-
-		expect(spies.consoleLog).not.toHaveBeenCalled();
-	});
-});
-
 describe("processCoverage threshold passed branch", () => {
 	it("should not write threshold-failed lines when threshold passes", async () => {
 		expect.assertions(2);
@@ -2956,8 +2148,8 @@ describe("processCoverage threshold passed branch", () => {
 		pipeline.checkThresholds.mockReturnValue({ failures: [], passed: true });
 		const spies = setupOutputSpies();
 
-		const code = await outputSingleResultAsync({
-			config: makeConfig({
+		const code = await outputOneProjectAsync({
+			config: makeOutputConfig({
 				collectCoverage: true,
 				coverageThreshold: { lines: 80 },
 			}),
@@ -2971,5 +2163,148 @@ describe("processCoverage threshold passed branch", () => {
 		expect(spies.stderr).not.toHaveBeenCalledWith(
 			expect.stringContaining("Coverage threshold not met"),
 		);
+	});
+});
+
+function passingTest(index: number): TestCaseResult {
+	return {
+		ancestorTitles: ["inventory"],
+		duration: 1,
+		failureMessages: [],
+		fullName: `inventory case ${index}`,
+		status: "passed",
+		title: `case ${index}`,
+	};
+}
+
+function passingResult(): JestResult {
+	return {
+		numFailedTests: 0,
+		numPassedTests: 5,
+		numPendingTests: 0,
+		numTodoTests: 0,
+		numTotalTests: 5,
+		startTime: 1000,
+		success: true,
+		testResults: [
+			{
+				numFailingTests: 0,
+				numPassingTests: 5,
+				numPendingTests: 0,
+				testFilePath: "src/client/inventory.spec.ts",
+				testResults: [0, 1, 2, 3, 4].map(passingTest),
+			},
+		],
+	};
+}
+
+/**
+ * One file fully covered (hidden by skipFull), one partial (shown), so the agent
+ * table and the raw-counts totals line both have something to print.
+ * @returns The mapped coverage.
+ */
+function mixedCoverage(): MappedCoverageResult {
+	return {
+		files: {
+			"src/client/inventory.ts": mappedFile({
+				f: { "0": 5 },
+				path: "src/client/inventory.ts",
+				s: { "0": 5, "1": 2, "2": 3 },
+			}),
+			"src/client/player.ts": mappedFile({ path: "src/client/player.ts" }),
+		},
+	};
+}
+
+/**
+ * Deliberately hostile: a workspace run must ignore every one of these. The
+ * values the render actually uses ride on the result below.
+ * @returns Config values the workspace render must ignore.
+ */
+function makeHostileConfig(): ResolvedConfig {
+	return {
+		...createResolvedConfig(),
+		color: true,
+		coverageReporters: ["lcov"],
+		formatters: ["json"],
+		rootDir: "/bootstrap",
+		testMatch: ["**/*.spec.ts"],
+		testPathIgnorePatterns: [],
+	};
+}
+
+function makeCoverageWorkspaceResult(): WorkspaceRunResult {
+	return fromAny({
+		coverageMs: 0,
+		coveragePackages: [
+			{
+				coverageDirectory: "/test/coverage",
+				coverageReporters: ["text"],
+				pkg: "client",
+				universe: mixedCoverage(),
+			},
+		],
+		merged: {},
+		mode: "workspace",
+		projectResults: [
+			{
+				displayName: "client",
+				result: {
+					exitCode: 0,
+					output: "",
+					result: passingResult(),
+					timing: { executionMs: 50, startTime: 1000, testsMs: 30, totalMs: 100 },
+				},
+			},
+		],
+		reportOptions: {
+			color: false,
+			formatters: ["agent"],
+			rootDir: "/test",
+			silent: false,
+			verbose: false,
+		},
+		stagingMs: 0,
+	});
+}
+
+describe("agent-mode output ordering", () => {
+	it("should render the run summary after the coverage report and above the status line", async () => {
+		expect.assertions(1);
+
+		const chunks: Array<string> = [];
+		vi.spyOn(console, "log").mockImplementation((message) => {
+			chunks.push(`${String(message)}\n`);
+		});
+		vi.spyOn(console, "error").mockImplementation(() => {});
+		vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+			chunks.push(String(chunk));
+			return true;
+		});
+		vi.spyOn(process.stderr, "write").mockReturnValue(true);
+
+		await outputMultiResultAsync({
+			result: makeCoverageWorkspaceResult(),
+			rootConfig: makeHostileConfig(),
+		});
+
+		expect(stripVTControlCharacters(chunks.join(""))).toMatchInlineSnapshot(`
+			"
+			 % Coverage report from istanbul
+
+			client
+			--------------|---------|----------|---------|---------|-------------------
+			File          | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s 
+			--------------|---------|----------|---------|---------|-------------------
+			All files     |   83.33 |      100 |     100 |   83.33 |                   
+			 player.ts    |   66.66 |      100 |     100 |   66.66 | 3                 
+			--------------|---------|----------|---------|---------|-------------------
+			Coverage: 83.33% stmts (5/6) | 100% branch (0/0) | 100% funcs (2/2) | 83.33% lines (5/6)
+			▶ client  1 passed (5 tests)
+			 Test Files  1 passed (1)
+			      Tests  5 passed (5)
+			 PASS 
+			"
+		`);
 	});
 });

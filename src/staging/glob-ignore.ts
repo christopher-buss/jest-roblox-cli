@@ -11,6 +11,8 @@ const DRIVE_LETTER = /^[A-Za-z]:/;
  * Takes the raw object rather than a parsed project: a caller reading a rojo
  * project holds either a validated tree or the JSON it came from, and the one
  * field this reads means the same thing in both.
+ * @param project - Project object or tree that may hold `globIgnorePaths`.
+ * @returns The string patterns, or an empty list when the field is absent.
  */
 export function readGlobIgnorePaths({
 	globIgnorePaths: value,
@@ -27,6 +29,8 @@ export function readGlobIgnorePaths({
  * Matched with and without the drive letter, because a declared pattern is
  * written against whatever frame the consumer's project expresses its mounts
  * in, and a leading globstar has to reach either one.
+ * @param patterns - Glob patterns the project ignores.
+ * @returns Predicate that is true for an ignored absolute path.
  */
 export function createIgnoreMatcher(
 	patterns: ReadonlyArray<string>,
@@ -49,6 +53,7 @@ export function createIgnoreMatcher(
  * The answer for a project that drops nothing, shared so the fast path is
  * observable: two matchers over an empty list are the same function, and one
  * built from picomatch could never be.
+ * @returns Always `false`.
  */
 function neverIgnored(): boolean {
 	return false;

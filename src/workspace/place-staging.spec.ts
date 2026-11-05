@@ -7,15 +7,17 @@ import { describe, expect, it, vi } from "vitest";
 import { fakeTimingCollector } from "#test/mocks/fake-timing-collector.ts";
 import type { MemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
+import { posixRoot } from "#test/mocks/posix-path.ts";
+import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
 import type { ResolvedProjectConfig } from "../config/projects.ts";
-import { DEFAULT_CONFIG } from "../config/schema.ts";
-import { prepareWorkspaceCoverage } from "../coverage-pipeline/workspace-prepare.ts";
+import type { WorkspacePackageCoverage } from "../coverage-pipeline/workspace-prepare.ts";
 import type { ChildProcessRunner } from "../utils/child-process.ts";
-import { toPosixRoot } from "../utils/normalize-windows-path.ts";
+import type { PrepareCoverage } from "./coverage-attach.ts";
 import type { LoadedPackage } from "./package-loader.ts";
+import type { PendingEntry } from "./pending-entry.ts";
 import { stageWorkspacePlaceAsync } from "./place-staging.ts";
 import type { PackageContext } from "./project-contexts.ts";
-import type { PendingEntry, WorkspaceTestSelection } from "./test-selection.ts";
+import type { WorkspaceTestSelection } from "./test-selection.ts";
 
 const WORKSPACE_ROOT = path.resolve("/workspace");
 const CACHE_DIRECTORY = path.resolve("/cache");
@@ -69,7 +71,7 @@ function makeContext(project: ResolvedProjectConfig): PackageContext {
 			rootDir: PACKAGE_DIR,
 		},
 		info: { name: PACKAGE_NAME, packageDirectory: PACKAGE_DIR },
-		pkgConfig: { ...DEFAULT_CONFIG, collectCoverage: true, rootDir: PACKAGE_DIR },
+		pkgConfig: { ...createResolvedConfig(), collectCoverage: true, rootDir: PACKAGE_DIR },
 		projects: [project],
 	});
 }
@@ -100,6 +102,26 @@ function makeSelection(
 	});
 }
 
+function makeCoverage(): WorkspacePackageCoverage {
+	return fromAny({
+		coverageRoots: [],
+		coverageSpine: [],
+		manifest: {
+			buildId: "build-1",
+			files: {},
+			generatedAt: "2026-01-01T00:00:00.000Z",
+			nonInstrumentedFiles: {},
+		},
+		manifestPath: `${SHADOW_KEY}/coverage-manifest.json`,
+		pkg: PACKAGE_NAME,
+		rootDir: PACKAGE_DIR,
+	});
+}
+
+function fakePrepareCoverage(coverage: WorkspacePackageCoverage): Mock<PrepareCoverage> {
+	return vi.fn<PrepareCoverage>(() => [coverage]);
+}
+
 function seed(): Harness {
 	const memory = createMemoryFileSystem({
 		[PACKAGE_PROJECT]: PROJECT_JSON,
@@ -127,13 +149,15 @@ describe(stageWorkspacePlaceAsync, () => {
 		// The two staging phases each report their own span, and the caller
 		// sums them: coverage, the stub sweep, the stub write, and the build.
 		const timing = fakeTimingCollector(35);
+		const coverage = makeCoverage();
+		const prepareCoverage = fakePrepareCoverage(coverage);
 
 		const result = await stageWorkspacePlaceAsync({
 			cacheDirectory: CACHE_DIRECTORY,
 			childProcess,
 			fileSystem,
 			loaded: makeLoaded(context),
-			prepareCoverage: prepareWorkspaceCoverage,
+			prepareCoverage,
 			selection: makeSelection(context, project),
 			timing,
 			workspaceRoot: WORKSPACE_ROOT,
@@ -143,7 +167,7 @@ describe(stageWorkspacePlaceAsync, () => {
 			// No Code Roots were asked for, so the place holds the code and
 			// there is no bundle beside it.
 			codeBundle: undefined,
-			coverageByPackage: new Map([[PACKAGE_NAME, expect.objectContaining({})]]),
+			coverageByPackage: new Map([[PACKAGE_NAME, coverage]]),
 			coverageMs: 35,
 			placeFile: path.join(CACHE_DIRECTORY, "synthesized.rbxl"),
 			stagingMs: 105,
@@ -154,14 +178,17 @@ describe(stageWorkspacePlaceAsync, () => {
 			`${CACHE_KEY}/synthesized.rbxl`,
 			`${CACHE_KEY}/synthesized.place-cache.json`,
 			`${CACHE_KEY}/synthesized.input-digests`,
+			`${SHADOW_KEY}/build-manifest.json`,
 		]);
 		expect(execFile.mock.lastCall![1]).toContain(
 			path.join(CACHE_DIRECTORY, "synthesized.project.json"),
 		);
-		expect(volume.toJSON()).toContainKeys([
-			`${SHADOW_KEY}/coverage-manifest.json`,
-			`${SHADOW_KEY}/build-manifest.json`,
-		]);
+		expect(prepareCoverage).toHaveBeenCalledExactlyOnceWith({
+			fileSystem,
+			packages: [context.descriptor],
+			timing,
+			workspaceRoot: WORKSPACE_ROOT,
+		});
 	});
 
 	it("should write a bundle beside the place when given Code Roots", async () => {
@@ -177,10 +204,10 @@ describe(stageWorkspacePlaceAsync, () => {
 			// Everything a coverage run mounts sits under the workspace root —
 			// the shadow the mounts were redirected onto included — so one root
 			// covers the lot and nothing stays behind.
-			codeRoots: [toPosixRoot(WORKSPACE_ROOT)],
+			codeRoots: [posixRoot(WORKSPACE_ROOT)],
 			fileSystem,
 			loaded: makeLoaded(context),
-			prepareCoverage: prepareWorkspaceCoverage,
+			prepareCoverage: fakePrepareCoverage(makeCoverage()),
 			selection: makeSelection(context, project),
 			timing: fakeTimingCollector(0),
 			workspaceRoot: WORKSPACE_ROOT,

@@ -3,11 +3,11 @@ import { fromAny } from "@total-typescript/shoehorn";
 import * as path from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { DEFAULT_CONFIG } from "../config/schema.ts";
+import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
 import type { AttributionResult } from "../coverage-pipeline/attribution.ts";
 import type { SourceMapper } from "../source-mapper/index.ts";
 import { buildMultiRunResult, type MultiRunResultInput } from "./multi-result.ts";
-import type { ProjectResult } from "./types.ts";
+import type { ProjectResult } from "./run-types.ts";
 
 function input({
 	cliFiles,
@@ -22,7 +22,7 @@ function input({
 		cli: { files: cliFiles, project: projectNames },
 		discovery: {
 			projects: [],
-			rootConfig: { ...DEFAULT_CONFIG, rootDir: "/repo" },
+			rootConfig: { ...createResolvedConfig(), rootDir: "/repo" },
 		},
 		outcome: {
 			placeBuildMs: 5,

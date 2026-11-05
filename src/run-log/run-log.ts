@@ -6,28 +6,32 @@ import { hasFormatter } from "../formatters/utils.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import { nodeFileSystem } from "../utils/file-system.ts";
 
+/** Inputs of {@link withRunLogAsync}. */
+export interface RunLogOptions {
+	/** Root directory for the log path and formatters for the hint. */
+	config: Pick<ResolvedConfig, "formatters" | "rootDir">;
+	/** File system for the log; defaults to Node's. */
+	fileSystem?: FileSystem;
+	/** Streams to copy into the log. */
+	streams: RunLogStreams;
+}
+
 /**
  * A standard stream as the log touches it: `write` is swapped out and back,
  * nothing else. The trailing arguments — an encoding, a callback — pass through
  * unnamed.
  */
-export interface RunLogStream {
+interface RunLogStream {
+	/** Write a chunk; the log swaps it out for the run and back after. */
 	write: (chunk: string | Uint8Array, ...rest: Array<never>) => boolean;
 }
 
-export interface RunLogStreams {
+/** The two streams the run log copies. */
+interface RunLogStreams {
+	/** Standard error; also receives the log-path hint. */
 	stderr: RunLogStream;
+	/** Standard output. */
 	stdout: RunLogStream;
-}
-
-export interface RunLogOptions {
-	config: Pick<ResolvedConfig, "formatters" | "rootDir">;
-	fileSystem?: FileSystem;
-	streams: RunLogStreams;
-}
-
-export function runLogPath(rootDirectory: string): string {
-	return path.join(rootDirectory, ".jest-roblox", "last-run.log");
 }
 
 /**
@@ -40,6 +44,14 @@ export function runLogPath(rootDirectory: string): string {
  * The hint goes to stderr after the log is closed, so the log holds exactly
  * what the terminal held. Only the agent formatter is told: a human watching
  * a terminal has the output in front of them.
+ *
+ * @template T
+ * @param options - Config, file system and streams to copy.
+ * @param options.config - Root directory and formatters.
+ * @param options.fileSystem - File system for the log.
+ * @param options.streams - Streams to copy into the log.
+ * @param runAsync - The run whose output the log copies.
+ * @returns The result of `runAsync`.
  */
 export async function withRunLogAsync<T>(
 	{ config, fileSystem = nodeFileSystem, streams }: RunLogOptions,
@@ -69,7 +81,23 @@ export async function withRunLogAsync<T>(
 	}
 }
 
-/** A log that cannot be opened costs the log, never the run. */
+/**
+ * Path of the run log under a root directory.
+ *
+ * @param rootDirectory - Project root directory.
+ * @returns `.jest-roblox/last-run.log` under the root.
+ */
+function runLogPath(rootDirectory: string): string {
+	return path.join(rootDirectory, ".jest-roblox", "last-run.log");
+}
+
+/**
+ * A log that cannot be opened costs the log, never the run.
+ *
+ * @param fileSystem - File system to open the log with.
+ * @param logPath - Path of the log file.
+ * @returns The open descriptor, or `undefined` when the log cannot be opened.
+ */
 function openLog(fileSystem: FileSystem, logPath: string): number | undefined {
 	try {
 		fileSystem.mkdirSync(path.dirname(logPath), { recursive: true });

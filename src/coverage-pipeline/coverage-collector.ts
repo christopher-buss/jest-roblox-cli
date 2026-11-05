@@ -8,16 +8,18 @@ import { createStatementCollector } from "./collect-statements.ts";
 import type { CollectorResult } from "./coverage-accumulator.ts";
 import { createCoverageAccumulator } from "./coverage-accumulator.ts";
 import { resolveCoverageIgnores } from "./coverage-ignore.ts";
-import { toUtf16Columns } from "./utf16-columns.ts";
+import { toUtf16Columns } from "./utf-16-columns.ts";
 
 export type { CollectorResult } from "./coverage-accumulator.ts";
 
 /**
+ * Collect statement, function and branch coverage records in one AST walk.
  * @param parsed - The AST and comment spans parsed from `source`.
  * @param source - The Luau `parsed` came from. Required because the parser
  *   reports byte columns and every consumer of the result indexes a JavaScript
  *   string; see {@link toUtf16Columns}. Taking it here rather than leaving the
  *   conversion to each caller keeps the two out of step by construction.
+ * @returns Coverage records with UTF-16 columns.
  */
 export function collectCoverage(
 	parsed: Pick<ParseSuccess, "comments" | "root">,

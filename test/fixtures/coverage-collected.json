@@ -1,0 +1,1444 @@
+{
+	"and-or-rhs-eval.luau": {
+		"branches": [
+			{
+				"arms": [
+					{
+						"bodyFirstColumn": 0,
+						"bodyFirstLine": 0,
+						"location": {
+							"beginColumn": 19,
+							"beginLine": 8,
+							"endColumn": 35,
+							"endLine": 8
+						}
+					},
+					{
+						"bodyFirstColumn": 0,
+						"bodyFirstLine": 0,
+						"location": {
+							"beginColumn": 40,
+							"beginLine": 8,
+							"endColumn": 54,
+							"endLine": 8
+						}
+					}
+				],
+				"branchType": "binary-expr",
+				"index": 1
+			},
+			{
+				"arms": [
+					{
+						"bodyFirstColumn": 0,
+						"bodyFirstLine": 0,
+						"location": {
+							"beginColumn": 18,
+							"beginLine": 9,
+							"endColumn": 35,
+							"endLine": 9
+						}
+					},
+					{
+						"bodyFirstColumn": 0,
+						"bodyFirstLine": 0,
+						"location": {
+							"beginColumn": 39,
+							"beginLine": 9,
+							"endColumn": 53,
+							"endLine": 9
+						}
+					}
+				],
+				"branchType": "binary-expr",
+				"index": 2
+			}
+		],
+		"functions": [
+			{
+				"name": "note",
+				"bodyFirstColumn": 2,
+				"bodyFirstLine": 4,
+				"index": 1,
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 3,
+					"endColumn": 4,
+					"endLine": 6
+				}
+			}
+		],
+		"implicitElseProbes": [],
+		"statements": [
+			{
+				"index": 1,
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 1,
+					"endColumn": 15,
+					"endLine": 1
+				}
+			},
+			{
+				"index": 2,
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 3,
+					"endColumn": 4,
+					"endLine": 6
+				}
+			},
+			{
+				"index": 3,
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 8,
+					"endColumn": 54,
+					"endLine": 8
+				}
+			},
+			{
+				"index": 4,
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 9,
+					"endColumn": 53,
+					"endLine": 9
+				}
+			},
+			{
+				"index": 5,
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 11,
+					"endColumn": 30,
+					"endLine": 11
+				}
+			},
+			{
+				"index": 6,
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 12,
+					"endColumn": 27,
+					"endLine": 12
+				}
+			},
+			{
+				"index": 7,
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 13,
+					"endColumn": 26,
+					"endLine": 13
+				}
+			},
+			{
+				"index": 8,
+				"location": {
+					"beginColumn": 2,
+					"beginLine": 4,
+					"endColumn": 24,
+					"endLine": 4
+				}
+			},
+			{
+				"index": 9,
+				"location": {
+					"beginColumn": 2,
+					"beginLine": 5,
+					"endColumn": 14,
+					"endLine": 5
+				}
+			}
+		],
+		"wrapProbes": [
+			{
+				"armIndex": 1,
+				"branchIndex": 1,
+				"exprLocation": {
+					"beginColumn": 19,
+					"beginLine": 8,
+					"endColumn": 35,
+					"endLine": 8
+				}
+			},
+			{
+				"armIndex": 2,
+				"branchIndex": 1,
+				"exprLocation": {
+					"beginColumn": 40,
+					"beginLine": 8,
+					"endColumn": 54,
+					"endLine": 8
+				}
+			},
+			{
+				"armIndex": 1,
+				"branchIndex": 2,
+				"exprLocation": {
+					"beginColumn": 18,
+					"beginLine": 9,
+					"endColumn": 35,
+					"endLine": 9
+				}
+			},
+			{
+				"armIndex": 2,
+				"branchIndex": 2,
+				"exprLocation": {
+					"beginColumn": 39,
+					"beginLine": 9,
+					"endColumn": 53,
+					"endLine": 9
+				}
+			}
+		]
+	},
+	"and-or-short-circuit.luau": {
+		"branches": [
+			{
+				"arms": [
+					{
+						"bodyFirstColumn": 0,
+						"bodyFirstLine": 0,
+						"location": {
+							"beginColumn": 19,
+							"beginLine": 8,
+							"endColumn": 36,
+							"endLine": 8
+						}
+					},
+					{
+						"bodyFirstColumn": 0,
+						"bodyFirstLine": 0,
+						"location": {
+							"beginColumn": 41,
+							"beginLine": 8,
+							"endColumn": 57,
+							"endLine": 8
+						}
+					}
+				],
+				"branchType": "binary-expr",
+				"index": 1
+			},
+			{
+				"arms": [
+					{
+						"bodyFirstColumn": 0,
+						"bodyFirstLine": 0,
+						"location": {
+							"beginColumn": 18,
+							"beginLine": 9,
+							"endColumn": 34,
+							"endLine": 9
+						}
+					},
+					{
+						"bodyFirstColumn": 0,
+						"bodyFirstLine": 0,
+						"location": {
+							"beginColumn": 38,
+							"beginLine": 9,
+							"endColumn": 55,
+							"endLine": 9
+						}
+					}
+				],
+				"branchType": "binary-expr",
+				"index": 2
+			}
+		],
+		"functions": [
+			{
+				"name": "note",
+				"bodyFirstColumn": 2,
+				"bodyFirstLine": 4,
+				"index": 1,
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 3,
+					"endColumn": 4,
+					"endLine": 6
+				}
+			}
+		],
+		"implicitElseProbes": [],
+		"statements": [
+			{
+				"index": 1,
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 1,
+					"endColumn": 15,
+					"endLine": 1
+				}
+			},
+			{
+				"index": 2,
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 3,
+					"endColumn": 4,
+					"endLine": 6
+				}
+			},
+			{
+				"index": 3,
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 8,
+					"endColumn": 57,
+					"endLine": 8
+				}
+			},
+			{
+				"index": 4,
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 9,
+					"endColumn": 55,
+					"endLine": 9
+				}
+			},
+			{
+				"index": 5,
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 11,
+					"endColumn": 30,
+					"endLine": 11
+				}
+			},
+			{
+				"index": 6,
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 12,
+					"endColumn": 27,
+					"endLine": 12
+				}
+			},
+			{
+				"index": 7,
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 13,
+					"endColumn": 26,
+					"endLine": 13
+				}
+			},
+			{
+				"index": 8,
+				"location": {
+					"beginColumn": 2,
+					"beginLine": 4,
+					"endColumn": 24,
+					"endLine": 4
+				}
+			},
+			{
+				"index": 9,
+				"location": {
+					"beginColumn": 2,
+					"beginLine": 5,
+					"endColumn": 14,
+					"endLine": 5
+				}
+			}
+		],
+		"wrapProbes": [
+			{
+				"armIndex": 1,
+				"branchIndex": 1,
+				"exprLocation": {
+					"beginColumn": 19,
+					"beginLine": 8,
+					"endColumn": 36,
+					"endLine": 8
+				}
+			},
+			{
+				"armIndex": 2,
+				"branchIndex": 1,
+				"exprLocation": {
+					"beginColumn": 41,
+					"beginLine": 8,
+					"endColumn": 57,
+					"endLine": 8
+				}
+			},
+			{
+				"armIndex": 1,
+				"branchIndex": 2,
+				"exprLocation": {
+					"beginColumn": 18,
+					"beginLine": 9,
+					"endColumn": 34,
+					"endLine": 9
+				}
+			},
+			{
+				"armIndex": 2,
+				"branchIndex": 2,
+				"exprLocation": {
+					"beginColumn": 38,
+					"beginLine": 9,
+					"endColumn": 55,
+					"endLine": 9
+				}
+			}
+		]
+	},
+	"and-or.luau": {
+		"branches": [
+			{
+				"arms": [
+					{
+						"bodyFirstColumn": 0,
+						"bodyFirstLine": 0,
+						"location": {
+							"beginColumn": 11,
+							"beginLine": 1,
+							"endColumn": 12,
+							"endLine": 1
+						}
+					},
+					{
+						"bodyFirstColumn": 0,
+						"bodyFirstLine": 0,
+						"location": {
+							"beginColumn": 17,
+							"beginLine": 1,
+							"endColumn": 18,
+							"endLine": 1
+						}
+					}
+				],
+				"branchType": "binary-expr",
+				"index": 1
+			},
+			{
+				"arms": [
+					{
+						"bodyFirstColumn": 0,
+						"bodyFirstLine": 0,
+						"location": {
+							"beginColumn": 11,
+							"beginLine": 2,
+							"endColumn": 12,
+							"endLine": 2
+						}
+					},
+					{
+						"bodyFirstColumn": 0,
+						"bodyFirstLine": 0,
+						"location": {
+							"beginColumn": 16,
+							"beginLine": 2,
+							"endColumn": 17,
+							"endLine": 2
+						}
+					}
+				],
+				"branchType": "binary-expr",
+				"index": 2
+			},
+			{
+				"arms": [
+					{
+						"bodyFirstColumn": 0,
+						"bodyFirstLine": 0,
+						"location": {
+							"beginColumn": 11,
+							"beginLine": 3,
+							"endColumn": 18,
+							"endLine": 3
+						}
+					},
+					{
+						"bodyFirstColumn": 0,
+						"bodyFirstLine": 0,
+						"location": {
+							"beginColumn": 23,
+							"beginLine": 3,
+							"endColumn": 24,
+							"endLine": 3
+						}
+					}
+				],
+				"branchType": "binary-expr",
+				"index": 3
+			},
+			{
+				"arms": [
+					{
+						"bodyFirstColumn": 0,
+						"bodyFirstLine": 0,
+						"location": {
+							"beginColumn": 11,
+							"beginLine": 3,
+							"endColumn": 12,
+							"endLine": 3
+						}
+					},
+					{
+						"bodyFirstColumn": 0,
+						"bodyFirstLine": 0,
+						"location": {
+							"beginColumn": 17,
+							"beginLine": 3,
+							"endColumn": 18,
+							"endLine": 3
+						}
+					}
+				],
+				"branchType": "binary-expr",
+				"index": 4
+			}
+		],
+		"functions": [],
+		"implicitElseProbes": [],
+		"statements": [
+			{
+				"index": 1,
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 1,
+					"endColumn": 18,
+					"endLine": 1
+				}
+			},
+			{
+				"index": 2,
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 2,
+					"endColumn": 17,
+					"endLine": 2
+				}
+			},
+			{
+				"index": 3,
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 3,
+					"endColumn": 24,
+					"endLine": 3
+				}
+			}
+		],
+		"wrapProbes": [
+			{
+				"armIndex": 1,
+				"branchIndex": 1,
+				"exprLocation": {
+					"beginColumn": 11,
+					"beginLine": 1,
+					"endColumn": 12,
+					"endLine": 1
+				}
+			},
+			{
+				"armIndex": 2,
+				"branchIndex": 1,
+				"exprLocation": {
+					"beginColumn": 17,
+					"beginLine": 1,
+					"endColumn": 18,
+					"endLine": 1
+				}
+			},
+			{
+				"armIndex": 1,
+				"branchIndex": 2,
+				"exprLocation": {
+					"beginColumn": 11,
+					"beginLine": 2,
+					"endColumn": 12,
+					"endLine": 2
+				}
+			},
+			{
+				"armIndex": 2,
+				"branchIndex": 2,
+				"exprLocation": {
+					"beginColumn": 16,
+					"beginLine": 2,
+					"endColumn": 17,
+					"endLine": 2
+				}
+			},
+			{
+				"armIndex": 1,
+				"branchIndex": 3,
+				"exprLocation": {
+					"beginColumn": 11,
+					"beginLine": 3,
+					"endColumn": 18,
+					"endLine": 3
+				}
+			},
+			{
+				"armIndex": 2,
+				"branchIndex": 3,
+				"exprLocation": {
+					"beginColumn": 23,
+					"beginLine": 3,
+					"endColumn": 24,
+					"endLine": 3
+				}
+			},
+			{
+				"armIndex": 1,
+				"branchIndex": 4,
+				"exprLocation": {
+					"beginColumn": 11,
+					"beginLine": 3,
+					"endColumn": 12,
+					"endLine": 3
+				}
+			},
+			{
+				"armIndex": 2,
+				"branchIndex": 4,
+				"exprLocation": {
+					"beginColumn": 17,
+					"beginLine": 3,
+					"endColumn": 18,
+					"endLine": 3
+				}
+			}
+		]
+	},
+	"directive-only.luau": {
+		"branches": [],
+		"functions": [],
+		"implicitElseProbes": [],
+		"statements": [],
+		"wrapProbes": []
+	},
+	"empty.luau": {
+		"branches": [],
+		"functions": [],
+		"implicitElseProbes": [],
+		"statements": [],
+		"wrapProbes": []
+	},
+	"expr-if.luau": {
+		"branches": [
+			{
+				"arms": [
+					{
+						"bodyFirstColumn": 0,
+						"bodyFirstLine": 0,
+						"location": {
+							"beginColumn": 24,
+							"beginLine": 1,
+							"endColumn": 25,
+							"endLine": 1
+						}
+					},
+					{
+						"bodyFirstColumn": 0,
+						"bodyFirstLine": 0,
+						"location": {
+							"beginColumn": 31,
+							"beginLine": 1,
+							"endColumn": 32,
+							"endLine": 1
+						}
+					}
+				],
+				"branchType": "expr-if",
+				"index": 1
+			},
+			{
+				"arms": [
+					{
+						"bodyFirstColumn": 0,
+						"bodyFirstLine": 0,
+						"location": {
+							"beginColumn": 25,
+							"beginLine": 2,
+							"endColumn": 28,
+							"endLine": 2
+						}
+					},
+					{
+						"bodyFirstColumn": 0,
+						"bodyFirstLine": 0,
+						"location": {
+							"beginColumn": 46,
+							"beginLine": 2,
+							"endColumn": 49,
+							"endLine": 2
+						}
+					},
+					{
+						"bodyFirstColumn": 0,
+						"bodyFirstLine": 0,
+						"location": {
+							"beginColumn": 55,
+							"beginLine": 2,
+							"endColumn": 58,
+							"endLine": 2
+						}
+					}
+				],
+				"branchType": "expr-if",
+				"index": 2
+			}
+		],
+		"functions": [],
+		"implicitElseProbes": [],
+		"statements": [
+			{
+				"index": 1,
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 1,
+					"endColumn": 32,
+					"endLine": 1
+				}
+			},
+			{
+				"index": 2,
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 2,
+					"endColumn": 58,
+					"endLine": 2
+				}
+			}
+		],
+		"wrapProbes": [
+			{
+				"armIndex": 1,
+				"branchIndex": 1,
+				"exprLocation": {
+					"beginColumn": 24,
+					"beginLine": 1,
+					"endColumn": 25,
+					"endLine": 1
+				}
+			},
+			{
+				"armIndex": 2,
+				"branchIndex": 1,
+				"exprLocation": {
+					"beginColumn": 31,
+					"beginLine": 1,
+					"endColumn": 32,
+					"endLine": 1
+				}
+			},
+			{
+				"armIndex": 1,
+				"branchIndex": 2,
+				"exprLocation": {
+					"beginColumn": 25,
+					"beginLine": 2,
+					"endColumn": 28,
+					"endLine": 2
+				}
+			},
+			{
+				"armIndex": 2,
+				"branchIndex": 2,
+				"exprLocation": {
+					"beginColumn": 46,
+					"beginLine": 2,
+					"endColumn": 49,
+					"endLine": 2
+				}
+			},
+			{
+				"armIndex": 3,
+				"branchIndex": 2,
+				"exprLocation": {
+					"beginColumn": 55,
+					"beginLine": 2,
+					"endColumn": 58,
+					"endLine": 2
+				}
+			}
+		]
+	},
+	"functions.luau": {
+		"branches": [],
+		"functions": [
+			{
+				"name": "greet",
+				"bodyFirstColumn": 5,
+				"bodyFirstLine": 2,
+				"index": 1,
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 1,
+					"endColumn": 4,
+					"endLine": 3
+				}
+			},
+			{
+				"name": "(anonymous)",
+				"bodyFirstColumn": 5,
+				"bodyFirstLine": 6,
+				"index": 2,
+				"location": {
+					"beginColumn": 17,
+					"beginLine": 5,
+					"endColumn": 4,
+					"endLine": 7
+				}
+			},
+			{
+				"name": "globalFunc",
+				"bodyFirstColumn": 5,
+				"bodyFirstLine": 10,
+				"index": 3,
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 9,
+					"endColumn": 4,
+					"endLine": 11
+				}
+			}
+		],
+		"implicitElseProbes": [],
+		"statements": [
+			{
+				"index": 1,
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 1,
+					"endColumn": 4,
+					"endLine": 3
+				}
+			},
+			{
+				"index": 2,
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 5,
+					"endColumn": 4,
+					"endLine": 7
+				}
+			},
+			{
+				"index": 3,
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 9,
+					"endColumn": 4,
+					"endLine": 11
+				}
+			},
+			{
+				"index": 4,
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 13,
+					"endColumn": 15,
+					"endLine": 13
+				}
+			},
+			{
+				"index": 5,
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 14,
+					"endColumn": 11,
+					"endLine": 14
+				}
+			},
+			{
+				"index": 6,
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 15,
+					"endColumn": 13,
+					"endLine": 15
+				}
+			},
+			{
+				"index": 7,
+				"location": {
+					"beginColumn": 5,
+					"beginLine": 2,
+					"endColumn": 29,
+					"endLine": 2
+				}
+			},
+			{
+				"index": 8,
+				"location": {
+					"beginColumn": 5,
+					"beginLine": 6,
+					"endColumn": 17,
+					"endLine": 6
+				}
+			},
+			{
+				"index": 9,
+				"location": {
+					"beginColumn": 5,
+					"beginLine": 10,
+					"endColumn": 20,
+					"endLine": 10
+				}
+			}
+		],
+		"wrapProbes": []
+	},
+	"if-else.luau": {
+		"branches": [
+			{
+				"arms": [
+					{
+						"bodyFirstColumn": 5,
+						"bodyFirstLine": 4,
+						"location": {
+							"beginColumn": 15,
+							"beginLine": 3,
+							"endColumn": 1,
+							"endLine": 5
+						}
+					},
+					{
+						"bodyFirstColumn": 5,
+						"bodyFirstLine": 6,
+						"location": {
+							"beginColumn": 19,
+							"beginLine": 5,
+							"endColumn": 1,
+							"endLine": 7
+						}
+					},
+					{
+						"bodyFirstColumn": 5,
+						"bodyFirstLine": 8,
+						"location": {
+							"beginColumn": 5,
+							"beginLine": 7,
+							"endColumn": 1,
+							"endLine": 9
+						}
+					}
+				],
+				"branchType": "if",
+				"index": 1
+			}
+		],
+		"functions": [],
+		"implicitElseProbes": [],
+		"statements": [
+			{
+				"index": 1,
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 1,
+					"endColumn": 12,
+					"endLine": 1
+				}
+			},
+			{
+				"index": 2,
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 3,
+					"endColumn": 4,
+					"endLine": 9
+				}
+			},
+			{
+				"index": 3,
+				"location": {
+					"beginColumn": 5,
+					"beginLine": 4,
+					"endColumn": 17,
+					"endLine": 4
+				}
+			},
+			{
+				"index": 4,
+				"location": {
+					"beginColumn": 5,
+					"beginLine": 6,
+					"endColumn": 17,
+					"endLine": 6
+				}
+			},
+			{
+				"index": 5,
+				"location": {
+					"beginColumn": 5,
+					"beginLine": 8,
+					"endColumn": 17,
+					"endLine": 8
+				}
+			}
+		],
+		"wrapProbes": []
+	},
+	"if-only.luau": {
+		"branches": [
+			{
+				"arms": [
+					{
+						"bodyFirstColumn": 3,
+						"bodyFirstLine": 2,
+						"location": {
+							"beginColumn": 13,
+							"beginLine": 1,
+							"endColumn": 1,
+							"endLine": 3
+						}
+					},
+					{
+						"bodyFirstColumn": 0,
+						"bodyFirstLine": 0,
+						"location": {
+							"beginColumn": 1,
+							"beginLine": 1,
+							"endColumn": 1,
+							"endLine": 1
+						}
+					}
+				],
+				"branchType": "if",
+				"index": 1
+			}
+		],
+		"functions": [],
+		"implicitElseProbes": [
+			{
+				"armIndex": 2,
+				"branchIndex": 1,
+				"endColumn": 1,
+				"endLine": 3
+			}
+		],
+		"statements": [
+			{
+				"index": 1,
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 1,
+					"endColumn": 4,
+					"endLine": 3
+				}
+			},
+			{
+				"index": 2,
+				"location": {
+					"beginColumn": 3,
+					"beginLine": 2,
+					"endColumn": 14,
+					"endLine": 2
+				}
+			}
+		],
+		"wrapProbes": []
+	},
+	"ignore-directives.luau": {
+		"branches": [
+			{
+				"arms": [
+					{
+						"bodyFirstColumn": 0,
+						"bodyFirstLine": 0,
+						"location": {
+							"beginColumn": 2,
+							"beginLine": 3,
+							"endColumn": 2,
+							"endLine": 3
+						}
+					}
+				],
+				"branchType": "if",
+				"index": 1
+			},
+			{
+				"arms": [
+					{
+						"bodyFirstColumn": 3,
+						"bodyFirstLine": 8,
+						"location": {
+							"beginColumn": 19,
+							"beginLine": 7,
+							"endColumn": 2,
+							"endLine": 9
+						}
+					},
+					{
+						"bodyFirstColumn": 3,
+						"bodyFirstLine": 10,
+						"location": {
+							"beginColumn": 23,
+							"beginLine": 9,
+							"endColumn": 2,
+							"endLine": 11
+						}
+					}
+				],
+				"branchType": "if",
+				"index": 2
+			}
+		],
+		"functions": [
+			{
+				"name": "check",
+				"bodyFirstColumn": 2,
+				"bodyFirstLine": 3,
+				"index": 1,
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 1,
+					"endColumn": 4,
+					"endLine": 15
+				}
+			}
+		],
+		"implicitElseProbes": [
+			{
+				"armIndex": 1,
+				"branchIndex": 1,
+				"endColumn": 2,
+				"endLine": 5
+			}
+		],
+		"statements": [
+			{
+				"index": 1,
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 1,
+					"endColumn": 4,
+					"endLine": 15
+				}
+			},
+			{
+				"index": 2,
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 22,
+					"endColumn": 16,
+					"endLine": 22
+				}
+			},
+			{
+				"index": 3,
+				"location": {
+					"beginColumn": 2,
+					"beginLine": 3,
+					"endColumn": 5,
+					"endLine": 5
+				}
+			},
+			{
+				"index": 4,
+				"location": {
+					"beginColumn": 2,
+					"beginLine": 7,
+					"endColumn": 5,
+					"endLine": 13
+				}
+			},
+			{
+				"index": 5,
+				"location": {
+					"beginColumn": 2,
+					"beginLine": 14,
+					"endColumn": 14,
+					"endLine": 14
+				}
+			},
+			{
+				"index": 6,
+				"location": {
+					"beginColumn": 3,
+					"beginLine": 8,
+					"endColumn": 15,
+					"endLine": 8
+				}
+			},
+			{
+				"index": 7,
+				"location": {
+					"beginColumn": 3,
+					"beginLine": 10,
+					"endColumn": 17,
+					"endLine": 10
+				}
+			}
+		],
+		"wrapProbes": []
+	},
+	"simple.luau": {
+		"branches": [],
+		"functions": [],
+		"implicitElseProbes": [],
+		"statements": [
+			{
+				"index": 1,
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 1,
+					"endColumn": 12,
+					"endLine": 1
+				}
+			},
+			{
+				"index": 2,
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 2,
+					"endColumn": 10,
+					"endLine": 2
+				}
+			},
+			{
+				"index": 3,
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 3,
+					"endColumn": 9,
+					"endLine": 3
+				}
+			}
+		],
+		"wrapProbes": []
+	},
+	"utf8-columns.luau": {
+		"branches": [
+			{
+				"arms": [
+					{
+						"bodyFirstColumn": 0,
+						"bodyFirstLine": 0,
+						"location": {
+							"beginColumn": 28,
+							"beginLine": 1,
+							"endColumn": 36,
+							"endLine": 1
+						}
+					},
+					{
+						"bodyFirstColumn": 0,
+						"bodyFirstLine": 0,
+						"location": {
+							"beginColumn": 42,
+							"beginLine": 1,
+							"endColumn": 48,
+							"endLine": 1
+						}
+					}
+				],
+				"branchType": "expr-if",
+				"index": 1
+			},
+			{
+				"arms": [
+					{
+						"bodyFirstColumn": 0,
+						"bodyFirstLine": 0,
+						"location": {
+							"beginColumn": 18,
+							"beginLine": 2,
+							"endColumn": 21,
+							"endLine": 2
+						}
+					},
+					{
+						"bodyFirstColumn": 0,
+						"bodyFirstLine": 0,
+						"location": {
+							"beginColumn": 25,
+							"beginLine": 2,
+							"endColumn": 35,
+							"endLine": 2
+						}
+					}
+				],
+				"branchType": "binary-expr",
+				"index": 2
+			},
+			{
+				"arms": [
+					{
+						"bodyFirstColumn": 0,
+						"bodyFirstLine": 0,
+						"location": {
+							"beginColumn": 15,
+							"beginLine": 3,
+							"endColumn": 23,
+							"endLine": 3
+						}
+					},
+					{
+						"bodyFirstColumn": 0,
+						"bodyFirstLine": 0,
+						"location": {
+							"beginColumn": 28,
+							"beginLine": 3,
+							"endColumn": 34,
+							"endLine": 3
+						}
+					}
+				],
+				"branchType": "binary-expr",
+				"index": 3
+			},
+			{
+				"arms": [
+					{
+						"bodyFirstColumn": 0,
+						"bodyFirstLine": 0,
+						"location": {
+							"beginColumn": 15,
+							"beginLine": 4,
+							"endColumn": 19,
+							"endLine": 4
+						}
+					},
+					{
+						"bodyFirstColumn": 0,
+						"bodyFirstLine": 0,
+						"location": {
+							"beginColumn": 24,
+							"beginLine": 4,
+							"endColumn": 29,
+							"endLine": 4
+						}
+					}
+				],
+				"branchType": "binary-expr",
+				"index": 4
+			}
+		],
+		"functions": [],
+		"implicitElseProbes": [],
+		"statements": [
+			{
+				"index": 1,
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 1,
+					"endColumn": 48,
+					"endLine": 1
+				}
+			},
+			{
+				"index": 2,
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 2,
+					"endColumn": 35,
+					"endLine": 2
+				}
+			},
+			{
+				"index": 3,
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 3,
+					"endColumn": 34,
+					"endLine": 3
+				}
+			},
+			{
+				"index": 4,
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 4,
+					"endColumn": 29,
+					"endLine": 4
+				}
+			}
+		],
+		"wrapProbes": [
+			{
+				"armIndex": 1,
+				"branchIndex": 1,
+				"exprLocation": {
+					"beginColumn": 28,
+					"beginLine": 1,
+					"endColumn": 36,
+					"endLine": 1
+				}
+			},
+			{
+				"armIndex": 2,
+				"branchIndex": 1,
+				"exprLocation": {
+					"beginColumn": 42,
+					"beginLine": 1,
+					"endColumn": 48,
+					"endLine": 1
+				}
+			},
+			{
+				"armIndex": 1,
+				"branchIndex": 2,
+				"exprLocation": {
+					"beginColumn": 18,
+					"beginLine": 2,
+					"endColumn": 21,
+					"endLine": 2
+				}
+			},
+			{
+				"armIndex": 2,
+				"branchIndex": 2,
+				"exprLocation": {
+					"beginColumn": 25,
+					"beginLine": 2,
+					"endColumn": 35,
+					"endLine": 2
+				}
+			},
+			{
+				"armIndex": 1,
+				"branchIndex": 3,
+				"exprLocation": {
+					"beginColumn": 15,
+					"beginLine": 3,
+					"endColumn": 23,
+					"endLine": 3
+				}
+			},
+			{
+				"armIndex": 2,
+				"branchIndex": 3,
+				"exprLocation": {
+					"beginColumn": 28,
+					"beginLine": 3,
+					"endColumn": 34,
+					"endLine": 3
+				}
+			},
+			{
+				"armIndex": 1,
+				"branchIndex": 4,
+				"exprLocation": {
+					"beginColumn": 15,
+					"beginLine": 4,
+					"endColumn": 19,
+					"endLine": 4
+				}
+			},
+			{
+				"armIndex": 2,
+				"branchIndex": 4,
+				"exprLocation": {
+					"beginColumn": 24,
+					"beginLine": 4,
+					"endColumn": 29,
+					"endLine": 4
+				}
+			}
+		]
+	}
+}

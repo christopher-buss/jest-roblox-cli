@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { DEFAULT_CONFIG } from "../config/schema.ts";
+import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
 import { generateMaterializerScript, generateWorkStealingScript } from "./test-script-staged.ts";
 
 describe(generateMaterializerScript, () => {
@@ -9,7 +9,7 @@ describe(generateMaterializerScript, () => {
 
 		const script = generateMaterializerScript([
 			{
-				config: DEFAULT_CONFIG,
+				config: createResolvedConfig(),
 				pkg: "@halcyon/foo",
 				project: "core",
 				testFiles: ["src/foo.spec.ts"],
@@ -25,14 +25,14 @@ describe(generateMaterializerScript, () => {
 		expect.assertions(2);
 
 		const script = generateMaterializerScript([
-			{ config: DEFAULT_CONFIG, pkg: "@halcyon/foo", project: "core", testFiles: [] },
+			{ config: createResolvedConfig(), pkg: "@halcyon/foo", project: "core", testFiles: [] },
 			{
-				config: DEFAULT_CONFIG,
+				config: createResolvedConfig(),
 				pkg: "@halcyon/foo",
 				project: "integration",
 				testFiles: [],
 			},
-			{ config: DEFAULT_CONFIG, pkg: "@halcyon/foo", project: "e2e", testFiles: [] },
+			{ config: createResolvedConfig(), pkg: "@halcyon/foo", project: "e2e", testFiles: [] },
 		]);
 
 		const corePosition = script.indexOf('"project":"core"');
@@ -47,9 +47,19 @@ describe(generateMaterializerScript, () => {
 		expect.assertions(3);
 
 		const script = generateMaterializerScript([
-			{ config: DEFAULT_CONFIG, pkg: "@halcyon/foo", project: "alpha", testFiles: [] },
-			{ config: DEFAULT_CONFIG, pkg: "@halcyon/bar", project: "beta", testFiles: [] },
-			{ config: DEFAULT_CONFIG, pkg: "@halcyon/bar", project: "gamma", testFiles: [] },
+			{
+				config: createResolvedConfig(),
+				pkg: "@halcyon/foo",
+				project: "alpha",
+				testFiles: [],
+			},
+			{ config: createResolvedConfig(), pkg: "@halcyon/bar", project: "beta", testFiles: [] },
+			{
+				config: createResolvedConfig(),
+				pkg: "@halcyon/bar",
+				project: "gamma",
+				testFiles: [],
+			},
 		]);
 
 		const fooPosition = script.indexOf('"pkg":"@halcyon/foo"');
@@ -65,7 +75,7 @@ describe(generateMaterializerScript, () => {
 		expect.assertions(1);
 
 		const script = generateMaterializerScript([
-			{ config: DEFAULT_CONFIG, pkg: "@halcyon/foo", project: "core", testFiles: [] },
+			{ config: createResolvedConfig(), pkg: "@halcyon/foo", project: "core", testFiles: [] },
 		]);
 
 		expect(script).toContain('"entries":[');
@@ -76,7 +86,7 @@ describe(generateMaterializerScript, () => {
 
 		const script = generateMaterializerScript([
 			{
-				config: { ...DEFAULT_CONFIG, testMatch: ["**/*.spec.ts"] },
+				config: { ...createResolvedConfig(), testMatch: ["**/*.spec.ts"] },
 				pkg: "@halcyon/foo",
 				project: "core",
 				testFiles: ["src/foo.spec.ts"],
@@ -92,7 +102,7 @@ describe(generateMaterializerScript, () => {
 		const script = generateMaterializerScript([
 			{
 				config: {
-					...DEFAULT_CONFIG,
+					...createResolvedConfig(),
 					jestPath: "ReplicatedStorage/Packages/_Index/Jest",
 				},
 				pkg: "@halcyon/foo",
@@ -108,7 +118,7 @@ describe(generateMaterializerScript, () => {
 		expect.assertions(1);
 
 		const script = generateMaterializerScript([
-			{ config: DEFAULT_CONFIG, pkg: "@halcyon/foo", project: "core", testFiles: [] },
+			{ config: createResolvedConfig(), pkg: "@halcyon/foo", project: "core", testFiles: [] },
 		]);
 
 		expect(script).toContain("[==[");
@@ -120,7 +130,7 @@ describe(generateMaterializerScript, () => {
 		const script = generateMaterializerScript([
 			{
 				config: {
-					...DEFAULT_CONFIG,
+					...createResolvedConfig(),
 					setupFilesAfterEnv: ["ReplicatedStorage/Pkg/Shared/setup"],
 				},
 				pkg: "@halcyon/foo",
@@ -142,7 +152,7 @@ describe(generateMaterializerScript, () => {
 		expect.assertions(2);
 
 		const script = generateMaterializerScript([
-			{ config: DEFAULT_CONFIG, pkg: "@halcyon/foo", project: "core", testFiles: [] },
+			{ config: createResolvedConfig(), pkg: "@halcyon/foo", project: "core", testFiles: [] },
 		]);
 
 		// The bundled materializer must reset _G.__jest_roblox_cov between
@@ -159,7 +169,7 @@ describe(generateMaterializerScript, () => {
 		expect(() => {
 			return generateMaterializerScript([
 				{
-					config: { ...DEFAULT_CONFIG, jestPath: "boom]==]bad" },
+					config: { ...createResolvedConfig(), jestPath: "boom]==]bad" },
 					pkg: "@halcyon/foo",
 					project: "core",
 					testFiles: [],
@@ -176,7 +186,7 @@ describe(generateWorkStealingScript, () => {
 		const script = generateWorkStealingScript({
 			inputs: [
 				{
-					config: DEFAULT_CONFIG,
+					config: createResolvedConfig(),
 					pkg: "@halcyon/foo",
 					project: "core",
 					testFiles: ["src/foo.spec.ts"],
@@ -198,7 +208,7 @@ describe(generateWorkStealingScript, () => {
 		expect.assertions(2);
 
 		const inputs = [
-			{ config: DEFAULT_CONFIG, pkg: "@halcyon/foo", project: "core", testFiles: [] },
+			{ config: createResolvedConfig(), pkg: "@halcyon/foo", project: "core", testFiles: [] },
 		];
 
 		const script = generateWorkStealingScript({
@@ -224,7 +234,7 @@ describe(generateWorkStealingScript, () => {
 		expect.assertions(2);
 
 		const inputs = [
-			{ config: DEFAULT_CONFIG, pkg: "@halcyon/foo", project: "core", testFiles: [] },
+			{ config: createResolvedConfig(), pkg: "@halcyon/foo", project: "core", testFiles: [] },
 		];
 
 		// Matched in its encoded form: the bundled materializer source names
@@ -251,8 +261,18 @@ describe(generateWorkStealingScript, () => {
 
 		const script = generateWorkStealingScript({
 			inputs: [
-				{ config: DEFAULT_CONFIG, pkg: "@halcyon/foo", project: "alpha", testFiles: [] },
-				{ config: DEFAULT_CONFIG, pkg: "@halcyon/bar", project: "beta", testFiles: [] },
+				{
+					config: createResolvedConfig(),
+					pkg: "@halcyon/foo",
+					project: "alpha",
+					testFiles: [],
+				},
+				{
+					config: createResolvedConfig(),
+					pkg: "@halcyon/bar",
+					project: "beta",
+					testFiles: [],
+				},
 			],
 			invisibilityWindowSeconds: 60,
 			queueId: "queue-uuid-2",
@@ -269,7 +289,12 @@ describe(generateWorkStealingScript, () => {
 		expect(() => {
 			return generateWorkStealingScript({
 				inputs: [
-					{ config: DEFAULT_CONFIG, pkg: "@halcyon/foo", project: "core", testFiles: [] },
+					{
+						config: createResolvedConfig(),
+						pkg: "@halcyon/foo",
+						project: "core",
+						testFiles: [],
+					},
 				],
 				invisibilityWindowSeconds: 60,
 				queueId: "queue]==]bad",
@@ -282,7 +307,12 @@ describe(generateWorkStealingScript, () => {
 
 		const script = generateWorkStealingScript({
 			inputs: [
-				{ config: DEFAULT_CONFIG, pkg: "@halcyon/foo", project: "core", testFiles: [] },
+				{
+					config: createResolvedConfig(),
+					pkg: "@halcyon/foo",
+					project: "core",
+					testFiles: [],
+				},
 			],
 			invisibilityWindowSeconds: 90,
 			queueId: "queue-uuid-1",
@@ -298,7 +328,12 @@ describe(generateWorkStealingScript, () => {
 
 		const script = generateWorkStealingScript({
 			inputs: [
-				{ config: DEFAULT_CONFIG, pkg: "@halcyon/foo", project: "core", testFiles: [] },
+				{
+					config: createResolvedConfig(),
+					pkg: "@halcyon/foo",
+					project: "core",
+					testFiles: [],
+				},
 			],
 			invisibilityWindowSeconds: 90,
 			queueId: "queue-uuid-1",
@@ -316,7 +351,14 @@ describe("generateMaterializerScript with streaming", () => {
 		expect.assertions(1);
 
 		const script = generateMaterializerScript(
-			[{ config: DEFAULT_CONFIG, pkg: "@halcyon/foo", project: "core", testFiles: [] }],
+			[
+				{
+					config: createResolvedConfig(),
+					pkg: "@halcyon/foo",
+					project: "core",
+					testFiles: [],
+				},
+			],
 			{ streaming: { sortedMapId: "stream-uuid" } },
 		);
 
@@ -329,7 +371,14 @@ describe("bail payload", () => {
 		expect.assertions(1);
 
 		const script = generateMaterializerScript(
-			[{ config: DEFAULT_CONFIG, pkg: "@halcyon/foo", project: "core", testFiles: [] }],
+			[
+				{
+					config: createResolvedConfig(),
+					pkg: "@halcyon/foo",
+					project: "core",
+					testFiles: [],
+				},
+			],
 			{ bail: true },
 		);
 
@@ -342,7 +391,12 @@ describe("bail payload", () => {
 		const script = generateWorkStealingScript({
 			bail: true,
 			inputs: [
-				{ config: DEFAULT_CONFIG, pkg: "@halcyon/foo", project: "core", testFiles: [] },
+				{
+					config: createResolvedConfig(),
+					pkg: "@halcyon/foo",
+					project: "core",
+					testFiles: [],
+				},
 			],
 			invisibilityWindowSeconds: 90,
 			queueId: "queue-uuid-1",
@@ -358,7 +412,12 @@ describe("bail payload", () => {
 			bail: true,
 			bailMapId: "bail-uuid",
 			inputs: [
-				{ config: DEFAULT_CONFIG, pkg: "@halcyon/foo", project: "core", testFiles: [] },
+				{
+					config: createResolvedConfig(),
+					pkg: "@halcyon/foo",
+					project: "core",
+					testFiles: [],
+				},
 			],
 			invisibilityWindowSeconds: 90,
 			queueId: "queue-uuid-1",
@@ -373,7 +432,14 @@ describe("bail payload", () => {
 		expect.assertions(1);
 
 		const script = generateMaterializerScript(
-			[{ config: DEFAULT_CONFIG, pkg: "@halcyon/foo", project: "core", testFiles: [] }],
+			[
+				{
+					config: createResolvedConfig(),
+					pkg: "@halcyon/foo",
+					project: "core",
+					testFiles: [],
+				},
+			],
 			{ bail: true },
 		);
 
@@ -384,7 +450,7 @@ describe("bail payload", () => {
 		expect.assertions(1);
 
 		const script = generateMaterializerScript([
-			{ config: DEFAULT_CONFIG, pkg: "@halcyon/foo", project: "core", testFiles: [] },
+			{ config: createResolvedConfig(), pkg: "@halcyon/foo", project: "core", testFiles: [] },
 		]);
 
 		expect(script).not.toContain('"bail":');

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { asciiColumn, asciiSpan } from "#test/mocks/ascii-columns.ts";
+import { COLLECTED_FIXTURES } from "#test/mocks/coverage-collected-fixtures.ts";
 import type { CollectorResult } from "./coverage-collector.ts";
 import { buildCoverageMap } from "./coverage-map-builder.ts";
 
@@ -152,5 +153,95 @@ describe("covmap-builder", () => {
 				type: "if",
 			});
 		});
+	});
+});
+
+function fixtureMap(name: string) {
+	return buildCoverageMap(COLLECTED_FIXTURES[name]!.result);
+}
+
+describe("coverage maps of collected fixtures", () => {
+	it.for([
+		"simple.luau",
+		"empty.luau",
+		"if-only.luau",
+		"functions.luau",
+		"if-else.luau",
+		"expr-if.luau",
+		"and-or.luau",
+	])("should build the expected cov-map for %s", (name) => {
+		expect.assertions(1);
+
+		expect(fixtureMap(name)).toMatchSnapshot();
+	});
+
+	it("should name declared, global and anonymous functions", () => {
+		expect.assertions(1);
+
+		const names = Object.values(fixtureMap("functions.luau").functionMap!).map((entry) => {
+			return entry.name;
+		});
+
+		expect(names).toIncludeAllMembers(["greet", "globalFunc", "(anonymous)"]);
+	});
+
+	it("should record one if branch with three arms for if/elseif/else", () => {
+		expect.assertions(3);
+
+		const { branchMap } = fixtureMap("if-else.luau");
+
+		expect(Object.values(branchMap!)).toHaveLength(1);
+		expect(branchMap!["1"]!.locations).toHaveLength(3);
+		expect(branchMap!["1"]!.type).toBe("if");
+	});
+
+	it("should record the implicit else arm of an if without else", () => {
+		expect.assertions(2);
+
+		const { branchMap } = fixtureMap("if-only.luau");
+
+		expect(Object.values(branchMap!)).toHaveLength(1);
+		expect(branchMap!["1"]!.locations).toHaveLength(2);
+	});
+
+	it("should leave the ignored sites out of the cov-map", () => {
+		expect.assertions(3);
+
+		const covMap = fixtureMap("ignore-directives.luau");
+
+		expect(Object.values(covMap.functionMap!).map((entry) => entry.name)).toStrictEqual([
+			"check",
+		]);
+		expect(
+			Object.values(covMap.branchMap!).map((entry) => entry.locations.length),
+		).toStrictEqual([1, 2]);
+		expect(
+			Object.values(covMap.statementMap)
+				.map((entry) => entry.start.line)
+				.toSorted((left, right) => left - right),
+		).toStrictEqual([1, 3, 7, 8, 10, 14, 22]);
+	});
+
+	it("should record expr-if branches with two and three arms", () => {
+		expect.assertions(3);
+
+		const { branchMap } = fixtureMap("expr-if.luau");
+
+		expect(Object.values(branchMap!).map((entry) => entry.type)).toStrictEqual([
+			"expr-if",
+			"expr-if",
+		]);
+		expect(branchMap!["1"]!.locations).toHaveLength(2);
+		expect(branchMap!["2"]!.locations).toHaveLength(3);
+	});
+
+	it("should record each and/or as a two-arm binary-expr branch", () => {
+		expect.assertions(3);
+
+		const entries = Object.values(fixtureMap("and-or.luau").branchMap!);
+
+		expect(entries).toHaveLength(4);
+		expect(entries.every((entry) => entry.type === "binary-expr")).toBeTrue();
+		expect(entries.every((entry) => entry.locations.length === 2)).toBeTrue();
 	});
 });

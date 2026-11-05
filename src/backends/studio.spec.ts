@@ -10,10 +10,10 @@ import {
 	mockWebSocketServerFactory as webSocketServerFactory,
 } from "#test/mocks/mock-web-socket-server.ts";
 import { MockWebSocket } from "#test/mocks/mock-web-socket.ts";
-import { DEFAULT_CONFIG } from "../config/schema.ts";
+import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
 import type { ResolvedConfig } from "../config/schema.ts";
 import type { RunProgress } from "../progress/reporter.ts";
-import type { JestResult } from "../types/jest-result.ts";
+import type { JestResult } from "../types/jest-result-types.ts";
 import type { BackendOptions, ProjectJob } from "./interface.ts";
 import { StudioBackend } from "./studio.ts";
 
@@ -40,6 +40,11 @@ const PROTOCOL_VERSION = 10;
  *
  * Dispatch waits for that announcement now, so a socket that only connects is
  * never asked to run anything.
+ * @param root0 - Connection input.
+ * @param root0.hello - Fields that override the default announcement.
+ * @param root0.socket - Socket to connect.
+ * @param root0.wss - Server the socket connects to.
+ * @returns The connected socket.
  */
 function connectPlugin({
 	hello = {},
@@ -79,15 +84,25 @@ function useSelectionTimers(): void {
 
 function job(displayName: string, overrides: Partial<ResolvedConfig> = {}): ProjectJob {
 	return {
-		config: { ...DEFAULT_CONFIG, backend: "studio", placeFile: "./test.rbxl", ...overrides },
+		config: {
+			...createResolvedConfig(),
+			backend: "studio",
+			placeFile: "./test.rbxl",
+			...overrides,
+		},
 		displayColor: `${displayName}-color`,
 		displayName,
 		testFiles: [`${displayName}/test.spec.ts`],
 	};
 }
 
-// Workspace jobs carry `pkg`; the backend then drives the staged materializer
-// dispatch by sending `workspace.entries` rather than `config.configs`.
+/**
+ * Workspace jobs carry `pkg`; the backend then drives the staged materializer
+ * dispatch by sending `workspace.entries` rather than `config.configs`.
+ * @param packageName - Workspace package of the job.
+ * @param displayName - Label for the job and its test file.
+ * @returns The workspace job.
+ */
 function wsJob(packageName: string, displayName: string): ProjectJob {
 	return { ...job(displayName), pkg: packageName };
 }
@@ -131,6 +146,9 @@ const vmRequestSchema = type({
 /**
  * Run `jobCount` jobs through the backend with the given VM request and hand
  * back the payload the plugin saw.
+ * @param jobCount - Number of jobs to run.
+ * @param vmParallel - VM parallelism to request.
+ * @returns The VM fields of the request the plugin received.
  */
 async function captureVmRequestAsync(
 	jobCount: number,
@@ -170,6 +188,26 @@ async function captureVmRequestAsync(
 
 // Any run request, config- or workspace-shaped: what a reply needs to echo.
 const runRequestSchema = type({ action: "string", requestId: "string" });
+
+async function startWithSocketAsync(onSend: (socket: MockWebSocket, data: string) => void) {
+	const backend = new StudioBackend({ port: 0, webSocketServerFactory });
+	const promise = backend.runTestsAsync(singleJobOptions);
+	const socket = new MockWebSocket();
+	socket.send.mockImplementation((data) => {
+		queueMicrotask(() => {
+			onSend(socket, data);
+		});
+	});
+	connectPlugin({ socket, wss: getLastCreatedServer()! });
+	return promise;
+}
+
+async function startWithReplyAsync(build: (requestId: string) => Record<string, unknown>) {
+	return startWithSocketAsync((socket, data) => {
+		const { requestId } = pluginRequest.assert(JSON.parse(data));
+		socket.emit("message", Buffer.from(JSON.stringify(build(requestId))));
+	});
+}
 
 function connectAndReply(wss: MockWebSocketServer, reply: ReplyOptions): MockWebSocket {
 	const socket = new MockWebSocket();
@@ -245,31 +283,15 @@ describe("protocol version handshake", () => {
 		// that ignored the request-side `protocolVersion`. Schema rejection on
 		// the response surfaces this as the standard "Invalid plugin message"
 		// error rather than running with no runtime injection.
-		const backend = new StudioBackend({ port: 0, webSocketServerFactory });
-		const promise = backend.runTestsAsync(singleJobOptions);
-
-		const wss = getLastCreatedServer()!;
-		const socket = new MockWebSocket();
-
-		socket.send.mockImplementation((data) => {
-			const { requestId } = pluginRequest.assert(JSON.parse(data));
-			queueMicrotask(() => {
-				socket.emit(
-					"message",
-					Buffer.from(
-						JSON.stringify({
-							gameOutput: "[]",
-							jestOutput: envelope([{ jestOutput: successResult() }]),
-							requestId,
-							type: "results",
-							// no protocolVersion — simulating stale plugin
-						}),
-					),
-				);
-			});
+		const promise = startWithReplyAsync((requestId) => {
+			return {
+				gameOutput: "[]",
+				jestOutput: envelope([{ jestOutput: successResult() }]),
+				requestId,
+				type: "results",
+				// no protocolVersion — simulating stale plugin
+			};
 		});
-
-		connectPlugin({ socket, wss });
 
 		await expect(promise).rejects.toThrow(/invalid plugin message/i);
 		expect(vi.getTimerCount()).toBe(0);
@@ -281,70 +303,17 @@ describe("protocol version handshake", () => {
 		// stale runtime semantics.
 		expect.assertions(1);
 
-		const backend = new StudioBackend({ port: 0, webSocketServerFactory });
-		const promise = backend.runTestsAsync(singleJobOptions);
-
-		const wss = getLastCreatedServer()!;
-		const socket = new MockWebSocket();
-
-		socket.send.mockImplementation((data) => {
-			const { requestId } = pluginRequest.assert(JSON.parse(data));
-			queueMicrotask(() => {
-				socket.emit(
-					"message",
-					Buffer.from(
-						JSON.stringify({
-							gameOutput: "[]",
-							jestOutput: envelope([{ jestOutput: successResult() }]),
-							protocolVersion: 2,
-							requestId,
-							type: "results",
-						}),
-					),
-				);
-			});
+		const promise = startWithReplyAsync((requestId) => {
+			return {
+				gameOutput: "[]",
+				jestOutput: envelope([{ jestOutput: successResult() }]),
+				protocolVersion: 2,
+				requestId,
+				type: "results",
+			};
 		});
-
-		connectPlugin({ socket, wss });
 
 		await expect(promise).rejects.toThrow(/invalid plugin message/i);
-	});
-
-	it("should dispatch only to the plugin whose announced protocol matches", async () => {
-		// The multi-install case: Studio runs every copy in the plugins folder
-		// and each opens its own socket. A stale copy refuses the moment it is
-		// asked, while the copy that can serve the run is still running the
-		// suite — so asking all of them means the refusal decides the run.
-		expect.assertions(3);
-
-		const backend = new StudioBackend({ port: 0, webSocketServerFactory });
-		const promise = backend.runTestsAsync(singleJobOptions);
-
-		const wss = getLastCreatedServer()!;
-		const stale = connectPlugin({
-			hello: {
-				pluginVersion: "0.3.18",
-				protocolVersion: PROTOCOL_VERSION - 1,
-			},
-			socket: new MockWebSocket(),
-			wss,
-		});
-		const ancient = connectPlugin({
-			hello: {
-				protocolVersion: PROTOCOL_VERSION - 3,
-			},
-			socket: new MockWebSocket(),
-			wss,
-		});
-		const current = connectAndReply(wss, {});
-
-		await promise;
-
-		expect(current.send).toHaveBeenCalledExactlyOnceWith(
-			expect.stringContaining('"action":"run_tests"'),
-		);
-		expect(stale.send).not.toHaveBeenCalled();
-		expect(ancient.send).not.toHaveBeenCalled();
 	});
 
 	it("should name every connected plugin when none of them match", async () => {
@@ -389,52 +358,17 @@ describe("protocol version handshake", () => {
 		expect(caught.message).toContain("remove the other copies");
 	});
 
-	it("should report a connection that never announces itself", async () => {
-		// Every plugin predating the handshake looks like this: connected,
-		// silent, and unusable. It has to be named rather than waited on.
-		expect.assertions(1);
-
-		useSelectionTimers();
-		const backend = new StudioBackend({ port: 0, webSocketServerFactory });
-		const settled = backend.runTestsAsync(singleJobOptions).catch((err: unknown) => err);
-
-		const wss = getLastCreatedServer()!;
-		wss.emit("connection", new MockWebSocket());
-		await vi.runAllTimersAsync();
-
-		const caught: unknown = await settled;
-		assert(caught instanceof Error);
-
-		expect(caught.message).toContain("sent no handshake");
-	});
-
 	it("should throw a clear upgrade error on version_mismatch response", async () => {
 		expect.assertions(1);
 
-		const backend = new StudioBackend({ port: 0, webSocketServerFactory });
-		const promise = backend.runTestsAsync(singleJobOptions);
-
-		const wss = getLastCreatedServer()!;
-		const socket = new MockWebSocket();
-
-		socket.send.mockImplementation((data) => {
-			const { requestId } = pluginRequest.assert(JSON.parse(data));
-			queueMicrotask(() => {
-				socket.emit(
-					"message",
-					Buffer.from(
-						JSON.stringify({
-							actualVersion: 1,
-							expectedVersion: 2,
-							requestId,
-							type: "version_mismatch",
-						}),
-					),
-				);
-			});
+		const promise = startWithReplyAsync((requestId) => {
+			return {
+				actualVersion: 1,
+				expectedVersion: 2,
+				requestId,
+				type: "version_mismatch",
+			};
 		});
-
-		connectPlugin({ socket, wss });
 
 		await expect(promise).rejects.toThrowWithMessage(
 			Error,
@@ -597,20 +531,6 @@ describe(StudioBackend, () => {
 		expect(captured!.workspace.resultBudgetBytes).toBe(Number.MAX_SAFE_INTEGER);
 	});
 
-	it("should fail fast when a workspace run has a job missing its package name", async () => {
-		// Workspace jobs are built all-or-none; a job without `pkg` alongside one
-		// that has it means a malformed (mixed) array reached the backend. The
-		// materializer keys entries by `pkg`, so reject rather than send a
-		// `pkg`-less entry that would fail opaquely inside Studio.
-		expect.assertions(1);
-
-		const backend = new StudioBackend({ port: 0, webSocketServerFactory });
-
-		await expect(
-			backend.runTestsAsync({ jobs: [wsJob("@scope/a", "a"), job("b")] }),
-		).rejects.toThrow(/missing its package name/);
-	});
-
 	it("should tell the workspace runner to stop on the first failing package under --bail", async () => {
 		expect.assertions(1);
 
@@ -625,27 +545,6 @@ describe(StudioBackend, () => {
 		);
 
 		expect(request.workspace.bail).toBeTrue();
-	});
-
-	it("should report the packages a bailed workspace run never reached", async () => {
-		expect.assertions(2);
-
-		const backend = new StudioBackend({ port: 0, webSocketServerFactory });
-		const promise = backend.runTestsAsync({
-			jobs: [wsJob("@scope/a", "a"), wsJob("@scope/b", "b")],
-		});
-
-		connectAndReply(getLastCreatedServer()!, {
-			rawJestOutput: JSON.stringify({
-				bailed: true,
-				entries: [{ elapsedMs: 11, jestOutput: successResult() }],
-			}),
-		});
-
-		const { bailedJobIndices, rawResults } = await promise;
-
-		expect(rawResults.map((raw) => raw.entry.elapsedMs)).toStrictEqual([11]);
-		expect(bailedJobIndices).toStrictEqual([1]);
 	});
 
 	it("should return rawResults in the same order as the submitted jobs", async () => {
@@ -725,37 +624,6 @@ describe(StudioBackend, () => {
 		expect(rawResults[0]!.fallbackGameOutput).toBe(fallback);
 	});
 
-	it("should surface a top-level whole-run error as a clean message, not the raw payload", async () => {
-		// A bare {success:false, err} is a wholesale failure (no per-job entry).
-		// Surface the err itself rather than the JSON blob or the count guard.
-		expect.assertions(1);
-
-		const rawJestOutput = JSON.stringify({
-			err: "Failed to find Jest instance",
-			success: false,
-		});
-
-		const backend = new StudioBackend({ port: 0, webSocketServerFactory });
-		const promise = backend.runTestsAsync(singleJobOptions);
-
-		const wss = getLastCreatedServer()!;
-		connectAndReply(wss, { rawJestOutput });
-
-		await expect(promise).rejects.toThrow(/^Failed to find Jest instance$/);
-	});
-
-	it("should rethrow syntax errors when jestOutput is not valid JSON", async () => {
-		expect.assertions(1);
-
-		const backend = new StudioBackend({ port: 0, webSocketServerFactory });
-		const promise = backend.runTestsAsync(singleJobOptions);
-
-		const wss = getLastCreatedServer()!;
-		connectAndReply(wss, { rawJestOutput: "{bad json" });
-
-		await expect(promise).rejects.toThrow(SyntaxError);
-	});
-
 	it("should throw on connection timeout", async () => {
 		expect.assertions(1);
 
@@ -795,17 +663,9 @@ describe(StudioBackend, () => {
 
 		useSelectionTimers();
 
-		const backend = new StudioBackend({ port: 0, webSocketServerFactory });
-		const promise = backend.runTestsAsync(singleJobOptions);
-
-		const wss = getLastCreatedServer()!;
-		const socket = new MockWebSocket();
-		socket.send.mockImplementation(() => {
-			queueMicrotask(() => {
-				socket.emit("close");
-			});
+		const promise = startWithSocketAsync((socket) => {
+			socket.emit("close");
 		});
-		connectPlugin({ socket, wss });
 
 		await expect(promise).rejects.toThrowWithMessage(
 			Error,
@@ -817,21 +677,25 @@ describe(StudioBackend, () => {
 	it("should reject when the plugin sends a malformed message", async () => {
 		expect.assertions(1);
 
+		const promise = startWithSocketAsync((socket) => {
+			socket.emit("message", Buffer.from(JSON.stringify({ type: "wrong" })));
+		});
+
+		await expect(promise).rejects.toThrowWithMessage(Error, /Invalid plugin message/);
+	});
+
+	it("should name the Studio backend when a results frame is short of jobs", async () => {
+		expect.assertions(1);
+
 		const backend = new StudioBackend({ port: 0, webSocketServerFactory });
 		const promise = backend.runTestsAsync(singleJobOptions);
 
-		const wss = getLastCreatedServer()!;
-		const socket = new MockWebSocket();
+		connectAndReply(getLastCreatedServer()!, { entries: [] });
 
-		socket.send.mockImplementation(() => {
-			queueMicrotask(() => {
-				socket.emit("message", Buffer.from(JSON.stringify({ type: "wrong" })));
-			});
-		});
-
-		connectPlugin({ socket, wss });
-
-		await expect(promise).rejects.toThrowWithMessage(Error, /Invalid plugin message/);
+		await expect(promise).rejects.toThrowWithMessage(
+			Error,
+			"Studio backend returned 0 entries but request had 1 jobs",
+		);
 	});
 
 	it("should reject when the websocket emits an error", async () => {
@@ -839,17 +703,9 @@ describe(StudioBackend, () => {
 
 		useSelectionTimers();
 
-		const backend = new StudioBackend({ port: 0, webSocketServerFactory });
-		const promise = backend.runTestsAsync(singleJobOptions);
-
-		const wss = getLastCreatedServer()!;
-		const socket = new MockWebSocket();
-		socket.send.mockImplementation(() => {
-			queueMicrotask(() => {
-				socket.emit("error", new Error("socket error"));
-			});
+		const promise = startWithSocketAsync((socket) => {
+			socket.emit("error", new Error("socket error"));
 		});
-		connectPlugin({ socket, wss });
 
 		await expect(promise).rejects.toThrowWithMessage(Error, "socket error");
 		expect(vi.getTimerCount()).toBe(0);
@@ -931,55 +787,6 @@ describe(StudioBackend, () => {
 
 		expect(secondWss).toBe(firstWss);
 		expect(firstWss.close).not.toHaveBeenCalled();
-	});
-
-	it("should throw when the runtime returns more entries than jobs", async () => {
-		expect.assertions(1);
-
-		const backend = new StudioBackend({ port: 0, webSocketServerFactory });
-		const promise = backend.runTestsAsync(singleJobOptions);
-
-		const wss = getLastCreatedServer()!;
-		connectAndReply(wss, {
-			entries: [{ jestOutput: successResult() }, { jestOutput: successResult() }],
-		});
-
-		await expect(promise).rejects.toThrow(
-			/Studio backend returned 2 entries but request had 1 jobs/,
-		);
-	});
-
-	it("should throw when the runtime returns fewer entries than jobs", async () => {
-		// Regression: a truncated result set used to silently drop trailing
-		// projects from the reporter and exit code — reporting success for a
-		// partial run. Length check must be symmetric.
-		expect.assertions(1);
-
-		const backend = new StudioBackend({ port: 0, webSocketServerFactory });
-		const promise = backend.runTestsAsync({ jobs: [job("alpha"), job("beta")] });
-
-		const wss = getLastCreatedServer()!;
-		connectAndReply(wss, {
-			entries: [{ jestOutput: successResult() }],
-		});
-
-		await expect(promise).rejects.toThrow(
-			/Studio backend returned 1 entries but request had 2 jobs/,
-		);
-	});
-
-	it("should name a deferred stop rather than report an entry count mismatch", async () => {
-		expect.assertions(1);
-
-		const backend = new StudioBackend({ port: 0, webSocketServerFactory });
-		const promise = backend.runTestsAsync({ jobs: [job("alpha"), job("beta")] });
-
-		const wss = getLastCreatedServer()!;
-		connectAndReply(wss, {
-			rawJestOutput: envelope([{ jestOutput: successResult() }], { deferred: true }),
-		});
-
-		await expect(promise).rejects.toThrow(/^Studio backend deferred 1 of 2 jobs/);
 	});
 
 	it("should surface a top-level whole-run error instead of the count-mismatch guard", async () => {

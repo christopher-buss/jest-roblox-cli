@@ -24,6 +24,13 @@ const INSTRUMENTABLE_STATEMENT_TYPES: ReadonlySet<string> = new Set([
 	"AstStatWhile",
 ]);
 
+/**
+ * Visitor that records each instrumentable statement not under an ignore
+ * comment.
+ * @param accumulator - Receives the statement records.
+ * @param ignores - Ignore ranges resolved from the source comments.
+ * @returns Visitor callbacks for statement blocks.
+ */
 export function createStatementCollector(
 	accumulator: CoverageAccumulator,
 	ignores: CoverageIgnores,

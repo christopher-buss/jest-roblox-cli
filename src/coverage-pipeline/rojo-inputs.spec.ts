@@ -1,10 +1,11 @@
-import { describe, expect, it, vi } from "vitest";
+import process from "node:process";
+import { assert, describe, expect, it, vi } from "vitest";
 
 import { writeAgedFile } from "#test/mocks/aged-file.ts";
 import type { MemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import type { FileSystem } from "../utils/file-system.ts";
-import { computeRojoInputsHashAsync } from "./rojo-inputs.ts";
+import { tryComputeRojoInputsHashAsync } from "./rojo-inputs.ts";
 
 const PROJECT = "/project/default.project.json";
 const DIGEST_CACHE = "/project/.jest-roblox/input-digests";
@@ -13,6 +14,7 @@ const DIGEST_CACHE = "/project/.jest-roblox/input-digests";
  * A volume holding a rojo project written out verbatim.
  *
  * @param contents - The project file's bytes.
+ * @returns Memory file system holding the project.
  */
 function writeRawProject(contents: string): MemoryFileSystem {
 	return createMemoryFileSystem({ [PROJECT]: contents });
@@ -22,6 +24,7 @@ function writeRawProject(contents: string): MemoryFileSystem {
  * A volume holding a rojo project with `tree`.
  *
  * @param tree - The project tree the walk reads.
+ * @returns Memory file system holding the project.
  */
 function writeProject(tree: JSONObject): MemoryFileSystem {
 	return writeRawProject(JSON.stringify({ name: "test", tree }));
@@ -34,7 +37,7 @@ async function hashOfAsync(
 		projectJson,
 	}: { luauRoots?: Array<string>; projectJson?: string | undefined } = {},
 ): Promise<string> {
-	return computeRojoInputsHashAsync({
+	const hash = await tryComputeRojoInputsHashAsync({
 		digestCacheFile: DIGEST_CACHE,
 		fileSystem,
 		luauRoots,
@@ -42,6 +45,27 @@ async function hashOfAsync(
 		rojoProjectPath: PROJECT,
 		rootDirectory: "/project",
 	});
+	assert(hash !== undefined, "expected the rojo inputs to hash");
+	return hash;
+}
+
+async function warningOfAsync(fileSystem: FileSystem): Promise<string> {
+	const write = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+	try {
+		await expect(
+			tryComputeRojoInputsHashAsync({
+				digestCacheFile: DIGEST_CACHE,
+				fileSystem,
+				luauRoots: [],
+				rojoProjectPath: PROJECT,
+				rootDirectory: "/project",
+			}),
+		).resolves.toBeUndefined();
+
+		return write.mock.calls.map(([chunk]) => String(chunk)).join("");
+	} finally {
+		write.mockRestore();
+	}
 }
 
 async function hashWithDelayedReadAsync(delayedPath: string): Promise<string> {
@@ -75,7 +99,7 @@ async function hashWithDelayedReadAsync(delayedPath: string): Promise<string> {
 	return hashOfAsync(fileSystem);
 }
 
-describe(computeRojoInputsHashAsync, () => {
+describe(tryComputeRojoInputsHashAsync, () => {
 	it("should not probe mount paths when the project declares none", async () => {
 		expect.assertions(1);
 
@@ -139,7 +163,7 @@ describe(computeRojoInputsHashAsync, () => {
 		writeAgedFile(fileSystem, "/project/include/a.lua", "-- v1");
 
 		await expect(
-			computeRojoInputsHashAsync({
+			tryComputeRojoInputsHashAsync({
 				digestCacheFile: "/elsewhere/.jest-roblox/input-digests",
 				fileSystem,
 				luauRoots: [],
@@ -179,6 +203,42 @@ describe(computeRojoInputsHashAsync, () => {
 		const { fileSystem } = writeProject({ $className: "DataModel" });
 
 		await expect(hashOfAsync(fileSystem)).resolves.toMatch(/^[a-f0-9]{64}$/);
+	});
+
+	it("should keep the digest of a fixed tree across releases", async () => {
+		expect.assertions(1);
+
+		const { fileSystem, volume } = writeProject({
+			$className: "DataModel",
+			Inc: { $path: "include" },
+		});
+		volume.mkdirSync("/project/include", { recursive: true });
+		volume.writeFileSync("/project/include/a.lua", "a");
+		volume.writeFileSync("/project/include/b.lua", "b");
+
+		await expect(hashOfAsync(fileSystem)).resolves.toBe(
+			"f888534c76e0ce3f7162d8cb4805704226068f9eb0a071733121572ae33e7593",
+		);
+	});
+
+	it("should not depend on the order a directory lists its entries in", async () => {
+		expect.assertions(1);
+
+		const { fileSystem, volume } = writeProject({
+			$className: "DataModel",
+			Inc: { $path: "include" },
+		});
+		volume.mkdirSync("/project/include", { recursive: true });
+		volume.writeFileSync("/project/include/a.lua", "a");
+		volume.writeFileSync("/project/include/b.lua", "b");
+		const listed = await hashOfAsync(fileSystem);
+		const readdir = fileSystem.promises.readdir.bind(fileSystem.promises);
+		vi.spyOn(fileSystem.promises, "readdir").mockImplementation(async (...args) => {
+			const entries = await readdir(...args);
+			return entries.toReversed();
+		});
+
+		await expect(hashOfAsync(fileSystem)).resolves.toBe(listed);
 	});
 
 	it("should be stable when nothing changes", async () => {
@@ -449,57 +509,52 @@ describe(computeRojoInputsHashAsync, () => {
 
 	describe("when the project file has no tree object", () => {
 		it("should throw when the project is not a JSON object", async () => {
-			expect.assertions(1);
+			expect.assertions(2);
 
 			const { fileSystem } = writeRawProject('"just a string"');
 
-			await expect(hashOfAsync(fileSystem)).rejects.toThrowWithMessage(
-				Error,
-				/Invalid Rojo project/,
+			await expect(warningOfAsync(fileSystem)).resolves.toMatch(
+				/^Warning: could not hash rojo build inputs: Invalid Rojo project \/project\/default\.project\.json: /,
 			);
 		});
 
 		it("should throw when the project is JSON null", async () => {
-			expect.assertions(1);
+			expect.assertions(2);
 
 			const { fileSystem } = writeRawProject("null");
 
-			await expect(hashOfAsync(fileSystem)).rejects.toThrowWithMessage(
-				Error,
-				/Invalid Rojo project/,
+			await expect(warningOfAsync(fileSystem)).resolves.toMatch(
+				/^Warning: could not hash rojo build inputs: Invalid Rojo project \/project\/default\.project\.json: /,
 			);
 		});
 
 		it("should throw when the project is a JSON array", async () => {
-			expect.assertions(1);
+			expect.assertions(2);
 
 			const { fileSystem } = writeRawProject("[]");
 
-			await expect(hashOfAsync(fileSystem)).rejects.toThrowWithMessage(
-				Error,
-				/Invalid Rojo project/,
+			await expect(warningOfAsync(fileSystem)).resolves.toMatch(
+				/^Warning: could not hash rojo build inputs: Invalid Rojo project \/project\/default\.project\.json: /,
 			);
 		});
 
 		it("should throw when tree is missing", async () => {
-			expect.assertions(1);
+			expect.assertions(2);
 
 			const { fileSystem } = writeRawProject('{ "name": "test" }');
 
-			await expect(hashOfAsync(fileSystem)).rejects.toThrowWithMessage(
-				Error,
-				/Invalid Rojo project/,
+			await expect(warningOfAsync(fileSystem)).resolves.toMatch(
+				/^Warning: could not hash rojo build inputs: Invalid Rojo project \/project\/default\.project\.json: /,
 			);
 		});
 
 		it("should throw when tree is an array", async () => {
-			expect.assertions(1);
+			expect.assertions(2);
 
 			const { fileSystem } = writeRawProject('{ "name": "test", "tree": [] }');
 
-			await expect(hashOfAsync(fileSystem)).rejects.toThrowWithMessage(
-				Error,
-				/Invalid Rojo project/,
+			await expect(warningOfAsync(fileSystem)).resolves.toMatch(
+				/^Warning: could not hash rojo build inputs: Invalid Rojo project \/project\/default\.project\.json: /,
 			);
 		});
 	});

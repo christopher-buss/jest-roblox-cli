@@ -4,7 +4,7 @@ import type { RojoTreeNode } from "../types/rojo.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import type { ResolvedConfig } from "./schema.ts";
 
-export const LAYOUT_PROJECT_FILE = ".jest-roblox-layout.project.json";
+const LAYOUT_PROJECT_FILE = ".jest-roblox-layout.project.json";
 
 const JEST_PACKAGES_PROJECT = path.join("node_modules", "@rbxts-js.project.json");
 const SKIPPED_DIRECTORIES = new Set(["node_modules"]);
@@ -18,6 +18,9 @@ interface LayoutProjectOptions {
  * Give a Luau-only package with no Rojo project one built from its file
  * layout, so a relative string require resolves the same in the place as on
  * disk. Each top-level directory mounts under `ReplicatedStorage/<package>`.
+ *
+ * @param options - Config and file system.
+ * @returns The config, with `rojoProject` set to the written layout project when one is needed.
  */
 export function resolveLayoutProject({ config, fileSystem }: LayoutProjectOptions): ResolvedConfig {
 	if (!needsLayoutProject(config, fileSystem)) {

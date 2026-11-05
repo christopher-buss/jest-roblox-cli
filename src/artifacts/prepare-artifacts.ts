@@ -10,24 +10,24 @@ import type {
 	CoverageArtifacts,
 } from "../coverage-pipeline/build-manifest.ts";
 import { emitBuildManifest } from "../coverage-pipeline/build-manifest.ts";
+import type { RawCoverageData } from "../coverage-pipeline/coverage-types.ts";
 import type { InstrumentUniverse } from "../coverage-pipeline/instrument-universe.ts";
+import { findRojoProject } from "../coverage-pipeline/luau-roots.ts";
 import type { CoverageManifest } from "../coverage-pipeline/manifest.ts";
 import { readManifest, writeManifest } from "../coverage-pipeline/manifest.ts";
+import { PLACE_DIR } from "../coverage-pipeline/place-build.ts";
 import { computePlaceContentId } from "../coverage-pipeline/place-content-id.ts";
 import {
 	COVERAGE_BUILD_MANIFEST_PATH,
 	COVERAGE_MANIFEST_PATH,
-	findRojoProject,
-	PLACE_DIR,
 } from "../coverage-pipeline/prepare.ts";
-import type { RawCoverageData } from "../coverage-pipeline/types.ts";
 import type { RunEntryOptions } from "../run.ts";
 import { nodeRunDispatch, runSingleOrMultiAsync } from "../run.ts";
 import type { RunSeams } from "../run/seams.ts";
 import { nodeRunSeams } from "../run/seams.ts";
 import { collectStubMounts } from "../run/staging.ts";
 import { buildPlaceAsync } from "../staging/place-builder.ts";
-import type { StubMount, UnwrappedPackageDescriptor } from "../staging/synthesizer.ts";
+import type { StubMount, UnwrappedPackageDescriptor } from "../staging/synthesizer-types.ts";
 import type { TimingCollector } from "../timing/orchestration-collector.ts";
 import { createTimingCollector } from "../timing/orchestration-collector.ts";
 import type { FileSystem } from "../utils/file-system.ts";
@@ -43,11 +43,17 @@ const CACHE_DIR = path.join(".jest-roblox", "cache");
  * of the sibling manifests, all sharing one `buildId`.
  */
 export interface ArtifactBundle {
+	/** Build id shared by both places and the sibling manifests. */
 	buildId: string;
+	/** The Build Manifest's path. */
 	buildManifestPath: string;
+	/** The uninstrumented Clean Place. */
 	cleanPlace: BuildManifestArtifact;
+	/** Coverage hit data from the instrumented run, if any. */
 	coverageData?: RawCoverageData | undefined;
+	/** The coverage-data sibling manifest's path. */
 	coverageManifestPath: string;
+	/** The Coverage-Instrumented Place. */
 	coveragePlace: BuildManifestArtifact;
 	/**
 	 * Per-project DataModel paths the kernel consumes, resolved from the run.
@@ -55,7 +61,9 @@ export interface ArtifactBundle {
 	projects: Array<BuildManifestProject>;
 }
 
+/** Options for `prepareArtifactsAsync`. */
 export interface PrepareArtifactsOptions extends RunEntryOptions {
+	/** Instrument universe passed to the coverage step, if set. */
 	instrumentUniverse?: InstrumentUniverse | undefined;
 }
 
@@ -71,6 +79,10 @@ interface ProduceArtifactsOptions extends Required<RunEntryOptions> {
  * the Build Manifest with both places in a single atomic write.
  * `runJestRobloxAsync` / the CLI never build a Clean Place — opting in is
  * calling this entry point.
+ *
+ * @param config - Resolved config for the run.
+ * @param options - Optional seams and instrument universe.
+ * @returns Both places, coverage data and the manifest paths.
  */
 export async function prepareArtifactsAsync(
 	config: ResolvedConfig,
@@ -115,6 +127,10 @@ function withInstrumentUniverse(
  * A `typecheckOnly` config, or a project with no runtime tests, produces no
  * coverage artifacts — which makes the whole bundle meaningless. Fail loud
  * rather than emit a half-written Build Manifest.
+ *
+ * @param coverageArtifacts - Artifacts from the coverage run, if any.
+ * @returns The same artifacts, known to be present.
+ * @throws {Error} When `coverageArtifacts` is undefined.
  */
 function requireCoverageArtifacts(
 	coverageArtifacts: CoverageArtifacts | undefined,
@@ -132,6 +148,11 @@ function requireCoverageArtifacts(
  * The manifest the instrument step published for this run. Unreadable is a
  * fault rather than a degraded bundle: it is what the Place Content Id is taken
  * over, and a place stamped from anything less proves less than it claims.
+ *
+ * @param manifestPath - Where the instrument step wrote it.
+ * @param fileSystem - File system to read it from.
+ * @returns The parsed coverage manifest.
+ * @throws {Error} When the manifest cannot be read.
  */
 function requireCoverageManifest(manifestPath: string, fileSystem: FileSystem): CoverageManifest {
 	const read = readManifest(manifestPath, fileSystem);
@@ -148,6 +169,8 @@ function requireCoverageManifest(manifestPath: string, fileSystem: FileSystem): 
  * Re-publish the coverage manifest with attribution folded in. A run that
  * produced no attribution is a no-op — the file records the instrument step
  * wrote stay as published.
+ *
+ * @param options - Attribution, file system and the manifest to update.
  */
 function writeManifestAttribution({
 	attribution,
@@ -199,6 +222,9 @@ async function resolveCleanStubMountsAsync(
  * Coverage-Instrumented Place, minus `coverageRoots`. In multi mode the place
  * carries the same `jest.config` stub mounts the coverage run already wrote to
  * the cache, so the Clean Place is runnable.
+ *
+ * @param options - Config, content id and run entry seams.
+ * @returns The built Clean Place artifact.
  */
 async function buildCleanPlaceAsync({
 	config,

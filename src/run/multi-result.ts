@@ -7,21 +7,27 @@ import {
 } from "../coverage-pipeline/agent-table-filter.ts";
 import type { AttributionResult } from "../coverage-pipeline/attribution.ts";
 import { mergeAttribution } from "../coverage-pipeline/attribution.ts";
+import type { RawCoverageData } from "../coverage-pipeline/coverage-types.ts";
 import { resolveCoverageInclude } from "../coverage-pipeline/derive-coverage-from.ts";
 import { mergeRawCoverage } from "../coverage-pipeline/merge-raw-coverage.ts";
-import type { RawCoverageData } from "../coverage-pipeline/types.ts";
 import { combineSourceMappers, type SourceMapper } from "../source-mapper/index.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import type { ExecutionOutcome } from "./execution.ts";
+import type { MultiProjectMerged, MultiRunResult, ProjectResult, RunOptions } from "./run-types.ts";
 import type { StagedRun } from "./staging.ts";
 import type { RunDiscovery, TestPlan } from "./test-plan.ts";
-import type { MultiProjectMerged, MultiRunResult, ProjectResult, RunOptions } from "./types.ts";
 
+/** Inputs of {@link buildMultiRunResult}. */
 export interface MultiRunResultInput {
+	/** Parsed command-line options. */
 	cli: RunOptions["cli"];
+	/** Discovered projects and root config. */
 	discovery: RunDiscovery;
+	/** Outcome of the executed run. */
 	outcome: ExecutionOutcome;
+	/** Planned test files of the run. */
 	plan: TestPlan;
+	/** Staging products and timings. */
 	staged: StagedRun;
 }
 
@@ -30,6 +36,14 @@ export interface MultiRunResultInput {
  * the coverage source universe, the display-only agent-table narrowing, and
  * the per-project results merged into one coverage/attribution/source-mapper
  * triple.
+ *
+ * @param options - The finished run's inputs.
+ * @param options.cli - Parsed command-line options.
+ * @param options.discovery - Discovered projects and root config.
+ * @param options.outcome - Outcome of the executed run.
+ * @param options.plan - Planned test files of the run.
+ * @param options.staged - Staging products and timings.
+ * @returns Coverage universe, display filter and merged project results.
  */
 export function buildMultiRunResult({
 	cli,
@@ -61,12 +75,23 @@ export function buildMultiRunResult({
 	};
 }
 
-// Builds the agent text-table narrowing for a filtered multi run. Files named
-// directly (positionals) win as source twins; a `--testPathPattern` twins the
-// matched runtime files; a bare `--project` scopes the table to the selected
-// projects' source roots (so the project's untested files still report 0%). A
-// full run (none of these) returns undefined — the table keeps the full
-// universe. Display-only: never reaches thresholds, totals, or lcov/html/json.
+/**
+ * Builds the agent text-table narrowing for a filtered multi run. Files named
+ * directly (positionals) win as source twins; a `--testPathPattern` twins the
+ * matched runtime files; a bare `--project` scopes the table to the selected
+ * projects' source roots (so the project's untested files still report 0%). A
+ * full run (none of these) returns undefined — the table keeps the full
+ * universe. Display-only: never reaches thresholds, totals, or lcov/html/json.
+ *
+ * @param options - The filter inputs.
+ * @param options.cliFiles - Positional files from the CLI.
+ * @param options.matchedRuntimeFiles - Runtime files the pattern matched.
+ * @param options.projectNames - Names passed to `--project`.
+ * @param options.projects - Resolved project configs.
+ * @param options.rootDir - Root directory of the run.
+ * @param options.testPathPattern - The `--testPathPattern` regex.
+ * @returns The display filter, or `undefined` on a full run.
+ */
 function buildMultiDisplayFilter({
 	cliFiles,
 	matchedRuntimeFiles,

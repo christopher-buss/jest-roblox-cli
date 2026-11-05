@@ -4,8 +4,9 @@ import * as path from "node:path";
 import type { WorkspaceRunOptions } from "../config/schema.ts";
 import type { ExecuteResult } from "../executor.ts";
 import { usesAgentFormatter } from "../formatters/utils.ts";
-import { mergeProjectResults, mergeResults, writeResultFileAsync } from "../output.ts";
-import type { JestResult } from "../types/jest-result.ts";
+import { mergeProjectResults, mergeResults } from "../output-merge.ts";
+import { writeResultFileAsync } from "../output-sinks.ts";
+import type { JestResult } from "../types/jest-result-types.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import { nodeFileSystem } from "../utils/file-system.ts";
 import {
@@ -16,8 +17,9 @@ import {
 	writeGameOutput,
 	writeGroupedGameOutput,
 } from "../utils/game-output.ts";
+import type { PendingEntry } from "./pending-entry.ts";
 import { projectKey } from "./project-key.ts";
-import type { PendingEntry, TypeTestProject } from "./test-selection.ts";
+import type { TypeTestProject } from "./test-selection.ts";
 
 const PER_PACKAGE_OUTPUT_DIRECTORY = path.join(".jest-roblox", "output");
 const FILESYSTEM_UNSAFE = /[^\w@.-]+/g;
@@ -59,7 +61,11 @@ interface WorkspaceSinkInput {
 	workspaceRoot: string;
 }
 
-/** Every sink a workspace run with runtime jobs writes. */
+/**
+ * Every sink a workspace run with runtime jobs writes.
+ * @param input - Run results, options and Type Test results to write.
+ * @returns Resolves once every sink is written.
+ */
 export async function writeWorkspaceSinksAsync(input: WorkspaceSinkInput): Promise<void> {
 	const { pending, results, runOptions, typeTestProjects, workspaceRoot } = input;
 	const fileSystem = input.fileSystem ?? nodeFileSystem;
@@ -99,6 +105,8 @@ export async function writeWorkspaceSinksAsync(input: WorkspaceSinkInput): Promi
  * The `--typecheckOnly` sinks: there is no runtime side, so every per-package
  * file is the package's Type Test result under each of its type-test projects,
  * and no Game Output is produced.
+ * @param input - Run options and Type Test results to write.
+ * @returns Resolves once every sink is written.
  */
 export async function writeTypecheckOnlySinksAsync(
 	input: Pick<
@@ -134,13 +142,21 @@ export async function writeTypecheckOnlySinksAsync(
 	}
 }
 
-// Builds the per-(package, project) files the workspace writes when
-// `workspace.outputFile` is on: each file mirrors the aggregate at finer
-// granularity via the shared `mergeResults`, so the per-package sink can't drift
-// from the aggregate. Runtime pairs come from `pending`/`results`; Type Test
-// pairs reuse each package's whole type result (the tsgo pass collapses a
-// package's projects, so package-level is the finest honest split) under every
-// project that owns Type Tests. A pair present on both sides merges.
+/**
+ * Builds the per-(package, project) files the workspace writes when
+ * `workspace.outputFile` is on: each file mirrors the aggregate at finer
+ * granularity via the shared `mergeResults`, so the per-package sink can't drift
+ * from the aggregate. Runtime pairs come from `pending`/`results`; Type Test
+ * pairs reuse each package's whole type result (the tsgo pass collapses a
+ * package's projects, so package-level is the finest honest split) under every
+ * project that owns Type Tests. A pair present on both sides merges.
+ * @param options - Runtime and Type Test results.
+ * @param options.pending - Entries in the same order as `results`.
+ * @param options.results - Runtime results.
+ * @param options.typeByPackage - Type Test result per package name.
+ * @param options.typeTestProjects - Projects that own Type Tests.
+ * @returns One merged result per (package, project) pair.
+ */
 function buildPerPackageResults({
 	pending,
 	results,
@@ -208,13 +224,21 @@ function writePerPackageOutputFiles({
 	}
 }
 
-// Sibling of writePerPackageOutputFiles; emits a `.game-output.log`
-// companion alongside each (pkg, project) result file under
-// `.jest-roblox/output/`. The path is built absolute against workspaceRoot
-// before calling writeGameOutput — that helper calls path.resolve which
-// would otherwise fall back to process.cwd() and silently mis-route files.
-// Returns each written file's path and entry count so the caller can build
-// notices for the non-empty ones.
+/**
+ * Sibling of writePerPackageOutputFiles; emits a `.game-output.log`
+ * companion alongside each (pkg, project) result file under
+ * `.jest-roblox/output/`. The path is built absolute against workspaceRoot
+ * before calling writeGameOutput — that helper calls path.resolve which
+ * would otherwise fall back to process.cwd() and silently mis-route files.
+ * Returns each written file's path and entry count so the caller can build
+ * notices for the non-empty ones.
+ * @param options - Results to write and where.
+ * @param options.fileSystem - File system to write through.
+ * @param options.pending - Entries in the same order as `results`.
+ * @param options.results - Runtime results.
+ * @param options.workspaceRoot - Root the output directory resolves against.
+ * @returns Path and entry count of each written file.
+ */
 function writePerPackageGameOutputFiles({
 	fileSystem,
 	pending,
@@ -241,8 +265,16 @@ function writePerPackageGameOutputFiles({
 	});
 }
 
-// The single grouped Game Output file (top-level `gameOutput`). Returns the
-// notice announcing it so the caller can pick which sink to advertise.
+/**
+ * The single grouped Game Output file (top-level `gameOutput`). Returns the
+ * notice announcing it so the caller can pick which sink to advertise.
+ * @param options - Results to write and where.
+ * @param options.aggregatePath - Path of the grouped file.
+ * @param options.fileSystem - File system to write through.
+ * @param options.pending - Entries in the same order as `results`.
+ * @param options.results - Runtime results.
+ * @returns The notice that names the written file.
+ */
 function writeAggregateGameOutput({
 	aggregatePath,
 	fileSystem,
@@ -273,6 +305,11 @@ function writeAggregateGameOutput({
  * Names one of the two sinks on stderr. An agent formatter prefers the
  * per-package files whenever they were written; every other formatter names
  * them only when there is no aggregate to name instead.
+ * @param options - Notices and the formatter choice.
+ * @param options.aggregateNotice - Notice for the grouped file, if written.
+ * @param options.perPackageNotices - Notices for the per-package files, if written.
+ * @param options.runOptions - Run options that name the formatters.
+ * @param options.verbose - Whether the run is verbose.
  */
 function announceGameOutput({
 	aggregateNotice,
@@ -297,12 +334,15 @@ function announceGameOutput({
 	}
 }
 
-// Writes the configured Game Output sinks for a workspace run and announces
-// exactly one of them. Aggregated (single grouped file, top-level
-// `gameOutput`) and Per-package (`.jest-roblox/output/` files,
-// `workspace.gameOutput`) are independent; either, both, or neither may be
-// active. Humans prefer the single aggregate (one place to look); agents
-// prefer the per-package files (smaller, targeted context).
+/**
+ * Writes the configured Game Output sinks for a workspace run and announces
+ * exactly one of them. Aggregated (single grouped file, top-level
+ * `gameOutput`) and Per-package (`.jest-roblox/output/` files,
+ * `workspace.gameOutput`) are independent; either, both, or neither may be
+ * active. Humans prefer the single aggregate (one place to look); agents
+ * prefer the per-package files (smaller, targeted context).
+ * @param input - Results, run options and workspace root.
+ */
 function emitWorkspaceGameOutput({
 	fileSystem,
 	pending,

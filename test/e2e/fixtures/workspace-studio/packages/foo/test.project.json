@@ -5,7 +5,7 @@
 		"ReplicatedStorage": {
 			"$className": "ReplicatedStorage",
 			"Foo": { "$path": "src" },
-			"Packages": { "$path": "../../../../../../../../node_modules/@rbxts-js.project.json" }
+			"Packages": { "$path": "node_modules/@rbxts-js.project.json" }
 		}
 	}
 }

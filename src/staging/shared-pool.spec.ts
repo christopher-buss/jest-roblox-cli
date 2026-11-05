@@ -2,6 +2,7 @@ import * as crypto from "node:crypto";
 import * as path from "node:path";
 import { assert, describe, expect, it } from "vitest";
 
+import { posixPath } from "#test/mocks/posix-path.ts";
 import {
 	poolKeyOf,
 	seed,
@@ -11,7 +12,6 @@ import {
 } from "#test/mocks/staged-project.ts";
 import type { RojoTreeNode } from "../types/rojo.ts";
 import type { FileSystem } from "../utils/file-system.ts";
-import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import { poolSharedMounts } from "./shared-pool.ts";
 
 const PROJECT_DIR = path.resolve("/repo/cache");
@@ -33,16 +33,22 @@ function pooledProject(
  * The digest the pass is expected to key a pooled path on, derived here from
  * the documented rule — a sha256 over the posix path relative to the project
  * directory — rather than from the pass itself.
+ * @param absolutePath - Pooled mount path.
+ * @returns The expected 16-digit hex key.
  */
 function digestOf(absolutePath: string): string {
 	return crypto
 		.createHash("sha256")
-		.update(normalizeWindowsPath(path.relative(PROJECT_DIR, absolutePath)))
+		.update(posixPath(path.relative(PROJECT_DIR, absolutePath)))
 		.digest("hex")
 		.slice(0, 16);
 }
 
-/** A childless node mounting a directory — the shape the pass pools. */
+/**
+ * A childless node mounting a directory — the shape the pass pools.
+ * @param mountPath - Directory the node mounts.
+ * @returns The Folder node.
+ */
 function folderMount(mountPath: string): RojoTreeNode {
 	return { $className: "Folder", $path: mountPath };
 }
@@ -50,6 +56,8 @@ function folderMount(mountPath: string): RojoTreeNode {
 /**
  * A package under coverage: it shares `include/` with its siblings and runs
  * against its own instrumented copy of its own `out`.
+ * @param name - Package name its shadow directory is under.
+ * @returns The package's Folder node.
  */
 function coveredPackage(name: string): RojoTreeNode {
 	return {
@@ -59,7 +67,12 @@ function coveredPackage(name: string): RojoTreeNode {
 	};
 }
 
-/** Two packages staging the same node under the same name. */
+/**
+ * Two packages staging the same node under the same name.
+ * @param node - Node both packages stage.
+ * @param key - Name both stage it under.
+ * @returns The project text.
+ */
 function twoPackagesStaging(node: RojoTreeNode, key = "Include"): string {
 	return stagedProject({
 		a: { [key]: structuredClone(node), $className: "Folder" },
@@ -79,7 +92,7 @@ describe(poolSharedMounts, () => {
 		);
 		const key = digestOf(INCLUDE);
 
-		expect(staged(project, "__shared", key)!.$path).toBe(normalizeWindowsPath(INCLUDE));
+		expect(staged(project, "__shared", key)!.$path).toBe(posixPath(INCLUDE));
 		expect(poolKeyOf(staged(project, "a", "ReplicatedStorage"))).toBe(key);
 		expect(poolKeyOf(staged(project, "b", "ReplicatedStorage"))).toBe(key);
 		// Only the pooled entry still names the path; each marker lost its own.
@@ -311,7 +324,7 @@ describe(poolSharedMounts, () => {
 		const project = pooledProject(fileSystem, twoPackagesStaging({ $path: stub }, "Config"));
 
 		expect(poolKeyOf(staged(project, "a", "Config"))).toBe(digestOf(stub));
-		expect(staged(project, "__shared", digestOf(stub))!.$path).toBe(normalizeWindowsPath(stub));
+		expect(staged(project, "__shared", digestOf(stub))!.$path).toBe(posixPath(stub));
 	});
 
 	it.for(["README.md", "init.meta.json"] as const)(
@@ -354,12 +367,8 @@ describe(poolSharedMounts, () => {
 			}),
 		);
 
-		expect(staged(project, "__shared", digestOf(INCLUDE))!.$path).toBe(
-			normalizeWindowsPath(INCLUDE),
-		);
-		expect(staged(project, "__shared", digestOf(assets))!.$path).toBe(
-			normalizeWindowsPath(assets),
-		);
+		expect(staged(project, "__shared", digestOf(INCLUDE))!.$path).toBe(posixPath(INCLUDE));
+		expect(staged(project, "__shared", digestOf(assets))!.$path).toBe(posixPath(assets));
 	});
 
 	it("should key a mount on its path relative to the project directory", () => {

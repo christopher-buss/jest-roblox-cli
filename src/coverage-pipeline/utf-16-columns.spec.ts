@@ -1,0 +1,147 @@
+import type { LuauSpan } from "@isentinel/luau-ast";
+
+import { describe, expect, it } from "vitest";
+
+import type { CollectorResult } from "./coverage-accumulator.ts";
+import { toUtf16Columns } from "./utf-16-columns.ts";
+
+type BranchArm = CollectorResult<LuauSpan>["branches"][number]["arms"][number];
+
+function emptyResult(): CollectorResult<LuauSpan> {
+	return {
+		branches: [],
+		functions: [],
+		implicitElseProbes: [],
+		statements: [],
+		wrapProbes: [],
+	};
+}
+
+/**
+ * A span within one line — every source under test here is one statement.
+ * @param line - Line the span sits on.
+ * @param options - Begin and end columns.
+ * @returns Single-line span.
+ */
+function span(
+	line: number,
+	{ beginColumn, endColumn }: { beginColumn: number; endColumn: number },
+): LuauSpan {
+	return { beginColumn, beginLine: line, endColumn, endLine: line };
+}
+
+function statementResult(location: LuauSpan): CollectorResult<LuauSpan> {
+	return { ...emptyResult(), statements: [{ index: 1, location }] };
+}
+
+function branchResult(arm: BranchArm, branchType: string): CollectorResult<LuauSpan> {
+	return { ...emptyResult(), branches: [{ arms: [arm], branchType, index: 1 }] };
+}
+
+describe("utf16-columns", () => {
+	describe(toUtf16Columns, () => {
+		it("should leave the columns of an ASCII source alone", () => {
+			expect.assertions(1);
+
+			const result = statementResult(span(1, { beginColumn: 1, endColumn: 12 }));
+			const converted = toUtf16Columns(result, "local x = 1\n");
+
+			expect<CollectorResult<LuauSpan>>(converted).toStrictEqual(result);
+		});
+
+		// `local a = "∞" 1` — the closing quote is byte column 15 and UTF-16
+		// column 13, because U+221E is three bytes and one UTF-16 unit. The
+		// column math itself belongs to `indexSourceBytes` and is covered
+		// there; what these cases pin is which fields this file reaches.
+		it("should convert both columns of a statement span", () => {
+			expect.assertions(2);
+
+			const source = 'local a = "\u{221E}" 1\n';
+			const converted = toUtf16Columns(
+				statementResult(span(1, { beginColumn: 11, endColumn: 15 })),
+				source,
+			);
+			const { location } = converted.statements[0]!;
+
+			expect<number>(location.beginColumn).toBe(11);
+			expect<number>(location.endColumn).toBe(13);
+		});
+
+		it("should convert the body position of a function and of a branch arm", () => {
+			expect.assertions(3);
+
+			const source = 'local f = function() return "\u{221E}", 1 end\n';
+			const converted = toUtf16Columns(
+				{
+					...branchResult(
+						{
+							bodyFirstColumn: 36,
+							bodyFirstLine: 1,
+							location: span(1, { beginColumn: 29, endColumn: 34 }),
+						},
+						"if",
+					),
+					functions: [
+						{
+							name: "f",
+							bodyFirstColumn: 22,
+							bodyFirstLine: 1,
+							index: 1,
+							location: span(1, { beginColumn: 11, endColumn: 41 }),
+						},
+					],
+				},
+				source,
+			);
+
+			expect<number>(converted.functions[0]!.location.endColumn).toBe(39);
+			expect<number>(converted.branches[0]!.arms[0]!.location.endColumn).toBe(32);
+			expect<number>(converted.branches[0]!.arms[0]!.bodyFirstColumn).toBe(34);
+		});
+
+		// `bodyFirstLine`/`bodyFirstColumn` of 0 is the "wrap probe, not point
+		// probe" sentinel — it names no position, so it must survive untouched.
+		it("should leave the wrap-probe sentinel at zero", () => {
+			expect.assertions(1);
+
+			const converted = toUtf16Columns(
+				branchResult(
+					{
+						bodyFirstColumn: 0,
+						bodyFirstLine: 0,
+						location: span(1, { beginColumn: 11, endColumn: 15 }),
+					},
+					"binary-expr",
+				),
+				'local a = "\u{221E}"\n',
+			);
+
+			expect<number>(converted.branches[0]!.arms[0]!.bodyFirstColumn).toBe(0);
+		});
+
+		it("should convert implicit-else probe and wrap positions", () => {
+			expect.assertions(2);
+
+			const source = 'if x then return "\u{221E}" end\n';
+			const converted = toUtf16Columns(
+				{
+					...emptyResult(),
+					implicitElseProbes: [
+						{ armIndex: 2, branchIndex: 1, endColumn: 25, endLine: 1 },
+					],
+					wrapProbes: [
+						{
+							armIndex: 1,
+							branchIndex: 1,
+							exprLocation: span(1, { beginColumn: 18, endColumn: 23 }),
+						},
+					],
+				},
+				source,
+			);
+
+			expect<number>(converted.implicitElseProbes[0]!.endColumn).toBe(23);
+			expect<number>(converted.wrapProbes[0]!.exprLocation.endColumn).toBe(21);
+		});
+	});
+});

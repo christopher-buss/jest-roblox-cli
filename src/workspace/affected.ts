@@ -9,7 +9,8 @@ import { nodeChildProcessRunner } from "../utils/child-process.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import { nodeFileSystem } from "../utils/file-system.ts";
 import { NX_MARKER, TURBO_MARKER } from "./discovery.ts";
-import { type PackageInfo, readPackageJsonName } from "./package-resolver.ts";
+import type { PackageInfo } from "./package-resolver.ts";
+import { readPackageJsonName } from "./pnpm-packages.ts";
 
 const JEST_CONFIG_MARKER = /^jest\.config\.[^.]+$/;
 
@@ -50,21 +51,26 @@ function resolvePosixShim({
 	return fileSystem.existsSync(candidate) ? candidate : command;
 }
 
-// Build cmd.exe args for `cmd.exe /d /s /c "<command> <args>"`. Each argument
-// is wrapped in double quotes — cmd metacharacters (^, &, |, <, >) are literal
-// inside quotes, and `ref` is already restricted by validRefPattern so no `"`
-// can appear. The outer pair of quotes around the whole command is stripped
-// by /s, leaving cmd.exe to parse the inner `cmd "tok" "tok" ...` normally.
-//
-// The command itself MUST stay unquoted: npm-cli batch shims (turbo.cmd,
-// nx.cmd) compute `%~dp0` from %0, and when cmd.exe runs a *quoted* command
-// resolved via PATHEXT it sets %0 to the bare name — so `%~dp0` falls back
-// to the cwd. The shim then does `node "%~dp0\..\turbo\bin\turbo"`, which
-// resolves to `<cwd>\..\turbo\bin\turbo` (one directory above the workspace),
-// and node errors with MODULE_NOT_FOUND. Leaving the command unquoted lets
-// cmd resolve it through PATH normally and %~dp0 points at the shim's own
-// directory. `command` here is a hard-coded "turbo" or "nx", so no quoting
-// is required for safety.
+/**
+ * Build cmd.exe args for `cmd.exe /d /s /c "<command> <args>"`. Each argument
+ * is wrapped in double quotes — cmd metacharacters (^, &, |, <, >) are literal
+ * inside quotes, and `ref` is already restricted by validRefPattern so no `"`
+ * can appear. The outer pair of quotes around the whole command is stripped
+ * by /s, leaving cmd.exe to parse the inner `cmd "tok" "tok" ...` normally.
+ *
+ * The command itself MUST stay unquoted: npm-cli batch shims (turbo.cmd,
+ * nx.cmd) compute `%~dp0` from %0, and when cmd.exe runs a *quoted* command
+ * resolved via PATHEXT it sets %0 to the bare name — so `%~dp0` falls back
+ * to the cwd. The shim then does `node "%~dp0\..\turbo\bin\turbo"`, which
+ * resolves to `<cwd>\..\turbo\bin\turbo` (one directory above the workspace),
+ * and node errors with MODULE_NOT_FOUND. Leaving the command unquoted lets
+ * cmd resolve it through PATH normally and %~dp0 points at the shim's own
+ * directory. `command` here is a hard-coded "turbo" or "nx", so no quoting
+ * is required for safety.
+ * @param command - Bare tool name, `turbo` or `nx`.
+ * @param args - Tool arguments, each quoted.
+ * @returns The cmd.exe argument list.
+ */
 function buildCommandExeArgs(command: string, args: Array<string>): Array<string> {
 	const quotedArgs = args.map((argument) => `"${argument}"`).join(" ");
 	return ["/d", "/s", "/c", `"${command} ${quotedArgs}"`];
@@ -102,12 +108,22 @@ interface TurboPackage {
 	relativePath: string;
 }
 
-// turbo.json takes precedence when both markers are present (hybrid monorepo).
-//
-// Returns full `PackageInfo` (name + absolute directory), not bare names: the
-// name must match `package.json#name` so downstream resolution doesn't fail,
-// and turbo/nx already hand us the directory, so resolving it here skips a
-// redundant `resolvePackage` round-trip in the caller.
+/**
+ * The `turbo.json` marker takes precedence when both markers are present
+ * (hybrid monorepo).
+ *
+ * Returns full `PackageInfo` (name + absolute directory), not bare names: the
+ * name must match `package.json#name` so downstream resolution doesn't fail,
+ * and turbo/nx already hand us the directory, so resolving it here skips a
+ * redundant `resolvePackage` round-trip in the caller.
+ * @param options - Workspace root, ref and process seams.
+ * @param options.childProcess - Runner that spawns turbo or nx.
+ * @param options.fileSystem - File system that finds the workspace marker.
+ * @param options.ref - Git ref to compare against.
+ * @param options.workspaceRoot - Workspace root directory.
+ * @returns Each affected package with its absolute directory.
+ * @throws {Error} When the ref is invalid or turbo or nx fails.
+ */
 export function getAffectedPackages({
 	childProcess = nodeChildProcessRunner,
 	fileSystem = nodeFileSystem,
@@ -160,9 +176,14 @@ function readStream(failure: ToolFailure, key: "stderr" | "stdout"): string | un
 	return stream !== undefined && stream.length > 0 ? stream : undefined;
 }
 
-// Reshape a failed tool invocation into a readable error. nx writes its branded
-// diagnostic to stdout, not stderr, when --base references an unknown ref —
-// fall back to stdout so users see it.
+/**
+ * Reshape a failed tool invocation into a readable error. The nx CLI writes its branded
+ * diagnostic to stdout, not stderr, when --base references an unknown ref —
+ * fall back to stdout so users see it.
+ * @param command - Tool name, for the message.
+ * @param err - Value the failed invocation threw.
+ * @returns The error to surface, with `err` as its cause.
+ */
 function toToolError(command: string, err: unknown): Error {
 	if (err instanceof Error && "code" in err && err.code === "ENOENT") {
 		return new Error(`${command} was not found on PATH`);
@@ -176,17 +197,22 @@ function toToolError(command: string, err: unknown): Error {
 }
 
 // cspell:words PATHEXT
-// pnpm only prepends `node_modules/.bin` to PATH for `pnpm exec` / `pnpm run`,
-// so a direct `node bin/jest-roblox.js` invocation can't see local tools.
-// Resolution differs per platform:
-//   - Windows: prepend the local bin to PATH and invoke cmd.exe with /d /s /c
-//     so it resolves the `.cmd` shim via PATHEXT. Args are pre-quoted and
-//     passed verbatim — `shell: true` with an args array trips Node 25's
-//     DEP0190, and spawning the `.cmd` shim directly trips Node's
-//     CVE-2024-27980 guard (EINVAL on Node 21+).
-//   - POSIX: pin the absolute path of the locally installed shim. Scripts
-//     in `.bin` are directly executable (`#!/usr/bin/env node`), so no
-//     shell is needed and the bare-PATH lookup isn't required.
+/**
+ * The pnpm CLI only prepends `node_modules/.bin` to PATH for `pnpm exec` /
+ * `pnpm run`, so a direct `node bin/jest-roblox.js` invocation can't see
+ * local tools.
+ * Resolution differs per platform:
+ *   - Windows: prepend the local bin to PATH and invoke cmd.exe with /d /s /c
+ *     so it resolves the `.cmd` shim via PATHEXT. Args are pre-quoted and
+ *     passed verbatim — `shell: true` with an args array trips Node 25's
+ *     DEP0190, and spawning the `.cmd` shim directly trips Node's
+ *     CVE-2024-27980 guard (EINVAL on Node 21+).
+ *   - POSIX: pin the absolute path of the locally installed shim. Scripts
+ *     in `.bin` are directly executable (`#!/usr/bin/env node`), so no
+ *     shell is needed and the bare-PATH lookup isn't required.
+ * @param invocation - Tool, arguments, working directory and process seams.
+ * @returns The tool's stdout.
+ */
 function runTool({
 	args,
 	childProcess,
@@ -288,10 +314,17 @@ function parseNxOutput(stdout: string): Array<string> {
 	return validated;
 }
 
-// Ask nx itself where a project lives. Errors surface with the project name
-// in the message regardless of failure mode (exec failure, non-JSON output,
-// schema mismatch) — nx reporting an affected project it can't subsequently
-// locate is a real inconsistency the user needs to see, not silently drop.
+/**
+ * Ask nx itself where a project lives. Errors surface with the project name
+ * in the message regardless of failure mode (exec failure, non-JSON output,
+ * schema mismatch) — nx reporting an affected project it can't subsequently
+ * locate is a real inconsistency the user needs to see, not silently drop.
+ * @param options - Project name, workspace root and process seams.
+ * @param options.name - Project name as nx knows it.
+ * @param options.workspaceRoot - Workspace root directory.
+ * @returns The project root that nx reports.
+ * @throws {Error} When nx fails or its output does not parse.
+ */
 function nxProjectRoot({
 	name,
 	workspaceRoot,

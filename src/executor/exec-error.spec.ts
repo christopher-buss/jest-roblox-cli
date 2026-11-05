@@ -2,18 +2,18 @@ import { fromAny } from "@total-typescript/shoehorn";
 
 import { assert, describe, expect, it, vi } from "vitest";
 
+import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
 import type { BackendTiming } from "../backends/interface.ts";
 import type { ResolvedConfig } from "../config/schema.ts";
-import { DEFAULT_CONFIG } from "../config/schema.ts";
-import { LuauScriptError } from "../reporter/parser.ts";
-import { EXEC_ERROR_FILE_PATH } from "../types/jest-result.ts";
-import type { ExecErrorEntry } from "./exec-error.ts";
+import { LuauScriptError } from "../reporter/luau-script-error.ts";
 import { buildExecutionErrorResult } from "./exec-error.ts";
 
 const BACKEND_TIMING: BackendTiming = {
 	executionMs: 23,
 	uploadMs: 11,
 };
+
+type ExecErrorEntry = Parameters<typeof buildExecutionErrorResult>[0]["entry"];
 
 const ENTRY: ExecErrorEntry = { pkg: "@scope/pkg", project: "unit", testFileCount: 3 };
 
@@ -36,16 +36,17 @@ function buildResult({
 	phase?: string | undefined;
 	timedOut?: boolean | undefined;
 }) {
-	const error = new LuauScriptError(message);
-	error.bannerOutput = bannerOutput;
-	error.captureInstalled = captureInstalled;
-	error.gameOutput = gameOutput;
-	error.phase = phase;
-	error.timedOut = timedOut;
+	const error = Object.assign(new LuauScriptError(message), {
+		bannerOutput,
+		captureInstalled,
+		gameOutput,
+		phase,
+		timedOut,
+	});
 
 	return buildExecutionErrorResult({
 		backendTiming: BACKEND_TIMING,
-		config: fromAny<ResolvedConfig, unknown>(DEFAULT_CONFIG),
+		config: fromAny<ResolvedConfig, unknown>(createResolvedConfig()),
 		deferFormatting,
 		entry,
 		error,
@@ -91,7 +92,7 @@ describe(buildExecutionErrorResult, () => {
 						numFailingTests: 0,
 						numPassingTests: 0,
 						numPendingTests: 0,
-						testFilePath: EXEC_ERROR_FILE_PATH,
+						testFilePath: "<exec-error>",
 						testResults: [],
 						timedOut: undefined,
 					},

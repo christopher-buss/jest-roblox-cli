@@ -1,0 +1,62 @@
+{
+	"ignore": [
+		"**/coverage/**",
+		"**/out/**",
+		"**/jest*.config.{ts,mjs}",
+		"packages/**",
+		"test/fixtures/**",
+		"test/e2e/fixtures/**"
+	],
+	"ignoreIssues": {
+		"src/results/gaps.ts": ["exports"],
+		"*.shared.ts": ["exports", "types", "files"],
+		"*.shared.config.ts": ["exports"]
+	},
+	"workspaces": {
+		".": {
+			"ignoreDependencies": [
+				"@typescript/native-preview",
+				"eslint-plugin-pnpm",
+				"oxlint-plugin-oxlint-comments",
+				"@rbxts/types",
+				"better-typescript-lib"
+			],
+			"ignoreUnresolved": ["^file:///.*/stryker[.]shared[.]config[.]ts$"],
+			"entry": [
+				"loaders/*.mjs!",
+				"loaders/*.d.mts",
+				"src/**/*.d.ts",
+				"test/setup/vitest-jest-extended.d.ts",
+				"dependency-cruiser.config.ts",
+				"bin/sea-entry.ts!",
+				"scripts/*.run.ts!",
+				"scripts/sea-executable.ts!",
+				"src/config/luau-config-type.ts!",
+				"test/fixtures/sea.config.mjs",
+				"test/bench/*.bench.ts",
+				"test/fixtures/typecheck/globals.d.ts",
+				"test/fixtures/typecheck-source/*.ts",
+				"weld.config.ts"
+			],
+			"project": [
+				"**/*.{js,mjs,cjs,jsx,ts,tsx,mts,cts}!",
+				"!test/**!",
+				"!*.shared.ts!",
+				"!*.shared.config.ts!",
+				"!src/**/__fixtures__/**!",
+				"!coverage/**!",
+				"!reports/**!",
+				"!dist/**!",
+				"!out/**!",
+				"!out-tsc/**!"
+			],
+			"stryker": {
+				"config": ["stryker.config.ts"]
+			},
+			"vitest": {
+				"config": ["vitest{,.stryker}.config.ts"]
+			},
+			"ignoreBinaries": ["lute", "nr", "rojo", "strip"]
+		}
+	}
+}

@@ -2,19 +2,24 @@ import * as path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
+import { posixRoot } from "#test/mocks/posix-path.ts";
+import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
 import type { ResolvedConfig } from "../config/schema.ts";
-import { DEFAULT_CONFIG } from "../config/schema.ts";
 import type { PosixRoot } from "../utils/normalize-windows-path.ts";
-import { toPosixRoot } from "../utils/normalize-windows-path.ts";
 import type { CodeRootsRequest } from "./code-roots.ts";
 import { resolveCodeRoots } from "./code-roots.ts";
 
 const STAGING_DIRECTORY = "/repo/.jest-roblox";
 
-/** A config naming its own roots, so nothing has to be detected off disk. */
+/**
+ * A config naming its own roots, so nothing has to be detected off disk.
+ * @param rootDirectory - The config's `rootDir`.
+ * @param luauRoots - Roots the config names.
+ * @returns A resolved config over the defaults.
+ */
 function projectConfig(rootDirectory: string, luauRoots?: Array<string>): ResolvedConfig {
 	return {
-		...DEFAULT_CONFIG,
+		...createResolvedConfig(),
 		luauRoots,
 		rojoProject: "none.project.json",
 		rootDir: rootDirectory,
@@ -32,23 +37,30 @@ function resolve(
 		exclusivePlace: true,
 		fileSystem,
 		stagingDirectory: STAGING_DIRECTORY,
-		// A project with no roots of its own must not reach a real tsconfig on
-		// the machine running the spec.
+		/**
+		 * A project with no roots of its own must not reach a real tsconfig on
+		 * the machine running the spec.
+		 * @returns No tsconfig.
+		 */
 		tsconfigReader: () => null,
 		...gate,
 	});
 }
 
-/** The one spelling a root arrives in, whatever the host calls its drive. */
+/**
+ * The one spelling a root arrives in, whatever the host calls its drive.
+ * @param segments - Path segments to resolve.
+ * @returns The resolved path as a posix root.
+ */
 function rootAt(...segments: Array<string>): PosixRoot {
-	return toPosixRoot(path.resolve(...segments));
+	return posixRoot(path.resolve(...segments));
 }
 
 describe(resolveCodeRoots, () => {
 	it("should take the staging directory whatever the projects say", () => {
 		expect.assertions(1);
 
-		expect(resolve([])).toStrictEqual([toPosixRoot(STAGING_DIRECTORY)]);
+		expect(resolve([])).toStrictEqual([posixRoot(STAGING_DIRECTORY)]);
 	});
 
 	it("should resolve every project's roots against its own root directory", () => {
@@ -60,7 +72,7 @@ describe(resolveCodeRoots, () => {
 		]);
 
 		expect(roots).toStrictEqual([
-			toPosixRoot(STAGING_DIRECTORY),
+			posixRoot(STAGING_DIRECTORY),
 			rootAt("/repo", "out"),
 			rootAt("/repo/packages/ui", "build/luau"),
 		]);
@@ -71,7 +83,7 @@ describe(resolveCodeRoots, () => {
 
 		const roots = resolve([projectConfig("/repo", ["out"]), projectConfig("/repo", ["out/"])]);
 
-		expect(roots).toStrictEqual([toPosixRoot(STAGING_DIRECTORY), rootAt("/repo", "out")]);
+		expect(roots).toStrictEqual([posixRoot(STAGING_DIRECTORY), rootAt("/repo", "out")]);
 	});
 
 	it("should contribute nothing for a project whose roots cannot be found", () => {
@@ -79,7 +91,7 @@ describe(resolveCodeRoots, () => {
 
 		// No `luauRoots`, no rojo project to read mounts off, and no tsconfig
 		// `outDir` — a run that still works, so it must not be refused here.
-		expect(resolve([projectConfig("/repo")])).toStrictEqual([toPosixRoot(STAGING_DIRECTORY)]);
+		expect(resolve([projectConfig("/repo")])).toStrictEqual([posixRoot(STAGING_DIRECTORY)]);
 	});
 
 	// The gate lives here rather than in each dispatch mode, so neither mode can

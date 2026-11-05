@@ -8,13 +8,19 @@ import { STAGE_IDS, STAGE_LABELS, type StageId } from "./stages.ts";
  */
 export type StageState = "active" | "done" | "unfinished";
 
+/** Snapshot of one stage for rendering. */
 export interface StageView {
+	/** Stage the row belongs to. */
 	id: StageId;
+	/** Text after the label, or `undefined` for none. */
 	detail: string | undefined;
+	/** Time the stage has run, in milliseconds. */
 	elapsedMs: number;
+	/** Where the stage stands. */
 	state: StageState;
 }
 
+/** Spinner frame and styles for one render. */
 export interface StageRenderOptions {
 	/**
 	 * The spinner glyph for this repaint, and the whole difference between the
@@ -23,13 +29,21 @@ export interface StageRenderOptions {
 	 * line is already in the scrollback, so it carries neither.
 	 */
 	frame: string | undefined;
+	/** Colors for the marker and the trailing parts. */
 	styles: Styles;
 }
 
 const LABEL_WIDTH = Math.max(...STAGE_IDS.map((id) => STAGE_LABELS[id].length));
 const MILLISECONDS_PER_SECOND = 1000;
 
-/** One stage, as a line of the scrollback or a row of the repainting block. */
+/**
+ * One stage, as a line of the scrollback or a row of the repainting block.
+ * @param view - Stage to render.
+ * @param options - Spinner frame and styles.
+ * @param options.frame - Spinner glyph, or `undefined` for a scrollback line.
+ * @param options.styles - Colors for the marker and the trailing parts.
+ * @returns The rendered line, without a newline.
+ */
 export function formatStage(view: StageView, { frame, styles }: StageRenderOptions): string {
 	const label = STAGE_LABELS[view.id].padEnd(LABEL_WIDTH);
 	const trailing = [view.detail, elapsedFor(view, frame)]
@@ -43,6 +57,8 @@ export function formatStage(view: StageView, { frame, styles }: StageRenderOptio
  * Durations as a stage reports them: milliseconds below a second, seconds to
  * one decimal above it. A stage is a whole step of a run rather than one test,
  * so `31640ms` is a number to decode where `31.6s` is one to read.
+ * @param elapsedMs - Duration in milliseconds.
+ * @returns The duration with its `ms` or `s` unit.
  */
 function formatElapsed(elapsedMs: number): string {
 	if (elapsedMs < MILLISECONDS_PER_SECOND) {
@@ -52,7 +68,12 @@ function formatElapsed(elapsedMs: number): string {
 	return `${(elapsedMs / MILLISECONDS_PER_SECOND).toFixed(1)}s`;
 }
 
-/** What a stage in this state has to say about its duration, if anything. */
+/**
+ * What a stage in this state has to say about its duration, if anything.
+ * @param view - Stage to describe.
+ * @param frame - Spinner glyph, or `undefined` for a scrollback line.
+ * @returns The formatted duration, or `undefined` when the row shows none.
+ */
 function elapsedFor(view: StageView, frame: string | undefined): string | undefined {
 	if (view.state === "done" || (frame !== undefined && view.state === "active")) {
 		return formatElapsed(view.elapsedMs);

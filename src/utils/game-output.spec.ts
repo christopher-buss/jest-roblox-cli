@@ -2,7 +2,7 @@ import * as path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
-import type { GameOutputEntry } from "../types/game-output.ts";
+import type { GameOutputEntry } from "../types/game-output-types.ts";
 import {
 	buildBatchGameOutput,
 	buildGroupedGameOutput,

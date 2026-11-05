@@ -5,26 +5,6 @@ import type { ResolvedConfig } from "../config/schema.ts";
 const SPEC_OR_TEST_EXTENSION = /\.(?:spec|test)(\.\w+)$/;
 
 /**
- * Derives `collectCoverageFrom` glob patterns from project `include` patterns.
- *
- * Extracts the static root directory from each include pattern and generates
- * coverage globs that match source files within those roots, excluding test
- * files. The source extension (`.ts`, `.tsx`, `.luau`, `.lua`) is inferred from
- * each include pattern. Returns `undefined` when no roots can be extracted
- * (preserving default all-files behavior).
- */
-export function deriveCoverageFromIncludes(
-	projects: ReadonlyArray<Pick<ResolvedProjectConfig, "include">>,
-): Array<string> | undefined {
-	const rootsByExtension = collectRootsByExtension(projects);
-	if (rootsByExtension.size === 0) {
-		return undefined;
-	}
-
-	return buildCoveragePatterns(rootsByExtension);
-}
-
-/**
  * The include globs this run's coverage universe is actually made of: the
  * user's `collectCoverageFrom` when set, otherwise the set derived from the
  * projects' own `include`.
@@ -33,6 +13,9 @@ export function deriveCoverageFromIncludes(
  * (to decide what earns probes) and the report asks it after (to decide what
  * to render); resolving the fallback in only one of the two would probe files
  * the report drops, or — worse — drop files the report expects.
+ * @param config - Coverage switch and the user's `collectCoverageFrom`.
+ * @param projects - Projects whose `include` patterns supply the fallback.
+ * @returns The include globs, or `undefined` for every file.
  */
 export function resolveCoverageInclude(
 	config: Pick<ResolvedConfig, "collectCoverage" | "collectCoverageFrom">,
@@ -49,6 +32,8 @@ export function resolveCoverageInclude(
  * Infers the source file extension from an include pattern by stripping the
  * `.spec` or `.test` suffix. Throws when the pattern has no recognizable test
  * extension so that misconfigured globs fail loudly.
+ * @param pattern - A test include glob.
+ * @returns The extension after `.spec` or `.test`, such as `.ts`.
  */
 function inferSourceExtension(pattern: string): string {
 	const match = pattern.match(SPEC_OR_TEST_EXTENSION);
@@ -67,6 +52,8 @@ function inferSourceExtension(pattern: string): string {
 /**
  * Groups the static root of every include pattern by the source extension that
  * pattern implies. A pattern with no static root is skipped.
+ * @param projects - Projects whose `include` patterns are read.
+ * @returns Static roots keyed by source extension.
  */
 function collectRootsByExtension(
 	projects: ReadonlyArray<Pick<ResolvedProjectConfig, "include">>,
@@ -113,4 +100,27 @@ function buildCoveragePatterns(rootsByExtension: Map<string, Set<string>>): Arra
 	}
 
 	return patterns;
+}
+
+/**
+ * Derives `collectCoverageFrom` glob patterns from project `include` patterns.
+ *
+ * Extracts the static root directory from each include pattern and generates
+ * coverage globs that match source files within those roots, excluding test
+ * files. The source extension (`.ts`, `.tsx`, `.luau`, `.lua`) is inferred from
+ * each include pattern. Returns `undefined` when no roots can be extracted
+ * (preserving default all-files behavior).
+ * @param projects - Projects whose `include` patterns are read.
+ * @returns Coverage globs, or `undefined` when no pattern has a static root.
+ * @throws When an include pattern has no `.spec` or `.test` extension.
+ */
+function deriveCoverageFromIncludes(
+	projects: ReadonlyArray<Pick<ResolvedProjectConfig, "include">>,
+): Array<string> | undefined {
+	const rootsByExtension = collectRootsByExtension(projects);
+	if (rootsByExtension.size === 0) {
+		return undefined;
+	}
+
+	return buildCoveragePatterns(rootsByExtension);
 }

@@ -7,6 +7,7 @@ import type {
 	AstStatBlock,
 } from "@isentinel/luau-ast/ast";
 
+/** A Luau value that a static read can represent. */
 export type LuauLiteral =
 	| Array<LuauLiteral>
 	| boolean
@@ -15,13 +16,25 @@ export type LuauLiteral =
 	| string
 	| undefined;
 
+/** A Luau table read as string keys to literal values. */
 export interface LuauLiteralTable {
 	[key: string]: LuauLiteral;
 }
 
+/** The outcome of a static read of a Luau `return` expression. */
 export type LuauStaticEvaluation =
-	| { readonly kind: "unreadable"; readonly line: number; readonly syntax: string }
-	| { readonly kind: "value"; readonly value: LuauLiteral };
+	| {
+			readonly kind: "unreadable";
+			/** The source line of the first unreadable expression. */
+			readonly line: number;
+			/** Names the unreadable syntax, like "a function call". */
+			readonly syntax: string;
+	  }
+	| {
+			readonly kind: "value";
+			/** The literal the `return` expression evaluates to. */
+			readonly value: LuauLiteral;
+	  };
 
 type DefineConfigCall = AstExprCall & { args: [AstExpr] };
 
@@ -53,6 +66,11 @@ const UNREADABLE_SYNTAX = {
 	AstExprVarargs: "a vararg",
 } satisfies Record<UnreadableExpressionType, string>;
 
+/**
+ * Statically evaluate the first `return` of a chunk as a Luau literal.
+ * @param root - The parsed chunk.
+ * @returns The literal value, or where and why the read failed.
+ */
 export function evalLuauReturnLiterals(root: AstStatBlock): LuauStaticEvaluation {
 	for (const statement of root.body) {
 		if (statement.type === "AstStatReturn") {

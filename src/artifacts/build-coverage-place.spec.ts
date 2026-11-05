@@ -4,19 +4,19 @@ import * as path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
+import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
+import { createRunSeams } from "#test/mocks/run-seams.ts";
 import type { ResolvedProjectConfig } from "../config/projects.ts";
-import { DEFAULT_CONFIG, type ResolvedConfig } from "../config/schema.ts";
-import { STUB_FILENAME } from "../config/stubs.ts";
-import type { PrepareCoverageResult } from "../coverage-pipeline/prepare.ts";
-import {
-	COVERAGE_BUILD_MANIFEST_PATH,
-	COVERAGE_MANIFEST_PATH,
-} from "../coverage-pipeline/prepare.ts";
+import type { ResolvedConfig } from "../config/schema.ts";
+import type { PrepareCoverageResult } from "../coverage-pipeline/prepare-types.ts";
 import type { RunDispatch } from "../run.ts";
 import type { RunSeams } from "../run/seams.ts";
-import { nodeRunSeams } from "../run/seams.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import { buildCoveragePlaceAsync } from "./build-coverage-place.ts";
+
+const COVERAGE_MANIFEST_PATH = path.join(".jest-roblox/coverage", "coverage-manifest.json");
+const COVERAGE_BUILD_MANIFEST_PATH = path.join(".jest-roblox/coverage", "build-manifest.json");
+const STUB_FILENAME = "jest.config.luau";
 
 const ROOT_DIR = "/test";
 const MOUNT_FS_PATH = "out/shared";
@@ -35,7 +35,7 @@ interface Harness {
 
 function makeConfig(overrides: Partial<ResolvedConfig> = {}): ResolvedConfig {
 	return {
-		...DEFAULT_CONFIG,
+		...createResolvedConfig(),
 		rootDir: ROOT_DIR,
 		testMatch: ["**/*.spec.ts"],
 		testPathIgnorePatterns: [],
@@ -91,13 +91,12 @@ function seed(rebuilt = true): Harness {
 		runResolvedProjects: vi.fn<RunDispatch["runResolvedProjects"]>(),
 		runWorkspaceMode: vi.fn<RunDispatch["runWorkspaceMode"]>(),
 	};
-	const seams: RunSeams = {
-		...nodeRunSeams(),
+	const seams = createRunSeams({
 		prepareCoverage: vi
 			.fn<RunSeams["prepareCoverage"]>()
 			.mockResolvedValue(makeCoverageResult(rebuilt)),
 		resolveAllProjects: vi.fn<RunSeams["resolveAllProjects"]>().mockResolvedValue([]),
-	};
+	});
 	return { dispatch, fileSystem, seams };
 }
 

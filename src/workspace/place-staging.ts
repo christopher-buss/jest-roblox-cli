@@ -5,9 +5,10 @@ import {
 	type WorkspacePackageCoverage,
 } from "../coverage-pipeline/workspace-prepare.ts";
 import { describePlaceFile } from "../progress/stages.ts";
-import type { CodeBundleArtifact, PlaceReuseOptions } from "../staging/place-builder.ts";
+import type { CodeBundleArtifact } from "../staging/code-bundle.ts";
+import type { PlaceReuseOptions } from "../staging/place-builder.ts";
 import { buildPlaceAsync } from "../staging/place-builder.ts";
-import type { PackageDescriptor } from "../staging/synthesizer.ts";
+import type { PackageDescriptor } from "../staging/synthesizer-types.ts";
 import type { TimingCollector } from "../timing/orchestration-collector.ts";
 import type { ChildProcessRunner } from "../utils/child-process.ts";
 import type { FileSystem } from "../utils/file-system.ts";
@@ -28,12 +29,14 @@ const PLACE_REUSE_FILE = "synthesized.place-cache.json";
  */
 const INPUT_DIGEST_FILE = "synthesized.input-digests";
 
+/** The staged place and what its staging cost. */
 export interface StagedWorkspacePlace {
 	/**
 	 * The Code Bundle split out of the place, present only when the caller
 	 * asked for a harness. Written on every run, reused place or not.
 	 */
 	codeBundle?: CodeBundleArtifact | undefined;
+	/** Coverage per instrumented package, for the report layer. */
 	coverageByPackage: Map<string, WorkspacePackageCoverage>;
 	/**
 	 * Host time spent instrumenting the packages that opted into coverage — the
@@ -41,6 +44,7 @@ export interface StagedWorkspacePlace {
 	 * a run that collected no coverage reports no coverage time.
 	 */
 	coverageMs: number;
+	/** Path of the synthesized place file. */
 	placeFile: string;
 	/**
 	 * Host time spent on the rest of the staging: the stubs and the rojo build,
@@ -51,7 +55,9 @@ export interface StagedWorkspacePlace {
 
 /** What one workspace run's staging reads, and where it writes. */
 export interface StageWorkspacePlaceOptions {
+	/** Directory the place and its caches are written to. */
 	cacheDirectory: string;
+	/** Runner that spawns the rojo build. */
 	childProcess: ChildProcessRunner;
 	/**
 	 * Build a Harness Place, splitting the mounts inside these Code Roots into
@@ -59,11 +65,17 @@ export interface StageWorkspacePlaceOptions {
 	 * Cloud run on an Exclusive Place ever gets any.
 	 */
 	codeRoots?: ReadonlyArray<PosixRoot> | undefined;
+	/** File system to read and write through. */
 	fileSystem: FileSystem;
+	/** Loaded packages that supply the descriptors. */
 	loaded: Array<LoadedPackage>;
+	/** Coverage prepare pass. */
 	prepareCoverage: PrepareCoverage;
+	/** Selected contexts and pending entries. */
 	selection: WorkspaceTestSelection;
+	/** Collector for the staging spans. */
 	timing: TimingCollector;
+	/** Workspace root directory. */
 	workspaceRoot: string;
 }
 
@@ -77,6 +89,9 @@ export interface StageWorkspacePlaceOptions {
  * this returns — exactly as multi opens its window after its own staging. See
  * `PreDispatchTiming` for what the two halves mean and why they are measured
  * here rather than left to the residual.
+ * @param options - Cache directory, packages, selection and seams.
+ * @returns The place, its coverage map and the staging times.
+ * @rejects When the rojo build fails.
  */
 export async function stageWorkspacePlaceAsync({
 	cacheDirectory,
@@ -125,6 +140,9 @@ export async function stageWorkspacePlaceAsync({
  * Workspace always synthesizes its own place, so unlike multi's coverage path
  * there is no upstream gate to defer to: a re-run with nothing edited would
  * otherwise rebuild it from scratch.
+ * @param cacheDirectory - Directory the reuse caches live in.
+ * @param coverage - Coverage of the instrumented packages.
+ * @returns The options that key place reuse.
  */
 function placeReuseOptions(
 	cacheDirectory: string,
@@ -147,7 +165,20 @@ function placeReuseOptions(
 	};
 }
 
-/** Builds the shared place and reports how long the rojo build took. */
+/**
+ * Builds the shared place and reports how long the rojo build took.
+ * @param options - Place inputs and build seams.
+ * @param options.cacheDirectory - Directory the place and its caches live in.
+ * @param options.childProcess - Runner that spawns the rojo build.
+ * @param options.codeRoots - Code Roots to split into a Code Bundle, if any.
+ * @param options.coverageByPackage - Coverage per instrumented package.
+ * @param options.descriptors - Package descriptors to synthesize.
+ * @param options.fileSystem - File system to read and write through.
+ * @param options.placeFile - Path to write the place to.
+ * @param options.timing - Collector for the `rojoBuild` span.
+ * @returns The Code Bundle, if split, and the build time.
+ * @rejects When the rojo build fails.
+ */
 async function buildWorkspacePlaceAsync({
 	cacheDirectory,
 	childProcess,

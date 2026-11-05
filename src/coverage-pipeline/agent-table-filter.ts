@@ -1,7 +1,7 @@
 import * as path from "node:path";
 
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
-import type { MappedCoverageResult } from "./mapper.ts";
+import type { MappedCoverageResult } from "./mapper-types.ts";
 
 /**
  * Decides whether a single coverage-universe source file is shown in the agent
@@ -26,6 +26,9 @@ const TEST_MARKER = /\.(?:test|spec)(?:-d)?(\.[^./]+)$/;
  * against `rootDirectory` and normalized so positionals (absolute) and
  * glob-discovered files (relative) land in the same namespace as the resolved
  * universe keys.
+ * @param testFiles - Test file paths, absolute or relative to `rootDirectory`.
+ * @param rootDirectory - Base for resolving relative test paths.
+ * @returns A predicate over normalized-absolute source paths.
  */
 export function sourceTwinFilter(
 	testFiles: ReadonlyArray<string>,
@@ -47,6 +50,8 @@ export function sourceTwinFilter(
  * path prefix at a directory boundary (so root `src/shared` matches
  * `src/shared/x.ts` but not `src/shared-extra/x.ts`). Roots are normalized to
  * the same absolute namespace as the resolved universe keys.
+ * @param roots - Static include roots of the selected projects.
+ * @returns A predicate over normalized-absolute source paths.
  */
 export function projectRootFilter(roots: ReadonlyArray<string>): CoverageDisplayPredicate {
 	const normalizedRoots = roots.map((root) => normalizeWindowsPath(root));
@@ -64,6 +69,9 @@ export function projectRootFilter(roots: ReadonlyArray<string>): CoverageDisplay
  * mirroring how `filterCoverageUniverse` canonicalizes paths so the two layers
  * agree. Used only for the agent text table; every other reporter and the
  * totals line keep the full universe.
+ * @param mapped - Mapped coverage of the full universe.
+ * @param predicate - Decides which files the table shows.
+ * @returns A new result holding only the kept files.
  */
 export function narrowMappedForAgentTable(
 	mapped: MappedCoverageResult,

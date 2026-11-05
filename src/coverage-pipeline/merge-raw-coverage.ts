@@ -1,8 +1,11 @@
-import type { RawCoverageData, RawFileCoverage } from "./types.ts";
+import type { RawCoverageData, RawFileCoverage } from "./coverage-types.ts";
 
 /**
  * Additively merge two raw coverage datasets. Overlapping files have their
  * hit counts summed (matching istanbul-lib-coverage's semantics).
+ * @param target - Base dataset; not mutated.
+ * @param source - Dataset added on top.
+ * @returns The merged dataset, or `target` when `source` is absent.
  */
 export function mergeRawCoverage(
 	target: RawCoverageData | undefined,

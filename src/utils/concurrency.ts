@@ -6,13 +6,29 @@
  * thread pool at once buys no throughput while it does exhaust file handles.
  * Results come back in the order of `items`, not the order they settled, so a
  * digest taken over them is stable.
+ * @template T
+ * @template R
  */
 export interface MapWithLimitOptions<T, R> {
+	/** Maps one item, given its index. */
 	readonly func: (item: T, index: number) => Promise<R>;
+	/** The items to map. */
 	readonly items: ReadonlyArray<T>;
+	/** The most calls outstanding at once. */
 	readonly limit: number;
 }
 
+/**
+ * Map `items` through `func`, with at most `limit` calls outstanding.
+ * @template T
+ * @template R
+ * @param options - The items, the mapper and the limit.
+ * @param options.func - Maps one item.
+ * @param options.items - The items to map.
+ * @param options.limit - The most calls outstanding at once.
+ * @returns The results, in the order of `items`.
+ * @rejects Whatever `func` first rejects with.
+ */
 export async function mapWithLimitAsync<T, R>({
 	func,
 	items,

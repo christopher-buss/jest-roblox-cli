@@ -32,6 +32,7 @@ export interface SourceMapOptions {
  * can check against the test's expectations.
  *
  * @param options - The generated file, its source, and the positions to map.
+ * @returns Serialized source map.
  */
 export function buildSourceMap({
 	file,
@@ -48,7 +49,11 @@ export function buildSourceMap({
 	});
 }
 
-/** Base64 VLQ, as the source map spec defines it: sign in the low bit. */
+/**
+ * Base64 VLQ, as the source map spec defines it: sign in the low bit.
+ * @param value - Integer to encode.
+ * @returns Base64 VLQ digits.
+ */
 function encodeVlq(value: number): string {
 	let remaining = value < 0 ? (-value << 1) | 1 : value << 1;
 	let encoded = "";
@@ -71,6 +76,7 @@ function encodeVlq(value: number): string {
  * map.
  *
  * @param segments - The positions to encode.
+ * @returns The `mappings` string.
  */
 function encodeMappings(segments: ReadonlyArray<SourceMapSegment>): string {
 	const lastLine = segments.reduce((highest, { generatedLine }) => {

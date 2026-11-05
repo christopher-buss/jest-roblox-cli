@@ -1,8 +1,7 @@
 import assert from "node:assert";
-import type { Stats } from "node:fs";
 
 import { atomicWrite } from "./atomic-write.ts";
-import type { FileSystem } from "./file-system.ts";
+import type { FileSystem, Stats } from "./file-system.ts";
 import { nodeFileSystem } from "./file-system.ts";
 import { hashFileAsync } from "./hash.ts";
 
@@ -81,6 +80,7 @@ const FIELD_COUNT = 4;
  *
  * @param cacheFile - Where the record lives between runs.
  * @param fileSystem - Where the inputs and the record are read and written.
+ * @returns The cache, loaded with the previous run's record.
  */
 export function openInputDigestCache(
 	cacheFile: string,
@@ -130,12 +130,21 @@ export function openInputDigestCache(
 	};
 }
 
-/** The two stat fields a recorded digest is keyed on. */
+/**
+ * The two stat fields a recorded digest is keyed on.
+ * @param stats - The file's stats.
+ * @returns Its `mtimeMs` and `size`.
+ */
 function statOf(stats: Stats): { mtimeMs: number; size: number } {
 	return { mtimeMs: stats.mtimeMs, size: stats.size };
 }
 
-/** Whether a recorded entry still answers for the file now on disk. */
+/**
+ * Whether a recorded entry still answers for the file now on disk.
+ * @param entry - The recorded entry, if any.
+ * @param stats - The file's current stats.
+ * @returns True when size and mtime both match.
+ */
 function describes(entry: DigestEntry | undefined, stats: Stats): entry is DigestEntry {
 	return entry?.size === stats.size && entry.mtimeMs === stats.mtimeMs;
 }
@@ -147,12 +156,18 @@ function describes(entry: DigestEntry | undefined, stats: Stats): entry is Diges
  * leaving the tail to be read as an entry for whatever path it happens to
  * spell. Such a file is simply never recorded — it is re-read every run, which
  * costs one file and no correctness.
+ * @param filePath - The input's path.
+ * @returns True when the path holds no line separator.
  */
 function isRecordable(filePath: string): boolean {
 	return !filePath.includes(LINE_SEPARATOR);
 }
 
-/** The record as it goes to disk: a version marker, then one line per file. */
+/**
+ * The record as it goes to disk: a version marker, then one line per file.
+ * @param entries - The digests by path.
+ * @returns The record text.
+ */
 function serialize(entries: Map<string, DigestEntry>): string {
 	const lines = [FORMAT_VERSION];
 	for (const [filePath, { hash, mtimeMs, size }] of entries) {
@@ -173,6 +188,7 @@ function serialize(entries: Map<string, DigestEntry>): string {
  *
  * @param cacheFile - Where the record lives between runs.
  * @param fileSystem - Where to read it from.
+ * @returns The recorded digests by path.
  */
 function readEntries(cacheFile: string, fileSystem: FileSystem): Map<string, DigestEntry> {
 	const entries = new Map<string, DigestEntry>();

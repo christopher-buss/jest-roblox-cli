@@ -1,22 +1,25 @@
 import * as path from "node:path";
+import type { Except } from "type-fest";
 import { describe, expect, it } from "vitest";
 
+import { copyIgnoreMatcher } from "#test/mocks/coverage-copy-ignore.ts";
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
+import { posixRoot } from "#test/mocks/posix-path.ts";
 import type { FileSystem } from "../utils/file-system.ts";
-import { toPosixRoot } from "../utils/normalize-windows-path.ts";
-import { createCopyIgnoreMatcher } from "./discover-files.ts";
+import type { PosixRoot } from "../utils/normalize-windows-path.ts";
 import type { InstrumentUniverse } from "./instrument-universe.ts";
-import { narrowLuauRoots, narrowRootToUniverse } from "./narrow-roots.ts";
+import { narrowLuauRoots } from "./narrow-roots.ts";
 
-const MOUNT = toPosixRoot(path.resolve("/repo/out/server"));
+const MOUNT = posixRoot(path.resolve("/repo/out/server"));
 
-const NO_COPY_IGNORE = createCopyIgnoreMatcher([]);
+const NO_COPY_IGNORE = copyIgnoreMatcher([]);
 
 /**
  * A volume holding prod `.luau` files under the mount, keyed by mount-relative
  * path.
  *
  * @param relativePaths - The files the walk should find.
+ * @returns The memory filesystem holding the files.
  */
 function seed(...relativePaths: Array<string>): FileSystem {
 	return createMemoryFileSystem(
@@ -25,13 +28,25 @@ function seed(...relativePaths: Array<string>): FileSystem {
 	).fileSystem;
 }
 
-/** A universe that probes exactly the listed mount-relative paths. */
+/**
+ * A universe that probes exactly the listed mount-relative paths.
+ * @param probed - Mount-relative paths the universe includes.
+ * @returns A universe that includes only those paths.
+ */
 function universeOf(...probed: Array<string>): InstrumentUniverse {
 	const absolute = new Set(probed.map((entry) => `${MOUNT}/${entry}`));
 	return { digest: "test", includes: (luauPath) => absolute.has(luauPath) };
 }
 
-describe(narrowRootToUniverse, () => {
+function narrowRootToUniverse(
+	luauRoot: PosixRoot,
+	options: Except<Parameters<typeof narrowLuauRoots>[1], "rojoMounts">,
+): Array<string> {
+	const answers = narrowLuauRoots([luauRoot], { ...options, rojoMounts: new Set([luauRoot]) });
+	return answers[0]!.roots.map((root) => path.posix.relative(luauRoot, root));
+}
+
+describe("narrowRootToUniverse", () => {
 	it("should keep the mount whole when the run narrows nothing", () => {
 		expect.assertions(1);
 
@@ -72,7 +87,7 @@ describe(narrowRootToUniverse, () => {
 		expect(
 			narrowRootToUniverse(MOUNT, {
 				fileSystem,
-				isCopyIgnored: createCopyIgnoreMatcher(["**/ecs/**"]),
+				isCopyIgnored: copyIgnoreMatcher(["**/ecs/**"]),
 				universe: universeOf("modules/ecs/world.luau"),
 			}),
 		).toStrictEqual([""]);
@@ -91,7 +106,7 @@ describe(narrowRootToUniverse, () => {
 		expect(
 			narrowRootToUniverse(MOUNT, {
 				fileSystem,
-				isCopyIgnored: createCopyIgnoreMatcher(["**/generated/**"]),
+				isCopyIgnored: copyIgnoreMatcher(["**/generated/**"]),
 				universe: universeOf("modules/ecs/world.luau"),
 			}),
 		).toStrictEqual(["modules/ecs"]);
@@ -114,7 +129,7 @@ describe(narrowRootToUniverse, () => {
 		// separator on the end lands each slice a character in and no probe
 		// matches the universe.
 		expect(
-			narrowRootToUniverse(toPosixRoot(`${MOUNT}/`), {
+			narrowRootToUniverse(posixRoot(`${MOUNT}/`), {
 				fileSystem,
 				isCopyIgnored: NO_COPY_IGNORE,
 				universe: universeOf("modules/ecs/world.luau"),
@@ -308,7 +323,7 @@ describe(narrowRootToUniverse, () => {
 		expect(
 			narrowRootToUniverse(MOUNT, {
 				fileSystem,
-				isCopyIgnored: createCopyIgnoreMatcher(["b/**"]),
+				isCopyIgnored: copyIgnoreMatcher(["b/**"]),
 				universe: universeOf("a/one.luau"),
 			}),
 		).toStrictEqual([""]);
@@ -352,8 +367,8 @@ describe(narrowLuauRoots, () => {
 		).toStrictEqual([
 			{
 				luauRoot: MOUNT,
-				roots: [toPosixRoot(`${MOUNT}/modules/ecs`)],
-				spine: [MOUNT, toPosixRoot(`${MOUNT}/modules`)],
+				roots: [posixRoot(`${MOUNT}/modules/ecs`)],
+				spine: [MOUNT, posixRoot(`${MOUNT}/modules`)],
 			},
 		]);
 	});
@@ -377,7 +392,7 @@ describe(narrowLuauRoots, () => {
 		expect.assertions(1);
 
 		expect(
-			narrowLuauRoots([toPosixRoot(`${MOUNT}/`)], {
+			narrowLuauRoots([posixRoot(`${MOUNT}/`)], {
 				isCopyIgnored: NO_COPY_IGNORE,
 				rojoMounts: new Set([MOUNT]),
 				universe: undefined,
@@ -450,14 +465,14 @@ describe(narrowLuauRoots, () => {
 			narrowLuauRoots([MOUNT], {
 				fileSystem,
 				isCopyIgnored: NO_COPY_IGNORE,
-				rojoMounts: new Set([toPosixRoot(`${MOUNT}/modules`)]),
+				rojoMounts: new Set([posixRoot(`${MOUNT}/modules`)]),
 				universe: universeOf("modules/ecs/world.luau"),
 			}),
 		).toStrictEqual([
 			{
 				luauRoot: MOUNT,
-				roots: [toPosixRoot(`${MOUNT}/modules/ecs`)],
-				spine: [toPosixRoot(`${MOUNT}/modules`)],
+				roots: [posixRoot(`${MOUNT}/modules/ecs`)],
+				spine: [posixRoot(`${MOUNT}/modules`)],
 			},
 		]);
 	});

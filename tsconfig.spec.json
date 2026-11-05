@@ -16,7 +16,10 @@
 			"path": "./tsconfig.lib.json"
 		}
 	],
-	"files": ["test/fixtures/model-classes/rojo-compressed.json"],
+	"files": [
+		"test/fixtures/coverage-collected.json",
+		"test/fixtures/model-classes/rojo-compressed.json"
+	],
 	"include": [
 		"scripts/**/*.ts",
 		"src/**/*.d.ts",
@@ -24,9 +27,13 @@
 		"src/**/*.spec.jsx",
 		"src/**/*.spec.ts",
 		"src/**/*.spec.tsx",
+		"src/**/*.spec-d.ts",
 		"test/**/*.*",
 		"types/**/*.d.ts",
 		"loaders/**/*.d.mts",
+		"loaders/*.spec.ts",
+		"loaders/*.spec-d.ts",
+		"bin/*.ts",
 		"*.config.ts",
 		"vitest.shared.ts",
 		"vitest.stryker.shared.ts",

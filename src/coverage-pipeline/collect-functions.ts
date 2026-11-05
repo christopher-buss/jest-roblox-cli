@@ -16,6 +16,11 @@ interface NamedFunctionContext {
 	readonly namedFunctions: Set<AstExprFunction>;
 }
 
+/**
+ * Locate where a function body starts.
+ * @param block - Function body.
+ * @returns Start of the first statement, or of the block when it is empty.
+ */
 export function getBodyFirstStatement(block: AstStatBlock): SourcePosition {
 	const first = block.body[0];
 	if (first !== undefined) {
@@ -27,6 +32,12 @@ export function getBodyFirstStatement(block: AstStatBlock): SourcePosition {
 	return { column: block.location.beginColumn, line: block.location.beginLine };
 }
 
+/**
+ * Record each named and anonymous function once, skipping ignored spans.
+ * @param accumulator - Receives the function records.
+ * @param ignores - Spans excluded from coverage.
+ * @returns Visitor hooks that collect functions.
+ */
 export function createFunctionCollector(
 	accumulator: CoverageAccumulator,
 	ignores: CoverageIgnores,

@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
+import { sha256, sha256File } from "#test/mocks/coverage-hash.ts";
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
-import type { JestResult, TestCaseResult } from "../types/jest-result.ts";
-import { hashFile, hashString } from "../utils/hash.ts";
+import type { JestResult, TestCaseResult } from "../types/jest-result-types.ts";
 import { createTestSourceResolver } from "./test-source.ts";
 
 const SOURCE = ["import x;", "", "it('a', () => {", "});", "", "it('b', () => {", "});", ""].join(
@@ -43,6 +43,9 @@ function jestResult(testFilePath: string, cases: Array<TestCaseResult>): JestRes
 /**
  * A mapper that resolves every test file to `diskPath` and offsets lines by
  * `lineShift`.
+ * @param diskPath - Path every test file resolves to.
+ * @param lineShift - Lines added to each Luau line.
+ * @returns The test file mapper.
  */
 function mapperFor(diskPath: string | undefined, lineShift = 0) {
 	return {
@@ -68,10 +71,10 @@ describe(createTestSourceResolver, () => {
 		});
 
 		expect(resolve("ReplicatedStorage/m.spec", "a").testSourceHash).toBe(
-			hashString("it('a', () => {\n});\n"),
+			sha256("it('a', () => {\n});\n"),
 		);
 		expect(resolve("ReplicatedStorage/m.spec", "b").testSourceHash).toBe(
-			hashString("it('b', () => {\n});\n"),
+			sha256("it('b', () => {\n});\n"),
 		);
 	});
 
@@ -90,7 +93,7 @@ describe(createTestSourceResolver, () => {
 			sourceMapper: mapperFor("/src/m.spec.ts"),
 		});
 
-		expect(resolve("ReplicatedStorage/m.spec", "a").testSourceHash).toBe(hashString("a\nb"));
+		expect(resolve("ReplicatedStorage/m.spec", "a").testSourceHash).toBe(sha256("a\nb"));
 	});
 
 	it("should record the mapped line and the range hash of a located test", () => {
@@ -111,8 +114,8 @@ describe(createTestSourceResolver, () => {
 
 		expect(resolve("ReplicatedStorage/m.spec", "a")).toStrictEqual({
 			location: { column: 0, line: 3 },
-			testFileSourceHash: hashFile("/src/m.spec.ts", fileSystem),
-			testSourceHash: hashString("it('a', () => {\n});\n"),
+			testFileSourceHash: sha256File("/src/m.spec.ts", fileSystem),
+			testSourceHash: sha256("it('a', () => {\n});\n"),
 		});
 	});
 
@@ -209,7 +212,7 @@ describe(createTestSourceResolver, () => {
 		});
 
 		expect(resolve("ReplicatedStorage/m.spec", "a")).toStrictEqual({
-			testFileSourceHash: hashFile("/src/m.spec.ts", fileSystem),
+			testFileSourceHash: sha256File("/src/m.spec.ts", fileSystem),
 		});
 	});
 
@@ -229,7 +232,7 @@ describe(createTestSourceResolver, () => {
 		});
 
 		expect(resolve("ReplicatedStorage/m.spec", "a")).toStrictEqual({
-			testFileSourceHash: hashFile("/src/m.spec.ts", fileSystem),
+			testFileSourceHash: sha256File("/src/m.spec.ts", fileSystem),
 		});
 	});
 
@@ -255,7 +258,7 @@ describe(createTestSourceResolver, () => {
 		});
 
 		expect(resolve("ReplicatedStorage/m.spec", "a")).toStrictEqual({
-			testFileSourceHash: hashFile("/src/m.spec.ts", fileSystem),
+			testFileSourceHash: sha256File("/src/m.spec.ts", fileSystem),
 		});
 	});
 

@@ -18,6 +18,8 @@ const JS_ASSET_HEADER = "/* eslint-disable */\n";
  * `readdirSync` + `copyFile` pass that reads them from beside the reporter
  * module. Same files, same names, same order; they travel inside the bundle
  * rather than beside it (see `loaders/istanbul-html-assets.mjs`).
+ * @param writer - Writes into the report directory.
+ * @param group - Reporter whose assets to write.
  */
 export function writeIstanbulHtmlAssets(writer: FileWriter, group: HtmlAssetGroup): void {
 	const assets = istanbulHtmlAssets[group];

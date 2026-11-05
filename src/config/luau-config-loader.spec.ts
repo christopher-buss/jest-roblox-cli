@@ -15,6 +15,7 @@ interface SeededConfig {
  *
  * @param source - The config's Luau source.
  * @param filePath - Where it lands.
+ * @returns The file path and a memory file system that holds the source.
  */
 function seedConfig(source: string, filePath = "/project/jest.config.luau"): SeededConfig {
 	return { filePath, fileSystem: createMemoryFileSystem({ [filePath]: source }).fileSystem };

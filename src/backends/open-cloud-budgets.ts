@@ -7,7 +7,12 @@ const SUBMIT_CAPACITY_BUDGET_MS = 405_000;
 const PHYSICAL_SUBMIT_LIMIT = 6;
 const NATIVE_RESULT_READ_LIMIT = 3;
 
-/** Bounds shared by admission, result observation, and the execution claim. */
+/**
+ * Bounds shared by admission, result observation, and the execution claim.
+ *
+ * @param timeout - Per-task run timeout, in milliseconds.
+ * @returns The budgets, in milliseconds.
+ */
 export function openCloudExecutionBudgets(timeout: number): {
 	inputValidityMs: number;
 	maximumSubmitMs: number;

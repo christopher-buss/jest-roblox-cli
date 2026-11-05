@@ -8,7 +8,7 @@ import { Buffer } from "node:buffer";
 import { luauParser } from "../luau/parser.ts";
 import { buildAncestorChain } from "./ancestor-chain.ts";
 import { applyLuauExpectErrors } from "./luau-expect-error.ts";
-import type { CollectedFile, RawTestDefinition, TypeTestDiagnostic } from "./types.ts";
+import type { CollectedFile, RawTestDefinition, TypeTestDiagnostic } from "./typecheck-types.ts";
 
 const LINE_SPLIT = /\r?\n/;
 const MODE_DIRECTIVE = /^--!(nocheck|nonstrict|strict)\s*$/;
@@ -16,29 +16,13 @@ const MODE_DIRECTIVE = /^--!(nocheck|nonstrict|strict)\s*$/;
 const STRICT_MESSAGE =
 	"Luau Type Tests must start with --!strict; without it lute skips or relaxes the checks.";
 
-export function createByteLocationsIndexMap(source: string): Map<string, number> {
-	const map = new Map<string, number>();
-	let offset = 0;
-	let line = 1;
-	let column = 1;
-
-	for (const char of source) {
-		map.set(`${String(line)}:${String(column)}`, offset);
-		const size = Buffer.byteLength(char);
-		offset += size;
-
-		if (char === "\n") {
-			line++;
-			column = 1;
-		} else {
-			column += size;
-		}
-	}
-
-	map.set(`${String(line)}:${String(column)}`, offset);
-	return map;
-}
-
+/**
+ * Find the suites and tests in a Luau type-test file.
+ * @param source - The Luau type-test source.
+ * @param filePath - The file's path, for diagnostics.
+ * @returns The definitions, or one file-level problem when the source does not
+ *   parse or lacks `--!strict`.
+ */
 export function collectLuauTestDefinitions(source: string, filePath: string): CollectedFile {
 	const locations = createByteLocationsIndexMap(source);
 	const parsed = luauParser.parse(source);
@@ -73,6 +57,34 @@ export function collectLuauTestDefinitions(source: string, filePath: string): Co
 	};
 }
 
+/**
+ * Index every `line:column` position of a source, columns counted in bytes.
+ * @param source - The source text.
+ * @returns The byte offset of each 1-indexed `line:column` key.
+ */
+function createByteLocationsIndexMap(source: string): Map<string, number> {
+	const map = new Map<string, number>();
+	let offset = 0;
+	let line = 1;
+	let column = 1;
+
+	for (const char of source) {
+		map.set(`${String(line)}:${String(column)}`, offset);
+		const size = Buffer.byteLength(char);
+		offset += size;
+
+		if (char === "\n") {
+			line++;
+			column = 1;
+		} else {
+			column += size;
+		}
+	}
+
+	map.set(`${String(line)}:${String(column)}`, offset);
+	return map;
+}
+
 function fileProblem(
 	locations: Map<string, number>,
 	{ code, filePath, message }: Pick<TypeTestDiagnostic, "code" | "filePath" | "message">,
@@ -87,17 +99,13 @@ function fileProblem(
 function hasStrictDirective(source: string, parsed: ParseSuccess): boolean {
 	const lines = source.split(LINE_SPLIT).map((line) => Buffer.from(line));
 	const firstStatement = parsed.root.body[0]?.location.beginLine ?? Infinity;
-	for (const { location, type } of parsed.comments) {
+	for (const { location } of parsed.comments) {
 		if (location.beginLine >= firstStatement) {
 			break;
 		}
 
-		const line = lines[location.beginLine - 1];
-		if (type !== "Comment" || line === undefined) {
-			continue;
-		}
-
-		const mode = MODE_DIRECTIVE.exec(line.subarray(location.beginColumn - 1).toString())?.[1];
+		const text = String(lines[location.beginLine - 1]?.subarray(location.beginColumn - 1));
+		const mode = MODE_DIRECTIVE.exec(text)?.[1];
 		if (mode !== undefined) {
 			return mode === "strict";
 		}

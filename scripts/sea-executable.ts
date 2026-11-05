@@ -18,6 +18,8 @@ export interface SeaExecutableOptions {
  * The official linux node ships its symbol tables. The copy is stripped
  * before the blob is injected: stripping an executable that already holds one
  * breaks it.
+ * @param options - Node binary, cache directory, platform and strip hook.
+ * @returns Path of the node binary to inject the blob into.
  */
 export function resolveSeaExecutable({
 	cacheDirectory,

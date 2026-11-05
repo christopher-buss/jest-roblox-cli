@@ -13,6 +13,7 @@ const MACOS_BETA_EXE = "/Applications/RobloxStudio.app/Contents/MacOS/RobloxStud
  * A volume holding the installs the probe should find.
  *
  * @param files - The executables on disk.
+ * @returns An in-memory file system holding `files`.
  */
 function seed(files: Record<string, string> = {}): MemoryFileSystem {
 	return createMemoryFileSystem(files);

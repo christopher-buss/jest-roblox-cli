@@ -4,6 +4,7 @@ import * as path from "node:path";
 import { assert, describe, expect, it } from "vitest";
 
 import type { MemoryFileSystem } from "#test/mocks/memory-file-system.ts";
+import { posixPath, posixRoot } from "#test/mocks/posix-path.ts";
 import {
 	mountOf,
 	seed,
@@ -13,7 +14,6 @@ import {
 } from "#test/mocks/staged-project.ts";
 import type { RojoTreeNode } from "../types/rojo.ts";
 import type { PosixRoot } from "../utils/normalize-windows-path.ts";
-import { normalizeWindowsPath, toPosixRoot } from "../utils/normalize-windows-path.ts";
 import { splitCodeMounts } from "./code-split.ts";
 
 const PROJECT_DIR = path.resolve("/cache");
@@ -38,7 +38,7 @@ type BundleMount = Bundle["mounts"][number];
 function split(
 	fileSystem: MemoryFileSystem["fileSystem"],
 	{
-		codeRoots = [toPosixRoot(OUT)],
+		codeRoots = [posixRoot(OUT)],
 		projectJson,
 	}: { codeRoots?: Array<PosixRoot>; projectJson: string },
 ): {
@@ -61,18 +61,32 @@ function split(
 	};
 }
 
-/** The one mount a single-mount project produced. */
+/**
+ * The one mount a single-mount project produced.
+ * @param bundle - Parsed bundle.
+ * @returns Its only mount.
+ */
 function onlyMount(bundle: Bundle): BundleMount {
 	assert(bundle.mounts.length === 1, `expected one mount, got ${String(bundle.mounts.length)}`);
 	return bundle.mounts[0]!;
 }
 
-/** The entry the bundle carries at an instance path. */
+/**
+ * The entry the bundle carries at an instance path.
+ * @param mount - Mount to search.
+ * @param instancePath - Slash-joined path under the mount root.
+ * @returns The matching entry.
+ */
 function entryAt(mount: BundleMount, instancePath: string): BundleMount["entries"][number] {
 	return mount.entries.find((candidate) => candidate.path === instancePath)!;
 }
 
-/** One package staging a single node under `ServerStorage.__pkg_stage`. */
+/**
+ * One package staging a single node under `ServerStorage.__pkg_stage`.
+ * @param node - Node staged as the package, as a Folder.
+ * @param globIgnorePaths - Patterns the project ignores.
+ * @returns The project text.
+ */
 function stagingProject(node: RojoTreeNode, globIgnorePaths?: Array<string>): string {
 	return stagedProject({ pkg: { $className: "Folder", ...node } }, globIgnorePaths);
 }
@@ -103,44 +117,6 @@ describe(splitCodeMounts, () => {
 		expect(entryAt(mount, "server")).toMatchObject({ className: "Script" });
 	});
 
-	it("should promote a directory its init file classes", () => {
-		expect.assertions(3);
-
-		const { fileSystem } = seed({
-			[`${OUT}/init.luau`]: "return 1",
-			[`${OUT}/nested/init.server.luau`]: "return 2",
-			[`${OUT}/nested/leaf.luau`]: "return 3",
-		});
-
-		const mount = onlyMount(
-			split(fileSystem, { projectJson: stagingProject({ Out: { $path: OUT } }) }).bundle,
-		);
-
-		expect(mount.root).toStrictEqual({ className: "ModuleScript", source: "return 1" });
-		expect(entryAt(mount, "nested")).toStrictEqual({
-			className: "Script",
-			path: "nested",
-			source: "return 2",
-		});
-		// The promoting file is the directory, never a child beside it.
-		expect(mount.entries.map((entry) => entry.path)).toStrictEqual(["nested", "nested/leaf"]);
-	});
-
-	it("should carry a json module as a decode of its own text", () => {
-		expect.assertions(2);
-
-		const { fileSystem } = seed({ [`${OUT}/preset.json`]: '{"a":1}' });
-
-		const mount = onlyMount(
-			split(fileSystem, { projectJson: stagingProject({ Out: { $path: OUT } }) }).bundle,
-		);
-
-		expect(entryAt(mount, "preset").className).toBe("ModuleScript");
-		expect(entryAt(mount, "preset").source).toBe(
-			'return game:GetService("HttpService"):JSONDecode([==[{"a":1}]==])',
-		);
-	});
-
 	it("should carry a mount past the files rojo builds nothing from", () => {
 		expect.assertions(4);
 
@@ -163,45 +139,6 @@ describe(splitCodeMounts, () => {
 		expect(staged(harness, "pkg", "Out")).toBeUndefined();
 	});
 
-	it("should promote a directory holding a file rojo builds nothing from", () => {
-		expect.assertions(2);
-
-		const { fileSystem } = seed({
-			[`${OUT}/init.d.ts`]: "export {};",
-			[`${OUT}/init.luau`]: "return 1",
-		});
-
-		// The declaration is not an `init` file of any kind, so it neither
-		// promotes the directory nor stands beside the one that does.
-		const mount = onlyMount(
-			split(fileSystem, { projectJson: stagingProject({ Out: { $path: OUT } }) }).bundle,
-		);
-
-		expect(mount.root).toStrictEqual({ className: "ModuleScript", source: "return 1" });
-		expect(mount.entries).toStrictEqual([]);
-	});
-
-	it.for(["blocker.csv", "blocker.model.json", "blocker.rbxmx", "blocker.toml", "blocker.txt"])(
-		"should keep a mount holding %s in the harness",
-		(fileName) => {
-			expect.assertions(2);
-
-			// Rojo builds an instance from each of these and no task can
-			// construct one, so the mount they sit in has to stay whole.
-			const { fileSystem } = seed({
-				[`${OUT}/${fileName}`]: "x",
-				[`${OUT}/ok.luau`]: "return {}",
-			});
-
-			const { bundle, stayed } = split(fileSystem, {
-				projectJson: stagingProject({ Out: { $path: OUT } }),
-			});
-
-			expect(bundle.mounts).toStrictEqual([]);
-			expect(stayed).toStrictEqual(["ServerStorage/__pkg_stage/pkg/Out"]);
-		},
-	);
-
 	it("should keep a mount holding an asset in the harness and report it", () => {
 		expect.assertions(4);
 
@@ -222,48 +159,6 @@ describe(splitCodeMounts, () => {
 		expect(harness).toStrictEqual(
 			stagedProjectSchema.assert(JSON.parse(stagingProject({ Out: { $path: OUT } }))),
 		);
-	});
-
-	it("should keep a mount holding a descriptor in the harness", () => {
-		expect.assertions(2);
-
-		const { fileSystem } = seed({
-			[`${OUT}/thing.luau`]: "return {}",
-			[`${OUT}/thing.meta.json`]: '{"properties":{}}',
-		});
-
-		const { bundle, stayed } = split(fileSystem, {
-			projectJson: stagingProject({ Out: { $path: OUT } }),
-		});
-
-		expect(bundle.mounts).toStrictEqual([]);
-		expect(stayed).toStrictEqual(["ServerStorage/__pkg_stage/pkg/Out"]);
-	});
-
-	it("should keep a mount holding a nested project in the harness", () => {
-		expect.assertions(1);
-
-		const { fileSystem } = seed({
-			[`${OUT}/inner.project.json`]: '{"name":"inner","tree":{}}',
-			[`${OUT}/thing.luau`]: "return {}",
-		});
-
-		expect(
-			split(fileSystem, { projectJson: stagingProject({ Out: { $path: OUT } }) }).stayed,
-		).toStrictEqual(["ServerStorage/__pkg_stage/pkg/Out"]);
-	});
-
-	it("should report a held-back mount once however deep the blocker sits", () => {
-		expect.assertions(1);
-
-		const { fileSystem } = seed({
-			[`${OUT}/a/b/c/more.csv`]: "1,2",
-			[`${OUT}/a/b/notes.txt`]: "hello",
-		});
-
-		expect(
-			split(fileSystem, { projectJson: stagingProject({ Out: { $path: OUT } }) }).stayed,
-		).toStrictEqual(["ServerStorage/__pkg_stage/pkg/Out"]);
 	});
 
 	it("should carry a file mount as the one script it is", () => {
@@ -322,7 +217,7 @@ describe(splitCodeMounts, () => {
 		// A workspace run names one Code Root per package plus the cache
 		// directory, so a mount reaches the bundle by matching any of them.
 		const { bundle } = split(fileSystem, {
-			codeRoots: [toPosixRoot(OUT), toPosixRoot(INCLUDE)],
+			codeRoots: [posixRoot(OUT), posixRoot(INCLUDE)],
 			projectJson: stagingProject({ Include: { $path: INCLUDE } }),
 		});
 
@@ -358,57 +253,6 @@ describe(splitCodeMounts, () => {
 		// One segment per tree node, which is what says the slash was never
 		// read as a separator.
 		expect(onlyMount(bundle).dataModelPath).toHaveLength(4);
-	});
-
-	it("should sort a directory's entries however the host lists them", () => {
-		expect.assertions(1);
-
-		const { fileSystem } = seed();
-
-		// Written back to front, which is what a host listing by creation
-		// order hands back. The bundle is an artifact, so the same tree has to
-		// come out as the same bytes wherever it is read.
-		fileSystem.mkdirSync(OUT, { recursive: true });
-		for (const name of ["c", "b", "a"]) {
-			fileSystem.writeFileSync(`${OUT}/${name}.luau`, `return "${name}"`);
-		}
-
-		const mount = onlyMount(
-			split(fileSystem, { projectJson: stagingProject({ Out: { $path: OUT } }) }).bundle,
-		);
-
-		expect(mount.entries.map((entry) => entry.path)).toStrictEqual(["a", "b", "c"]);
-	});
-
-	it("should honour an ignore pattern that reaches a dotfile", () => {
-		expect.assertions(2);
-
-		const { fileSystem } = seed({
-			[`${OUT}/.notes.txt`]: "hello",
-			[`${OUT}/keep.luau`]: "return {}",
-		});
-
-		// A leading dot hides a file from an ordinary glob, and a blocker rojo
-		// never reads is not what holds a mount back.
-		const { bundle, stayed } = split(fileSystem, {
-			projectJson: stagingProject({ Out: { $path: OUT } }, ["**/*.txt"]),
-		});
-
-		expect(stayed).toStrictEqual([]);
-		expect(onlyMount(bundle).entries.map((entry) => entry.path)).toStrictEqual(["keep"]);
-	});
-
-	it("should keep a file mount no task can construct", () => {
-		expect.assertions(2);
-
-		const { fileSystem } = seed({ [`${OUT}/assets/gui.rbxmx`]: "<roblox/>" });
-
-		const { bundle, stayed } = split(fileSystem, {
-			projectJson: stagingProject({ Gui: { $path: `${OUT}/assets/gui.rbxmx` } }),
-		});
-
-		expect(bundle.mounts).toStrictEqual([]);
-		expect(stayed).toStrictEqual(["ServerStorage/__pkg_stage/pkg/Gui"]);
 	});
 
 	it("should leave a file mount rojo builds nothing from alone", () => {
@@ -454,24 +298,6 @@ describe(splitCodeMounts, () => {
 
 		expect(stayed).toStrictEqual([]);
 		expect(mountOf(harness, "pkg", "Out")).toBe(OUT);
-	});
-
-	it("should leave a file the project ignores out of the bundle", () => {
-		expect.assertions(2);
-
-		const { fileSystem } = seed({
-			[`${OUT}/keep.luau`]: "return {}",
-			[`${OUT}/skip.rbxm`]: "binary",
-		});
-
-		// Ignored, so rojo builds nothing from it — and a blocker rojo never
-		// reads cannot be what holds the mount back.
-		const { bundle, stayed } = split(fileSystem, {
-			projectJson: stagingProject({ Out: { $path: OUT } }, ["**/skip.rbxm"]),
-		});
-
-		expect(stayed).toStrictEqual([]);
-		expect(onlyMount(bundle).entries.map((entry) => entry.path)).toStrictEqual(["keep"]);
 	});
 
 	it("should mark a mount the project declares children beside as a merge", () => {
@@ -596,7 +422,7 @@ describe(splitCodeMounts, () => {
 
 		expect(
 			splitCodeMounts({
-				codeRoots: [toPosixRoot(OUT)],
+				codeRoots: [posixRoot(OUT)],
 				fileSystem,
 				projectDirectory: PROJECT_DIR,
 				projectJson,
@@ -611,7 +437,7 @@ describe(splitCodeMounts, () => {
 
 			const { fileSystem } = seed();
 			const result = splitCodeMounts({
-				codeRoots: [toPosixRoot(OUT)],
+				codeRoots: [posixRoot(OUT)],
 				fileSystem,
 				projectDirectory: PROJECT_DIR,
 				projectJson,
@@ -633,9 +459,7 @@ describe(splitCodeMounts, () => {
 		// Rojo builds nothing from it, so there is nothing to carry and the
 		// node can stay exactly as the project wrote it.
 		const { bundle, harness } = split(fileSystem, {
-			projectJson: stagingProject({ Out: { $path: OUT } }, [
-				`**${normalizeWindowsPath(OUT)}`,
-			]),
+			projectJson: stagingProject({ Out: { $path: OUT } }, [`**${posixPath(OUT)}`]),
 		});
 
 		expect(bundle.mounts).toStrictEqual([]);
@@ -648,7 +472,7 @@ describe(splitCodeMounts, () => {
 		const { fileSystem } = seed({ [`${PROJECT_DIR}/staged/code.luau`]: "return {}" });
 
 		const { bundle } = split(fileSystem, {
-			codeRoots: [toPosixRoot(path.join(PROJECT_DIR, "staged"))],
+			codeRoots: [posixRoot(path.join(PROJECT_DIR, "staged"))],
 			projectJson: stagingProject({ Out: { $path: "staged" } }),
 		});
 

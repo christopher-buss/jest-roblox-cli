@@ -7,6 +7,9 @@ import type { FormatterEntry } from "./schema.ts";
  * The formatters a run falls back to when neither the CLI nor a config names
  * one. `std-env` resolves `isAgent` once at module load, so no later env change
  * moves it.
+ *
+ * @param isAgentRuntime - Whether the run is inside an agent runtime.
+ * @returns The default formatter entries.
  */
 export function defaultFormatters(isAgentRuntime: boolean = isAgent): Array<FormatterEntry> {
 	const defaults: Array<FormatterEntry> = isAgentRuntime ? ["agent"] : ["default"];

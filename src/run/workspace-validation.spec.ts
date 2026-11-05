@@ -5,8 +5,8 @@ import process from "node:process";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
+import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
 import type { CliOptions, WorkspaceRunOptions } from "../config/schema.ts";
-import { DEFAULT_CONFIG } from "../config/schema.ts";
 import type { ChildProcessRunner } from "../utils/child-process.ts";
 import {
 	buildWorkspaceCredentials,
@@ -68,13 +68,14 @@ function turboReturns(childProcess: ChildProcessRunner, names: Array<string>): v
 }
 
 function makeRunOptions(overrides: Partial<WorkspaceRunOptions> = {}): WorkspaceRunOptions {
+	const defaults = createResolvedConfig();
 	return {
-		backend: DEFAULT_CONFIG.backend,
+		backend: defaults.backend,
 		bail: false,
-		color: DEFAULT_CONFIG.color,
+		color: defaults.color,
 		formatters: [],
-		port: DEFAULT_CONFIG.port,
-		silent: DEFAULT_CONFIG.silent,
+		port: defaults.port,
+		silent: defaults.silent,
 		workspaceGameOutput: false,
 		workspaceOutputFile: false,
 		...overrides,

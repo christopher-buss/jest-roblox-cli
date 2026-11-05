@@ -1,5 +1,5 @@
 import { NetworkError, TRANSIENT_TRANSPORT_CODES } from "@bedrock-rbx/ocale";
-import { ExecutionTimeoutError, TaskSubmitError } from "@isentinel/roblox-runner";
+import { TaskSubmitError } from "@isentinel/roblox-runner";
 
 import { walkErrorChain } from "../utils/error-chain.ts";
 
@@ -7,11 +7,11 @@ const transientCodes = new Set<string | undefined>(TRANSIENT_TRANSPORT_CODES);
 const transientStatuses = new Set([500, 502, 503, 504]);
 
 /**
- * The create may have succeeded; its relay remains observable without a task
- * ref.
+ * Whether a failed task submit may still have created the task.
+ *
+ * @param error - Error a task submit threw.
+ * @returns True for a request timeout or a transient status or transport code.
  */
-export class UncertainSubmissionError extends ExecutionTimeoutError {}
-
 export function isUncertainTaskSubmit(error: unknown): error is TaskSubmitError {
 	return (
 		error instanceof TaskSubmitError &&

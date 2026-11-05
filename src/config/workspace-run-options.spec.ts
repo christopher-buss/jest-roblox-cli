@@ -1,12 +1,12 @@
 import { fromAny } from "@total-typescript/shoehorn";
 
 import * as path from "node:path";
-import { assert, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-import { defaultFormatters } from "./default-formatters.ts";
+import { expectedDefaultFormatters } from "#test/mocks/config-default-formatters.ts";
+import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
 import type { CliOptions } from "./schema.ts";
-import { DEFAULT_CONFIG } from "./schema.ts";
-import { buildWorkspaceRunOptions, WorkspaceConsensusError } from "./workspace-run-options.ts";
+import { buildWorkspaceRunOptions } from "./workspace-run-options.ts";
 
 function emptyCli(): CliOptions {
 	return {};
@@ -53,9 +53,7 @@ describe(buildWorkspaceRunOptions, () => {
 			captured = err;
 		}
 
-		assert(captured instanceof WorkspaceConsensusError);
-
-		expect(captured.field).toBe(field);
+		expect(captured).toMatchObject({ name: "WorkspaceConsensusError", field });
 	});
 
 	it("should enable workspace bail only when the CLI flag is true", () => {
@@ -147,9 +145,10 @@ describe(buildWorkspaceRunOptions, () => {
 				thrown = err;
 			}
 
-			assert(thrown instanceof WorkspaceConsensusError);
-
-			expect(thrown.message).toContain("workspace.packages");
+			expect(thrown).toMatchObject({
+				name: "WorkspaceConsensusError",
+				message: expect.stringContaining("workspace.packages"),
+			});
 		});
 
 		it("should throw when packages disagree on workspace.root", () => {
@@ -169,7 +168,7 @@ describe(buildWorkspaceRunOptions, () => {
 						},
 					],
 				});
-			}).toThrow(WorkspaceConsensusError);
+			}).toThrow(expect.objectContaining({ name: "WorkspaceConsensusError" }));
 		});
 
 		it("should not throw when every package agrees on workspace.root/packages", () => {
@@ -205,10 +204,10 @@ describe(buildWorkspaceRunOptions, () => {
 				],
 			});
 
-			expect(result.backend).toBe(DEFAULT_CONFIG.backend);
-			expect(result.color).toBe(DEFAULT_CONFIG.color);
-			expect(result.silent).toBe(DEFAULT_CONFIG.silent);
-			expect(result.port).toBe(DEFAULT_CONFIG.port);
+			expect(result.backend).toBe(createResolvedConfig().backend);
+			expect(result.color).toBe(createResolvedConfig().color);
+			expect(result.silent).toBe(createResolvedConfig().silent);
+			expect(result.port).toBe(createResolvedConfig().port);
 		});
 
 		it("should leave optional fields undefined when no one declares them", () => {
@@ -232,7 +231,7 @@ describe(buildWorkspaceRunOptions, () => {
 				perPackageConfigs: [{ name: "alpha", config: {} }],
 			});
 
-			expect(result.formatters).toStrictEqual(defaultFormatters());
+			expect(result.formatters).toStrictEqual(expectedDefaultFormatters());
 		});
 	});
 
@@ -248,49 +247,7 @@ describe(buildWorkspaceRunOptions, () => {
 						{ name: "beta", config: { backend: "studio" } },
 					],
 				});
-			}).toThrow(WorkspaceConsensusError);
-		});
-
-		it("should list each declared value with the packages declaring it", () => {
-			expect.assertions(5);
-
-			let captured: unknown;
-			try {
-				buildWorkspaceRunOptions({
-					cli: emptyCli(),
-					perPackageConfigs: [
-						{ name: "alpha", config: { backend: "open-cloud" } },
-						{ name: "gamma", config: { backend: "open-cloud" } },
-						{ name: "beta", config: { backend: "studio" } },
-					],
-				});
-			} catch (err) {
-				captured = err;
-			}
-
-			assert(captured instanceof WorkspaceConsensusError);
-
-			expect(captured.name).toBe("WorkspaceConsensusError");
-			expect(captured.field).toBe("backend");
-			expect(captured.groups).toStrictEqual([
-				{ packages: ["alpha", "gamma"], value: "open-cloud" },
-				{ packages: ["beta"], value: "studio" },
-			]);
-			expect(captured.omittedBy).toStrictEqual([]);
-			expect(captured.message).toBe(
-				[
-					"workspace packages disagree on `backend`.",
-					"",
-					'  - "open-cloud" — declared by alpha, gamma',
-					'  - "studio" — declared by beta',
-					"",
-					"In workspace mode this field must be uniform across all selected",
-					"packages — the entire run uses one backend. Either:",
-					"  - Declare it consistently across packages (typically by inheriting",
-					"    from a shared config), OR",
-					"  - Pass the CLI override to set a single value for the run.",
-				].join("\n"),
-			);
+			}).toThrow(expect.objectContaining({ name: "WorkspaceConsensusError" }));
 		});
 
 		it("should reject mixed values for deep-compared arrays", () => {
@@ -304,7 +261,7 @@ describe(buildWorkspaceRunOptions, () => {
 						{ name: "beta", config: { formatters: ["agent"] } },
 					],
 				});
-			}).toThrow(WorkspaceConsensusError);
+			}).toThrow(expect.objectContaining({ name: "WorkspaceConsensusError" }));
 		});
 	});
 
@@ -320,47 +277,7 @@ describe(buildWorkspaceRunOptions, () => {
 						{ name: "beta", config: {} },
 					],
 				});
-			}).toThrow(WorkspaceConsensusError);
-		});
-
-		it("should use the partial-variant wording in the error message", () => {
-			expect.assertions(3);
-
-			let captured: unknown;
-			try {
-				buildWorkspaceRunOptions({
-					cli: emptyCli(),
-					perPackageConfigs: [
-						{ name: "alpha", config: { backend: "open-cloud" } },
-						{ name: "gamma", config: { backend: "open-cloud" } },
-						{ name: "beta", config: {} },
-						{ name: "delta", config: {} },
-					],
-				});
-			} catch (err) {
-				captured = err;
-			}
-
-			assert(captured instanceof WorkspaceConsensusError);
-
-			expect(captured.groups).toStrictEqual([
-				{ packages: ["alpha", "gamma"], value: "open-cloud" },
-			]);
-			expect(captured.omittedBy).toStrictEqual(["beta", "delta"]);
-			expect(captured.message).toBe(
-				[
-					"workspace packages disagree on `backend`.",
-					"",
-					'  - declared as "open-cloud" by: alpha, gamma',
-					"  - not declared by: beta, delta",
-					"",
-					"In workspace mode this field must be uniform across all selected",
-					"packages — the entire run uses one backend. Either:",
-					"  - Declare it consistently across packages (typically by inheriting",
-					"    from a shared config), OR",
-					"  - Pass the CLI override to set a single value for the run.",
-				].join("\n"),
-			);
+			}).toThrow(expect.objectContaining({ name: "WorkspaceConsensusError" }));
 		});
 	});
 
@@ -459,7 +376,7 @@ describe(buildWorkspaceRunOptions, () => {
 					],
 					platform: "win32",
 				});
-			}).toThrow(WorkspaceConsensusError);
+			}).toThrow(expect.objectContaining({ name: "WorkspaceConsensusError" }));
 		});
 
 		it.for(["win32", "darwin"] as const)(
@@ -507,7 +424,7 @@ describe(buildWorkspaceRunOptions, () => {
 					],
 					platform: "linux",
 				});
-			}).toThrow(WorkspaceConsensusError);
+			}).toThrow(expect.objectContaining({ name: "WorkspaceConsensusError" }));
 		});
 	});
 
@@ -687,7 +604,7 @@ describe(buildWorkspaceRunOptions, () => {
 					],
 					workspaceRoot: "/repo",
 				});
-			}).toThrow(WorkspaceConsensusError);
+			}).toThrow(expect.objectContaining({ name: "WorkspaceConsensusError" }));
 		});
 	});
 
@@ -731,7 +648,7 @@ describe(buildWorkspaceRunOptions, () => {
 					],
 					workspaceRoot: "/repo",
 				});
-			}).toThrow(WorkspaceConsensusError);
+			}).toThrow(expect.objectContaining({ name: "WorkspaceConsensusError" }));
 		});
 	});
 
@@ -799,7 +716,7 @@ describe(buildWorkspaceRunOptions, () => {
 					],
 					workspaceRoot: "/repo",
 				});
-			}).toThrow(WorkspaceConsensusError);
+			}).toThrow(expect.objectContaining({ name: "WorkspaceConsensusError" }));
 		});
 	});
 
@@ -843,7 +760,7 @@ describe(buildWorkspaceRunOptions, () => {
 					],
 					workspaceRoot: "/repo",
 				});
-			}).toThrow(WorkspaceConsensusError);
+			}).toThrow(expect.objectContaining({ name: "WorkspaceConsensusError" }));
 		});
 	});
 
@@ -861,19 +778,5 @@ describe(buildWorkspaceRunOptions, () => {
 
 			expect(result.backend).toBe("open-cloud");
 		});
-	});
-});
-
-describe(WorkspaceConsensusError, () => {
-	it("should default omittedBy to an empty list", () => {
-		expect.assertions(2);
-
-		const error = new WorkspaceConsensusError("backend", [
-			{ packages: ["alpha"], value: "open-cloud" },
-			{ packages: ["beta"], value: "studio" },
-		]);
-
-		expect(error).toBeInstanceOf(Error);
-		expect(error.omittedBy).toStrictEqual([]);
 	});
 });

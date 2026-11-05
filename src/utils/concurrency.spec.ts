@@ -13,6 +13,7 @@ interface Gate {
 /**
  * A `func` whose calls hang until released, so a test can look at how many are
  * outstanding at once rather than inferring it from timing.
+ * @returns The tracked `func`, the started indices and the release hook.
  */
 function createGate(): Gate {
 	const resolvers = new Map<number, (value: string) => void>();

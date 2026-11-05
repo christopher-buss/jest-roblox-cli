@@ -4,11 +4,9 @@ import { sharedViteOptions, unitProject } from "./vitest.config.ts";
 
 // Stryker runs one suite: the coverage-measured `unit` project, hoisted to the
 // root so there is no `projects` array to filter (the vitest runner exposes no
-// project filter). The other three are unaffordable per mutant — `integration`
+// project filter). The others are unaffordable per mutant — `integration`
 // boots the real c12/jiti loader, `e2e` spawns the built CLI, and `live` talks
-// to Open Cloud. Type tests are dropped for the same reason: tsgo re-checks the
-// whole project on every run, and `.spec-d.ts` files constrain types, not the
-// runtime behaviour Stryker mutates.
+// to Open Cloud.
 export default defineConfig({
 	...sharedViteOptions,
 	...unitProject,
@@ -29,6 +27,5 @@ export default defineConfig({
 		// doing legitimately heavier work declare their own `{ timeout }` at
 		// the test site.
 		testTimeout: 100,
-		typecheck: { enabled: false },
 	},
 });

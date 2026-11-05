@@ -4,7 +4,7 @@ import { loadConfig, type PackageConfigLoader } from "../config/loader.ts";
 import { mergeCliWithConfig } from "../config/merge.ts";
 import type { CliOptions, ResolvedConfig } from "../config/schema.ts";
 import { DEFAULT_CONFIG } from "../config/schema.ts";
-import type { PackageDescriptor } from "../staging/synthesizer.ts";
+import type { PackageDescriptor } from "../staging/synthesizer-types.ts";
 import type { TimingCollector } from "../timing/orchestration-collector.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import { nodeFileSystem } from "../utils/file-system.ts";
@@ -12,21 +12,36 @@ import type { PackageInfo } from "./package-resolver.ts";
 
 const ROJO_PROJECT_DEFAULT = "test.project.json";
 
+/** A package with its merged config and synthesizer descriptor. */
 export interface LoadedPackage {
+	/** Descriptor the synthesizer mounts the package from. */
 	descriptor: PackageDescriptor;
+	/** Package name and directory. */
 	info: PackageInfo;
+	/** Package config merged with the CLI options. */
 	pkgConfig: ResolvedConfig;
 }
 
+/** Packages to load and the seams to load them through. */
 export interface LoadWorkspacePackagesOptions {
+	/** CLI options that override each package config. */
 	cli: CliOptions;
 	/** Where each package's config is read from. Defaults to the real one. */
 	fileSystem?: FileSystem;
+	/** Config loader. Defaults to the real one. */
 	loadPackageConfig?: PackageConfigLoader;
+	/** Packages to load. */
 	packageInfos: Array<PackageInfo>;
+	/** Collector for the per-package config load spans. */
 	timing: TimingCollector;
 }
 
+/**
+ * Load each package's config, merged with the CLI options.
+ * @param options - CLI options, packages, loader and timing.
+ * @returns One loaded package per input, in order.
+ * @rejects When a package config fails to load.
+ */
 export async function loadWorkspacePackagesAsync({
 	cli,
 	fileSystem = nodeFileSystem,
@@ -55,8 +70,13 @@ export async function loadWorkspacePackagesAsync({
 	return loaded;
 }
 
-// A package's rojo project is resolved per-package only; the workspace-root
-// config is intentionally not consulted (see `buildPackageDescriptor`).
+/**
+ * A package's rojo project is resolved per-package only; the workspace-root
+ * config is intentionally not consulted (see `buildPackageDescriptor`).
+ * @param info - Package to resolve for.
+ * @param packageConfig - Merged package config.
+ * @returns The absolute Rojo project path.
+ */
 function resolveRojoProjectPath(info: PackageInfo, packageConfig: ResolvedConfig): string {
 	return path.resolve(info.packageDirectory, packageConfig.rojoProject ?? ROJO_PROJECT_DEFAULT);
 }

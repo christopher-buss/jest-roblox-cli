@@ -1,0 +1,216 @@
+import { fromAny } from "@total-typescript/shoehorn";
+
+import { describe, expect, it } from "vitest";
+
+import { createTaggedStyles } from "#test/mocks/format-tagged-styles.ts";
+import type { JestResult, TestCaseResult, TestFileResult } from "../types/jest-result-types.ts";
+import { computeProjectStats, formatFileSummary } from "./file-summary.ts";
+
+const options = {
+	color: false,
+	rootDir: "/repo",
+	verbose: false,
+	version: "1.0.0",
+};
+
+function makeTest(overrides: Partial<TestCaseResult>): TestCaseResult {
+	return fromAny({
+		ancestorTitles: ["suite"],
+		failureMessages: [],
+		fullName: "suite test",
+		status: "passed",
+		title: "test",
+		...overrides,
+	});
+}
+
+function makeFile(overrides: Partial<TestFileResult>): TestFileResult {
+	return {
+		numFailingTests: 0,
+		numPassingTests: 0,
+		numPendingTests: 0,
+		testFilePath: "src/example.spec.ts",
+		testResults: [],
+		...overrides,
+	};
+}
+
+describe(formatFileSummary, () => {
+	it("should render a collected file with no tests as passed", () => {
+		expect.assertions(1);
+
+		expect(
+			formatFileSummary({ file: makeFile({}), options, styles: createTaggedStyles() }),
+		).toBe(
+			" <pass>✓</pass> <dir>src/</dir><file>example.spec.ts</file> <dim>(0 tests</dim><dim>)</dim>",
+		);
+	});
+
+	it("should render an all-pending file through the pending style", () => {
+		expect.assertions(1);
+
+		expect(
+			formatFileSummary({
+				file: makeFile({ numPendingTests: 2 }),
+				options,
+				styles: createTaggedStyles(),
+			}),
+		).toBe(
+			" <pending>↓</pending> <dir>src/</dir><file>example.spec.ts</file> <dim>(2 tests)</dim>",
+		);
+	});
+
+	it("should mark an abandoned project with the clock, not the cross", () => {
+		expect.assertions(1);
+
+		const file = makeFile({
+			failureMessage: "Timed out after 60s, aborting tests. Raise test.projectTimeout",
+			testFilePath: "<exec-error>",
+			timedOut: true,
+		});
+
+		expect(formatFileSummary({ file, options, styles: createTaggedStyles() })).toBe(
+			" <pending>⏱</pending> <file><exec-error></file>",
+		);
+	});
+
+	it("should render failed groups and individual statuses on separate lines", () => {
+		expect.assertions(1);
+
+		const file = makeFile({
+			numFailingTests: 1,
+			numPassingTests: 1,
+			testResults: [
+				makeTest({ duration: 10, title: "passes" }),
+				makeTest({
+					duration: 400,
+					fullName: "suite fails",
+					status: "failed",
+					title: "fails",
+				}),
+				makeTest({ fullName: "suite waits", status: "todo", title: "waits" }),
+			],
+		});
+
+		expect(
+			formatFileSummary({ file, options, styles: createTaggedStyles() }),
+		).toMatchSnapshot();
+	});
+
+	it("should mark a describe group without failures as passed inside a failed file", () => {
+		expect.assertions(1);
+
+		const file = makeFile({
+			numFailingTests: 1,
+			testResults: [
+				makeTest({ ancestorTitles: ["idle"], status: "skipped", title: "skips" }),
+				makeTest({ duration: 5, status: "failed", title: "fails" }),
+			],
+		});
+
+		expect(formatFileSummary({ file, options, styles: createTaggedStyles() })).toContain(
+			"<pass>   ✓</pass><fail> idle</fail> <dim>(1 tests)</dim>\n",
+		);
+	});
+
+	it("should mark a thrown file with the cross", () => {
+		expect.assertions(1);
+
+		const file = makeFile({ failureMessage: "boom", testFilePath: "<exec-error>" });
+
+		expect(formatFileSummary({ file, options, styles: createTaggedStyles() })).toBe(
+			" <fail>✗</fail> <file><exec-error></file>",
+		);
+	});
+
+	it("should omit the duration of a failed test that reports none", () => {
+		expect.assertions(1);
+
+		const file = makeFile({
+			numFailingTests: 1,
+			testResults: [makeTest({ status: "failed", title: "fails" })],
+		});
+
+		expect(formatFileSummary({ file, options, styles: createTaggedStyles() })).toContain(
+			"<fail>     × fails</fail>",
+		);
+	});
+
+	it("should render only passing tests in verbose passed-file output", () => {
+		expect.assertions(1);
+
+		const file = makeFile({
+			numPassingTests: 1,
+			numPendingTests: 1,
+			testResults: [
+				makeTest({ duration: 25 }),
+				makeTest({ status: "skipped", title: "skip" }),
+			],
+		});
+
+		expect(
+			formatFileSummary({
+				file,
+				options: { ...options, verbose: true },
+				styles: createTaggedStyles(),
+			}),
+		).toMatchSnapshot();
+	});
+
+	it("should omit durations when passed tests do not report one", () => {
+		expect.assertions(1);
+
+		const file = makeFile({ numPassingTests: 1, testResults: [makeTest({})] });
+
+		expect(formatFileSummary({ file, options, styles: createTaggedStyles() })).toBe(
+			" <pass>✓</pass> <dir>src/</dir><file>example.spec.ts</file> <dim>(1 tests</dim><dim>)</dim>",
+		);
+	});
+
+	it("should omit durations from verbose test rows when they are not reported", () => {
+		expect.assertions(1);
+
+		const file = makeFile({ numPassingTests: 1, testResults: [makeTest({})] });
+
+		expect(
+			formatFileSummary({
+				file,
+				options: { ...options, verbose: true },
+				styles: createTaggedStyles(),
+			}),
+		).toBe(
+			" <pass>✓</pass> <dir>src/</dir><file>example.spec.ts</file> <dim>(1 tests</dim><dim>)</dim>\n" +
+				"<pass>  ✓ suite test</pass>",
+		);
+	});
+});
+
+describe(computeProjectStats, () => {
+	it("should classify files and sum durations for tests that executed", () => {
+		expect.assertions(1);
+
+		const result: JestResult = fromAny({
+			numTotalTests: 6,
+			testResults: [
+				makeFile({
+					numFailingTests: 1,
+					testResults: [makeTest({ duration: 10, status: "failed" })],
+				}),
+				makeFile({ failureMessage: "boom" }),
+				makeFile({
+					numPendingTests: 2,
+					testResults: [makeTest({ duration: 99, status: "skipped" })],
+				}),
+				makeFile({ numPassingTests: 1, testResults: [makeTest({ duration: 20 })] }),
+			],
+		});
+
+		expect(computeProjectStats(result)).toStrictEqual({
+			durationMs: 30,
+			failedFiles: 2,
+			passedFiles: 1,
+			skippedFiles: 1,
+			totalTests: 6,
+		});
+	});
+});

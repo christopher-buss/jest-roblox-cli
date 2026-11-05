@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { collectTestDefinitions } from "./collect.ts";
-import type { TestDefinition } from "./types.ts";
+import type { TestDefinition } from "./typecheck-types.ts";
 
 describe(collectTestDefinitions, () => {
 	it("should ignore indirect calls returned by another function", () => {
@@ -18,6 +18,12 @@ describe(collectTestDefinitions, () => {
 		expect(collectTestDefinitions("it(`first\r\nsecond`, () => {});")[0]!.name).toBe(
 			"first\nsecond",
 		);
+	});
+
+	it("should name a test with a non-string literal by its source text", () => {
+		expect.assertions(1);
+
+		expect(collectTestDefinitions("it(42, () => {});")[0]!.name).toBe("42");
 	});
 
 	it("should only credit suites as ancestors of nested calls", () => {

@@ -38,24 +38,39 @@ export interface TypecheckConfig {
 
 /** CLI flags that map onto `test.typecheck.{enabled,only,tsconfig}`. */
 export interface TypecheckCliOptions {
+	/** `--typecheck`. */
 	enabled?: boolean | undefined;
+	/** `--typecheckOnly`. */
 	only?: boolean | undefined;
+	/** `--typecheckTsconfig`. */
 	tsconfig?: string | undefined;
 }
 
+/** The typecheck sources merged by `resolveTypecheckConfig`. */
 export interface TypecheckLayers {
+	/** CLI flags; highest precedence. */
 	cli?: TypecheckCliOptions | undefined;
+	/** Per-project `test.typecheck`. */
 	project?: TypecheckConfig | undefined;
+	/** Root `test.typecheck`; lowest precedence. */
 	root?: TypecheckConfig | undefined;
 }
 
+/** Typecheck settings after layer precedence is applied. */
 export interface ResolvedTypecheckConfig {
+	/** Whether the typecheck pass runs; true whenever `only` is. */
 	enabled: boolean;
+	/** Globs removed from the typecheck file set. */
 	exclude?: Array<string> | undefined;
+	/** Whether errors outside test files are ignored. */
 	ignoreSourceErrors?: boolean | undefined;
+	/** Typecheck file globs; unset means the caller derives them. */
 	include?: Array<string> | undefined;
+	/** Whether only the typecheck pass runs. */
 	only: boolean;
+	/** Milliseconds to wait for the tsgo process to start. */
 	spawnTimeout?: number | undefined;
+	/** Custom tsconfig used for type checking. */
 	tsconfig?: string | undefined;
 }
 
@@ -65,6 +80,9 @@ export interface ResolvedTypecheckConfig {
  * CLI > project > root > default. `only` implies `enabled` (mirroring the
  * CLI's `--typecheckOnly`). `include` is never derived here — the caller falls
  * back to `deriveTypecheckInclude(runtimeInclude)` when it is unset.
+ *
+ * @param layers - CLI, project and root typecheck settings.
+ * @returns The resolved typecheck config.
  */
 export function resolveTypecheckConfig({
 	cli = {},

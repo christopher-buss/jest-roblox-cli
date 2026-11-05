@@ -31,6 +31,11 @@ const BUILT_IN =
 const KEYWORD =
 	"and break continue do else elseif end for function if in local not or repeat return then until while type export";
 
+/**
+ * Build the highlight.js language definition for Luau.
+ * @param hljs - The highlight.js API that supplies the shared modes.
+ * @returns The Luau language definition.
+ */
 export function luauGrammar(hljs: HLJSApi): Language {
 	const longBrackets = {
 		begin: OPENING_LONG_BRACKET,
@@ -62,9 +67,14 @@ export function luauGrammar(hljs: HLJSApi): Language {
 	};
 }
 
-// A `function` definition: the (optionally dotted / colon-qualified) name, then
-// the parameter list, which ends the mode at the closing paren. Comments are
-// allowed both inside the parameter list and around it.
+/**
+ * A `function` definition: the (optionally dotted / colon-qualified) name, then
+ * the parameter list, which ends the mode at the closing paren. Comments are
+ * allowed both inside the parameter list and around it.
+ * @param hljs - The highlight.js API that supplies the title mode.
+ * @param comments - The comment modes allowed in and around the parameters.
+ * @returns The function-definition mode.
+ */
 function buildFunctionMode(hljs: HLJSApi, comments: Array<Mode>): Mode {
 	return {
 		beginKeywords: "function",
@@ -85,9 +95,13 @@ function buildFunctionMode(hljs: HLJSApi, comments: Array<Mode>): Mode {
 	};
 }
 
-// The two Luau-specific string forms, in match order: long bracket `[[...]]`
-// (nesting through the caller's own long-bracket mode) and backtick strings
-// with `{...}` interpolation.
+/**
+ * The two Luau-specific string forms, in match order: long bracket `[[...]]`
+ * (nesting through the caller's own long-bracket mode) and backtick strings
+ * with `{...}` interpolation.
+ * @param longBrackets - The caller's nestable long-bracket mode.
+ * @returns The long-bracket and backtick string modes.
+ */
 function buildStringModes(longBrackets: Mode): Array<Mode> {
 	return [
 		{

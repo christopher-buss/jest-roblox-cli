@@ -7,13 +7,18 @@ import type { FormatOptions } from "../formatters/formatter.ts";
 import { formatResult } from "../formatters/formatter.ts";
 import { formatJson } from "../formatters/json.ts";
 import { DEFAULT_MAX_FAILURES, findFormatterOptions, hasFormatter } from "../formatters/utils.ts";
-import type { FormatOutputOptions } from "./types.ts";
+import type { FormatOutputOptions } from "./executor-types.ts";
 
 interface ResolvedOutputPaths {
 	gameOutput: string | undefined;
 	outputFile: string | undefined;
 }
 
+/**
+ * Format one project's result for the terminal.
+ * @param options - The result, config and timing to format.
+ * @returns The formatted output, or an empty string when `config.silent` is set.
+ */
 export function formatExecuteOutput(options: FormatOutputOptions): string {
 	const { config, result, sourceMapper, timing } = options;
 	if (config.silent) {

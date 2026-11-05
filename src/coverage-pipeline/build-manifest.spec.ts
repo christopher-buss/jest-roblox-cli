@@ -1,21 +1,17 @@
 import { Buffer } from "node:buffer";
 import { describe, expect, it } from "vitest";
 
+import { sha256, sha256File } from "#test/mocks/coverage-hash.ts";
 import type { MemoryVolume } from "#test/mocks/memory-file-system.ts";
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
-import { hashBuffer, hashFile } from "../utils/hash.ts";
+import type { FileSystem } from "../utils/file-system.ts";
 import type {
 	BuildManifest,
 	BuildManifestProject,
 	CoverageArtifacts,
 	ReadBuildManifestResult,
 } from "./build-manifest.ts";
-import {
-	BUILD_MANIFEST_VERSION,
-	emitBuildManifest,
-	readBuildManifest,
-	writeBuildManifest,
-} from "./build-manifest.ts";
+import { BUILD_MANIFEST_VERSION, emitBuildManifest, readBuildManifest } from "./build-manifest.ts";
 
 const COVERAGE_PLACE = "/project/.jest-roblox/coverage/game.rbxl";
 const CLEAN_PLACE = "/project/.jest-roblox/coverage/clean.rbxl";
@@ -32,19 +28,23 @@ function seedArtifacts(volume: MemoryVolume): void {
 	volume.writeFileSync(SOURCE_FILE, SOURCE_CONTENT);
 }
 
-// Hashes derive from the content constants, not from disk, so a fixture stays
-// valid even after a test unlinks or tampers with the artifacts. The example
-// carries both places (the shape `prepareArtifacts` emits); the coverage path
-// emits only `coveragePlace`, exercised via the `cleanPlace: undefined` case.
+/**
+ * Hashes derive from the content constants, not from disk, so a fixture stays
+ * valid even after a test unlinks or tampers with the artifacts. The example
+ * carries both places (the shape `prepareArtifacts` emits); the coverage path
+ * emits only `coveragePlace`, exercised via the `cleanPlace: undefined` case.
+ * @param overrides - Fields replacing the defaults.
+ * @returns A valid build manifest.
+ */
 function exampleManifest(overrides: Partial<BuildManifest> = {}): BuildManifest {
 	return {
 		buildId: "11111111-1111-1111-1111-111111111111",
-		cleanPlace: { hash: hashBuffer(Buffer.from(CLEAN_PLACE_CONTENT)), path: CLEAN_PLACE },
+		cleanPlace: { hash: sha256(Buffer.from(CLEAN_PLACE_CONTENT)), path: CLEAN_PLACE },
 		coveragePlace: {
-			hash: hashBuffer(Buffer.from(COVERAGE_PLACE_CONTENT)),
+			hash: sha256(Buffer.from(COVERAGE_PLACE_CONTENT)),
 			path: COVERAGE_PLACE,
 		},
-		files: { [SOURCE_FILE]: { sourceHash: hashBuffer(Buffer.from(SOURCE_CONTENT)) } },
+		files: { [SOURCE_FILE]: { sourceHash: sha256(Buffer.from(SOURCE_CONTENT)) } },
 		generatedAt: "2026-06-06T00:00:00.000Z",
 		projects: [],
 		version: BUILD_MANIFEST_VERSION,
@@ -56,10 +56,10 @@ function exampleArtifacts(): CoverageArtifacts {
 	return {
 		buildId: "11111111-1111-1111-1111-111111111111",
 		coveragePlace: {
-			hash: hashBuffer(Buffer.from(COVERAGE_PLACE_CONTENT)),
+			hash: sha256(Buffer.from(COVERAGE_PLACE_CONTENT)),
 			path: COVERAGE_PLACE,
 		},
-		files: { [SOURCE_FILE]: { sourceHash: hashBuffer(Buffer.from(SOURCE_CONTENT)) } },
+		files: { [SOURCE_FILE]: { sourceHash: sha256(Buffer.from(SOURCE_CONTENT)) } },
 		generatedAt: "2026-06-06T00:00:00.000Z",
 		projects: [],
 		rebuilt: true,
@@ -76,15 +76,37 @@ function expectOk(result: ReadBuildManifestResult): BuildManifest {
 
 const MANIFEST_PATH = "/project/.jest-roblox/coverage/build-manifest.json";
 
-// Callers pass an already-serialized manifest: serializing at the call site
-// keeps the concrete type, so the stricter JSON.stringify typing returns a
-// `string` rather than a possibly-`undefined` result.
+/**
+ * Callers pass an already-serialized manifest: serializing at the call site
+ * keeps the concrete type, so the stricter JSON.stringify typing returns a
+ * `string` rather than a possibly-`undefined` result.
+ * @param volume - Volume the manifest is written to.
+ * @param json - Serialized manifest.
+ */
 function seedManifest(volume: MemoryVolume, json: string): void {
 	volume.mkdirSync("/project/.jest-roblox/coverage", { recursive: true });
 	volume.writeFileSync(MANIFEST_PATH, json);
 }
 
-describe(writeBuildManifest, () => {
+function writeBuildManifest({
+	filePath,
+	fileSystem,
+	manifest,
+}: {
+	filePath: string;
+	fileSystem: FileSystem;
+	manifest: BuildManifest;
+}): void {
+	const { cleanPlace, version: _version, ...rest } = manifest;
+	emitBuildManifest({
+		artifacts: rest,
+		...(cleanPlace === undefined ? {} : { cleanPlace }),
+		filePath,
+		fileSystem,
+	});
+}
+
+describe("build manifest write", () => {
 	it("should round-trip through readBuildManifest when artifacts match on disk", () => {
 		expect.assertions(2);
 
@@ -141,7 +163,7 @@ describe(emitBuildManifest, () => {
 
 		emitBuildManifest({
 			artifacts: exampleArtifacts(),
-			cleanPlace: { hash: hashBuffer(Buffer.from(CLEAN_PLACE_CONTENT)), path: CLEAN_PLACE },
+			cleanPlace: { hash: sha256(Buffer.from(CLEAN_PLACE_CONTENT)), path: CLEAN_PLACE },
 			filePath: MANIFEST_PATH,
 			fileSystem,
 		});
@@ -512,9 +534,11 @@ describe(readBuildManifest, () => {
 		volume.writeFileSync("/base/out/init.luau", "local x = 1");
 		volume.mkdirSync("/base/.jest-roblox/coverage", { recursive: true });
 		const manifest = exampleManifest({
-			cleanPlace: { hash: hashFile("/base/place.rbxl", fileSystem), path: "place.rbxl" },
-			coveragePlace: { hash: hashFile("/base/game.rbxl", fileSystem), path: "game.rbxl" },
-			files: { "out/init.luau": { sourceHash: hashFile("/base/out/init.luau", fileSystem) } },
+			cleanPlace: { hash: sha256File("/base/place.rbxl", fileSystem), path: "place.rbxl" },
+			coveragePlace: { hash: sha256File("/base/game.rbxl", fileSystem), path: "game.rbxl" },
+			files: {
+				"out/init.luau": { sourceHash: sha256File("/base/out/init.luau", fileSystem) },
+			},
 		});
 		volume.writeFileSync(
 			"/base/.jest-roblox/coverage/build-manifest.json",

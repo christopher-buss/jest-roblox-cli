@@ -1,21 +1,21 @@
-import { type, type Type } from "arktype";
-import { createDefineConfig } from "c12";
 import type { ReportOptions } from "istanbul-reports";
 import * as path from "node:path";
 import process from "node:process";
 import type { Except } from "type-fest";
 
-import { isAbsolutePath, normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import type { TypecheckConfig } from "./resolve-typecheck-config.ts";
 
+/** Execution backend that runs the tests. */
 export type Backend = "auto" | "open-cloud" | "studio" | "studio-cli";
 
+/** Name of an Istanbul coverage reporter. */
 export type CoverageReporter = keyof ReportOptions;
 
+/** A formatter name, or a `[name, options]` pair. */
 export type FormatterEntry = [string, object] | string;
 
 /**
- * pretty-format options controlling how snapshots are serialized.
+ * Pretty-format options controlling how snapshots are serialized.
  *
  * @external
  */
@@ -102,7 +102,7 @@ export interface SharedTestConfig {
 	setupFilesAfterEnv?: Array<string>;
 	/** Seconds after which a single test is reported as slow. Default `5`. */
 	slowTestThreshold?: number;
-	/** pretty-format options controlling how snapshots are serialized. */
+	/** Pretty-format options controlling how snapshots are serialized. */
 	snapshotFormat?: SnapshotFormatOptions;
 	/** DataModel paths to custom snapshot serializer modules. */
 	snapshotSerializers?: Array<string>;
@@ -149,7 +149,7 @@ export interface ProjectTestConfig extends SharedTestConfig {
 	/**
 	 * Compiled-output directory the project's `.luau` lives in. Setting it
 	 * pins the project to a single DataModel mount (exact Rojo lookup, no
-	 * auto-expand). roblox-ts users point this at the compiled output (e.g.
+	 * auto-expand). Point it at the roblox-ts compiled output (e.g.
 	 * `"out/client"`), not `"src/…"`.
 	 */
 	outDir?: string;
@@ -160,7 +160,9 @@ export interface ProjectTestConfig extends SharedTestConfig {
 	root?: string;
 }
 
+/** An inline project entry in `projects`. */
 export interface InlineProjectConfig {
+	/** The project's Jest options. */
 	test: ProjectTestConfig;
 }
 
@@ -214,6 +216,7 @@ export interface WorkspaceConfig {
 	root?: string;
 }
 
+/** A `projects` entry: a DataModel path string or an inline project. */
 export type ProjectEntry = InlineProjectConfig | string;
 
 /** Jest-passthrough keys valid only at root `test:` (not per-project). */
@@ -238,20 +241,20 @@ export interface GlobalTestConfig extends SharedTestConfig {
 	collectCoverage?: boolean;
 	/** Globs selecting which source files coverage is collected from. */
 	collectCoverageFrom?: Array<string>;
-	/** Alias for {@link collectCoverage}. */
+	/** Alias for `collectCoverage`. */
 	coverage?: boolean;
 	/**
 	 * Globs for files a coverage run never copies into the instrumented place
 	 * it builds. Matched against each file's path relative to its compiled
 	 * root, so `**\/*.d.ts` and `foo/bar.json` both work.
 	 *
-	 * Distinct from {@link coveragePathIgnorePatterns}, which decides what the
-	 * *report* covers: this one decides what reaches the place at all, and a
+	 * Distinct from `coveragePathIgnorePatterns`, which decides what the
+	 * report covers: this one decides what reaches the place at all, and a
 	 * pattern that matches a `.luau` removes that module from the build.
 	 *
 	 * Defaults to the three sidecars roblox-ts emits beside every module: rojo
 	 * mounts none of those extensions, and every reader of a source map opens
-	 * the one in `outDir`. Declare a function to keep them and add your own:
+	 * the one in `outDir`. Declare a function to keep them and add your own.
 	 *
 	 * ```ts
 	 * coverageCopyIgnorePatterns: (defaults) => [...defaults, "**\/*.tsbuildinfo"],
@@ -271,9 +274,13 @@ export interface GlobalTestConfig extends SharedTestConfig {
 	 * Minimum coverage percentages (0–100); the run fails when any is not met.
 	 */
 	coverageThreshold?: {
+		/** Minimum branch coverage percentage. */
 		branches?: number;
+		/** Minimum function coverage percentage. */
 		functions?: number;
+		/** Minimum line coverage percentage. */
 		lines?: number;
+		/** Minimum statement coverage percentage. */
 		statements?: number;
 	};
 	/** Print Jest's resolved config and debugging info. */
@@ -316,7 +323,7 @@ export interface GlobalTestConfig extends SharedTestConfig {
 	preset?: string;
 	/**
 	 * Per-project configs for a multi-project run. Each entry is a DataModel
-	 * path string, or an inline {@link defineProject} object.
+	 * path string, or an inline `defineProject` object.
 	 */
 	projects?: Array<ProjectEntry>;
 	/** Reporter modules (DataModel paths) used to format results. */
@@ -497,7 +504,9 @@ export interface Config {
  * `Object.keys` and the arktype schema rejects unknown/misplaced ones, so a
  * present-but-undefined key there is a validation error, not a no-op.
  * Homomorphic (`[K in keyof T]`) so each property keeps its source JSDoc on
- * hover, same as {@link ConfigInput}.
+ * hover, same as `ConfigInput`.
+ *
+ * @template T - Object type whose optional properties are relaxed.
  */
 export type UndefinedTolerant<T> = { [K in keyof T]: T[K] | undefined };
 
@@ -521,15 +530,25 @@ export interface ResolvedConfig
 	extends
 		UndefinedTolerant<Except<Config, "test">>,
 		UndefinedTolerant<Except<GlobalTestConfig, "projects">> {
+	/** Execution backend. */
 	backend: Backend;
+	/** Boot probe budget in milliseconds. */
 	bootProbeTimeout: number;
+	/** Collect code coverage during the run. */
 	collectCoverage: boolean;
+	/** Collect coverage per test. */
 	collectPerTestCoverage?: boolean | undefined;
+	/** Force ANSI colour in output. */
 	color: boolean;
+	/** Reuse the instrumented coverage place between runs. */
 	coverageCache: boolean;
+	/** Globs for files a coverage run does not copy into the place. */
 	coverageCopyIgnorePatterns: Array<string>;
+	/** Directory coverage reports are written to. */
 	coverageDirectory: string;
+	/** Globs excluded from coverage collection. */
 	coveragePathIgnorePatterns: Array<string>;
+	/** Istanbul reporters to emit. */
 	coverageReporters: Array<CoverageReporter>;
 	/**
 	 * Studio-only, experimental: the VM count `--experimental-vm-parallel`
@@ -548,25 +567,38 @@ export interface ResolvedConfig
 	 * explicit path is kept as-is.
 	 */
 	outputFile?: string | undefined;
+	/** Exit `0` even when no tests are found. */
 	passWithNoTests: boolean;
+	/** Path to the `.rbxl` place, relative to `rootDir`. */
 	placeFile: string;
+	/** WebSocket port for the Studio backend. */
 	port: number;
 	/**
 	 * The `projects` entries as authored. Resolution turns each into a
-	 * {@link ResolvedProjectConfig}; this field keeps the raw form, because
+	 * `ResolvedProjectConfig`; this field keeps the raw form, because
 	 * single/multi dispatch and workspace mode both read it before resolution
 	 * runs.
 	 */
 	projects?: Array<ProjectEntry> | undefined;
+	/** Budget in milliseconds for one project's whole Jest run. */
 	projectTimeout: number;
+	/** Absolute base directory for relative paths. */
 	rootDir: string;
+	/** Include the translated Luau line in error output. */
 	showLuau: boolean;
+	/** Suppress test console output. */
 	silent: boolean;
+	/** Map Luau stack traces back to TypeScript source. */
 	sourceMap: boolean;
+	/** Glob patterns that detect test files. */
 	testMatch: Array<string>;
+	/** Regex patterns of test file paths to skip. */
 	testPathIgnorePatterns: Array<string>;
+	/** Deadline in milliseconds Roblox is given to run the script. */
 	timeout: number;
+	/** Skip the place upload when the place is already uploaded. */
 	uploadCache: boolean;
+	/** Report each individual test result. */
 	verbose: boolean;
 }
 
@@ -576,34 +608,44 @@ export interface ResolvedConfig
  * override per-package config; otherwise every selected package must agree.
  */
 export interface WorkspaceRunOptions {
+	/** Execution backend. */
 	backend: Backend;
 	/**
 	 * Stop the run at the first failing package. CLI-only — there is no config
 	 * counterpart, so a package cannot opt its workspace into failing fast.
 	 */
 	bail: boolean;
+	/** Force ANSI colour in output. */
 	color: boolean;
 	/**
 	 * Studio-only, experimental: how many Luau VMs one package's projects split
 	 * across. CLI-only, like `bail`.
 	 */
 	experimentalVmParallel?: ParallelCount | undefined;
+	/** Output formatters. */
 	formatters: Array<FormatterEntry>;
 	/** Absolute path for the Aggregated Game Output file; undefined = off. */
 	gameOutput?: string;
+	/** Run the `studio-cli` Studio hidden. */
 	hiddenDesktop?: boolean;
 	/** Absolute path for the aggregated result file; undefined = off. */
 	outputFile?: string;
+	/** Number of places to shard the run across, or `"auto"`. */
 	parallel?: "auto" | number;
+	/** Open Cloud place id. */
 	placeId?: string;
+	/** Absolute Studio plugins folder path. */
 	pluginsDirectory?: string;
+	/** WebSocket port for the Studio backend. */
 	port: number;
+	/** Suppress test console output. */
 	silent: boolean;
 	/**
 	 * Studio executable override for the `studio-cli` backend; undefined =
 	 * auto-discover.
 	 */
 	studioPath?: string;
+	/** Open Cloud universe id. */
 	universeId?: string;
 	/**
 	 * When true, emit Per-package Game Output files under
@@ -616,45 +658,13 @@ export interface WorkspaceRunOptions {
 	workspaceOutputFile: boolean;
 }
 
-type MergerFunction<T> = (defaults: T) => T;
-
-type Mergeable<T> = MergerFunction<T> | T;
-
-export const VALID_BACKENDS: ReadonlySet<string> = new Set<Backend>([
-	"auto",
-	"open-cloud",
-	"studio",
-	"studio-cli",
-]);
-
-export function isValidBackend(value: string): value is Backend {
-	return VALID_BACKENDS.has(value);
-}
-
-export const VALID_COVERAGE_REPORTERS: ReadonlySet<string> = new Set<CoverageReporter>([
-	"clover",
-	"cobertura",
-	"html",
-	"html-spa",
-	"json",
-	"json-summary",
-	"lcov",
-	"lcovonly",
-	"none",
-	"teamcity",
-	"text",
-	"text-lcov",
-	"text-summary",
-]);
-
-export function isCoverageReporter(value: string): value is CoverageReporter {
-	return VALID_COVERAGE_REPORTERS.has(value);
-}
-
 /**
  * Resolve a config's `placeFile` against its `rootDir` to an absolute path.
  * The one resolution every backend shares: `placeFile` is rootDir-relative,
  * and a coverage run has the run layer point it at the instrumented place.
+ *
+ * @param config - Resolved config to read.
+ * @returns Absolute place file path.
  */
 export function resolvePlaceFilePath(config: ResolvedConfig): string {
 	return path.resolve(config.rootDir, config.placeFile);
@@ -711,9 +721,13 @@ export const DEFAULT_CONFIG: ResolvedConfig = {
 	verbose: false,
 };
 
+/** Options parsed from the command line. */
 export interface CliOptions {
+	/** Run only tests affected by changes since this git ref. */
 	affectedSince?: string | undefined;
+	/** Open Cloud API key. */
 	apiKey?: string | undefined;
+	/** Execution backend. */
 	backend?: Backend | undefined;
 	/**
 	 * Workspace mode: stop the run as soon as a package fails (`--bail`).
@@ -721,13 +735,20 @@ export interface CliOptions {
 	 * failing test suites inside a single package.
 	 */
 	bail?: boolean | undefined;
+	/** Collect code coverage. */
 	collectCoverage?: boolean | undefined;
+	/** Globs selecting coverage source files. */
 	collectCoverageFrom?: Array<string> | undefined;
+	/** Force ANSI colour in output. */
 	color?: boolean | undefined;
 
+	/** Path to the config file. */
 	config?: string | undefined;
+	/** Reuse the instrumented coverage place between runs. */
 	coverageCache?: boolean | undefined;
+	/** Directory coverage reports are written to. */
 	coverageDirectory?: string | undefined;
+	/** Istanbul reporters to emit. */
 	coverageReporters?: Array<CoverageReporter> | undefined;
 	/**
 	 * Studio-only, experimental (`--experimental-vm-parallel [n]`): run the
@@ -737,543 +758,77 @@ export interface CliOptions {
 	 * of the machine running it, not of the suite.
 	 */
 	experimentalVmParallel?: ParallelCount | undefined;
+	/** Test file paths given as positional arguments. */
 	files?: Array<string> | undefined;
+	/** Output formatter names. */
 	formatters?: Array<string> | undefined;
+	/** Where to write Game Output. */
 	gameOutput?: string | undefined;
 	/**
 	 * Show the Studio window during a `studio-cli` run (`--headed`). CLI-only;
 	 * inert for every other backend. Never sourced from config or env.
 	 */
 	headed?: boolean | undefined;
+	/** Print help and exit. */
 	help?: boolean | undefined;
+	/** Run the `studio-cli` Studio hidden. */
 	hiddenDesktop?: boolean | undefined;
+	/** Where to write the Jest result JSON. */
 	outputFile?: string | undefined;
+	/** Packages to select in workspace mode. */
 	packages?: string | undefined;
+	/** Number of places to shard the run across, or `"auto"`. */
 	parallel?: "auto" | number | undefined;
+	/** Exit `0` even when no tests are found. */
 	passWithNoTests?: boolean | undefined;
+	/** Open Cloud place id. */
 	placeId?: string | undefined;
+	/** WebSocket port for the Studio backend. */
 	port?: number | undefined;
+	/** Names of the projects to run. */
 	project?: Array<string> | undefined;
+	/** Reporter modules used to format results. */
 	reporters?: Array<string> | undefined;
+	/** Path to the Rojo project file. */
 	rojoProject?: string | undefined;
+	/** Scripts run before the test framework is installed. */
 	setupFiles?: Array<string> | undefined;
+	/** Scripts run after the test framework is installed. */
 	setupFilesAfterEnv?: Array<string> | undefined;
+	/** Include the translated Luau line in error output. */
 	showLuau?: boolean | undefined;
+	/** Suppress test console output. */
 	silent?: boolean | undefined;
+	/** Map Luau stack traces back to TypeScript source. */
 	sourceMap?: boolean | undefined;
+	/** Path to the Roblox Studio executable. */
 	studioPath?: string | undefined;
+	/** Run only tests whose full name matches this regex. */
 	testNamePattern?: string | undefined;
+	/** Run only test files whose path matches this regex. */
 	testPathPattern?: string | undefined;
+	/** Deadline in milliseconds Roblox is given to run the script. */
 	timeout?: number | undefined;
+	/** Run Type Tests too. */
 	typecheck?: boolean | undefined;
+	/** Run only Type Tests. */
 	typecheckOnly?: boolean | undefined;
+	/** Tsconfig path for Type Tests. */
 	typecheckTsconfig?: string | undefined;
+	/** Open Cloud universe id. */
 	universeId?: string | undefined;
+	/** Update stored snapshots. */
 	updateSnapshot?: boolean | undefined;
+	/** Skip the place upload when the place is already uploaded. */
 	uploadCache?: boolean | undefined;
+	/** Report each individual test result. */
 	verbose?: boolean | undefined;
+	/** Print the version and exit. */
 	version?: boolean | undefined;
+	/** Run in workspace mode. */
 	workspace?: boolean | undefined;
 	/**
 	 * Directory to load the workspace config from when run outside a package.
 	 */
 	workspaceRoot?: string | undefined;
 }
-
-const snapshotFormatSchema = type({
-	"+": "reject",
-	"callToJSON?": "boolean",
-	"escapeRegex?": "boolean",
-	"escapeString?": "boolean",
-	"indent?": "number",
-	"maxDepth?": "number",
-	"min?": "boolean",
-	"printBasicPrototype?": "boolean",
-	"printFunctionName?": "boolean",
-});
-
-const coverageThresholdSchema = type({
-	"+": "reject",
-	"branches?": "number",
-	"functions?": "number",
-	"lines?": "number",
-	"statements?": "number",
-});
-
-const displayNameSchema = type({
-	"name": "string",
-	"+": "reject",
-	"color": "string",
-});
-
-const typecheckConfigSchema = type({
-	"+": "reject",
-	"enabled?": "boolean",
-	"exclude?": "string[]",
-	"ignoreSourceErrors?": "boolean",
-	"include?": "string[]",
-	"only?": "boolean",
-	"spawnTimeout?": "number > 0",
-	"tsconfig?": "string",
-});
-
-const sharedTestDefinition = type.define({
-	"automock?": "boolean",
-	"clearMocks?": "boolean",
-	"injectGlobals?": "boolean",
-	"mockDataModel?": "boolean",
-	"projectTimeout?": "number >= 0",
-	"resetMocks?": "boolean",
-	"resetModules?": "boolean",
-	"restoreMocks?": "boolean",
-	"setupFiles?": "string[]",
-	"setupFilesAfterEnv?": "string[]",
-	"slowTestThreshold?": "number > 0",
-	"snapshotFormat?": snapshotFormatSchema,
-	"snapshotSerializers?": "string[]",
-	"testEnvironment?": "string",
-	"testEnvironmentOptions?": type("string").or(type("object")),
-	"testMatch?": "string[]",
-	"testPathIgnorePatterns?": "string[]",
-	"testRegex?": type("string").or(type("string[]")),
-	"testTimeout?": "number",
-	"typecheck?": typecheckConfigSchema,
-});
-
-// Everything a project's `test` block carries except `include`, which is
-// required once resolved but optional as authored — see ProjectConfigFile.
-const projectTestDefinition = type.define({
-	...sharedTestDefinition,
-	"displayName": type("string").or(displayNameSchema),
-	"exclude?": "string[]",
-	"outDir?": "string",
-	"root?": "string",
-});
-
-const projectTestConfigSchema = type({
-	"+": "reject",
-	...projectTestDefinition,
-	"include": "string[]",
-});
-
-const inlineProjectSchema = type({
-	"+": "reject",
-	"test": projectTestConfigSchema,
-});
-
-const projectConfigFileTestSchema = type({
-	"+": "reject",
-	...projectTestDefinition,
-	"include?": "string[]",
-});
-
-/**
- * Both shapes a project config file may export — a bare `test` block, or the
- * `defineProject` wrapper around one — parsed into the block either way. A
- * config file is loaded by c12, which merges layers but validates nothing, so
- * this is where it becomes a domain type.
- */
-export const projectConfigFileSchema: Type<ProjectConfigFile> = type({
-	"+": "reject",
-	"test": projectConfigFileTestSchema,
-})
-	.pipe(({ test }) => test)
-	.or(projectConfigFileTestSchema)
-	.as<ProjectConfigFile>();
-
-const workspaceConfigSchema = type({
-	"+": "reject",
-	"exclude?": "string[]",
-	"gameOutput?": "true",
-	"outputFile?": "true",
-	"packages?": "string[]",
-	"root?": "string",
-});
-
-const formatterEntrySchema = type("string").or(type(["string", type("object")]));
-
-const projectEntrySchema = type("string").or(inlineProjectSchema);
-
-export const absolutePathSchema: Type<string> = type("string").narrow((value, ctx) => {
-	if (isAbsolutePath(normalizeWindowsPath(value))) {
-		return true;
-	}
-
-	return ctx.reject({ actual: `"${value}"`, expected: "an absolute path" });
-});
-
-const globalTestConfigSchema = type({
-	"+": "reject",
-	...sharedTestDefinition,
-	"all?": "boolean",
-	"bail?": type("boolean").or(type("number")),
-	"changedSince?": "string",
-	"ci?": "boolean",
-	"clearCache?": "boolean",
-	"collectCoverage?": "boolean",
-	"collectCoverageFrom?": "string[]",
-	"coverage?": "boolean",
-	"coverageCopyIgnorePatterns?": "string[]",
-	"coverageDirectory?": "string",
-	"coveragePathIgnorePatterns?": "string[]",
-	"coverageReporters?": "string[]",
-	"coverageThreshold?": coverageThresholdSchema,
-	"debug?": "boolean",
-	"displayName?": type("string").or(displayNameSchema),
-	"env?": "string",
-	"exclude?": "string[]",
-	"expand?": "boolean",
-	"globals?": "string",
-	"include?": "string[]",
-	"maxWorkers?": type("number").or(type("string")),
-	"noStackTrace?": "boolean",
-	"outDir?": "string",
-	"passWithNoTests?": "boolean",
-	"preset?": "string",
-	"projects?": projectEntrySchema.array(),
-	"reporters?": "string[]",
-	"roots?": "string[]",
-	"runInBand?": "boolean",
-	"selectProjects?": "string[]",
-	"showConfig?": "boolean",
-	"silent?": "boolean",
-	"testFailureExitCode?": "string",
-	"testNamePattern?": "string",
-	"testPathPattern?": "string",
-	"timers?": "string",
-	"updateSnapshot?": "boolean",
-	"verbose?": "boolean",
-});
-
-export const configSchema: Type<Config> = type({
-	"+": "reject",
-	"backend?": type("'auto'|'open-cloud'|'studio'|'studio-cli'"),
-	"bootProbeTimeout?": "number",
-	"color?": "boolean",
-	"config?": "string",
-	"coverageCache?": "boolean",
-	"extends?": type("string").or(type("string[]")),
-	"formatters?": formatterEntrySchema.array(),
-	"gameOutput?": type("string").or("true"),
-	"hiddenDesktop?": "boolean",
-	"jestPath?": "string",
-	"luauRoots?": "string[]",
-	"outputFile?": type("string").or("true"),
-	"parallel?": type("'auto'").or("number.integer >= 1"),
-	"placeFile?": "string",
-	"placeId?": "string",
-	"pluginsDirectory?": absolutePathSchema,
-	"port?": "number",
-	"rojoProject?": "string",
-	"rootDir?": "string",
-	"showLuau?": "boolean",
-	"sourceMap?": "boolean",
-	"studioPath?": "string",
-	"test?": globalTestConfigSchema,
-	"timeout?": "number",
-	"universeId?": "string",
-	"uploadCache?": "boolean",
-	"workspace?": workspaceConfigSchema,
-}).as<Config>();
-
-// Homomorphic (`[K in keyof T]`) so each property's JSDoc is preserved on
-// hover in a `defineConfig({ … })` literal — the mergeable keys still relax
-// to accept a `(defaults) => merged` function, but TypeScript forwards the
-// source doc comment.
-export type ConfigInput = {
-	[K in keyof Config]?: K extends "formatters"
-		? Mergeable<Array<FormatterEntry>>
-		: K extends "luauRoots"
-			? Mergeable<Array<string>>
-			: K extends "test"
-				? GlobalTestConfigInput
-				: Config[K];
-};
-
-type MergeableTestKey =
-	| "collectCoverageFrom"
-	| "coverageCopyIgnorePatterns"
-	| "coveragePathIgnorePatterns"
-	| "coverageReporters"
-	| "coverageThreshold"
-	| "reporters"
-	| "roots"
-	| "selectProjects"
-	| "setupFiles"
-	| "setupFilesAfterEnv"
-	| "snapshotFormat"
-	| "snapshotSerializers"
-	| "testMatch"
-	| "testPathIgnorePatterns";
-
-// Homomorphic for the same JSDoc-preservation reason as `ConfigInput`; the
-// mergeable keys relax to `Mergeable<…>` while every key keeps its source doc.
-type GlobalTestConfigInput = {
-	[K in keyof GlobalTestConfig]?: K extends MergeableTestKey
-		? Mergeable<NonNullable<GlobalTestConfig[K]>>
-		: GlobalTestConfig[K];
-};
-
-type RootCliKey = Exclude<keyof Config, "test">;
-
-type GlobalOnlyKey = Exclude<keyof GlobalTestConfig, keyof SharedTestConfig>;
-
-type SharedKey = keyof SharedTestConfig;
-
-export const ROOT_CLI_KEYS_LIST: ReadonlyArray<RootCliKey> = [
-	"backend",
-	"bootProbeTimeout",
-	"color",
-	"coverageCache",
-	"extends",
-	"formatters",
-	"gameOutput",
-	"hiddenDesktop",
-	"jestPath",
-	"luauRoots",
-	"outputFile",
-	"parallel",
-	"placeFile",
-	"placeId",
-	"pluginsDirectory",
-	"port",
-	"rojoProject",
-	"rootDir",
-	"showLuau",
-	"sourceMap",
-	"studioPath",
-	"timeout",
-	"universeId",
-	"uploadCache",
-	"workspace",
-];
-
-const SHARED_TEST_KEYS_LIST = [
-	"automock",
-	"clearMocks",
-	"injectGlobals",
-	"mockDataModel",
-	"projectTimeout",
-	"resetMocks",
-	"resetModules",
-	"restoreMocks",
-	"setupFiles",
-	"setupFilesAfterEnv",
-	"slowTestThreshold",
-	"snapshotFormat",
-	"snapshotSerializers",
-	"testEnvironment",
-	"testEnvironmentOptions",
-	"testMatch",
-	"testPathIgnorePatterns",
-	"testRegex",
-	"testTimeout",
-	"typecheck",
-] as const satisfies ReadonlyArray<SharedKey>;
-
-const GLOBAL_ONLY_KEYS_LIST = [
-	"all",
-	"bail",
-	"changedSince",
-	"ci",
-	"clearCache",
-	"collectCoverage",
-	"collectCoverageFrom",
-	"coverage",
-	"coverageCopyIgnorePatterns",
-	"coverageDirectory",
-	"coveragePathIgnorePatterns",
-	"coverageReporters",
-	"coverageThreshold",
-	"debug",
-	"env",
-	"expand",
-	"globals",
-	"maxWorkers",
-	"noStackTrace",
-	"passWithNoTests",
-	"preset",
-	"projects",
-	"reporters",
-	"roots",
-	"runInBand",
-	"selectProjects",
-	"showConfig",
-	"silent",
-	"testFailureExitCode",
-	"testNamePattern",
-	"testPathPattern",
-	"timers",
-	"updateSnapshot",
-	"verbose",
-] as const satisfies ReadonlyArray<GlobalOnlyKey>;
-
-// Keep in sync with `ProjectTestConfig`: any new field added there must
-// also be listed here to appear in generated stubs (`satisfies` checks
-// membership, not exhaustiveness).
-const PROJECT_TEST_KEYS_LIST = [
-	...SHARED_TEST_KEYS_LIST,
-	"displayName",
-	"exclude",
-	"include",
-	"outDir",
-	"root",
-] as const satisfies ReadonlyArray<keyof ProjectTestConfig>;
-
-export const SHARED_TEST_KEYS: ReadonlySet<string> = new Set<SharedKey>(SHARED_TEST_KEYS_LIST);
-
-/** Keys valid in `test:` (root) but not per-project (`projects[N].test`). */
-export const GLOBAL_TEST_KEYS: ReadonlySet<string> = new Set<GlobalOnlyKey>(GLOBAL_ONLY_KEYS_LIST);
-
-/**
- * Root-level CLI/runner keys. The complement of `test:` jest-passthrough keys.
- */
-export const ROOT_CLI_KEYS: ReadonlySet<string> = new Set<RootCliKey>(ROOT_CLI_KEYS_LIST);
-
-/**
- * Keys valid per-project (`projects[N].test`). Used to filter `ResolvedConfig`
- * when generating stubs.
- */
-export const PROJECT_TEST_KEYS: ReadonlySet<string> = new Set<keyof ProjectTestConfig>(
-	PROJECT_TEST_KEYS_LIST,
-);
-
-/**
- * Keys excluded from jest argv when building the test runner script. Includes
- * all CLI/runner-level keys plus the coverage keys, which live under `test:`
- * by configuration layout but are consumed by the runner's lute-based coverage
- * layer (not jest itself).
- */
-export const JEST_ARGV_EXCLUDED_KEYS: ReadonlySet<string> = new Set<string>([
-	...ROOT_CLI_KEYS_LIST,
-	"collectCoverage",
-	"collectCoverageFrom",
-	"collectPerTestCoverage",
-	"coverageCopyIgnorePatterns",
-	"coverageDirectory",
-	"coveragePathIgnorePatterns",
-	"coverageReporters",
-	"coverageThreshold",
-	// CLI-only, and not in `Config`, so `ROOT_CLI_KEYS_LIST` cannot carry it:
-	// it tells the plugin how many VMs to run, and means nothing to Jest.
-	"experimentalVmParallel",
-	// Read by our own runner, not by Jest — it reaches the runtime as
-	// `runnerTimeoutMs` instead. See `buildJestArgv`.
-	"projectTimeout",
-	"typecheck",
-]);
-
-/**
- * Removed flat root keys mapped to their `test.typecheck.*` replacements.
- * `assertNoLegacyKeys` emits a migration error naming these so upgraders see
- * the targets, mirroring the "wrap jest options in a `test:` block" directive.
- */
-const MIGRATED_TYPECHECK_KEYS = new Map([
-	["typecheck", "test.typecheck.enabled"],
-	["typecheckOnly", "test.typecheck.only"],
-	["typecheckTsconfig", "test.typecheck.tsconfig"],
-]);
-
-/**
- * Source of truth for jest-passthrough vs CLI key partitioning.  Used by
- * `assertNoLegacyKeys` to emit a migration error when jest options appear at
- * config root.
- */
-const KEY_LOCATIONS: Readonly<Record<string, "root" | "test">> = (() => {
-	const result: Record<string, "root" | "test"> = {};
-	for (const key of ROOT_CLI_KEYS_LIST) {
-		result[key] = "root";
-	}
-
-	for (const key of SHARED_TEST_KEYS_LIST) {
-		result[key] = "test";
-	}
-
-	for (const key of GLOBAL_ONLY_KEYS_LIST) {
-		result[key] = "test";
-	}
-
-	return result;
-})();
-
-export function validateConfigLayer(raw: unknown): Config {
-	assertNoLegacyKeys(raw);
-
-	const result = configSchema(raw);
-	if (result instanceof type.errors) {
-		throw new Error(`Invalid config: ${result.summary}`);
-	}
-
-	return result;
-}
-
-export function validateConfig(raw: unknown): Config {
-	const result = validateConfigLayer(raw);
-	const { workspace } = result;
-	if (
-		workspace !== undefined &&
-		(workspace.root === undefined) !== (workspace.packages === undefined)
-	) {
-		throw new Error("workspace.root and workspace.packages must be declared together.");
-	}
-
-	return result;
-}
-
-/**
- * Reject configs still written against the pre-`test:` layout. Both checks run
- * before the arktype pass so a migrating config gets a directive naming the
- * replacement keys, rather than a generic "unknown key" schema summary.
- */
-function assertNoLegacyKeys(raw: unknown): void {
-	if (typeof raw !== "object" || raw === null) {
-		return;
-	}
-
-	const migrated = Object.keys(raw)
-		.flatMap((key) => {
-			const replacement = MIGRATED_TYPECHECK_KEYS.get(key);
-			return replacement === undefined ? [] : [`${key} → ${replacement}`];
-		})
-		.sort();
-	if (migrated.length > 0) {
-		throw new Error(
-			`\`typecheck\` options have moved under \`test.typecheck\`. Replace these keys: ${migrated.join(", ")}`,
-		);
-	}
-
-	const misplaced = Object.keys(raw)
-		.filter((key) => KEY_LOCATIONS[key] === "test")
-		.sort();
-	if (misplaced.length > 0) {
-		throw new Error(
-			`jest options must be wrapped in a \`test:\` block. Move these keys under \`test:\`: ${misplaced.join(", ")}`,
-		);
-	}
-}
-
-/**
- * Identity helper for authoring a typed `jest.config.*` file. Returns its
- * input unchanged; it exists purely to give editors autocompletion and
- * type-checking for the root config contract (`Config` plus the c12 layer props
- * on `ConfigInput`).
- *
- * Use it as the default export of a config file discovered by c12 (`.ts`,
- * `.js`, `.mjs`, `.cjs`, `.json`, `.yaml`, `.toml`). All jest-passthrough
- * options live under the `test:` block; root keys are CLI/runner-level.
- * Configs may extend a shared base via `extends`, and any `Mergeable` array
- * field (e.g. `test.testMatch`) accepts a function that receives the inherited
- * defaults and returns the merged value. Precedence is CLI flags > config file
- * > extended config > defaults.
- */
-export const defineConfig: (input: ConfigInput) => ConfigInput = createDefineConfig<ConfigInput>();
-
-/**
- * Identity helper for a single entry inside `test.projects`, mirroring
- * {@link defineConfig} for per-project overrides. Returns its input unchanged
- * and exists only for editor autocompletion and type-checking of the
- * `InlineProjectConfig` contract — a `test:` block carrying the project's
- * `include`/`displayName` plus any shared per-project jest options.
- */
-export const defineProject: (input: InlineProjectConfig) => InlineProjectConfig =
-	createDefineConfig<InlineProjectConfig>();

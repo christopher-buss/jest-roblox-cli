@@ -2,8 +2,8 @@ import * as path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
+import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
 import type { ResolvedConfig } from "../config/schema.ts";
-import { DEFAULT_CONFIG } from "../config/schema.ts";
 import type { createSetupResolver } from "../config/setup-resolver.ts";
 import { classifyTestFiles, discoverTestFiles, resolveAllSetupFilePaths } from "./discovery.ts";
 
@@ -21,7 +21,7 @@ function resolverTarget(factory: ReturnType<typeof makeResolverFactory>): {
 
 function makeConfig(overrides: Partial<ResolvedConfig> = {}): ResolvedConfig {
 	return {
-		...DEFAULT_CONFIG,
+		...createResolvedConfig(),
 		rootDir: "/project",
 		testMatch: ["**/*.spec.ts"],
 		testPathIgnorePatterns: [],

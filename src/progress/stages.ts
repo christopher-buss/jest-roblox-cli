@@ -73,6 +73,9 @@ export const SPAN_STAGES: Record<string, StageId> = {
  * function. Undefined when it cannot be read: the build and the upload each
  * fail on that file with their own message, and a stage detail must not be
  * the thing that reports it.
+ * @param placeFilePath - Place file to measure.
+ * @param fileSystem - File system to stat it through.
+ * @returns The formatted size, or `undefined` when the file cannot be read.
  */
 export function describePlaceFile(
 	placeFilePath: string,
@@ -90,6 +93,10 @@ export function describePlaceFile(
  * in hand when the split writes the bundle, so neither costs a stat the way a
  * place file does — and the file count is what separates a bundle that grew
  * from one that picked up a directory it should not have.
+ * @param options - Bundle size and file count.
+ * @param options.byteLength - Bundle size in bytes.
+ * @param options.fileCount - Number of files in the bundle.
+ * @returns The size and the file count, as one detail.
  */
 export function describeCodeBundle({
 	byteLength,
@@ -102,7 +109,11 @@ export function describeCodeBundle({
 	return `${formatBytes(byteLength)}, ${files}`;
 }
 
-/** What the `tests` stage says it is about to run, in every backend. */
+/**
+ * What the `tests` stage says it is about to run, in every backend.
+ * @param projectCount - Number of projects to run.
+ * @returns The project count with its noun.
+ */
 export function describeProjectCount(projectCount: number): string {
 	return projectCount === 1 ? "1 project" : `${projectCount.toString()} projects`;
 }
@@ -122,6 +133,8 @@ const BYTES_PER_MEGABYTE = BYTES_PER_KILOBYTE * 1024;
  * Exported because a run says a size in two places — the stage line and the
  * cap refusal the Code Bundle can earn — and two spellings of one number read
  * as two different numbers.
+ * @param bytes - Size in bytes.
+ * @returns The size with its `B`, `KB` or `MB` unit.
  */
 export function formatBytes(bytes: number): string {
 	if (bytes < BYTES_PER_KILOBYTE) {

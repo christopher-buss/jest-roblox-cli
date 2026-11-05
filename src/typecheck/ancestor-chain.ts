@@ -1,8 +1,18 @@
-import type { RawTestDefinition, TestDefinition } from "./types.ts";
+import type { RawTestDefinition, TestDefinition } from "./typecheck-types.ts";
 
+/**
+ * Attach to each definition the names of the suites that enclose it.
+ * @param sorted - Definitions in source order.
+ * @returns The definitions with their ancestor names.
+ */
 export function buildAncestorChain(sorted: Array<RawTestDefinition>): Array<TestDefinition> {
 	const result: Array<TestDefinition> = [];
-	const suiteStack: Array<{ end: number; name: string }> = [];
+	const suiteStack: Array<{
+		/** Source offset where the suite ends. */
+		end: number;
+		/** The suite's title. */
+		name: string;
+	}> = [];
 
 	for (const definition of sorted) {
 		while (

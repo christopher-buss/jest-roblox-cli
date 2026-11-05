@@ -4,11 +4,12 @@ import * as path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
-import type { ExecuteResult } from "../executor/types.ts";
-import type { GameOutputEntry } from "../types/game-output.ts";
-import type { JestResult } from "../types/jest-result.ts";
+import type { ExecuteResult } from "../executor/executor-types.ts";
+import type { GameOutputEntry } from "../types/game-output-types.ts";
+import type { JestResult } from "../types/jest-result-types.ts";
 import { writeTypecheckOnlySinksAsync, writeWorkspaceSinksAsync } from "./output-sinks.ts";
-import type { PendingEntry, TypeTestProject } from "./test-selection.ts";
+import type { PendingEntry } from "./pending-entry.ts";
+import type { TypeTestProject } from "./test-selection.ts";
 
 const collator = new Intl.Collator("en");
 const OUTPUT_DIRECTORY = path.join("/workspace", ".jest-roblox", "output");
@@ -37,8 +38,13 @@ function makePending(packageName = "@halcyon/foo", project = "client"): PendingE
 	return fromAny({ pkg: packageName, project: { displayName: project } });
 }
 
-// memfs keys a path as written, so on Windows "/workspace/x" and its resolved
-// form are two different volume keys.
+/**
+ * The memfs volume keys a path as written, so on Windows "/workspace/x" and its resolved
+ * form are two different volume keys.
+ * @param volume - Memory volume the sinks wrote to.
+ * @param file - Sink path, resolved before the read.
+ * @returns The file contents.
+ */
 function readSink(
 	volume: ReturnType<typeof createMemoryFileSystem>["volume"],
 	file: string,

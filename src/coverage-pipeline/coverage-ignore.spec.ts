@@ -1,8 +1,8 @@
 import type { AstStat, AstStatIf } from "@isentinel/luau-ast/ast";
+import { loadLuauParser } from "@isentinel/luau-ast/parser";
 
 import { assert, describe, expect, it } from "vitest";
 
-import { luauParser } from "../luau/parser.ts";
 import type { CoverageIgnores } from "./coverage-ignore.ts";
 import { resolveCoverageIgnores } from "./coverage-ignore.ts";
 
@@ -31,6 +31,8 @@ function firstIf({ statements }: Resolved): AstStatIf {
 	assert(statement?.type === "AstStatIf");
 	return statement;
 }
+
+const luauParser = loadLuauParser();
 
 describe(resolveCoverageIgnores, () => {
 	it("should cover the statement after a line directive", () => {

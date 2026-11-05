@@ -5,10 +5,10 @@ import { emitBuildManifest } from "./coverage-pipeline/build-manifest.ts";
 import { COVERAGE_BUILD_MANIFEST_PATH } from "./coverage-pipeline/prepare.ts";
 import { NOOP_RUN_PROGRESS, type RunProgress } from "./progress/reporter.ts";
 import { loadRojoTree, runMultiProjectAsync, runResolvedProjectsAsync } from "./run/multi.ts";
+import type { MultiRunResult, WorkspaceRunResult } from "./run/run-types.ts";
 import type { RunSeams } from "./run/seams.ts";
 import { nodeRunSeams } from "./run/seams.ts";
 import { buildImplicitProject } from "./run/single-projects.ts";
-import type { MultiRunResult, WorkspaceRunResult } from "./run/types.ts";
 import { isWorkspaceInvocation } from "./run/workspace-validation.ts";
 import { runWorkspaceModeAsync } from "./run/workspace.ts";
 import { createTimingCollector, type TimingCollector } from "./timing/orchestration-collector.ts";
@@ -17,33 +17,52 @@ import { nodeFileSystem } from "./utils/file-system.ts";
 
 /** The run paths the entry point chooses between. */
 export interface RunDispatch {
+	/** Builds the one project a run without `projects` uses. */
 	buildImplicitProject: typeof buildImplicitProject;
+	/** Loads the Rojo project tree. */
 	loadRojoTree: typeof loadRojoTree;
+	/** Runs a config with explicit `projects`. */
 	runMultiProject: typeof runMultiProjectAsync;
+	/** Runs projects that are already resolved. */
 	runResolvedProjects: typeof runResolvedProjectsAsync;
+	/** Runs workspace mode. */
 	runWorkspaceMode: typeof runWorkspaceModeAsync;
 }
 
 /** What a run reads and writes through. */
 export interface RunEntryOptions {
+	/** Run paths to choose between. Defaults to the real ones. */
 	dispatch?: RunDispatch;
+	/** Where the run reads and writes. Defaults to the real filesystem. */
 	fileSystem?: FileSystem;
+	/** Host seams the run uses. Defaults to the real ones. */
 	seams?: RunSeams;
 }
 
+/** Input to `runJestRobloxAsync`. */
 export interface RunJestRobloxOptions extends RunEntryOptions {
+	/** Parsed CLI options. */
 	cli: CliOptions;
+	/** Loaded config, before CLI options are merged in. */
 	config: ResolvedConfig;
+	/** Stage reporter for the run. */
 	progress?: RunProgress | undefined;
 }
 
+/** Input to `runSingleOrMultiAsync`. */
 export interface SingleOrMultiRunInput extends Required<RunEntryOptions> {
+	/** Parsed CLI options. */
 	cli: CliOptions;
+	/** Config with CLI options merged in. */
 	rootConfig: ResolvedConfig;
+	/** Span-tree profiler for the run. */
 	timing: TimingCollector;
 }
 
-/** The real run paths, for every caller that is not a test. */
+/**
+ * The real run paths, for every caller that is not a test.
+ * @returns The production run dispatch.
+ */
 export function nodeRunDispatch(): RunDispatch {
 	return {
 		buildImplicitProject,
@@ -59,6 +78,9 @@ export function nodeRunDispatch(): RunDispatch {
  * are siblings over this core: it builds the Coverage-Instrumented Place and
  * runs the suite, returning `coverageArtifacts` for the caller to emit a Build
  * Manifest from — the core never writes that manifest itself.
+ *
+ * @param options - CLI, merged config, timing and run dependencies.
+ * @returns The run result.
  */
 export async function runSingleOrMultiAsync({
 	dispatch,
@@ -104,6 +126,12 @@ export async function runSingleOrMultiAsync({
 	return dispatch.runResolvedProjects({ ...run, allProjects: [project] });
 }
 
+/**
+ * Run single, multi or workspace mode and emit the Build Manifest when the
+ * coverage place was rebuilt.
+ * @param options - CLI, config, progress and run dependencies.
+ * @returns The multi or workspace run result.
+ */
 export async function runJestRobloxAsync({
 	cli,
 	config,

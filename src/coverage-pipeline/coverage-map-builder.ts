@@ -1,6 +1,11 @@
 import type { CollectorResult } from "./coverage-collector.ts";
 import type { CoverageMap } from "./coverage-map.ts";
 
+/**
+ * Convert collected probe locations into a coverage map.
+ * @param result - Statements, functions and branches found by the collector.
+ * @returns Spans keyed by probe index.
+ */
 export function buildCoverageMap(result: CollectorResult): CoverageMap {
 	return {
 		branchMap: buildBranchMap(result),

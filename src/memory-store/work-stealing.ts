@@ -5,6 +5,7 @@ import { randomUUID } from "node:crypto";
 const DEFAULT_TTL_SECONDS = 600;
 const INVISIBILITY_BUFFER_SECONDS = 30;
 
+/** Queue ID and timing that the materializer reads the queue with. */
 export interface PreparedWorkStealing {
 	/**
 	 * Materializer-side invisibility window = perPackageTimeoutSeconds + 30.
@@ -45,6 +46,9 @@ interface PrepareWorkStealingOptions {
  * is empty (work-stealing); the invisibility window covers per-package
  * execution plus a small buffer so a crashing task lets its in-flight
  * package become visible again to siblings.
+ * @param options - Credentials, packages, per-package timeout and test seams.
+ * @returns Queue ID, invisibility window and item TTL.
+ * @rejects When the queue writer fails to enqueue.
  */
 export async function prepareWorkStealingQueueAsync(
 	options: PrepareWorkStealingOptions,

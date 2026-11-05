@@ -6,6 +6,7 @@ import type { ResolvedProjectConfig } from "../config/projects.ts";
 import type { PackageContext } from "./project-contexts.ts";
 import { projectKey } from "./project-key.ts";
 
+/** Contexts and files that a positional file filter keeps. */
 export interface WorkspaceFileSelection {
 	/**
 	 * The contexts that survived, each narrowed to the projects that matched.
@@ -19,13 +20,16 @@ export interface WorkspaceFileSelection {
 	filesByProject: ReadonlyMap<string, Array<string>>;
 }
 
+/** Contexts and positional files to filter. */
 export interface WorkspaceFileFilter {
+	/** Package contexts before the filter. */
 	contexts: Array<PackageContext>;
 	/**
 	 * Base a relative positional file resolves against — the directory the CLI
 	 * was invoked from, which is not any one package's.
 	 */
 	cwd: string;
+	/** Positional file arguments, or `undefined` when the run named none. */
 	files: ReadonlyArray<string> | undefined;
 }
 
@@ -46,6 +50,9 @@ type PackageByProject = Map<ResolvedProjectConfig, PackageContext>;
  * is left here is workspace-shaped: every package brings a root of its own for
  * include patterns to resolve against, and the flat match list has to be folded
  * back under the contexts it came from.
+ * @param filter - Contexts, invocation directory and positional files.
+ * @returns The narrowed contexts and the files each project owns.
+ * @throws {Error} When a file belongs to no project.
  */
 export function applyFileFilter({
 	contexts,
@@ -75,6 +82,9 @@ export function applyFileFilter({
  * Order follows the matches, which follow the scopes, which follow the original
  * context order — so a package keeps its place in the run and its projects keep
  * theirs within it.
+ * @param matches - Matches from `matchFilesToProjects`.
+ * @param packageByProject - Package context of each project.
+ * @returns The narrowed contexts and the files each project owns.
  */
 function regroupByPackage(
 	matches: ReadonlyArray<ProjectScopeMatch>,

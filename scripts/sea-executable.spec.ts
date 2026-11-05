@@ -49,6 +49,16 @@ describe(resolveSeaExecutable, () => {
 		expect(memory.volume.readFileSync(NODE, "utf8")).toBe("symbols+code");
 	});
 
+	it("should create a cache directory whose parents are missing", () => {
+		expect.assertions(1);
+
+		const executable = resolveSeaExecutable(
+			options(seed(), { cacheDirectory: "/cache/sea/node" }),
+		);
+
+		expect(executable).toBe("/cache/sea/node/node-v26.5.0-linux-stripped");
+	});
+
 	it("should reuse a copy stripped by an earlier build", () => {
 		expect.assertions(1);
 

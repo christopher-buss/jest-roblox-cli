@@ -3,6 +3,11 @@
  * was submitted. Not a Jest result: nothing ran.
  */
 export class BootUnverifiedError extends Error {
+	/**
+	 * Builds the message from the probe report and the budget it ran under.
+	 *
+	 * @param options - Probe report, boot budget in milliseconds, and place version number.
+	 */
 	constructor({
 		booted,
 		budget,

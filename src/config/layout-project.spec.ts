@@ -2,10 +2,11 @@ import * as path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
-import { LAYOUT_PROJECT_FILE, resolveLayoutProject } from "./layout-project.ts";
-import { DEFAULT_CONFIG, type ResolvedConfig } from "./schema.ts";
+import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
+import { resolveLayoutProject } from "./layout-project.ts";
+import type { ResolvedConfig } from "./schema.ts";
 
-const LAYOUT_PATH = path.join("/repo/pkg", LAYOUT_PROJECT_FILE);
+const LAYOUT_PATH = path.join("/repo/pkg", ".jest-roblox-layout.project.json");
 
 function luauPackage(extra: Record<string, string> = {}) {
 	return createMemoryFileSystem(
@@ -22,7 +23,7 @@ function luauPackage(extra: Record<string, string> = {}) {
 }
 
 function packageConfig(overrides: Partial<ResolvedConfig> = {}): ResolvedConfig {
-	return { ...DEFAULT_CONFIG, rootDir: "/repo/pkg", ...overrides };
+	return { ...createResolvedConfig(), rootDir: "/repo/pkg", ...overrides };
 }
 
 function readLayout(volume: ReturnType<typeof luauPackage>["volume"]) {
@@ -37,7 +38,7 @@ describe(resolveLayoutProject, () => {
 
 		const config = resolveLayoutProject({ config: packageConfig(), fileSystem });
 
-		expect(config.rojoProject).toBe(path.join("/repo/pkg", LAYOUT_PROJECT_FILE));
+		expect(config.rojoProject).toBe(LAYOUT_PATH);
 		expect(readLayout(volume)).toStrictEqual({
 			name: "pkg",
 			tree: {

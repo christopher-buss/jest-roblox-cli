@@ -1,10 +1,11 @@
 import type { LuauSpan } from "@isentinel/luau-ast/ast";
+import { fromAny } from "@total-typescript/shoehorn";
 
 import { describe, expect, it } from "vitest";
 
+import { COLLECTED_FIXTURES } from "#test/mocks/coverage-collected-fixtures.ts";
 import type { CollectorResult } from "./coverage-collector.ts";
 import { insertProbes } from "./probe-inserter.ts";
-import { toUtf16Columns } from "./utf16-columns.ts";
 
 function insert({
 	fileKey,
@@ -15,7 +16,11 @@ function insert({
 	result: CollectorResult<LuauSpan>;
 	source: string;
 }): string {
-	return insertProbes({ fileKey, result: toUtf16Columns(result, source), source });
+	return insertProbes({
+		fileKey,
+		result: fromAny<CollectorResult, CollectorResult<LuauSpan>>(result),
+		source,
+	});
 }
 
 function emptyResult(): CollectorResult<LuauSpan> {
@@ -25,6 +30,61 @@ function emptyResult(): CollectorResult<LuauSpan> {
 		implicitElseProbes: [],
 		statements: [],
 		wrapProbes: [],
+	};
+}
+
+function singleStatementResult(): CollectorResult<LuauSpan> {
+	return {
+		...emptyResult(),
+		statements: [
+			{
+				index: 1,
+				location: { beginColumn: 1, beginLine: 1, endColumn: 12, endLine: 1 },
+			},
+		],
+	};
+}
+
+function twoStatementResult(): CollectorResult<LuauSpan> {
+	return {
+		...emptyResult(),
+		statements: [
+			{
+				index: 1,
+				location: { beginColumn: 1, beginLine: 1, endColumn: 12, endLine: 1 },
+			},
+			{
+				index: 2,
+				location: { beginColumn: 1, beginLine: 2, endColumn: 9, endLine: 2 },
+			},
+		],
+	};
+}
+
+function noopFunctionResult({
+	bodyFirstColumn,
+	bodyFirstLine,
+}: {
+	bodyFirstColumn: number;
+	bodyFirstLine: number;
+}): CollectorResult<LuauSpan> {
+	return {
+		...emptyResult(),
+		functions: [
+			{
+				name: "noop",
+				bodyFirstColumn,
+				bodyFirstLine,
+				index: 1,
+				location: { beginColumn: 1, beginLine: 1, endColumn: 26, endLine: 1 },
+			},
+		],
+		statements: [
+			{
+				index: 1,
+				location: { beginColumn: 1, beginLine: 1, endColumn: 26, endLine: 1 },
+			},
+		],
 	};
 }
 
@@ -183,15 +243,7 @@ describe("probe-inserter", () => {
 			expect.assertions(5);
 
 			const source = "local x = 1";
-			const collector: CollectorResult<LuauSpan> = {
-				...emptyResult(),
-				statements: [
-					{
-						index: 1,
-						location: { beginColumn: 1, beginLine: 1, endColumn: 12, endLine: 1 },
-					},
-				],
-			};
+			const collector = singleStatementResult();
 
 			const result = insert({ fileKey: "test.luau", result: collector, source });
 
@@ -370,19 +422,7 @@ describe("probe-inserter", () => {
 			expect.assertions(3);
 
 			const source = "local x = 1\nprint(x)";
-			const collector: CollectorResult<LuauSpan> = {
-				...emptyResult(),
-				statements: [
-					{
-						index: 1,
-						location: { beginColumn: 1, beginLine: 1, endColumn: 12, endLine: 1 },
-					},
-					{
-						index: 2,
-						location: { beginColumn: 1, beginLine: 2, endColumn: 9, endLine: 2 },
-					},
-				],
-			};
+			const collector = twoStatementResult();
 
 			const result = insert({ fileKey: "test.luau", result: collector, source });
 
@@ -560,15 +600,7 @@ describe("probe-inserter", () => {
 			expect.assertions(1);
 
 			const source = "local x = 1";
-			const collector: CollectorResult<LuauSpan> = {
-				...emptyResult(),
-				statements: [
-					{
-						index: 1,
-						location: { beginColumn: 1, beginLine: 1, endColumn: 12, endLine: 1 },
-					},
-				],
-			};
+			const collector = singleStatementResult();
 
 			const result = insert({
 				fileKey: 'path\\to\\"file".luau',
@@ -583,24 +615,7 @@ describe("probe-inserter", () => {
 			expect.assertions(1);
 
 			const source = "local function noop() end";
-			const collector: CollectorResult<LuauSpan> = {
-				...emptyResult(),
-				functions: [
-					{
-						name: "noop",
-						bodyFirstColumn: 23,
-						bodyFirstLine: 1,
-						index: 1,
-						location: { beginColumn: 1, beginLine: 1, endColumn: 26, endLine: 1 },
-					},
-				],
-				statements: [
-					{
-						index: 1,
-						location: { beginColumn: 1, beginLine: 1, endColumn: 26, endLine: 1 },
-					},
-				],
-			};
+			const collector = noopFunctionResult({ bodyFirstColumn: 23, bodyFirstLine: 1 });
 
 			const result = insert({ fileKey: "test.luau", result: collector, source });
 
@@ -611,24 +626,7 @@ describe("probe-inserter", () => {
 			expect.assertions(1);
 
 			const source = "local function noop() end";
-			const collector: CollectorResult<LuauSpan> = {
-				...emptyResult(),
-				functions: [
-					{
-						name: "noop",
-						bodyFirstColumn: 0,
-						bodyFirstLine: 0,
-						index: 1,
-						location: { beginColumn: 1, beginLine: 1, endColumn: 26, endLine: 1 },
-					},
-				],
-				statements: [
-					{
-						index: 1,
-						location: { beginColumn: 1, beginLine: 1, endColumn: 26, endLine: 1 },
-					},
-				],
-			};
+			const collector = noopFunctionResult({ bodyFirstColumn: 0, bodyFirstLine: 0 });
 
 			const result = insert({ fileKey: "test.luau", result: collector, source });
 
@@ -931,15 +929,7 @@ describe("probe-inserter", () => {
 			expect.assertions(1);
 
 			const source = "local x = 1";
-			const collector: CollectorResult<LuauSpan> = {
-				...emptyResult(),
-				statements: [
-					{
-						index: 1,
-						location: { beginColumn: 1, beginLine: 1, endColumn: 12, endLine: 1 },
-					},
-				],
-			};
+			const collector = singleStatementResult();
 
 			const result = insert({ fileKey: "test.luau", result: collector, source });
 
@@ -987,23 +977,108 @@ describe("probe-inserter", () => {
 			expect.assertions(1);
 
 			const source = "local x = 1\r\nprint(x)";
-			const collector: CollectorResult<LuauSpan> = {
-				...emptyResult(),
-				statements: [
-					{
-						index: 1,
-						location: { beginColumn: 1, beginLine: 1, endColumn: 12, endLine: 1 },
-					},
-					{
-						index: 2,
-						location: { beginColumn: 1, beginLine: 2, endColumn: 9, endLine: 2 },
-					},
-				],
-			};
+			const collector = twoStatementResult();
 
 			const result = insert({ fileKey: "test.luau", result: collector, source });
 
 			expect(result).toEndWith("__cov_s[1] += 1; local x = 1\n__cov_s[2] += 1; print(x)");
 		});
 	});
+});
+
+function instrumentFixture(name: string, fileKey = name): string {
+	const { result, source } = COLLECTED_FIXTURES[name]!;
+	return insertProbes({ fileKey, result, source });
+}
+
+describe("probes in collected fixtures", () => {
+	it.for([
+		"simple.luau",
+		"empty.luau",
+		"if-only.luau",
+		"functions.luau",
+		"if-else.luau",
+		"expr-if.luau",
+		"and-or.luau",
+	])("should produce the expected instrumented source for %s", (name) => {
+		expect.assertions(1);
+
+		expect(instrumentFixture(name)).toMatchSnapshot();
+	});
+
+	it("should key the preamble on the file key", () => {
+		expect.assertions(3);
+
+		const instrumented = instrumentFixture("simple.luau", "shared/simple.luau");
+
+		expect(instrumented).toContain('__cov_file_key = "shared/simple.luau"');
+		expect(instrumented).toContain("_G.__jest_roblox_cov");
+		expect(instrumented).toContain("__cov_s");
+	});
+
+	it("should count function entry inside the body", () => {
+		expect.assertions(1);
+
+		expect(instrumentFixture("functions.luau")).toContain("__cov_f[1] += 1;");
+	});
+
+	it("should probe every if/elseif/else arm and size the preamble to match", () => {
+		expect.assertions(4);
+
+		const instrumented = instrumentFixture("if-else.luau");
+
+		expect(instrumented).toContain("__cov_b[1][1] += 1;");
+		expect(instrumented).toContain("__cov_b[1][2] += 1;");
+		expect(instrumented).toContain("__cov_b[1][3] += 1;");
+		expect(instrumented).toContain("__cov_b[1] = {0, 0, 0}");
+	});
+
+	it("should not point-probe an expression-if", () => {
+		expect.assertions(1);
+
+		expect(instrumentFixture("expr-if.luau")).not.toContain("__cov_b[1][1] += 1");
+	});
+
+	it("should wrap and/or operands, outer wraps around inner", () => {
+		expect.assertions(3);
+
+		const instrumented = instrumentFixture("and-or.luau");
+
+		expect(instrumented).toContain("local a = __cov_br(1, 1, x) and __cov_br(1, 2, y)");
+		expect(instrumented).toContain("local b = __cov_br(2, 1, p) or __cov_br(2, 2, q)");
+		expect(instrumented).toContain(
+			"local c = __cov_br(3, 1, __cov_br(4, 1, i) and __cov_br(4, 2, j)) and __cov_br(3, 2, k)",
+		);
+	});
+
+	it("should place probes at character boundaries on multi-byte lines", () => {
+		expect.assertions(4);
+
+		const instrumented = instrumentFixture("utf8-columns.luau");
+
+		expect(instrumented).toContain(
+			'local heart = if true then __cov_br(1, 1, `❤️ {1}`) else __cov_br(1, 2, "none")',
+		);
+		expect(instrumented).toContain(
+			'local infinity = __cov_br(2, 1, "∞") or __cov_br(2, 2, "fallback")',
+		);
+		expect(instrumented).toContain(
+			'local price = __cov_br(3, 1, `\u{E002}{100}`) and __cov_br(3, 2, "free")',
+		);
+		expect(instrumented).toContain(
+			'local party = __cov_br(4, 1, "\u{1F389}") and __cov_br(4, 2, "yes")',
+		);
+	});
+
+	it.for(Object.keys(COLLECTED_FIXTURES))(
+		"should keep %s line-for-line aligned with its original",
+		(name) => {
+			expect.assertions(1);
+
+			const { source } = COLLECTED_FIXTURES[name]!;
+			const originalLineCount = source.replace(/\r?\n$/u, "").split(/\r?\n/u).length;
+
+			expect(instrumentFixture(name).split("\n")).toHaveLength(originalLineCount);
+		},
+	);
 });

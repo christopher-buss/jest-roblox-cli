@@ -2,11 +2,10 @@ import * as path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
+import { posixPath } from "#test/mocks/posix-path.ts";
 import type { SourceMapSegment } from "#test/mocks/source-map.ts";
 import { buildSourceMap } from "#test/mocks/source-map.ts";
-import { formatSourceSnippet } from "../formatters/formatter.ts";
 import type { FileSystem } from "../utils/file-system.ts";
-import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import type { SourceMapper } from "./index.ts";
 import { combineSourceMappers, createSourceMapper, getSourceSnippet } from "./index.ts";
 
@@ -20,13 +19,14 @@ const SHARED_MAPPINGS = [{ outDir: "out", rootDir: "src" }];
 const SHARED_SOURCE = "../src/shared/test.ts";
 
 /** That same source as an absolute path, which is what a location reports. */
-const SHARED_SOURCE_PATH = normalizeWindowsPath(path.resolve("out/shared", SHARED_SOURCE));
+const SHARED_SOURCE_PATH = posixPath(path.resolve("out/shared", SHARED_SOURCE));
 
 /**
  * A volume seeded relative to the working directory, because a rojo `$path`
  * and a tsconfig `outDir` are both relative and the resolver joins onto them.
  *
  * @param files - What the run should find on disk.
+ * @returns The seeded filesystem.
  */
 function seedProject(files: Record<string, string>): FileSystem {
 	return createMemoryFileSystem(files).fileSystem;
@@ -37,6 +37,7 @@ function seedProject(files: Record<string, string>): FileSystem {
  *
  * @param segments - Which generated lines map to which source lines.
  * @param sourceContent - The source text to embed, when the case needs one.
+ * @returns The `.map` file keyed by its path.
  */
 function sharedMap(
 	segments: ReadonlyArray<SourceMapSegment>,
@@ -52,7 +53,12 @@ function sharedMap(
 	};
 }
 
-/** One generated line mapped to one source line, both at column 0. */
+/**
+ * One generated line mapped to one source line, both at column 0.
+ * @param generatedLine - The Luau line.
+ * @param sourceLine - The TypeScript line it maps to.
+ * @returns The segment.
+ */
 function lineToLine(generatedLine: number, sourceLine: number): SourceMapSegment {
 	return { generatedColumn: 0, generatedLine, sourceColumn: 0, sourceLine };
 }
@@ -88,7 +94,7 @@ describe(createSourceMapper, () => {
 		// which is why the map is seeded there and nowhere else.
 		const generated = "out-test/src/server/modules/ecs/context.spec.luau";
 		const source = "../../../../../src/server/modules/ecs/context.spec.ts";
-		const sourcePath = normalizeWindowsPath(path.resolve(path.dirname(generated), source));
+		const sourcePath = posixPath(path.resolve(path.dirname(generated), source));
 		const fileSystem = seedProject({
 			[`${generated}.map`]: buildSourceMap({
 				file: "context.spec.luau",
@@ -536,7 +542,7 @@ describe(getSourceSnippet, () => {
 		expect(snippet!.lines[0]!.num).toBe(1);
 	});
 
-	it("should snapshot rendered snippet with context", () => {
+	it("should return the failing line with its context", () => {
 		expect.assertions(1);
 
 		const fileSystem = seedProject({
@@ -555,17 +561,17 @@ describe("math", () => {
 			line: 4,
 		});
 
-		expect(
-			formatSourceSnippet({ filePath: "math.spec.ts", snippet: snippet!, useColor: false }),
-		).toMatchInlineSnapshot(`
-				" ❯ math.spec.ts:4:19
-					2| describe("math", () => {
-					3|   it("should add", () => {
-					4|     expect(2 + 2).toBe(5);
-					 |                   ^
-					5|   });
-					6| });"
-			`);
+		expect(snippet).toStrictEqual({
+			column: 19,
+			failureLine: 4,
+			lines: [
+				{ content: 'describe("math", () => {', num: 2 },
+				{ content: '  it("should add", () => {', num: 3 },
+				{ content: "    expect(2 + 2).toBe(5);", num: 4 },
+				{ content: "  });", num: 5 },
+				{ content: "});", num: 6 },
+			],
+		});
 	});
 
 	it("should use sourceContent when provided instead of reading file", () => {

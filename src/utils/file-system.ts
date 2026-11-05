@@ -1,5 +1,7 @@
 import * as nodeFs from "node:fs";
 
+export type { Dirent, Stats } from "node:fs";
+
 /**
  * The `node:fs` surface this CLI reaches for, named once so every module that
  * touches the disk takes it as a parameter rather than importing `node:fs`

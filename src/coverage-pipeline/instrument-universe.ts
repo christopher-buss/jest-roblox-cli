@@ -44,6 +44,9 @@ export interface InstrumentUniverse {
  * already drops whole roots before instrumentation, and its remaining job is a
  * report-time filter over TypeScript paths; re-deciding it per file here would
  * change what gets probed on every project that never set a coverage glob.
+ * @param filter - Include globs, ignore patterns and their anchor.
+ * @param fileSystem - File system that source-map sidecars are read through.
+ * @returns The gate, or `undefined` when `include` is empty.
  */
 export function createInstrumentUniverse(
 	filter: CoverageUniverseFilter,
@@ -105,6 +108,9 @@ function isFileNotFound(err: unknown): boolean {
  *
  * Every declared source counts, not just the first: a file built from more
  * than one module is in the universe if any of them is.
+ * @param fileSystem - File system to read the sidecar through.
+ * @param luauPath - Compiled Luau file path.
+ * @returns Source paths, or `undefined` when the sidecar is unusable.
  */
 function readSourcePaths(fileSystem: FileSystem, luauPath: string): Array<string> | undefined {
 	const sourceMapPath = `${luauPath}.map`;

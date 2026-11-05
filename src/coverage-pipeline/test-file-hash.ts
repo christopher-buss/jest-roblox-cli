@@ -8,6 +8,8 @@ import { hashFile } from "../utils/hash.ts";
  * to a disk file via the source mapper, then hash that file's bytes. Returns
  * undefined when there is no mapper, the path doesn't resolve, or the file is
  * absent — the harvester records an empty hash in that case.
+ * @param options - File system, source mapper and DataModel test path.
+ * @returns File hash, or undefined when it cannot be resolved.
  */
 export function resolveTestFileHash({
 	fileSystem = nodeFileSystem,

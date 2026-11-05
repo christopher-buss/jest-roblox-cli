@@ -14,6 +14,17 @@ function makeStorage(get: GetFunc): StorageClient {
 	return storage;
 }
 
+function makeObserver(get: GetFunc): ExecutionClaimObserver {
+	return new ExecutionClaimObserver({
+		credentials: { apiKey: "test-key", universeId: "123" },
+		storageFactory: () => makeStorage(get),
+	});
+}
+
+function failWith(cause: OpenCloudError): GetFunc {
+	return vi.fn<GetFunc>(async () => ({ err: cause, success: false }));
+}
+
 describe(ExecutionClaimObserver, () => {
 	it("should read and decode an execution claim by key", async () => {
 		expect.assertions(3);
@@ -32,10 +43,7 @@ describe(ExecutionClaimObserver, () => {
 			} satisfies SortedMapItem;
 			return { data: item, success: true };
 		});
-		const observer = new ExecutionClaimObserver({
-			credentials: { apiKey: "test-key", universeId: "123" },
-			storageFactory: () => makeStorage(get),
-		});
+		const observer = makeObserver(get);
 
 		const { signal } = new AbortController();
 
@@ -62,10 +70,7 @@ describe(ExecutionClaimObserver, () => {
 				success: false,
 			};
 		});
-		const observer = new ExecutionClaimObserver({
-			credentials: { apiKey: "test-key", universeId: "123" },
-			storageFactory: () => makeStorage(get),
-		});
+		const observer = makeObserver(get);
 
 		await expect(observer.readAsync("missing-key")).resolves.toStrictEqual({
 			status: "missing",
@@ -76,11 +81,7 @@ describe(ExecutionClaimObserver, () => {
 		expect.assertions(1);
 
 		const cause = new OpenCloudError("MemoryStore unavailable");
-		const get = vi.fn<GetFunc>(async () => ({ err: cause, success: false }));
-		const observer = new ExecutionClaimObserver({
-			credentials: { apiKey: "test-key", universeId: "123" },
-			storageFactory: () => makeStorage(get),
-		});
+		const observer = makeObserver(failWith(cause));
 
 		await expect(observer.readAsync("execution-key")).resolves.toStrictEqual({
 			error: cause,
@@ -92,11 +93,7 @@ describe(ExecutionClaimObserver, () => {
 		expect.assertions(1);
 
 		const cause = new ApiError("Forbidden", { statusCode: 403 });
-		const get = vi.fn<GetFunc>(async () => ({ err: cause, success: false }));
-		const observer = new ExecutionClaimObserver({
-			credentials: { apiKey: "test-key", universeId: "123" },
-			storageFactory: () => makeStorage(get),
-		});
+		const observer = makeObserver(failWith(cause));
 
 		await expect(observer.readAsync("execution-key")).resolves.toStrictEqual({
 			error: cause,
@@ -110,11 +107,7 @@ describe(ExecutionClaimObserver, () => {
 		const cause = new RequestAbortedError("Request was aborted", {
 			reason: "run superseded",
 		});
-		const get = vi.fn<GetFunc>(async () => ({ err: cause, success: false }));
-		const observer = new ExecutionClaimObserver({
-			credentials: { apiKey: "test-key", universeId: "123" },
-			storageFactory: () => makeStorage(get),
-		});
+		const observer = makeObserver(failWith(cause));
 
 		await expect(observer.readAsync("execution-key")).rejects.toBe(cause);
 	});
@@ -136,10 +129,7 @@ describe(ExecutionClaimObserver, () => {
 				success: true,
 			};
 		});
-		const observer = new ExecutionClaimObserver({
-			credentials: { apiKey: "test-key", universeId: "123" },
-			storageFactory: () => makeStorage(get),
-		});
+		const observer = makeObserver(get);
 
 		const observation = await observer.readAsync("execution-key");
 		assert(observation.status === "failed", "expected a failed claim observation");

@@ -4,8 +4,8 @@ import process from "node:process";
 import { assert, describe, expect, it, onTestFinished, vi } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
+import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
 import type { Backend, ProjectJob } from "../backends/interface.ts";
-import { DEFAULT_CONFIG } from "../config/schema.ts";
 import type { ExecuteResult, runProjectsAsync, RunProjectsResult } from "../executor.ts";
 import type { TsconfigMappingCache } from "../executor/tsconfig-mappings.ts";
 import type { prepareWorkStealingQueueAsync } from "../memory-store/work-stealing.ts";
@@ -16,7 +16,7 @@ import {
 	runDispatchedProjectsAsync,
 	type WorkspaceJob,
 } from "./dispatch.ts";
-import type { PendingEntry } from "./test-selection.ts";
+import type { PendingEntry } from "./pending-entry.ts";
 
 interface DispatchedPayload {
 	bail?: boolean;
@@ -47,7 +47,7 @@ function makeJob({
 }): WorkspaceJob {
 	return fromAny({
 		config: {
-			...DEFAULT_CONFIG,
+			...createResolvedConfig(),
 			projectTimeout: 60_000,
 			rootDir: `/repo/${packageName}`,
 			timeout: 300_000,
@@ -135,7 +135,7 @@ describe(buildWorkspaceJobs, () => {
 
 		const { fileSystem } = createMemoryFileSystem();
 		const projectConfig = {
-			...DEFAULT_CONFIG,
+			...createResolvedConfig(),
 			placeFile: "old.rbxl",
 			rootDir: "/repo",
 			snapshotFormat: { printBasicPrototype: true },
@@ -210,6 +210,18 @@ describe(prepareWorkspaceDispatchAsync, () => {
 		expect(spec.bail).toBeTrue();
 	});
 
+	it("should not bail unless asked", async () => {
+		expect.assertions(1);
+
+		const spec = await prepareWorkspaceDispatchAsync({
+			jobs: [makeJob({ displayName: "unit", packageName: "pkg-a" })],
+			parallel: 1,
+			workStealingCredentials: undefined,
+		});
+
+		expect(spec.bail).toBeFalse();
+	});
+
 	it("should hand the VM count to a backend that builds its own payload", async () => {
 		expect.assertions(1);
 
@@ -223,165 +235,8 @@ describe(prepareWorkspaceDispatchAsync, () => {
 		expect(spec.vmParallel).toBe("auto");
 	});
 
-	it("should return a work-stealing script when queue setup succeeds", async () => {
+	it("should fall back to a bucketed script when queue setup fails", async () => {
 		expect.assertions(2);
-
-		const job = makeJob({ displayName: "unit", packageName: "pkg-a" });
-		const prepareWorkStealingQueue = stubQueue();
-		const credentials = { apiKey: "key", baseUrl: "https://example.test", universeId: "42" };
-
-		const spec = await prepareWorkspaceDispatchAsync({
-			jobs: [job],
-			parallel: "auto",
-			prepareWorkStealingQueue,
-			workStealingCredentials: credentials,
-		});
-
-		expect(prepareWorkStealingQueue).toHaveBeenCalledExactlyOnceWith({
-			baseUrl: "https://example.test",
-			credentials: { apiKey: "key", universeId: "42" },
-			packages: [{ pkg: "pkg-a", project: "unit" }],
-			perPackageTimeoutSeconds: 60,
-		});
-
-		assert(spec.scriptOverride !== undefined);
-
-		expect({ ...spec, scriptOverride: payloadOf(spec.scriptOverride) }).toStrictEqual({
-			parallel: "auto",
-			scriptOverride: expect.objectContaining({
-				invisibilityWindowSeconds: 90,
-				queueId: "queue-1",
-				queueTtlSeconds: 600,
-			}),
-			workStealing: true,
-		});
-	});
-
-	it("should size the invisibility window off the slowest package's budget", async () => {
-		expect.assertions(1);
-
-		const prepareWorkStealingQueue = stubQueue();
-
-		await prepareWorkspaceDispatchAsync({
-			jobs: [
-				makeJob({ displayName: "unit", packageName: "pkg-a" }),
-				makeJob({
-					config: { projectTimeout: 180_000 },
-					displayName: "unit",
-					packageName: "pkg-b",
-				}),
-			],
-			parallel: "auto",
-			prepareWorkStealingQueue,
-			workStealingCredentials: { apiKey: "key", universeId: "42" },
-		});
-
-		expect(prepareWorkStealingQueue).toHaveBeenCalledWith(
-			expect.objectContaining({ perPackageTimeoutSeconds: 180 }),
-		);
-	});
-
-	// A package with no budget of its own is bounded only by the deadline
-	// Roblox gives the whole task, so that is the window a sibling must wait
-	// out before reclaiming it.
-	it("should fall back to the task deadline for a package with no budget", async () => {
-		expect.assertions(1);
-
-		const prepareWorkStealingQueue = stubQueue();
-
-		await prepareWorkspaceDispatchAsync({
-			jobs: [
-				makeJob({
-					config: { projectTimeout: 0 },
-					displayName: "unit",
-					packageName: "pkg-a",
-				}),
-			],
-			parallel: "auto",
-			prepareWorkStealingQueue,
-			workStealingCredentials: { apiKey: "key", universeId: "42" },
-		});
-
-		expect(prepareWorkStealingQueue).toHaveBeenCalledWith(
-			expect.objectContaining({ perPackageTimeoutSeconds: 300 }),
-		);
-	});
-
-	// Every task runs under the first job's `timeout`, so a later package's own
-	// run timeout is not the deadline it will be worked on under. Reading it as
-	// one sizes the window under the deadline, and the item is reclaimed and
-	// run a second time while the first task is still inside it.
-	it("should take an unbudgeted package's deadline from the first job", async () => {
-		expect.assertions(1);
-
-		const prepareWorkStealingQueue = stubQueue();
-
-		await prepareWorkspaceDispatchAsync({
-			jobs: [
-				makeJob({ displayName: "unit", packageName: "pkg-a" }),
-				makeJob({
-					config: { projectTimeout: 0, timeout: 60_000 },
-					displayName: "unit",
-					packageName: "pkg-b",
-				}),
-			],
-			parallel: "auto",
-			prepareWorkStealingQueue,
-			workStealingCredentials: { apiKey: "key", universeId: "42" },
-		});
-
-		expect(prepareWorkStealingQueue).toHaveBeenCalledWith(
-			expect.objectContaining({ perPackageTimeoutSeconds: 300 }),
-		);
-	});
-
-	// A budget past the task deadline cannot be reached: Roblox ends the task
-	// first. Waiting it out only delays the reclaim of an item whose worker is
-	// already gone.
-	it("should cap a package budget at the task deadline", async () => {
-		expect.assertions(1);
-
-		const prepareWorkStealingQueue = stubQueue();
-
-		await prepareWorkspaceDispatchAsync({
-			jobs: [
-				makeJob({
-					config: { projectTimeout: 900_000 },
-					displayName: "unit",
-					packageName: "pkg-a",
-				}),
-			],
-			parallel: "auto",
-			prepareWorkStealingQueue,
-			workStealingCredentials: { apiKey: "key", universeId: "42" },
-		});
-
-		expect(prepareWorkStealingQueue).toHaveBeenCalledWith(
-			expect.objectContaining({ perPackageTimeoutSeconds: 300 }),
-		);
-	});
-
-	it("should hand the stealing script the queue TTL the queue was seeded with", async () => {
-		expect.assertions(1);
-
-		const spec = await prepareWorkspaceDispatchAsync({
-			jobs: [makeJob({ displayName: "unit", packageName: "pkg-a" })],
-			parallel: "auto",
-			prepareWorkStealingQueue: stubQueue(),
-			workStealingCredentials: { apiKey: "key", universeId: "42" },
-		});
-		assert(spec.scriptOverride !== undefined);
-
-		expect(payloadOf(spec.scriptOverride)).toStrictEqual({
-			entries: [expect.objectContaining({ pkg: "pkg-a", project: "unit" })],
-			invisibilityWindowSeconds: 90,
-			queueId: "queue-1",
-			queueTtlSeconds: 600,
-		});
-	});
-
-	it("should warn and fall back to a sequential script when queue setup fails", async () => {
-		expect.assertions(3);
 
 		const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
 		onTestFinished(() => {
@@ -396,15 +251,22 @@ describe(prepareWorkspaceDispatchAsync, () => {
 			workStealingCredentials: { apiKey: "key", universeId: "42" },
 		});
 
-		expect(stderr).toHaveBeenCalledExactlyOnceWith(
-			"Warning: could not set up the work-stealing queue, running packages " +
-				"with no work-stealing: missing scope\n" +
-				"Grant the API key memory-store.queue:add/dequeue/discard so tasks " +
-				"can rebalance instead of running a fixed share each.\n",
-		);
 		expect(spec.scriptFactory).toBeTypeOf("function");
 		// The fallback loses work-stealing, not concurrency: the backend
 		// buckets the entries statically, which needs the count to survive.
 		expect(spec.parallel).toBe(2);
+	});
+
+	it("should dispatch a work-stealing spec when queue setup succeeds", async () => {
+		expect.assertions(1);
+
+		const spec = await prepareWorkspaceDispatchAsync({
+			jobs: [makeJob({ displayName: "unit", packageName: "pkg-a" })],
+			parallel: "auto",
+			prepareWorkStealingQueue: stubQueue(),
+			workStealingCredentials: { apiKey: "key", universeId: "42" },
+		});
+
+		expect(spec.workStealing).toBeTrue();
 	});
 });

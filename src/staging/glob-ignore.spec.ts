@@ -41,4 +41,10 @@ describe(createIgnoreMatcher, () => {
 		expect(matcher("/repo/out/thing.luau")).toBeTrue();
 		expect(matcher("/repo/src/thing.luau")).toBeFalse();
 	});
+
+	it("should match a path through a dot-directory", () => {
+		expect.assertions(1);
+
+		expect(createIgnoreMatcher(["**/out/**"])("/repo/.cache/out/thing.luau")).toBeTrue();
+	});
 });

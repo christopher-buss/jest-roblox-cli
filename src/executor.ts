@@ -1,75 +1,45 @@
-import { resolveNestedProjects } from "@isentinel/rojo-utils";
-
-import { type } from "arktype";
-import * as path from "node:path";
-import type { Except } from "type-fest";
-
-import { buildProjectResult } from "./backends/envelope.ts";
 import type {
 	Backend,
 	BackendResult,
 	BackendTiming,
 	ParallelOption,
-	ProjectBackendResult,
 	ProjectJob,
-	RawBackendEntry,
 	StreamingHooks,
 } from "./backends/interface.ts";
 import type { ResolvedConfig } from "./config/schema.ts";
 import { resolveSnapshotFormat } from "./config/snapshot-format.ts";
-import type { AttributionResult } from "./coverage-pipeline/attribution.ts";
-import { harvestAttribution } from "./coverage-pipeline/attribution.ts";
-import { createTestSourceResolver } from "./coverage-pipeline/test-source.ts";
-import { buildExecutionErrorResult } from "./executor/exec-error.ts";
-import { formatExecuteOutput } from "./executor/format-output.ts";
-import type { SnapshotWriteCounts } from "./executor/snapshot-writer.ts";
-import { findRojoProject, writeSnapshots } from "./executor/snapshot-writer.ts";
-import {
-	calculateTestsMs,
-	printLuauTiming,
-	recordBackendTimingSpans,
-	recordLuauTimingSpans,
-} from "./executor/timing-spans.ts";
+import type { ExecuteResult } from "./executor/executor-types.ts";
+import { type EntryContext, processOrRecoverEntry } from "./executor/process-entry.ts";
+import { recordBackendTimingSpans, recordLuauTimingSpans } from "./executor/timing-spans.ts";
 import type { TsconfigMappingCache, TsconfigReader } from "./executor/tsconfig-mappings.ts";
-import {
-	createTsconfigMappingCache,
-	nodeTsconfigReader,
-	resolveAllTsconfigMappings,
-} from "./executor/tsconfig-mappings.ts";
-import type { ExecuteResult } from "./executor/types.ts";
-import { LuauScriptError, type SnapshotWrites } from "./reporter/parser.ts";
-import { applyFailureGaps, applyGapRecord } from "./results/gaps.ts";
-import { createSourceMapper, type SourceMapper } from "./source-mapper/index.ts";
-import type { CodeBundleArtifact } from "./staging/place-builder.ts";
+import { createTsconfigMappingCache, nodeTsconfigReader } from "./executor/tsconfig-mappings.ts";
+import type { CodeBundleArtifact } from "./staging/code-bundle.ts";
 import { NOOP_TIMING_COLLECTOR, type TimingCollector } from "./timing/orchestration-collector.ts";
-import type { JestResult } from "./types/jest-result.ts";
-import { rojoProjectSchema } from "./types/rojo.ts";
-import type { TimingResult } from "./types/timing.ts";
-import type { TsconfigMapping } from "./types/tsconfig.ts";
 import type { FileSystem } from "./utils/file-system.ts";
 import { nodeFileSystem } from "./utils/file-system.ts";
 
-export { loadCoverageManifest } from "./coverage-pipeline/manifest-load.ts";
+export type { ExecuteResult, FormatOutputOptions } from "./executor/executor-types.ts";
 export { formatExecuteOutput } from "./executor/format-output.ts";
-export {
-	isLuauProject,
-	readTsconfigMapping,
-	resolveAllTsconfigMappings,
-	resolveTsconfigDirectories,
-} from "./executor/tsconfig-mappings.ts";
-export type { ExecuteResult, FormatOutputOptions } from "./executor/types.ts";
 
+/** One project to run, before the executor resolves it into a job. */
 export interface ProjectInput {
+	/** Resolved config for this project. */
 	config: ResolvedConfig;
+	/** Color for the project label in output. */
 	displayColor?: string | undefined;
+	/** Label shown for the project in output. */
 	displayName?: string | undefined;
+	/** Workspace package this project belongs to. */
 	pkg?: string | undefined;
 	/** Studio-only: forwarded to `ProjectJob.runtimeInjectionPaths`. */
 	runtimeInjectionPaths?: Array<string> | undefined;
+	/** Test files the project runs. */
 	testFiles: Array<string>;
 }
 
+/** Input to `runProjectsAsync`. */
 export interface RunProjectsOptions {
+	/** Backend that runs the jobs. */
 	backend: Backend;
 	/** Workspace mode: stop on the first failing package (`--bail`). */
 	bail?: boolean | undefined;
@@ -78,14 +48,21 @@ export interface RunProjectsOptions {
 	 * as-is. Absent for a run that built the whole place.
 	 */
 	codeBundle?: CodeBundleArtifact | undefined;
+	/** Skip formatting output per project; the caller formats later. */
 	deferFormatting?: boolean | undefined;
 	/** Where the run reads and writes. Defaults to the real filesystem. */
 	fileSystem?: FileSystem | undefined;
+	/** Parallelism forwarded to the backend. */
 	parallel?: ParallelOption;
+	/** Projects to run. */
 	projects: Array<ProjectInput>;
+	/** Builds the runtime script from the jobs, forwarded to the backend. */
 	scriptFactory?: ((jobs: ReadonlyArray<ProjectJob>) => string) | undefined;
+	/** Runtime script to use as-is, forwarded to the backend. */
 	scriptOverride?: string | undefined;
+	/** Run start time, in epoch milliseconds. */
 	startTime: number;
+	/** Hooks the backend calls as results stream in. */
 	streaming?: StreamingHooks | undefined;
 	/**
 	 * Span-tree profiler owned by the top-level run. Optional so existing
@@ -104,16 +81,20 @@ export interface RunProjectsOptions {
 	tsconfigCache?: TsconfigMappingCache | undefined;
 	/** How a tsconfig is read. Defaults to the real one. */
 	tsconfigReader?: TsconfigReader | undefined;
+	/** CLI version recorded in results. */
 	version: string;
 	/**
 	 * Studio-only, experimental: how many Luau VMs the plugin splits the jobs
 	 * across inside one Studio session. Every other backend ignores it.
 	 */
 	vmParallel?: ParallelOption;
+	/** Work-stealing flag forwarded to the backend. */
 	workStealing?: boolean | undefined;
 }
 
+/** Output of `runProjectsAsync`. */
 export interface RunProjectsResult {
+	/** Timing the backend reported for the dispatch. */
 	backendTiming: BackendTiming;
 	/**
 	 * Which entries of `projects` the `results` are for, in the same order.
@@ -122,50 +103,24 @@ export interface RunProjectsResult {
 	 * per-project state up against this rather than against `projects`.
 	 */
 	ranProjectIndices: Array<number>;
+	/** Processed result per project that ran. */
 	results: Array<ExecuteResult>;
 }
 
+/** Input to `buildProjectJob`. */
 export interface BuildProjectJobOptions {
+	/** Tsconfig mappings shared across the run. */
 	cache: TsconfigMappingCache;
+	/** Where the job reads. Defaults to the real filesystem. */
 	fileSystem?: FileSystem | undefined;
+	/** Project to resolve. */
 	project: ProjectInput;
+	/** How a tsconfig is read. Defaults to the real one. */
 	tsconfigReader?: TsconfigReader | undefined;
 }
 
+/** Signature of `runProjectsAsync`, for injection. */
 export type RunProjects = typeof runProjectsAsync;
-
-interface ProcessProjectOptions {
-	backendTiming: BackendTiming;
-	config: ResolvedConfig;
-	deferFormatting?: boolean | undefined;
-	fileSystem: FileSystem;
-	startTime: number;
-	/**
-	 * The orchestration collector created by `runJestRoblox`. Required —
-	 * the only caller is `runProjects` which always passes its own
-	 * collector (NOOP when the top-level run didn't enable TIMING).
-	 */
-	timing: TimingCollector;
-	/**
-	 * Shared with the job build, so this run scans a package once, not once
-	 * per project.
-	 */
-	tsconfigCache: TsconfigMappingCache;
-	tsconfigReader: TsconfigReader;
-	version: string;
-}
-
-/**
- * Everything a raw backend entry needs to post-process except the config,
- * which each entry recovers from its own job.
- */
-type EntryContext = Except<ProcessProjectOptions, "config">;
-
-interface ProjectArtifacts {
-	attribution: AttributionResult | undefined;
-	sourceMapper: SourceMapper | undefined;
-	writeCounts: SnapshotWriteCounts;
-}
 
 /**
  * Resolve one project into the job the runtime runs: `snapshotFormat` per
@@ -178,6 +133,9 @@ interface ProjectArtifacts {
  * freezes the script. Per-project config resolution belongs in this one
  * function for that reason: resolve a field anywhere downstream of the payload
  * and it reaches multi mode only.
+ *
+ * @param options - Project, tsconfig cache, filesystem and tsconfig reader.
+ * @returns The job with its snapshot format resolved.
  */
 export function buildProjectJob({
 	cache,
@@ -215,6 +173,10 @@ export function buildProjectJob({
  * in `projects`. Backends MUST return `rawResults` in the order of the jobs
  * that ran, because `runProjects` walks the two together to recover each
  * project's resolved config, and a mismatch post-processes with the wrong one.
+ *
+ * @param options - Projects, backend and run settings.
+ * @returns Results per project that ran, with the indices they map to.
+ * @throws When the backend returns a different count of results than jobs that ran.
  */
 export async function runProjectsAsync(options: RunProjectsOptions): Promise<RunProjectsResult> {
 	const { fileSystem = nodeFileSystem, tsconfigReader = nodeTsconfigReader } = options;
@@ -255,6 +217,9 @@ export async function runProjectsAsync(options: RunProjectsOptions): Promise<Run
 
 /**
  * One job per input project, resolved against the caches the run will reuse.
+ * @param options - Run options holding the projects.
+ * @param context - Filesystem, timing, tsconfig cache and reader.
+ * @returns One job per project, in project order.
  */
 function buildRunJobs(
 	options: RunProjectsOptions,
@@ -274,6 +239,9 @@ function buildRunJobs(
 
 /**
  * The job indices a dispatch produced results for, in job order.
+ * @param jobCount - Count of dispatched jobs.
+ * @param bailedJobIndices - Job indices a bail skipped.
+ * @returns Indices of jobs that ran.
  */
 function selectRanIndices(
 	jobCount: number,
@@ -326,299 +294,5 @@ function assertResultParity(resultCount: number, jobCount: number): void {
 		throw new Error(
 			`Backend returned ${resultCount.toString()} results for ${jobCount.toString()} jobs — rawResults must be parallel to jobs`,
 		);
-	}
-}
-
-function writeProjectSnapshots({
-	config,
-	fileSystem,
-	snapshotWrites,
-	timing,
-	tsconfigMappings,
-}: {
-	config: ResolvedConfig;
-	fileSystem: FileSystem;
-	snapshotWrites: SnapshotWrites | undefined;
-	timing: TimingCollector;
-	tsconfigMappings: ReadonlyArray<TsconfigMapping>;
-}): SnapshotWriteCounts {
-	if (snapshotWrites === undefined) {
-		return { attempted: 0, failed: 0, written: 0 };
-	}
-
-	return timing.profile("writeSnapshots", () => {
-		return writeSnapshots({ config, fileSystem, snapshotWrites, tsconfigMappings });
-	});
-}
-
-function buildSourceMapper({
-	config,
-	fileSystem,
-	tsconfigMappings,
-}: {
-	config: ResolvedConfig;
-	fileSystem: FileSystem;
-	tsconfigMappings: ReadonlyArray<TsconfigMapping>;
-}): SourceMapper | undefined {
-	const rojoProjectPath = config.rojoProject ?? findRojoProject(config.rootDir, fileSystem);
-	if (rojoProjectPath === undefined || !fileSystem.existsSync(rojoProjectPath)) {
-		return undefined;
-	}
-
-	try {
-		const rojoProjectRaw = JSON.parse(fileSystem.readFileSync(rojoProjectPath, "utf-8"));
-		const rojoResult = rojoProjectSchema(rojoProjectRaw);
-		if (rojoResult instanceof type.errors) {
-			return undefined;
-		}
-
-		const resolvedTree = resolveNestedProjects(
-			{ rootDirectory: path.dirname(rojoProjectPath), tree: rojoResult.tree },
-			fileSystem,
-		);
-
-		return createSourceMapper({
-			fileSystem,
-			mappings: tsconfigMappings,
-			rojoProject: { ...rojoResult, tree: resolvedTree },
-		});
-	} catch {
-		return undefined;
-	}
-}
-
-function resolveTestFilePaths(result: JestResult, sourceMapper: SourceMapper | undefined): void {
-	if (sourceMapper === undefined) {
-		return;
-	}
-
-	for (const file of result.testResults) {
-		file.testFilePath =
-			sourceMapper.resolveTestFilePath(file.testFilePath) ?? file.testFilePath;
-	}
-}
-
-/**
- * Everything the resolved tsconfig mappings unlock for one project: the
- * snapshot writes they address, the source mapper they feed, and the
- * attribution keyed off that mapper. The mapper is returned alongside the
- * attribution because the caller threads it into both the formatter and the
- * `ExecuteResult`.
- */
-function collectProjectArtifacts({
-	coverageData,
-	options: { config, fileSystem, timing },
-	perTestCoverage,
-	result,
-	snapshotWrites,
-	tsconfigMappings,
-}: ProjectBackendResult & {
-	options: ProcessProjectOptions;
-	tsconfigMappings: ReadonlyArray<TsconfigMapping>;
-}): ProjectArtifacts {
-	const writeCounts = writeProjectSnapshots({
-		config,
-		fileSystem,
-		snapshotWrites,
-		timing,
-		tsconfigMappings,
-	});
-
-	const sourceMapper = config.sourceMap
-		? timing.profile("buildSourceMapper", () => {
-				return buildSourceMapper({ config, fileSystem, tsconfigMappings });
-			})
-		: undefined;
-
-	// Built before the result's paths are rewritten: the resolver joins the
-	// per-test entries to Jest's own test cases on the DataModel path both
-	// report.
-	const resolveTestSource = createTestSourceResolver({ fileSystem, result, sourceMapper });
-	resolveTestFilePaths(result, sourceMapper);
-
-	// Harvest whenever per-test coverage was collected, even if no test credited
-	// anything (perTestCoverage is then undefined): every cumulative hit ran
-	// outside a window, so the whole hit set is static.
-	const shouldHarvestStatic =
-		config.collectPerTestCoverage === true && coverageData !== undefined;
-	const attribution =
-		perTestCoverage !== undefined || shouldHarvestStatic
-			? harvestAttribution({
-					cumulative: coverageData ?? {},
-					entries: perTestCoverage ?? [],
-					resolveTestSource,
-				})
-			: undefined;
-
-	return { attribution, sourceMapper, writeCounts };
-}
-
-function buildResultTiming(
-	{ result, setupMs }: ProjectBackendResult,
-	{ backendTiming, startTime }: ProcessProjectOptions,
-): TimingResult {
-	return {
-		executionMs: backendTiming.executionMs,
-		setupMs,
-		startTime,
-		testsMs: calculateTestsMs(result.testResults),
-		totalMs: Date.now() - startTime,
-		uploadMs: backendTiming.uploadMs,
-	};
-}
-
-function renderProjectOutput({
-	artifacts: { sourceMapper, writeCounts },
-	options: { config, deferFormatting, version },
-	result,
-	timing,
-}: ProjectBackendResult & {
-	artifacts: ProjectArtifacts;
-	options: ProcessProjectOptions;
-	timing: TimingResult;
-}): string {
-	if (deferFormatting === true) {
-		return "";
-	}
-
-	return formatExecuteOutput({
-		config,
-		result,
-		snapshotWriteFailures: writeCounts.failed,
-		sourceMapper,
-		timing,
-		version,
-	});
-}
-
-/**
- * This project's tsconfig mappings, measured under the span the run reports.
- */
-function resolveProjectTsconfigMappings(options: ProcessProjectOptions): Array<TsconfigMapping> {
-	return options.timing.profile("resolveTsconfigMappings", () => {
-		return resolveAllTsconfigMappings({
-			cache: options.tsconfigCache,
-			fileSystem: options.fileSystem,
-			projectRoot: options.config.rootDir,
-			tsconfigReader: options.tsconfigReader,
-		});
-	});
-}
-
-/**
- * Process a single `ProjectBackendResult` into an `ExecuteResult`: writes
- * snapshots, builds the source mapper, resolves test-file paths, and renders
- * formatter output. Called once per job.
- */
-function processProjectResult(
-	backendResult: ProjectBackendResult,
-	options: ProcessProjectOptions,
-): ExecuteResult {
-	const { luauTiming, result } = backendResult;
-
-	const tsconfigMappings = resolveProjectTsconfigMappings(options);
-	const artifacts = collectProjectArtifacts({ ...backendResult, options, tsconfigMappings });
-	const resultTiming = buildResultTiming(backendResult, options);
-	const output = renderProjectOutput({
-		...backendResult,
-		artifacts,
-		options,
-		timing: resultTiming,
-	});
-
-	// Workspace runs (deferFormatting) surface these phases as nested
-	// `luau.*` spans in the collector tree instead; the flat print would
-	// duplicate them unindented above it, once per project.
-	if (luauTiming !== undefined && options.deferFormatting !== true) {
-		printLuauTiming(luauTiming);
-	}
-
-	const { failed } = artifacts.writeCounts;
-
-	return {
-		attribution: artifacts.attribution,
-		coverageData: backendResult.coverageData,
-		exitCode: failed === 0 && result.success ? 0 : 1,
-		gameOutput: backendResult.gameOutput,
-		gameOutputScope: backendResult.gameOutputScope,
-		output,
-		result,
-		snapshotWriteFailures: failed > 0 ? failed : undefined,
-		sourceMapper: artifacts.sourceMapper,
-		timing: resultTiming,
-	};
-}
-
-function recoverFromParseFailure({
-	context,
-	error,
-	job,
-	raw,
-}: {
-	context: EntryContext;
-	error: LuauScriptError;
-	job: ProjectJob;
-	raw: RawBackendEntry;
-}): ExecuteResult {
-	const failed = buildExecutionErrorResult({
-		backendTiming: context.backendTiming,
-		config: job.config,
-		deferFormatting: context.deferFormatting,
-		// Off the job rather than off the entry: the entry is what the run
-		// came back with, and a run that came back with nothing still has
-		// the job the host sent.
-		entry: {
-			pkg: job.pkg,
-			project: job.displayName,
-			testFileCount: job.testFiles.length,
-		},
-		error,
-		startTime: context.startTime,
-		version: context.version,
-	});
-	if (raw.gaps !== undefined) {
-		applyFailureGaps(failed.result, raw.gaps);
-	}
-
-	return failed;
-}
-
-function processOrRecoverEntry({
-	context,
-	job,
-	raw,
-}: {
-	context: EntryContext;
-	job: ProjectJob;
-	raw: RawBackendEntry;
-}): ExecuteResult {
-	// When one entry's envelope decodes to `{success:false,
-	// err:...}` (Jest's per-entry pcall in `runEntry` encodes deferred
-	// Promise rejections this way — e.g. when jest-core's runJest:345
-	// calls exit(1) because a project's --testPathPattern matched zero
-	// files), parseJestOutput throws LuauScriptError. Without per-entry
-	// recovery the throw escapes runProjects entirely and the
-	// workspace-runner never reaches writePerPackageOutputFiles or writes
-	// snapshots from sibling entries. Convert the parse failure into a
-	// synthetic failed ExecuteResult so the other entries' snapshot
-	// writes and per-package output files still land.
-	try {
-		const projectResult = buildProjectResult({
-			...raw.entry,
-			fallbackGameOutput: raw.fallbackGameOutput,
-			gameOutputScope: raw.gameOutputScope,
-			job,
-		});
-		if (raw.gaps !== undefined) {
-			applyGapRecord(projectResult.result, raw.gaps);
-		}
-
-		return processProjectResult(projectResult, { ...context, config: job.config });
-	} catch (err) {
-		if (!(err instanceof LuauScriptError)) {
-			throw err;
-		}
-
-		return recoverFromParseFailure({ context, error: err, job, raw });
 	}
 }

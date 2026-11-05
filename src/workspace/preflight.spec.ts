@@ -2,6 +2,7 @@ import * as path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
+import type { FileSystem } from "../utils/file-system.ts";
 import { validatePackages } from "./preflight.ts";
 
 const ROOT = path.resolve("/repo");
@@ -9,6 +10,19 @@ const FOO_DIR = path.join(ROOT, "packages/foo");
 
 function projectJson(json: JSONObject): string {
 	return JSON.stringify(json);
+}
+
+function validateFoo(fileSystem: FileSystem): ReturnType<typeof validatePackages> {
+	return validatePackages(
+		[
+			{
+				name: "@halcyon/foo",
+				packageDirectory: FOO_DIR,
+				rojoProjectPath: path.join(FOO_DIR, "test.project.json"),
+			},
+		],
+		fileSystem,
+	);
 }
 
 describe(validatePackages, () => {
@@ -27,16 +41,7 @@ describe(validatePackages, () => {
 			}),
 		});
 
-		const errors = validatePackages(
-			[
-				{
-					name: "@halcyon/foo",
-					packageDirectory: FOO_DIR,
-					rojoProjectPath: path.join(FOO_DIR, "test.project.json"),
-				},
-			],
-			fileSystem,
-		);
+		const errors = validateFoo(fileSystem);
 
 		expect(errors).toStrictEqual([]);
 	});
@@ -48,16 +53,7 @@ describe(validatePackages, () => {
 			[path.join(FOO_DIR, "jest.config.ts")]: "export default {}",
 		});
 
-		const errors = validatePackages(
-			[
-				{
-					name: "@halcyon/foo",
-					packageDirectory: FOO_DIR,
-					rojoProjectPath: path.join(FOO_DIR, "test.project.json"),
-				},
-			],
-			fileSystem,
-		);
+		const errors = validateFoo(fileSystem);
 
 		expect(errors).toHaveLength(1);
 		expect(errors[0]!.package).toBe("@halcyon/foo");
@@ -71,16 +67,7 @@ describe(validatePackages, () => {
 			[path.join(FOO_DIR, "test.project.json")]: "not json {{",
 		});
 
-		const errors = validatePackages(
-			[
-				{
-					name: "@halcyon/foo",
-					packageDirectory: FOO_DIR,
-					rojoProjectPath: path.join(FOO_DIR, "test.project.json"),
-				},
-			],
-			fileSystem,
-		);
+		const errors = validateFoo(fileSystem);
 
 		expect(errors).toHaveLength(1);
 		expect(errors[0]!.package).toBe("@halcyon/foo");
@@ -102,16 +89,7 @@ describe(validatePackages, () => {
 			}),
 		});
 
-		const errors = validatePackages(
-			[
-				{
-					name: "@halcyon/foo",
-					packageDirectory: FOO_DIR,
-					rojoProjectPath: path.join(FOO_DIR, "test.project.json"),
-				},
-			],
-			fileSystem,
-		);
+		const errors = validateFoo(fileSystem);
 
 		expect(errors).toStrictEqual([
 			{ package: "@halcyon/foo", reason: "$path target not found: server" },
@@ -135,16 +113,7 @@ describe(validatePackages, () => {
 			}),
 		});
 
-		const errors = validatePackages(
-			[
-				{
-					name: "@halcyon/foo",
-					packageDirectory: FOO_DIR,
-					rojoProjectPath: path.join(FOO_DIR, "test.project.json"),
-				},
-			],
-			fileSystem,
-		);
+		const errors = validateFoo(fileSystem);
 
 		expect(errors).toStrictEqual([]);
 	});

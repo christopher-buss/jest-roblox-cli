@@ -16,44 +16,49 @@ pnpm typecheck     # Check types
 
 ## Test
 
-A few specs (anything that transitively imports `src/test-script.ts`) need the
-bundled Luau test runner present on disk. Build it once before running those
-specs:
-
 ```bash
-pnpm build:bundle             # Produces src/test-runner.bundled.luau
+pnpm test          # Typecheck, then the test suite with coverage
+pnpm test-unit     # Unit tests, without coverage
+pnpm test-type     # Type tests
+pnpm integration   # Integration tests
+pnpm test-luau     # Luau harness tests in lute
 ```
 
-Then:
+`test-unit` and `integration` build the bundled Luau test runner
+(`src/test-runner.bundled.luau`) first, because every spec that imports
+`src/test-script.ts` needs it. To run one folder or file, build it once with
+`pnpm build:bundle`, then call vitest with a project:
 
 ```bash
-vitest run                    # All tests
-vitest run src/formatters     # One folder
-vitest run src/cli.spec.ts    # One file
+pnpm vitest run --project unit src/formatters
+pnpm vitest run --project unit src/cli.spec.ts
 ```
-
-Specs that don't touch `test-script.ts` (e.g. `src/config/`, `src/staging/`) run
-without the bundle.
 
 ## Mutation testing
 
-Stryker mutates `src/` and enforces a mutation-score floor alongside the
-coverage gate. The run is incremental — `reports/stryker-incremental.json`
-carries results forward, so pass `--force` after changing the config. The script
-builds the Luau bundle first, so it works on a fresh checkout.
+Stryker mutates `src/`, `loaders/` and the two build scripts, and holds the
+mutation score at 100 alongside the coverage gate. The run is incremental —
+`reports/stryker-incremental.json` carries results forward, so pass `--force`
+after changing the config. The script builds the Luau bundle first, so it works
+on a fresh checkout.
 
 ```bash
 pnpm mutation
 ```
 
-That script exists in this repo only. Inside the monorepo the same run goes
-through `nx run jest-roblox-cli:stryker`, which takes a machine-wide lock.
-
-## Lint
+## Lint and static checks
 
 ```bash
-eslint .
+pnpm lint          # oxlint, then ESLint
+pnpm boundaries    # Import boundaries (dependency-cruiser)
+pnpm cpd           # Duplicate code (jscpd), production then specs
+pnpm knip          # Unused files, exports and dependencies
 ```
+
+`pnpm cpd` runs `cpd-production` (source, scripts, loaders, bin and the test
+helpers, 40 tokens) and `cpd-spec` (specs, 75 tokens). Remove a clone with a
+shared helper. Keep a `// jscpd:ignore-start` / `// jscpd:ignore-end` pair only
+with a comment that says why the copy stays.
 
 ## Project structure
 
@@ -63,7 +68,7 @@ jest-roblox-cli/
 ├── src/
 │   ├── backends/     Open Cloud and Studio backends
 │   ├── config/       Config loading and validation
-│   ├── coverage/     Coverage instrumentation pipeline
+│   ├── coverage-pipeline/ Coverage instrumentation pipeline
 │   ├── formatters/   Output formatters (default, agent, JSON, GitHub Actions)
 │   ├── highlighter/  Luau syntax highlighting
 │   ├── reporter/     Result parsing and validation

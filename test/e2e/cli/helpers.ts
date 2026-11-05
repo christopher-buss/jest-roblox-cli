@@ -1,21 +1,24 @@
+import type { BackendOptions, JestResult } from "@isentinel/jest-roblox/artifacts";
+
 import { type } from "arktype";
-import { Buffer } from "node:buffer";
 import { execFile, execFileSync } from "node:child_process";
-import { cpSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import nodeProcess from "node:process";
 import { assert, onTestFinished } from "vitest";
 
+import { buildCliEnvironment, hermeticEnvironment } from "#test/e2e/cli/cli-environment.ts";
+import { absolutizeEscapingProjectPaths } from "#test/e2e/cli/project-path-rewrite.ts";
+import { writeRbxtsCompiledOutput } from "#test/e2e/cli/rbxts-compiled-fixture.ts";
 import { createSandboxDirectory } from "#test/e2e/sandbox-root.ts";
-import { isStudioDiscoverable } from "../../../src/backends/auto.ts";
-import type { CodeBundleArtifact } from "../../../src/staging/place-builder.ts";
-import type { JestResult } from "../../../src/types/jest-result.ts";
 
 export interface JestEnvelopePayload {
 	runner: { setup: number };
 	success: true;
 	value: JestResult;
 }
+
+type CodeBundleArtifact = NonNullable<BackendOptions["codeBundle"]>;
 
 interface ExecResult {
 	exitCode: number;
@@ -35,6 +38,8 @@ const CODE_BUNDLE_JSON = '{"mounts":[],"version":1}';
 /**
  * Write an empty Code Bundle into `directory`. A run that ships one is the only
  * kind that may replace a task, and no production resolver selects it.
+ * @param directory - Directory to write `code-bundle.json` into.
+ * @returns Artifact describing the written bundle.
  */
 export function writeCodeBundle(directory: string): CodeBundleArtifact {
 	const bundlePath = path.join(directory, "code-bundle.json");
@@ -58,29 +63,6 @@ const execFailureSchema = type({
 	"stderr?": "string",
 	"stdout?": "string",
 });
-
-// cspell:ignore LOCALAPPDATA MSYSTEM PATHEXT PROGRAMDATA WINDIR
-const ALLOWED_ENV_VARS = [
-	"CI",
-	"ComSpec",
-	"JEST_ROBLOX_OCALE_MAX_RETRIES",
-	"MSYSTEM",
-	"NODE_OPTIONS",
-	"NUMBER_OF_PROCESSORS",
-	"PATH",
-	"PATHEXT",
-	"PNPM_HOME",
-	"PROGRAMDATA",
-	"ProgramData",
-	"ProgramFiles",
-	"ProgramFiles(x86)",
-	"SystemDrive",
-	"SystemRoot",
-	"TEMP",
-	"TERM",
-	"TMP",
-	"WINDIR",
-] as const;
 
 export function runCli(args: Array<string>, cwdOrOptions?: RunCliOptions | string): ExecResult {
 	const options = typeof cwdOrOptions === "string" ? { cwd: cwdOrOptions } : (cwdOrOptions ?? {});
@@ -127,6 +109,9 @@ export async function runCliAsync(
  * beside the bundle here, and beside the executable there, and neither holds
  * one. Running it under node reproduces that on any machine, in a second,
  * without building a 100 MB binary first.
+ * @param args - CLI arguments.
+ * @param cwdOrOptions - Working directory, or run options.
+ * @returns Exit code and captured output.
  */
 export async function runSeaBundleAsync(
 	args: Array<string>,
@@ -167,6 +152,7 @@ export function readJsonSync(filePath: string): JSONValue {
  * roughly 200ms each on Windows, to answer one unchanging question. Vitest
  * isolates each spec file in its own worker, so the answer is cached per file
  * and installing rojo mid-run is still picked up by the next one.
+ * @returns Whether `rojo --version` runs.
  */
 export function rojoOnPath(): boolean {
 	isRojoOnPath ??= probeRojo();
@@ -220,6 +206,8 @@ let isRojoOnPath: boolean | undefined;
  * The `testFilePath`s of a merged result sink (`--outputFile`), validated
  * against the one field the type-test e2e specs read rather than asserted onto
  * the parsed JSON.
+ * @param filePath - Path of the merged result file.
+ * @returns Test file paths, in file order.
  */
 export function readMergedTestFilePaths(filePath: string): Array<string> {
 	const merged = mergedResultSchema.assert(readJsonSync(filePath));
@@ -255,7 +243,7 @@ export function createFixtureSandbox(sourcePath: string): string {
 		filter: (source) => !FIXTURE_RUN_ARTIFACTS.has(path.basename(source)),
 		recursive: true,
 	});
-	absolutizeEscapingProjectPaths(sourcePath, sandboxPath);
+	absolutizeEscapingProjectPaths({ sandboxDirectory: sandboxPath, sourceDirectory: sourcePath });
 	onTestFinished(() => {
 		rmSync(directory, { force: true, recursive: true });
 	});
@@ -265,6 +253,8 @@ export function createFixtureSandbox(sourcePath: string): string {
 /**
  * Prepend config fields to a sandbox's `defineConfig({ … })`, patching the
  * fixture's own config rather than restating it.
+ * @param sandbox - Sandbox directory.
+ * @param fields - Config fields as source text.
  */
 export function patchSandboxConfig(sandbox: string, fields: string): void {
 	const configPath = path.join(sandbox, "jest.config.ts");
@@ -282,162 +272,16 @@ export function patchSandboxConfig(sandbox: string, fields: string): void {
 
 export function createRbxtsFixtureSandbox(sourcePath: string): string {
 	const sandboxPath = createFixtureSandbox(sourcePath);
-	const outDirectory = path.join(sandboxPath, "out");
-
-	mkdirSync(outDirectory, { recursive: true });
-	writeFileSync(path.join(sandboxPath, "game.rbxl"), Buffer.from("fake-rbxl-place", "utf-8"));
-	writeFileSync(path.join(outDirectory, "example.luau"), RBXTS_EXAMPLE_LUAU);
-	writeFileSync(path.join(outDirectory, "example.luau.map"), RBXTS_EXAMPLE_LUAU_MAP);
-	writeFileSync(path.join(outDirectory, "example.spec.luau"), RBXTS_EXAMPLE_SPEC_LUAU);
-	writeFileSync(path.join(outDirectory, "example.spec.luau.map"), RBXTS_EXAMPLE_SPEC_LUAU_MAP);
-	writeFileSync(
-		path.join(outDirectory, "example.d.ts"),
-		"export declare function greet(name: string): string;\nexport declare function add(a: number, b: number): number;\n",
-	);
-	writeFileSync(path.join(outDirectory, "example.spec.d.ts"), "export {};\n");
-	writeFileSync(path.join(outDirectory, "jest.config.luau"), RBXTS_JEST_CONFIG_LUAU);
+	writeRbxtsCompiledOutput(sandboxPath);
 
 	return sandboxPath;
 }
 
-function rewriteEscapingPaths(
-	node: JSONValue,
-	sourceResolved: string,
-	sandboxResolved: string,
-): void {
-	if (node === null || typeof node !== "object" || Array.isArray(node)) {
-		return;
-	}
-
-	const value = node["$path"];
-	if (typeof value === "string" && !path.isAbsolute(value)) {
-		const absolute = path.resolve(sourceResolved, value);
-		const relativeFromSource = path.relative(sourceResolved, absolute);
-		if (relativeFromSource.startsWith("..") || path.isAbsolute(relativeFromSource)) {
-			const fromSandbox = path.relative(sandboxResolved, absolute).replaceAll("\\", "/");
-			node["$path"] = fromSandbox;
-		}
-	}
-
-	for (const child of Object.values(node)) {
-		rewriteEscapingPaths(child, sourceResolved, sandboxResolved);
-	}
-}
-
-// Rojo project files use `$path` values relative to the project file. When a
-// fixture references siblings outside its own directory (e.g. `rojo-sync/`),
-// the relative path is calibrated to the fixture's location in the repo —
-// copying the fixture to a temp sandbox at a different depth breaks those
-// references. For each `$path` that escapes the source fixture, rewrite it
-// to a sandbox-relative path that points back at the original target.
-// Sandbox-relative (rather than absolute) lets downstream consumers like the
-// coverage rewriter still relocate the project tree without mangling the path.
-function findProjectFiles(root: string, relativeDirectory = ""): Array<string> {
-	return readdirSync(path.join(root, relativeDirectory), { withFileTypes: true }).flatMap(
-		(entry) => {
-			const relativePath = path.join(relativeDirectory, entry.name);
-			if (entry.isDirectory() && entry.name !== "node_modules") {
-				return findProjectFiles(root, relativePath);
-			}
-
-			return entry.isFile() && entry.name.endsWith(".project.json") ? [relativePath] : [];
-		},
-	);
-}
-
-function absolutizeEscapingProjectPaths(sourceDirectory: string, sandboxDirectory: string): void {
-	const projectFiles = findProjectFiles(sandboxDirectory);
-
-	for (const relativeFile of projectFiles) {
-		const projectFile = path.join(sandboxDirectory, relativeFile);
-		const sourceResolved = path.resolve(sourceDirectory, path.dirname(relativeFile));
-		const sandboxResolved = path.resolve(sandboxDirectory, path.dirname(relativeFile));
-		const raw = JSON.parse(readFileSync(projectFile, "utf-8"));
-		const before = JSON.stringify(raw);
-
-		rewriteEscapingPaths(raw, sourceResolved, sandboxResolved);
-		if (JSON.stringify(raw) !== before) {
-			writeFileSync(projectFile, `${JSON.stringify(raw, null, "\t")}\n`);
-		}
-	}
-}
-
-// Pins Open Cloud, so auto never launches a local Studio, unless the caller
-// names a `--backend`.
-function withIsolatedBackend(args: Array<string>): Array<string> {
-	const hasBackend = args.some(
-		(argument) => argument === "--backend" || argument.startsWith("--backend="),
-	);
-	return hasBackend ? args : ["--backend", "open-cloud", ...args];
-}
-
-/* eslint-disable unicorn/no-incorrect-template-string-interpolation -- Luau `{name}` interpolation syntax, not a JS placeholder; fixture text for a compiled Luau file, must stay byte-exact */
-const RBXTS_EXAMPLE_LUAU = `-- Compiled with @isentinel/roblox-ts v3.1.5
-local function greet(name)
-	return \`hello {name}\`
-end
-local function add(a, b)
-	return a + b
-end
-return {
-	greet = greet,
-	add = add,
-}
-`;
-/* eslint-enable unicorn/no-incorrect-template-string-interpolation */
-
-// cspell:ignore AACC AACD AAEA AACA
-const RBXTS_EXAMPLE_LUAU_MAP = JSON.stringify({
-	file: "example.luau",
-	ignoreList: [],
-	mappings: ";AAAA;AACC;AACD;AAEA;AACC;AACD",
-	names: [],
-	sources: ["../src/example.ts"],
-	sourcesContent: [
-		"export function greet(name: string): string {\n\treturn `hello ${" +
-			"name}`;\n}\n\nexport function add(a: number, b: number): number {\n\treturn a + b;\n}\n",
-	],
-	version: 3,
-});
-
-const RBXTS_EXAMPLE_SPEC_LUAU = `-- Compiled with @isentinel/roblox-ts v3.1.5
-local TS = _G[script]
-local _example = TS.import(script, script.Parent, "example")
-local add = _example.add
-local greet = _example.greet
-local result = greet("Alice")
-print(result)
-local sum = add(2, 3)
-print(sum)
-`;
-
-const RBXTS_EXAMPLE_SPEC_LUAU_MAP = JSON.stringify({
-	file: "example.spec.luau",
-	ignoreList: [],
-	mappings: ";;AAAA;AAAA;AAAA;AAEA;AACA;AAEA;AACA",
-	names: [],
-	sources: ["../src/example.spec.ts"],
-	sourcesContent: [
-		'import { add, greet } from "#test/e2e/cli/example";\n\nconst result = greet("Alice");\nprint(result);\n\nconst sum = add(2, 3);\nprint(sum);\n',
-	],
-	version: 3,
-});
-
-const RBXTS_JEST_CONFIG_LUAU = `-- Auto-generated by jest-roblox (do not edit)
-return {
-	color = true,
-	passWithNoTests = true,
-	silent = false,
-	testMatch = { "**/*.spec" },
-	testPathIgnorePatterns = { "/node_modules/", "/dist/", "/out/" },
-	verbose = false,
-	displayName = "rbxts-e2e",
-}
-`;
-
 /**
  * Mixed stdout the Luau runner produces around the Jest JSON payload —
  * exercises `extractJsonFromOutput`'s log-noise stripping.
+ * @param payload - Jest payload to embed.
+ * @returns Log lines with the payload between them.
  */
 export function buildMixedOutput(payload: JestEnvelopePayload): string {
 	return [
@@ -447,7 +291,10 @@ export function buildMixedOutput(payload: JestEnvelopePayload): string {
 	].join("\n");
 }
 
-/** A minimal passing single-suite Jest payload in the runner's wire shape. */
+/**
+ * A minimal passing single-suite Jest payload in the runner's wire shape.
+ * @returns Passing payload with one suite.
+ */
 // eslint-disable-next-line flawless/max-lines-per-function -- Returns a cohesive single object; splitting would scatter the fields and make it harder to see the shape.
 export function buildPassingPayload(): JestEnvelopePayload {
 	return {
@@ -489,6 +336,7 @@ export function buildPassingPayload(): JestEnvelopePayload {
  * test only needs the task to succeed. Counts, not results — a spec asserting
  * on pipeline shape reads `1 passed` and the server-side call record, never the
  * suite bodies.
+ * @returns Serialized Jest output.
  */
 export function buildPassingJestOutput(): string {
 	return JSON.stringify({
@@ -502,7 +350,11 @@ export function buildPassingJestOutput(): string {
 	});
 }
 
-/** Env vars pointing the CLI's open-cloud backend at a fake server. */
+/**
+ * Env vars pointing the CLI's open-cloud backend at a fake server.
+ * @param baseUrl - Base URL of the fake server.
+ * @returns Environment variables for the CLI.
+ */
 export function createOpenCloudEnvironment(baseUrl: string): NonNullable<RunCliOptions["env"]> {
 	return {
 		JEST_ROBLOX_OPEN_CLOUD_BASE_URL: baseUrl,
@@ -512,49 +364,50 @@ export function createOpenCloudEnvironment(baseUrl: string): NonNullable<RunCliO
 	};
 }
 
-export const IS_STUDIO_ON_HOST = isStudioDiscoverable();
-
-let hermeticHome: string | undefined;
-
-/** Gate every caller on {@link IS_STUDIO_ON_HOST}. */
+/**
+ * Gate every caller on {@link isStudioOnHost}.
+ * @returns Host values of the hermetic environment keys.
+ */
 export function hostStudioEnvironment(): Record<string, string | undefined> {
 	return Object.fromEntries(
 		Object.keys(hermeticEnvironment()).map((key) => [key, nodeProcess.env[key]]),
 	);
 }
 
-function hermeticEnvironment(): NodeJS.ProcessEnv {
-	hermeticHome ??= createSandboxDirectory();
-	return {
-		APPDATA: path.join(hermeticHome, "AppData", "Roaming"),
-		HOME: hermeticHome,
-		JEST_ROBLOX_PLUGINS_DIR: path.join(hermeticHome, "Plugins"),
-		JEST_ROBLOX_STUDIO_DISCOVERY: "off",
-		LOCALAPPDATA: path.join(hermeticHome, "AppData", "Local"),
-		USERPROFILE: hermeticHome,
-	};
+/**
+ * Whether the built CLI finds a Studio on this host. `--backend auto` prints
+ * the backend it resolved before any run starts, and a VM count above any
+ * plugin's pool then fails the run on either backend, so nothing launches.
+ * @returns `true` when the CLI resolves `auto` to `studio-cli`.
+ */
+export function isStudioOnHost(): boolean {
+	const directory = createSandboxDirectory();
+	try {
+		mkdirSync(path.join(directory, "src"));
+		writeFileSync(path.join(directory, "src", "probe.spec.luau"), "return {}\n");
+		writeFileSync(
+			path.join(directory, "jest.config.luau"),
+			'return { luauRoots = { "src" }, placeFile = "game.rbxl", test = {} }\n',
+		);
+		const probe = runCli(["--backend", "auto", "--experimental-vm-parallel", "999"], {
+			cwd: directory,
+			env: hostStudioEnvironment(),
+		});
+		return probe.stderr.includes("Backend: studio-cli");
+	} finally {
+		rmSync(directory, { force: true, recursive: true });
+	}
 }
 
-function buildCliEnvironment(overrides?: Record<string, string | undefined>): NodeJS.ProcessEnv {
-	const environment: NodeJS.ProcessEnv = { FORCE_COLOR: "0", NO_COLOR: "1" };
-
-	for (const key of ALLOWED_ENV_VARS) {
-		const value = nodeProcess.env[key];
-		if (value !== undefined) {
-			environment[key] = value;
-		}
-	}
-
-	Object.assign(environment, hermeticEnvironment());
-
-	const overrideEntries = Object.entries(overrides ?? {});
-	for (const [key, value] of overrideEntries) {
-		if (value === undefined) {
-			delete environment[key];
-		} else {
-			environment[key] = value;
-		}
-	}
-
-	return environment;
+/**
+ * Pins Open Cloud, so auto never launches a local Studio, unless the caller
+ * names a `--backend`.
+ * @param args - CLI arguments.
+ * @returns The arguments, with `--backend open-cloud` first when none is given.
+ */
+function withIsolatedBackend(args: Array<string>): Array<string> {
+	const hasBackend = args.some(
+		(argument) => argument === "--backend" || argument.startsWith("--backend="),
+	);
+	return hasBackend ? args : ["--backend", "open-cloud", ...args];
 }

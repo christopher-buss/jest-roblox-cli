@@ -4,10 +4,10 @@ import * as path from "node:path";
 import { assert, describe, expect, it, vi } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
+import { posixPath } from "#test/mocks/posix-path.ts";
+import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
 import type { ResolvedProjectConfig } from "../config/projects.ts";
 import type { ResolvedConfig } from "../config/schema.ts";
-import { DEFAULT_CONFIG } from "../config/schema.ts";
-import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import type { RojoResolverFactory } from "../utils/rojo-project-reader.ts";
 import type { LoadedPackage } from "./package-loader.ts";
 import {
@@ -46,7 +46,7 @@ function loadedPackage(overrides: Partial<ResolvedConfig>): LoadedPackage {
 			rojoProjectPath: ROJO_PROJECT_PATH,
 		},
 		info: { name: "@halcyon/pkg", packageDirectory: PACKAGE_DIRECTORY },
-		pkgConfig: { ...DEFAULT_CONFIG, rootDir: PACKAGE_DIRECTORY, ...overrides },
+		pkgConfig: { ...createResolvedConfig(), rootDir: PACKAGE_DIRECTORY, ...overrides },
 	};
 }
 
@@ -126,12 +126,14 @@ describe(resolvePackageContextsAsync, () => {
 		const { projects } = context;
 		const firstProject = projects[0];
 		assert(firstProject !== undefined);
-		const packageDirectory = normalizeWindowsPath(PACKAGE_DIRECTORY);
+		const packageDirectory = posixPath(PACKAGE_DIRECTORY);
 		const probedPaths = statSync.mock.calls.map(([file]) => file);
 
 		expect(projects).toHaveLength(1);
 		expect(firstProject.include).toStrictEqual(
-			DEFAULT_CONFIG.testMatch.map((pattern) => path.posix.join("src/shared", pattern)),
+			createResolvedConfig().testMatch.map((pattern) => {
+				return path.posix.join("src/shared", pattern);
+			}),
 		);
 		expect(probedPaths).toStrictEqual([
 			path.posix.join(packageDirectory, "src/shared"),

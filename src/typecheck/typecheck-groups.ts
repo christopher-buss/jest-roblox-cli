@@ -2,7 +2,7 @@ import { performance } from "node:perf_hooks";
 import process from "node:process";
 
 import { ConfigError } from "../config/errors.ts";
-import type { JestResult } from "../types/jest-result.ts";
+import type { JestResult } from "../types/jest-result-types.ts";
 import { isLuauTypeTestFile } from "./type-test-pattern.ts";
 
 /**
@@ -10,11 +10,15 @@ import { isLuauTypeTestFile } from "./type-test-pattern.ts";
  * checked against. Also the shape handed to `run` per collapsed group.
  */
 export interface TypecheckGroupEntry {
+	/** The working directory the files are checked from. */
 	cwd: string;
+	/** The Type Test files. */
 	files: Array<string>;
+	/** The tsconfig the TypeScript files are checked against. */
 	tsconfig?: string | undefined;
 }
 
+/** Runs one Type Test pass over a collapsed group. */
 export type RunTypecheckGroup = (group: TypecheckGroupEntry) => Promise<JestResult>;
 
 /**
@@ -23,7 +27,9 @@ export type RunTypecheckGroup = (group: TypecheckGroupEntry) => Promise<JestResu
  * the `runTypecheck` span after the concurrency barrier.
  */
 export interface TypecheckPassOutcome {
+	/** Wall-clock duration of the pass, in milliseconds. */
 	elapsedMs: number;
+	/** The merged result of every group. */
 	result?: JestResult | undefined;
 }
 
@@ -33,6 +39,12 @@ interface GroupAccumulator {
 	tsconfig?: string | undefined;
 }
 
+/**
+ * Reject TypeScript Type Tests under the standalone binary, which cannot run
+ * tsgo.
+ * @param entries - The planned Type Test entries.
+ * @throws {ConfigError} When running standalone with a TypeScript Type Test.
+ */
 export function assertTypecheckAvailable(entries: ReadonlyArray<TypecheckGroupEntry>): void {
 	if (process.env["JEST_ROBLOX_SEA"] !== "true") {
 		return;
@@ -48,30 +60,6 @@ export function assertTypecheckAvailable(entries: ReadonlyArray<TypecheckGroupEn
 	}
 }
 
-export async function groupTypecheckPassesAsync(
-	entries: ReadonlyArray<TypecheckGroupEntry>,
-	run: RunTypecheckGroup,
-): Promise<JestResult | undefined> {
-	async function toResultAsync(group: GroupAccumulator): Promise<JestResult> {
-		return run({
-			cwd: group.cwd,
-			files: [...group.files],
-			tsconfig: group.tsconfig,
-		});
-	}
-
-	const [firstGroup, ...otherGroups] = collectGroups(entries);
-	if (firstGroup === undefined) {
-		return undefined;
-	}
-
-	const results = await Promise.all([
-		toResultAsync(firstGroup),
-		...otherGroups.map(toResultAsync),
-	]);
-	return mergeResults(results);
-}
-
 /**
  * Times a Type Test pass over `entries` — grouping them by `(cwd, tsconfig)`
  * and running each group via `run` — and returns the merged result with the
@@ -81,6 +69,10 @@ export async function groupTypecheckPassesAsync(
  * concurrency-safe) because the pass runs concurrently with the Open Cloud
  * dispatch. The mode-specific policy (run-wide vs per-package) and any
  * per-group result post-processing live in the caller's `run` callback.
+ * @param entries - The Type Test entries to group.
+ * @param run - Runs one group.
+ * @returns The merged result and the elapsed wall-clock.
+ * @rejects Whatever `run` rejects with.
  */
 export async function runTypecheckPassAsync(
 	entries: ReadonlyArray<TypecheckGroupEntry>,
@@ -95,8 +87,12 @@ export async function runTypecheckPassAsync(
 	return { elapsedMs: performance.now() - start, result };
 }
 
-// Collapses files sharing a Typecheck Group into one accumulator each, in
-// first-seen order: `(cwd, tsconfig)` for TypeScript, `cwd` alone for Luau.
+/**
+ * Collapses files sharing a Typecheck Group into one accumulator each, in
+ * first-seen order: `(cwd, tsconfig)` for TypeScript, `cwd` alone for Luau.
+ * @param entries - The Type Test entries.
+ * @returns One accumulator per group.
+ */
 function collectGroups(entries: ReadonlyArray<TypecheckGroupEntry>): Array<GroupAccumulator> {
 	const groups = new Map<string, GroupAccumulator>();
 	for (const entry of entries) {
@@ -132,4 +128,35 @@ function mergeResults(results: [JestResult, ...Array<JestResult>]): JestResult {
 			testResults: [...accumulator.testResults, ...current.testResults],
 		};
 	});
+}
+
+/**
+ * Run one pass per Typecheck Group, concurrently, and merge the results.
+ * @param entries - The Type Test entries to group.
+ * @param run - Runs one group.
+ * @returns The merged result, or `undefined` when no entry has files.
+ * @rejects Whatever `run` rejects with.
+ */
+async function groupTypecheckPassesAsync(
+	entries: ReadonlyArray<TypecheckGroupEntry>,
+	run: RunTypecheckGroup,
+): Promise<JestResult | undefined> {
+	async function toResultAsync(group: GroupAccumulator): Promise<JestResult> {
+		return run({
+			cwd: group.cwd,
+			files: [...group.files],
+			tsconfig: group.tsconfig,
+		});
+	}
+
+	const [firstGroup, ...otherGroups] = collectGroups(entries);
+	if (firstGroup === undefined) {
+		return undefined;
+	}
+
+	const results = await Promise.all([
+		toResultAsync(firstGroup),
+		...otherGroups.map(toResultAsync),
+	]);
+	return mergeResults(results);
 }

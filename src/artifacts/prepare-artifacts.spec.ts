@@ -1,30 +1,42 @@
 import { fromAny } from "@total-typescript/shoehorn";
 
 import { Buffer } from "node:buffer";
+import { createHash } from "node:crypto";
 import * as path from "node:path";
 import process from "node:process";
 import { describe, expect, it, vi } from "vitest";
 
 import type { MemoryVolume } from "#test/mocks/memory-file-system.ts";
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
+import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
+import { createRunSeams } from "#test/mocks/run-seams.ts";
 import type { ResolvedProjectConfig } from "../config/projects.ts";
-import { DEFAULT_CONFIG, type ResolvedConfig } from "../config/schema.ts";
+import type { ResolvedConfig } from "../config/schema.ts";
 import type { AttributionResult } from "../coverage-pipeline/attribution.ts";
 import type { CoverageArtifacts } from "../coverage-pipeline/build-manifest.ts";
 import type { CoverageManifest } from "../coverage-pipeline/manifest.ts";
-import { MANIFEST_VERSION } from "../coverage-pipeline/manifest.ts";
-import { computePlaceContentId } from "../coverage-pipeline/place-content-id.ts";
-import {
-	COVERAGE_BUILD_MANIFEST_PATH,
-	COVERAGE_MANIFEST_PATH,
-} from "../coverage-pipeline/prepare.ts";
 import type { RunDispatch } from "../run.ts";
+import type { MultiRunResult } from "../run/run-types.ts";
 import type { RunSeams } from "../run/seams.ts";
-import { nodeRunSeams } from "../run/seams.ts";
-import type { MultiRunResult } from "../run/types.ts";
 import type { FileSystem } from "../utils/file-system.ts";
-import { hashBuffer } from "../utils/hash.ts";
 import { prepareArtifactsAsync } from "./prepare-artifacts.ts";
+
+const COVERAGE_MANIFEST_PATH = path.join(".jest-roblox/coverage", "coverage-manifest.json");
+const COVERAGE_BUILD_MANIFEST_PATH = path.join(".jest-roblox/coverage", "build-manifest.json");
+
+function sha256(data: Buffer | string): string {
+	return createHash("sha256").update(data).digest("hex");
+}
+
+function contentIdOf({ files, nonInstrumentedFiles }: CoverageManifest): string {
+	const lines = [
+		...Object.entries(files).map(([key, record]) => `f\0${key}\0${record.sourceHash}`),
+		...Object.entries(nonInstrumentedFiles).map(
+			([key, record]) => `n\0${key}\0${record.sourceHash}`,
+		),
+	];
+	return sha256(lines.sort().join("\0"));
+}
 
 const PLACE_DIR = path.join(".jest-roblox", "place");
 const CLEAN_PLACE_PATH = path.join(PLACE_DIR, "clean.rbxl");
@@ -91,7 +103,7 @@ function manifestWithFile(): CoverageManifest {
 		luauRoots: ["out"],
 		nonInstrumentedFiles: {},
 		shadowDir: ".jest-roblox/coverage",
-		version: MANIFEST_VERSION,
+		version: 5,
 	};
 }
 
@@ -109,7 +121,7 @@ function makeArtifacts(overrides: Partial<CoverageArtifacts> = {}): CoverageArti
 
 function makeConfig(overrides: Partial<ResolvedConfig> = {}): ResolvedConfig {
 	return {
-		...DEFAULT_CONFIG,
+		...createResolvedConfig(),
 		rootDir: "/test",
 		testMatch: ["**/*.spec.ts"],
 		testPathIgnorePatterns: [],
@@ -157,11 +169,10 @@ function seed(
 		runResolvedProjects: vi.fn<RunDispatch["runResolvedProjects"]>().mockResolvedValue(result),
 		runWorkspaceMode: vi.fn<RunDispatch["runWorkspaceMode"]>(),
 	};
-	const seams: RunSeams = {
-		...nodeRunSeams(),
+	const seams = createRunSeams({
 		childProcess: fromAny({ execFile }),
 		resolveAllProjects: vi.fn<RunSeams["resolveAllProjects"]>().mockResolvedValue([]),
-	};
+	});
 	return { dispatch, fileSystem: memory.fileSystem, seams, volume: memory.volume };
 }
 
@@ -199,8 +210,8 @@ describe(prepareArtifactsAsync, () => {
 			buildId: "build-42",
 			buildManifestPath: COVERAGE_BUILD_MANIFEST_PATH,
 			cleanPlace: {
-				contentId: computePlaceContentId(manifestWithFile()),
-				hash: hashBuffer(Buffer.from(PLACE_BYTES)),
+				contentId: contentIdOf(manifestWithFile()),
+				hash: sha256(Buffer.from(PLACE_BYTES)),
 				path: CLEAN_PLACE_PATH,
 			},
 			coverageData: undefined,
@@ -233,7 +244,7 @@ describe(prepareArtifactsAsync, () => {
 		// The id the coverage run's own file records digest to — the place has
 		// to carry the identity of the build the collector read, and this is
 		// where the two are tied together.
-		expect(bundle.cleanPlace.contentId).toBe(computePlaceContentId(manifestWithFile()));
+		expect(bundle.cleanPlace.contentId).toBe(contentIdOf(manifestWithFile()));
 	});
 
 	it("should surface the coverage manifest paths and an empty projects list", async () => {

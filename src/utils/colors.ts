@@ -28,6 +28,12 @@ const TS_SUPPORTED_EXTS = new Set(
 
 const LUAU_SUPPORTED_EXTS = new Set([".lua", ".luau"]);
 
+/**
+ * Syntax-highlight source for the terminal, picking the grammar by extension.
+ * @param id - The file path, used for its extension.
+ * @param source - The source text.
+ * @returns The highlighted text, or the source unchanged for other files.
+ */
 export function highlightCode(id: string, source: string): string {
 	const extension = extname(id);
 

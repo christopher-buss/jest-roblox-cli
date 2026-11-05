@@ -20,10 +20,7 @@ export default defineConfig<OxlintConfig>({
 				"reports/stryker-incremental.json",
 				"spike/**/*",
 			],
-			jsdoc: false,
-			rules: {
-				"max-lines": "off",
-			},
+			jsdoc: true,
 			test: {
 				vitest: {
 					extended: true,

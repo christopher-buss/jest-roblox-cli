@@ -29,7 +29,9 @@ import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 export interface UploadCacheTarget {
 	/** Absolute path of the place file whose bytes were uploaded. */
 	placeFilePath: string;
+	/** Place the upload targets. */
 	placeId: number | string;
+	/** Universe that owns the place. */
 	universeId: number | string;
 }
 
@@ -37,7 +39,9 @@ export interface UploadCacheTarget {
  * What a cached upload records: the inputs it was built from, and its version.
  */
 export interface CacheEntry {
+	/** SHA-256 hash of the uploaded place file. */
 	hash: string;
+	/** Place version that holds the uploaded bytes. */
 	versionNumber: number;
 }
 
@@ -68,6 +72,9 @@ const cacheFileInputSchema = type({
  * Undefined when the place file cannot be read. The caller then uploads, which
  * fails on the same file with the API's own message — a cache miss must never
  * be the thing that reports a missing place.
+ * @param placeFilePath - Path of the place file to hash.
+ * @param fileSystem - File system to read from.
+ * @returns The hex SHA-256 hash, or `undefined` when the file cannot be read.
  */
 export function hashPlaceFile(
 	placeFilePath: string,
@@ -83,6 +90,12 @@ export function hashPlaceFile(
 /**
  * The version already holding `hash` for this target, or undefined when these
  * bytes have never been uploaded from this machine.
+ * @param root0 - Lookup input.
+ * @param root0.fileSystem - File system to read from.
+ * @param root0.hash - Hash of the place file.
+ * @param root0.rootDirectory - Project root that holds the cache file.
+ * @param root0.target - Upload target.
+ * @returns The cached version number, or `undefined` on a miss.
  */
 export function readCachedVersion({
 	fileSystem = nodeFileSystem,
@@ -90,24 +103,40 @@ export function readCachedVersion({
 	rootDirectory,
 	target,
 }: {
+	/** File system to read from. */
 	readonly fileSystem?: FileSystem;
+	/** Hash of the place file. */
 	readonly hash: string;
+	/** Project root that holds the cache file. */
 	readonly rootDirectory: string;
+	/** Upload target. */
 	readonly target: UploadCacheTarget;
 }): number | undefined {
 	const entry = readCacheFile(fileSystem, rootDirectory).entries[entryKey(target)];
 	return entry?.hash === hash ? entry.versionNumber : undefined;
 }
 
+/**
+ * Records an uploaded version for a target; a failed write is ignored.
+ * @param root0 - Write input.
+ * @param root0.entry - Hash and version to record.
+ * @param root0.fileSystem - File system to write to.
+ * @param root0.rootDirectory - Project root that holds the cache file.
+ * @param root0.target - Upload target.
+ */
 export function writeCachedVersion({
 	entry: { hash, versionNumber },
 	fileSystem = nodeFileSystem,
 	rootDirectory,
 	target,
 }: {
+	/** Hash and version to record. */
 	readonly entry: CacheEntry;
+	/** File system to write to. */
 	readonly fileSystem?: FileSystem;
+	/** Project root that holds the cache file. */
 	readonly rootDirectory: string;
+	/** Upload target. */
 	readonly target: UploadCacheTarget;
 }): void {
 	const cache = readCacheFile(fileSystem, rootDirectory);
@@ -123,6 +152,11 @@ export function writeCachedVersion({
 /**
  * True once the entry is gone. A cache file that cannot be written keeps
  * serving the entry it already holds, so the caller hears no.
+ * @param root0 - Invalidate input.
+ * @param root0.fileSystem - File system to write to.
+ * @param root0.rootDirectory - Project root that holds the cache file.
+ * @param root0.target - Upload target.
+ * @returns Whether the entry is gone.
  */
 export function invalidateCachedVersion({
 	fileSystem = nodeFileSystem,
@@ -157,6 +191,11 @@ export function invalidateCachedVersion({
  * One entry per (universe, place, place file) rather than per content hash, so
  * the file stays bounded — re-uploading a changed build overwrites its entry
  * instead of appending another.
+ * @param root0 - Upload target.
+ * @param root0.placeFilePath - Place file the upload came from.
+ * @param root0.placeId - Place the upload targets.
+ * @param root0.universeId - Universe that owns the place.
+ * @returns The cache entry key.
  */
 function entryKey({ placeFilePath, placeId, universeId }: UploadCacheTarget): string {
 	return `${String(universeId)}/${String(placeId)}/${normalizeWindowsPath(placeFilePath)}`;
@@ -166,6 +205,8 @@ function entryKey({ placeFilePath, placeId, universeId }: UploadCacheTarget): st
  * Deliberately not under `.jest-roblox/coverage/` — a non-incremental coverage
  * rebuild wipes that directory, which would drop the cache on exactly the runs
  * that rebuilt an identical place.
+ * @param rootDirectory - Project root.
+ * @returns The path of the cache file.
  */
 function cachePath(rootDirectory: string): string {
 	return path.join(rootDirectory, ".jest-roblox", "upload-cache.json");
@@ -176,6 +217,9 @@ function cachePath(rootDirectory: string): string {
  * unknown `version`, a junk entry — collapses to "no cache". That is how the
  * format migrates without a migration, and why a corrupt file costs a re-upload
  * rather than a run.
+ * @param fileSystem - File system to read from.
+ * @param rootDirectory - Project root that holds the cache file.
+ * @returns The cache contents, or an empty cache on any failure.
  */
 function readCacheFile(fileSystem: FileSystem, rootDirectory: string): CacheFile {
 	const entries: Record<string, CacheEntry> = {};

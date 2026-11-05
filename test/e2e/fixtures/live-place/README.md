@@ -6,28 +6,27 @@ Pre-built Roblox place file for the live OCALE e2e tests in
 ## What's pre-built vs. rebuilt at test time
 
 The committed `game.rbxl` is consumed **only** by the contract test
-(`test/e2e/live/contract.e2e.spec.ts`), which uploads it directly
-as a sealed binary to verify Open Cloud's response shape. No CLI subprocess,
-no Rojo at test time.
+(`test/e2e/live/contract.spec.ts`), which uploads it directly as a sealed binary
+to verify Open Cloud's response shape. No CLI subprocess, no Rojo at test time.
 
-The pipeline tests (`test/e2e/live/pipeline.e2e.spec.ts`) run the full CLI
-pipeline against the fixture. The CLI's
-`runMultiProject` path writes per-project stubs into the rojo source tree
-and rebuilds the rbxl — that rebuild needs `out/` (compiled Luau) and
-`include/` (rbxts runtime) to exist. Both are gitignored regenerated
-artifacts, so the live vitest project's `globalSetup` (`global-setup.ts`)
-invokes `rbxtsc` on demand. Sentinel-cached on `out/shared/example.luau`,
-so successive runs in the same workspace skip recompilation.
+The pipeline tests (`test/e2e/live/pipeline.spec.ts`) run the full CLI pipeline
+against the fixture. The CLI's `runMultiProject` path writes per-project stubs
+into the rojo source tree and rebuilds the rbxl — that rebuild needs `out/`
+(compiled Luau) and `include/` (rbxts runtime) to exist. Both are gitignored
+regenerated artifacts, so the live vitest project's `globalSetup`
+(`global-setup.ts`) invokes `rbxtsc` on demand. Sentinel-cached on
+`out/shared/example.luau`, so successive runs in the same workspace skip
+recompilation.
 
-Source files (`src/`, `default.project.json`, `tsconfig.*.json`,
-`package.json`) live alongside `game.rbxl` so the binary can be rebuilt
-out-of-band when the contract test's pre-built copy needs refreshing
-(jest-roblox runtime upgrades, rojo bumps).
+Source files (`src/`, `default.project.json`, `tsconfig.*.json`, `package.json`)
+live alongside `game.rbxl` so the binary can be rebuilt out-of-band when the
+contract test's pre-built copy needs refreshing (jest-roblox runtime upgrades,
+rojo bumps).
 
 ## Layout
 
-- Two Rojo mounts so `workspace/`-level multi-root assertions have something
-  to merge:
+- Two Rojo mounts so `workspace/`-level multi-root assertions have something to
+  merge:
   - `ReplicatedStorage.PkgShared` <- `out/shared/`
   - `ServerScriptService.PkgServer` <- `out/server/`
 - One passing `.spec.ts` on the shared mount and four on the server mount
@@ -66,10 +65,10 @@ committed. Rebuild only when the runtime, Rojo, or the fixture sources change.
 - ESLint already ignores `**/fixtures/**/*` for `jest-roblox-cli`, so source
   files here aren't linted.
 - `default.project.json` mounts the **local** `node_modules/@rbxts` (not the
-  workspace-root path) so `rbxtsc`'s rojo-resolver matches the symlinked
-  layout. Switching to the workspace path causes a "Could not find Rojo data"
-  diagnostic because the resolver looks up file paths relative to the project
-  root, not the realpath through pnpm's `.pnpm/` store.
+  workspace-root path) so `rbxtsc`'s rojo-resolver matches the symlinked layout.
+  Switching to the workspace path causes a "Could not find Rojo data" diagnostic
+  because the resolver looks up file paths relative to the project root, not the
+  realpath through pnpm's `.pnpm/` store.
 - The `@rbxts-js` mount uses the workspace's generated
   `node_modules/@rbxts-js.project.json`. Root `postinstall` regenerates it from
   pnpm's package map.

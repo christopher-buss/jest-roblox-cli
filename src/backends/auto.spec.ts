@@ -1,5 +1,6 @@
 import { OcaleRunner } from "@isentinel/roblox-runner";
 
+import { createHash } from "node:crypto";
 import * as path from "node:path";
 import process from "node:process";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
@@ -10,16 +11,13 @@ import {
 	MockWebSocketServer,
 	mockWebSocketServerFactory as webSocketServerFactory,
 } from "#test/mocks/mock-web-socket-server.ts";
-import { DEFAULT_CONFIG } from "../config/schema.ts";
+import { posixPath } from "#test/mocks/posix-path.ts";
+import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
 import type { CliOptions, ResolvedConfig } from "../config/schema.ts";
 import { isStudioDiscoverable, resolveAutoBackend, resolveBackendAsync } from "./auto.ts";
-import { OpenCloudBackend } from "./open-cloud.ts";
-import { StudioCliBackend } from "./studio-cli.ts";
-import { StudioBackend } from "./studio.ts";
-import { hashPlaceFile, writeCachedVersion } from "./upload-cache.ts";
 
 function makeConfig(overrides: Partial<ResolvedConfig> = {}): ResolvedConfig {
-	return { ...DEFAULT_CONFIG, ...overrides };
+	return { ...createResolvedConfig(), ...overrides };
 }
 
 function makeCli(overrides: Partial<CliOptions> = {}): CliOptions {
@@ -43,7 +41,7 @@ function stubNoCredentials(): void {
 	vi.stubEnv("JEST_ROBLOX_PLACE_ID", undefined);
 }
 
-// A developer's own Studio path would otherwise decide auto.
+/** A developer's own Studio path would otherwise decide auto. */
 function stubNoStudioPath(): void {
 	vi.stubEnv("JEST_ROBLOX_STUDIO_PATH", undefined);
 }
@@ -171,7 +169,7 @@ describe(resolveBackendAsync, () => {
 			isStudioInstalled: () => true,
 		});
 
-		expect(backend).toBeInstanceOf(StudioCliBackend);
+		expect(backend.constructor.name).toBe("StudioCliBackend");
 	});
 
 	it("should select open-cloud for auto when Studio is not installed", async () => {
@@ -187,7 +185,7 @@ describe(resolveBackendAsync, () => {
 			isStudioInstalled: () => false,
 		});
 
-		expect(backend).toBeInstanceOf(OpenCloudBackend);
+		expect(backend.constructor.name).toBe("OpenCloudBackend");
 	});
 
 	it("should reuse a proven Open Cloud place from the supplied filesystem", async () => {
@@ -200,12 +198,19 @@ describe(resolveBackendAsync, () => {
 		const placeFile = path.join(rootDirectory, "place.rbxl");
 		const { fileSystem } = createMemoryFileSystem({ [placeFile]: "place" });
 		const config = makeConfig({ backend: "auto", placeFile, rootDir: rootDirectory });
-		writeCachedVersion({
-			entry: { hash: hashPlaceFile(placeFile, fileSystem)!, versionNumber: 42 },
-			fileSystem,
-			rootDirectory,
-			target: { placeFilePath: placeFile, placeId: "456", universeId: "123" },
-		});
+		fileSystem.mkdirSync(path.join(rootDirectory, ".jest-roblox"), { recursive: true });
+		fileSystem.writeFileSync(
+			path.join(rootDirectory, ".jest-roblox", "upload-cache.json"),
+			JSON.stringify({
+				entries: {
+					[`123/456/${posixPath(placeFile)}`]: {
+						hash: createHash("sha256").update("place").digest("hex"),
+						versionNumber: 42,
+					},
+				},
+				version: 2,
+			}),
+		);
 		const upload = vi
 			.spyOn(OcaleRunner.prototype, "uploadPlaceAsync")
 			.mockRejectedValue(new Error("The proven place should not be uploaded"));
@@ -258,7 +263,7 @@ describe(resolveBackendAsync, () => {
 			config: makeConfig({ backend: "open-cloud" }),
 		});
 
-		expect(backend).toBeInstanceOf(OpenCloudBackend);
+		expect(backend.constructor.name).toBe("OpenCloudBackend");
 	});
 
 	it("should return studio backend for explicit studio config", async () => {
@@ -269,7 +274,7 @@ describe(resolveBackendAsync, () => {
 			config: makeConfig({ backend: "studio" }),
 		});
 
-		expect(backend).toBeInstanceOf(StudioBackend);
+		expect(backend.constructor.name).toBe("StudioBackend");
 	});
 
 	it("should open an explicit studio backend's server through the server seam", async () => {
@@ -297,7 +302,7 @@ describe(resolveBackendAsync, () => {
 			config: makeConfig({ backend: "studio-cli" }),
 		});
 
-		expect(backend).toBeInstanceOf(StudioCliBackend);
+		expect(backend.constructor.name).toBe("StudioCliBackend");
 	});
 
 	it("should forward the configured hiddenDesktop to the studio-cli backend", async () => {
@@ -384,7 +389,7 @@ describe(resolveBackendAsync, () => {
 			config: makeConfig({ backend: "studio-cli", parallel: 3 }),
 		});
 
-		expect(backend).toBeInstanceOf(StudioCliBackend);
+		expect(backend.constructor.name).toBe("StudioCliBackend");
 	});
 
 	it("should reject --experimental-vm-parallel on the open-cloud backend", async () => {
@@ -453,7 +458,7 @@ describe(resolveBackendAsync, () => {
 			config: makeConfig({ backend: "open-cloud", placeId: "456", universeId: "123" }),
 		});
 
-		expect(backend).toBeInstanceOf(OpenCloudBackend);
+		expect(backend.constructor.name).toBe("OpenCloudBackend");
 	});
 
 	it.for([

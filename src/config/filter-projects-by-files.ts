@@ -4,6 +4,7 @@ import { isAbsolutePath, normalizeWindowsPath } from "../utils/normalize-windows
 import type { ResolvedProjectConfig } from "./projects.ts";
 import { extractStaticRoot } from "./projects.ts";
 
+/** A project with the cli files it owns. */
 export interface ProjectFileMatch {
 	/**
 	 * The subset of cli files whose absolute path falls under one of the
@@ -11,6 +12,7 @@ export interface ProjectFileMatch {
 	 * downstream consumers can still resolve relative to `rootDirectory`.
 	 */
 	matchingFiles: Array<string>;
+	/** Project that owns the files. */
 	project: ResolvedProjectConfig;
 }
 
@@ -22,15 +24,21 @@ export interface ProjectFileMatch {
  * each against its own package directory.
  */
 export interface ProjectScope {
+	/** Project in scope. */
 	project: ResolvedProjectConfig;
+	/** Directory the project's include patterns resolve against. */
 	rootDirectory: string;
 }
 
+/** A scope with the cli files its include roots own. */
 export interface ProjectScopeMatch {
+	/** Owned files. */
 	files: Array<MatchedFile>;
+	/** Scope that owns them. */
 	scope: ProjectScope;
 }
 
+/** Input to `matchFilesToProjects`. */
 export interface ProjectFileMatching {
 	/**
 	 * Base a relative cli file resolves against. Separate from the scopes' own
@@ -39,7 +47,9 @@ export interface ProjectFileMatching {
 	 * run root for both, which is this same call with the two coincident.
 	 */
 	fileBase: string;
+	/** Cli files as typed. */
 	files: ReadonlyArray<string>;
+	/** Scopes to match the files against. */
 	scopes: ReadonlyArray<ProjectScope>;
 }
 
@@ -54,6 +64,13 @@ interface MatchedFile {
 	original: string;
 }
 
+/**
+ * Resolve a project's static include roots against a root directory.
+ *
+ * @param project - Project whose include patterns to read.
+ * @param posixRootDirectory - Posix root the include roots resolve against.
+ * @returns Absolute posix roots; patterns with no static prefix are skipped.
+ */
 export function collectProjectRoots(
 	project: ResolvedProjectConfig,
 	posixRootDirectory: string,
@@ -81,7 +98,7 @@ export function collectProjectRoots(
  * static-root prefix matching: each include pattern's directory prefix
  * (everything before the first glob char) is resolved against the scope's
  * `rootDirectory`, and a file matches when its absolute path falls under that
- * prefix. Patterns with no static root (e.g. bare `**\/*.spec.ts`) are skipped
+ * prefix. Patterns with no static root (such as bare `**\/*.spec.ts`) are skipped
  * — they carry no project boundary to test against, so the caller falls back to
  * naming a project explicitly.
  *
@@ -90,6 +107,10 @@ export function collectProjectRoots(
  * `path.posix`. This avoids Node's platform-dependent `path.resolve` behavior,
  * so `D:/repo/...` and `/repo/...` both resolve correctly regardless of where
  * the CLI is running.
+ *
+ * @param matching - File base, cli files and scopes.
+ * @returns Each scope that owns at least one file, with its files.
+ * @throws If no scope owns any of the files.
  */
 export function matchFilesToProjects({
 	fileBase,
@@ -126,6 +147,10 @@ export function matchFilesToProjects({
  * forcing the user to pass `--project`, and so each project only sees the files
  * it actually owns (no leaking type-test files or runtime files across
  * projects).
+ *
+ * @param options - Cli files, projects and the run root.
+ * @returns Each project that owns at least one file, with its files as typed.
+ * @throws If no project owns any of the files.
  */
 export function filterProjectsByFiles({
 	files,
@@ -151,6 +176,10 @@ export function filterProjectsByFiles({
  * absolutes (`/repo/...`) and drive-letter absolutes (`D:/repo/...`) as
  * absolute, regardless of host platform. Relative paths are posix-joined to
  * the root.
+ *
+ * @param posixRootDirectory - Posix root for relative paths.
+ * @param file - Path to resolve.
+ * @returns The posix path.
  */
 function resolveAgainst(posixRootDirectory: string, file: string): string {
 	const normalizedFile = normalizeWindowsPath(file);
@@ -165,6 +194,10 @@ function resolveAgainst(posixRootDirectory: string, file: string): string {
  * Tests one fixed list of cli files against whatever include roots it is asked
  * about. Built once per walk: resolving those files to absolute form is the
  * whole of the setup, and every scope after the first re-uses it.
+ *
+ * @param files - Cli files as typed.
+ * @param base - Directory relative files resolve against.
+ * @returns A function that selects the files under any given root.
  */
 function createFileMatcher(
 	files: ReadonlyArray<string>,

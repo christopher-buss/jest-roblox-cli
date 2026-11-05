@@ -67,11 +67,15 @@ function isConditionalExport(entry: unknown): entry is Record<string, string> {
 	return typeof entry === "object" && entry !== null;
 }
 
-// tsdown derives `.` from the `src/index.ts` entry. Both subpaths ship the same
-// dist chunk, but their `source` conditions differ: `.` resolves to the slim
-// `source.ts` barrel so a workspace consumer typechecking from source never
-// pulls the CLI's `.luau` graph, and `./artifacts` opts into the full producer
-// API (`prepareArtifacts`, `loadConfig`, …) for the consumers that need it.
+/**
+ * The tsdown build derives `.` from the `src/index.ts` entry. Both subpaths
+ * ship the same dist chunk, but their `source` conditions differ: `.` resolves to the slim
+ * `source.ts` barrel so a workspace consumer typechecking from source never
+ * pulls the CLI's `.luau` graph, and `./artifacts` opts into the full producer
+ * API (`prepareArtifacts`, `loadConfig`, …) for the consumers that need it.
+ * @param exportsMap - Exports tsdown derives.
+ * @returns Exports with the `source` conditions set.
+ */
 function customizeExports(exportsMap: ExportsMap): ExportsMap {
 	const root: unknown = exportsMap["."];
 	return sortExports({
@@ -119,7 +123,7 @@ export default defineConfig([
 	},
 	{
 		deps: { alwaysBundle: [/.*/] },
-		entry: ["src/sea-entry.ts"],
+		entry: ["bin/sea-entry.ts"],
 		exe: {
 			fileName: "jest-roblox",
 			outDir: "dist/sea",

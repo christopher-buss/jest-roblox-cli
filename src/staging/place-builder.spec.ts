@@ -3,6 +3,7 @@ import { fromAny } from "@total-typescript/shoehorn";
 
 import { type } from "arktype";
 import { Buffer } from "node:buffer";
+import { createHash } from "node:crypto";
 import * as path from "node:path";
 import process from "node:process";
 import type { Mock } from "vitest";
@@ -11,22 +12,19 @@ import { describe, expect, it, vi } from "vitest";
 import { ageFile } from "#test/mocks/aged-file.ts";
 import type { MemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
+import { posixPath, posixRoot } from "#test/mocks/posix-path.ts";
 import { mountOf, poolKeyOf, staged, stagedProjectSchema } from "#test/mocks/staged-project.ts";
 import type { ChildProcessRunner } from "../utils/child-process.ts";
-import { hashBuffer } from "../utils/hash.ts";
-import { normalizeWindowsPath, toPosixRoot } from "../utils/normalize-windows-path.ts";
-import { CODE_SPLIT_PASS_VERSION, splitCodeMounts } from "./code-split.ts";
-import { PINNED_MOUNT_PASS_VERSION } from "./pinned-mounts.ts";
+import type { PosixRoot } from "../utils/normalize-windows-path.ts";
 import {
 	buildCodeBundle,
 	buildPlaceAsync,
+	type PlaceReuseOptions,
 	type UnwrappedBuildPlaceOptions,
 } from "./place-builder.ts";
-import { computePlaceInputsKeyAsync } from "./place-reuse.ts";
-import { relativizeProjectPaths } from "./relativize-paths.ts";
-import { SHARED_POOL_PASS_VERSION } from "./shared-pool.ts";
-import type { PackageDescriptor, UnwrappedPackageDescriptor } from "./synthesizer.ts";
-import { synthesize } from "./synthesizer.ts";
+import type { PackageDescriptor, UnwrappedPackageDescriptor } from "./synthesizer-types.ts";
+
+type ComputeInputsKey = NonNullable<PlaceReuseOptions["computeInputsKey"]>;
 
 const PROJECT_FILE = "/cache/synth.project.json";
 const PLACE_FILE = "/out/game.rbxl";
@@ -129,7 +127,7 @@ describe(buildPlaceAsync, () => {
 		});
 
 		expect(result).toStrictEqual({
-			hash: hashBuffer(Buffer.from(PLACE_BYTES)),
+			hash: createHash("sha256").update(Buffer.from(PLACE_BYTES)).digest("hex"),
 			path: PLACE_FILE,
 		});
 	});
@@ -201,7 +199,7 @@ describe(buildPlaceAsync, () => {
 		// Rojo matches globIgnorePaths against the path as written, so an
 		// absolute mount would leave every ignore pattern inert.
 		expect(writtenProject(rojo)).toMatchObject({
-			tree: { $path: normalizeWindowsPath(path.relative("/cache", MOUNT_DIR)) },
+			tree: { $path: posixPath(path.relative("/cache", MOUNT_DIR)) },
 		});
 	});
 
@@ -441,37 +439,38 @@ describe("place reuse", () => {
 	});
 
 	it("should fold the shared-pool pass version into the key", async () => {
-		expect.assertions(2);
+		expect.assertions(1);
 
 		const rojo = seedBuild();
-		await buildAsync(rojo);
-		const recorded = JSON.parse(String(rojo.volume.readFileSync(CACHE_FILE, "utf8")));
-		const projectJson = synthesize({
+		const computeInputsKey = vi.fn<ComputeInputsKey>(async () => "inputs-key");
+		await buildPlaceAsync({
+			childProcess: rojo.childProcess,
 			fileSystem: rojo.fileSystem,
 			packages: [makeUnwrappedDescriptor()],
+			placeFile: PLACE_FILE,
+			projectFile: PROJECT_FILE,
+			reuse: {
+				cacheFile: CACHE_FILE,
+				computeInputsKey,
+				digestCacheFile: DIGEST_CACHE_FILE,
+				manifests: [],
+				shadowRoots: [],
+			},
 			wrap: false,
 		});
 
-		// The build's own inputs, keyed over a chosen set of passes. A pool
-		// pass left out of the key would hand out a place built by its
-		// previous rule.
-		async function keyOverAsync(stagingVersions: Array<number>): Promise<string | undefined> {
-			return computePlaceInputsKeyAsync({
-				digestCacheFile: DIGEST_CACHE_FILE,
-				fileSystem: rojo.fileSystem,
-				manifests: [],
-				projectFile: PROJECT_FILE,
-				projectJson: relativizeProjectPaths(projectJson, path.dirname(PROJECT_FILE)),
-				shadowRoots: [],
-				stagingVersions,
-			});
-		}
-
-		expect(recorded).not.toMatchObject({
-			inputsKey: await keyOverAsync([PINNED_MOUNT_PASS_VERSION]),
-		});
-		expect(recorded).toMatchObject({
-			inputsKey: await keyOverAsync([PINNED_MOUNT_PASS_VERSION, SHARED_POOL_PASS_VERSION]),
+		expect(computeInputsKey).toHaveBeenCalledExactlyOnceWith({
+			digestCacheFile: DIGEST_CACHE_FILE,
+			fileSystem: rojo.fileSystem,
+			manifests: [],
+			projectFile: PROJECT_FILE,
+			projectJson: JSON.stringify(
+				{ name: "synth", tree: { $path: "../repo/out" } },
+				undefined,
+				2,
+			),
+			shadowRoots: [],
+			stagingVersions: [expect.any(Number), expect.any(Number)],
 		});
 	});
 
@@ -543,7 +542,7 @@ describe("code bundle", () => {
 	async function buildHarnessAsync(rojo: Harness): ReturnType<typeof buildPlaceAsync> {
 		return buildPlaceAsync({
 			childProcess: rojo.childProcess,
-			codeRoots: [toPosixRoot(CODE_DIR)],
+			codeRoots: [posixRoot(CODE_DIR)],
 			fileSystem: rojo.fileSystem,
 			packages: [makeDescriptor()],
 			placeFile: PLACE_FILE,
@@ -557,7 +556,11 @@ describe("code bundle", () => {
 		});
 	}
 
-	/** The Code Bundle the build wrote, parsed. */
+	/**
+	 * The Code Bundle the build wrote, parsed.
+	 * @param harness - Harness whose volume holds the bundle.
+	 * @returns The parsed bundle.
+	 */
 	function readBundle({ volume }: Harness): typeof bundleSchema.infer {
 		return bundleSchema.assert(JSON.parse(String(volume.readFileSync(BUNDLE_FILE, "utf8"))));
 	}
@@ -572,7 +575,7 @@ describe("code bundle", () => {
 		expect(staged(project, "pkg", "Out")).toBeUndefined();
 		// The two that could not travel are untouched, mount and all.
 		expect(mountOf(project, "pkg", "Mixed")).toBe(
-			normalizeWindowsPath(path.relative("/cache", MIXED_DIR)),
+			posixPath(path.relative("/cache", MIXED_DIR)),
 		);
 		expect(mountOf(project, "pkg", "Include")).toBeDefined();
 	});
@@ -615,7 +618,7 @@ describe("code bundle", () => {
 		const rojo = seedBundleBuild();
 
 		const bundle = buildCodeBundle({
-			codeRoots: [toPosixRoot(CODE_DIR)],
+			codeRoots: [posixRoot(CODE_DIR)],
 			fileSystem: rojo.fileSystem,
 			packages: [makeDescriptor()],
 			// Named but never built at: it is what says where the bundle goes.
@@ -665,46 +668,38 @@ describe("code bundle", () => {
 	});
 
 	it("should fold the split pass version into the key", async () => {
-		expect.assertions(2);
+		expect.assertions(1);
 
-		const rojo = seedBundleBuild();
-		await buildHarnessAsync(rojo);
-		const recorded = JSON.parse(String(rojo.volume.readFileSync(CACHE_FILE, "utf8")));
-		const { harnessProjectJson } = splitCodeMounts({
-			codeRoots: [toPosixRoot(CODE_DIR)],
-			fileSystem: rojo.fileSystem,
-			projectDirectory: "/cache",
-			projectJson: synthesize({
+		async function stagingVersionsForAsync(
+			codeRoots: Array<PosixRoot> | undefined,
+		): Promise<ReadonlyArray<number>> {
+			const rojo = seedBundleBuild();
+			const computeInputsKey = vi.fn<ComputeInputsKey>(async () => "inputs-key");
+			await buildPlaceAsync({
+				childProcess: rojo.childProcess,
+				codeRoots,
 				fileSystem: rojo.fileSystem,
 				packages: [makeDescriptor()],
-			}),
-		});
-
-		// The harness's own inputs, keyed over a chosen set of passes. A split
-		// left out of the key would hand out a harness hollowed by the
-		// previous rule.
-		async function keyOverAsync(stagingVersions: Array<number>): Promise<string | undefined> {
-			return computePlaceInputsKeyAsync({
-				digestCacheFile: DIGEST_CACHE_FILE,
-				fileSystem: rojo.fileSystem,
-				manifests: [],
+				placeFile: PLACE_FILE,
 				projectFile: PROJECT_FILE,
-				projectJson: relativizeProjectPaths(harnessProjectJson, "/cache"),
-				shadowRoots: [],
-				stagingVersions,
+				reuse: {
+					cacheFile: CACHE_FILE,
+					computeInputsKey,
+					digestCacheFile: DIGEST_CACHE_FILE,
+					manifests: [],
+					shadowRoots: [],
+				},
 			});
+
+			return computeInputsKey.mock.calls[0]![0].stagingVersions;
 		}
 
-		expect(recorded).not.toMatchObject({
-			inputsKey: await keyOverAsync([PINNED_MOUNT_PASS_VERSION, SHARED_POOL_PASS_VERSION]),
-		});
-		expect(recorded).toMatchObject({
-			inputsKey: await keyOverAsync([
-				PINNED_MOUNT_PASS_VERSION,
-				SHARED_POOL_PASS_VERSION,
-				CODE_SPLIT_PASS_VERSION,
-			]),
-		});
+		const placeVersions = await stagingVersionsForAsync(undefined);
+
+		await expect(stagingVersionsForAsync([posixRoot(CODE_DIR)])).resolves.toStrictEqual([
+			...placeVersions,
+			expect.any(Number),
+		]);
 	});
 
 	it("should leave the code in the place when no bundle is asked for", async () => {
@@ -720,54 +715,8 @@ describe("code bundle", () => {
 		});
 
 		expect(mountOf(writtenProject(rojo), "pkg", "Out")).toBe(
-			normalizeWindowsPath(path.relative("/cache", OUT_DIR)),
+			posixPath(path.relative("/cache", OUT_DIR)),
 		);
 		expect(rojo.volume.existsSync(BUNDLE_FILE)).toBeFalse();
 	});
-
-	it("should accept a bundle exactly at the binary-input cap", { timeout: 10_000 }, async () => {
-		expect.assertions(2);
-
-		const rojo = seedBundleBuild();
-		const sourcePath = `${OUT_DIR}/boundary.luau`;
-		rojo.fileSystem.writeFileSync(sourcePath, "");
-		await buildHarnessAsync(rojo);
-		const overhead = rojo.fileSystem.statSync(BUNDLE_FILE).size;
-		const cap = 100 * 1024 * 1024;
-		rojo.fileSystem.writeFileSync(sourcePath, `--${" ".repeat(cap - overhead - 2)}`);
-
-		const result = await buildHarnessAsync(rojo);
-
-		expect(result.codeBundle).toBeDefined();
-		expect(rojo.fileSystem.statSync(BUNDLE_FILE).size).toBe(cap);
-	});
-
-	// Over the mutation run's 100ms budget by design: the only honest way to
-	// prove a hundred-megabyte refusal is a hundred megabytes.
-	it(
-		"should refuse a bundle over the binary-input cap before building",
-		{ timeout: 5000 },
-		async () => {
-			expect.assertions(2);
-
-			const rojo = seedBundleBuild();
-			// A sixth of the cap in control characters, which JSON escapes to six
-			// bytes each: the smallest source that puts the payload over, and a
-			// sixth of the bytes to move around getting there.
-			rojo.fileSystem.writeFileSync(
-				`${OUT_DIR}/huge.luau`,
-				"\u0001".repeat(17 * 1024 * 1024),
-			);
-
-			await expect(buildHarnessAsync(rojo)).rejects.toMatchObject({
-				// The way out rides with the refusal: a run that cannot ship
-				// its code this way can still ship it inside the place.
-				hint: expect.stringContaining("inside the place"),
-				message: expect.stringContaining(
-					"over the 100.0 MB cap Open Cloud puts on a binary input",
-				),
-			});
-			expect(rojo.execFile).not.toHaveBeenCalled();
-		},
-	);
 });

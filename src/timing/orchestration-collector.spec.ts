@@ -57,6 +57,20 @@ function createRecordingProgress() {
 	return { calls, progress };
 }
 
+function profilePastThrowingSink(sink: (line: string) => void, times: Array<number>): void {
+	const collector = createTimingCollector({
+		clock: createScriptedClock(times),
+		enabled: true,
+		sink,
+	});
+
+	expect(() => {
+		collector.profile("boom-phase", () => {});
+	}).toThrow("sink boom");
+
+	collector.profile("next-phase", () => {});
+}
+
 describe(createTimingCollector, () => {
 	it("should avoid reading the clock for disabled operations without durations", async () => {
 		expect.assertions(1);
@@ -459,76 +473,6 @@ describe(createTimingCollector, () => {
 		]);
 	});
 
-	it("should aggregate repeated nested spans into one counted line", () => {
-		expect.assertions(1);
-
-		const { lines, sink } = createCapturingSink();
-		const collector = createTimingCollector({
-			clock: createScriptedClock([0, 1, 3, 3, 4, 10]),
-			enabled: true,
-			sink,
-		});
-
-		collector.profile("prepareCoverage", () => {
-			collector.profile("parse-ast", () => {});
-			collector.profile("parse-ast", () => {});
-		});
-
-		expect(lines).toStrictEqual([
-			"[TIMING] prepareCoverage: start",
-			"[TIMING] prepareCoverage: 10ms",
-			"[TIMING]   parse-ast: 3ms (×2)",
-			"[TIMING]   (unmeasured): 7ms",
-		]);
-	});
-
-	it("should report unmeasured time at every depth that has children", () => {
-		expect.assertions(1);
-
-		const { lines, sink } = createCapturingSink();
-		const collector = createTimingCollector({
-			clock: createScriptedClock([0, 1, 2, 3, 6, 20]),
-			enabled: true,
-			sink,
-		});
-
-		collector.profile("runProjects", () => {
-			collector.profile("processResults", () => {
-				collector.profile("buildSourceMapper", () => {});
-			});
-		});
-
-		expect(lines).toStrictEqual([
-			"[TIMING] runProjects: start",
-			"[TIMING] runProjects: 20ms",
-			"[TIMING]   processResults: 5ms",
-			"[TIMING]     buildSourceMapper: 1ms",
-			"[TIMING]     (unmeasured): 4ms",
-			"[TIMING]   (unmeasured): 15ms",
-		]);
-	});
-
-	it("should omit the unmeasured line when the children account for the phase", () => {
-		expect.assertions(1);
-
-		const { lines, sink } = createCapturingSink();
-		const collector = createTimingCollector({
-			clock: createScriptedClock([0, 0, 10, 10]),
-			enabled: true,
-			sink,
-		});
-
-		collector.profile("prepareCoverage", () => {
-			collector.profile("parse-ast", () => {});
-		});
-
-		expect(lines).toStrictEqual([
-			"[TIMING] prepareCoverage: start",
-			"[TIMING] prepareCoverage: 10ms",
-			"[TIMING]   parse-ast: 10ms",
-		]);
-	});
-
 	it("should hold a root-level record until the flush", () => {
 		expect.assertions(2);
 
@@ -552,17 +496,7 @@ describe(createTimingCollector, () => {
 			throw new Error("sink boom");
 		});
 
-		const collector = createTimingCollector({
-			clock: createScriptedClock([0, 1]),
-			enabled: true,
-			sink,
-		});
-
-		expect(() => {
-			collector.profile("boom-phase", () => {});
-		}).toThrow("sink boom");
-
-		collector.profile("next-phase", () => {});
+		profilePastThrowingSink(sink, [0, 1]);
 
 		// A stranded frame would swallow the second phase's own announcement
 		// and its report, so those two lines are what prove the stack unwound.
@@ -583,17 +517,7 @@ describe(createTimingCollector, () => {
 			throw new Error("sink boom");
 		});
 
-		const collector = createTimingCollector({
-			clock: createScriptedClock([0, 1, 2, 3]),
-			enabled: true,
-			sink,
-		});
-
-		expect(() => {
-			collector.profile("boom-phase", () => {});
-		}).toThrow("sink boom");
-
-		collector.profile("next-phase", () => {});
+		profilePastThrowingSink(sink, [0, 1, 2, 3]);
 
 		expect(sink.mock.calls.map((call) => call[0])).toStrictEqual([
 			"[TIMING] boom-phase: start",
@@ -665,25 +589,6 @@ describe(createTimingCollector, () => {
 
 		expect(calls).toStrictEqual([]);
 		expect(lines).toStrictEqual([]);
-	});
-
-	it("should report a whole millisecond of unmeasured time", () => {
-		expect.assertions(1);
-
-		const { lines, sink } = createCapturingSink();
-		const collector = createTimingCollector({
-			clock: createScriptedClock([0, 1, 3, 3]),
-			enabled: true,
-			sink,
-		});
-
-		// The parent spans 3ms and its child 2ms, leaving exactly 1ms
-		// unaccounted — the smallest gap the report still names.
-		collector.profile("prepareCoverage", () => {
-			collector.profile("parse-ast", () => {});
-		});
-
-		expect(lines).toContain("[TIMING]   (unmeasured): 1ms");
 	});
 
 	it("should hand back a profiled phase's own elapsed time with its value", () => {

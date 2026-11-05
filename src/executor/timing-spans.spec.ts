@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { RawBackendEntry } from "../backends/interface.ts";
 import type { TimingCollector } from "../timing/orchestration-collector.ts";
-import type { TestFileResult } from "../types/jest-result.ts";
+import type { TestFileResult } from "../types/jest-result-types.ts";
 import { calculateTestsMs, printLuauTiming, recordLuauTimingSpans } from "./timing-spans.ts";
 
 function runnerOutput(timing: Record<string, number>): string {

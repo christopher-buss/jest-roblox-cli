@@ -20,6 +20,9 @@ export type ConfigFormatOptions = Pick<
  * (executor single-project output, and the combined and multi-project prints).
  * Each spreads this and adds only what it alone knows — the source mapper, the
  * snapshot-write tally, the type-error count, the resolved sink paths.
+ * @param config - Resolved CLI config.
+ * @param version - CLI version for the header.
+ * @returns The config-derived format options.
  */
 export function toFormatOptions(config: ResolvedConfig, version: string): ConfigFormatOptions {
 	return {

@@ -15,6 +15,11 @@ import type { FileSystem } from "../utils/file-system.ts";
  * subdirectory (e.g. `test/default.project.json`) the two bases diverge, so
  * rebase the tree to package-relative paths so mount resolution (findInTree /
  * collectMounts) compares like-for-like.
+ * @param options - Package directory, project file and file system.
+ * @param options.fileSystem - File system to read through.
+ * @param options.packageDirectory - Package directory the paths become relative to.
+ * @param options.rojoProjectPath - Rojo project file to load.
+ * @returns The tree with package-relative `$path` values.
  */
 export function loadPackageRojoTree({
 	fileSystem,

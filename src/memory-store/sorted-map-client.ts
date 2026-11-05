@@ -24,17 +24,27 @@ const streamingResultSchema = type({
  * one-line progress message.
  */
 export interface StreamingResultEntry {
+	/** Wall time the package run took, in milliseconds. */
 	elapsedMs: number;
+	/** Failed test count. */
 	numFailedTests: number;
+	/** Passed test count. */
 	numPassedTests: number;
+	/** Pending (skipped or todo) test count. */
 	numPendingTests: number;
+	/** Package name. */
 	pkg: string;
+	/** Jest project display name within the package. */
 	project: string;
+	/** Whether the package run passed. */
 	success: boolean;
 }
 
+/** One SortedMap item as read back from the map. */
 export interface StreamingResultRecord {
+	/** SortedMap item ID, `<pkg>::<project>`. */
 	id: string;
+	/** Decoded item payload. */
 	value: StreamingResultEntry;
 }
 
@@ -43,14 +53,30 @@ export interface StreamingResultRecord {
  * stand in a stub without depending on the SDK class hierarchy.
  */
 export interface StreamingResultReader {
+	/**
+	 * Delete one item from the map.
+	 * @param itemId - ID of the item to delete.
+	 * @returns Resolves once the item is deleted.
+	 */
 	deleteAsync(itemId: string): Promise<void>;
+	/**
+	 * Read every current item in the map.
+	 * @returns Every item, decoded.
+	 */
 	readAllAsync(): Promise<Array<StreamingResultRecord>>;
 }
 
+/** Map, credentials and test seams for a `StreamingResultClient`. */
 export interface StreamingResultClientOptions {
 	/** Override the Open Cloud base URL (default: live Roblox endpoint). */
 	baseUrl?: string | undefined;
-	credentials: { apiKey: string; universeId: string };
+	/** Open Cloud API key and the universe that owns the map. */
+	credentials: {
+		/** Open Cloud API key with MemoryStore access. */
+		apiKey: string;
+		/** Universe that owns the map. */
+		universeId: string;
+	};
 	/**
 	 * Per-run UUID-keyed sorted-map identifier shared between materializer and
 	 * CLI.
@@ -75,6 +101,10 @@ export class StreamingResultClient {
 	private readonly ttlSeconds: number;
 	private readonly universeId: string;
 
+	/**
+	 * Bind the client to one map and its storage client.
+	 * @param options - Map ID, credentials, TTL and storage seam.
+	 */
 	constructor(options: StreamingResultClientOptions) {
 		this.mapId = options.mapId;
 		this.universeId = options.credentials.universeId;
@@ -82,6 +112,12 @@ export class StreamingResultClient {
 		this.storage = resolveStorageClient(options);
 	}
 
+	/**
+	 * Delete one item from the map.
+	 * @param itemId - ID of the item to delete.
+	 * @returns Resolves once the item is deleted.
+	 * @rejects When the storage API refuses the delete.
+	 */
 	public async deleteAsync(itemId: string): Promise<void> {
 		const result = await this.storage.sortedMaps.delete({
 			itemId,
@@ -95,6 +131,11 @@ export class StreamingResultClient {
 		}
 	}
 
+	/**
+	 * Read every current item in the map.
+	 * @returns Every item, decoded.
+	 * @rejects When a page read fails or an item fails to decode.
+	 */
 	public async readAllAsync(): Promise<Array<StreamingResultRecord>> {
 		return listSortedMapItemsAsync({
 			decode: (item) => ({ id: item.id, value: decodeStreamingResult(item.value) }),
@@ -105,6 +146,12 @@ export class StreamingResultClient {
 		});
 	}
 
+	/**
+	 * Write one package result as a map item with the configured TTL.
+	 * @param entry - Package result to publish.
+	 * @returns Resolves once the item is written.
+	 * @rejects When the storage API refuses the write.
+	 */
 	public async writeAsync(entry: StreamingResultEntry): Promise<void> {
 		const parameters: CreateSortedMapItemParameters = {
 			itemId: itemIdFor(entry),
@@ -125,8 +172,10 @@ export class StreamingResultClient {
 /**
  * Validates the wire payload against the StreamingResultEntry shape; throws on
  * mismatch.
+ * @param value - Wire payload of one SortedMap item.
+ * @returns The validated entry.
  */
-export function decodeStreamingResult(value: JSONValue): StreamingResultEntry {
+function decodeStreamingResult(value: JSONValue): StreamingResultEntry {
 	return streamingResultSchema.assert(value);
 }
 
@@ -135,7 +184,9 @@ export function decodeStreamingResult(value: JSONValue): StreamingResultEntry {
  * neither `pkg` nor `project` contains `::` — npm package names disallow
  * it, and project displayNames are validated upstream. If that ever
  * changes the join token needs to become a character that's banned by
- * both naming rules (e.g. a control character or null byte).
+ * both naming rules, such as a control character or null byte.
+ * @param entry - Entry whose `pkg` and `project` form the ID.
+ * @returns The `<pkg>::<project>` item ID.
  */
 function itemIdFor(entry: StreamingResultEntry): string {
 	return `${entry.pkg}::${entry.project}`;

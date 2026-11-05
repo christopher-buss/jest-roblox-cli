@@ -1,8 +1,8 @@
 import * as path from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { createTsconfigMappingCache } from "../executor/tsconfig-mappings.ts";
-import { DEFAULT_CONFIG } from "./schema.ts";
+import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
+import type { ResolvedConfig } from "./schema.ts";
 import { resolveSnapshotFormat } from "./snapshot-format.ts";
 
 // A directory that does not exist, so the tsconfig scan finds nothing and each
@@ -11,12 +11,12 @@ import { resolveSnapshotFormat } from "./snapshot-format.ts";
 // `executor.spec.ts`.
 const ROOT = path.resolve("/jest-roblox-no-such-package");
 
-function configWithRoot(overrides: Partial<typeof DEFAULT_CONFIG> = {}) {
-	return { ...DEFAULT_CONFIG, rootDir: ROOT, ...overrides };
+function configWithRoot(overrides: Partial<ResolvedConfig> = {}) {
+	return { ...createResolvedConfig(), rootDir: ROOT, ...overrides };
 }
 
-function resolve(config: typeof DEFAULT_CONFIG, testFiles: Array<string>) {
-	return resolveSnapshotFormat({ cache: createTsconfigMappingCache(), config, testFiles });
+function resolve(config: ResolvedConfig, testFiles: Array<string>) {
+	return resolveSnapshotFormat({ cache: new Map(), config, testFiles });
 }
 
 describe(resolveSnapshotFormat, () => {

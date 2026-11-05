@@ -2,11 +2,8 @@ import type { Argv } from "@rbxts/jest/src/config";
 
 import process from "node:process";
 
-import {
-	JEST_ARGV_EXCLUDED_KEYS,
-	type ResolvedConfig,
-	type SnapshotFormatOptions,
-} from "./config/schema.ts";
+import { JEST_ARGV_EXCLUDED_KEYS } from "./config/config-keys.ts";
+import type { ResolvedConfig, SnapshotFormatOptions } from "./config/schema.ts";
 import template from "./test-runner.bundled.luau";
 import {
 	toRobloxTestMatch,
@@ -34,11 +31,19 @@ export type JestArgv = Argv & {
 	testMatch: Array<string>;
 };
 
+/** Input to `buildJestArgv`. */
 export interface JestArgvInput {
+	/** Resolved config to translate. */
 	config: ResolvedConfig;
+	/** Test files the run covers. */
 	testFiles: Array<string>;
 }
 
+/**
+ * Translate a resolved config into the argv jest-roblox runs with.
+ * @param options - Resolved config and the test files to run.
+ * @returns Argv with Roblox-form test patterns and the Jest passthrough keys.
+ */
 export function buildJestArgv(options: JestArgvInput): JestArgv {
 	// Jest passthrough keys are copied by name, so they land via `Reflect.set`
 	// on an already-typed argv rather than being asserted onto one afterwards.

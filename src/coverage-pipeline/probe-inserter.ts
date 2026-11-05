@@ -28,13 +28,21 @@ interface ProbeInfo {
 const KIND_RANK = { close: 2, open: 0, point: 1 } satisfies Record<ProbeKind, number>;
 const TRAILING_WHITESPACE = /\s$/;
 
+/**
+ * Rewrite Luau source with coverage probes and the counter preamble.
+ * @param options - File key, collected coverage sites and source text.
+ * @returns The instrumented source, with any directive header kept first.
+ */
 export function insertProbes({
 	fileKey,
 	result,
 	source,
 }: {
+	/** Key the counters are stored under in `_G.__jest_roblox_cov`. */
 	fileKey: string;
+	/** Coverage sites collected from the source. */
 	result: CollectorResult;
+	/** Luau source text. */
 	source: string;
 }): string {
 	const lines = splitLines(source);
@@ -78,6 +86,9 @@ export function insertProbes({
  * by column. Insertions on different lines commute. At a shared position,
  * order by kind and then by the wrap's opposite end so nested wraps surround
  * inner ones; point probes keep their (stable) insertion order.
+ * @param left - First probe.
+ * @param right - Second probe.
+ * @returns Negative when `left` is applied first.
  */
 function compareProbes(left: ProbeInfo, right: ProbeInfo): number {
 	if (left.column !== right.column) {
@@ -138,6 +149,8 @@ function functionProbes(result: CollectorResult): Array<ProbeInfo> {
 /**
  * Arm-body bumps, followed by the implicit-`else` bumps that give an `if`
  * without an `else` a countable second arm.
+ * @param result - Collected coverage sites.
+ * @returns Point probes for every branch arm.
  */
 function branchPointProbes(result: CollectorResult): Array<ProbeInfo> {
 	const probes: Array<ProbeInfo> = [];
@@ -170,12 +183,18 @@ function branchPointProbes(result: CollectorResult): Array<ProbeInfo> {
 /**
  * Every self-contained bump: statements, function bodies, branch arm bodies and
  * the synthesized `else` arm an `if` without one still needs to count.
+ * @param result - Collected coverage sites.
+ * @returns Every point probe, unsorted.
  */
 function pointProbes(result: CollectorResult): Array<ProbeInfo> {
 	return [...statementProbes(result), ...functionProbes(result), ...branchPointProbes(result)];
 }
 
-/** The two halves of each expression wrap, emitted as an adjacent pair. */
+/**
+ * The two halves of each expression wrap, emitted as an adjacent pair.
+ * @param result - Collected coverage sites.
+ * @returns Open and close probes for every wrap.
+ */
 function wrapProbes(result: CollectorResult): Array<ProbeInfo> {
 	const probes: Array<ProbeInfo> = [];
 
@@ -218,6 +237,8 @@ function collectProbes(result: CollectorResult): Array<ProbeInfo> {
 /**
  * Mutates `mutableLines` in place, inserting probe text at each probe's
  * position.
+ * @param mutableLines - Source lines, edited in place.
+ * @param probes - Probes sorted by {@link compareProbes}.
  */
 function applyProbes(mutableLines: Array<string>, probes: Array<ProbeInfo>): void {
 	for (const { column, kind, line: probeLine, text } of probes) {
@@ -237,6 +258,8 @@ function applyProbes(mutableLines: Array<string>, probes: Array<ProbeInfo>): voi
  * The block moves intact — a `--!native` the preamble gets ahead of stops
  * being a directive, and the twin then compiles under settings the original
  * never asked for.
+ * @param lines - Source lines; the header lines are removed.
+ * @returns The header lines, each ending in a newline.
  */
 function extractDirectiveHeader(lines: Array<string>): string {
 	return lines
@@ -245,8 +268,12 @@ function extractDirectiveHeader(lines: Array<string>): string {
 		.join("");
 }
 
-// Splits source into lines, stripping \r from CRLF endings.
-// Rejoined with \n only — Luau is LF-only.
+/**
+ * Splits source into lines, stripping \r from CRLF endings.
+ * Rejoined with \n only — Luau is LF-only.
+ * @param source - Luau source text.
+ * @returns Each line without its line ending.
+ */
 function splitLines(source: string): Array<string> {
 	const lines: Array<string> = [];
 	let position = 0;
@@ -270,7 +297,11 @@ function splitLines(source: string): Array<string> {
 	return lines;
 }
 
-/** Whether the file has anything a counter table would hold. */
+/**
+ * Whether the file has anything a counter table would hold.
+ * @param result - Collected coverage sites.
+ * @returns `true` when there is any statement, function or branch.
+ */
 function hasCoverageSites(result: CollectorResult): boolean {
 	return (
 		result.statements.length > 0 || result.functions.length > 0 || result.branches.length > 0
@@ -282,6 +313,8 @@ function hasCoverageSites(result: CollectorResult): boolean {
  * one half of the cross-machine join key pair — the other half is the manifest
  * record `instrumentRoot` writes from the same string — so a second escaper
  * would silently split the two.
+ * @param value - Text to embed in a double-quoted Luau string.
+ * @returns The escaped text, with NUL characters removed.
  */
 function escapeLuauString(value: string): string {
 	return value
@@ -296,6 +329,8 @@ function escapeLuauString(value: string): string {
  * The one emitter for a counter bucket's `ensure the table, then bind a local`
  * pair. Three buckets share it so the field letter cannot drift between the
  * `nil` guard, the assignment, and the local the probes read.
+ * @param field - Counter bucket letter.
+ * @returns The guard statement and the local binding.
  */
 function bindBucket(field: "b" | "f" | "s"): Array<string> {
 	const bucket = `_G.__jest_roblox_cov[__cov_file_key].${field}`;
@@ -306,6 +341,8 @@ function bindBucket(field: "b" | "f" | "s"): Array<string> {
  * The branch half of the preamble: the shared `__cov_b` table, one zero-filled
  * arm vector per branch, and the `__cov_br` wrap helper when any expression
  * wrap probe needs it. Empty when the file has no branches.
+ * @param result - Collected coverage sites.
+ * @returns The branch preamble statements.
  */
 function buildBranchInit(result: CollectorResult): Array<string> {
 	if (result.branches.length === 0) {
@@ -329,12 +366,22 @@ function buildBranchInit(result: CollectorResult): Array<string> {
 	return statements;
 }
 
-/** Zeroes every slot of a bucket the caller has already bound. */
+/**
+ * Zeroes every slot of a bucket the caller has already bound.
+ * @param field - Counter bucket letter.
+ * @param count - Number of slots, from 1.
+ * @returns One Luau loop statement.
+ */
 function zeroFill(field: "f" | "s", count: number): string {
 	return `for __i = 1, ${count} do if __cov_${field}[__i] == nil then __cov_${field}[__i] = 0 end end`;
 }
 
-/** Every statement the file's probes need in scope, in dependency order. */
+/**
+ * Every statement the file's probes need in scope, in dependency order.
+ * @param fileKey - Key the counters are stored under.
+ * @param result - Collected coverage sites.
+ * @returns The preamble statements.
+ */
 function buildPreamble(fileKey: string, result: CollectorResult): Array<string> {
 	const escapedKey = escapeLuauString(fileKey);
 

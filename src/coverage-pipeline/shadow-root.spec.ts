@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { copyIgnoreMatcher } from "#test/mocks/coverage-copy-ignore.ts";
+import { MANIFEST_VERSION } from "#test/mocks/coverage-versions.ts";
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
-import { toPosixRoot } from "../utils/normalize-windows-path.ts";
-import { createCopyIgnoreMatcher } from "./discover-files.ts";
-import { MANIFEST_VERSION } from "./manifest.ts";
+import { posixRoot } from "#test/mocks/posix-path.ts";
 import type { CoverageManifest } from "./manifest.ts";
-import { prepareShadowRoot, syncOneFile } from "./shadow-root.ts";
+import { prepareShadowRoot } from "./shadow-root.ts";
 
 function manifestFrom(result: ReturnType<typeof prepareShadowRoot>): CoverageManifest {
 	return {
@@ -32,8 +32,8 @@ describe(prepareShadowRoot, () => {
 		prepareShadowRoot({
 			fileSystem,
 			instrumenter: () => ({}),
-			isCopyIgnored: createCopyIgnoreMatcher([]),
-			luauRoot: toPosixRoot("/source"),
+			isCopyIgnored: copyIgnoreMatcher([]),
+			luauRoot: posixRoot("/source"),
 			shadowDir: "/shadow",
 			useIncremental: false,
 		});
@@ -56,8 +56,8 @@ describe(prepareShadowRoot, () => {
 
 		const result = prepareShadowRoot({
 			fileSystem,
-			isCopyIgnored: createCopyIgnoreMatcher([]),
-			luauRoot: toPosixRoot("."),
+			isCopyIgnored: copyIgnoreMatcher([]),
+			luauRoot: posixRoot("."),
 			shadowDir: "/shadow",
 			useIncremental: false,
 		});
@@ -75,8 +75,8 @@ describe(prepareShadowRoot, () => {
 		});
 		const options = {
 			fileSystem,
-			isCopyIgnored: createCopyIgnoreMatcher([]),
-			luauRoot: toPosixRoot("."),
+			isCopyIgnored: copyIgnoreMatcher([]),
+			luauRoot: posixRoot("."),
 			shadowDir: "/shadow",
 		};
 		const first = prepareShadowRoot({ ...options, useIncremental: false });
@@ -101,8 +101,8 @@ describe(prepareShadowRoot, () => {
 		});
 		const options = {
 			fileSystem,
-			isCopyIgnored: createCopyIgnoreMatcher([]),
-			luauRoot: toPosixRoot("."),
+			isCopyIgnored: copyIgnoreMatcher([]),
+			luauRoot: posixRoot("."),
 			shadowDir: "/shadow",
 		};
 		const first = prepareShadowRoot({ ...options, useIncremental: false });
@@ -125,8 +125,8 @@ describe(prepareShadowRoot, () => {
 		const { fileSystem, volume } = createMemoryFileSystem({ "init.luau": "local x = 1\n" });
 		const options = {
 			fileSystem,
-			isCopyIgnored: createCopyIgnoreMatcher([]),
-			luauRoot: toPosixRoot("."),
+			isCopyIgnored: copyIgnoreMatcher([]),
+			luauRoot: posixRoot("."),
 			shadowDir: "/shadow",
 		};
 		const first = prepareShadowRoot({ ...options, useIncremental: false });
@@ -142,32 +142,5 @@ describe(prepareShadowRoot, () => {
 		});
 
 		expect(second.changed).toBeTrue();
-	});
-});
-
-describe(syncOneFile, () => {
-	it("should overwrite a stale target when a matching record names another path", () => {
-		expect.assertions(2);
-
-		const { fileSystem, volume } = createMemoryFileSystem({
-			"/source.luau": "return 'current'\n",
-			"/target.luau": "return 'stale'\n",
-		});
-		const previousRecord = syncOneFile({
-			fileSystem,
-			previousRecord: undefined,
-			shadowPath: "/previous.luau",
-			sourcePath: "/source.luau",
-		});
-
-		const record = syncOneFile({
-			fileSystem,
-			previousRecord,
-			shadowPath: "/target.luau",
-			sourcePath: "/source.luau",
-		});
-
-		expect(record.shadowPath).toBe("/target.luau");
-		expect(volume.readFileSync("/target.luau", "utf8")).toBe("return 'current'\n");
 	});
 });

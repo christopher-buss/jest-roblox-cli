@@ -18,6 +18,13 @@ interface StatIfChain {
 	elseBlock: AstStatBlock | undefined;
 }
 
+/**
+ * Record each `and`/`or` operand pair, expression-`if` and statement-`if`
+ * chain as one branch, skipping ignored spans.
+ * @param accumulator - Receives the branch records.
+ * @param ignores - Spans excluded from coverage.
+ * @returns Visitor hooks that collect branches.
+ */
 export function createBranchCollector(
 	accumulator: CoverageAccumulator,
 	ignores: CoverageIgnores,

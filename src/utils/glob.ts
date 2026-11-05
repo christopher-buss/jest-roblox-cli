@@ -54,15 +54,30 @@ interface WalkDirectoryOptions {
  * A pattern the cache was not declared for is still answered correctly — it
  * walks fresh rather than reading a narrower cache — so an undeclared caller
  * loses the sharing, never the files.
+ * @param patterns - Every pattern the cache will serve, or none for any.
+ * @returns An empty cache that keeps only files those patterns can match.
  */
 export function createGlobCache(patterns?: Iterable<string>): GlobCache {
 	return { leaves: collectLeaves(patterns), walks: new Map<string, Array<string>>() };
 }
 
+/**
+ * Whether a path matches a glob, where `*` stays inside one segment and `**`
+ * spans them.
+ * @param filePath - The `/`-separated path to test.
+ * @param pattern - The glob to match against.
+ * @returns True when the whole path matches.
+ */
 export function matchesGlobPattern(filePath: string, pattern: string): boolean {
 	return compileGlobPattern(pattern).test(filePath);
 }
 
+/**
+ * Find the files under `cwd` that match a glob.
+ * @param pattern - The glob, relative to `cwd`.
+ * @param options - The directory, filesystem and shared walk cache.
+ * @returns The matching paths, relative to `cwd`.
+ */
 export function globSync(pattern: string, options: GlobOptions = {}): Array<string> {
 	const { fileSystem = nodeFileSystem } = options;
 	const cwd = options.cwd ?? process.cwd();
@@ -91,6 +106,8 @@ export function globSync(pattern: string, options: GlobOptions = {}): Array<stri
  * The pattern's trailing path segment, which every match's basename must
  * satisfy — `undefined` when the segment carries a `**` and so spans
  * separators, leaving the basename unconstrained.
+ * @param pattern - The glob.
+ * @returns The trailing segment, or `undefined`.
  */
 function leafOf(pattern: string): string | undefined {
 	const leaf = pattern.slice(pattern.lastIndexOf("/") + 1);
@@ -100,6 +117,8 @@ function leafOf(pattern: string): string | undefined {
 /**
  * `undefined` — no filter — as soon as one pattern leaves the basename
  * unconstrained, since the walk keeps the union of what the patterns match.
+ * @param patterns - The declared patterns.
+ * @returns Their trailing segments, or `undefined` for no filter.
  */
 function collectLeaves(patterns?: Iterable<string>): ReadonlySet<string> | undefined {
 	if (patterns === undefined) {
@@ -123,6 +142,8 @@ function collectLeaves(patterns?: Iterable<string>): ReadonlySet<string> | undef
  * Translate one glob into the regex that matches it. Separate from
  * {@link matchesGlobPattern} so a caller testing many paths against one pattern
  * compiles once rather than once per path.
+ * @param pattern - The glob to translate.
+ * @returns A regex anchored to the whole path.
  */
 function compileGlobPattern(pattern: string): RegExp {
 	const regexPattern = pattern
@@ -152,6 +173,9 @@ function compileGlobPattern(pattern: string): RegExp {
 /**
  * The cache if it was declared for this pattern, otherwise `undefined` — its
  * walk was filtered for other patterns and would answer this one short.
+ * @param cache - The caller's cache, if any.
+ * @param pattern - The glob to serve.
+ * @returns The cache, or `undefined` when it cannot serve the pattern.
  */
 function servingCache(cache: GlobCache | undefined, pattern: string): GlobCache | undefined {
 	if (cache?.leaves === undefined) {
@@ -185,6 +209,12 @@ function compileLeafMatcher(
  * Dropping the rest here is what keeps the returned array proportional to the
  * files a caller asked about rather than to the size of the checkout, build
  * output included.
+ * @param options - The directories, filesystem and basename filter.
+ * @param options.baseDirectory - The root results are relative to.
+ * @param options.directoryPath - The directory to walk.
+ * @param options.fileSystem - The filesystem to read.
+ * @param options.keepBasename - Keeps a file when true; keeps all if absent.
+ * @returns The kept file paths, `/`-separated.
  */
 function walkDirectory({
 	baseDirectory,

@@ -1,6 +1,6 @@
 import type { Except } from "type-fest";
 
-import type { JestResult, SnapshotSummary } from "../types/jest-result.ts";
+import type { JestResult, SnapshotSummary } from "../types/jest-result-types.ts";
 
 /**
  * A merged Jest result minus its snapshot summary. `snapshot` is deliberately
@@ -20,6 +20,10 @@ type RequiredCountKey = "added" | "matched" | "total" | "unmatched" | "updated";
  * Jest-result merge in the CLI. The multi-project merge (`output.ts`) and the
  * multi-project formatter both fold the same eight fields the same way; keeping
  * one implementation means a new result dimension lands in both at once.
+ *
+ * @param results - Per-project Jest results.
+ * @returns Summed counters, earliest `startTime`, joint `success` and all test
+ *   results.
  */
 export function mergeJestTotals(results: Array<JestResult>): JestTotals {
 	const totals: JestTotals = {
@@ -51,6 +55,9 @@ export function mergeJestTotals(results: Array<JestResult>): JestTotals {
  * Merges per-project snapshot summaries into one. The optional fields stay
  * optional: a field absent from every input stays absent from the output, so a
  * runner that never reports it doesn't gain a phantom zero.
+ *
+ * @param snapshots - Per-project snapshot summaries.
+ * @returns The merged summary, or `undefined` when there is none.
  */
 export function mergeSnapshotSummaries(
 	snapshots: Array<SnapshotSummary>,
@@ -94,8 +101,14 @@ function anyDidUpdate(snapshots: Array<SnapshotSummary>): boolean | undefined {
 	return present.some((snapshot) => snapshot.didUpdate === true);
 }
 
-// Stays `undefined` until some snapshot reports the field, which is what keeps
-// an absent field absent rather than summing to a phantom zero.
+/**
+ * Stays `undefined` until some snapshot reports the field, which is what keeps
+ * an absent field absent rather than summing to a phantom zero.
+ *
+ * @param snapshots - Per-project snapshot summaries.
+ * @param key - Optional counter to sum.
+ * @returns The sum, or `undefined` when no snapshot reports the field.
+ */
 function sumOptional(snapshots: Array<SnapshotSummary>, key: OptionalCountKey): number | undefined {
 	let total: number | undefined;
 

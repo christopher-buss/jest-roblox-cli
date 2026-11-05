@@ -1,9 +1,13 @@
 import type { ChildProcessRunner } from "./child-process.ts";
 import { nodeChildProcessRunner } from "./child-process.ts";
 
+/** Inputs for one `rojo build`. */
 export interface RojoBuildOptions {
+	/** Spawns rojo. Defaults to the real launcher. */
 	readonly childProcess?: ChildProcessRunner;
+	/** Where the built place file goes. */
 	readonly outputPath: string;
+	/** The Rojo project file to build. */
 	readonly projectPath: string;
 }
 
@@ -20,6 +24,11 @@ interface RojoFailure {
  * the event loop for every one of them — the stage block above it repaints from
  * a timer, so a blocking build reports itself as taking no time at all until
  * the moment it ends.
+ * @param options - The project, output path and launcher.
+ * @param options.childProcess - Spawns rojo.
+ * @param options.outputPath - Where the built place file goes.
+ * @param options.projectPath - The Rojo project file to build.
+ * @rejects When rojo is not on PATH or the build fails.
  */
 export async function buildWithRojoAsync({
 	childProcess = nodeChildProcessRunner,
@@ -49,6 +58,11 @@ export async function buildWithRojoAsync({
  * replaced hung it off the error object. Rejecting would drop it, and every
  * failed build would then report the same bare line with rojo's own diagnosis
  * of the project thrown away.
+ * @param options - The project, output path and launcher.
+ * @param options.childProcess - Spawns rojo.
+ * @param options.outputPath - Where the built place file goes.
+ * @param options.projectPath - The Rojo project file to build.
+ * @returns The failure and its stderr, or `undefined` on success.
  */
 async function runRojoAsync({
 	childProcess,

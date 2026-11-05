@@ -4,16 +4,20 @@ import { assert, describe, expect, it } from "vitest";
 
 import type { MemoryVolume } from "#test/mocks/memory-file-system.ts";
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
+import { posixPath } from "#test/mocks/posix-path.ts";
 import type { FileSystem } from "../utils/file-system.ts";
-import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import type { CoverageUniverseFilter } from "./coverage-universe.ts";
 import { createInstrumentUniverse, type InstrumentUniverse } from "./instrument-universe.ts";
 
-const CWD = normalizeWindowsPath(process.cwd());
+const CWD = posixPath(process.cwd());
 /** A package sited away from the invocation directory. */
-const PACKAGE_ROOT = normalizeWindowsPath(path.resolve("/repo/packages/foo"));
+const PACKAGE_ROOT = posixPath(path.resolve("/repo/packages/foo"));
 
-/** Absolute POSIX path for a cwd-relative one, as the walkers produce. */
+/**
+ * Absolute POSIX path for a cwd-relative one, as the walkers produce.
+ * @param relativePath - Path relative to the invocation directory.
+ * @returns Absolute POSIX path.
+ */
 function under(relativePath: string): string {
 	return path.posix.join(CWD, relativePath);
 }
@@ -21,6 +25,9 @@ function under(relativePath: string): string {
 /**
  * The universe for a filter that is known to narrow, so the tests can call
  * `includes` without re-deciding whether one exists.
+ * @param fileSystem - Volume the universe walks.
+ * @param filter - Filter known to narrow.
+ * @returns Narrowed universe.
  */
 function universeFor(fileSystem: FileSystem, filter: CoverageUniverseFilter): InstrumentUniverse {
 	const universe = createInstrumentUniverse(filter, fileSystem);
@@ -41,8 +48,9 @@ function writeSourceMap(
  * Write a compiled Luau file, optionally with its source-map sidecar.
  *
  * @param volume - Where the compiled file lands.
- * @param luauRelative - Its path, relative to the invocation directory.
- * @param sources - The sources its sidecar declares, when it has one.
+ * @param options - Its path relative to the invocation directory, and the
+ *   sources its sidecar declares when it has one.
+ * @returns Absolute path of the compiled file.
  */
 function writeCompiled(
 	volume: MemoryVolume,

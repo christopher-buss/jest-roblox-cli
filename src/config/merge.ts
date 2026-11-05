@@ -8,6 +8,13 @@ type CoverageKey =
 	| "coverageDirectory"
 	| "coverageReporters";
 
+/**
+ * Overlay CLI options on a resolved config; a CLI value wins when set.
+ *
+ * @param cli - Parsed CLI options.
+ * @param config - Resolved config.
+ * @returns The merged config.
+ */
 export function mergeCliWithConfig(cli: CliOptions, config: ResolvedConfig): ResolvedConfig {
 	return {
 		...config,

@@ -1,10 +1,11 @@
 import * as path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
+import { MANIFEST_VERSION } from "#test/mocks/coverage-versions.ts";
+import type { RawCoverageData } from "./coverage-types.ts";
 import type { CoverageManifest } from "./manifest.ts";
-import { MANIFEST_VERSION } from "./manifest.ts";
-import type { CoverageMapper, MappedFileCoverage } from "./mapper.ts";
-import type { RawCoverageData } from "./types.ts";
+import type { MappedFileCoverage } from "./mapper-types.ts";
+import type { CoverageMapper } from "./mapper.ts";
 import { aggregateWorkspaceCoverage } from "./workspace-aggregate.ts";
 
 /**

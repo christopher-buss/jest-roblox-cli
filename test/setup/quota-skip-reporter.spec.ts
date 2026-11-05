@@ -5,7 +5,7 @@ import { describe, expect, it, onTestFinished, vi } from "vitest";
 import type { TestModule } from "vitest/node";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
-import { NOTE_PREFIX, QuotaSkipReporter } from "#test/setup/quota-skip-reporter.ts";
+import { NOTE_PREFIX, QuotaSkipReporter } from "./quota-skip-reporter.ts";
 
 const REPORT_DIRECTORY = "/reports";
 

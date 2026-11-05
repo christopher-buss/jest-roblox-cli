@@ -1,69 +1,40 @@
-import { PermissionError } from "@bedrock-rbx/ocale";
-import { OcaleRunner, runTaskPool } from "@isentinel/roblox-runner";
+import { OcaleRunner } from "@isentinel/roblox-runner";
 import type {
 	BinaryInputUploader,
-	OcaleRunnerOptions,
 	RemoteRunner,
 	RunnerCredentials,
 	ScriptResult,
 } from "@isentinel/roblox-runner";
 
-import process from "node:process";
-import type { Except } from "type-fest";
-
-import { ConfigError } from "../config/errors.ts";
-import type { ResolvedConfig } from "../config/schema.ts";
 import { resolvePlaceFilePath } from "../config/schema.ts";
 import { ExecutionClaimObserver } from "../luau/execution-claim.ts";
 import { prepareTaskScript } from "../luau/task-script.ts";
 import { NOOP_RUN_PROGRESS, type RunProgress } from "../progress/reporter.ts";
-import { describeCodeBundle, describePlaceFile, describeProjectCount } from "../progress/stages.ts";
-import type { CodeBundleArtifact } from "../staging/place-builder.ts";
-import { generateTestScript, type JestArgvInput } from "../test-script.ts";
-import { formatMissingScopes, isPollTimeout, walkErrorChain } from "../utils/error-chain.ts";
+import { describeProjectCount } from "../progress/stages.ts";
+import type { CodeBundleArtifact } from "../staging/code-bundle.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import { nodeFileSystem } from "../utils/file-system.ts";
-import { BootUnverifiedError } from "./boot-unverified.ts";
-import type { DecodedEnvelope } from "./envelope.ts";
-import { decodeEnvelope, isEnvelopeDeferred } from "./envelope.ts";
 import { DEFAULT_BOOT_WATCH_MS, executeWithRecoveryAsync } from "./execution-recovery.ts";
-import type {
-	Backend,
-	BackendOptions,
-	BackendResult,
-	EnvelopeEntry,
-	ProjectJob,
-	RawBackendEntry,
-	StreamingHooks,
-} from "./interface.ts";
+import type { Backend, BackendOptions, BackendResult, ProjectJob } from "./interface.ts";
 import { openCloudExecutionBudgets } from "./open-cloud-budgets.ts";
+import { type BundleRun, openBundleRun } from "./open-cloud-bundle.ts";
+import { dispatchJobsAsync } from "./open-cloud-dispatch.ts";
+import type { DispatchOutcome } from "./open-cloud-entries.ts";
+import { resolveOpenCloudBaseUrl, resolveRunnerOptions } from "./open-cloud-environment.ts";
+import { rethrowOversizedResult } from "./open-cloud-failures.ts";
+import {
+	PlaceVersionGate,
+	toCacheTarget,
+	type UploadOutcome,
+	type VersionContext,
+} from "./open-cloud-place-version.ts";
 import { executeWithResultRelayAsync } from "./result-relay.ts";
 import type { UploadCacheTarget } from "./upload-cache.ts";
-import {
-	hashPlaceFile,
-	invalidateCachedVersion,
-	readCachedVersion,
-	writeCachedVersion,
-} from "./upload-cache.ts";
 
-/** A completed probe proves only the version it actually booted. */
-export const BOOT_PROBE_SCRIPT = "return tostring(game.PlaceVersion)";
-
-/**
- * The script deadline is separate from the budget allowed for boot and
- * polling.
- */
-const BOOT_PROBE_TASK_TIMEOUT_MS = 10_000;
-
-const BINARY_INPUT_LIFETIME_MS = 15 * 60_000;
-
-const PARALLEL_AUTO_CAP = 3;
-const BASE_URL_ENV = "JEST_ROBLOX_OPEN_CLOUD_BASE_URL";
-const MAX_RETRIES_ENV = "JEST_ROBLOX_OCALE_MAX_RETRIES";
-const DEFAULT_STREAM_POLL_MS = 250;
-
+/** API key and the universe and place the run targets. */
 export type OpenCloudCredentials = RunnerCredentials;
 
+/** Optional overrides and test seams for {@link OpenCloudBackend}. */
 export interface OpenCloudOptions {
 	/** Delay before checking whether the first test task acquired its claim. */
 	bootWatchMs?: number | undefined;
@@ -97,88 +68,7 @@ export interface OpenCloudOptions {
 	runner?: (BinaryInputUploader & RemoteRunner) | undefined;
 }
 
-interface BundleInput {
-	createdAt: number;
-	path: string;
-}
-
-/**
- * The Code Bundle this run ships, and the input it has been uploaded as.
- *
- * One per run, held on the backend rather than threaded through every dispatch
- * shape: the input is created once and then named by every submit, several of
- * them layers below the call that made it.
- */
-interface BundleRun {
-	artifact: CodeBundleArtifact;
-	/**
-	 * Absent until the bundle has been uploaded, which is after the boot
-	 * probe.
-	 */
-	input: BundleInput | undefined;
-	/**
-	 * The upload in flight, so submits that all cross the refresh threshold at
-	 * once wait on one create rather than each making its own — N creates
-	 * against a five-a-minute quota, N PUTs of the same tens of megabytes, and
-	 * N stage lines for one upload.
-	 */
-	pending: Promise<BundleInput> | undefined;
-	progress: RunProgress;
-	/** Create and PUT time, this run's refreshes included. */
-	uploadMs: number;
-}
-
-interface JobBucket {
-	indices: Array<number>;
-	jobs: Array<ProjectJob>;
-}
-
-interface PollState {
-	warned: boolean;
-}
-
-/**
- * The Exact Version every task in this run is submitted to. A Shared Place
- * has no stable head, so nothing is ever submitted there: the version the
- * upload (or the cache) named is the one whose bytes hold this run's code.
- */
-interface VersionContext {
-	/** True when this run's probe completed on the uploaded version. */
-	bootProven: boolean;
-	versionNumber: number;
-}
-
-interface UploadOutcome {
-	/** True when the version came from the cache instead of a fresh upload. */
-	fromCache: boolean;
-	/**
-	 * Hash of the uploaded place bytes, or undefined when this run keeps no
-	 * cache. Carried out of the upload so the entry is written only once the
-	 * boot probe has proved the version starts.
-	 */
-	hash: string | undefined;
-	uploadMs: number;
-	versionNumber: number;
-}
-
-interface StealingPoolOutcome {
-	failure?: { error: Error };
-	results: Array<ScriptResult>;
-}
-
-/** One package's entry plus the task-level game output it arrived with. */
-interface CollectedEntry {
-	entry: EnvelopeEntry;
-	gameOutput: string | undefined;
-}
-
-interface StealingEnvelope extends DecodedEnvelope {
-	gameOutput: string | undefined;
-}
-
-/** What one dispatch produced, minus the timing the caller measures itself. */
-type DispatchOutcome = Except<BackendResult, "timing">;
-
+/** Runs tests as Open Cloud Luau tasks against an uploaded place version. */
 export class OpenCloudBackend implements Backend {
 	private readonly bootWatchMs: number;
 	/**
@@ -188,6 +78,7 @@ export class OpenCloudBackend implements Backend {
 	private readonly executionClaimObserver: Pick<ExecutionClaimObserver, "readAsync">;
 	private readonly fileSystem: FileSystem;
 	private readonly now: () => number;
+	private readonly placeVersion: PlaceVersionGate;
 	private readonly prepareScript: typeof prepareTaskScript;
 	private readonly resultRelay: typeof executeWithResultRelayAsync;
 	private readonly runner: BinaryInputUploader & RemoteRunner;
@@ -205,6 +96,11 @@ export class OpenCloudBackend implements Backend {
 	public readonly kind = "open-cloud" as const;
 	public readonly placeInput = "built" as const;
 
+	/**
+	 * Create a backend for the given place.
+	 * @param credentials - API key and the universe and place to run against.
+	 * @param options - Overrides and test seams.
+	 */
 	constructor(credentials: OpenCloudCredentials, options?: OpenCloudOptions) {
 		this.bootWatchMs = options?.bootWatchMs ?? DEFAULT_BOOT_WATCH_MS;
 		this.prepareScript = options?.prepareScript ?? prepareTaskScript;
@@ -219,31 +115,42 @@ export class OpenCloudBackend implements Backend {
 		this.now = options?.now ?? Date.now;
 		this.runner = options?.runner ?? new OcaleRunner(credentials, resolveRunnerOptions());
 		this.resultRelay = options?.resultRelay ?? executeWithResultRelayAsync;
+		this.placeVersion = new PlaceVersionGate({
+			fileSystem: this.fileSystem,
+			runner: this.runner,
+		});
 	}
 
+	/**
+	 * Upload or reuse the place version, prove it boots, then dispatch every job.
+	 * @param options - Jobs and run settings.
+	 * @returns Raw entries plus upload and execution timing.
+	 */
 	public async runTestsAsync(options: BackendOptions): Promise<BackendResult> {
-		const {
-			codeBundle,
-			jobs,
-			progress = NOOP_RUN_PROGRESS,
-			scriptOverride,
-			workStealing: isStealing,
-		} = options;
-		this.beginRun(codeBundle, progress);
-		const primary = resolvePrimaryJob({ jobs, scriptOverride, workStealing: isStealing });
+		const progress = options.progress ?? NOOP_RUN_PROGRESS;
+		this.beginRun(options.codeBundle, progress);
+		const primary = resolvePrimaryJob(options);
 		// timeout and bootProbeTimeout are picked from the first job — both are
 		// per-run knobs, and one run boots one version of one place.
 		const target = toCacheTarget(this.credentials, resolvePlaceFilePath(primary.config));
 
-		const attemptAsync = async (upload: UploadOutcome): Promise<DispatchOutcome> => {
-			return this.bootAndDispatchAsync({ options, primary, progress, target, upload });
-		};
-
-		const upload = await this.uploadOrReuseAsync({ config: primary.config, progress, target });
+		const upload = await this.placeVersion.uploadOrReuseAsync({
+			config: primary.config,
+			progress,
+			target,
+		});
 		const executionStart = Date.now();
-		const outcome = await this.executeWithCachedUploadAsync(
+		const outcome = await this.placeVersion.executeWithCachedUploadAsync(
 			{ rootDirectory: primary.config.rootDir, target, upload },
-			attemptAsync,
+			async (attempt) => {
+				return this.bootAndDispatchAsync({
+					options,
+					primary,
+					progress,
+					target,
+					upload: attempt,
+				});
+			},
 		);
 
 		return splitUploadAndExecution({
@@ -260,10 +167,17 @@ export class OpenCloudBackend implements Backend {
 	 *
 	 * Every field here is per-run rather than per-backend, and a second run on
 	 * one instance must not inherit the first's bundle or composed scripts.
+	 * @param codeBundle - Code Bundle of this run, if any.
+	 * @param progress - Sink for the bundle stages.
 	 */
 	private beginRun(codeBundle: CodeBundleArtifact | undefined, progress: RunProgress): void {
-		noteStayedMounts(codeBundle);
-		this.bundle = toBundleRun(codeBundle, progress);
+		this.bundle = openBundleRun({
+			artifact: codeBundle,
+			fileSystem: this.fileSystem,
+			now: this.now,
+			progress,
+			runner: this.runner,
+		});
 		this.composed = new Map();
 	}
 
@@ -271,6 +185,8 @@ export class OpenCloudBackend implements Backend {
 	 * One attempt against one place version: prove it boots, then run every job
 	 * on it. A 404 on a reused version drops the cache entry and fails the run;
 	 * the next run uploads afresh.
+	 * @param options - Backend options, primary job, progress sink, place target and upload outcome.
+	 * @returns Raw results of the dispatched jobs.
 	 */
 	private async bootAndDispatchAsync({
 		options,
@@ -279,27 +195,33 @@ export class OpenCloudBackend implements Backend {
 		target,
 		upload,
 	}: {
+		/** Backend options of the run. */
 		options: BackendOptions;
+		/** First job; its config sets the per-run knobs. */
 		primary: ProjectJob;
+		/** Sink for the boot and tests stages. */
 		progress: RunProgress;
+		/** Upload-cache target of the place. */
 		target: UploadCacheTarget;
+		/** Upload outcome of this attempt. */
 		upload: UploadOutcome;
 	}): Promise<DispatchOutcome> {
-		const isBootProven = await this.verifyBootAsync({
+		const isBootProven = await this.placeVersion.verifyBootAsync({
 			config: primary.config,
 			progress,
 			target,
 			upload,
 		});
 		// Keep the input's validity window available for dispatched test tasks.
-		await this.ensureBinaryInputAsync(
+		await this.bundle?.ensureInputAsync(
 			openCloudExecutionBudgets(primary.config.timeout).inputValidityMs,
 		);
 		// Closed on success only: a dispatch that throws leaves the stage open,
 		// and the reporter then names it as the step the run died inside.
 		const done = progress.begin("tests", describeProjectCount(options.jobs.length));
-		const outcome = await this.selectDispatchAsync({
+		const outcome = await dispatchJobsAsync({
 			...options,
+			executeAsync: async (request) => this.executeAsync(request),
 			primaryConfig: primary.config,
 			version: {
 				bootProven: isBootProven,
@@ -311,107 +233,18 @@ export class OpenCloudBackend implements Backend {
 	}
 
 	/**
-	 * Run one bucket's jobs, re-sending whatever its task left behind, and hand
-	 * back what came in plus whether the bucket bailed.
-	 */
-	private async drainDeferralsAsync({
-		jobs,
-		scriptFactory,
-		timeout,
-		version,
-	}: {
-		jobs: Array<ProjectJob>;
-		scriptFactory: (jobs: ReadonlyArray<ProjectJob>) => string;
-		timeout: number;
-		version: VersionContext;
-	}): Promise<{ bailed: boolean; collected: Map<string, CollectedEntry> }> {
-		const collected = new Map<string, CollectedEntry>();
-		let remaining: Array<ProjectJob> = jobs;
-		let script = scriptFactory(jobs);
-		let hasBailed = false;
-
-		// One attempt per job is the ceiling: a task always runs at least one
-		// entry, so it cannot take more rounds than there are jobs.
-		for (const _attempt of jobs) {
-			const envelope = parseStealingEnvelope(
-				await this.executeAsync({ script, timeout, version }),
-			);
-			addEntriesToMap({
-				entries: envelope.entries,
-				entryByKey: collected,
-				gameOutput: envelope.gameOutput,
-			});
-			hasBailed ||= envelope.bailed;
-			if (!envelope.deferred) {
-				break;
-			}
-
-			// Against `remaining`, not `jobs`: a round that covers nothing new
-			// stops the loop rather than spending the rest of that budget on
-			// tasks that cannot make progress.
-			const outstanding = remaining.filter((job) => {
-				return !collected.has(entryLookupKey(job.pkg ?? job.displayName, job.displayName));
-			});
-			if (outstanding.length === 0 || outstanding.length === remaining.length) {
-				break;
-			}
-
-			remaining = outstanding;
-			script = scriptFactory(remaining);
-		}
-
-		return { bailed: hasBailed, collected };
-	}
-
-	/**
-	 * The input every submit names, or `undefined` for a run that ships the
-	 * whole place.
-	 *
-	 * Uploaded on the first ask and created again once the one in hand is too
-	 * old to survive the next task. Asked before every submit rather than once
-	 * per run, because an input is Open Cloud's to expire and a long run
-	 * outlives one: a late shard would otherwise fail on an input that was
-	 * valid when the run started.
-	 */
-	private async ensureBinaryInputAsync(minimumValidityMs: number): Promise<string | undefined> {
-		const { bundle } = this;
-		if (bundle === undefined) {
-			return undefined;
-		}
-
-		const { input } = bundle;
-		if (
-			input !== undefined &&
-			this.now() - input.createdAt < BINARY_INPUT_LIFETIME_MS - minimumValidityMs
-		) {
-			return input.path;
-		}
-
-		bundle.pending ??= this.uploadBundleAsync(bundle).finally(() => {
-			// Cleared on settle rather than kept: the next ask past the
-			// threshold has to make a real create, and a rejected one must not
-			// be handed to every later submit as the answer.
-			bundle.pending = undefined;
-		});
-		const uploaded = await bundle.pending;
-		if (this.now() - uploaded.createdAt >= BINARY_INPUT_LIFETIME_MS - minimumValidityMs) {
-			throw new ConfigError(
-				"The binary input upload completed too late to remain valid through task admission and boot.",
-				"Upload the code inside the place instead.",
-			);
-		}
-
-		return uploaded.path;
-	}
-
-	/**
 	 * One logical execution. A Shared Place run creates exactly one task for
 	 * it; only a Binary Input run, which nothing in production selects, may
 	 * replace one under an execution claim.
+	 * @param request - Script, timeout and the version to pin to.
+	 * @returns Result of the task.
 	 */
 	private async executeAsync(request: {
+		/** Luau script to run. */
 		script: string;
+		/** Task timeout, in milliseconds. */
 		timeout: number;
+		/** Version the task is pinned to. */
 		version: VersionContext;
 	}): Promise<ScriptResult> {
 		if (this.bundle !== undefined) {
@@ -432,14 +265,19 @@ export class OpenCloudBackend implements Backend {
 	/**
 	 * One logical execution under one execution claim. Every physical task it
 	 * creates, replacements included, is pinned to the run's Exact Version.
+	 * @param request - Script, timeout and the version to pin to.
+	 * @returns Result of the task that held the claim.
 	 */
 	private async executeClaimedAsync({
 		script,
 		timeout,
 		version,
 	}: {
+		/** Luau script to run. */
 		script: string;
+		/** Task timeout, in milliseconds. */
 		timeout: number;
+		/** Version the task is pinned to. */
 		version: VersionContext;
 	}): Promise<ScriptResult> {
 		return executeWithRecoveryAsync({
@@ -465,36 +303,10 @@ export class OpenCloudBackend implements Backend {
 	}
 
 	/**
-	 * Clear a suspect upload-cache entry without restarting dispatched work.
+	 * {@link prepareTaskScript}, once per script. See `composed`.
+	 * @param script - Caller script to compose.
+	 * @returns Composer that prefixes the script with a claim.
 	 */
-	private async executeWithCachedUploadAsync(
-		{
-			rootDirectory,
-			target,
-			upload,
-		}: {
-			rootDirectory: string;
-			target: UploadCacheTarget;
-			upload: UploadOutcome;
-		},
-		executeAsync: (uploadOutcome: UploadOutcome) => Promise<DispatchOutcome>,
-	): Promise<DispatchOutcome> {
-		try {
-			return await executeAsync(upload);
-		} catch (err) {
-			if (!upload.fromCache || !isNotFoundError(err)) {
-				throw err;
-			}
-
-			process.stderr.write(
-				"Warning: Open Cloud returned 404; clearing the upload cache without restarting dispatched tests.\n",
-			);
-			invalidateCachedVersion({ fileSystem: this.fileSystem, rootDirectory, target });
-			throw err;
-		}
-	}
-
-	/** {@link prepareTaskScript}, once per script. See `composed`. */
 	private prepareOnce(script: string): (claim: string) => string {
 		// The bundle is per-run and the map is cleared per run, so the script
 		// alone is the key.
@@ -509,238 +321,12 @@ export class OpenCloudBackend implements Backend {
 	}
 
 	/**
-	 * A lost probe says nothing about the place, so it gets one more; a
-	 * completed one has answered. Undefined when both were lost.
-	 */
-	private async probeBootAsync(options: {
-		budget: number;
-		upload: UploadOutcome;
-	}): Promise<string | undefined> {
-		return (
-			(await this.submitBootProbeAsync(options)) ?? (await this.submitBootProbeAsync(options))
-		);
-	}
-
-	private async runBucketAsync({
-		bucket: { indices, jobs },
-		scriptOverride,
-		version,
-	}: {
-		bucket: JobBucket;
-		scriptOverride: string | undefined;
-		version: VersionContext;
-	}): Promise<{ indices: Array<number>; rawResults: Array<RawBackendEntry> }> {
-		// A bucket is only created for at least one job, so jobs[0] is defined.
-		// oxlint-disable-next-line typescript/no-non-null-assertion -- bucket non-empty
-		const primary = jobs[0]!;
-		const script = scriptOverride ?? bucketScript(jobs);
-		const scriptResult = await this.executeAsync({
-			script,
-			timeout: primary.config.timeout,
-			version,
-		});
-
-		const jestOutput = scriptResult.outputs[0];
-		if (jestOutput === undefined) {
-			throw new Error(
-				`No test results in output. Got: ${JSON.stringify(scriptResult.outputs)}`,
-			);
-		}
-
-		const fallbackGameOutput = scriptResult.outputs[1];
-		const { entries } = decodeEnvelope(jestOutput);
-		if (entries.length !== jobs.length) {
-			throw new Error(
-				`Open Cloud backend returned ${entries.length.toString()} entries but bucket had ${jobs.length.toString()} jobs`,
-			);
-		}
-
-		const rawResults: Array<RawBackendEntry> = entries.map((entry) => {
-			return { entry, fallbackGameOutput };
-		});
-
-		return { indices, rawResults };
-	}
-
-	/**
-	 * Bucket a workspace run and drain each bucket's deferrals concurrently.
-	 *
-	 * There is no queue on this path, so a task that fills its return-envelope
-	 * budget cannot hand the rest to a sibling; the backend answers the
-	 * deferral itself. The factory is what makes the buckets possible — it
-	 * builds a script from any subset of the entries, so `--parallel N` buys
-	 * the same static shard split multi mode gets, and every bucket keeps its
-	 * own chain of re-sends.
-	 *
-	 * Buckets hold disjoint jobs, so the per-bucket maps merge with no winner
-	 * to pick: no key reaches two of them.
-	 */
-	private async runDeferrableAsync({
-		jobs,
-		parallel,
-		primaryConfig,
-		scriptFactory,
-		version,
-	}: {
-		jobs: Array<ProjectJob>;
-		parallel: BackendOptions["parallel"];
-		primaryConfig: ResolvedConfig;
-		scriptFactory: (jobs: ReadonlyArray<ProjectJob>) => string;
-		version: VersionContext;
-	}): Promise<DispatchOutcome> {
-		const drained = await Promise.all(
-			bucketJobs(jobs, parallel).map(async (bucket) => {
-				return this.drainDeferralsAsync({
-					jobs: bucket.jobs,
-					scriptFactory,
-					timeout: primaryConfig.timeout,
-					version,
-				});
-			}),
-		);
-
-		const entryByKey = new Map<string, CollectedEntry>();
-		for (const bucket of drained) {
-			for (const [key, entry] of bucket.collected) {
-				entryByKey.set(key, entry);
-			}
-		}
-
-		return collectStealingResults({
-			bailed: drained.some((bucket) => bucket.bailed),
-			entryByKey,
-			jobs,
-		});
-	}
-
-	private async runStaticBucketsAsync({
-		jobs,
-		parallel,
-		scriptOverride,
-		version,
-	}: {
-		jobs: Array<ProjectJob>;
-		parallel: BackendOptions["parallel"];
-		scriptOverride: string | undefined;
-		version: VersionContext;
-	}): Promise<DispatchOutcome> {
-		const buckets = bucketJobs(jobs, parallel);
-		const bucketResults = await Promise.all(
-			buckets.map(async (bucket) => this.runBucketAsync({ bucket, scriptOverride, version })),
-		);
-
-		// Flatten bucket results in original job order via the indices recorded
-		// at bucketing time. indices and rawResults always share the same length
-		// because runBucket asserts that invariant before returning.
-		const flattened: Array<RawBackendEntry> = Array.from({ length: jobs.length });
-		for (const { indices, rawResults } of bucketResults) {
-			for (const [positionInBucket, originalIndex] of indices.entries()) {
-				// oxlint-disable-next-line typescript/no-non-null-assertion -- length invariant
-				flattened[originalIndex] = rawResults[positionInBucket]!;
-			}
-		}
-
-		return { rawResults: flattened };
-	}
-
-	private async runWorkStealingAsync({
-		jobs,
-		parallel,
-		primaryConfig,
-		scriptOverride,
-		streaming,
-		version,
-	}: {
-		jobs: Array<ProjectJob>;
-		parallel: BackendOptions["parallel"];
-		primaryConfig: ResolvedConfig;
-		scriptOverride: string;
-		streaming: StreamingHooks | undefined;
-		version: VersionContext;
-	}): Promise<DispatchOutcome> {
-		const taskResults = await drainStealingPoolAsync({
-			requiredKeyCount: jobs.length,
-			runTask: async () => {
-				return this.executeAsync({
-					script: scriptOverride,
-					timeout: primaryConfig.timeout,
-					version,
-				});
-			},
-			streaming,
-			taskCount: resolveBucketCount(parallel, jobs.length),
-		});
-
-		// Parse after the pool settles so a task that returned no usable output
-		// throws here, in the normal flow, rather than being swallowed by the
-		// pool's per-task error handling.
-		const taskEnvelopes = taskResults.map(parseStealingEnvelope);
-		return collectStealingResults({
-			bailed: taskEnvelopes.some((envelope) => envelope.bailed),
-			entryByKey: aggregateEntriesByKey(taskEnvelopes),
-			jobs,
-		});
-	}
-
-	/**
-	 * Pick the execution shape for one run.
-	 *
-	 * Every shape but the first buckets the jobs; what differs is where a
-	 * bucket's script comes from and whether the run can answer a deferral.
-	 * Work-stealing skips bucketing entirely and fans one script out over a
-	 * shared queue. A workspace run without the queue takes each bucket's
-	 * script from the factory, which is also what lets it re-send whatever a
-	 * task defers. Everything else generates a bucket's script from its jobs
-	 * and has no deferral to answer.
-	 */
-	private async selectDispatchAsync({
-		jobs,
-		parallel,
-		primaryConfig,
-		scriptFactory,
-		scriptOverride,
-		streaming,
-		version,
-		workStealing,
-	}: BackendOptions & {
-		readonly primaryConfig: ResolvedConfig;
-		readonly version: VersionContext;
-	}): Promise<DispatchOutcome> {
-		if (workStealing === true) {
-			return this.runWorkStealingAsync({
-				jobs,
-				parallel,
-				primaryConfig,
-				// oxlint-disable-next-line typescript/no-non-null-assertion -- length checked above
-				scriptOverride: scriptOverride!,
-				streaming,
-				version,
-			});
-		}
-
-		if (scriptFactory !== undefined) {
-			return this.runDeferrableAsync({
-				jobs,
-				parallel,
-				primaryConfig,
-				scriptFactory,
-				version,
-			});
-		}
-
-		return this.runStaticBucketsAsync({
-			jobs,
-			parallel,
-			scriptOverride,
-			version,
-		});
-	}
-
-	/**
 	 * One submit, pinned to the run's Exact Version.
 	 *
 	 * A run carrying a code bundle always pairs its rebuild script with a
 	 * current binary input, recovery submissions included.
+	 * @param options - Claim, observation signal, submit callback, script, timeout and version.
+	 * @returns Result of the task, read through the result relay.
 	 */
 	private async submitAsync({
 		claim,
@@ -750,16 +336,22 @@ export class OpenCloudBackend implements Backend {
 		timeout,
 		version,
 	}: {
+		/** Execution claim the script carries. */
 		claim: string;
+		/** Signal that stops observing the task. */
 		observationSignal: AbortSignal;
+		/** Called once the task create is accepted. */
 		onSubmitted: () => void;
+		/** Caller script to compose and run. */
 		script: string;
+		/** Task timeout, in milliseconds. */
 		timeout: number;
+		/** Version the task is pinned to. */
 		version: VersionContext;
 	}): Promise<ScriptResult> {
 		const budgets = openCloudExecutionBudgets(timeout);
 		const baseUrl = resolveOpenCloudBaseUrl();
-		const binaryInput = await this.ensureBinaryInputAsync(budgets.inputValidityMs);
+		const binaryInput = await this.bundle?.ensureInputAsync(budgets.inputValidityMs);
 		return this.resultRelay({
 			...(baseUrl === undefined ? {} : { baseUrl }),
 			credentials: this.credentials,
@@ -783,194 +375,14 @@ export class OpenCloudBackend implements Backend {
 			timeout: budgets.observationMs,
 		}).catch(rethrowOversizedResult);
 	}
-
-	/**
-	 * Ask the uploaded version, and only it, whether it boots. Undefined when
-	 * the probe reached no terminal state within its budget.
-	 */
-	private async submitBootProbeAsync({
-		budget,
-		upload,
-	}: {
-		budget: number;
-		upload: UploadOutcome;
-	}): Promise<string | undefined> {
-		try {
-			const result = await this.runner.executeScriptAsync({
-				// A wall-clock cap, not a deadline: the question is whether the
-				// place booted, and the runner's boot-lag allowance answers a
-				// different one — it would only delay the verdict.
-				placeVersion: upload.versionNumber,
-				pollBudget: budget,
-				script: BOOT_PROBE_SCRIPT,
-				timeout: Math.min(BOOT_PROBE_TASK_TIMEOUT_MS, budget),
-			});
-			return result.outputs[0] ?? "";
-		} catch (err) {
-			if (!isPollTimeout(err)) {
-				throw err;
-			}
-
-			return undefined;
-		}
-	}
-
-	/**
-	 * Send the Code Bundle and record the input it became.
-	 *
-	 * The runner reports what the upload cost and that figure is the one the
-	 * run carries: it spans the create and the PUT, the pacer's wait for the
-	 * per-key quota included, which is exactly the slice this backend would
-	 * otherwise be re-measuring around it. A refresh adds onto the same number.
-	 */
-	private async uploadBundleAsync(bundle: BundleRun): Promise<BundleInput> {
-		const { artifact, progress } = bundle;
-		const done = progress.begin("bundle", describeCodeBundle(artifact));
-		// Read before the create, and the only clock this keeps: Open Cloud's
-		// fifteen minutes run from the create, so dating the input at the end
-		// of the upload would read it as younger than Roblox does.
-		const createdAt = this.now();
-		const created = await this.runner
-			.uploadBinaryInputAsync({ payload: this.fileSystem.readFileSync(artifact.path) })
-			.catch(rethrowBinaryInputFailure);
-		done();
-		bundle.uploadMs += created.uploadMs;
-		bundle.input = { createdAt, path: created.path };
-		return bundle.input;
-	}
-
-	/**
-	 * Skip `places.save` when these exact place bytes already have a version.
-	 * An upload is the only thing measured to precede a cold place boot (~22s
-	 * against ~3s warm), so an unchanged build that reuses its version keeps
-	 * the fast path. Correctness rests on every task being pinned to the
-	 * version, not on the cache: the recorded version holds exactly the bytes
-	 * that were hashed, and a version keeps existing after head moves on.
-	 *
-	 * Reads the cache but never writes it: an entry means "these bytes boot",
-	 * so only {@link OpenCloudBackend.verifyBootAsync} may record one. The
-	 * hash rides out on the outcome for it to write with.
-	 */
-	private async uploadOrReuseAsync({
-		config,
-		progress,
-		target,
-	}: {
-		config: ResolvedConfig;
-		progress: RunProgress;
-		target: UploadCacheTarget;
-	}): Promise<UploadOutcome> {
-		const start = Date.now();
-		const { fileSystem } = this;
-		const { rootDir: rootDirectory, uploadCache: canCache } = config;
-		const hash = canCache ? hashPlaceFile(target.placeFilePath, fileSystem) : undefined;
-		// A hash of undefined means "no cache this run" for both reads and
-		// writes: either the caller disabled it, or the file could not be read.
-		if (hash !== undefined) {
-			const cached = readCachedVersion({ fileSystem, hash, rootDirectory, target });
-			if (cached !== undefined) {
-				// Noted rather than opened: nothing went over the wire, so the
-				// stage has a result and never had a wait.
-				progress.note("upload", `cache hit, version ${cached.toString()}`);
-				return {
-					fromCache: true,
-					hash,
-					uploadMs: Date.now() - start,
-					versionNumber: cached,
-				};
-			}
-		}
-
-		const done = progress.begin("upload", describePlaceFile(target.placeFilePath, fileSystem));
-		const upload = await this.runner.uploadPlaceAsync({
-			placeFilePath: target.placeFilePath,
-		});
-		done(`version ${upload.versionNumber.toString()}`);
-
-		return {
-			fromCache: false,
-			hash,
-			uploadMs: Date.now() - start,
-			versionNumber: upload.versionNumber,
-		};
-	}
-
-	/**
-	 * Gate the tests on a completed probe of the uploaded version, and cache
-	 * only that proof. A lost probe gets one more; a second loss, or a probe
-	 * that booted another version, stops the run before any test task.
-	 */
-	private async verifyBootAsync({
-		config,
-		progress,
-		target,
-		upload,
-	}: {
-		config: ResolvedConfig;
-		progress: RunProgress;
-		target: UploadCacheTarget;
-		upload: UploadOutcome;
-	}): Promise<boolean> {
-		const budget = config.bootProbeTimeout;
-		if (budget === 0 || upload.fromCache) {
-			return false;
-		}
-
-		const done = progress.begin("boot", `version ${upload.versionNumber.toString()}`);
-		const booted = await this.probeBootAsync({ budget, upload });
-		if (booted !== String(upload.versionNumber)) {
-			throw new BootUnverifiedError({ booted, budget, versionNumber: upload.versionNumber });
-		}
-
-		done();
-		if (upload.hash !== undefined) {
-			writeCachedVersion({
-				entry: {
-					hash: upload.hash,
-					versionNumber: upload.versionNumber,
-				},
-				fileSystem: this.fileSystem,
-				rootDirectory: config.rootDir,
-				target,
-			});
-		}
-
-		return true;
-	}
-}
-
-export function resolveOpenCloudBaseUrl(): string | undefined {
-	const override = process.env[BASE_URL_ENV]?.trim();
-	if (override === undefined || override === "") {
-		return undefined;
-	}
-
-	let end = override.length;
-	while (override.charAt(end - 1) === "/") {
-		end -= 1;
-	}
-
-	return override.slice(0, end);
 }
 
 /**
- * Reads {@link MAX_RETRIES_ENV} for an Open Cloud per-request retry override,
- * which bounds unguided 429s, 5xx and transport retries; a 429 with
- * `retry-after` > 0 spends none. Returns undefined for unset, empty, or
- * non-integer values so the client keeps its own default.
+ * Create an {@link OpenCloudBackend}.
+ * @param credentials - API key and the universe and place to run against.
+ * @param options - Overrides and test seams.
+ * @returns A backend that targets the given place.
  */
-export function resolveOcaleMaxRetries(): number | undefined {
-	const raw = process.env[MAX_RETRIES_ENV]?.trim();
-	if (raw === "") {
-		return undefined;
-	}
-
-	// Number() (not parseInt) so partial/decimal strings like "8abc" or "8.5"
-	// reject instead of silently truncating to 8.
-	const parsed = Number(raw);
-	return Number.isInteger(parsed) && parsed >= 0 ? parsed : undefined;
-}
-
 export function createOpenCloudBackend(
 	credentials: OpenCloudCredentials,
 	options: OpenCloudOptions = {},
@@ -978,8 +390,27 @@ export function createOpenCloudBackend(
 	return new OpenCloudBackend(credentials, options);
 }
 
+function resolvePrimaryJob({
+	jobs,
+	scriptOverride,
+	workStealing = false,
+}: BackendOptions): ProjectJob {
+	const primary = jobs[0];
+	if (primary === undefined) {
+		throw new Error("OpenCloudBackend requires at least one job");
+	}
+
+	if (workStealing && scriptOverride === undefined) {
+		throw new Error("OpenCloudBackend work-stealing mode requires scriptOverride");
+	}
+
+	return primary;
+}
+
 /**
  * Binary uploads occur inside the execution window; charge them to uploadMs.
+ * @param options - Execution start, binary upload time, dispatch outcome and place upload time.
+ * @returns The outcome with its timing.
  */
 function splitUploadAndExecution({
 	executionStart,
@@ -999,490 +430,4 @@ function splitUploadAndExecution({
 			uploadMs: uploadMs + extraUploadMs,
 		},
 	};
-}
-
-function toCacheTarget(
-	credentials: OpenCloudCredentials,
-	placeFilePath: string,
-): UploadCacheTarget {
-	return {
-		placeFilePath,
-		placeId: credentials.placeId,
-		universeId: credentials.universeId,
-	};
-}
-
-/**
- * A 404 makes the cached target suspect; it does not prove execution absent.
- */
-function isNotFoundError(err: unknown): boolean {
-	return walkErrorChain(err).some((entry) => entry.statusCode === 404);
-}
-
-/** The script one bucket of jobs runs. */
-function bucketScript(jobs: Array<ProjectJob>): string {
-	const inputs: Array<JestArgvInput> = jobs.map((job) => {
-		return { config: job.config, testFiles: job.testFiles };
-	});
-	return generateTestScript(inputs);
-}
-
-function resolvePrimaryJob({
-	jobs,
-	scriptOverride,
-	workStealing = false,
-}: {
-	readonly jobs: Array<ProjectJob>;
-	readonly scriptOverride: string | undefined;
-	readonly workStealing?: boolean | undefined;
-}): ProjectJob {
-	const primary = jobs[0];
-	if (primary === undefined) {
-		throw new Error("OpenCloudBackend requires at least one job");
-	}
-
-	if (workStealing && scriptOverride === undefined) {
-		throw new Error("OpenCloudBackend work-stealing mode requires scriptOverride");
-	}
-
-	return primary;
-}
-
-/**
- * Name the Code Mounts that could not travel, once per run.
- *
- * A mount that stayed is a finding rather than a fault — the place still
- * serves it and the run is correct either way — so it is said where the split
- * result reaches the backend, and never raised.
- */
-function noteStayedMounts(artifact: CodeBundleArtifact | undefined): void {
-	const stayedMounts = artifact?.stayedMounts ?? [];
-	if (stayedMounts.length === 0) {
-		return;
-	}
-
-	process.stderr.write(
-		`Note: ${String(stayedMounts.length)} code mount(s) stayed in the place, ` +
-			`each holding a file a task cannot rebuild:\n${stayedMounts
-				.map((mount) => `  ${mount}\n`)
-				.join("")}`,
-	);
-}
-
-/** This run's bundle state, before anything has been uploaded. */
-function toBundleRun(
-	artifact: CodeBundleArtifact | undefined,
-	progress: RunProgress,
-): BundleRun | undefined {
-	return artifact === undefined
-		? undefined
-		: { artifact, input: undefined, pending: undefined, progress, uploadMs: 0 };
-}
-
-/**
- * Fail on a bundle that never reached Roblox, naming the cause and the way out.
- *
- * `binaryInputs.create` is metered per key — five a minute, and the owner of a
- * key may be running several agents on it — so the client has already retried
- * by the time this fires. Past that the run cannot ship its code at all, and
- * the transport's own message names neither what was being sent nor the flag
- * that stops sending it.
- */
-function rethrowBinaryInputFailure(err: unknown): never {
-	throw new ConfigError(
-		`The run's code could not be sent to Open Cloud as a binary input: ${describeError(err)}`,
-		"`binaryInputs.create` is metered at five a minute per API key, and the " +
-			"client has already retried inside that budget — so several runs " +
-			"sharing one key is the usual cause.\n" +
-			"Upload the code inside the place instead.",
-	);
-}
-
-function resolveRunnerOptions(): OcaleRunnerOptions {
-	const baseUrl = resolveOpenCloudBaseUrl();
-	const maxRetries = resolveOcaleMaxRetries();
-	return {
-		baseUrl,
-		maxRetries,
-	};
-}
-
-function resolveBucketCount(parallel: BackendOptions["parallel"], jobCount: number): number {
-	if (parallel === undefined) {
-		return 1;
-	}
-
-	if (parallel === "auto") {
-		return Math.min(jobCount, PARALLEL_AUTO_CAP);
-	}
-
-	if (parallel < 1) {
-		throw new Error(`--parallel must be >= 1, got ${parallel.toString()}`);
-	}
-
-	return Math.min(Math.floor(parallel), jobCount);
-}
-
-function bucketJobs(
-	jobs: Array<ProjectJob>,
-	parallel: BackendOptions["parallel"],
-): Array<JobBucket> {
-	const bucketCount = resolveBucketCount(parallel, jobs.length);
-	const buckets = Array.from({ length: bucketCount }, (): JobBucket => {
-		return {
-			indices: [],
-			jobs: [],
-		};
-	});
-
-	// Round-robin assignment: job[i] goes to bucket i % bucketCount. Preserves
-	// input order within each bucket so per-bucket results flatten back in the
-	// original request order via the recorded indices. Smart LPT bucketing is
-	// future work (F1 in the plan).
-	for (const [originalIndex, job] of jobs.entries()) {
-		// oxlint-disable-next-line typescript/no-non-null-assertion -- index always valid
-		const bucket = buckets[originalIndex % bucketCount]!;
-		bucket.indices.push(originalIndex);
-		bucket.jobs.push(job);
-	}
-
-	return buckets;
-}
-
-/**
- * Poll the streaming SortedMap until `isDone()` returns true, then perform
- * one final drain. Each newly-observed entry is forwarded to
- * `onPackageResult` and deleted from the map. Errors are swallowed so a
- * transient HTTP failure doesn't take down the test run — the final task
- * envelope still carries authoritative results.
- */
-async function pollStreamingResultsAsync(
-	hooks: StreamingHooks,
-	isDone: () => boolean,
-): Promise<void> {
-	const pollMs = hooks.pollMs ?? DEFAULT_STREAM_POLL_MS;
-	const state: PollState = { warned: false };
-
-	while (!isDone()) {
-		await drainOnceAsync(hooks, state);
-		await sleepAsync(pollMs);
-	}
-
-	// Final pass to catch any entries written between the last drain and
-	// tasksDone.
-	await drainOnceAsync(hooks, state);
-}
-
-// Open Cloud's wording when a task's return value exceeds its 4 MiB cap. It
-// rejects the whole task, so every package that task ran is lost with it.
-const OVERSIZED_RESULT_PATTERN = /Return results too large/i;
-
-/**
- * Rethrow an oversized-return failure with the remedy attached.
- *
- * Work-stealing already keeps a task under the cap by leaving queue items for
- * the next task, so reaching here means the split cannot help: either the run
- * is on the single-task path, or one package's own results exceed the cap.
- * Both need a decision from the user, and Open Cloud's bare message names
- * neither the cause nor a way out.
- */
-function rethrowOversizedResult(err: unknown): never {
-	if (!(err instanceof Error) || !OVERSIZED_RESULT_PATTERN.test(err.message)) {
-		throw err;
-	}
-
-	throw new Error(
-		`${err.message}\n` +
-			"One task returned more Jest output than Open Cloud accepts (4 MiB).\n" +
-			"Coverage is usually the bulk of it — try --no-coverage to confirm.\n" +
-			"Only files in the coverage universe are probed, so narrowing " +
-			"`collectCoverageFrom` to what you actually report on shrinks the " +
-			"payload with it.\n" +
-			'Otherwise set `parallel: "auto"` (or --parallel 2+) so results come ' +
-			"back split across tasks, or narrow the run with --packages / --project.",
-		{ cause: err },
-	);
-}
-
-/** The Jest envelope a task returned, or a failure naming what came back. */
-function requireJestOutput(result: ScriptResult): string {
-	const jestOutput = result.outputs[0];
-	if (jestOutput === undefined) {
-		throw new Error(`No test results in output. Got: ${JSON.stringify(result.outputs)}`);
-	}
-
-	return jestOutput;
-}
-
-function describeError(err: unknown): string {
-	const cause = err instanceof Error ? err.cause : undefined;
-	if (cause instanceof PermissionError) {
-		return formatMissingScopes(cause.requiredScopes);
-	}
-
-	return err instanceof Error ? err.message : String(err);
-}
-
-function warnStreamingDisabled(err: unknown, state: PollState): void {
-	if (state.warned) {
-		return;
-	}
-
-	state.warned = true;
-	process.stderr.write(`Warning: live per-package streaming disabled — ${describeError(err)}\n`);
-	process.stderr.write("  Tests still run; results print as usual once each task finishes.\n");
-}
-
-async function drainOnceAsync(hooks: StreamingHooks, state: PollState): Promise<void> {
-	let records;
-	try {
-		records = await hooks.reader.readAllAsync();
-	} catch (err) {
-		warnStreamingDisabled(err, state);
-		return;
-	}
-
-	// Forward in arrival order so the streaming-progress lines stay
-	// deterministic, then fire deletes in parallel — when several packages
-	// land between two poll ticks, serial deletes can stack up to a full
-	// poll interval of latency before the next read sees fresh entries.
-	for (const record of records) {
-		hooks.onPackageResult(record.value);
-	}
-
-	await Promise.all(
-		records.map(async (record) => {
-			try {
-				await hooks.reader.deleteAsync(record.id);
-			} catch (err) {
-				// Best-effort; if delete fails the entry will reappear on the
-				// next poll and onPackageResult dedupes downstream. Still surface
-				// the first failure so users know their key can read but not
-				// write.
-				warnStreamingDisabled(err, state);
-			}
-		}),
-	);
-}
-
-async function sleepAsync(ms: number): Promise<void> {
-	await new Promise((resolve) => {
-		setTimeout(resolve, ms);
-	});
-}
-
-/**
- * Drive the work-stealing task set through the shared roblox-runner pool.
- *
- * A worker normally drains the queue until it is empty, so `taskCount` tasks
- * cover the known set and no slot ever needs refilling — the wave is exactly
- * `taskCount` tasks, as it was before deferral existed.
- *
- * The exception is a worker that fills its return-envelope budget: Open Cloud
- * rejects a task returning more than 4 MiB, so the worker stops early, leaves
- * the rest of the queue behind and says so (`deferred`). Each deferral earns
- * exactly one replacement launch, which may itself defer, chaining until the
- * queue drains.
- *
- * `maxLaunches` bounds that chain: a worker always takes at least one item, so
- * covering `jobCount` jobs can never need more than `jobCount` extra tasks.
- */
-async function runStealingTasksAsync({
-	jobCount,
-	outcome,
-	runTask,
-	taskCount,
-}: {
-	readonly jobCount: number;
-	readonly outcome: StealingPoolOutcome;
-	readonly runTask: () => Promise<ScriptResult>;
-	readonly taskCount: number;
-}): Promise<void> {
-	let launched = 0;
-	let pendingDeferrals = 0;
-	const maxLaunches = taskCount + jobCount;
-
-	await runTaskPool({
-		concurrency: taskCount,
-		isDone: () => launched >= taskCount && (pendingDeferrals === 0 || launched >= maxLaunches),
-		onError: (error) => {
-			// The pool folds a task failure into a freed slot and resolves, so
-			// without this the failure would be masked whenever a sibling task
-			// drains the whole queue and covers every package. Capture it and
-			// rethrow once the pool settles so an infrastructure or script
-			// failure always fails the run, as the old `Promise.all` wave did.
-			outcome.failure = { error };
-		},
-		onResult: (result) => {
-			outcome.results.push(result);
-
-			const jestOutput = result.outputs[0];
-			if (jestOutput !== undefined && isEnvelopeDeferred(jestOutput)) {
-				pendingDeferrals += 1;
-			}
-		},
-		places: [
-			{
-				runTask: async () => {
-					// Claim the deferral this launch answers, so two launches
-					// never settle the same one.
-					if (pendingDeferrals > 0) {
-						pendingDeferrals -= 1;
-					}
-
-					launched += 1;
-					return runTask();
-				},
-			},
-		],
-	});
-}
-
-/**
- * Run the work-stealing task wave and, when streaming is enabled, poll the
- * streaming map alongside it. Returns every task's result once the wave has
- * settled; rethrows the first task failure the pool folded into a freed slot.
- */
-async function drainStealingPoolAsync({
-	requiredKeyCount,
-	runTask,
-	streaming,
-	taskCount,
-}: {
-	readonly requiredKeyCount: number;
-	readonly runTask: () => Promise<ScriptResult>;
-	readonly streaming: StreamingHooks | undefined;
-	readonly taskCount: number;
-}): Promise<Array<ScriptResult>> {
-	// A holder, not a plain boolean, so the poll's `isDone` arrow reads the
-	// live value instead of capturing false forever.
-	const tasksDone = { value: false };
-	const outcome: StealingPoolOutcome = { results: [] };
-	const poolPromise = runStealingTasksAsync({
-		jobCount: requiredKeyCount,
-		outcome,
-		runTask,
-		taskCount,
-	}).finally(() => {
-		tasksDone.value = true;
-	});
-
-	const pollPromise =
-		streaming !== undefined
-			? pollStreamingResultsAsync(streaming, () => tasksDone.value)
-			: Promise.resolve();
-
-	// The pool never rejects (it folds task errors into freed slots) and its
-	// `.finally` always flips tasksDone, so pollPromise terminates within
-	// ~pollMs — neither promise orphans the other.
-	await Promise.all([poolPromise, pollPromise]);
-
-	if (outcome.failure !== undefined) {
-		throw outcome.failure.error;
-	}
-
-	return outcome.results;
-}
-
-function entryLookupKey(packageName: string, project: string | undefined): string {
-	return project === undefined || project === packageName
-		? packageName
-		: `${packageName}::${project}`;
-}
-
-/**
- * Pair every job with its aggregated entry, in request order.
- *
- * A gap normally means a task broke and lost its results, so they are collected
- * and one failure message names them all rather than failing on the first.
- * Under `--bail` the gaps are the point: the run stopped on a failing package
- * and the ones after it were never meant to run, so they come back reported as
- * bailed instead.
- *
- * That trade is real — once any task reports a bail, a sibling that lost
- * results some other way is reported as deliberately skipped too. Nothing here
- * can tell the two apart: every caller runs its tasks concurrently, so "after
- * the failing package" names no set. A task that dies outright still fails the
- * run through the pool's captured error; what this gives up is the narrower
- * case of a task that returns successfully having lost entries.
- */
-function collectStealingResults({
-	bailed,
-	entryByKey,
-	jobs,
-}: {
-	bailed: boolean;
-	entryByKey: Map<string, CollectedEntry>;
-	jobs: Array<ProjectJob>;
-}): DispatchOutcome {
-	const bailedJobIndices: Array<number> = [];
-	const missingJobNames: Array<string> = [];
-	const rawResults: Array<RawBackendEntry> = [];
-	for (const [index, job] of jobs.entries()) {
-		const found = entryByKey.get(entryLookupKey(job.pkg ?? job.displayName, job.displayName));
-		if (found === undefined) {
-			bailedJobIndices.push(index);
-			missingJobNames.push(job.displayName);
-			continue;
-		}
-
-		rawResults.push({ entry: found.entry, fallbackGameOutput: found.gameOutput });
-	}
-
-	if (bailed) {
-		return { bailedJobIndices, rawResults };
-	}
-
-	if (bailedJobIndices.length > 0) {
-		throw new Error(
-			`Open Cloud returned no entries for ${bailedJobIndices.length.toString()} package(s): ${missingJobNames.join(", ")}`,
-		);
-	}
-
-	return { rawResults };
-}
-
-/**
- * Decode one task's return envelope. Throws when the task produced no Jest
- * output so a broken task surfaces as a run failure rather than a
- * silently-missing package.
- */
-function parseStealingEnvelope(result: ScriptResult): StealingEnvelope {
-	return { ...decodeEnvelope(requireJestOutput(result)), gameOutput: result.outputs[1] };
-}
-
-function addEntriesToMap({
-	entries,
-	entryByKey,
-	gameOutput,
-}: {
-	readonly entries: Array<EnvelopeEntry>;
-	readonly entryByKey: Map<string, CollectedEntry>;
-	readonly gameOutput: string | undefined;
-}): void {
-	for (const entry of entries) {
-		if (entry.pkg === undefined) {
-			continue;
-		}
-
-		const key = entryLookupKey(entry.pkg, entry.project);
-		if (!entryByKey.has(key)) {
-			entryByKey.set(key, { entry, gameOutput });
-		}
-	}
-}
-
-// Aggregate entries from all task envelopes. Map by pkg::project so
-// multi-project packages don't collide on a shared `pkg`. The first
-// observed entry per key wins; subsequent duplicates (from fault-
-// recovery re-runs after invisibility timeout) are dropped.
-function aggregateEntriesByKey(
-	taskEnvelopes: ReadonlyArray<{ entries: Array<EnvelopeEntry>; gameOutput: string | undefined }>,
-): Map<string, CollectedEntry> {
-	const entryByKey = new Map<string, CollectedEntry>();
-	for (const { entries, gameOutput } of taskEnvelopes) {
-		addEntriesToMap({ entries, entryByKey, gameOutput });
-	}
-
-	return entryByKey;
 }

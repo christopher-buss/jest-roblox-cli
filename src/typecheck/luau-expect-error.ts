@@ -5,7 +5,7 @@ import { visitBlock } from "@isentinel/luau-ast/visit";
 import assert from "node:assert";
 import { Buffer } from "node:buffer";
 
-import type { TypeTestDiagnostic } from "./types.ts";
+import type { TypeTestDiagnostic } from "./typecheck-types.ts";
 
 const DIRECTIVE = /^--\s*@expect-error(?:\s|$)/;
 const LINE_SPLIT = /\r?\n/;
@@ -15,22 +15,32 @@ interface Directive {
 	target: LuauSpan | undefined;
 }
 
+/**
+ * Drop each diagnostic an `@expect-error` comment covers, and report every
+ * directive that covered none.
+ * @param options - The file's diagnostics, source and parse.
+ * @param options.diagnostics - The checker's diagnostics for the file.
+ * @param options.filePath - The file's path, for unused-directive errors.
+ * @param options.parsed - The file's parse.
+ * @param options.source - The file's source.
+ * @returns The uncovered diagnostics plus one per unused directive.
+ */
 export function applyLuauExpectErrors({
 	diagnostics,
 	filePath,
 	parsed,
 	source,
 }: {
+	/** The checker's diagnostics for the file. */
 	diagnostics: Array<TypeTestDiagnostic>;
+	/** The file's path, for unused-directive errors. */
 	filePath: string;
+	/** The file's parse. */
 	parsed: ParseSuccess;
+	/** The file's source. */
 	source: string;
 }): Array<TypeTestDiagnostic> {
 	const directives = collectDirectives(source, parsed);
-	if (directives.length === 0) {
-		return diagnostics;
-	}
-
 	const used = new Set<Directive>();
 	const remaining = diagnostics.filter((diagnostic) => {
 		const directive = directives.find(
@@ -75,19 +85,12 @@ function findTarget(statements: Array<AstStat>, line: number): LuauSpan | undefi
 
 function collectDirectives(source: string, parsed: ParseSuccess): Array<Directive> {
 	const lines = source.split(LINE_SPLIT).map((line) => Buffer.from(line));
-	const comments = parsed.comments.filter(({ location, type }) => {
-		const line = lines[location.beginLine - 1];
-		return (
-			type === "Comment" &&
-			line !== undefined &&
-			DIRECTIVE.test(line.subarray(location.beginColumn - 1).toString())
+	const comments = parsed.comments.filter(({ location }) => {
+		return DIRECTIVE.test(
+			String(lines[location.beginLine - 1]?.subarray(location.beginColumn - 1)),
 		);
 	});
-	if (comments.length === 0) {
-		return [];
-	}
-
-	const blocks: Array<AstStatBlock> = [parsed.root];
+	const blocks: Array<AstStatBlock> = [];
 	visitBlock(parsed.root, {
 		visitStatBlock(block) {
 			blocks.push(block);

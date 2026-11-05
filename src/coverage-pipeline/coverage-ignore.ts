@@ -11,7 +11,14 @@ import { visitBlock } from "@isentinel/luau-ast/visit";
 
 /** Takes parser spans in UTF-8 bytes, so query it before `toUtf16Columns`. */
 export interface CoverageIgnores {
+	/**
+	 * Whether a `cov ignore` directive excludes the span.
+	 */
 	covers: (location: LuauSpan) => boolean;
+	/**
+	 * Whether a `cov ignore else` directive drops the statement's implicit
+	 * else arm.
+	 */
 	dropsImplicitElse: (node: AstStatIf) => boolean;
 }
 
@@ -38,6 +45,13 @@ const NO_IGNORES = {
 	dropsImplicitElse: () => false,
 } satisfies CoverageIgnores;
 
+/**
+ * Index the `cov ignore` directives in a parsed Luau file.
+ * @param parsed - Parsed comments and root block.
+ * @param source - Source text the parse came from.
+ * @returns Lookups for the regions and implicit else arms the directives
+ * exclude.
+ */
 export function resolveCoverageIgnores(
 	{ comments, root }: Pick<ParseSuccess, "comments" | "root">,
 	source: string,

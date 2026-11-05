@@ -1,26 +1,52 @@
 import path from "node:path";
 
-import {
-	hasExecError,
-	type JestResult,
-	type TestCaseResult,
-	type TestFileResult,
-} from "../types/jest-result.ts";
+import { hasExecError } from "../types/exec-error-file.ts";
+import type { JestResult, TestCaseResult, TestFileResult } from "../types/jest-result-types.ts";
 import { type FormatOptions, resolveDisplayPath } from "./shared.ts";
 import { formatDuration, type Styles } from "./styles.ts";
 import { countFileBuckets } from "./summary.ts";
 
+/**
+ * Totals for one project's header line.
+ */
 export interface ProjectStats {
+	/**
+	 * Summed duration of the files' timed tests.
+	 */
 	durationMs: number;
+	/**
+	 * Files counted as failed.
+	 */
 	failedFiles: number;
+	/**
+	 * Files counted as passed.
+	 */
 	passedFiles: number;
+	/**
+	 * Files counted as skipped.
+	 */
 	skippedFiles: number;
+	/**
+	 * Tests in the run.
+	 */
 	totalTests: number;
 }
 
+/**
+ * Inputs of `formatFileSummary`.
+ */
 export interface FormatFileSummaryOptions {
+	/**
+	 * File to report.
+	 */
 	file: TestFileResult;
+	/**
+	 * Format options.
+	 */
 	options: FormatOptions;
+	/**
+	 * Palette to render with.
+	 */
 	styles: Styles;
 }
 
@@ -31,7 +57,11 @@ interface FormatFailedFileSummaryOptions {
 	testCount: number;
 }
 
-/** The one-or-more lines that report a single test file's outcome. */
+/**
+ * The one-or-more lines that report a single test file's outcome.
+ * @param options - File, format options and palette.
+ * @returns The file's summary lines joined by newlines.
+ */
 export function formatFileSummary({ file, options, styles }: FormatFileSummaryOptions): string {
 	const displayPath = resolveDisplayPath(file.testFilePath, options.sourceMapper);
 	const formattedPath = formatFilePath(displayPath, styles);
@@ -59,6 +89,11 @@ export function formatFileSummary({ file, options, styles }: FormatFileSummaryOp
 	}).join("\n");
 }
 
+/**
+ * Total a project's files by outcome and its test durations.
+ * @param result - Jest result of one project.
+ * @returns The project's totals.
+ */
 export function computeProjectStats(result: JestResult): ProjectStats {
 	// The file counts come from countFileBuckets rather than a second walk of
 	// the same list: the header and the trailing `Test Files` row report the
@@ -107,8 +142,13 @@ function countsTowardDuration(test: TestCaseResult): boolean {
 	return test.status === "passed" || test.status === "failed";
 }
 
-// A group of tests that all skipped has no duration to report, which is not the
-// same as a duration of zero — hence the emptiness check rather than `> 0`.
+/**
+ * A group of tests that all skipped has no duration to report, which is not the
+ * same as a duration of zero — hence the emptiness check rather than `> 0`.
+ * @param tests - Tests of one describe group.
+ * @param styles - Palette to render with.
+ * @returns The styled duration, or empty when no test was timed.
+ */
 function formatGroupDuration(tests: Array<TestCaseResult>, styles: Styles): string {
 	const durations = tests
 		.filter((testCase) => countsTowardDuration(testCase))

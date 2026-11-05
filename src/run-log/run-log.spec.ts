@@ -1,9 +1,17 @@
 import { Buffer } from "node:buffer";
-import { describe, expect, it } from "vitest";
+import * as path from "node:path";
+import { describe, expect, it, vi } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
-import type { RunLogStream, RunLogStreams } from "./run-log.ts";
-import { runLogPath, withRunLogAsync } from "./run-log.ts";
+import type { RunLogOptions } from "./run-log.ts";
+import { withRunLogAsync } from "./run-log.ts";
+
+type RunLogStreams = RunLogOptions["streams"];
+type RunLogStream = RunLogStreams["stdout"];
+
+function runLogPath(rootDirectory: string): string {
+	return path.join(rootDirectory, ".jest-roblox", "last-run.log");
+}
 
 const ROOT = "/project";
 
@@ -50,6 +58,16 @@ describe(withRunLogAsync, () => {
 		});
 
 		expect(readLog()).toBe("summary\nwarning\nfooter\n");
+	});
+
+	it("should close the log when the run ends", async () => {
+		expect.assertions(1);
+
+		const { options } = makeHarness();
+		const closeSync = vi.spyOn(options.fileSystem, "closeSync");
+		await withRunLogAsync(options, async () => 0);
+
+		expect(closeSync).toHaveBeenCalledOnce();
 	});
 
 	it("should log bytes as well as strings", async () => {

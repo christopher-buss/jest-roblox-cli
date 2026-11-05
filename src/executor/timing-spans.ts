@@ -3,8 +3,13 @@ import process from "node:process";
 import type { BackendTiming, RawBackendEntry } from "../backends/interface.ts";
 import { extractLuauTimingFromOutput } from "../reporter/parser.ts";
 import type { TimingCollector } from "../timing/orchestration-collector.ts";
-import type { TestFileResult } from "../types/jest-result.ts";
+import type { TestFileResult } from "../types/jest-result-types.ts";
 
+/**
+ * Record the backend's upload and execution spans.
+ * @param timing - Collector to record into.
+ * @param backendTiming - Timing the backend reported.
+ */
 export function recordBackendTimingSpans(
 	timing: TimingCollector,
 	backendTiming: BackendTiming,
@@ -18,21 +23,26 @@ export function recordBackendTimingSpans(
 	timing.record("executionMs", backendTiming.executionMs);
 }
 
-// Surfaces each project's Luau-side phase breakdown (findJest, jestRunCLI,
-// etc.) as nested spans of `backend.runTests`, matching uploadMs/executionMs.
-// Phases are prefixed `luau.` so they group together and read distinctly
-// from the host-measured spans; repeated phases across projects accumulate,
-// same as uploadMs. The raw `total` key is skipped — it's the Luau-measured
-// wall clock for the whole run, and a second "total" leaf next to the host's
-// own executionMs would read as double-counting even though the tree math
-// doesn't actually double it.
-//
-// Gated on `timing.enabled` (unlike `recordBackendTimingSpans`, whose
-// `record` calls are already free): extracting `runner.timing` re-parses each
-// project's full jestOutput, which is wasted work on an ordinary run where
-// TIMING isn't set (the Luau side doesn't even emit `runner.timing` then)
-// and would otherwise put a parse/schema-assert failure on the
-// `backend.runTests` frame of every non-debug run.
+/**
+ * Surfaces each project's Luau-side phase breakdown (findJest, jestRunCLI,
+ * etc.) as nested spans of `backend.runTests`, matching uploadMs/executionMs.
+ * Phases are prefixed `luau.` so they group together and read distinctly
+ * from the host-measured spans; repeated phases across projects accumulate,
+ * same as uploadMs. The raw `total` key is skipped — it's the Luau-measured
+ * wall clock for the whole run, and a second "total" leaf next to the host's
+ * own executionMs would read as double-counting even though the tree math
+ * doesn't actually double it.
+ *
+ * Gated on `timing.enabled` (unlike `recordBackendTimingSpans`, whose
+ * `record` calls are already free): extracting `runner.timing` re-parses each
+ * project's full jestOutput, which is wasted work on an ordinary run where
+ * TIMING isn't set (the Luau side doesn't even emit `runner.timing` then)
+ * and would otherwise put a parse/schema-assert failure on the
+ * `backend.runTests` frame of every non-debug run.
+ *
+ * @param timing - Collector to record into.
+ * @param rawResults - Raw backend entries whose Jest output holds the timing.
+ */
 export function recordLuauTimingSpans(
 	timing: TimingCollector,
 	rawResults: Array<RawBackendEntry>,
@@ -49,6 +59,11 @@ export function recordLuauTimingSpans(
 	}
 }
 
+/**
+ * Sum the durations of all tests.
+ * @param testResults - Test file results to sum.
+ * @returns Total test duration in milliseconds; tests with no duration count as zero.
+ */
 export function calculateTestsMs(testResults: Array<TestFileResult>): number {
 	let total = 0;
 	for (const file of testResults) {
@@ -62,6 +77,10 @@ export function calculateTestsMs(testResults: Array<TestFileResult>): number {
 	return total;
 }
 
+/**
+ * Write each Luau phase and the total to stderr, in milliseconds.
+ * @param timing - Phase durations in seconds, keyed by phase name.
+ */
 export function printLuauTiming(timing: Record<string, number>): void {
 	let total = 0;
 	for (const [phase, seconds] of Object.entries(timing)) {

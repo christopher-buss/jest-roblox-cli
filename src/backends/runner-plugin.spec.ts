@@ -2,18 +2,18 @@
 import { fromAny } from "@total-typescript/shoehorn";
 
 import { type } from "arktype";
-import { describe, expect, it, vi } from "vitest";
+import { assert, describe, expect, it, vi } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import type { ChildProcessRunner } from "../utils/child-process.ts";
 import type { FileSystem } from "../utils/file-system.ts";
-import type { ManagedPluginOptions } from "./runner-plugin.ts";
-import { installManagedPluginAsync, installRunnerPluginAsync } from "./runner-plugin.ts";
+import { installRunnerPluginAsync } from "./runner-plugin.ts";
 
 const projectSchema = type({ tree: "object" });
 
 const PLUGINS = "/plugins";
-const USAGE = "/state/managed-plugins";
+const HOME = "/home/me";
+const USAGE = "/home/me/Library/Caches/jest-roblox/managed-plugins";
 const STAGING = "/repo/.jest-roblox/studio-cli/plugin";
 const HOUR_MS = 60 * 60 * 1000;
 const NOW = Date.UTC(2026, 0, 10);
@@ -30,6 +30,10 @@ const SOURCES = [
 	{ path: "luau/runner.luau", text: "return {}" },
 ];
 
+type BuildAsync = (projectPath: string, outputPath: string) => Promise<void>;
+
+type InstallOptions = Parameters<typeof installRunnerPluginAsync>[0];
+
 type RojoExec = (
 	file: string,
 	args: Array<string>,
@@ -38,12 +42,17 @@ type RojoExec = (
 ) => void;
 
 function fakeRojo(fileSystem: FileSystem) {
-	return vi.fn<ManagedPluginOptions["buildAsync"]>(async (_projectPath, outputPath) => {
+	return vi.fn<BuildAsync>(async (_projectPath, outputPath) => {
 		fileSystem.writeFileSync(outputPath, "rbxm-bytes");
 	});
 }
 
-/** A `rojo build <project> -o <output>` that writes the output and succeeds. */
+/**
+ * A `rojo build <project> -o <output>` that writes the output and succeeds.
+ *
+ * @param fileSystem - File system the output is written to.
+ * @returns The fake child process runner and its `execFile` mock.
+ */
 function rojoChildProcess(fileSystem: FileSystem) {
 	const execFile = vi.fn<RojoExec>((...[, args, , callback]) => {
 		fileSystem.writeFileSync(args[3]!, "rbxm-bytes");
@@ -52,21 +61,43 @@ function rojoChildProcess(fileSystem: FileSystem) {
 	return { childProcess: fromAny<ChildProcessRunner, unknown>({ execFile }), execFile };
 }
 
+function rojoBuilding(buildAsync: BuildAsync): ChildProcessRunner {
+	const execFile = vi.fn<RojoExec>((...[, args, , callback]) => {
+		void buildAsync(args[1]!, args[3]!).then(() => {
+			callback(null, "", "");
+		});
+	});
+	return fromAny<ChildProcessRunner, unknown>({ execFile });
+}
+
 function options(
 	fileSystem: FileSystem,
-	overrides: Partial<ManagedPluginOptions> = {},
-): ManagedPluginOptions {
+	{
+		buildAsync = fakeRojo(fileSystem),
+		...overrides
+	}: Partial<InstallOptions> & { buildAsync?: BuildAsync } = {},
+): InstallOptions {
 	return {
-		buildAsync: fakeRojo(fileSystem),
+		childProcess: rojoBuilding(buildAsync),
+		environment: {},
 		fileSystem,
+		homeDirectory: HOME,
 		now: NOW,
+		platform: "darwin",
 		pluginsDirectory: PLUGINS,
 		sources: SOURCES,
-		stagingDirectory: STAGING,
-		usageDirectory: USAGE,
 		version: "1.2.3",
+		workDirectory: "/repo/.jest-roblox/studio-cli",
 		...overrides,
 	};
+}
+
+async function installManagedPluginAsync(
+	install: InstallOptions,
+): Promise<NonNullable<Awaited<ReturnType<typeof installRunnerPluginAsync>>>> {
+	const installed = await installRunnerPluginAsync(install);
+	assert(installed !== undefined);
+	return installed;
 }
 
 function managedFile(key: string): string {
@@ -77,7 +108,7 @@ function usageMark(key: string): string {
 	return `${USAGE}/JestRobloxRunner.cli-${key}.rbxm`;
 }
 
-describe(installManagedPluginAsync, () => {
+describe("managed plugin install", () => {
 	it("should build and install the managed plugin when its key is missing", async () => {
 		expect.assertions(2);
 
@@ -94,14 +125,12 @@ describe(installManagedPluginAsync, () => {
 
 		const { fileSystem } = createMemoryFileSystem();
 		let tree: unknown;
-		const buildAsync = vi.fn<ManagedPluginOptions["buildAsync"]>(
-			async (projectPath, output) => {
-				({ tree } = projectSchema.assert(
-					JSON.parse(fileSystem.readFileSync(projectPath, "utf8")),
-				));
-				fileSystem.writeFileSync(output, "rbxm-bytes");
-			},
-		);
+		const buildAsync = vi.fn<BuildAsync>(async (projectPath, output) => {
+			({ tree } = projectSchema.assert(
+				JSON.parse(fileSystem.readFileSync(projectPath, "utf8")),
+			));
+			fileSystem.writeFileSync(output, "rbxm-bytes");
+		});
 
 		await installManagedPluginAsync(options(fileSystem, { buildAsync }));
 
@@ -119,7 +148,7 @@ describe(installManagedPluginAsync, () => {
 
 		const { fileSystem } = createMemoryFileSystem();
 		const modules: Array<string> = [];
-		const buildAsync = vi.fn<ManagedPluginOptions["buildAsync"]>(async (_project, output) => {
+		const buildAsync = vi.fn<BuildAsync>(async (_project, output) => {
 			for (const module of ["pluginKey", "version"]) {
 				modules.push(
 					fileSystem.readFileSync(`${STAGING}/plugin/src/${module}.luau`, "utf8"),
@@ -152,7 +181,7 @@ describe(installManagedPluginAsync, () => {
 
 		const { fileSystem } = createMemoryFileSystem({ [`${STAGING}/luau/removed.luau`]: "" });
 		let wasStaleKept = true;
-		const buildAsync = vi.fn<ManagedPluginOptions["buildAsync"]>(async (_project, output) => {
+		const buildAsync = vi.fn<BuildAsync>(async (_project, output) => {
 			wasStaleKept = fileSystem.existsSync(`${STAGING}/luau/removed.luau`);
 			fileSystem.writeFileSync(output, "rbxm-bytes");
 		});
@@ -169,7 +198,7 @@ describe(installManagedPluginAsync, () => {
 			options(createMemoryFileSystem().fileSystem),
 		);
 		const { fileSystem } = createMemoryFileSystem();
-		const buildAsync = vi.fn<ManagedPluginOptions["buildAsync"]>(async (_project, output) => {
+		const buildAsync = vi.fn<BuildAsync>(async (_project, output) => {
 			fileSystem.mkdirSync(PLUGINS, { recursive: true });
 			fileSystem.writeFileSync(managedFile(key), "loaded-by-studio");
 			fileSystem.writeFileSync(output, "rbxm-bytes");

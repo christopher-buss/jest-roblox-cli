@@ -13,6 +13,9 @@ import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
  *
  * A relative entry is anchored to the directory holding the sidecar; anything
  * else is already the path the emitter meant.
+ * @param source - Entry from the source map's `sources`.
+ * @param sourceMapDirectory - Directory holding the source map.
+ * @returns Normalized source path.
  */
 export function resolveSourcePath(source: string, sourceMapDirectory: string): string {
 	const normalized = normalizeWindowsPath(source);

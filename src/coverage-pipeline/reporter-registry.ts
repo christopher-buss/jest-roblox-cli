@@ -49,6 +49,12 @@ const REPORTER_FACTORIES = {
 	"text-summary": (options: object) => new TextSummaryReport(options),
 } as const satisfies Record<CoverageReporter, (options: object) => ReportBase>;
 
+/**
+ * Create an Istanbul report whose assets come from the bundle.
+ * @param name - Reporter to create.
+ * @param options - Istanbul reporter options.
+ * @returns The report instance.
+ */
 export function createReporter(name: CoverageReporter, options: object): ReportBase {
 	return REPORTER_FACTORIES[name](options);
 }
@@ -59,6 +65,9 @@ export function createReporter(name: CoverageReporter, options: object): ReportB
  * reaches for a file beside its module. Nothing lets that directory be
  * configured, so the hook is replaced on the instance: same phase, same writer,
  * assets from the bundle.
+ * @param report - Html report to patch.
+ * @param group - Bundled asset set to write.
+ * @returns The same report.
  */
 function carryAssets(report: HtmlReport, group: HtmlAssetGroup): HtmlReport {
 	report.onStart = (_root, context) => {
@@ -72,6 +81,8 @@ function carryAssets(report: HtmlReport, group: HtmlAssetGroup): HtmlReport {
  * `html-spa` writes two sets of assets: the html reporter's, through the
  * instance it delegates to, and its own on top. Its `onStart` reads that second
  * set off disk itself, so both halves are replaced.
+ * @param options - Istanbul reporter options.
+ * @returns An html-spa report that writes bundled assets.
  */
 function createHtmlSpaReport(options: object): HtmlSpaReport {
 	const report = new HtmlSpaReport(options);
@@ -85,7 +96,11 @@ function createHtmlSpaReport(options: object): HtmlSpaReport {
 	return report;
 }
 
-/** Half of `lcov` is an html report, rooted at `lcov-report/`. */
+/**
+ * Half of `lcov` is an html report, rooted at `lcov-report/`.
+ * @param options - Istanbul reporter options.
+ * @returns An lcov report whose html half writes bundled assets.
+ */
 function createLcovReport(options: object): LcovReport {
 	const report = new LcovReport(options);
 	carryAssets(report.html, "html");

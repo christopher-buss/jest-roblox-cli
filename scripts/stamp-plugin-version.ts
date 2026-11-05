@@ -16,6 +16,9 @@ const manifestSchema = type({ version: "string" });
  * committed because the release tool writes the version to `package.json`
  * alone, so a checked-in copy would be stale for the length of every release
  * commit.
+ * @param packageRoot - Directory holding `package.json` and `plugin/`.
+ * @param fileSystem - File system to read and write through.
+ * @returns The stamped version.
  */
 export function stampPluginVersion(
 	packageRoot: string,

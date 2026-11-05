@@ -25,6 +25,14 @@ describe(parseLuauOutput, () => {
 		]);
 	});
 
+	it("should keep a continuation line's indent and drop its trailing space", () => {
+		expect.assertions(1);
+
+		const output = [`${FILE}:9:11-28: (W0) TypeError: outer`, "  inner  ", ""].join("\n");
+
+		expect(parseLuauOutput(output).get(FILE)![0]!.message).toBe("outer\n  inner");
+	});
+
 	it("should join a multi-line message and separate diagnostics at blank lines", () => {
 		expect.assertions(1);
 

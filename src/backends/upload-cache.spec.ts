@@ -23,9 +23,11 @@ const TARGET: UploadCacheTarget = {
 /**
  * Seed the place file on `volume` and report the hash the cache keys on.
  *
- * @param volume - Where the place file lands.
- * @param fileSystem - The same volume, as the code under test reads it.
- * @param contents - The place bytes.
+ * @param root0 - Seed input.
+ * @param root0.volume - Where the place file lands.
+ * @param root0.fileSystem - The same volume, as the code under test reads it.
+ * @param root0.contents - The place bytes.
+ * @returns The SHA-256 hash of the place file.
  */
 function seedPlaceFile({
 	contents = "place-bytes",
@@ -38,6 +40,18 @@ function seedPlaceFile({
 }): string {
 	volume.fromJSON({ "/repo/game.rbxl": contents });
 	return hashPlaceFile(TARGET.placeFilePath, fileSystem)!;
+}
+
+function seedCachedVersion(contents = "place-bytes") {
+	const { fileSystem, volume } = createMemoryFileSystem();
+	const hash = seedPlaceFile({ contents, fileSystem, volume });
+	writeCachedVersion({
+		entry: { hash, versionNumber: 42 },
+		fileSystem,
+		rootDirectory: ROOT,
+		target: TARGET,
+	});
+	return { fileSystem, hash, volume };
 }
 
 describe(hashPlaceFile, () => {
@@ -77,16 +91,7 @@ describe("upload cache", () => {
 	it("should return the recorded version for the same bytes", () => {
 		expect.assertions(2);
 
-		const { fileSystem, volume } = createMemoryFileSystem();
-
-		const hash = seedPlaceFile({ fileSystem, volume });
-
-		writeCachedVersion({
-			entry: { hash, versionNumber: 42 },
-			fileSystem,
-			rootDirectory: ROOT,
-			target: TARGET,
-		});
+		const { fileSystem, hash, volume } = seedCachedVersion();
 
 		expect(readCachedVersion({ fileSystem, hash, rootDirectory: ROOT, target: TARGET })).toBe(
 			42,
@@ -108,15 +113,7 @@ describe("upload cache", () => {
 	it("should miss when the bytes changed", () => {
 		expect.assertions(1);
 
-		const { fileSystem, volume } = createMemoryFileSystem();
-
-		const hash = seedPlaceFile({ contents: "one", fileSystem, volume });
-		writeCachedVersion({
-			entry: { hash, versionNumber: 42 },
-			fileSystem,
-			rootDirectory: ROOT,
-			target: TARGET,
-		});
+		const { fileSystem, volume } = seedCachedVersion("one");
 
 		expect(
 			readCachedVersion({
@@ -131,15 +128,7 @@ describe("upload cache", () => {
 	it("should miss when the same bytes target a different place", () => {
 		expect.assertions(2);
 
-		const { fileSystem, volume } = createMemoryFileSystem();
-
-		const hash = seedPlaceFile({ fileSystem, volume });
-		writeCachedVersion({
-			entry: { hash, versionNumber: 42 },
-			fileSystem,
-			rootDirectory: ROOT,
-			target: TARGET,
-		});
+		const { fileSystem, hash } = seedCachedVersion();
 
 		expect(
 			readCachedVersion({
@@ -227,16 +216,7 @@ describe("upload cache", () => {
 	it("should drop the entry on invalidate", () => {
 		expect.assertions(3);
 
-		const { fileSystem, volume } = createMemoryFileSystem();
-
-		const hash = seedPlaceFile({ fileSystem, volume });
-
-		writeCachedVersion({
-			entry: { hash, versionNumber: 42 },
-			fileSystem,
-			rootDirectory: ROOT,
-			target: TARGET,
-		});
+		const { fileSystem, hash, volume } = seedCachedVersion();
 
 		expect(
 			invalidateCachedVersion({ fileSystem, rootDirectory: ROOT, target: TARGET }),
@@ -257,15 +237,7 @@ describe("upload cache", () => {
 	it("should report a stale entry as surviving when the cache cannot be written", async () => {
 		expect.assertions(2);
 
-		const { fileSystem, volume } = createMemoryFileSystem();
-
-		const hash = seedPlaceFile({ fileSystem, volume });
-		writeCachedVersion({
-			entry: { hash, versionNumber: 42 },
-			fileSystem,
-			rootDirectory: ROOT,
-			target: TARGET,
-		});
+		const { fileSystem, hash } = seedCachedVersion();
 		vi.spyOn(fileSystem, "writeFileSync").mockImplementation(() => {
 			throw new Error("EROFS: read-only file system");
 		});

@@ -4,29 +4,31 @@ import color from "tinyrainbow";
 
 import type { CoverageReporter, ResolvedConfig } from "../config/schema.ts";
 import type { CoverageDisplayPredicate } from "../coverage-pipeline/agent-table-filter.ts";
+import type { RawCoverageData } from "../coverage-pipeline/coverage-types.ts";
 import { loadCoverageManifest } from "../coverage-pipeline/manifest-load.ts";
-import {
-	type CoverageMapper,
-	mapCoverageToTypeScript,
-	type MappedCoverageResult,
-} from "../coverage-pipeline/mapper.ts";
+import type { MappedCoverageResult } from "../coverage-pipeline/mapper-types.ts";
+import { type CoverageMapper, mapCoverageToTypeScript } from "../coverage-pipeline/mapper.ts";
 import {
 	checkThresholds,
 	generateReports,
 	printCoverageHeader,
 } from "../coverage-pipeline/reporter.ts";
-import type { RawCoverageData } from "../coverage-pipeline/types.ts";
 import { usesAgentFormatter } from "../formatters/utils.ts";
 import type {
 	MultiRunResult,
 	WorkspacePackageCoverageGate,
 	WorkspaceRunResult,
-} from "../run/types.ts";
+} from "../run/run-types.ts";
 
+/** The coverage steps {@link processCoverage} runs, injectable for tests. */
 export interface CoveragePipeline {
+	/** Judges a universe against a coverage threshold. */
 	checkThresholds: typeof checkThresholds;
+	/** Writes the configured coverage reports. */
 	generateReports: typeof generateReports;
+	/** Reads the coverage manifest under a root directory. */
 	loadCoverageManifest: typeof loadCoverageManifest;
+	/** Maps raw Luau hit counts onto TypeScript sources. */
 	mapCoverageToTypeScript: CoverageMapper;
 }
 
@@ -72,6 +74,16 @@ export const defaultCoveragePipeline: CoveragePipeline = {
 	mapCoverageToTypeScript,
 };
 
+/**
+ * Write the coverage reports and judge each against its threshold.
+ * @param options - The run's config, raw coverage and pipeline.
+ * @param options.agentTextFilter - Narrows the agent coverage table.
+ * @param options.config - The resolved run config.
+ * @param options.coverageData - The run's raw hit counts.
+ * @param options.packageGates - Per-package units for a workspace run.
+ * @param options.pipeline - The coverage steps to run.
+ * @returns False when any unit fails its threshold.
+ */
 export function processCoverage({
 	agentTextFilter,
 	config,
@@ -116,6 +128,10 @@ export function processCoverage({
 	return isPassed;
 }
 
+/**
+ * Write the closing PASS or FAIL badge to stdout.
+ * @param passed - Whether the run passed.
+ */
 export function printFinalStatus(passed: boolean): void {
 	const badge = passed
 		? color.bgGreen(color.black(color.bold(" PASS ")))
@@ -123,27 +139,39 @@ export function printFinalStatus(passed: boolean): void {
 	process.stdout.write(`${badge}\n`);
 }
 
-// Present only on workspace results that ran coverage; multi mode reports and
-// gates one universe built from its own resolved config.
+/**
+ * Present only on workspace results that ran coverage; multi mode reports and
+ * gates one universe built from its own resolved config.
+ * @param result - The multi or workspace run result.
+ * @returns The per-package coverage units, or `undefined`.
+ */
 export function extractCoveragePackages(
 	result: MultiRunResult | WorkspaceRunResult,
 ): Array<WorkspacePackageCoverageGate> | undefined {
 	return result.mode === "workspace" ? result.coveragePackages : undefined;
 }
 
-// `coverageDisplayFilter` lives on `MultiRunResult` only; workspace runs never
-// narrow the agent table (they consume no positional/file filter). The mode
-// discriminant states that invariant directly — immune to the field ever being
-// added to `WorkspaceRunResult`.
+/**
+ * `coverageDisplayFilter` lives on `MultiRunResult` only; workspace runs never
+ * narrow the agent table (they consume no positional/file filter). The mode
+ * discriminant states that invariant directly — immune to the field ever being
+ * added to `WorkspaceRunResult`.
+ * @param result - The multi or workspace run result.
+ * @returns The agent-table filter of a multi run, or `undefined`.
+ */
 export function extractCoverageDisplayFilter(
 	result: MultiRunResult | WorkspaceRunResult,
 ): CoverageDisplayPredicate | undefined {
 	return result.mode === "multi" ? result.coverageDisplayFilter : undefined;
 }
 
-// A workspace package arrives report-ready: its universe was mapped through the
-// package's own manifest and narrowed by the package's own globs, so the only
-// thing left to say is where the report goes and what renders it.
+/**
+ * A workspace package arrives report-ready: its universe was mapped through the
+ * package's own manifest and narrowed by the package's own globs, so the only
+ * thing left to say is where the report goes and what renders it.
+ * @param gate - The package's coverage gate.
+ * @returns The package's report unit.
+ */
 function toPackageUnit(gate: WorkspacePackageCoverageGate): CoverageReportUnit {
 	return {
 		coverageDirectory: gate.coverageDirectory,
@@ -154,9 +182,16 @@ function toPackageUnit(gate: WorkspacePackageCoverageGate): CoverageReportUnit {
 	};
 }
 
-// Single and multi report one universe, mapped here from the run's raw hit
-// counts through the one manifest at `rootDir`. Returns no unit — so no header,
-// no report, no gate — when coverage is off or nothing mappable came back.
+/**
+ * Single and multi report one universe, mapped here from the run's raw hit
+ * counts through the one manifest at `rootDir`. Returns no unit — so no header,
+ * no report, no gate — when coverage is off or nothing mappable came back.
+ * @param options - The run's config, raw coverage and pipeline.
+ * @param options.config - The resolved run config.
+ * @param options.coverageData - The run's raw hit counts.
+ * @param options.pipeline - The coverage steps to run.
+ * @returns One unit, or none.
+ */
 function resolveSingleUnit({
 	config,
 	coverageData,
@@ -201,12 +236,17 @@ function resolveSingleUnit({
 	];
 }
 
-// Judge a unit against the threshold its own config declared. Nothing gates a
-// unit that declares none: in workspace mode there is no run-level threshold to
-// fall back to (the only candidate would be whatever config sits at the
-// invocation directory, which would make the same package pass or fail
-// depending on where the CLI was run), and no pooled cross-package check either
-// — a cross-package average could mask a failing package.
+/**
+ * Judge a unit against the threshold its own config declared. Nothing gates a
+ * unit that declares none: in workspace mode there is no run-level threshold to
+ * fall back to (the only candidate would be whatever config sits at the
+ * invocation directory, which would make the same package pass or fail
+ * depending on where the CLI was run), and no pooled cross-package check either
+ * — a cross-package average could mask a failing package.
+ * @param unit - The report unit to judge.
+ * @param checkUnitThresholds - The threshold check to apply.
+ * @returns False when the unit declares a threshold and fails it.
+ */
 function enforceUnitThreshold(
 	unit: CoverageReportUnit,
 	checkUnitThresholds: CoveragePipeline["checkThresholds"],

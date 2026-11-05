@@ -1,8 +1,8 @@
 import process from "node:process";
 
 import type { SourceMapper } from "../source-mapper/index.ts";
-import type { ExecErrorTestFileResult, JestResult } from "../types/jest-result.ts";
-import { execErrorTitle, hasExecError } from "../types/jest-result.ts";
+import { execErrorTitle, hasExecError } from "../types/exec-error-file.ts";
+import type { ExecErrorTestFileResult, JestResult } from "../types/jest-result-types.ts";
 import type { PosixRoot } from "../utils/normalize-windows-path.ts";
 import {
 	normalizeWindowsPath,
@@ -12,6 +12,9 @@ import {
 
 const SEPARATOR = " · ";
 
+/**
+ * Options of the `github-actions` formatter.
+ */
 export interface GitHubActionsFormatterOptions {
 	/**
 	 * Whether to emit `::error` workflow commands for test failures.
@@ -28,9 +31,22 @@ export interface GitHubActionsFormatterOptions {
 	jobSummary?: Partial<JobSummaryOptions> | undefined;
 }
 
+/**
+ * Inputs of `resolveGitHubActionsOptions`.
+ */
 export interface ResolveGitHubActionsOptions {
+	/**
+	 * Environment the `GITHUB_*` defaults are read from; defaults to
+	 * `process.env`.
+	 */
 	environment?: Record<string, string | undefined>;
+	/**
+	 * Maps Luau failure locations back to TypeScript source.
+	 */
 	sourceMapper: SourceMapper | undefined;
+	/**
+	 * Formatter options from the config, which win over the environment.
+	 */
 	userOptions: GitHubActionsFormatterOptions;
 }
 
@@ -84,7 +100,7 @@ interface GitHubAnnotation {
 	file: string;
 	line?: number | undefined;
 	message: string;
-	title?: string | undefined;
+	title: string;
 }
 
 interface GitHubActionsOptions {
@@ -95,60 +111,23 @@ interface GitHubActionsOptions {
 	workspace?: PosixRoot | undefined;
 }
 
-export function escapeData(value: string): string {
-	return value.replace(/%/g, "%25").replace(/\r/g, "%0D").replace(/\n/g, "%0A");
-}
-
-export function escapeProperty(value: string): string {
-	return value
-		.replace(/%/g, "%25")
-		.replace(/\r/g, "%0D")
-		.replace(/\n/g, "%0A")
-		.replace(/:/g, "%3A")
-		.replace(/,/g, "%2C");
-}
-
-export function formatAnnotation(annotation: GitHubAnnotation): string {
-	const properties: Array<string> = [`file=${escapeProperty(annotation.file)}`];
-
-	if (annotation.line !== undefined) {
-		properties.push(`line=${String(annotation.line)}`);
-	}
-
-	if (annotation.col !== undefined) {
-		properties.push(`col=${String(annotation.col)}`);
-	}
-
-	if (annotation.title !== undefined) {
-		properties.push(`title=${escapeProperty(annotation.title)}`);
-	}
-
-	return `::error ${properties.join(",")}::${escapeData(annotation.message)}`;
-}
-
-export function collectAnnotations(
-	result: JestResult,
-	options: GitHubActionsOptions,
-): Array<GitHubAnnotation> {
-	const annotations: Array<GitHubAnnotation> = [];
-
-	for (const file of result.testResults) {
-		if (hasExecError(file)) {
-			annotations.push(collectExecErrorAnnotation({ file, options }));
-			continue;
-		}
-
-		annotations.push(...collectTestFailureAnnotations({ file, options }));
-	}
-
-	return annotations;
-}
-
+/**
+ * Render every failure as an `::error` workflow command.
+ * @param result - Run result.
+ * @param options - Resolved GitHub context and source mapper.
+ * @returns The commands joined by newlines.
+ */
 export function formatAnnotations(result: JestResult, options: GitHubActionsOptions): string {
 	const annotations = collectAnnotations(result, options);
 	return annotations.map(formatAnnotation).join("\n");
 }
 
+/**
+ * Render the Job Summary markdown: the result counts, then each failure, linked to its file when the repository context is known.
+ * @param result - Run result.
+ * @param options - Resolved GitHub context and source mapper.
+ * @returns The markdown.
+ */
 export function formatJobSummary(result: JestResult, options: GitHubActionsOptions): string {
 	const fileLink = createFileLink(options);
 	const lines: Array<string> = ["## Test Results\n", renderStats(result)];
@@ -183,6 +162,11 @@ export function formatJobSummary(result: JestResult, options: GitHubActionsOptio
 	return lines.join("\n");
 }
 
+/**
+ * Merge the formatter options over the `GITHUB_*` environment defaults.
+ * @param options - Formatter options, environment and source mapper.
+ * @returns The resolved GitHub context.
+ */
 export function resolveGitHubActionsOptions({
 	environment = process.env,
 	sourceMapper,
@@ -200,6 +184,50 @@ export function resolveGitHubActionsOptions({
 		// the whole run, and every reader of it wants the same spelling.
 		workspace: workspacePath === undefined ? undefined : toPosixRoot(workspacePath),
 	};
+}
+
+/**
+ * Escape a workflow-command message.
+ * @param value - Message text.
+ * @returns `value` with `%`, CR and LF percent-encoded.
+ */
+function escapeData(value: string): string {
+	return value.replace(/%/g, "%25").replace(/\r/g, "%0D").replace(/\n/g, "%0A");
+}
+
+/**
+ * Escape a workflow-command property value.
+ * @param value - Property text.
+ * @returns `value` with `%`, CR, LF, `:` and `,` percent-encoded.
+ */
+function escapeProperty(value: string): string {
+	return value
+		.replace(/%/g, "%25")
+		.replace(/\r/g, "%0D")
+		.replace(/\n/g, "%0A")
+		.replace(/:/g, "%3A")
+		.replace(/,/g, "%2C");
+}
+
+/**
+ * Render an `::error` workflow command.
+ * @param annotation - File, position, title and message.
+ * @returns The command line.
+ */
+function formatAnnotation(annotation: GitHubAnnotation): string {
+	const properties: Array<string> = [`file=${escapeProperty(annotation.file)}`];
+
+	if (annotation.line !== undefined) {
+		properties.push(`line=${String(annotation.line)}`);
+	}
+
+	if (annotation.col !== undefined) {
+		properties.push(`col=${String(annotation.col)}`);
+	}
+
+	properties.push(`title=${escapeProperty(annotation.title)}`);
+
+	return `::error ${properties.join(",")}::${escapeData(annotation.message)}`;
 }
 
 function makeRelative(filePath: string, workspace: PosixRoot | undefined): string {
@@ -272,6 +300,30 @@ function collectTestFailureAnnotations({
 	return annotations;
 }
 
+/**
+ * Build annotations for failed tests, and one per file whose suite threw.
+ * @param result - Run result.
+ * @param options - Resolved GitHub context and source mapper.
+ * @returns The annotations in file order.
+ */
+function collectAnnotations(
+	result: JestResult,
+	options: GitHubActionsOptions,
+): Array<GitHubAnnotation> {
+	const annotations: Array<GitHubAnnotation> = [];
+
+	for (const file of result.testResults) {
+		if (hasExecError(file)) {
+			annotations.push(collectExecErrorAnnotation({ file, options }));
+			continue;
+		}
+
+		annotations.push(...collectTestFailureAnnotations({ file, options }));
+	}
+
+	return annotations;
+}
+
 function collectFileFailures(
 	file: JestResult["testResults"][number],
 	options: GitHubActionsOptions,
@@ -303,8 +355,12 @@ function noun({
 	return count === 1 ? singular : plural;
 }
 
-// File-level pass/fail counts plus their total. A file with an exec error
-// counts as failed even when it reported no failing tests.
+/**
+ * File-level pass/fail counts plus their total. A file with an exec error
+ * counts as failed even when it reported no failing tests.
+ * @param result - Run result.
+ * @returns The count cells of the files row.
+ */
 function renderFileCounts(result: JestResult): Array<string> {
 	const failedFiles = result.testResults.filter(
 		(file) => file.numFailingTests > 0 || hasExecError(file),
@@ -352,8 +408,12 @@ function renderTestCounts(result: JestResult): Array<string> {
 	return testInfo;
 }
 
-// Pending/todo counts plus their total, or empty when neither is present — in
-// which case the caller omits the whole row.
+/**
+ * Pending/todo counts plus their total, or empty when neither is present — in
+ * which case the caller omits the whole row.
+ * @param result - Run result.
+ * @returns The count cells of the other row.
+ */
 function renderOtherCounts(result: JestResult): Array<string> {
 	const otherInfo: Array<string> = [];
 

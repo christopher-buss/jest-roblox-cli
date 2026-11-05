@@ -5,13 +5,26 @@ import { describe, expect, it, vi } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import type { PackageConfigLoader } from "../config/loader.ts";
-import { DEFAULT_CONFIG, type ResolvedConfig } from "../config/schema.ts";
+import type { ResolvedConfig } from "../config/schema.ts";
 import type { TimingCollector } from "../timing/orchestration-collector.ts";
 import { loadWorkspacePackagesAsync } from "./package-loader.ts";
 
+const NO_SUCH_PACKAGE = path.join(import.meta.dirname, "no-such-package");
+
+async function loadDefaultConfigAsync(): Promise<ResolvedConfig> {
+	const [loaded] = await loadWorkspacePackagesAsync({
+		cli: {},
+		packageInfos: [{ name: "defaults", packageDirectory: NO_SUCH_PACKAGE }],
+		timing: createTiming(),
+	});
+	return loaded!.pkgConfig;
+}
+
+const LOADED_DEFAULTS = await loadDefaultConfigAsync();
+
 function makeConfig(overrides: Partial<ResolvedConfig> = {}): ResolvedConfig {
 	return {
-		...DEFAULT_CONFIG,
+		...LOADED_DEFAULTS,
 		// `std-env` settles when it loads, so the env-probed formatter default
 		// differs between a developer machine and an agent one.
 		formatters: ["default"],
@@ -80,7 +93,7 @@ describe(loadWorkspacePackagesAsync, () => {
 
 		const packageConfig = makeConfig({
 			collectCoverageFrom: ["src/**/*.ts"],
-			coverageCache: !DEFAULT_CONFIG.coverageCache,
+			coverageCache: !LOADED_DEFAULTS.coverageCache,
 			coverageCopyIgnorePatterns: ["**/*.tsbuildinfo"],
 			coveragePathIgnorePatterns: ["generated/**"],
 			luauRoots: ["src", "test"],
@@ -97,7 +110,7 @@ describe(loadWorkspacePackagesAsync, () => {
 		expect(loaded!.descriptor).toStrictEqual({
 			name: "pkg",
 			collectCoverageFrom: ["src/**/*.ts"],
-			coverageCache: !DEFAULT_CONFIG.coverageCache,
+			coverageCache: !LOADED_DEFAULTS.coverageCache,
 			coverageCopyIgnorePatterns: ["**/*.tsbuildinfo"],
 			coveragePathIgnorePatterns: ["generated/**"],
 			luauRoots: ["src", "test"],
@@ -123,7 +136,7 @@ describe(loadWorkspacePackagesAsync, () => {
 	it("should read the package's own config when no loader is supplied", async () => {
 		expect.assertions(1);
 
-		const packageDirectory = path.join(import.meta.dirname, "no-such-package");
+		const packageDirectory = NO_SUCH_PACKAGE;
 
 		const [loaded] = await loadWorkspacePackagesAsync({
 			cli: {},
@@ -138,5 +151,18 @@ describe(loadWorkspacePackagesAsync, () => {
 			rojoProjectPath: path.resolve(packageDirectory, "test.project.json"),
 			rootDir: path.resolve(packageDirectory),
 		});
+	});
+
+	it("should leave descriptor.coveragePathIgnorePatterns undefined when the package config defaults", async () => {
+		expect.assertions(1);
+
+		const [loaded] = await loadWorkspacePackagesAsync({
+			cli: { collectCoverage: true },
+			loadPackageConfig: loaderFor(makeConfig({ collectCoverage: true })),
+			packageInfos: [{ name: "pkg", packageDirectory: "/repo/pkg" }],
+			timing: createTiming(),
+		});
+
+		expect(loaded!.descriptor.coveragePathIgnorePatterns).toBeUndefined();
 	});
 });

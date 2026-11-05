@@ -1,0 +1,567 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`coverage maps of collected fixtures > should build the expected cov-map for and-or.luau 1`] = `
+{
+  "branchMap": {
+    "1": {
+      "locations": [
+        {
+          "end": {
+            "column": 12,
+            "line": 1,
+          },
+          "start": {
+            "column": 11,
+            "line": 1,
+          },
+        },
+        {
+          "end": {
+            "column": 18,
+            "line": 1,
+          },
+          "start": {
+            "column": 17,
+            "line": 1,
+          },
+        },
+      ],
+      "type": "binary-expr",
+    },
+    "2": {
+      "locations": [
+        {
+          "end": {
+            "column": 12,
+            "line": 2,
+          },
+          "start": {
+            "column": 11,
+            "line": 2,
+          },
+        },
+        {
+          "end": {
+            "column": 17,
+            "line": 2,
+          },
+          "start": {
+            "column": 16,
+            "line": 2,
+          },
+        },
+      ],
+      "type": "binary-expr",
+    },
+    "3": {
+      "locations": [
+        {
+          "end": {
+            "column": 18,
+            "line": 3,
+          },
+          "start": {
+            "column": 11,
+            "line": 3,
+          },
+        },
+        {
+          "end": {
+            "column": 24,
+            "line": 3,
+          },
+          "start": {
+            "column": 23,
+            "line": 3,
+          },
+        },
+      ],
+      "type": "binary-expr",
+    },
+    "4": {
+      "locations": [
+        {
+          "end": {
+            "column": 12,
+            "line": 3,
+          },
+          "start": {
+            "column": 11,
+            "line": 3,
+          },
+        },
+        {
+          "end": {
+            "column": 18,
+            "line": 3,
+          },
+          "start": {
+            "column": 17,
+            "line": 3,
+          },
+        },
+      ],
+      "type": "binary-expr",
+    },
+  },
+  "functionMap": {},
+  "statementMap": {
+    "1": {
+      "end": {
+        "column": 18,
+        "line": 1,
+      },
+      "start": {
+        "column": 1,
+        "line": 1,
+      },
+    },
+    "2": {
+      "end": {
+        "column": 17,
+        "line": 2,
+      },
+      "start": {
+        "column": 1,
+        "line": 2,
+      },
+    },
+    "3": {
+      "end": {
+        "column": 24,
+        "line": 3,
+      },
+      "start": {
+        "column": 1,
+        "line": 3,
+      },
+    },
+  },
+}
+`;
+
+exports[`coverage maps of collected fixtures > should build the expected cov-map for empty.luau 1`] = `
+{
+  "branchMap": {},
+  "functionMap": {},
+  "statementMap": {},
+}
+`;
+
+exports[`coverage maps of collected fixtures > should build the expected cov-map for expr-if.luau 1`] = `
+{
+  "branchMap": {
+    "1": {
+      "locations": [
+        {
+          "end": {
+            "column": 25,
+            "line": 1,
+          },
+          "start": {
+            "column": 24,
+            "line": 1,
+          },
+        },
+        {
+          "end": {
+            "column": 32,
+            "line": 1,
+          },
+          "start": {
+            "column": 31,
+            "line": 1,
+          },
+        },
+      ],
+      "type": "expr-if",
+    },
+    "2": {
+      "locations": [
+        {
+          "end": {
+            "column": 28,
+            "line": 2,
+          },
+          "start": {
+            "column": 25,
+            "line": 2,
+          },
+        },
+        {
+          "end": {
+            "column": 49,
+            "line": 2,
+          },
+          "start": {
+            "column": 46,
+            "line": 2,
+          },
+        },
+        {
+          "end": {
+            "column": 58,
+            "line": 2,
+          },
+          "start": {
+            "column": 55,
+            "line": 2,
+          },
+        },
+      ],
+      "type": "expr-if",
+    },
+  },
+  "functionMap": {},
+  "statementMap": {
+    "1": {
+      "end": {
+        "column": 32,
+        "line": 1,
+      },
+      "start": {
+        "column": 1,
+        "line": 1,
+      },
+    },
+    "2": {
+      "end": {
+        "column": 58,
+        "line": 2,
+      },
+      "start": {
+        "column": 1,
+        "line": 2,
+      },
+    },
+  },
+}
+`;
+
+exports[`coverage maps of collected fixtures > should build the expected cov-map for functions.luau 1`] = `
+{
+  "branchMap": {},
+  "functionMap": {
+    "1": {
+      "location": {
+        "end": {
+          "column": 4,
+          "line": 3,
+        },
+        "start": {
+          "column": 1,
+          "line": 1,
+        },
+      },
+      "name": "greet",
+    },
+    "2": {
+      "location": {
+        "end": {
+          "column": 4,
+          "line": 7,
+        },
+        "start": {
+          "column": 17,
+          "line": 5,
+        },
+      },
+      "name": "(anonymous)",
+    },
+    "3": {
+      "location": {
+        "end": {
+          "column": 4,
+          "line": 11,
+        },
+        "start": {
+          "column": 1,
+          "line": 9,
+        },
+      },
+      "name": "globalFunc",
+    },
+  },
+  "statementMap": {
+    "1": {
+      "end": {
+        "column": 4,
+        "line": 3,
+      },
+      "start": {
+        "column": 1,
+        "line": 1,
+      },
+    },
+    "2": {
+      "end": {
+        "column": 4,
+        "line": 7,
+      },
+      "start": {
+        "column": 1,
+        "line": 5,
+      },
+    },
+    "3": {
+      "end": {
+        "column": 4,
+        "line": 11,
+      },
+      "start": {
+        "column": 1,
+        "line": 9,
+      },
+    },
+    "4": {
+      "end": {
+        "column": 15,
+        "line": 13,
+      },
+      "start": {
+        "column": 1,
+        "line": 13,
+      },
+    },
+    "5": {
+      "end": {
+        "column": 11,
+        "line": 14,
+      },
+      "start": {
+        "column": 1,
+        "line": 14,
+      },
+    },
+    "6": {
+      "end": {
+        "column": 13,
+        "line": 15,
+      },
+      "start": {
+        "column": 1,
+        "line": 15,
+      },
+    },
+    "7": {
+      "end": {
+        "column": 29,
+        "line": 2,
+      },
+      "start": {
+        "column": 5,
+        "line": 2,
+      },
+    },
+    "8": {
+      "end": {
+        "column": 17,
+        "line": 6,
+      },
+      "start": {
+        "column": 5,
+        "line": 6,
+      },
+    },
+    "9": {
+      "end": {
+        "column": 20,
+        "line": 10,
+      },
+      "start": {
+        "column": 5,
+        "line": 10,
+      },
+    },
+  },
+}
+`;
+
+exports[`coverage maps of collected fixtures > should build the expected cov-map for if-else.luau 1`] = `
+{
+  "branchMap": {
+    "1": {
+      "locations": [
+        {
+          "end": {
+            "column": 1,
+            "line": 5,
+          },
+          "start": {
+            "column": 15,
+            "line": 3,
+          },
+        },
+        {
+          "end": {
+            "column": 1,
+            "line": 7,
+          },
+          "start": {
+            "column": 19,
+            "line": 5,
+          },
+        },
+        {
+          "end": {
+            "column": 1,
+            "line": 9,
+          },
+          "start": {
+            "column": 5,
+            "line": 7,
+          },
+        },
+      ],
+      "type": "if",
+    },
+  },
+  "functionMap": {},
+  "statementMap": {
+    "1": {
+      "end": {
+        "column": 12,
+        "line": 1,
+      },
+      "start": {
+        "column": 1,
+        "line": 1,
+      },
+    },
+    "2": {
+      "end": {
+        "column": 4,
+        "line": 9,
+      },
+      "start": {
+        "column": 1,
+        "line": 3,
+      },
+    },
+    "3": {
+      "end": {
+        "column": 17,
+        "line": 4,
+      },
+      "start": {
+        "column": 5,
+        "line": 4,
+      },
+    },
+    "4": {
+      "end": {
+        "column": 17,
+        "line": 6,
+      },
+      "start": {
+        "column": 5,
+        "line": 6,
+      },
+    },
+    "5": {
+      "end": {
+        "column": 17,
+        "line": 8,
+      },
+      "start": {
+        "column": 5,
+        "line": 8,
+      },
+    },
+  },
+}
+`;
+
+exports[`coverage maps of collected fixtures > should build the expected cov-map for if-only.luau 1`] = `
+{
+  "branchMap": {
+    "1": {
+      "locations": [
+        {
+          "end": {
+            "column": 1,
+            "line": 3,
+          },
+          "start": {
+            "column": 13,
+            "line": 1,
+          },
+        },
+        {
+          "end": {
+            "column": 1,
+            "line": 1,
+          },
+          "start": {
+            "column": 1,
+            "line": 1,
+          },
+        },
+      ],
+      "type": "if",
+    },
+  },
+  "functionMap": {},
+  "statementMap": {
+    "1": {
+      "end": {
+        "column": 4,
+        "line": 3,
+      },
+      "start": {
+        "column": 1,
+        "line": 1,
+      },
+    },
+    "2": {
+      "end": {
+        "column": 14,
+        "line": 2,
+      },
+      "start": {
+        "column": 3,
+        "line": 2,
+      },
+    },
+  },
+}
+`;
+
+exports[`coverage maps of collected fixtures > should build the expected cov-map for simple.luau 1`] = `
+{
+  "branchMap": {},
+  "functionMap": {},
+  "statementMap": {
+    "1": {
+      "end": {
+        "column": 12,
+        "line": 1,
+      },
+      "start": {
+        "column": 1,
+        "line": 1,
+      },
+    },
+    "2": {
+      "end": {
+        "column": 10,
+        "line": 2,
+      },
+      "start": {
+        "column": 1,
+        "line": 2,
+      },
+    },
+    "3": {
+      "end": {
+        "column": 9,
+        "line": 3,
+      },
+      "start": {
+        "column": 1,
+        "line": 3,
+      },
+    },
+  },
+}
+`;

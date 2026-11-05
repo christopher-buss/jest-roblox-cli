@@ -1,20 +1,45 @@
 import type { ChildProcess } from "node:child_process";
 import { EventEmitter } from "node:events";
 
+import type { ChildProcessRunner } from "../utils/child-process.ts";
 import type { FileSystem } from "../utils/file-system.ts";
-import type { StudioCliProcess } from "./studio-cli.ts";
+import type { StudioCliProcess } from "./studio-cli-types.ts";
 import { clearStaleLock, watchLockRelease } from "./studio-lock.ts";
 
 const LINE_SPLIT_PATTERN = /\r?\n/u;
 const PID_PATTERN = /^\d+$/u;
 const HELPER_EXIT_CAP_MS = 5000;
 
-export interface HiddenHelperLaunch {
+/** What a hidden Studio launch needs. */
+export interface HiddenLaunchRequest {
+	/** Studio argument vector, without the executable. */
+	args: Array<string>;
+	/** Runs the helper and the kill command. */
+	childProcess: ChildProcessRunner;
+	/** File system that holds the place lock file. */
 	fileSystem: FileSystem;
-	killStudio: (pid: number, helper: ChildProcess) => void;
-	label: string;
+	/** Place file Studio opens. */
 	placeFile: string;
+	/** Path to the Studio executable. */
+	studioPath: string;
+}
+
+/** How to start and stop one helper-launched Studio. */
+export interface HiddenHelperLaunch {
+	/** File system that holds the place lock file. */
+	fileSystem: FileSystem;
+	/** Kills the Studio process the helper reported. */
+	killStudio: (pid: number, helper: ChildProcess) => void;
+	/** Launch mode name for error messages. */
+	label: string;
+	/** Place file Studio opens. */
+	placeFile: string;
+	/** Starts the helper that launches Studio and prints its PID. */
 	spawnHelper: () => ChildProcess;
+}
+
+interface HelperEvents {
+	failure: [Error];
 }
 
 interface HelperOutput {
@@ -24,10 +49,16 @@ interface HelperOutput {
 	stdout: string;
 }
 
+/**
+ * Launch Studio through a helper process that prints the Studio PID.
+ *
+ * @param launch - How to spawn the helper and kill Studio.
+ * @returns A handle that kills Studio and reports launch failures.
+ */
 export function launchThroughHelper(launch: HiddenHelperLaunch): StudioCliProcess {
 	const { fileSystem, label } = launch;
 	const lockFile = clearStaleLock(fileSystem, launch.placeFile);
-	const errors = new EventEmitter<{ failure: [Error] }>();
+	const errors = new EventEmitter<HelperEvents>();
 	const helper = launch.spawnHelper();
 	const { onPid, terminate } = deferredKill({
 		killStudio: (pid) => {

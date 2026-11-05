@@ -4,35 +4,110 @@ import type { Except } from "type-fest";
 
 const DEFAULT_SLOW_TEST_THRESHOLD_MS = 300;
 
+/**
+ * Wraps text in a style; the plain palette returns it unchanged.
+ */
 export type ColorFunc = (text: string) => string;
 
+/**
+ * Color functions every formatter paints through, plus the slow-test threshold.
+ */
 export interface Styles {
+	/**
+	 * Diff line colors.
+	 */
 	diff: {
+		/**
+		 * Expected-side lines.
+		 */
 		expected: ColorFunc;
+		/**
+		 * Received-side lines.
+		 */
 		received: ColorFunc;
 	};
+	/**
+	 * De-emphasized text.
+	 */
 	dim: ColorFunc;
+	/**
+	 * Duration colors.
+	 */
 	duration: {
+		/**
+		 * Durations at or under `slowTestThreshold`.
+		 */
 		fast: ColorFunc;
+		/**
+		 * Durations over `slowTestThreshold`.
+		 */
 		slow: ColorFunc;
 	};
+	/**
+	 * The FAIL badge.
+	 */
 	failBadge: ColorFunc;
+	/**
+	 * Snippet gutter and line numbers.
+	 */
 	lineNumber: ColorFunc;
+	/**
+	 * Source location headers.
+	 */
 	location: ColorFunc;
+	/**
+	 * File path parts.
+	 */
 	path: {
+		/**
+		 * Directory part.
+		 */
 		dir: ColorFunc;
+		/**
+		 * File name part.
+		 */
 		file: ColorFunc;
 	};
+	/**
+	 * The RUN badge.
+	 */
 	runBadge: ColorFunc;
+	/**
+	 * Milliseconds above which a duration is styled as slow.
+	 */
 	slowTestThreshold: number;
+	/**
+	 * Per-test status text.
+	 */
 	status: {
+		/**
+		 * Failed tests and errors.
+		 */
 		fail: ColorFunc;
+		/**
+		 * Passed tests.
+		 */
 		pass: ColorFunc;
+		/**
+		 * Pending or skipped tests.
+		 */
 		pending: ColorFunc;
 	};
+	/**
+	 * Summary count text.
+	 */
 	summary: {
+		/**
+		 * Failed counts.
+		 */
 		failed: ColorFunc;
+		/**
+		 * Passed counts.
+		 */
 		passed: ColorFunc;
+		/**
+		 * Pending counts.
+		 */
 		pending: ColorFunc;
 	};
 	/**
@@ -43,9 +118,22 @@ export interface Styles {
 	timeoutBadge: ColorFunc;
 }
 
+/**
+ * Inputs of `formatProjectBadge`.
+ */
 export interface FormatProjectBadgeOptions {
+	/**
+	 * Named badge color; an unknown or absent name falls back to one hashed
+	 * from `displayName`.
+	 */
 	displayColor?: string | undefined;
+	/**
+	 * Project name shown in the badge.
+	 */
 	displayName: string;
+	/**
+	 * Emit ANSI color.
+	 */
 	useColor: boolean;
 }
 
@@ -55,6 +143,9 @@ type StyleSet = Except<Styles, "slowTestThreshold">;
  * The colour palette every formatter renders through. `slowTestThreshold` is
  * the only per-run value, so the two palettes themselves are module-level
  * constants and this only stamps the threshold onto the chosen one.
+ * @param useColor - Pick the ANSI palette over the plain one.
+ * @param slowTestThreshold - Milliseconds above which a duration is slow.
+ * @returns The palette with the threshold set.
  */
 export function createStyles(
 	useColor: boolean,
@@ -63,11 +154,22 @@ export function createStyles(
 	return { ...(useColor ? COLOR_STYLE_SET : PLAIN_STYLE_SET), slowTestThreshold };
 }
 
+/**
+ * Render a duration, colored by the slow-test threshold.
+ * @param ms - Duration in milliseconds.
+ * @param styles - Palette and threshold.
+ * @returns The styled ` <n>ms` text.
+ */
 export function formatDuration(ms: number, styles: Styles): string {
 	const colorFunc = ms > styles.slowTestThreshold ? styles.duration.slow : styles.duration.fast;
 	return colorFunc(` ${ms}${styles.dim("ms")}`);
 }
 
+/**
+ * Render the `▶ name` project badge.
+ * @param options - Project name, color name and color mode.
+ * @returns The badge text.
+ */
 export function formatProjectBadge({
 	displayColor,
 	displayName,
@@ -81,6 +183,11 @@ export function formatProjectBadge({
 	return `▶ ${label}`;
 }
 
+/**
+ * The no-op color function.
+ * @param text - Text to return.
+ * @returns `text` unchanged.
+ */
 export function identity(text: string): string {
 	return text;
 }

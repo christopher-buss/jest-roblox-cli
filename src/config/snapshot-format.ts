@@ -8,8 +8,11 @@ import type { FileSystem } from "../utils/file-system.ts";
 import { nodeFileSystem } from "../utils/file-system.ts";
 import type { ResolvedConfig } from "./schema.ts";
 
+/** Inputs for `resolveSnapshotFormat`. */
 export interface SnapshotFormatRequest extends TsconfigLookup {
+	/** Project config to resolve. */
 	readonly config: ResolvedConfig;
+	/** Project test files, used to detect a Luau project. */
 	readonly testFiles: ReadonlyArray<string>;
 }
 
@@ -29,6 +32,9 @@ interface TsconfigLookup {
  * follows the project's language, because Jest-Roblox prints `Table {` where
  * JS Jest prints `{`. Idempotent — a config that already carries the flag
  * (user-declared, or resolved by an earlier caller) comes back untouched.
+ *
+ * @param options - Config, test files and tsconfig lookup.
+ * @returns The config with `snapshotFormat.printBasicPrototype` set.
  */
 export function resolveSnapshotFormat({
 	cache,

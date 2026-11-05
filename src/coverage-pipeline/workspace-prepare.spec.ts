@@ -1,27 +1,32 @@
+import { fromAny } from "@total-typescript/shoehorn";
+
+import { type } from "arktype";
 import * as crypto from "node:crypto";
 import * as path from "node:path";
 import process from "node:process";
+import type { Except } from "type-fest";
 import type { MockedFunction } from "vitest";
 import { describe, expect, it, vi } from "vitest";
 
+import { copyIgnoreHash } from "#test/mocks/coverage-hash.ts";
+import { INSTRUMENTER_VERSION, MANIFEST_VERSION } from "#test/mocks/coverage-versions.ts";
 import type { MemoryVolume } from "#test/mocks/memory-file-system.ts";
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
-import { DEFAULT_CONFIG } from "../config/schema.ts";
+import { posixPath, posixRoot } from "#test/mocks/posix-path.ts";
+import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
 import type { FileSystem } from "../utils/file-system.ts";
-import { normalizeWindowsPath, toPosixRoot } from "../utils/normalize-windows-path.ts";
 import type { BuildManifest, BuildManifestArtifact } from "./build-manifest.ts";
-import { buildManifestSchema } from "./build-manifest.ts";
-import { hashCopyIgnorePatterns } from "./discover-files.ts";
 import type { Instrumenter } from "./instrumenter.ts";
-import { INSTRUMENTER_VERSION } from "./instrumenter.ts";
 import type { CoverageManifest, InstrumentedFileRecord } from "./manifest.ts";
-import { MANIFEST_VERSION, manifestSchema } from "./manifest.ts";
+import type { PrepareWorkspaceCoverageOptions } from "./workspace-prepare.ts";
 import { emitWorkspaceBuildManifests, prepareWorkspaceCoverage } from "./workspace-prepare.ts";
 
 /**
  * Matches the warning emitted for `@halcyon/foo`'s missing `build/out` root.
  * Hoisted to module scope so the two-clause predicate isn't a conditional
  * inside a test body.
+ * @param line - One captured write chunk.
+ * @returns Whether the line is that warning.
  */
 function mentionsMissingFooRoot(line: string): boolean {
 	return line.includes('luauRoot "build/out"') && line.includes("@halcyon/foo");
@@ -36,14 +41,17 @@ function isoNow(): string {
 	return now.toISOString();
 }
 
-const DEFAULT_COPY_IGNORE_HASH = hashCopyIgnorePatterns(DEFAULT_CONFIG.coverageCopyIgnorePatterns);
+const DEFAULT_COPY_IGNORE_HASH = copyIgnoreHash(createResolvedConfig().coverageCopyIgnorePatterns);
 
 const WORKSPACE_ROOT = path.resolve("/repo");
 const FOO_DIR = path.join(WORKSPACE_ROOT, "packages/foo");
 const BAR_DIR = path.join(WORKSPACE_ROOT, "packages/bar");
 const FOO_PROJECT = path.join(FOO_DIR, "test.project.json");
 const BAR_PROJECT = path.join(BAR_DIR, "test.project.json");
-const SHARED_PLACE: BuildManifestArtifact = { hash: "place-hash", path: "synthesized.rbxl" };
+const SHARED_PLACE: BuildManifestArtifact = {
+	hash: "place-hash",
+	path: "synthesized.rbxl",
+};
 
 interface SeedOptions {
 	luauRoots?: Array<string>;
@@ -69,7 +77,9 @@ function seedPackage(
 		}),
 	});
 	for (const luauRoot of luauRoots) {
-		volume.mkdirSync(path.join(packageDirectory, luauRoot), { recursive: true });
+		volume.mkdirSync(path.join(packageDirectory, luauRoot), {
+			recursive: true,
+		});
 		volume.writeFileSync(path.join(packageDirectory, luauRoot, "init.luau"), "local x = 1");
 	}
 }
@@ -99,6 +109,168 @@ function createInstrumenter(
 			}),
 	);
 	return instrumenter;
+}
+
+const FOO_SHADOW = posixPath(
+	path.join(WORKSPACE_ROOT, ".jest-roblox/workspace/@halcyon-foo/coverage"),
+);
+const FOO_MANIFEST_PATH = path.join(FOO_SHADOW, "coverage-manifest.json");
+
+type FooDescriptorFields = Except<
+	PrepareWorkspaceCoverageOptions["packages"][number],
+	"name" | "packageDirectory" | "rojoProjectPath"
+>;
+
+function prepareFoo({
+	descriptor,
+	fileSystem,
+	instrumenter,
+}: {
+	descriptor?: FooDescriptorFields;
+	fileSystem: FileSystem;
+	instrumenter: Instrumenter;
+}): ReturnType<typeof prepareWorkspaceCoverage> {
+	return prepareWorkspaceCoverage({
+		fileSystem,
+		instrumenter,
+		packages: [
+			{
+				name: "@halcyon/foo",
+				...descriptor,
+				packageDirectory: FOO_DIR,
+				rojoProjectPath: FOO_PROJECT,
+			},
+		],
+		workspaceRoot: WORKSPACE_ROOT,
+	});
+}
+
+function fooProject(tree: object): Record<string, string> {
+	return { [FOO_PROJECT]: JSON.stringify({ name: "foo-test", tree }) };
+}
+
+const OUT_SOURCE = "local x = 1";
+
+interface WrittenManifest {
+	files: Record<string, unknown>;
+	luauRoots: Array<string>;
+	nonInstrumentedFiles: Record<string, unknown>;
+}
+
+function cachedOutManifest(overrides: Partial<CoverageManifest>): CoverageManifest {
+	const fileKey = `${posixPath(path.join(FOO_DIR, "out"))}/init.luau`;
+	return {
+		buildId: "prev-build-id",
+		copyIgnoreHash: DEFAULT_COPY_IGNORE_HASH,
+		files: {
+			[fileKey]: {
+				key: fileKey,
+				coverageMapPath: `${FOO_SHADOW}/out/init.cov-map.json`,
+				instrumentedLuauPath: `${FOO_SHADOW}/out/init.luau`,
+				originalLuauPath: fileKey,
+				sourceHash: sha256(OUT_SOURCE),
+				sourceMapPath: `${FOO_SHADOW}/out/init.luau.map`,
+				statementCount: 1,
+			},
+		},
+		generatedAt: "2025-01-01T00:00:00.000Z",
+		instrumenterVersion: INSTRUMENTER_VERSION,
+		luauRoots: [`${FOO_SHADOW}/out`],
+		nonInstrumentedFiles: {},
+		shadowDir: FOO_SHADOW,
+		version: MANIFEST_VERSION,
+		...overrides,
+	};
+}
+
+function seedCachedOut(
+	volume: MemoryVolume,
+	{ manifest, shadowOutputs }: { manifest: CoverageManifest; shadowOutputs: boolean },
+): void {
+	seedPackage(volume, { packageDirectory: FOO_DIR });
+	volume.fromJSON({ [FOO_MANIFEST_PATH]: JSON.stringify(manifest) });
+	if (shadowOutputs) {
+		volume.fromJSON({
+			[`${FOO_SHADOW}/out/init.cov-map.json`]: "{}",
+			[`${FOO_SHADOW}/out/init.luau`]: "instrumented",
+		});
+	}
+}
+
+function priorRootsManifest({
+	content,
+	fileKey,
+	luauRoots,
+}: {
+	content: string;
+	fileKey: string;
+	luauRoots: Array<string>;
+}): CoverageManifest {
+	return {
+		buildId: "prev-build-id",
+		copyIgnoreHash: DEFAULT_COPY_IGNORE_HASH,
+		files: {
+			[fileKey]: {
+				key: fileKey,
+				coverageMapPath: `${fileKey}.cov-map.json`,
+				instrumentedLuauPath: fileKey,
+				originalLuauPath: fileKey,
+				sourceHash: sha256(content),
+				sourceMapPath: `${fileKey}.map`,
+				statementCount: 1,
+			},
+		},
+		generatedAt: isoNow(),
+		instrumenterVersion: INSTRUMENTER_VERSION,
+		luauRoots,
+		nonInstrumentedFiles: {},
+		shadowDir: FOO_SHADOW,
+		version: MANIFEST_VERSION,
+	};
+}
+
+function seedMixedOutTest(volume: MemoryVolume): void {
+	volume.fromJSON({
+		...fooProject({
+			$className: "DataModel",
+			ReplicatedStorage: { Tests: { $path: "out-test" } },
+		}),
+		[path.join(FOO_DIR, "out-test/src/foo.spec.luau")]: "return {}",
+		[path.join(FOO_DIR, "out-test/test/fixtures.luau")]: "local x = 1",
+	});
+}
+
+function expectInstrumentedOnce({
+	instrumenter,
+	root,
+}: {
+	instrumenter: MockedFunction<Instrumenter>;
+	root: string;
+}): void {
+	expect(instrumenter).toHaveBeenCalledExactlyOnceWith(
+		expect.objectContaining({ luauRoot: posixPath(path.join(FOO_DIR, root)) }),
+	);
+}
+
+const writtenManifestSchema = type({
+	"+": "ignore",
+	"files": "Record<string, unknown>",
+	"luauRoots": "string[]",
+	"nonInstrumentedFiles": "Record<string, unknown>",
+}).as<WrittenManifest>();
+
+/**
+ * The fields of a published coverage manifest that these specs read.
+ *
+ * @param volume - Where the run wrote it.
+ * @param manifestPath - Where the manifest sits on the volume.
+ * @returns The manifest, checked only for the fields `WrittenManifest` names.
+ * @throws When the file is not JSON or lacks one of those fields.
+ */
+function readManifest(volume: MemoryVolume, manifestPath: string): WrittenManifest {
+	return writtenManifestSchema.assert(
+		JSON.parse(volume.readFileSync(manifestPath, "utf-8").toString()),
+	);
 }
 
 describe(prepareWorkspaceCoverage, () => {
@@ -156,23 +328,18 @@ describe(prepareWorkspaceCoverage, () => {
 			packageDirectory: FOO_DIR,
 			rojoTree: {
 				$className: "DataModel",
-				ReplicatedStorage: { Pkg: { $path: "out" }, Vendor: { $path: "vendor" } },
+				ReplicatedStorage: {
+					Pkg: { $path: "out" },
+					Vendor: { $path: "vendor" },
+				},
 			},
 		});
 		const instrumenter = createInstrumenter();
 
-		const [result] = prepareWorkspaceCoverage({
+		const [result] = prepareFoo({
+			descriptor: { collectCoverageFrom: ["out/init.luau"] },
 			fileSystem,
 			instrumenter,
-			packages: [
-				{
-					name: "@halcyon/foo",
-					collectCoverageFrom: ["out/init.luau"],
-					packageDirectory: FOO_DIR,
-					rojoProjectPath: FOO_PROJECT,
-				},
-			],
-			workspaceRoot: WORKSPACE_ROOT,
 		});
 
 		// Only `out` earns a redirect; `vendor` keeps its original mount, which
@@ -187,18 +354,7 @@ describe(prepareWorkspaceCoverage, () => {
 		seedPackage(volume, { packageDirectory: FOO_DIR });
 		const instrumenter = createInstrumenter();
 
-		const result = prepareWorkspaceCoverage({
-			fileSystem,
-			instrumenter,
-			packages: [
-				{
-					name: "@halcyon/foo",
-					packageDirectory: FOO_DIR,
-					rojoProjectPath: FOO_PROJECT,
-				},
-			],
-			workspaceRoot: WORKSPACE_ROOT,
-		});
+		const result = prepareFoo({ fileSystem, instrumenter });
 
 		expect(instrumenter.mock.calls[0]![0].skipFiles).toBeUndefined();
 		expect(result[0]!.manifest.coverageUniverseHash).toBeUndefined();
@@ -211,23 +367,12 @@ describe(prepareWorkspaceCoverage, () => {
 		seedPackage(volume, { packageDirectory: FOO_DIR });
 		const instrumenter = createInstrumenter();
 
-		const result = prepareWorkspaceCoverage({
-			fileSystem,
-			instrumenter,
-			packages: [
-				{
-					name: "@halcyon/foo",
-					packageDirectory: FOO_DIR,
-					rojoProjectPath: FOO_PROJECT,
-				},
-			],
-			workspaceRoot: WORKSPACE_ROOT,
-		});
+		const result = prepareFoo({ fileSystem, instrumenter });
 
 		expect(result).toHaveLength(1);
 		expect(result[0]!.coverageRoots).toStrictEqual([
 			{
-				luauRoot: toPosixRoot("out"),
+				luauRoot: posixRoot("out"),
 				shadowDir: path
 					.join(WORKSPACE_ROOT, ".jest-roblox/workspace/@halcyon-foo/coverage/out")
 					.replaceAll("\\", "/"),
@@ -242,23 +387,9 @@ describe(prepareWorkspaceCoverage, () => {
 		seedPackage(volume, { packageDirectory: FOO_DIR });
 		const instrumenter = createInstrumenter();
 
-		const result = prepareWorkspaceCoverage({
-			fileSystem,
-			instrumenter,
-			packages: [
-				{
-					name: "@halcyon/foo",
-					packageDirectory: FOO_DIR,
-					rojoProjectPath: FOO_PROJECT,
-				},
-			],
-			workspaceRoot: WORKSPACE_ROOT,
-		});
+		const result = prepareFoo({ fileSystem, instrumenter });
 
-		const expectedPath = path.join(
-			WORKSPACE_ROOT,
-			".jest-roblox/workspace/@halcyon-foo/coverage/coverage-manifest.json",
-		);
+		const expectedPath = FOO_MANIFEST_PATH;
 
 		expect(result[0]!.manifestPath).toBe(expectedPath.replaceAll("\\", "/"));
 		expect(volume.existsSync(expectedPath)).toBeTrue();
@@ -280,18 +411,7 @@ describe(prepareWorkspaceCoverage, () => {
 		});
 		const instrumenter = createInstrumenter();
 
-		prepareWorkspaceCoverage({
-			fileSystem,
-			instrumenter,
-			packages: [
-				{
-					name: "@halcyon/foo",
-					packageDirectory: FOO_DIR,
-					rojoProjectPath: FOO_PROJECT,
-				},
-			],
-			workspaceRoot: WORKSPACE_ROOT,
-		});
+		prepareFoo({ fileSystem, instrumenter });
 
 		expect(instrumenter).toHaveBeenCalledTimes(2);
 
@@ -313,16 +433,21 @@ describe(prepareWorkspaceCoverage, () => {
 			fileSystem,
 			instrumenter,
 			packages: [
-				{ name: "@halcyon/foo", packageDirectory: FOO_DIR, rojoProjectPath: FOO_PROJECT },
-				{ name: "@halcyon/bar", packageDirectory: BAR_DIR, rojoProjectPath: BAR_PROJECT },
+				{
+					name: "@halcyon/foo",
+					packageDirectory: FOO_DIR,
+					rojoProjectPath: FOO_PROJECT,
+				},
+				{
+					name: "@halcyon/bar",
+					packageDirectory: BAR_DIR,
+					rojoProjectPath: BAR_PROJECT,
+				},
 			],
 			workspaceRoot: WORKSPACE_ROOT,
 		});
 
-		const fooManifest = path.join(
-			WORKSPACE_ROOT,
-			".jest-roblox/workspace/@halcyon-foo/coverage/coverage-manifest.json",
-		);
+		const fooManifest = FOO_MANIFEST_PATH;
 		const barManifest = path.join(
 			WORKSPACE_ROOT,
 			".jest-roblox/workspace/@halcyon-bar/coverage/coverage-manifest.json",
@@ -345,18 +470,9 @@ describe(prepareWorkspaceCoverage, () => {
 		seedPackage(volume, { packageDirectory: FOO_DIR });
 		const instrumenter = createInstrumenter();
 
-		const [result] = prepareWorkspaceCoverage({
-			fileSystem,
-			instrumenter,
-			packages: [
-				{ name: "@halcyon/foo", packageDirectory: FOO_DIR, rojoProjectPath: FOO_PROJECT },
-			],
-			workspaceRoot: WORKSPACE_ROOT,
-		});
+		const [result] = prepareFoo({ fileSystem, instrumenter });
 
-		const manifest = manifestSchema.assert(
-			JSON.parse(volume.readFileSync(result!.manifestPath, "utf-8").toString()),
-		);
+		const manifest = readManifest(volume, result!.manifestPath);
 		const expectedKey = `${path.join(FOO_DIR, "out").replaceAll("\\", "/")}/init.luau`;
 
 		expect(Object.keys(manifest.files)).toContain(expectedKey);
@@ -374,18 +490,13 @@ describe(prepareWorkspaceCoverage, () => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
-		const packageShadow = path
-			.join(WORKSPACE_ROOT, ".jest-roblox/workspace/@halcyon-foo/coverage")
-			.replaceAll("\\", "/");
+		const packageShadow = FOO_SHADOW;
 		const staleSpecPath = path.join(packageShadow, "out/stale.spec.luau");
 
 		volume.fromJSON({
-			[FOO_PROJECT]: JSON.stringify({
-				name: "foo-test",
-				tree: {
-					$className: "DataModel",
-					ReplicatedStorage: { Pkg: { $path: "out" } },
-				},
+			...fooProject({
+				$className: "DataModel",
+				ReplicatedStorage: { Pkg: { $path: "out" } },
 			}),
 			[path.join(FOO_DIR, "out/init.luau")]: "local x = 1",
 			[path.join(FOO_DIR, "out/live.spec.luau")]: "return {}",
@@ -394,14 +505,7 @@ describe(prepareWorkspaceCoverage, () => {
 		});
 		const instrumenter = createInstrumenter();
 
-		prepareWorkspaceCoverage({
-			fileSystem,
-			instrumenter,
-			packages: [
-				{ name: "@halcyon/foo", packageDirectory: FOO_DIR, rojoProjectPath: FOO_PROJECT },
-			],
-			workspaceRoot: WORKSPACE_ROOT,
-		});
+		prepareFoo({ fileSystem, instrumenter });
 
 		// Stale shadow file gone — rmSync of the package shadow before the run
 		// writes anything into it.
@@ -420,71 +524,20 @@ describe(prepareWorkspaceCoverage, () => {
 		// `coverageCache: true`, the manifest matches the current source, and
 		// the only thing forcing re-instrumentation is the per-pkg
 		// descriptor's `coverageCache: false`.
-		const sourceContent = "local x = 1";
-		const absoluteSourceRoot = path.join(FOO_DIR, "out").replaceAll("\\", "/");
-		const fileKey = `${absoluteSourceRoot}/init.luau`;
-		const packageShadow = path
-			.join(WORKSPACE_ROOT, ".jest-roblox/workspace/@halcyon-foo/coverage")
-			.replaceAll("\\", "/");
-		const previousManifest: CoverageManifest = {
-			buildId: "prev-build-id",
-			copyIgnoreHash: DEFAULT_COPY_IGNORE_HASH,
-			files: {
-				[fileKey]: {
-					key: fileKey,
-					coverageMapPath: `${packageShadow}/out/init.cov-map.json`,
-					instrumentedLuauPath: `${packageShadow}/out/init.luau`,
-					originalLuauPath: fileKey,
-					sourceHash: sha256(sourceContent),
-					sourceMapPath: `${packageShadow}/out/init.luau.map`,
-					statementCount: 1,
-				},
-			},
-			generatedAt: "2025-01-01T00:00:00.000Z",
-			instrumenterVersion: INSTRUMENTER_VERSION,
-			luauRoots: [`${packageShadow}/out`],
-			nonInstrumentedFiles: {},
-			shadowDir: packageShadow,
-			version: MANIFEST_VERSION,
-		};
-
-		volume.fromJSON({
-			[`${packageShadow}/out/init.cov-map.json`]: "{}",
-			[`${packageShadow}/out/init.luau`]: "instrumented",
-			[FOO_PROJECT]: JSON.stringify({
-				name: "foo-test",
-				tree: {
-					$className: "DataModel",
-					ReplicatedStorage: { Pkg: { $path: "out" } },
-				},
-			}),
-			[path.join(FOO_DIR, "out/init.luau")]: sourceContent,
-			[path.join(
-				WORKSPACE_ROOT,
-				".jest-roblox/workspace/@halcyon-foo/coverage/coverage-manifest.json",
-			)]: JSON.stringify(previousManifest),
-		});
+		seedCachedOut(volume, { manifest: cachedOutManifest({}), shadowOutputs: true });
 		const instrumenter = createInstrumenter();
 
-		prepareWorkspaceCoverage({
+		prepareFoo({
+			descriptor: { coverageCache: false },
 			fileSystem,
 			instrumenter,
-			packages: [
-				{
-					name: "@halcyon/foo",
-					coverageCache: false,
-					packageDirectory: FOO_DIR,
-					rojoProjectPath: FOO_PROJECT,
-				},
-			],
-			workspaceRoot: WORKSPACE_ROOT,
 		});
 
 		// Cache disabled → cold path: instrumenter runs even though the manifest
 		// matched.
 		expect(instrumenter).toHaveBeenCalledExactlyOnceWith(
 			expect.objectContaining({
-				luauRoot: normalizeWindowsPath(path.join(FOO_DIR, "out")),
+				luauRoot: posixPath(path.join(FOO_DIR, "out")),
 				skipFiles: undefined,
 			}),
 		);
@@ -494,52 +547,16 @@ describe(prepareWorkspaceCoverage, () => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
-		const sourceContent = "local x = 1";
-		const fileKey = `${path.join(FOO_DIR, "out").replaceAll("\\", "/")}/init.luau`;
-		const previousManifest: CoverageManifest = {
-			buildId: "prev-build-id",
-			copyIgnoreHash: DEFAULT_COPY_IGNORE_HASH,
-			coverageUniverseHash: "a-different-universe",
-			files: {
-				[fileKey]: {
-					key: fileKey,
-					coverageMapPath: "x",
-					instrumentedLuauPath: "x",
-					originalLuauPath: fileKey,
-					sourceHash: sha256(sourceContent),
-					sourceMapPath: "x",
-					statementCount: 1,
-				},
-			},
-			generatedAt: "2025-01-01T00:00:00.000Z",
-			instrumenterVersion: INSTRUMENTER_VERSION,
-			luauRoots: [],
-			nonInstrumentedFiles: {},
-			shadowDir: "x",
-			version: MANIFEST_VERSION,
-		};
-
-		seedPackage(volume, { packageDirectory: FOO_DIR });
-		volume.fromJSON({
-			[path.join(
-				WORKSPACE_ROOT,
-				".jest-roblox/workspace/@halcyon-foo/coverage/coverage-manifest.json",
-			)]: JSON.stringify(previousManifest),
+		seedCachedOut(volume, {
+			manifest: cachedOutManifest({ coverageUniverseHash: "a-different-universe" }),
+			shadowOutputs: false,
 		});
 		const instrumenter = createInstrumenter();
 
-		prepareWorkspaceCoverage({
+		prepareFoo({
+			descriptor: { collectCoverageFrom: ["out/**"] },
 			fileSystem,
 			instrumenter,
-			packages: [
-				{
-					name: "@halcyon/foo",
-					collectCoverageFrom: ["out/**"],
-					packageDirectory: FOO_DIR,
-					rojoProjectPath: FOO_PROJECT,
-				},
-			],
-			workspaceRoot: WORKSPACE_ROOT,
 		});
 
 		// A cold run carries nothing forward, so it passes no skip list.
@@ -550,58 +567,17 @@ describe(prepareWorkspaceCoverage, () => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
-		const sourceContent = "local x = 1";
-		const fileKey = `${path.join(FOO_DIR, "out").replaceAll("\\", "/")}/init.luau`;
-		const previousManifest: CoverageManifest = {
-			buildId: "prev-build-id",
-			copyIgnoreHash: DEFAULT_COPY_IGNORE_HASH,
-			files: {
-				[fileKey]: {
-					key: fileKey,
-					coverageMapPath: "x",
-					instrumentedLuauPath: "x",
-					originalLuauPath: fileKey,
-					sourceHash: sha256(sourceContent),
-					sourceMapPath: "x",
-					statementCount: 1,
-				},
-			},
-			generatedAt: "2025-01-01T00:00:00.000Z",
-			instrumenterVersion: INSTRUMENTER_VERSION - 1,
-			luauRoots: [],
-			nonInstrumentedFiles: {},
-			shadowDir: "x",
-			version: MANIFEST_VERSION,
-		};
-
-		volume.fromJSON({
-			[FOO_PROJECT]: JSON.stringify({
-				name: "foo-test",
-				tree: {
-					$className: "DataModel",
-					ReplicatedStorage: { Pkg: { $path: "out" } },
-				},
-			}),
-			[path.join(FOO_DIR, "out/init.luau")]: sourceContent,
-			[path.join(
-				WORKSPACE_ROOT,
-				".jest-roblox/workspace/@halcyon-foo/coverage/coverage-manifest.json",
-			)]: JSON.stringify(previousManifest),
+		seedCachedOut(volume, {
+			manifest: cachedOutManifest({ instrumenterVersion: INSTRUMENTER_VERSION - 1 }),
+			shadowOutputs: false,
 		});
 		const instrumenter = createInstrumenter();
 
-		prepareWorkspaceCoverage({
-			fileSystem,
-			instrumenter,
-			packages: [
-				{ name: "@halcyon/foo", packageDirectory: FOO_DIR, rojoProjectPath: FOO_PROJECT },
-			],
-			workspaceRoot: WORKSPACE_ROOT,
-		});
+		prepareFoo({ fileSystem, instrumenter });
 
 		expect(instrumenter).toHaveBeenCalledExactlyOnceWith(
 			expect.objectContaining({
-				luauRoot: normalizeWindowsPath(path.join(FOO_DIR, "out")),
+				luauRoot: posixPath(path.join(FOO_DIR, "out")),
 				skipFiles: undefined,
 			}),
 		);
@@ -615,7 +591,10 @@ describe(prepareWorkspaceCoverage, () => {
 		},
 		{
 			name: "schema-invalid manifest",
-			body: JSON.stringify({ files: "not-an-object", version: MANIFEST_VERSION }),
+			body: JSON.stringify({
+				files: "not-an-object",
+				version: MANIFEST_VERSION,
+			}),
 			expectedWarning: "is invalid",
 		},
 	])("should warn and discard the cache for $name", async ({ body, expectedWarning }) => {
@@ -633,18 +612,11 @@ describe(prepareWorkspaceCoverage, () => {
 		volume.writeFileSync(path.join(manifestDirectory, "coverage-manifest.json"), body);
 		const instrumenter = createInstrumenter();
 
-		prepareWorkspaceCoverage({
-			fileSystem,
-			instrumenter,
-			packages: [
-				{ name: "@halcyon/foo", packageDirectory: FOO_DIR, rojoProjectPath: FOO_PROJECT },
-			],
-			workspaceRoot: WORKSPACE_ROOT,
-		});
+		prepareFoo({ fileSystem, instrumenter });
 
 		expect(instrumenter).toHaveBeenCalledExactlyOnceWith(
 			expect.objectContaining({
-				luauRoot: normalizeWindowsPath(path.join(FOO_DIR, "out")),
+				luauRoot: posixPath(path.join(FOO_DIR, "out")),
 				skipFiles: undefined,
 			}),
 		);
@@ -662,66 +634,18 @@ describe(prepareWorkspaceCoverage, () => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
-		const sourceContent = "local x = 1";
-		const absoluteSourceRoot = path.join(FOO_DIR, "out").replaceAll("\\", "/");
-		const fileKey = `${absoluteSourceRoot}/init.luau`;
-		const packageShadow = path
-			.join(WORKSPACE_ROOT, ".jest-roblox/workspace/@halcyon-foo/coverage")
-			.replaceAll("\\", "/");
-		const previousManifest: CoverageManifest = {
-			buildId: "prev-build-id",
-			copyIgnoreHash: DEFAULT_COPY_IGNORE_HASH,
-			files: {
-				[fileKey]: {
-					key: fileKey,
-					coverageMapPath: `${packageShadow}/out/init.cov-map.json`,
-					instrumentedLuauPath: `${packageShadow}/out/init.luau`,
-					originalLuauPath: fileKey,
-					sourceHash: sha256(sourceContent),
-					sourceMapPath: `${packageShadow}/out/init.luau.map`,
-					statementCount: 1,
-				},
-			},
-			generatedAt: "2025-01-01T00:00:00.000Z",
-			instrumenterVersion: INSTRUMENTER_VERSION,
-			luauRoots: [`${packageShadow}/out`],
-			nonInstrumentedFiles: {},
-			shadowDir: packageShadow,
-			version: MANIFEST_VERSION,
-		};
-
 		// Manifest claims init.luau is fully cached, but the shadow files
 		// the record points at don't exist on disk.
-		volume.fromJSON({
-			[FOO_PROJECT]: JSON.stringify({
-				name: "foo-test",
-				tree: {
-					$className: "DataModel",
-					ReplicatedStorage: { Pkg: { $path: "out" } },
-				},
-			}),
-			[path.join(FOO_DIR, "out/init.luau")]: sourceContent,
-			[path.join(
-				WORKSPACE_ROOT,
-				".jest-roblox/workspace/@halcyon-foo/coverage/coverage-manifest.json",
-			)]: JSON.stringify(previousManifest),
-		});
+		seedCachedOut(volume, { manifest: cachedOutManifest({}), shadowOutputs: false });
 		const instrumenter = createInstrumenter();
 
-		prepareWorkspaceCoverage({
-			fileSystem,
-			instrumenter,
-			packages: [
-				{ name: "@halcyon/foo", packageDirectory: FOO_DIR, rojoProjectPath: FOO_PROJECT },
-			],
-			workspaceRoot: WORKSPACE_ROOT,
-		});
+		prepareFoo({ fileSystem, instrumenter });
 
 		// Cache record points at a missing file → drop it from skipFiles
 		// and call the instrumenter for a fresh run.
 		expect(instrumenter).toHaveBeenCalledExactlyOnceWith(
 			expect.objectContaining({
-				luauRoot: normalizeWindowsPath(path.join(FOO_DIR, "out")),
+				luauRoot: posixPath(path.join(FOO_DIR, "out")),
 				skipFiles: new Set(),
 			}),
 		);
@@ -736,63 +660,13 @@ describe(prepareWorkspaceCoverage, () => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
-		const sourceContent = "local x = 1";
-		const absoluteSourceRoot = path.join(FOO_DIR, "out").replaceAll("\\", "/");
-		const fileKey = `${absoluteSourceRoot}/init.luau`;
-		const packageShadow = path
-			.join(WORKSPACE_ROOT, ".jest-roblox/workspace/@halcyon-foo/coverage")
-			.replaceAll("\\", "/");
-		const previousManifest: CoverageManifest = {
-			buildId: "prev-build-id",
-			copyIgnoreHash: DEFAULT_COPY_IGNORE_HASH,
-			files: {
-				[fileKey]: {
-					key: fileKey,
-					coverageMapPath: `${packageShadow}/out/init.cov-map.json`,
-					instrumentedLuauPath: `${packageShadow}/out/init.luau`,
-					originalLuauPath: fileKey,
-					sourceHash: sha256(sourceContent),
-					sourceMapPath: `${packageShadow}/out/init.luau.map`,
-					statementCount: 1,
-				},
-			},
-			generatedAt: "2025-01-01T00:00:00.000Z",
-			instrumenterVersion: INSTRUMENTER_VERSION,
-			luauRoots: [`${packageShadow}/out`],
-			nonInstrumentedFiles: {},
-			shadowDir: packageShadow,
-			version: MANIFEST_VERSION,
-		};
-
-		volume.fromJSON({
-			[`${packageShadow}/out/init.cov-map.json`]: "{}",
-			// Cache hit requires the shadow outputs the manifest points at
-			// to still exist on disk (otherwise computeSkipFiles drops the
-			// record and forces re-instrumentation).
-			[`${packageShadow}/out/init.luau`]: "instrumented",
-			[FOO_PROJECT]: JSON.stringify({
-				name: "foo-test",
-				tree: {
-					$className: "DataModel",
-					ReplicatedStorage: { Pkg: { $path: "out" } },
-				},
-			}),
-			[path.join(FOO_DIR, "out/init.luau")]: sourceContent,
-			[path.join(
-				WORKSPACE_ROOT,
-				".jest-roblox/workspace/@halcyon-foo/coverage/coverage-manifest.json",
-			)]: JSON.stringify(previousManifest),
-		});
+		// Cache hit requires the shadow outputs the manifest points at
+		// to still exist on disk (otherwise computeSkipFiles drops the
+		// record and forces re-instrumentation).
+		seedCachedOut(volume, { manifest: cachedOutManifest({}), shadowOutputs: true });
 		const instrumenter = createInstrumenter();
 
-		prepareWorkspaceCoverage({
-			fileSystem,
-			instrumenter,
-			packages: [
-				{ name: "@halcyon/foo", packageDirectory: FOO_DIR, rojoProjectPath: FOO_PROJECT },
-			],
-			workspaceRoot: WORKSPACE_ROOT,
-		});
+		prepareFoo({ fileSystem, instrumenter });
 
 		expect(instrumenter).not.toHaveBeenCalled();
 	});
@@ -811,9 +685,7 @@ describe(prepareWorkspaceCoverage, () => {
 		const absoluteSourceRoot = path.join(FOO_DIR, "out-test").replaceAll("\\", "/");
 		const helperKey = `${absoluteSourceRoot}/test/fixtures.luau`;
 		const specKey = `${absoluteSourceRoot}/src/foo.spec.luau`;
-		const packageShadow = path
-			.join(WORKSPACE_ROOT, ".jest-roblox/workspace/@halcyon-foo/coverage")
-			.replaceAll("\\", "/");
+		const packageShadow = FOO_SHADOW;
 		const shadowSpecPath = `${packageShadow}/out-test/src/foo.spec.luau`;
 		const previousManifest: CoverageManifest = {
 			buildId: "prev-build-id",
@@ -848,30 +720,17 @@ describe(prepareWorkspaceCoverage, () => {
 			// Cached helper shadow files exist (so instrumentation is skipped
 			// for the helper) — but the spec's shadow file does NOT exist.
 			[`${packageShadow}/out-test/test/fixtures.luau`]: "instrumented",
-			[FOO_PROJECT]: JSON.stringify({
-				name: "foo-test",
-				tree: {
-					$className: "DataModel",
-					ReplicatedStorage: { Tests: { $path: "out-test" } },
-				},
+			...fooProject({
+				$className: "DataModel",
+				ReplicatedStorage: { Tests: { $path: "out-test" } },
 			}),
+			[FOO_MANIFEST_PATH]: JSON.stringify(previousManifest),
 			[path.join(FOO_DIR, "out-test/src/foo.spec.luau")]: specContent,
 			[path.join(FOO_DIR, "out-test/test/fixtures.luau")]: helperContent,
-			[path.join(
-				WORKSPACE_ROOT,
-				".jest-roblox/workspace/@halcyon-foo/coverage/coverage-manifest.json",
-			)]: JSON.stringify(previousManifest),
 		});
 		const instrumenter = createInstrumenter();
 
-		prepareWorkspaceCoverage({
-			fileSystem,
-			instrumenter,
-			packages: [
-				{ name: "@halcyon/foo", packageDirectory: FOO_DIR, rojoProjectPath: FOO_PROJECT },
-			],
-			workspaceRoot: WORKSPACE_ROOT,
-		});
+		prepareFoo({ fileSystem, instrumenter });
 
 		// previousRecord matched the source hash but pointed at a missing
 		// shadow file — re-copy via copyFileSync so the shadow stays
@@ -887,31 +746,12 @@ describe(prepareWorkspaceCoverage, () => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
-		volume.fromJSON({
-			[FOO_PROJECT]: JSON.stringify({
-				name: "foo-test",
-				tree: {
-					$className: "DataModel",
-					ReplicatedStorage: { Tests: { $path: "out-test" } },
-				},
-			}),
-			[path.join(FOO_DIR, "out-test/src/foo.spec.luau")]: "return {}",
-			[path.join(FOO_DIR, "out-test/test/fixtures.luau")]: "local x = 1",
-		});
+		seedMixedOutTest(volume);
 		const instrumenter = createInstrumenter();
 
-		const [result] = prepareWorkspaceCoverage({
-			fileSystem,
-			instrumenter,
-			packages: [
-				{ name: "@halcyon/foo", packageDirectory: FOO_DIR, rojoProjectPath: FOO_PROJECT },
-			],
-			workspaceRoot: WORKSPACE_ROOT,
-		});
+		const [result] = prepareFoo({ fileSystem, instrumenter });
 
-		const manifest = manifestSchema.assert(
-			JSON.parse(volume.readFileSync(result!.manifestPath, "utf-8").toString()),
-		);
+		const manifest = readManifest(volume, result!.manifestPath);
 		const specKey = `${path.join(FOO_DIR, "out-test").replaceAll("\\", "/")}/src/foo.spec.luau`;
 
 		expect(Object.keys(manifest.nonInstrumentedFiles)).toContain(specKey);
@@ -923,25 +763,15 @@ describe(prepareWorkspaceCoverage, () => {
 		const { fileSystem, volume } = createMemoryFileSystem();
 		// $path: "../bar" resolves to the SIBLING package, outside FOO_DIR.
 		volume.fromJSON({
-			[FOO_PROJECT]: JSON.stringify({
-				name: "foo-test",
-				tree: {
-					$className: "DataModel",
-					ReplicatedStorage: { Escape: { $path: "../bar" } },
-				},
+			...fooProject({
+				$className: "DataModel",
+				ReplicatedStorage: { Escape: { $path: "../bar" } },
 			}),
 			[path.join(BAR_DIR, "init.luau")]: "local x = 1",
 		});
 		const instrumenter = createInstrumenter();
 
-		prepareWorkspaceCoverage({
-			fileSystem,
-			instrumenter,
-			packages: [
-				{ name: "@halcyon/foo", packageDirectory: FOO_DIR, rojoProjectPath: FOO_PROJECT },
-			],
-			workspaceRoot: WORKSPACE_ROOT,
-		});
+		prepareFoo({ fileSystem, instrumenter });
 
 		expect(instrumenter).not.toHaveBeenCalled();
 	});
@@ -951,24 +781,14 @@ describe(prepareWorkspaceCoverage, () => {
 
 		const { fileSystem, volume } = createMemoryFileSystem();
 		volume.fromJSON({
-			[FOO_PROJECT]: JSON.stringify({
-				name: "foo-test",
-				tree: {
-					$className: "DataModel",
-					ReplicatedStorage: { Missing: { $path: "does-not-exist" } },
-				},
+			...fooProject({
+				$className: "DataModel",
+				ReplicatedStorage: { Missing: { $path: "does-not-exist" } },
 			}),
 		});
 		const instrumenter = createInstrumenter();
 
-		prepareWorkspaceCoverage({
-			fileSystem,
-			instrumenter,
-			packages: [
-				{ name: "@halcyon/foo", packageDirectory: FOO_DIR, rojoProjectPath: FOO_PROJECT },
-			],
-			workspaceRoot: WORKSPACE_ROOT,
-		});
+		prepareFoo({ fileSystem, instrumenter });
 
 		expect(instrumenter).not.toHaveBeenCalled();
 	});
@@ -987,14 +807,7 @@ describe(prepareWorkspaceCoverage, () => {
 		});
 		const instrumenter = createInstrumenter();
 
-		prepareWorkspaceCoverage({
-			fileSystem,
-			instrumenter,
-			packages: [
-				{ name: "@halcyon/foo", packageDirectory: FOO_DIR, rojoProjectPath: FOO_PROJECT },
-			],
-			workspaceRoot: WORKSPACE_ROOT,
-		});
+		prepareFoo({ fileSystem, instrumenter });
 
 		expect(instrumenter).not.toHaveBeenCalled();
 	});
@@ -1004,25 +817,15 @@ describe(prepareWorkspaceCoverage, () => {
 
 		const { fileSystem, volume } = createMemoryFileSystem();
 		volume.fromJSON({
-			[FOO_PROJECT]: JSON.stringify({
-				name: "foo-test",
-				tree: {
-					$className: "DataModel",
-					ReplicatedStorage: { Single: { $path: "init.luau" } },
-				},
+			...fooProject({
+				$className: "DataModel",
+				ReplicatedStorage: { Single: { $path: "init.luau" } },
 			}),
 			[path.join(FOO_DIR, "init.luau")]: "local x = 1",
 		});
 		const instrumenter = createInstrumenter();
 
-		prepareWorkspaceCoverage({
-			fileSystem,
-			instrumenter,
-			packages: [
-				{ name: "@halcyon/foo", packageDirectory: FOO_DIR, rojoProjectPath: FOO_PROJECT },
-			],
-			workspaceRoot: WORKSPACE_ROOT,
-		});
+		prepareFoo({ fileSystem, instrumenter });
 
 		expect(instrumenter).not.toHaveBeenCalled();
 	});
@@ -1032,26 +835,16 @@ describe(prepareWorkspaceCoverage, () => {
 
 		const { fileSystem, volume } = createMemoryFileSystem();
 		volume.fromJSON({
-			[FOO_PROJECT]: JSON.stringify({
-				name: "foo-test",
-				tree: {
-					$className: "DataModel",
-					ReplicatedStorage: { Empty: { $path: "vendor" } },
-				},
+			...fooProject({
+				$className: "DataModel",
+				ReplicatedStorage: { Empty: { $path: "vendor" } },
 			}),
 			[path.join(FOO_DIR, "vendor/readme.txt")]: "",
 			[path.join(FOO_DIR, "vendor/sub/data.json")]: "{}",
 		});
 		const instrumenter = createInstrumenter();
 
-		prepareWorkspaceCoverage({
-			fileSystem,
-			instrumenter,
-			packages: [
-				{ name: "@halcyon/foo", packageDirectory: FOO_DIR, rojoProjectPath: FOO_PROJECT },
-			],
-			workspaceRoot: WORKSPACE_ROOT,
-		});
+		prepareFoo({ fileSystem, instrumenter });
 
 		expect(instrumenter).not.toHaveBeenCalled();
 	});
@@ -1061,14 +854,11 @@ describe(prepareWorkspaceCoverage, () => {
 
 		const { fileSystem, volume } = createMemoryFileSystem();
 		volume.fromJSON({
-			[FOO_PROJECT]: JSON.stringify({
-				name: "foo-test",
-				tree: {
-					$className: "DataModel",
-					ReplicatedStorage: {
-						Code: { $path: "lua-code" },
-						Docs: { $path: "docs" },
-					},
+			...fooProject({
+				$className: "DataModel",
+				ReplicatedStorage: {
+					Code: { $path: "lua-code" },
+					Docs: { $path: "docs" },
 				},
 			}),
 			[path.join(FOO_DIR, "docs/module.txt")]: "not luau",
@@ -1076,20 +866,10 @@ describe(prepareWorkspaceCoverage, () => {
 		});
 		const instrumenter = createInstrumenter();
 
-		const [result] = prepareWorkspaceCoverage({
-			fileSystem,
-			instrumenter,
-			packages: [
-				{ name: "@halcyon/foo", packageDirectory: FOO_DIR, rojoProjectPath: FOO_PROJECT },
-			],
-			workspaceRoot: WORKSPACE_ROOT,
-		});
+		const [result] = prepareFoo({ fileSystem, instrumenter });
 
-		expect(instrumenter).toHaveBeenCalledExactlyOnceWith(
-			expect.objectContaining({
-				luauRoot: normalizeWindowsPath(path.join(FOO_DIR, "lua-code")),
-			}),
-		);
+		expectInstrumentedOnce({ instrumenter, root: "lua-code" });
+
 		expect(result!.coverageRoots.map((entry): string => entry.luauRoot)).toStrictEqual([
 			"lua-code",
 		]);
@@ -1100,12 +880,9 @@ describe(prepareWorkspaceCoverage, () => {
 
 		const { fileSystem, volume } = createMemoryFileSystem();
 		volume.fromJSON({
-			[FOO_PROJECT]: JSON.stringify({
-				name: "foo-test",
-				tree: {
-					$className: "DataModel",
-					ReplicatedStorage: { Tests: { $path: "out-test" } },
-				},
+			...fooProject({
+				$className: "DataModel",
+				ReplicatedStorage: { Tests: { $path: "out-test" } },
 			}),
 			[path.join(FOO_DIR, "out-test/__snapshots__/foo.spec.snap.luau")]: "",
 			[path.join(FOO_DIR, "out-test/src/bar.test.luau")]: "",
@@ -1113,14 +890,7 @@ describe(prepareWorkspaceCoverage, () => {
 		});
 		const instrumenter = createInstrumenter();
 
-		const result = prepareWorkspaceCoverage({
-			fileSystem,
-			instrumenter,
-			packages: [
-				{ name: "@halcyon/foo", packageDirectory: FOO_DIR, rojoProjectPath: FOO_PROJECT },
-			],
-			workspaceRoot: WORKSPACE_ROOT,
-		});
+		const result = prepareFoo({ fileSystem, instrumenter });
 
 		// `out-test/` only contains files the instrumenter would skip
 		// (`.spec.luau`, `.test.luau`, `.snap.luau` — see `parse-ast.luau`).
@@ -1143,27 +913,10 @@ describe(prepareWorkspaceCoverage, () => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
-		volume.fromJSON({
-			[FOO_PROJECT]: JSON.stringify({
-				name: "foo-test",
-				tree: {
-					$className: "DataModel",
-					ReplicatedStorage: { Tests: { $path: "out-test" } },
-				},
-			}),
-			[path.join(FOO_DIR, "out-test/src/foo.spec.luau")]: "return {}",
-			[path.join(FOO_DIR, "out-test/test/fixtures.luau")]: "local x = 1",
-		});
+		seedMixedOutTest(volume);
 		const instrumenter = createInstrumenter();
 
-		const result = prepareWorkspaceCoverage({
-			fileSystem,
-			instrumenter,
-			packages: [
-				{ name: "@halcyon/foo", packageDirectory: FOO_DIR, rojoProjectPath: FOO_PROJECT },
-			],
-			workspaceRoot: WORKSPACE_ROOT,
-		});
+		const result = prepareFoo({ fileSystem, instrumenter });
 
 		expect(result[0]!.coverageRoots).toHaveLength(1);
 
@@ -1184,14 +937,11 @@ describe(prepareWorkspaceCoverage, () => {
 
 		const { fileSystem, volume } = createMemoryFileSystem();
 		volume.fromJSON({
-			[FOO_PROJECT]: JSON.stringify({
-				name: "foo-test",
-				tree: {
-					$className: "DataModel",
-					ReplicatedStorage: {
-						Pkg: { $path: "out" },
-						rbxts_include: { $path: "include" },
-					},
+			...fooProject({
+				$className: "DataModel",
+				ReplicatedStorage: {
+					Pkg: { $path: "out" },
+					rbxts_include: { $path: "include" },
 				},
 			}),
 			[path.join(FOO_DIR, "include/Promise.lua")]: "local x = 1",
@@ -1200,21 +950,16 @@ describe(prepareWorkspaceCoverage, () => {
 		});
 		const instrumenter = createInstrumenter();
 
-		const result = prepareWorkspaceCoverage({
-			fileSystem,
-			instrumenter,
-			packages: [
-				{ name: "@halcyon/foo", packageDirectory: FOO_DIR, rojoProjectPath: FOO_PROJECT },
-			],
-			workspaceRoot: WORKSPACE_ROOT,
-		});
+		const result = prepareFoo({ fileSystem, instrumenter });
 
 		expect(instrumenter).toHaveBeenCalledExactlyOnceWith(
-			expect.objectContaining({ luauRoot: normalizeWindowsPath(path.join(FOO_DIR, "out")) }),
+			expect.objectContaining({
+				luauRoot: posixPath(path.join(FOO_DIR, "out")),
+			}),
 		);
 		expect(result[0]!.coverageRoots).toStrictEqual([
 			{
-				luauRoot: toPosixRoot("out"),
+				luauRoot: posixRoot("out"),
 				shadowDir: path
 					.join(WORKSPACE_ROOT, ".jest-roblox/workspace/@halcyon-foo/coverage/out")
 					.replaceAll("\\", "/"),
@@ -1227,28 +972,20 @@ describe(prepareWorkspaceCoverage, () => {
 
 		const { fileSystem, volume } = createMemoryFileSystem();
 		volume.fromJSON({
-			[FOO_PROJECT]: JSON.stringify({
-				name: "foo-test",
-				tree: {
-					$className: "DataModel",
-					ReplicatedStorage: { A: { $path: "src" }, B: { $path: "src" } },
-				},
+			...fooProject({
+				$className: "DataModel",
+				ReplicatedStorage: { A: { $path: "src" }, B: { $path: "src" } },
 			}),
 			[path.join(FOO_DIR, "src/init.luau")]: "local x = 1",
 		});
 		const instrumenter = createInstrumenter();
 
-		prepareWorkspaceCoverage({
-			fileSystem,
-			instrumenter,
-			packages: [
-				{ name: "@halcyon/foo", packageDirectory: FOO_DIR, rojoProjectPath: FOO_PROJECT },
-			],
-			workspaceRoot: WORKSPACE_ROOT,
-		});
+		prepareFoo({ fileSystem, instrumenter });
 
 		expect(instrumenter).toHaveBeenCalledExactlyOnceWith(
-			expect.objectContaining({ luauRoot: normalizeWindowsPath(path.join(FOO_DIR, "src")) }),
+			expect.objectContaining({
+				luauRoot: posixPath(path.join(FOO_DIR, "src")),
+			}),
 		);
 	});
 
@@ -1259,17 +996,12 @@ describe(prepareWorkspaceCoverage, () => {
 		seedPackage(volume, { packageDirectory: FOO_DIR });
 		const instrumenter = createInstrumenter();
 
-		prepareWorkspaceCoverage({
-			fileSystem,
-			instrumenter,
-			packages: [
-				{ name: "@halcyon/foo", packageDirectory: FOO_DIR, rojoProjectPath: FOO_PROJECT },
-			],
-			workspaceRoot: WORKSPACE_ROOT,
-		});
+		prepareFoo({ fileSystem, instrumenter });
 
 		expect(instrumenter).toHaveBeenCalledExactlyOnceWith(
-			expect.objectContaining({ luauRoot: normalizeWindowsPath(path.join(FOO_DIR, "out")) }),
+			expect.objectContaining({
+				luauRoot: posixPath(path.join(FOO_DIR, "out")),
+			}),
 		);
 	});
 
@@ -1277,22 +1009,17 @@ describe(prepareWorkspaceCoverage, () => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
-		seedPackage(volume, { luauRoots: ["unmounted"], packageDirectory: FOO_DIR });
+		seedPackage(volume, {
+			luauRoots: ["unmounted"],
+			packageDirectory: FOO_DIR,
+		});
 		const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
 		const instrumenter = createInstrumenter();
 
-		prepareWorkspaceCoverage({
+		prepareFoo({
+			descriptor: { luauRoots: ["unmounted"] },
 			fileSystem,
 			instrumenter,
-			packages: [
-				{
-					name: "@halcyon/foo",
-					luauRoots: ["unmounted"],
-					packageDirectory: FOO_DIR,
-					rojoProjectPath: FOO_PROJECT,
-				},
-			],
-			workspaceRoot: WORKSPACE_ROOT,
 		});
 
 		expect(instrumenter).not.toHaveBeenCalled();
@@ -1307,15 +1034,12 @@ describe(prepareWorkspaceCoverage, () => {
 		const { fileSystem, volume } = createMemoryFileSystem();
 		const outsideDirectory = path.join(WORKSPACE_ROOT, "outside");
 		volume.fromJSON({
-			[FOO_PROJECT]: JSON.stringify({
-				name: "foo-test",
-				tree: {
-					$className: "DataModel",
-					ReplicatedStorage: {
-						Outside: { $path: outsideDirectory },
-						Parent: { $path: "../bar" },
-						Root: { $path: "." },
-					},
+			...fooProject({
+				$className: "DataModel",
+				ReplicatedStorage: {
+					Outside: { $path: outsideDirectory },
+					Parent: { $path: "../bar" },
+					Root: { $path: "." },
 				},
 			}),
 			[path.join(BAR_DIR, "init.luau")]: "return {}",
@@ -1325,18 +1049,10 @@ describe(prepareWorkspaceCoverage, () => {
 		const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
 		const instrumenter = createInstrumenter();
 
-		prepareWorkspaceCoverage({
+		prepareFoo({
+			descriptor: { luauRoots: [".", "../bar", outsideDirectory] },
 			fileSystem,
 			instrumenter,
-			packages: [
-				{
-					name: "@halcyon/foo",
-					luauRoots: [".", "../bar", outsideDirectory],
-					packageDirectory: FOO_DIR,
-					rojoProjectPath: FOO_PROJECT,
-				},
-			],
-			workspaceRoot: WORKSPACE_ROOT,
 		});
 
 		expect(instrumenter).not.toHaveBeenCalled();
@@ -1348,14 +1064,11 @@ describe(prepareWorkspaceCoverage, () => {
 
 		const { fileSystem, volume } = createMemoryFileSystem();
 		volume.fromJSON({
-			[FOO_PROJECT]: JSON.stringify({
-				name: "foo-test",
-				tree: {
-					$className: "DataModel",
-					ReplicatedStorage: {
-						Out: { $path: "out" },
-						Root: { $path: "." },
-					},
+			...fooProject({
+				$className: "DataModel",
+				ReplicatedStorage: {
+					Out: { $path: "out" },
+					Root: { $path: "." },
 				},
 			}),
 			[path.join(FOO_DIR, "init.luau")]: "return {}",
@@ -1363,17 +1076,12 @@ describe(prepareWorkspaceCoverage, () => {
 		});
 		const instrumenter = createInstrumenter();
 
-		prepareWorkspaceCoverage({
-			fileSystem,
-			instrumenter,
-			packages: [
-				{ name: "@halcyon/foo", packageDirectory: FOO_DIR, rojoProjectPath: FOO_PROJECT },
-			],
-			workspaceRoot: WORKSPACE_ROOT,
-		});
+		prepareFoo({ fileSystem, instrumenter });
 
 		expect(instrumenter).toHaveBeenCalledExactlyOnceWith(
-			expect.objectContaining({ luauRoot: normalizeWindowsPath(path.join(FOO_DIR, "out")) }),
+			expect.objectContaining({
+				luauRoot: posixPath(path.join(FOO_DIR, "out")),
+			}),
 		);
 	});
 
@@ -1391,18 +1099,10 @@ describe(prepareWorkspaceCoverage, () => {
 		});
 		const instrumenter = createInstrumenter();
 
-		prepareWorkspaceCoverage({
+		prepareFoo({
+			descriptor: { coveragePathIgnorePatterns: ["generated"] },
 			fileSystem,
 			instrumenter,
-			packages: [
-				{
-					name: "@halcyon/foo",
-					coveragePathIgnorePatterns: ["generated"],
-					packageDirectory: FOO_DIR,
-					rojoProjectPath: FOO_PROJECT,
-				},
-			],
-			workspaceRoot: WORKSPACE_ROOT,
 		});
 
 		expect(instrumenter).not.toHaveBeenCalled();
@@ -1414,22 +1114,12 @@ describe(prepareWorkspaceCoverage, () => {
 		const { fileSystem, volume } = createMemoryFileSystem();
 		// Package whose tree has no $path entries → nothing to instrument
 		volume.fromJSON({
-			[FOO_PROJECT]: JSON.stringify({
-				name: "foo-test",
-				tree: { $className: "DataModel" },
-			}),
+			...fooProject({ $className: "DataModel" }),
 		});
 		const instrumenter = createInstrumenter();
 		const exists = vi.spyOn(fileSystem, "existsSync");
 
-		const result = prepareWorkspaceCoverage({
-			fileSystem,
-			instrumenter,
-			packages: [
-				{ name: "@halcyon/foo", packageDirectory: FOO_DIR, rojoProjectPath: FOO_PROJECT },
-			],
-			workspaceRoot: WORKSPACE_ROOT,
-		});
+		const result = prepareFoo({ fileSystem, instrumenter });
 
 		expect(exists).toHaveBeenCalledExactlyOnceWith(
 			path.join(WORKSPACE_ROOT, ".jest-roblox/workspace", "@halcyon-foo", "coverage"),
@@ -1455,12 +1145,32 @@ describe(prepareWorkspaceCoverage, () => {
 
 		function seedMultiMount(volume: MemoryVolume): void {
 			volume.fromJSON({
-				[FOO_PROJECT]: JSON.stringify({
-					name: "foo-test",
-					tree: multiMountTree,
-				}),
+				...fooProject(multiMountTree),
 				[path.join(FOO_DIR, "src/init.luau")]: "local x = 1",
 				[path.join(FOO_DIR, "vendored-packages/dep/init.luau")]: "local y = 2",
+			});
+		}
+
+		function rebuildOverPriorManifest({
+			fileSystem,
+			manifest,
+			staleShadow,
+			volume,
+		}: {
+			fileSystem: FileSystem;
+			manifest: CoverageManifest;
+			staleShadow: string;
+			volume: MemoryVolume;
+		}): void {
+			seedMultiMount(volume);
+			volume.fromJSON({
+				[FOO_MANIFEST_PATH]: JSON.stringify(manifest),
+				[staleShadow]: "return {}",
+			});
+			prepareFoo({
+				descriptor: { luauRoots: ["src"] },
+				fileSystem,
+				instrumenter: createInstrumenter(),
 			});
 		}
 
@@ -1471,55 +1181,37 @@ describe(prepareWorkspaceCoverage, () => {
 			seedMultiMount(volume);
 			const instrumenter = createInstrumenter();
 
-			const [result] = prepareWorkspaceCoverage({
+			const [result] = prepareFoo({
+				descriptor: { luauRoots: ["src"] },
 				fileSystem,
 				instrumenter,
-				packages: [
-					{
-						name: "@halcyon/foo",
-						luauRoots: ["src"],
-						packageDirectory: FOO_DIR,
-						rojoProjectPath: FOO_PROJECT,
-					},
-				],
-				workspaceRoot: WORKSPACE_ROOT,
 			});
 
-			expect(instrumenter).toHaveBeenCalledExactlyOnceWith(
-				expect.objectContaining({
-					luauRoot: normalizeWindowsPath(path.join(FOO_DIR, "src")),
-				}),
-			);
+			expectInstrumentedOnce({ instrumenter, root: "src" });
+
 			expect(result!.coverageRoots.map((entry): string => entry.luauRoot)).toStrictEqual([
 				"src",
 			]);
 
-			const manifest = manifestSchema.assert(
-				JSON.parse(volume.readFileSync(result!.manifestPath, "utf-8").toString()),
-			);
+			const manifest = readManifest(volume, result!.manifestPath);
 
 			expect(manifest.luauRoots).toHaveLength(1);
 		});
 
-		it("should preserve existing behavior (walk every $path) when descriptor.luauRoots is undefined", async () => {
+		// Workspace-mode reads ignore patterns from each package's own config
+		// (or DEFAULT_CONFIG when omitted) — not from a workspace-root
+		// jest.config — so an undefined descriptor field walks both mounts.
+		it.for([
+			"should preserve existing behavior (walk every $path) when descriptor.luauRoots is undefined",
+			"should ignore workspace-root coveragePathIgnorePatterns and inherit DEFAULT_CONFIG when descriptor field is undefined",
+		])("%s", async () => {
 			expect.assertions(2);
 
 			const { fileSystem, volume } = createMemoryFileSystem();
 			seedMultiMount(volume);
 			const instrumenter = createInstrumenter();
 
-			const [result] = prepareWorkspaceCoverage({
-				fileSystem,
-				instrumenter,
-				packages: [
-					{
-						name: "@halcyon/foo",
-						packageDirectory: FOO_DIR,
-						rojoProjectPath: FOO_PROJECT,
-					},
-				],
-				workspaceRoot: WORKSPACE_ROOT,
-			});
+			const [result] = prepareFoo({ fileSystem, instrumenter });
 
 			expect(instrumenter).toHaveBeenCalledTimes(2);
 			expect(
@@ -1535,18 +1227,10 @@ describe(prepareWorkspaceCoverage, () => {
 			const instrumenter = createInstrumenter();
 			const writeSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
 
-			const [result] = prepareWorkspaceCoverage({
+			const [result] = prepareFoo({
+				descriptor: { luauRoots: ["build/out"] },
 				fileSystem,
 				instrumenter,
-				packages: [
-					{
-						name: "@halcyon/foo",
-						luauRoots: ["build/out"],
-						packageDirectory: FOO_DIR,
-						rojoProjectPath: FOO_PROJECT,
-					},
-				],
-				workspaceRoot: WORKSPACE_ROOT,
 			});
 
 			expect(instrumenter).not.toHaveBeenCalled();
@@ -1564,54 +1248,11 @@ describe(prepareWorkspaceCoverage, () => {
 			seedMultiMount(volume);
 			const instrumenter = createInstrumenter();
 
-			prepareWorkspaceCoverage({
-				fileSystem,
-				instrumenter,
-				packages: [
-					{
-						name: "@halcyon/foo",
-						luauRoots: [],
-						packageDirectory: FOO_DIR,
-						rojoProjectPath: FOO_PROJECT,
-					},
-				],
-				workspaceRoot: WORKSPACE_ROOT,
-			});
+			prepareFoo({ descriptor: { luauRoots: [] }, fileSystem, instrumenter });
 
 			// `[]` means auto-detect (matches single mode's `> 0` gate at
 			// prepare.ts:187). Both mounts get instrumented.
 			expect(instrumenter).toHaveBeenCalledTimes(2);
-		});
-
-		it("should ignore workspace-root coveragePathIgnorePatterns and inherit DEFAULT_CONFIG when descriptor field is undefined", async () => {
-			expect.assertions(2);
-
-			const { fileSystem, volume } = createMemoryFileSystem();
-			// Workspace-mode reads ignore patterns from each
-			// package's own config (or DEFAULT_CONFIG when omitted) — not
-			// from a workspace-root jest.config. The descriptor has no
-			// per-pkg override here, so the workspace-root custom value
-			// below must be ignored and both rojo mounts instrumented.
-			seedMultiMount(volume);
-			const instrumenter = createInstrumenter();
-
-			const [result] = prepareWorkspaceCoverage({
-				fileSystem,
-				instrumenter,
-				packages: [
-					{
-						name: "@halcyon/foo",
-						packageDirectory: FOO_DIR,
-						rojoProjectPath: FOO_PROJECT,
-					},
-				],
-				workspaceRoot: WORKSPACE_ROOT,
-			});
-
-			expect(instrumenter).toHaveBeenCalledTimes(2);
-			expect(
-				result!.coverageRoots.map((entry): string => entry.luauRoot).sort(),
-			).toStrictEqual(["src", "vendored-packages"]);
 		});
 
 		it("should honor per-pkg coveragePathIgnorePatterns over the DEFAULT_CONFIG fallback", async () => {
@@ -1621,25 +1262,14 @@ describe(prepareWorkspaceCoverage, () => {
 			seedMultiMount(volume);
 			const instrumenter = createInstrumenter();
 
-			const [result] = prepareWorkspaceCoverage({
+			const [result] = prepareFoo({
+				descriptor: { coveragePathIgnorePatterns: ["**/vendored-packages/**"] },
 				fileSystem,
 				instrumenter,
-				packages: [
-					{
-						name: "@halcyon/foo",
-						coveragePathIgnorePatterns: ["**/vendored-packages/**"],
-						packageDirectory: FOO_DIR,
-						rojoProjectPath: FOO_PROJECT,
-					},
-				],
-				workspaceRoot: WORKSPACE_ROOT,
 			});
 
-			expect(instrumenter).toHaveBeenCalledExactlyOnceWith(
-				expect.objectContaining({
-					luauRoot: normalizeWindowsPath(path.join(FOO_DIR, "src")),
-				}),
-			);
+			expectInstrumentedOnce({ instrumenter, root: "src" });
+
 			expect(result!.coverageRoots.map((entry): string => entry.luauRoot)).toStrictEqual([
 				"src",
 			]);
@@ -1654,19 +1284,13 @@ describe(prepareWorkspaceCoverage, () => {
 			volume.writeFileSync(path.join(FOO_DIR, "src/build.tsbuildinfo"), "{}");
 			const instrumenter = createInstrumenter();
 
-			const [result] = prepareWorkspaceCoverage({
+			const [result] = prepareFoo({
+				descriptor: {
+					coverageCopyIgnorePatterns: ["**/*.tsbuildinfo"],
+					luauRoots: ["src"],
+				},
 				fileSystem,
 				instrumenter,
-				packages: [
-					{
-						name: "@halcyon/foo",
-						coverageCopyIgnorePatterns: ["**/*.tsbuildinfo"],
-						luauRoots: ["src"],
-						packageDirectory: FOO_DIR,
-						rojoProjectPath: FOO_PROJECT,
-					},
-				],
-				workspaceRoot: WORKSPACE_ROOT,
 			});
 
 			const mirrored = Object.keys(result!.manifest.nonInstrumentedFiles);
@@ -1682,9 +1306,7 @@ describe(prepareWorkspaceCoverage, () => {
 			// Workspace mode writes its own manifest and runs its own
 			// incremental gate, so the single/multi warm-cache test cannot
 			// speak for it.
-			const packageShadow = path
-				.join(WORKSPACE_ROOT, ".jest-roblox/workspace/@halcyon-foo/coverage")
-				.replaceAll("\\", "/");
+			const packageShadow = FOO_SHADOW;
 			const fileKey = `${path.join(FOO_DIR, "src").replaceAll("\\", "/")}/init.luau`;
 			const mirroredKey = `${path.join(FOO_DIR, "src").replaceAll("\\", "/")}/build.tsbuildinfo`;
 			const previousManifest: CoverageManifest = {
@@ -1730,26 +1352,20 @@ describe(prepareWorkspaceCoverage, () => {
 			volume.writeFileSync(`${packageShadow}/src/init.cov-map.json`, "{}");
 			const instrumenter = createInstrumenter();
 
-			const [result] = prepareWorkspaceCoverage({
+			const [result] = prepareFoo({
+				descriptor: {
+					coverageCopyIgnorePatterns: ["**/*.tsbuildinfo"],
+					luauRoots: ["src"],
+				},
 				fileSystem,
 				instrumenter,
-				packages: [
-					{
-						name: "@halcyon/foo",
-						coverageCopyIgnorePatterns: ["**/*.tsbuildinfo"],
-						luauRoots: ["src"],
-						packageDirectory: FOO_DIR,
-						rojoProjectPath: FOO_PROJECT,
-					},
-				],
-				workspaceRoot: WORKSPACE_ROOT,
 			});
 
 			expect(volume.existsSync(`${packageShadow}/src/init.cov-map.json`)).toBeFalse();
 			expect(result!.manifest.nonInstrumentedFiles).not.toHaveProperty(mirroredKey);
 			expect(instrumenter).toHaveBeenCalledExactlyOnceWith(
 				expect.objectContaining({
-					luauRoot: normalizeWindowsPath(path.join(FOO_DIR, "src")),
+					luauRoot: posixPath(path.join(FOO_DIR, "src")),
 				}),
 			);
 		});
@@ -1766,21 +1382,14 @@ describe(prepareWorkspaceCoverage, () => {
 			seedMultiMount(volume);
 			const instrumenter = createInstrumenter();
 
-			const [result] = prepareWorkspaceCoverage({
+			const [result] = prepareFoo({
+				descriptor: { coveragePathIgnorePatterns: [] },
 				fileSystem,
 				instrumenter,
-				packages: [
-					{
-						name: "@halcyon/foo",
-						coveragePathIgnorePatterns: [],
-						packageDirectory: FOO_DIR,
-						rojoProjectPath: FOO_PROJECT,
-					},
-				],
-				workspaceRoot: WORKSPACE_ROOT,
 			});
 
 			expect(instrumenter).toHaveBeenCalledTimes(2);
+
 			expect(
 				result!.coverageRoots.map((entry): string => entry.luauRoot).sort(),
 			).toStrictEqual(["src", "vendored-packages"]);
@@ -1794,38 +1403,24 @@ describe(prepareWorkspaceCoverage, () => {
 			// `luauRoot` underneath it. The mount above is demoted onto its
 			// spine copy, so the place loads the instrumented subtree.
 			volume.fromJSON({
-				[FOO_PROJECT]: JSON.stringify({
-					name: "foo-test",
-					tree: {
-						$className: "DataModel",
-						ReplicatedStorage: { Src: { $path: "src" } },
-					},
+				...fooProject({
+					$className: "DataModel",
+					ReplicatedStorage: { Src: { $path: "src" } },
 				}),
 				[path.join(FOO_DIR, "src/client/init.luau")]: "local x = 1",
 			});
 			const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
 			const instrumenter = createInstrumenter();
 
-			const [result] = prepareWorkspaceCoverage({
+			const [result] = prepareFoo({
+				descriptor: { luauRoots: ["src/client"] },
 				fileSystem,
 				instrumenter,
-				packages: [
-					{
-						name: "@halcyon/foo",
-						luauRoots: ["src/client"],
-						packageDirectory: FOO_DIR,
-						rojoProjectPath: FOO_PROJECT,
-					},
-				],
-				workspaceRoot: WORKSPACE_ROOT,
 			});
 
-			expect(instrumenter).toHaveBeenCalledExactlyOnceWith(
-				expect.objectContaining({
-					luauRoot: normalizeWindowsPath(path.join(FOO_DIR, "src/client")),
-				}),
-			);
-			expect(result!.coverageRoots.map((root): string => root.luauRoot)).toStrictEqual([
+			expectInstrumentedOnce({ instrumenter, root: "src/client" });
+
+			expect(result!.coverageRoots.map((entry): string => entry.luauRoot)).toStrictEqual([
 				"src/client",
 			]);
 			expect(result!.coverageSpine.map((entry): string => entry.luauRoot)).toStrictEqual([
@@ -1834,86 +1429,42 @@ describe(prepareWorkspaceCoverage, () => {
 			expect(stderr).not.toHaveBeenCalled();
 		});
 
-		it("should demote the deepest containing mount when several sit above the root", async () => {
-			expect.assertions(1);
+		// `src` and `src/client` both sit above `src/client/ui`, and
+		// `src/client` is the one the place reads it through. Declared in
+		// both orders so the deeper mount has to displace an incumbent, and
+		// the shallower one must not displace the incumbent it contains.
+		it.for([
+			{
+				mounts: { ASrc: { $path: "src" }, BClient: { $path: "src/client" } },
+				order: "shallow-first",
+			},
+			{
+				mounts: { AClient: { $path: "src/client" }, BSrc: { $path: "src" } },
+				order: "deep-first",
+			},
+		])(
+			"should demote the deepest containing mount when declared $order",
+			async ({ mounts }) => {
+				expect.assertions(1);
 
-			const { fileSystem, volume } = createMemoryFileSystem();
-			// `src` and `src/client` both sit above `src/client/ui`, and
-			// `src/client` is the one the place reads it through. Declared
-			// shallow-first so the deeper mount has to displace an incumbent.
-			volume.fromJSON({
-				[FOO_PROJECT]: JSON.stringify({
-					name: "foo-test",
-					tree: {
-						$className: "DataModel",
-						ReplicatedStorage: {
-							ASrc: { $path: "src" },
-							BClient: { $path: "src/client" },
-						},
-					},
-				}),
-				[path.join(FOO_DIR, "src/client/ui/init.luau")]: "local x = 1",
-			});
-			const instrumenter = createInstrumenter();
+				const { fileSystem, volume } = createMemoryFileSystem();
+				volume.fromJSON({
+					...fooProject({ $className: "DataModel", ReplicatedStorage: mounts }),
+					[path.join(FOO_DIR, "src/client/ui/init.luau")]: "local x = 1",
+				});
+				const instrumenter = createInstrumenter();
 
-			const [result] = prepareWorkspaceCoverage({
-				fileSystem,
-				instrumenter,
-				packages: [
-					{
-						name: "@halcyon/foo",
-						luauRoots: ["src/client/ui"],
-						packageDirectory: FOO_DIR,
-						rojoProjectPath: FOO_PROJECT,
-					},
-				],
-				workspaceRoot: WORKSPACE_ROOT,
-			});
+				const [result] = prepareFoo({
+					descriptor: { luauRoots: ["src/client/ui"] },
+					fileSystem,
+					instrumenter,
+				});
 
-			expect(result!.coverageSpine.map((entry): string => entry.luauRoot)).toStrictEqual([
-				"src/client",
-			]);
-		});
-
-		it("should demote the deepest containing mount whichever order they are declared", async () => {
-			expect.assertions(1);
-
-			const { fileSystem, volume } = createMemoryFileSystem();
-			// The test above, deep-first: the shallower mount must not displace
-			// the incumbent it contains.
-			volume.fromJSON({
-				[FOO_PROJECT]: JSON.stringify({
-					name: "foo-test",
-					tree: {
-						$className: "DataModel",
-						ReplicatedStorage: {
-							AClient: { $path: "src/client" },
-							BSrc: { $path: "src" },
-						},
-					},
-				}),
-				[path.join(FOO_DIR, "src/client/ui/init.luau")]: "local x = 1",
-			});
-			const instrumenter = createInstrumenter();
-
-			const [result] = prepareWorkspaceCoverage({
-				fileSystem,
-				instrumenter,
-				packages: [
-					{
-						name: "@halcyon/foo",
-						luauRoots: ["src/client/ui"],
-						packageDirectory: FOO_DIR,
-						rojoProjectPath: FOO_PROJECT,
-					},
-				],
-				workspaceRoot: WORKSPACE_ROOT,
-			});
-
-			expect(result!.coverageSpine.map((entry): string => entry.luauRoot)).toStrictEqual([
-				"src/client",
-			]);
-		});
+				expect(result!.coverageSpine.map((entry): string => entry.luauRoot)).toStrictEqual([
+					"src/client",
+				]);
+			},
+		);
 
 		it("should reject a luauRoot that escapes the package through a traversal", async () => {
 			expect.assertions(2);
@@ -1923,30 +1474,19 @@ describe(prepareWorkspaceCoverage, () => {
 			// lands outside the package — on a directory the rojo tree really
 			// does mount, so reachability alone would wave it through.
 			volume.fromJSON({
-				[FOO_PROJECT]: JSON.stringify({
-					name: "foo-test",
-					tree: {
-						$className: "DataModel",
-						ReplicatedStorage: { Bar: { $path: "../bar" } },
-					},
+				...fooProject({
+					$className: "DataModel",
+					ReplicatedStorage: { Bar: { $path: "../bar" } },
 				}),
 				[path.join(BAR_DIR, "init.luau")]: "local x = 1",
 			});
 			const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
 			const instrumenter = createInstrumenter();
 
-			prepareWorkspaceCoverage({
+			prepareFoo({
+				descriptor: { luauRoots: ["src/../../bar"] },
 				fileSystem,
 				instrumenter,
-				packages: [
-					{
-						name: "@halcyon/foo",
-						luauRoots: ["src/../../bar"],
-						packageDirectory: FOO_DIR,
-						rojoProjectPath: FOO_PROJECT,
-					},
-				],
-				workspaceRoot: WORKSPACE_ROOT,
 			});
 
 			expect(instrumenter).not.toHaveBeenCalled();
@@ -1960,30 +1500,19 @@ describe(prepareWorkspaceCoverage, () => {
 
 			const { fileSystem, volume } = createMemoryFileSystem();
 			volume.fromJSON({
-				[FOO_PROJECT]: JSON.stringify({
-					name: "foo-test",
-					tree: {
-						$className: "DataModel",
-						ReplicatedStorage: { Root: { $path: "." } },
-					},
+				...fooProject({
+					$className: "DataModel",
+					ReplicatedStorage: { Root: { $path: "." } },
 				}),
 				[path.join(FOO_DIR, "src/init.luau")]: "local x = 1",
 			});
 			const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
 			const instrumenter = createInstrumenter();
 
-			prepareWorkspaceCoverage({
+			prepareFoo({
+				descriptor: { luauRoots: ["src/.."] },
 				fileSystem,
 				instrumenter,
-				packages: [
-					{
-						name: "@halcyon/foo",
-						luauRoots: ["src/.."],
-						packageDirectory: FOO_DIR,
-						rojoProjectPath: FOO_PROJECT,
-					},
-				],
-				workspaceRoot: WORKSPACE_ROOT,
 			});
 
 			expect(instrumenter).not.toHaveBeenCalled();
@@ -1998,36 +1527,22 @@ describe(prepareWorkspaceCoverage, () => {
 			const { fileSystem, volume } = createMemoryFileSystem();
 			// `..cache` is a directory inside the package, not a step out of it.
 			volume.fromJSON({
-				[FOO_PROJECT]: JSON.stringify({
-					name: "foo-test",
-					tree: {
-						$className: "DataModel",
-						ReplicatedStorage: { Cache: { $path: "..cache" } },
-					},
+				...fooProject({
+					$className: "DataModel",
+					ReplicatedStorage: { Cache: { $path: "..cache" } },
 				}),
 				[path.join(FOO_DIR, "..cache/init.luau")]: "local x = 1",
 			});
 			const instrumenter = createInstrumenter();
 
-			const [result] = prepareWorkspaceCoverage({
+			const [result] = prepareFoo({
+				descriptor: { luauRoots: ["..cache"] },
 				fileSystem,
 				instrumenter,
-				packages: [
-					{
-						name: "@halcyon/foo",
-						luauRoots: ["..cache"],
-						packageDirectory: FOO_DIR,
-						rojoProjectPath: FOO_PROJECT,
-					},
-				],
-				workspaceRoot: WORKSPACE_ROOT,
 			});
 
-			expect(instrumenter).toHaveBeenCalledExactlyOnceWith(
-				expect.objectContaining({
-					luauRoot: normalizeWindowsPath(path.join(FOO_DIR, "..cache")),
-				}),
-			);
+			expectInstrumentedOnce({ instrumenter, root: "..cache" });
+
 			expect(result!.coverageRoots.map((entry): string => entry.luauRoot)).toStrictEqual([
 				"..cache",
 			]);
@@ -2038,31 +1553,16 @@ describe(prepareWorkspaceCoverage, () => {
 
 			const { fileSystem, volume } = createMemoryFileSystem();
 			volume.fromJSON({
-				[FOO_PROJECT]: JSON.stringify({
-					name: "foo-test",
-					tree: {
-						$className: "DataModel",
-						ReplicatedStorage: { Src: { $path: "src" } },
-					},
+				...fooProject({
+					$className: "DataModel",
+					ReplicatedStorage: { Src: { $path: "src" } },
 				}),
 				[path.join(FOO_DIR, "src/init.luau")]: "local x = 1",
 			});
 			const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
 			const instrumenter = createInstrumenter();
 
-			prepareWorkspaceCoverage({
-				fileSystem,
-				instrumenter,
-				packages: [
-					{
-						name: "@halcyon/foo",
-						luauRoots: [""],
-						packageDirectory: FOO_DIR,
-						rojoProjectPath: FOO_PROJECT,
-					},
-				],
-				workspaceRoot: WORKSPACE_ROOT,
-			});
+			prepareFoo({ descriptor: { luauRoots: [""] }, fileSystem, instrumenter });
 
 			expect(instrumenter).not.toHaveBeenCalled();
 			expect(stderr).toHaveBeenCalledExactlyOnceWith(
@@ -2077,39 +1577,25 @@ describe(prepareWorkspaceCoverage, () => {
 			// rojo mounts both `src` and `src/client`. The finer mount is the
 			// one that redirects, so the nested root is reachable after all.
 			volume.fromJSON({
-				[FOO_PROJECT]: JSON.stringify({
-					name: "foo-test",
-					tree: {
-						$className: "DataModel",
-						ReplicatedStorage: {
-							Client: { $path: "src/client" },
-							Src: { $path: "src" },
-						},
+				...fooProject({
+					$className: "DataModel",
+					ReplicatedStorage: {
+						Client: { $path: "src/client" },
+						Src: { $path: "src" },
 					},
 				}),
 				[path.join(FOO_DIR, "src/client/init.luau")]: "local x = 1",
 			});
 			const instrumenter = createInstrumenter();
 
-			const [result] = prepareWorkspaceCoverage({
+			const [result] = prepareFoo({
+				descriptor: { luauRoots: ["src/client"] },
 				fileSystem,
 				instrumenter,
-				packages: [
-					{
-						name: "@halcyon/foo",
-						luauRoots: ["src/client"],
-						packageDirectory: FOO_DIR,
-						rojoProjectPath: FOO_PROJECT,
-					},
-				],
-				workspaceRoot: WORKSPACE_ROOT,
 			});
 
-			expect(instrumenter).toHaveBeenCalledExactlyOnceWith(
-				expect.objectContaining({
-					luauRoot: normalizeWindowsPath(path.join(FOO_DIR, "src/client")),
-				}),
-			);
+			expectInstrumentedOnce({ instrumenter, root: "src/client" });
+
 			expect(result!.coverageRoots.map((entry): string => entry.luauRoot)).toStrictEqual([
 				"src/client",
 			]);
@@ -2123,37 +1609,23 @@ describe(prepareWorkspaceCoverage, () => {
 			// broader `src` as its luauRoot. Exercises the
 			// `mount.startsWith(candidate/)` branch of `isOnRojoTree`.
 			volume.fromJSON({
-				[FOO_PROJECT]: JSON.stringify({
-					name: "foo-test",
-					tree: {
-						$className: "DataModel",
-						ReplicatedStorage: { Client: { $path: "src/client" } },
-					},
+				...fooProject({
+					$className: "DataModel",
+					ReplicatedStorage: { Client: { $path: "src/client" } },
 				}),
 				[path.join(FOO_DIR, "src/client/init.luau")]: "local y = 2",
 				[path.join(FOO_DIR, "src/init.luau")]: "local x = 1",
 			});
 			const instrumenter = createInstrumenter();
 
-			const [result] = prepareWorkspaceCoverage({
+			const [result] = prepareFoo({
+				descriptor: { luauRoots: ["src"] },
 				fileSystem,
 				instrumenter,
-				packages: [
-					{
-						name: "@halcyon/foo",
-						luauRoots: ["src"],
-						packageDirectory: FOO_DIR,
-						rojoProjectPath: FOO_PROJECT,
-					},
-				],
-				workspaceRoot: WORKSPACE_ROOT,
 			});
 
-			expect(instrumenter).toHaveBeenCalledExactlyOnceWith(
-				expect.objectContaining({
-					luauRoot: normalizeWindowsPath(path.join(FOO_DIR, "src")),
-				}),
-			);
+			expectInstrumentedOnce({ instrumenter, root: "src" });
+
 			expect(result!.coverageRoots.map((entry): string => entry.luauRoot)).toStrictEqual([
 				"src",
 			]);
@@ -2166,25 +1638,14 @@ describe(prepareWorkspaceCoverage, () => {
 			seedMultiMount(volume);
 			const instrumenter = createInstrumenter();
 
-			const [result] = prepareWorkspaceCoverage({
+			const [result] = prepareFoo({
+				descriptor: { luauRoots: ["src", "src"] },
 				fileSystem,
 				instrumenter,
-				packages: [
-					{
-						name: "@halcyon/foo",
-						luauRoots: ["src", "src"],
-						packageDirectory: FOO_DIR,
-						rojoProjectPath: FOO_PROJECT,
-					},
-				],
-				workspaceRoot: WORKSPACE_ROOT,
 			});
 
-			expect(instrumenter).toHaveBeenCalledExactlyOnceWith(
-				expect.objectContaining({
-					luauRoot: normalizeWindowsPath(path.join(FOO_DIR, "src")),
-				}),
-			);
+			expectInstrumentedOnce({ instrumenter, root: "src" });
+
 			expect(result!.coverageRoots.map((entry): string => entry.luauRoot)).toStrictEqual([
 				"src",
 			]);
@@ -2198,14 +1659,11 @@ describe(prepareWorkspaceCoverage, () => {
 			// `empty` is on-tree per `isOnRojoTree` but `containsLuauFiles`
 			// returns false; `isInstrumentableRoot` drops it.
 			volume.fromJSON({
-				[FOO_PROJECT]: JSON.stringify({
-					name: "foo-test",
-					tree: {
-						$className: "DataModel",
-						ReplicatedStorage: {
-							Empty: { $path: "empty" },
-							Src: { $path: "src" },
-						},
+				...fooProject({
+					$className: "DataModel",
+					ReplicatedStorage: {
+						Empty: { $path: "empty" },
+						Src: { $path: "src" },
 					},
 				}),
 				[path.join(FOO_DIR, "empty/README.md")]: "not a luau file",
@@ -2213,25 +1671,14 @@ describe(prepareWorkspaceCoverage, () => {
 			});
 			const instrumenter = createInstrumenter();
 
-			const [result] = prepareWorkspaceCoverage({
+			const [result] = prepareFoo({
+				descriptor: { luauRoots: ["empty", "src"] },
 				fileSystem,
 				instrumenter,
-				packages: [
-					{
-						name: "@halcyon/foo",
-						luauRoots: ["empty", "src"],
-						packageDirectory: FOO_DIR,
-						rojoProjectPath: FOO_PROJECT,
-					},
-				],
-				workspaceRoot: WORKSPACE_ROOT,
 			});
 
-			expect(instrumenter).toHaveBeenCalledExactlyOnceWith(
-				expect.objectContaining({
-					luauRoot: normalizeWindowsPath(path.join(FOO_DIR, "src")),
-				}),
-			);
+			expectInstrumentedOnce({ instrumenter, root: "src" });
+
 			expect(result!.coverageRoots.map((entry): string => entry.luauRoot)).toStrictEqual([
 				"src",
 			]);
@@ -2241,62 +1688,27 @@ describe(prepareWorkspaceCoverage, () => {
 			expect.assertions(2);
 
 			const { fileSystem, volume } = createMemoryFileSystem();
-			const packageShadow = path
-				.join(WORKSPACE_ROOT, ".jest-roblox/workspace/@halcyon-foo/coverage")
-				.replaceAll("\\", "/");
+			const packageShadow = FOO_SHADOW;
 			const staleVendoredShadow = path.join(packageShadow, "vendored-packages/dep/init.luau");
 			const sourceFileKey = `${path.join(FOO_DIR, "src").replaceAll("\\", "/")}/init.luau`;
 			const vendoredShadowDirectory = path.join(packageShadow, "vendored-packages");
-			const previousManifest: CoverageManifest = {
-				buildId: "prev-build-id",
-				copyIgnoreHash: DEFAULT_COPY_IGNORE_HASH,
-				files: {
-					[sourceFileKey]: {
-						key: sourceFileKey,
-						coverageMapPath: `${sourceFileKey}.cov-map.json`,
-						instrumentedLuauPath: sourceFileKey,
-						originalLuauPath: sourceFileKey,
-						sourceHash: sha256("local x = 1"),
-						sourceMapPath: `${sourceFileKey}.map`,
-						statementCount: 1,
-					},
-				},
-				generatedAt: isoNow(),
-				instrumenterVersion: INSTRUMENTER_VERSION,
-				// Prior run instrumented BOTH mounts; the new run only lists
-				// `src`.
+			// Prior run instrumented BOTH mounts; the new run only lists
+			// `src`.
+			const previousManifest = priorRootsManifest({
+				content: "local x = 1",
+				fileKey: sourceFileKey,
 				luauRoots: [
 					path.join(packageShadow, "src").replaceAll("\\", "/"),
 					path.join(packageShadow, "vendored-packages").replaceAll("\\", "/"),
 				],
-				nonInstrumentedFiles: {},
-				shadowDir: packageShadow,
-				version: MANIFEST_VERSION,
-			};
-
-			volume.fromJSON({
-				[FOO_PROJECT]: JSON.stringify({ name: "foo-test", tree: multiMountTree }),
-				[path.join(FOO_DIR, "src/init.luau")]: "local x = 1",
-				[path.join(FOO_DIR, "vendored-packages/dep/init.luau")]: "local y = 2",
-				[path.join(packageShadow, "coverage-manifest.json")]:
-					JSON.stringify(previousManifest),
-				// Stale shadow file from the prior mount that the new run drops.
-				[staleVendoredShadow]: "return {}",
 			});
-			const instrumenter = createInstrumenter();
 
-			prepareWorkspaceCoverage({
+			// Stale shadow file from the prior mount that the new run drops.
+			rebuildOverPriorManifest({
 				fileSystem,
-				instrumenter,
-				packages: [
-					{
-						name: "@halcyon/foo",
-						luauRoots: ["src"],
-						packageDirectory: FOO_DIR,
-						rojoProjectPath: FOO_PROJECT,
-					},
-				],
-				workspaceRoot: WORKSPACE_ROOT,
+				manifest: previousManifest,
+				staleShadow: staleVendoredShadow,
+				volume,
 			});
 
 			expect(volume.existsSync(staleVendoredShadow)).toBeFalse();
@@ -2310,55 +1722,20 @@ describe(prepareWorkspaceCoverage, () => {
 			// Same cardinality, different members: prior manifest tracked
 			// `vendored-packages` but the new luauRoot is `src`. Exercises the
 			// `setsEqual` value-mismatch branch (size equal, content differs).
-			const packageShadow = path
-				.join(WORKSPACE_ROOT, ".jest-roblox/workspace/@halcyon-foo/coverage")
-				.replaceAll("\\", "/");
+			const packageShadow = FOO_SHADOW;
 			const staleVendoredShadow = path.join(packageShadow, "vendored-packages/dep/init.luau");
 			const previousFileKey = `${path.join(FOO_DIR, "vendored-packages").replaceAll("\\", "/")}/dep/init.luau`;
-			const previousManifest: CoverageManifest = {
-				buildId: "prev-build-id",
-				copyIgnoreHash: DEFAULT_COPY_IGNORE_HASH,
-				files: {
-					[previousFileKey]: {
-						key: previousFileKey,
-						coverageMapPath: `${previousFileKey}.cov-map.json`,
-						instrumentedLuauPath: previousFileKey,
-						originalLuauPath: previousFileKey,
-						sourceHash: sha256("local y = 2"),
-						sourceMapPath: `${previousFileKey}.map`,
-						statementCount: 1,
-					},
-				},
-				generatedAt: isoNow(),
-				instrumenterVersion: INSTRUMENTER_VERSION,
+			const previousManifest = priorRootsManifest({
+				content: "local y = 2",
+				fileKey: previousFileKey,
 				luauRoots: [path.join(packageShadow, "vendored-packages").replaceAll("\\", "/")],
-				nonInstrumentedFiles: {},
-				shadowDir: packageShadow,
-				version: MANIFEST_VERSION,
-			};
-
-			volume.fromJSON({
-				[FOO_PROJECT]: JSON.stringify({ name: "foo-test", tree: multiMountTree }),
-				[path.join(FOO_DIR, "src/init.luau")]: "local x = 1",
-				[path.join(FOO_DIR, "vendored-packages/dep/init.luau")]: "local y = 2",
-				[path.join(packageShadow, "coverage-manifest.json")]:
-					JSON.stringify(previousManifest),
-				[staleVendoredShadow]: "return {}",
 			});
-			const instrumenter = createInstrumenter();
 
-			prepareWorkspaceCoverage({
+			rebuildOverPriorManifest({
 				fileSystem,
-				instrumenter,
-				packages: [
-					{
-						name: "@halcyon/foo",
-						luauRoots: ["src"],
-						packageDirectory: FOO_DIR,
-						rojoProjectPath: FOO_PROJECT,
-					},
-				],
-				workspaceRoot: WORKSPACE_ROOT,
+				manifest: previousManifest,
+				staleShadow: staleVendoredShadow,
+				volume,
 			});
 
 			expect(volume.existsSync(staleVendoredShadow)).toBeFalse();
@@ -2371,31 +1748,13 @@ describe(prepareWorkspaceCoverage, () => {
 			// Cache hit with matching luauRoots set: prior shadow survives and
 			// `useIncremental` stays `true`. Exercises the
 			// `setsEqual === true` branch.
-			const packageShadow = path
-				.join(WORKSPACE_ROOT, ".jest-roblox/workspace/@halcyon-foo/coverage")
-				.replaceAll("\\", "/");
+			const packageShadow = FOO_SHADOW;
 			const fileKey = `${path.join(FOO_DIR, "out").replaceAll("\\", "/")}/init.luau`;
-			const previousManifest: CoverageManifest = {
-				buildId: "prev-build-id",
-				copyIgnoreHash: DEFAULT_COPY_IGNORE_HASH,
-				files: {
-					[fileKey]: {
-						key: fileKey,
-						coverageMapPath: `${fileKey}.cov-map.json`,
-						instrumentedLuauPath: fileKey,
-						originalLuauPath: fileKey,
-						sourceHash: sha256("local x = 1"),
-						sourceMapPath: `${fileKey}.map`,
-						statementCount: 1,
-					},
-				},
-				generatedAt: isoNow(),
-				instrumenterVersion: INSTRUMENTER_VERSION,
+			const previousManifest = priorRootsManifest({
+				content: "local x = 1",
+				fileKey,
 				luauRoots: [path.join(packageShadow, "out").replaceAll("\\", "/")],
-				nonInstrumentedFiles: {},
-				shadowDir: packageShadow,
-				version: MANIFEST_VERSION,
-			};
+			});
 
 			seedPackage(volume, { packageDirectory: FOO_DIR });
 			volume.fromJSON({
@@ -2409,18 +1768,7 @@ describe(prepareWorkspaceCoverage, () => {
 			});
 			const instrumenter = createInstrumenter();
 
-			prepareWorkspaceCoverage({
-				fileSystem,
-				instrumenter,
-				packages: [
-					{
-						name: "@halcyon/foo",
-						packageDirectory: FOO_DIR,
-						rojoProjectPath: FOO_PROJECT,
-					},
-				],
-				workspaceRoot: WORKSPACE_ROOT,
-			});
+			prepareFoo({ fileSystem, instrumenter });
 
 			// Cache preserved → rmSync did not fire, the sidecar is still there.
 			expect(volume.existsSync(path.join(packageShadow, "out/init.cov-map.json"))).toBeTrue();
@@ -2435,30 +1783,19 @@ describe(prepareWorkspaceCoverage, () => {
 			// `luauRoots` that lists the absolute-equivalent root, this
 			// confirms the off-tree filter and the warning fire.
 			volume.fromJSON({
-				[FOO_PROJECT]: JSON.stringify({
-					name: "foo-test",
-					tree: {
-						$className: "DataModel",
-						ReplicatedStorage: { External: { $path: "../sibling" } },
-					},
+				...fooProject({
+					$className: "DataModel",
+					ReplicatedStorage: { External: { $path: "../sibling" } },
 				}),
 				[path.join(WORKSPACE_ROOT, "sibling/init.luau")]: "local x = 1",
 			});
 			const instrumenter = createInstrumenter();
 			const writeSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
 
-			const [result] = prepareWorkspaceCoverage({
+			const [result] = prepareFoo({
+				descriptor: { luauRoots: ["sibling"] },
 				fileSystem,
 				instrumenter,
-				packages: [
-					{
-						name: "@halcyon/foo",
-						luauRoots: ["sibling"],
-						packageDirectory: FOO_DIR,
-						rojoProjectPath: FOO_PROJECT,
-					},
-				],
-				workspaceRoot: WORKSPACE_ROOT,
 			});
 
 			expect(result!.coverageRoots).toStrictEqual([]);
@@ -2477,16 +1814,13 @@ describe(emitWorkspaceBuildManifests, () => {
 		seedPackage(volume, { packageDirectory: FOO_DIR });
 		const instrumenter = createInstrumenter();
 
-		const entries = prepareWorkspaceCoverage({
-			fileSystem,
-			instrumenter,
-			packages: [
-				{ name: "@halcyon/foo", packageDirectory: FOO_DIR, rojoProjectPath: FOO_PROJECT },
-			],
-			workspaceRoot: WORKSPACE_ROOT,
-		});
+		const entries = prepareFoo({ fileSystem, instrumenter });
 
-		emitWorkspaceBuildManifests({ coveragePlace: SHARED_PLACE, entries, fileSystem });
+		emitWorkspaceBuildManifests({
+			coveragePlace: SHARED_PLACE,
+			entries,
+			fileSystem,
+		});
 
 		const buildManifestPath = path.join(
 			WORKSPACE_ROOT,
@@ -2495,7 +1829,7 @@ describe(emitWorkspaceBuildManifests, () => {
 
 		expect(volume.existsSync(buildManifestPath)).toBeTrue();
 
-		const manifest = buildManifestSchema.assert(
+		const manifest = fromAny<BuildManifest, JSONValue>(
 			JSON.parse(volume.readFileSync(buildManifestPath, "utf-8").toString()),
 		);
 
@@ -2516,13 +1850,25 @@ describe(emitWorkspaceBuildManifests, () => {
 			fileSystem,
 			instrumenter,
 			packages: [
-				{ name: "@halcyon/foo", packageDirectory: FOO_DIR, rojoProjectPath: FOO_PROJECT },
-				{ name: "@halcyon/bar", packageDirectory: BAR_DIR, rojoProjectPath: BAR_PROJECT },
+				{
+					name: "@halcyon/foo",
+					packageDirectory: FOO_DIR,
+					rojoProjectPath: FOO_PROJECT,
+				},
+				{
+					name: "@halcyon/bar",
+					packageDirectory: BAR_DIR,
+					rojoProjectPath: BAR_PROJECT,
+				},
 			],
 			workspaceRoot: WORKSPACE_ROOT,
 		});
 
-		emitWorkspaceBuildManifests({ coveragePlace: SHARED_PLACE, entries, fileSystem });
+		emitWorkspaceBuildManifests({
+			coveragePlace: SHARED_PLACE,
+			entries,
+			fileSystem,
+		});
 
 		const foo = readPackageBuildManifest(volume, "@halcyon-foo");
 		const bar = readPackageBuildManifest(volume, "@halcyon-bar");
@@ -2543,21 +1889,20 @@ describe(emitWorkspaceBuildManifests, () => {
 		seedPackage(volume, { packageDirectory: FOO_DIR });
 		const instrumenter = createInstrumenter();
 
-		const entries = prepareWorkspaceCoverage({
-			fileSystem,
-			instrumenter,
-			packages: [
-				{ name: "@halcyon/foo", packageDirectory: FOO_DIR, rojoProjectPath: FOO_PROJECT },
-			],
-			workspaceRoot: WORKSPACE_ROOT,
-		});
+		const entries = prepareFoo({ fileSystem, instrumenter });
 
-		emitWorkspaceBuildManifests({ coveragePlace: SHARED_PLACE, entries, fileSystem });
+		emitWorkspaceBuildManifests({
+			coveragePlace: SHARED_PLACE,
+			entries,
+			fileSystem,
+		});
 
 		const manifest = readPackageBuildManifest(volume, "@halcyon-foo");
 		const expectedKey = `${path.join(FOO_DIR, "out").replaceAll("\\", "/")}/init.luau`;
 
-		expect(manifest.files).toStrictEqual({ [expectedKey]: { sourceHash: "deadbeef" } });
+		expect(manifest.files).toStrictEqual({
+			[expectedKey]: { sourceHash: "deadbeef" },
+		});
 		expect(manifest.projects).toStrictEqual([]);
 	});
 });
@@ -2567,18 +1912,21 @@ function readPackageBuildManifest(volume: MemoryVolume, safeName: string): Build
 		WORKSPACE_ROOT,
 		`.jest-roblox/workspace/${safeName}/coverage/build-manifest.json`,
 	);
-	return buildManifestSchema.assert(
+	return fromAny<BuildManifest, JSONValue>(
 		JSON.parse(volume.readFileSync(buildManifestPath, "utf-8").toString()),
 	);
 }
 
 describe("narrowing a workspace package to its coverage universe", () => {
-	/** A package whose probes all sit in one subtree below its rojo mount. */
+	/**
+	 * A package whose probes all sit in one subtree below its rojo mount.
+	 * @param volume - Volume the package is written to.
+	 */
 	function seedNarrowablePackage(volume: MemoryVolume): void {
 		volume.fromJSON({
-			[FOO_PROJECT]: JSON.stringify({
-				name: "foo-test",
-				tree: { $className: "DataModel", ReplicatedStorage: { Pkg: { $path: "out" } } },
+			...fooProject({
+				$className: "DataModel",
+				ReplicatedStorage: { Pkg: { $path: "out" } },
 			}),
 			[path.join(FOO_DIR, "out/client/button.luau")]: "local x = 1",
 			[path.join(FOO_DIR, "out/loose.luau")]: "local x = 2",
@@ -2591,18 +1939,10 @@ describe("narrowing a workspace package to its coverage universe", () => {
 		fileSystem: FileSystem,
 		instrumenter: Instrumenter,
 	): ReturnType<typeof prepareWorkspaceCoverage> {
-		return prepareWorkspaceCoverage({
+		return prepareFoo({
+			descriptor: { collectCoverageFrom: ["**/ecs/**"] },
 			fileSystem,
 			instrumenter,
-			packages: [
-				{
-					name: "@halcyon/foo",
-					collectCoverageFrom: ["**/ecs/**"],
-					packageDirectory: FOO_DIR,
-					rojoProjectPath: FOO_PROJECT,
-				},
-			],
-			workspaceRoot: WORKSPACE_ROOT,
 		});
 	}
 
@@ -2646,7 +1986,50 @@ describe("narrowing a workspace package to its coverage universe", () => {
 		// Recorded, not just copied: the hash is what lets a warm run leave the
 		// copy alone rather than write it again.
 		expect(Object.keys(result!.manifest.nonInstrumentedFiles)).toContain(
-			normalizeWindowsPath(path.join(FOO_DIR, "out/loose.luau")),
+			posixPath(path.join(FOO_DIR, "out/loose.luau")),
+		);
+	});
+});
+
+describe("workspace-mode $path containment", () => {
+	const packageDirectory = posixRoot(path.resolve("/pkg"));
+	const packageProject = `${packageDirectory}/test.project.json`;
+
+	it.for([
+		{
+			mount: `${packageDirectory}/out`,
+			roots: ["out"],
+			shape: "an absolute mount inside",
+		},
+		{ mount: "../outside/out", roots: [], shape: "a relative mount outside" },
+	])("should answer $roots for $shape the frame", async ({ mount, roots }) => {
+		expect.assertions(1);
+
+		const { fileSystem, volume } = createMemoryFileSystem();
+		const frameDirectories = [
+			`${packageDirectory}/out`,
+			"/outside/out",
+			path.resolve("../outside/out"),
+		];
+		volume.fromJSON({
+			...Object.fromEntries(
+				frameDirectories.map((directory) => [`${directory}/init.luau`, "local x = 1"]),
+			),
+			[packageProject]: JSON.stringify({
+				name: "test",
+				tree: { $className: "DataModel", ReplicatedStorage: { $path: mount } },
+			}),
+		});
+
+		const [workspace] = prepareWorkspaceCoverage({
+			fileSystem,
+			instrumenter: createInstrumenter(),
+			packages: [{ name: "pkg", packageDirectory, rojoProjectPath: packageProject }],
+			workspaceRoot: packageDirectory,
+		});
+
+		expect(workspace!.coverageRoots.map((root) => root.luauRoot)).toStrictEqual(
+			roots.map(posixRoot),
 		);
 	});
 });

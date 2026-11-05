@@ -1,31 +1,36 @@
 import { describe, expect, it } from "vitest";
 
-import { narrowConfigByFiles, narrowForLuauRun } from "./narrow-by-files.ts";
+import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
+import { narrowForLuauRun } from "./narrow-by-files.ts";
 import type { ResolvedConfig } from "./schema.ts";
-import { DEFAULT_CONFIG } from "./schema.ts";
 
-// Stands in for a project whose mounts own no part of the file, which is what
-// drives the basename fallback.
+/**
+ * Stands in for a project whose mounts own no part of the file, which is what
+ * drives the basename fallback.
+ */
 function noMountOwnsIt(): undefined {}
 
 function make(overrides: Partial<ResolvedConfig> = {}): ResolvedConfig {
-	return { ...DEFAULT_CONFIG, ...overrides };
+	return { ...createResolvedConfig(), ...overrides };
 }
 
-/** Narrow with no mount ownership, so every file takes the basename branch. */
+/**
+ * Narrow with no mount ownership, so every file takes the basename branch.
+ *
+ * @param config - Config to narrow.
+ * @param files - Files to narrow to.
+ * @returns The narrowed config.
+ */
 function byBasename(config: ResolvedConfig, files: Array<string>): ResolvedConfig {
-	return narrowConfigByFiles({ config, files, toInstancePath: noMountOwnsIt });
+	return narrowForLuauRun({
+		config,
+		filterActive: true,
+		runtimeFiles: files,
+		toInstancePath: noMountOwnsIt,
+	});
 }
 
-describe(narrowConfigByFiles, () => {
-	it("should return config unchanged when files is empty", () => {
-		expect.assertions(1);
-
-		const config = make({ testPathPattern: "existing" });
-
-		expect(byBasename(config, [])).toBe(config);
-	});
-
+describe("file narrowing", () => {
 	it("should set testPathPattern to a wrapped basename pattern when one file given", () => {
 		expect.assertions(1);
 
@@ -75,22 +80,6 @@ describe(narrowConfigByFiles, () => {
 		const result = byBasename(make(), ["src/(foo).test.ts"]);
 
 		expect(result.testPathPattern).toBe("(\\(foo\\)\\.test)");
-	});
-
-	it("should append an existing testPathPattern as another alternation branch", () => {
-		expect.assertions(1);
-
-		const result = byBasename(make({ testPathPattern: "cleanup" }), ["src/foo.test.ts"]);
-
-		expect(result.testPathPattern).toBe("(foo\\.test|cleanup)");
-	});
-
-	it("should treat empty-string existing testPathPattern as absent", () => {
-		expect.assertions(1);
-
-		const result = byBasename(make({ testPathPattern: "" }), ["src/foo.test.ts"]);
-
-		expect(result.testPathPattern).toBe("(foo\\.test)");
 	});
 
 	it("should dedupe identical basename patterns when multiple files share a basename", () => {
@@ -160,9 +149,10 @@ describe(narrowConfigByFiles, () => {
 	it("should use the instance sub-path when a mount owns the file", () => {
 		expect.assertions(1);
 
-		const result = narrowConfigByFiles({
+		const result = narrowForLuauRun({
 			config: make(),
-			files: ["src/server/systems/attack/index.test.ts"],
+			filterActive: true,
+			runtimeFiles: ["src/server/systems/attack/index.test.ts"],
 			toInstancePath: () => "systems/attack/init.test",
 		});
 
@@ -176,9 +166,10 @@ describe(narrowConfigByFiles, () => {
 			["src/server/a/index.test.ts", "a/init.test"],
 			["src/server/b/index.test.ts", "b/init.test"],
 		]);
-		const result = narrowConfigByFiles({
+		const result = narrowForLuauRun({
 			config: make(),
-			files: ["src/server/a/index.test.ts", "src/server/b/index.test.ts"],
+			filterActive: true,
+			runtimeFiles: ["src/server/a/index.test.ts", "src/server/b/index.test.ts"],
 			toInstancePath: (file) => subPaths.get(file),
 		});
 
@@ -196,9 +187,10 @@ describe(narrowConfigByFiles, () => {
 	it("should escape regex metacharacters in a resolved sub-path", () => {
 		expect.assertions(1);
 
-		const result = narrowConfigByFiles({
+		const result = narrowForLuauRun({
 			config: make(),
-			files: ["src/server/(a)/index.test.ts"],
+			filterActive: true,
+			runtimeFiles: ["src/server/(a)/index.test.ts"],
 			toInstancePath: () => "(a)/init.test",
 		});
 

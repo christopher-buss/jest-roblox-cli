@@ -3,7 +3,7 @@ import { fromPartial } from "@total-typescript/shoehorn";
 import { describe, expect, it } from "vitest";
 
 import type { SourceMapper } from "../source-mapper/index.ts";
-import type { JestResult, TestCaseResult, TestFileResult } from "../types/jest-result.ts";
+import type { JestResult, TestCaseResult, TestFileResult } from "../types/jest-result-types.ts";
 import { formatGapSummary } from "./gap-summary.ts";
 
 function testCase(fullName: string, gaps: Record<string, number> = {}): TestCaseResult {

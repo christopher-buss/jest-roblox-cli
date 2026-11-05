@@ -26,6 +26,8 @@ const ROOT_NAME = "the place";
  * class landed rather than on whether the file mentions it. A byte-offset scan
  * cannot: the place's own services serialize after the stage does, and every
  * class in them would read as staged.
+ * @param placeFile - Path of the built `.rbxlx`.
+ * @returns The DataModel node.
  */
 export function readPlaceTree(placeFile: string): PlaceNode {
 	const root: PlaceNode = { name: ROOT_NAME, children: [], instanceClass: "DataModel" };
@@ -64,6 +66,10 @@ export function readPlaceTree(placeFile: string): PlaceNode {
  * anywhere in the place proves nothing about where the stage put it. A missing
  * step throws naming the step, which reads better than an assertion on
  * `undefined`.
+ * @param root - Node to start from.
+ * @param names - Instance names to walk, outermost first.
+ * @returns The node at the end of the path.
+ * @throws {Error} When a step names no child.
  */
 export function nodeAt(root: PlaceNode, names: ReadonlyArray<string>): PlaceNode {
 	let cursor = root;
@@ -79,7 +85,11 @@ export function nodeAt(root: PlaceNode, names: ReadonlyArray<string>): PlaceNode
 	return cursor;
 }
 
-/** Every node below `node`, for a test asking what a whole subtree holds. */
+/**
+ * Every node below `node`, for a test asking what a whole subtree holds.
+ * @param node - Subtree root.
+ * @returns Every node below `node`.
+ */
 export function descendants(node: PlaceNode): Array<PlaceNode> {
 	return node.children.flatMap((child) => {
 		return [child, ...descendants(child)];

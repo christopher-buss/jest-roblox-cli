@@ -1,13 +1,14 @@
 import * as path from "node:path";
 
 import type { ResolvedConfig } from "../config/schema.ts";
-import { tryResolveLuauRoots } from "../coverage-pipeline/prepare.ts";
+import { tryResolveLuauRoots } from "../coverage-pipeline/luau-roots.ts";
 import type { TsconfigReader } from "../executor/tsconfig-mappings.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import { nodeFileSystem } from "../utils/file-system.ts";
 import type { PosixRoot } from "../utils/normalize-windows-path.ts";
 import { toPosixRoot } from "../utils/normalize-windows-path.ts";
 
+/** What a run passes to decide its Code Roots. */
 export interface CodeRootsRequest {
 	/**
 	 * Which backend the run resolved. Only Open Cloud ever gets a harness: a
@@ -53,6 +54,8 @@ export interface CodeRootsRequest {
  * directory, workspace hands its packages and the workspace cache — so a mount
  * is judged by one rule either way, and neither mode can decide on its own that
  * a backend may be served a harness.
+ * @param request - Backend, configs, place grant and staging directory.
+ * @returns Absolute Code Roots, or `undefined` when the run ships the whole place.
  */
 export function resolveCodeRoots({
 	backendKind,

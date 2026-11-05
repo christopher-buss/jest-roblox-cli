@@ -5,12 +5,14 @@ import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import { replacePrefix } from "../utils/tsconfig-mapping.ts";
 import { findExpectationColumn } from "./column-finder.ts";
 import type { PathResolver } from "./path-resolver.ts";
-import type { StackFrame } from "./types.ts";
-import type { V3Mapper } from "./v3-mapper.ts";
+import type { StackFrame } from "./source-mapper-types.ts";
+import type { V3Mapper } from "./v-3-mapper.ts";
 
 const TS_EXTENSION = /\.ts$/;
 
+/** A stack frame resolved to its Luau file and any TypeScript origin. */
 export interface MappedFrame {
+	/** The resolved Luau file path. */
 	luauPath: string;
 	/** Absent when the frame has no TypeScript origin (pure-Luau project). */
 	source?: MappedSource | undefined;

@@ -9,12 +9,12 @@ import { describe, expect, it, onTestFinished, vi } from "vitest";
 import {
 	EXECUTION_NOT_CLAIMED,
 	EXECUTION_START_EXPIRED,
-	type ExecutionClaimObservation,
-} from "../luau/execution-claim.ts";
-import { executeWithRecoveryAsync, type ExecutionAttemptContext } from "./execution-recovery.ts";
-import { UncertainSubmissionError } from "./uncertain-submission.ts";
+} from "#test/mocks/luau-execution-claim.ts";
+import type { ExecutionClaimObservation } from "../luau/execution-claim.ts";
+import { executeWithRecoveryAsync, UncertainSubmissionError } from "./execution-recovery.ts";
 
-type ExecuteAttempt = (context: ExecutionAttemptContext) => Promise<ScriptResult>;
+type ExecuteAttempt = Parameters<typeof executeWithRecoveryAsync>[0]["executeAsync"];
+type ExecutionAttemptContext = Parameters<ExecuteAttempt>[0];
 
 const SUCCESS: ScriptResult = { durationMs: 12, outputs: ["test results"] };
 const DECLINED: ScriptResult = {
@@ -33,6 +33,26 @@ function timeoutFailure(message = "Execution timed out"): Error {
 	return new Error(message, {
 		cause: new PollTimeoutError("Still PROCESSING", { timeoutMs: 75_000 }),
 	});
+}
+
+function startExpiredReplacement() {
+	vi.useFakeTimers();
+	onTestFinished(() => {
+		vi.useRealTimers();
+	});
+	vi.spyOn(process.stderr, "write").mockReturnValue(true);
+	const original = Promise.withResolvers<ScriptResult>();
+	const executeAsync = vi
+		.fn<ExecuteAttempt>()
+		.mockReturnValueOnce(original.promise)
+		.mockResolvedValueOnce({ durationMs: 0, outputs: [EXECUTION_START_EXPIRED] });
+	const diagnosed = executeWithRecoveryAsync({
+		bootWatchMs: 1_000,
+		executeAsync,
+		readClaimAsync: async () => ({ status: "missing" }),
+		timeout: 30_000,
+	}).catch((err: unknown) => err);
+	return { diagnosed, executeAsync, original };
 }
 
 describe("open Cloud execution recovery", () => {
@@ -116,6 +136,42 @@ describe("open Cloud execution recovery", () => {
 
 		await expect(recovered).resolves.toBe(SUCCESS);
 		expect(executeAsync).toHaveBeenCalledTimes(2);
+	});
+
+	it("should wait for the re-armed watch when a re-submission lands after the claim read", async () => {
+		expect.assertions(2);
+
+		vi.spyOn(process.stderr, "write").mockReturnValue(true);
+		const original = Promise.withResolvers<ScriptResult>();
+		const submitted = Promise.withResolvers<ExecutionAttemptContext["submission"]>();
+		const executeAsync = vi.fn<ExecuteAttempt>(async ({ submission }) => {
+			submitted.resolve(submission);
+			submission.accepted();
+			return original.promise;
+		});
+		const readClaimAsync = vi
+			.fn<() => Promise<ExecutionClaimObservation>>()
+			.mockResolvedValueOnce({ status: "missing" })
+			.mockResolvedValue({ claim: { claimedAt: 0, owner: "original" }, status: "found" });
+		const race = Promise.race.bind(Promise);
+		vi.spyOn(Promise, "race").mockImplementationOnce(async (values) => {
+			const first = await race(values);
+			const submission = await submitted.promise;
+			submission.accepted();
+			return first;
+		});
+		const recovered = executeWithRecoveryAsync({
+			bootWatchMs: 0,
+			executeAsync,
+			readClaimAsync,
+			timeout: 30_000,
+			watchesSubmission: true,
+		});
+		await delayAsync(10);
+		original.resolve(SUCCESS);
+
+		await expect(recovered).resolves.toBe(SUCCESS);
+		expect(executeAsync).toHaveBeenCalledOnce();
 	});
 
 	it("should cancel a nested native result reread when the ordinary hedge wins", async () => {
@@ -390,44 +446,6 @@ describe("open Cloud execution recovery", () => {
 		expect(readClaimAsync).not.toHaveBeenCalled();
 	});
 
-	it("should start watching for a claim only after submission is accepted", async () => {
-		expect.assertions(3);
-
-		vi.useFakeTimers();
-		onTestFinished(() => {
-			vi.useRealTimers();
-		});
-		vi.spyOn(process.stderr, "write").mockReturnValue(true);
-		const original = Promise.withResolvers<ScriptResult>();
-		let accept: (() => void) | undefined;
-		const executeAsync = vi
-			.fn<ExecuteAttempt>()
-			.mockImplementationOnce(async ({ submission }) => {
-				accept = submission.accepted;
-				return original.promise;
-			})
-			.mockResolvedValue(SUCCESS);
-		const readClaimAsync = vi.fn<() => Promise<{ status: "missing" }>>(async () => {
-			return { status: "missing" };
-		});
-		const recovered = executeWithRecoveryAsync({
-			bootWatchMs: 1_000,
-			executeAsync,
-			readClaimAsync,
-			timeout: 30_000,
-			watchesSubmission: true,
-		});
-		await vi.advanceTimersByTimeAsync(60_000);
-
-		expect(executeAsync).toHaveBeenCalledExactlyOnceWith(ATTEMPT_CONTEXT);
-		expect(readClaimAsync).not.toHaveBeenCalled();
-
-		accept!();
-		await vi.advanceTimersByTimeAsync(1_000);
-
-		await expect(recovered).resolves.toBe(SUCCESS);
-	});
-
 	it("should replace an unclaimed task when the boot watchdog expires", async () => {
 		expect.assertions(5);
 
@@ -646,168 +664,10 @@ describe("open Cloud execution recovery", () => {
 		await expect(recovered).resolves.toBe(SUCCESS);
 	});
 
-	it("should use the hedge when the original declines first", async () => {
-		expect.assertions(1);
-
-		vi.useFakeTimers();
-		onTestFinished(() => {
-			vi.useRealTimers();
-		});
-		vi.spyOn(process.stderr, "write").mockReturnValue(true);
-		const original = Promise.withResolvers<ScriptResult>();
-		const replacement = Promise.withResolvers<ScriptResult>();
-		const executeAsync = vi
-			.fn<ExecuteAttempt>()
-			.mockReturnValueOnce(original.promise)
-			.mockReturnValueOnce(replacement.promise);
-		const recovered = executeWithRecoveryAsync({
-			bootWatchMs: 1_000,
-			executeAsync,
-			readClaimAsync: async () => ({ status: "missing" }),
-			timeout: 30_000,
-		});
-
-		await vi.advanceTimersByTimeAsync(1_000);
-		original.resolve(DECLINED);
-		replacement.resolve(SUCCESS);
-
-		await expect(recovered).resolves.toBe(SUCCESS);
-	});
-
-	it("should use the original when a rejected hedge finishes first", async () => {
-		expect.assertions(1);
-
-		vi.useFakeTimers();
-		onTestFinished(() => {
-			vi.useRealTimers();
-		});
-		vi.spyOn(process.stderr, "write").mockReturnValue(true);
-		const original = Promise.withResolvers<ScriptResult>();
-		const replacement = Promise.withResolvers<ScriptResult>();
-		const executeAsync = vi
-			.fn<ExecuteAttempt>()
-			.mockReturnValueOnce(original.promise)
-			.mockReturnValueOnce(replacement.promise);
-		const recovered = executeWithRecoveryAsync({
-			bootWatchMs: 1_000,
-			executeAsync,
-			readClaimAsync: async () => ({ status: "missing" }),
-			timeout: 30_000,
-		});
-
-		await vi.advanceTimersByTimeAsync(1_000);
-		replacement.reject(timeoutFailure());
-		original.resolve(SUCCESS);
-
-		await expect(recovered).resolves.toBe(SUCCESS);
-	});
-
-	it("should preserve both failures when the original and hedge stall", async () => {
-		expect.assertions(1);
-
-		vi.useFakeTimers();
-		onTestFinished(() => {
-			vi.useRealTimers();
-		});
-		vi.spyOn(process.stderr, "write").mockReturnValue(true);
-		const first = timeoutFailure("Original execution timed out");
-		const second = timeoutFailure("Hedged execution timed out");
-		const original = Promise.withResolvers<ScriptResult>();
-		const replacement = Promise.withResolvers<ScriptResult>();
-		const executeAsync = vi
-			.fn<ExecuteAttempt>()
-			.mockReturnValueOnce(original.promise)
-			.mockReturnValueOnce(replacement.promise);
-		const recovered = executeWithRecoveryAsync({
-			bootWatchMs: 1_000,
-			executeAsync,
-			readClaimAsync: async () => ({ status: "missing" }),
-			timeout: 30_000,
-		});
-
-		await vi.advanceTimersByTimeAsync(1_000);
-		original.reject(first);
-		replacement.reject(second);
-
-		await expect(recovered).rejects.toMatchObject({ cause: first, errors: [first, second] });
-	});
-
-	it("should preserve attempt order when the hedge fails first", async () => {
-		expect.assertions(1);
-
-		vi.useFakeTimers();
-		onTestFinished(() => {
-			vi.useRealTimers();
-		});
-		vi.spyOn(process.stderr, "write").mockReturnValue(true);
-		const first = new Error("original stalled");
-		const second = new Error("hedge stalled");
-		const original = Promise.withResolvers<ScriptResult>();
-		const replacement = Promise.withResolvers<ScriptResult>();
-		const executeAsync = vi
-			.fn<ExecuteAttempt>()
-			.mockReturnValueOnce(original.promise)
-			.mockReturnValueOnce(replacement.promise);
-		const recovered = executeWithRecoveryAsync({
-			bootWatchMs: 1_000,
-			executeAsync,
-			readClaimAsync: async () => ({ status: "missing" }),
-			timeout: 30_000,
-		});
-
-		await vi.advanceTimersByTimeAsync(1_000);
-		replacement.reject(second);
-		original.reject(first);
-
-		await expect(recovered).rejects.toMatchObject({ cause: first, errors: [first, second] });
-	});
-
-	it("should fail when neither hedged task claims execution", async () => {
-		expect.assertions(1);
-
-		vi.useFakeTimers();
-		onTestFinished(() => {
-			vi.useRealTimers();
-		});
-		vi.spyOn(process.stderr, "write").mockReturnValue(true);
-		const original = Promise.withResolvers<ScriptResult>();
-		const executeAsync = vi
-			.fn<ExecuteAttempt>()
-			.mockReturnValueOnce(original.promise)
-			.mockResolvedValueOnce(DECLINED);
-		const recovered = executeWithRecoveryAsync({
-			bootWatchMs: 1_000,
-			executeAsync,
-			readClaimAsync: async () => ({ status: "missing" }),
-			timeout: 30_000,
-		});
-
-		await vi.advanceTimersByTimeAsync(1_000);
-		original.resolve(DECLINED);
-
-		await expect(recovered).rejects.toThrow("refusing to run tests twice");
-	});
-
 	it("should preserve the original result when its replacement starts after expiry", async () => {
 		expect.assertions(3);
 
-		vi.useFakeTimers();
-		onTestFinished(() => {
-			vi.useRealTimers();
-		});
-		vi.spyOn(process.stderr, "write").mockReturnValue(true);
-		const original = Promise.withResolvers<ScriptResult>();
-		const executeAsync = vi
-			.fn<ExecuteAttempt>()
-			.mockReturnValueOnce(original.promise)
-			.mockResolvedValueOnce({ durationMs: 0, outputs: [EXECUTION_START_EXPIRED] });
-		const recovered = executeWithRecoveryAsync({
-			bootWatchMs: 1_000,
-			executeAsync,
-			readClaimAsync: async () => ({ status: "missing" }),
-			timeout: 30_000,
-		});
-		const diagnosed = recovered.catch((err: unknown) => err);
+		const { diagnosed, executeAsync, original } = startExpiredReplacement();
 
 		await vi.advanceTimersByTimeAsync(1_000);
 		original.resolve(SUCCESS);
@@ -820,24 +680,8 @@ describe("open Cloud execution recovery", () => {
 	it("should retain expiry diagnostics when neither hedge can produce results", async () => {
 		expect.assertions(3);
 
-		vi.useFakeTimers();
-		onTestFinished(() => {
-			vi.useRealTimers();
-		});
-		vi.spyOn(process.stderr, "write").mockReturnValue(true);
-		const original = Promise.withResolvers<ScriptResult>();
 		const failure = new Error("original task failed");
-		const executeAsync = vi
-			.fn<ExecuteAttempt>()
-			.mockReturnValueOnce(original.promise)
-			.mockResolvedValueOnce({ durationMs: 0, outputs: [EXECUTION_START_EXPIRED] });
-		const recovered = executeWithRecoveryAsync({
-			bootWatchMs: 1_000,
-			executeAsync,
-			readClaimAsync: async () => ({ status: "missing" }),
-			timeout: 30_000,
-		});
-		const diagnosed = recovered.catch((err: unknown) => err);
+		const { diagnosed, executeAsync, original } = startExpiredReplacement();
 		await vi.advanceTimersByTimeAsync(1_000);
 		original.reject(failure);
 
@@ -1207,5 +1051,46 @@ describe("open Cloud execution recovery", () => {
 		expect(executeAsync.mock.calls[0]![0].claim).toContain(
 			'"execution-key", 241000, 300, "__JEST_ROBLOX_EXECUTION_NOT_CLAIMED__", "__JEST_ROBLOX_EXECUTION_START_EXPIRED__"',
 		);
+	});
+});
+
+function createFailedOriginal() {
+	const publish = Promise.withResolvers<void>();
+	const signals: Array<AbortSignal> = [];
+	const executeAsync = vi.fn<ExecuteAttempt>(async ({ observationSignal }) => {
+		const isOriginal = signals.length === 0;
+		signals.push(observationSignal);
+		if (isOriginal) {
+			throw new UncertainSubmissionError(
+				new Error("accepted create lost its response"),
+				async () => {
+					await publish.promise;
+					throw new Error("original assertion failed\noriginal stack");
+				},
+			);
+		}
+
+		publish.resolve();
+		return DECLINED;
+	});
+
+	return { executeAsync, signals };
+}
+
+describe("uncertain submission composition", () => {
+	it("should retain an accepted original's relayed error when the rescue loses its claim", async () => {
+		expect.assertions(4);
+
+		const { executeAsync, signals } = createFailedOriginal();
+
+		await expect(executeWithRecoveryAsync({ executeAsync, timeout: 1000 })).rejects.toThrow(
+			"original assertion failed\noriginal stack",
+		);
+
+		const claims = new Set(executeAsync.mock.calls.map(([context]) => context.claim));
+
+		expect(executeAsync).toHaveBeenCalledTimes(2);
+		expect(claims.size).toBe(1);
+		expect(signals.map((signal) => signal.aborted)).toStrictEqual([true, true]);
 	});
 });

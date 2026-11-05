@@ -1,4 +1,5 @@
 import * as path from "node:path";
+import type { Except } from "type-fest";
 
 import type { FileSystem } from "../utils/file-system.ts";
 import { nodeFileSystem } from "../utils/file-system.ts";
@@ -30,22 +31,22 @@ const MAX_RETAINED_SHARE = 0.9;
 /** The mount taken whole, which is what every non-narrowing answer is. */
 const WHOLE_MOUNT: ReadonlyArray<string> = [""];
 
-export interface NarrowRootOptions {
+/**
+ * Inputs for narrowing every mount.
+ */
+export interface NarrowMountsOptions {
 	/** Where the walk reads. Defaults to the real filesystem. */
 	fileSystem?: FileSystem;
 	/** Paths the shadow never carries, relative to the mount. */
 	isCopyIgnored: CopyIgnoreMatcher;
-	/** Absent means the run narrows nothing, so the mount is taken whole. */
-	universe: InstrumentUniverse | undefined;
-}
-
-export interface NarrowMountsOptions extends NarrowRootOptions {
 	/**
 	 * The project's `$path` mounts, in the same frame as the roots. Only a
 	 * directory the place actually mounts is one a demote can rewrite, and a
 	 * `luauRoot` need not be one — it can sit above the mounts, or below.
 	 */
 	rojoMounts: ReadonlySet<string>;
+	/** Absent means the run narrows nothing, so the mount is taken whole. */
+	universe: InstrumentUniverse | undefined;
 }
 
 /** One rojo mount, split into what the shadow mirrors and the way down. */
@@ -69,10 +70,107 @@ export interface NarrowedMount {
 	spine: Array<PosixRoot>;
 }
 
+type NarrowRootOptions = Except<NarrowMountsOptions, "rojoMounts">;
+
 /** One mount's walk: what the shadow would carry, and what the list refused. */
 interface CarriedFiles {
 	carried: Array<string>;
 	hasIgnoredPaths: boolean;
+}
+
+/**
+ * Narrow every rojo mount, keeping each one's answer beside the mount it came
+ * from — the spine is only meaningful against the mount it descends from, and
+ * `coverageCopyIgnorePatterns` is written relative to that same directory.
+ * @param mounts - Canonical mounts to narrow.
+ * @param options - Narrowing inputs and the project's `$path` mounts.
+ * @returns One answer per mount, in input order.
+ */
+export function narrowLuauRoots(
+	mounts: ReadonlyArray<PosixRoot>,
+	options: NarrowMountsOptions,
+): Array<NarrowedMount> {
+	return mounts.map((mount) => {
+		const narrowed = narrowRootToUniverse(mount, options).map((relative) => {
+			return toPosixRoot(underRoot(mount, relative));
+		});
+		const roots = isLoadable(narrowed, options.rojoMounts) ? narrowed : [mount];
+		return {
+			luauRoot: mount,
+			roots,
+			spine: resolveSpineDirectories(roots, options.rojoMounts),
+		};
+	});
+}
+
+/**
+ * Every file the shadow would carry for this mount, mount-relative, and whether
+ * the ignore list refused anything on the way.
+ *
+ * The whole set, not just the probed half: the share the threshold reads is a
+ * share of the copying, and a spec file or a `.meta.json` costs the same to
+ * copy as a module. Copy-ignored paths are left out because the shadow never
+ * holds them either way — which is exactly why the walk has to say it saw them.
+ * Nothing downstream can tell a mount the list emptied from one that was empty.
+ * @param options - File system, copy-ignore matcher and mount.
+ * @returns The carried files and whether any path was ignored.
+ */
+function carriedFiles({
+	fileSystem,
+	isCopyIgnored,
+	luauRoot,
+}: {
+	fileSystem: FileSystem;
+	isCopyIgnored: CopyIgnoreMatcher;
+	luauRoot: PosixRoot;
+}): CarriedFiles {
+	const carried: Array<string> = [];
+	let hasIgnoredPaths = false;
+	walkLuauDirectory({
+		directory: luauRoot,
+		fileSystem,
+		filter: {
+			accept: () => true,
+			skip: (relativePath) => {
+				if (!isCopyIgnored(relativePath)) {
+					return false;
+				}
+
+				hasIgnoredPaths = true;
+				return true;
+			},
+		},
+		results: carried,
+	});
+	return { carried, hasIgnoredPaths };
+}
+
+/**
+ * The directories that directly hold a probed file, mount-relative.
+ * @param probed - Mount-relative probed file paths.
+ * @returns Their parent directories.
+ */
+function probeDirectories(probed: ReadonlyArray<string>): Set<string> {
+	const directories = new Set<string>();
+	for (const relativePath of probed) {
+		directories.add(path.posix.dirname(relativePath));
+	}
+
+	return directories;
+}
+
+/**
+ * Drop every candidate that sits inside another. The shadow mirrors a root's
+ * whole subtree, so a nested pair would copy everything under the child twice
+ * and mount it twice.
+ * @param candidates - Mount-relative directories.
+ * @returns Sorted candidates that sit inside no other.
+ */
+function collapseToMaximal(candidates: ReadonlySet<string>): Array<string> {
+	const ordered = [...candidates].toSorted();
+	return ordered.filter((candidate) => {
+		return ordered.every((other) => other === candidate || !isWithinRoot(candidate, other));
+	});
 }
 
 /**
@@ -90,8 +188,12 @@ interface CarriedFiles {
  * The universe is resolvable before anything is instrumented: the walk reads
  * directory entries only, and the universe gate reads source maps. So the
  * discovery pass this makes is the same one instrumentation would have made.
+ * @param luauRoot - The mount to narrow.
+ * @param options - File system, copy-ignore matcher and universe.
+ * @returns Mount-relative roots; `[""]` for the whole mount, empty when the
+ * universe reaches no file.
  */
-export function narrowRootToUniverse(
+function narrowRootToUniverse(
 	luauRoot: PosixRoot,
 	{ fileSystem = nodeFileSystem, isCopyIgnored, universe }: NarrowRootOptions,
 ): Array<string> {
@@ -134,90 +236,6 @@ export function narrowRootToUniverse(
 }
 
 /**
- * Narrow every rojo mount, keeping each one's answer beside the mount it came
- * from — the spine is only meaningful against the mount it descends from, and
- * `coverageCopyIgnorePatterns` is written relative to that same directory.
- */
-export function narrowLuauRoots(
-	mounts: ReadonlyArray<PosixRoot>,
-	options: NarrowMountsOptions,
-): Array<NarrowedMount> {
-	return mounts.map((mount) => {
-		const narrowed = narrowRootToUniverse(mount, options).map((relative) => {
-			return toPosixRoot(underRoot(mount, relative));
-		});
-		const roots = isLoadable(narrowed, options.rojoMounts) ? narrowed : [mount];
-		return {
-			luauRoot: mount,
-			roots,
-			spine: resolveSpineDirectories(roots, options.rojoMounts),
-		};
-	});
-}
-
-/**
- * Every file the shadow would carry for this mount, mount-relative, and whether
- * the ignore list refused anything on the way.
- *
- * The whole set, not just the probed half: the share the threshold reads is a
- * share of the copying, and a spec file or a `.meta.json` costs the same to
- * copy as a module. Copy-ignored paths are left out because the shadow never
- * holds them either way — which is exactly why the walk has to say it saw them.
- * Nothing downstream can tell a mount the list emptied from one that was empty.
- */
-function carriedFiles({
-	fileSystem,
-	isCopyIgnored,
-	luauRoot,
-}: {
-	fileSystem: FileSystem;
-	isCopyIgnored: CopyIgnoreMatcher;
-	luauRoot: PosixRoot;
-}): CarriedFiles {
-	const carried: Array<string> = [];
-	let hasIgnoredPaths = false;
-	walkLuauDirectory({
-		directory: luauRoot,
-		fileSystem,
-		filter: {
-			accept: () => true,
-			skip: (relativePath) => {
-				if (!isCopyIgnored(relativePath)) {
-					return false;
-				}
-
-				hasIgnoredPaths = true;
-				return true;
-			},
-		},
-		results: carried,
-	});
-	return { carried, hasIgnoredPaths };
-}
-
-/** The directories that directly hold a probed file, mount-relative. */
-function probeDirectories(probed: ReadonlyArray<string>): Set<string> {
-	const directories = new Set<string>();
-	for (const relativePath of probed) {
-		directories.add(path.posix.dirname(relativePath));
-	}
-
-	return directories;
-}
-
-/**
- * Drop every candidate that sits inside another. The shadow mirrors a root's
- * whole subtree, so a nested pair would copy everything under the child twice
- * and mount it twice.
- */
-function collapseToMaximal(candidates: ReadonlySet<string>): Array<string> {
-	const ordered = [...candidates].toSorted();
-	return ordered.filter((candidate) => {
-		return ordered.every((other) => other === candidate || !isWithinRoot(candidate, other));
-	});
-}
-
-/**
  * Whether the place can be made to load every one of these roots.
  *
  * A root earns that from a `$path` mount landing on it — redirected outright —
@@ -229,6 +247,9 @@ function collapseToMaximal(candidates: ReadonlySet<string>): Array<string> {
  *
  * The live way in is a rojo project this run could not read — a mount set it
  * cannot see is one it cannot demote against.
+ * @param roots - Candidate roots.
+ * @param mounts - The project's `$path` mounts.
+ * @returns Whether every root has a mount on, above or below it.
  */
 function isLoadable(roots: ReadonlyArray<string>, mounts: ReadonlySet<string>): boolean {
 	return roots.every((root) => {

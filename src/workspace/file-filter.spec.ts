@@ -5,7 +5,6 @@ import { describe, expect, it } from "vitest";
 import type { ResolvedProjectConfig } from "../config/projects.ts";
 import { applyFileFilter } from "./file-filter.ts";
 import type { PackageContext } from "./project-contexts.ts";
-import { projectKey } from "./project-key.ts";
 
 function makeProject(displayName: string, include: Array<string>): ResolvedProjectConfig {
 	return fromAny({ displayName, include });
@@ -91,8 +90,8 @@ describe(applyFileFilter, () => {
 		});
 
 		expect([...selection.filesByProject]).toStrictEqual([
-			[projectKey("@halcyon/app", "client"), ["/repo/src/client/a.spec.ts"]],
-			[projectKey("@halcyon/lib", "lib"), ["/repo/packages/lib/src/b.spec.ts"]],
+			[JSON.stringify(["@halcyon/app", "client"]), ["/repo/src/client/a.spec.ts"]],
+			[JSON.stringify(["@halcyon/lib", "lib"]), ["/repo/packages/lib/src/b.spec.ts"]],
 		]);
 	});
 

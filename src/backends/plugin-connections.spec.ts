@@ -12,7 +12,6 @@ import {
 	describePluginMismatch,
 	type PluginCandidate,
 	PluginConnectionPool,
-	type PluginHello,
 } from "./plugin-connections.ts";
 
 const EXPECTED_VERSION = 6;
@@ -32,7 +31,11 @@ function useFakeTimers(): void {
 	});
 }
 
-/** Connect without announcing — every plugin predating the handshake. */
+/**
+ * Connect without announcing — every plugin predating the handshake.
+ * @param wss - Server the socket connects to.
+ * @returns The connected socket.
+ */
 function connectSilent(wss: MockWebSocketServer): MockWebSocket {
 	const socket = new MockWebSocket();
 	wss.emit("connection", socket);
@@ -49,7 +52,12 @@ async function waitAsync(ms: number): Promise<void> {
 	});
 }
 
-/** Connect a socket and let it announce itself, the way a real plugin does. */
+/**
+ * Connect a socket and let it announce itself, the way a real plugin does.
+ * @param wss - Server the socket connects to.
+ * @param hello - Fields that override the default announcement.
+ * @returns The connected socket.
+ */
 function connectPlugin(
 	wss: MockWebSocketServer,
 	hello: Record<string, unknown> = {},
@@ -393,7 +401,9 @@ describe(closePluginServer, () => {
 	});
 });
 
-function candidate(hello: Partial<PluginHello> & { protocolVersion: number }): PluginCandidate {
+function candidate(
+	hello: Partial<NonNullable<PluginCandidate["hello"]>> & { protocolVersion: number },
+): PluginCandidate {
 	return {
 		hello: { pluginName: "JestRobloxRunner", ...hello, type: "hello" },
 		socket: fromPartial<WebSocket>(new MockWebSocket()),

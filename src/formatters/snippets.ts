@@ -4,28 +4,16 @@ import {
 	getSourceSnippet,
 	type MappedLocation,
 	type SourceMapper,
-	type SourceSnippet,
 } from "../source-mapper/index.ts";
-import { highlightCode } from "../utils/colors.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import { nodeFileSystem } from "../utils/file-system.ts";
-import { createStyles, type Styles } from "./styles.ts";
+import { formatSourceSnippet } from "./snippet-render.ts";
+import type { Styles } from "./styles.ts";
 
 // The path segment is length-bounded so an unanchored `.match` over a long
 // message stays linear (an unbounded run of non-colon chars backtracks per
 // start position); 512 clears any real source path.
 const SOURCE_LOCATION = /([^\s:]{1,512}\.(?:tsx?|luau?)):(\d+)(?::(\d+))?/;
-
-const SNIPPET_INDENT = "\t";
-
-export interface SourceSnippetOptions {
-	filePath: string;
-	language?: string | undefined;
-	snippet: SourceSnippet;
-	styles?: Styles | undefined;
-	useColor?: boolean | undefined;
-}
-
 interface SourceLocation {
 	column?: number | undefined;
 	line: number;
@@ -49,54 +37,11 @@ interface TsSnippetOptions {
 	useColor: boolean;
 }
 
-interface FormatLocationHeaderOptions {
-	filePath: string;
-	language: string | undefined;
-	snippet: SourceSnippet;
-	styles: Styles;
-}
-
-interface FormatCaretLineOptions {
-	column: number;
-	content: string;
-	padding: number;
-	styles: Styles;
-}
-
-export function formatSourceSnippet({
-	filePath,
-	language,
-	snippet,
-	styles: snippetStyles,
-	useColor: isColorEnabled = true,
-}: SourceSnippetOptions): string {
-	const styles = snippetStyles ?? createStyles(isColorEnabled);
-	const lines = [formatLocationHeader({ filePath, language, snippet, styles })];
-
-	// Determine padding for line numbers
-	const maxLineNumber = Math.max(...snippet.lines.map((line) => line.num));
-	const padding = String(maxLineNumber).length;
-
-	for (const line of snippet.lines) {
-		const prefix = `${String(line.num).padStart(padding)}|`;
-		const expandedContent = expandTabs(line.content);
-		const highlighted = highlightSyntax({
-			code: expandedContent,
-			filePath,
-			useColor: isColorEnabled,
-		});
-		lines.push(`${SNIPPET_INDENT}${styles.lineNumber(prefix)} ${highlighted}`);
-
-		if (line.num === snippet.failureLine && snippet.column !== undefined) {
-			lines.push(
-				formatCaretLine({ column: snippet.column, content: line.content, padding, styles }),
-			);
-		}
-	}
-
-	return lines.join("\n");
-}
-
+/**
+ * Find the first `path.ts:line[:column]` or Luau equivalent in a message.
+ * @param message - Failure message to scan.
+ * @returns The parsed location, or undefined when the message holds none.
+ */
 export function parseSourceLocation(message: string): SourceLocation | undefined {
 	// Match patterns like "path/to/file.ts:25" or "path/to/file.ts:25:12"
 	const match = message.match(SOURCE_LOCATION);
@@ -119,6 +64,8 @@ export function parseSourceLocation(message: string): SourceLocation | undefined
  * Picks the snippets that best explain a failure: the mapped locations when the
  * source mapper resolved any, else a location parsed out of the raw message,
  * else the lone `toMatchSnapshot` call in the test file.
+ * @param options - Failure message, its mapped locations, test file and palette.
+ * @returns Snippet lines, or none when no source location is readable.
  */
 export function resolveSourceSnippets({
 	filePath,
@@ -164,62 +111,13 @@ export function resolveSourceSnippets({
 	return [];
 }
 
-// Location header: ❯ path:line:col  (Language)
-function formatLocationHeader({
-	filePath,
-	language,
-	snippet,
-	styles,
-}: FormatLocationHeaderOptions): string {
-	const location =
-		snippet.column !== undefined
-			? `${filePath}:${snippet.failureLine}:${snippet.column}`
-			: `${filePath}:${snippet.failureLine}`;
-	const langSuffix = language !== undefined ? styles.dim(`  (${language})`) : "";
-	return styles.location(` ❯ ${location}`) + langSuffix;
-}
-
-function expandTabs(text: string, tabWidth = 4): string {
-	let result = "";
-	for (const char of text) {
-		if (char === "\t") {
-			const spaces = tabWidth - (result.length % tabWidth);
-			result += " ".repeat(spaces);
-		} else {
-			result += char;
-		}
-	}
-
-	return result;
-}
-
-function highlightSyntax({
-	code,
-	filePath,
-	useColor,
-}: {
-	code: string;
-	filePath: string;
-	useColor: boolean;
-}): string {
-	if (!useColor) {
-		return code;
-	}
-
-	return highlightCode(filePath, code);
-}
-
-// Tabs before the column widen the caret's offset, so the prefix is expanded
-// the same way the rendered line was.
-function formatCaretLine({ column, content, padding, styles }: FormatCaretLineOptions): string {
-	const beforeColumn = expandTabs(content.slice(0, column - 1));
-	const gutterPrefix = styles.lineNumber(`${" ".repeat(padding)}|`);
-	return `${SNIPPET_INDENT}${gutterPrefix} ${" ".repeat(beforeColumn.length)}${styles.status.fail("^")}`;
-}
-
-// `tsLine`/`tsPath` arrive already narrowed from the caller — the only caller
-// branches on them to pick between this and the Luau-only rendering, so
-// re-checking them here would be an unreachable guard.
+/**
+ * `tsLine`/`tsPath` arrive already narrowed from the caller — the only caller
+ * branches on them to pick between this and the Luau-only rendering, so
+ * re-checking them here would be an unreachable guard.
+ * @param options - Mapped location, narrowed TypeScript position and palette.
+ * @returns Snippet lines, or none when the TypeScript source is unreadable.
+ */
 function tsSnippetLines({
 	fileSystem,
 	loc,

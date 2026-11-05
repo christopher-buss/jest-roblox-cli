@@ -10,13 +10,14 @@ export interface DependencyCruiserProjectOptions {
 	ambientModules?: ReadonlyArray<string>;
 	/** Shared rules this project opts out of; each is a recorded retrofit. */
 	disabledRules?: ReadonlyArray<SharedRuleName>;
-	/** The one production file allowed to import `node:fs`. */
-	fileSystemSeam?: string;
+	/** The production files allowed to import `node:fs`. */
+	fileSystemSeam?: ReadonlyArray<string> | string;
 	projectRoot: string;
 	rules: ReadonlyArray<IForbiddenRuleType>;
 	sourceRoots: ReadonlyArray<string>;
 	testRoot: string;
 	tsConfig: string;
+	unitHelperRoots?: ReadonlyArray<string>;
 }
 
 type SharedRuleOptions = Pick<
@@ -79,7 +80,7 @@ function alternation(literals: ReadonlyArray<string>): string {
 }
 
 function pathPrefix(...roots: ReadonlyArray<string>): string {
-	return `^${alternation(roots)}(?:/|$)`;
+	return roots.includes("") ? "^" : `^${alternation(roots)}(?:/|$)`;
 }
 
 function createImportRules({
@@ -136,7 +137,7 @@ function createStructureRules(
 			to: {
 				dependencyTypesNot: ["type-only"],
 				path: production,
-				pathNot: "^$1[.]ts$",
+				pathNot: "^$1[.](?:ts|mjs)$",
 			},
 		},
 	];
@@ -145,36 +146,58 @@ function createStructureRules(
 type TierRuleOptions = Pick<
 	DependencyCruiserProjectOptions,
 	"projectRoot" | "sourceRoots" | "testRoot"
-> & { fileSystemSeam: string | undefined };
+> & {
+	fileSystemSeam: ReadonlyArray<string> | string | undefined;
+	unitHelperRoots: ReadonlyArray<string> | undefined;
+};
 
 function createTierRules({
 	fileSystemSeam,
 	projectRoot,
 	sourceRoots,
 	testRoot,
+	unitHelperRoots = [`${testRoot}/helpers/unit`],
 }: TierRuleOptions): ReadonlyArray<IForbiddenRuleType & { name: SharedRuleName }> {
 	const production = pathPrefix(...sourceRoots);
 	const unitSpec = `^${alternation(sourceRoots)}/.+[.]spec[.]ts$`;
-	const unitHelpers = pathPrefix(`${testRoot}/helpers/unit`);
+	const unitHelpers = pathPrefix(...unitHelperRoots);
 	const integration = [
 		pathPrefix(`${testRoot}/integration`),
 		pathPrefix(`${testRoot}/helpers/integration`),
 	];
 	const publishedEntries = readPublishedSourceEntries(projectRoot);
 
+	const projectDirectory = projectRoot === "" ? "" : `${RegExp.escape(projectRoot)}/`;
+	const testAliasRule = {
+		name: "test-imports-use-package-alias" as const,
+		comment:
+			"Imports into the test tree use #test so they do not depend on caller depth; a helper's spec imports its sibling relatively.",
+		severity: "error" as const,
+	};
+	const testAliasTarget = {
+		dependencyTypes: ["local" as const],
+		dependencyTypesNot: ["aliased-subpath-import" as const, "aliased-tsconfig-paths" as const],
+		path: pathPrefix(testRoot),
+	};
+
 	return [
 		{
-			name: "test-imports-use-package-alias",
-			comment: "Imports into the test tree use #test so they do not depend on caller depth.",
-			from: { path: pathPrefix(projectRoot), pathNot: pathPrefix(`${testRoot}/fixtures`) },
-			severity: "error",
-			to: {
-				dependencyTypes: ["local"],
-				dependencyTypesNot: ["aliased-subpath-import"],
-				path: pathPrefix(testRoot),
+			...testAliasRule,
+			from: {
+				path: pathPrefix(projectRoot),
+				pathNot: [pathPrefix(`${testRoot}/fixtures`), "[.]spec[.]ts$"],
+			},
+			to: { ...testAliasTarget, pathNot: pathPrefix(`${testRoot}/fixtures`) },
+		},
+		{
+			...testAliasRule,
+			from: {
+				path: `^(${projectDirectory}.+)[.]spec[.]ts$`,
 				pathNot: pathPrefix(`${testRoot}/fixtures`),
 			},
+			to: { ...testAliasTarget, pathNot: [pathPrefix(`${testRoot}/fixtures`), "^$1[.]ts$"] },
 		},
+
 		{
 			name: "unit-helpers-have-no-runtime-production-imports",
 			from: { path: unitHelpers },
@@ -205,7 +228,7 @@ function createTierRules({
 			from: {
 				path: production,
 				pathNot: [
-					...(fileSystemSeam === undefined ? [] : [`^${RegExp.escape(fileSystemSeam)}$`]),
+					...[fileSystemSeam ?? []].flat().map((seam) => `^${RegExp.escape(seam)}$`),
 					"[.]spec[.]ts$",
 				],
 			},
@@ -255,8 +278,15 @@ export function createDependencyCruiserConfig({
 	sourceRoots,
 	testRoot,
 	tsConfig,
+	unitHelperRoots,
 }: DependencyCruiserProjectOptions): IConfiguration {
-	const tierRules = createTierRules({ fileSystemSeam, projectRoot, sourceRoots, testRoot });
+	const tierRules = createTierRules({
+		fileSystemSeam,
+		projectRoot,
+		sourceRoots,
+		testRoot,
+		unitHelperRoots,
+	});
 
 	return {
 		forbidden: [

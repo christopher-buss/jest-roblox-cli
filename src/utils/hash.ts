@@ -4,11 +4,20 @@ import { createHash } from "node:crypto";
 import type { FileSystem } from "./file-system.ts";
 import { nodeFileSystem } from "./file-system.ts";
 
+/**
+ * SHA-256 of raw bytes.
+ * @param data - The bytes to digest.
+ * @returns The hex digest.
+ */
 export function hashBuffer(data: buffer.Buffer): string {
 	return createHash("sha256").update(data).digest("hex");
 }
 
-/** SHA-256 of a string, for digests over config rather than file bytes. */
+/**
+ * SHA-256 of a string, for digests over config rather than file bytes.
+ * @param text - The text to digest.
+ * @returns The hex digest.
+ */
 export function hashString(text: string): string {
 	return createHash("sha256").update(text).digest("hex");
 }
@@ -20,6 +29,7 @@ export function hashString(text: string): string {
  *
  * @param filePath - The file to digest.
  * @param fileSystem - Where to read it from.
+ * @returns The hex digest.
  */
 export function hashFile(filePath: string, fileSystem: FileSystem = nodeFileSystem): string {
 	return hashBuffer(fileSystem.readFileSync(filePath));
@@ -33,6 +43,7 @@ export function hashFile(filePath: string, fileSystem: FileSystem = nodeFileSyst
  *
  * @param filePath - The file to digest.
  * @param fileSystem - Where to read it from.
+ * @returns The hex digest.
  */
 export async function hashFileAsync(
 	filePath: string,

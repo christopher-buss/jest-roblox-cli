@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { defaultFormatters } from "./default-formatters.ts";
+import { expectedDefaultFormatters } from "#test/mocks/config-default-formatters.ts";
+import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
 import { mergeCliWithConfig } from "./merge.ts";
-import { DEFAULT_CONFIG } from "./schema.ts";
 
 describe(mergeCliWithConfig, () => {
 	it("should preserve explicit falsy CLI overrides", () => {
@@ -17,7 +17,7 @@ describe(mergeCliWithConfig, () => {
 				updateSnapshot: false,
 			},
 			{
-				...DEFAULT_CONFIG,
+				...createResolvedConfig(),
 				hiddenDesktop: true,
 				outputFile: "results.json",
 				studioPath: "Studio.exe",
@@ -46,7 +46,7 @@ describe(mergeCliWithConfig, () => {
 				updateSnapshot: true,
 			},
 			{
-				...DEFAULT_CONFIG,
+				...createResolvedConfig(),
 				gameOutput: "config-game.log",
 				outputFile: "config-results.json",
 				parallel: 2,
@@ -70,7 +70,8 @@ describe(mergeCliWithConfig, () => {
 		expect.assertions(1);
 
 		expect(
-			mergeCliWithConfig({}, { ...DEFAULT_CONFIG, hiddenDesktop: true }).hiddenDesktop,
+			mergeCliWithConfig({}, { ...createResolvedConfig(), hiddenDesktop: true })
+				.hiddenDesktop,
 		).toBeTrue();
 	});
 
@@ -78,28 +79,32 @@ describe(mergeCliWithConfig, () => {
 		expect.assertions(2);
 
 		expect(
-			mergeCliWithConfig({ formatters: ["json"] }, DEFAULT_CONFIG).formatters,
+			mergeCliWithConfig({ formatters: ["json"] }, createResolvedConfig()).formatters,
 		).toStrictEqual(["json"]);
 		expect(
-			mergeCliWithConfig({}, { ...DEFAULT_CONFIG, formatters: ["junit"] }).formatters,
+			mergeCliWithConfig({}, { ...createResolvedConfig(), formatters: ["junit"] }).formatters,
 		).toStrictEqual(["junit"]);
 	});
 
 	it("should fall back to the environment-detected formatter defaults", () => {
 		expect.assertions(1);
 
-		expect(mergeCliWithConfig({}, DEFAULT_CONFIG).formatters).toStrictEqual(
-			defaultFormatters(),
+		expect(mergeCliWithConfig({}, createResolvedConfig()).formatters).toStrictEqual(
+			expectedDefaultFormatters(),
 		);
 	});
 
 	it("should add the GitHub formatter only inside GitHub Actions", () => {
 		expect.assertions(2);
 
-		expect(mergeCliWithConfig({}, DEFAULT_CONFIG).formatters).not.toContain("github-actions");
+		expect(mergeCliWithConfig({}, createResolvedConfig()).formatters).not.toContain(
+			"github-actions",
+		);
 
 		vi.stubEnv("GITHUB_ACTIONS", "true");
 
-		expect(mergeCliWithConfig({}, DEFAULT_CONFIG).formatters).toContain("github-actions");
+		expect(mergeCliWithConfig({}, createResolvedConfig()).formatters).toContain(
+			"github-actions",
+		);
 	});
 });

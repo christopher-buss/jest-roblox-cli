@@ -21,6 +21,7 @@ const AFTER_INSTALL = new Date(Date.UTC(2026, 0, 3));
  *
  * @param state - What pnpm recorded, or the raw bytes to stand in for it.
  * @param yamlModifiedAt - When the manifest was last written.
+ * @returns A file system over the seeded volume.
  */
 function writeWorkspace(
 	state: Record<string, unknown> | string,
