@@ -217,6 +217,41 @@ before the `return`, such as a `require` used only for types, are ignored. Any
 other syntax in the returned value stops the load with an error that names the
 file and line.
 
+#### Types for Luau configs
+
+Run `jest-roblox setup` in the project root to get the `Config` type and
+`defineConfig`:
+
+```sh
+jest-roblox setup
+```
+
+Setup writes the type module to `~/.jest-roblox/typedefs/<version>/` and adds a
+`jest-roblox` alias that points there:
+
+- If `.config.luau` exists, setup adds the alias to its `luau.aliases` table and
+  keeps the file's comments and formatting. If `luau.aliases` is built by code,
+  setup changes nothing and prints the entry to add by hand.
+- If only `.luaurc` exists, setup adds the alias to its `aliases` and keeps the
+  other keys. Setup reads `.luaurc` as strict JSON. If the file has comments or
+  trailing commas, setup changes nothing and prints the entry to add by hand.
+- If neither exists, setup creates `.config.luau` with the alias.
+
+Then type your config, and luau-lsp and `lute check` check it:
+
+```luau
+local jest = require("@jest-roblox/config")
+
+return jest.defineConfig({
+	test = {
+		testMatch = { "**/*.spec" },
+	},
+})
+```
+
+Each CLI version has its own type folder, so run setup again after you upgrade.
+To run tests filtered to a file named `setup`, write the filter as `./setup`.
+
 `--config path/to/file.luau` loads a Luau config explicitly. A relative
 `rootDir` or `workspace.root` is relative to the Luau config's directory, as in
 other formats. Mergeable fields cannot take the function form in Luau.

@@ -1,8 +1,10 @@
+import * as os from "node:os";
 import process from "node:process";
 
 import packageJson from "../package.json" with { type: "json" };
 import { parseArgs } from "./cli-args.ts";
 import { printError } from "./cli-errors.ts";
+import { ConfigError } from "./config/errors.ts";
 import { resolveLayoutProject } from "./config/layout-project.ts";
 import { loadConfig, type PackageConfigLoader } from "./config/loader.ts";
 import { mergeCliWithConfig } from "./config/merge.ts";
@@ -12,6 +14,7 @@ import { createStdoutRunProgress } from "./progress/reporter.ts";
 import { withRunLogAsync } from "./run-log/run-log.ts";
 import { runJestRobloxAsync } from "./run.ts";
 import type { MultiRunResult, WorkspaceRunResult } from "./run/run-types.ts";
+import { formatSetupOutcome, runSetup, SETUP_COMMAND } from "./setup/setup.ts";
 import type { FileSystem } from "./utils/file-system.ts";
 import { nodeFileSystem } from "./utils/file-system.ts";
 import {
@@ -23,6 +26,13 @@ const VERSION = packageJson.version;
 
 const HELP_TEXT = `
 Usage: jest-roblox [options] [files...]
+       jest-roblox setup
+
+Commands:
+  setup                             Install the Luau Config type and add the
+                                    "jest-roblox" alias to .config.luau or
+                                    .luaurc. Write a test filter named setup
+                                    as ./setup
 
 Options:
   --backend <type>                  Backend: "auto", "open-cloud", "studio", or
@@ -113,6 +123,8 @@ Examples:
 export interface CliDependencies {
 	/** File system for config, output and artifacts. */
 	fileSystem?: FileSystem;
+	/** Home folder that setup writes the type module under. */
+	homeDirectory?: string;
 	/** Loads the package config. */
 	loadConfig?: PackageConfigLoader;
 	/** Writes the run result to the configured sinks. */
@@ -125,6 +137,7 @@ type ResolvedCliDependencies = Required<CliDependencies>;
 
 const NODE_DEPENDENCIES: ResolvedCliDependencies = {
 	fileSystem: nodeFileSystem,
+	homeDirectory: os.homedir(),
 	loadConfig,
 	outputMultiResult: outputMultiResultAsync,
 	runJestRoblox: runJestRobloxAsync,
@@ -213,6 +226,19 @@ async function runReportedAsync({
 	}
 }
 
+function runSetupCommand({ fileSystem, homeDirectory }: ResolvedCliDependencies): number {
+	const outcome = runSetup({ cwd: process.cwd(), fileSystem, homeDirectory, version: VERSION });
+	if (outcome.kind === "unreadable") {
+		throw new ConfigError(
+			`Failed to read ${outcome.configFile}: ${outcome.problem}`,
+			`Fix the file and run setup again, or add this entry to its "aliases" by hand: ${outcome.entry}`,
+		);
+	}
+
+	process.stdout.write(formatSetupOutcome(outcome));
+	return 0;
+}
+
 async function runInnerAsync(
 	args: Array<string>,
 	dependencies: ResolvedCliDependencies,
@@ -229,7 +255,12 @@ async function runInnerAsync(
 		return 0;
 	}
 
+	if (cli.files?.[0] === SETUP_COMMAND) {
+		return runSetupCommand(dependencies);
+	}
+
 	const { fileSystem } = dependencies;
+
 	const loadedConfig = await dependencies.loadConfig({
 		configPath: cli.config,
 		cwd: cli.workspaceRoot,

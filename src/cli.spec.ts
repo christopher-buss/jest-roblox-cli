@@ -580,3 +580,71 @@ describe("runInner orchestration", () => {
 		expect(config.formatters).toContain("github-actions");
 	});
 });
+
+describe("setup subcommand", () => {
+	it("should run setup instead of a test run when setup is the first positional", async () => {
+		expect.assertions(4);
+
+		const spies = setupOutputSpies();
+		const { fileSystem, volume } = createMemoryFileSystem();
+		volume.mkdirSync(process.cwd(), { recursive: true });
+		const cli = setupDefaults();
+		const homeDirectory = path.resolve("/home/user");
+
+		const code = await runAsync(["setup"], { ...cli.dependencies, fileSystem, homeDirectory });
+
+		expect(code).toBe(0);
+		expect(
+			volume.existsSync(
+				path.join(
+					homeDirectory,
+					".jest-roblox",
+					"typedefs",
+					packageJson.version,
+					"config.luau",
+				),
+			),
+		).toBeTrue();
+		expect(cli.loadConfig).not.toHaveBeenCalled();
+		expect(spies.stdout).toHaveBeenCalledWith(
+			expect.stringContaining('Created .config.luau with the "jest-roblox" alias'),
+		);
+	});
+
+	it("should show a .luaurc that setup cannot read as a Config Error with the entry to add", async () => {
+		expect.assertions(3);
+
+		const spies = setupOutputSpies();
+		const { fileSystem } = createMemoryFileSystem({
+			[path.join(process.cwd(), ".luaurc")]: '{ "aliases": { "x": 1 } }',
+		});
+		const cli = setupDefaults();
+
+		const code = await runAsync(["setup"], {
+			...cli.dependencies,
+			fileSystem,
+			homeDirectory: path.resolve("/home/user"),
+		});
+
+		expect(code).toBe(2);
+		expect(renderedStderr(spies)).toContain(
+			"Failed to read .luaurc: aliases.x must be a string (was a number)",
+		);
+		expect(renderedStderr(spies)).toContain(
+			`Hint: Fix the file and run setup again, or add this entry to its "aliases" by hand: "jest-roblox": "~/.jest-roblox/typedefs/${packageJson.version}"`,
+		);
+	});
+
+	it("should run tests filtered to setup when the filter is written ./setup", async () => {
+		expect.assertions(1);
+
+		setupOutputSpies();
+		const cli = setupDefaults();
+
+		await runAsync(["./setup"], cli.dependencies);
+
+		const [{ cli: options }] = cli.runJestRoblox.mock.calls[0]!;
+
+		expect(options.files).toStrictEqual(["./setup"]);
+	});
+});

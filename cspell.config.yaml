@@ -49,6 +49,7 @@ words:
   - interpolatedstring
   - interpstring
   - ipairs
+  - languagemode
   - ldexp
   - lhsOperand
   - localfunction
