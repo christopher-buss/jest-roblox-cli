@@ -6,14 +6,14 @@ import { randomUUID } from "node:crypto";
 import process from "node:process";
 import { describe, expect, it, vi } from "vitest";
 
-import { summarizeClaims } from "#test/e2e/live/e2e-spec-recovery-claims.ts";
-import { IS_BINARY_INPUT, IS_LIVE } from "#test/e2e/live/live-gate.ts";
 import {
 	DEFAULT_BOOT_WATCH_MS,
 	executeWithRecoveryAsync,
-} from "../../../src/backends/execution-recovery.ts";
-import { openCloudExecutionBudgets } from "../../../src/backends/open-cloud-budgets.ts";
-import { executeWithResultRelayAsync } from "../../../src/backends/result-relay.ts";
+} from "#src/backends/execution-recovery.ts";
+import { openCloudExecutionBudgets } from "#src/backends/open-cloud-budgets.ts";
+import { executeWithResultRelayAsync } from "#src/backends/result-relay.ts";
+import { summarizeClaims } from "#test/e2e/live/e2e-spec-recovery-claims.ts";
+import { IS_BINARY_INPUT, IS_LIVE } from "#test/e2e/live/live-gate.ts";
 
 type ExecutionAttemptContext = Parameters<
 	Parameters<typeof executeWithRecoveryAsync>[0]["executeAsync"]

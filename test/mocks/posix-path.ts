@@ -2,7 +2,7 @@ import { fromAny } from "@total-typescript/shoehorn";
 
 import * as path from "node:path";
 
-import type { PosixRoot } from "../../src/utils/normalize-windows-path.ts";
+import type { PosixRoot } from "#src/utils/normalize-windows-path.ts";
 
 const DRIVE_LETTER_START = /^[A-Za-z]:\//;
 const TRAILING_SLASH = /(?<=.)\/$/;

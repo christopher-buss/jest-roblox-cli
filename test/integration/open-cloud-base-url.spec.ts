@@ -3,8 +3,8 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 
+import { DEFAULT_CONFIG, OpenCloudBackend } from "#src/index.ts";
 import { startFakeOpenCloudServerAsync } from "#test/e2e/cli/fake-open-cloud.ts";
-import { DEFAULT_CONFIG, OpenCloudBackend } from "../../src/index.ts";
 
 const credentials = { apiKey: "test-api-key", placeId: "456", universeId: "123" };
 function successJest(): string {

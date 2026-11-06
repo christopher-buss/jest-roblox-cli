@@ -2,11 +2,11 @@
 /* eslint-disable flawless/prefer-ending-with-an-expect -- the host test measures rather than asserts. */
 import { describe, it } from "vitest";
 
-import { DEFAULT_CONFIG } from "../../src/config/schema.ts";
+import { DEFAULT_CONFIG } from "#src/config/schema.ts";
 import {
 	generateMaterializerScript,
 	type MaterializerInput,
-} from "../../src/staging/test-script-staged.ts";
+} from "#src/staging/test-script-staged.ts";
 
 /**
  * The materializer payload is built once per workspace run and grows with the

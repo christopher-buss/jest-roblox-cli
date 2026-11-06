@@ -1,5 +1,5 @@
+import type { JestResult } from "#src/types/jest-result-types.ts";
 import { createTestCase, oneFailedOfTwo } from "#test/mocks/format-results.ts";
-import type { JestResult } from "../../src/types/jest-result-types.ts";
 
 const PASSING_TYPES = "passing types";
 

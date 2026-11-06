@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { assert, describe, expect, it } from "vitest";
 
-import { configSchema } from "../../src/source.ts";
+import { configSchema } from "#src/source.ts";
 
 const LUAU_CONFIG_TYPE_FILE = path.resolve(__dirname, "..", "..", "luau", "types", "config.luau");
 

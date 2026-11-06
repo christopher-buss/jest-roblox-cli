@@ -1,8 +1,4 @@
-import type {
-	JestResult,
-	TestCaseResult,
-	TestFileResult,
-} from "../../src/types/jest-result-types.ts";
+import type { JestResult, TestCaseResult, TestFileResult } from "#src/types/jest-result-types.ts";
 
 const UTILS_SPEC = "src/utils.spec.ts";
 const UTILS_ADD = "Utils add works";

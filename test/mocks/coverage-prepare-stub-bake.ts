@@ -1,7 +1,7 @@
 import * as path from "node:path";
 
-import type { ShadowBake } from "../../src/coverage-pipeline/spine.ts";
-import type { FileSystem } from "../../src/utils/file-system.ts";
+import type { ShadowBake } from "#src/coverage-pipeline/spine.ts";
+import type { FileSystem } from "#src/utils/file-system.ts";
 
 const STUB = "jest.config.luau";
 const STUB_TEXT = "-- generated stub\nreturn {}\n";

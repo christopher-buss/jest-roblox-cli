@@ -1,7 +1,7 @@
 import * as path from "node:path";
 
+import type { FileSystem } from "#src/utils/file-system.ts";
 import { sha256 } from "#test/mocks/coverage-hash.ts";
-import type { FileSystem } from "../../src/utils/file-system.ts";
 
 export function rojoInputsHash(
 	fileSystem: FileSystem,

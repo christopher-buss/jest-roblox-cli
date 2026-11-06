@@ -64,15 +64,22 @@ function plantStaleSandbox(): Record<keyof typeof DECOY_SPEC_NAMES, string> {
  * The real collector rather than a glob library standing in for it:
  * `--filesOnly` globs the project and prints what it found without running or
  * typechecking anything.
+ *
+ * `--no-fsModuleCache`: on a lockfile change Vitest deletes the workspace-wide
+ * module cache that concurrent runs are writing into, failing with ENOTEMPTY.
  * @param project - Vitest project name.
  * @returns The file list Vitest prints.
  */
 function listProjectFiles(project: string): string {
-	return execFileSync("node", [VITEST_BIN, "list", "--filesOnly", "--project", project], {
-		cwd: PACKAGE_ROOT,
-		encoding: "utf-8",
-		windowsHide: true,
-	});
+	return execFileSync(
+		"node",
+		[VITEST_BIN, "list", "--filesOnly", "--no-fsModuleCache", "--project", project],
+		{
+			cwd: PACKAGE_ROOT,
+			encoding: "utf-8",
+			windowsHide: true,
+		},
+	);
 }
 
 describe("file collection", () => {

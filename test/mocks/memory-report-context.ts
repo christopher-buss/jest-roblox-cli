@@ -3,8 +3,8 @@ import istanbulReport from "istanbul-lib-report";
 import { Buffer } from "node:buffer";
 import path from "node:path";
 
+import type { FileSystem } from "#src/utils/file-system.ts";
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
-import type { FileSystem } from "../../src/utils/file-system.ts";
 
 interface MemoryWriter extends FileWriter {
 	writerForDir(subdirectory: string): FileWriter;

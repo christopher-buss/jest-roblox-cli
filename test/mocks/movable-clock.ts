@@ -1,5 +1,5 @@
+import type { TimingCollector } from "#src/timing/orchestration-collector.ts";
 import { clockTimingCollector } from "#test/mocks/clock-timing-collector.ts";
-import type { TimingCollector } from "../../src/timing/orchestration-collector.ts";
 
 export interface MovableClockCollector {
 	/** Moves the clock forward, from inside the phase under measurement. */

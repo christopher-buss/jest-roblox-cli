@@ -1,7 +1,7 @@
 import { vi } from "vitest";
 
+import type { TimedPhase, TimingCollector } from "#src/timing/orchestration-collector.ts";
 import { NOOP_PROGRESS } from "#test/mocks/noop-progress.ts";
-import type { TimedPhase, TimingCollector } from "../../src/timing/orchestration-collector.ts";
 
 export interface TimingRecorder {
 	collector: TimingCollector;

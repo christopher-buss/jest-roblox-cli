@@ -2,13 +2,13 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
+import type { RawCoverageData } from "#src/index.ts";
 import { createRbxtsFixtureSandbox } from "#test/e2e/cli/helpers.ts";
 import {
 	instrumentFixtureAsync,
 	reportCoverageAsync,
 } from "#test/integration/coverage-pipeline/coverage-run.ts";
 import { buildSyntheticCoverage } from "#test/mocks/coverage-spec-synthetic.ts";
-import type { RawCoverageData } from "../../../src/index.ts";
 
 const RBXTS_FIXTURE = path.resolve(__dirname, "../../e2e/fixtures/rbxts-project");
 

@@ -1,4 +1,4 @@
-import type { CstNumber } from "../../../src/cst.ts";
+import type { CstNumber } from "#src/cst.ts";
 
 export function numberNode(): CstNumber {
 	return {

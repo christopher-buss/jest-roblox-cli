@@ -3,7 +3,7 @@ import type { ScriptResult } from "@isentinel/roblox-runner";
 import process from "node:process";
 import { onTestFinished, vi } from "vitest";
 
-import type { ProjectJob } from "../../src/backends/interface.ts";
+import type { ProjectJob } from "#src/backends/interface.ts";
 
 export interface StderrCapture {
 	restore: () => void;

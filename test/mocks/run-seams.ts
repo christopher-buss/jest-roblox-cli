@@ -2,7 +2,7 @@ import { fromAny } from "@total-typescript/shoehorn";
 
 import { vi } from "vitest";
 
-import type { RunSeams } from "../../src/run/seams.ts";
+import type { RunSeams } from "#src/run/seams.ts";
 
 export function createRunSeams(overrides: Partial<RunSeams> = {}): RunSeams {
 	return {

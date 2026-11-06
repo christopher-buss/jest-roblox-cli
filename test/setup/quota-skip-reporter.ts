@@ -3,7 +3,7 @@ import * as path from "node:path";
 import process from "node:process";
 import type { Reporter, TestModule, TestRunEndReason } from "vitest/node";
 
-import type { FileSystem } from "../../src/utils/file-system.ts";
+import type { FileSystem } from "#src/utils/file-system.ts";
 
 export const NOTE_PREFIX = "open-cloud-quota:";
 

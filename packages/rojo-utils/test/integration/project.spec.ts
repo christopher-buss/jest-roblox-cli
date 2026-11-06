@@ -9,7 +9,7 @@ import {
 	mapFsPathToDataModel,
 	RbxPathParent,
 	RojoResolver,
-} from "../../src/index.ts";
+} from "#src/index.ts";
 
 function makeProject(): string {
 	const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "rojo-integration-")));

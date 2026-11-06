@@ -3,7 +3,7 @@ import { fromAny, fromPartial } from "@total-typescript/shoehorn";
 import { createFsFromVolume, type IFs, Volume } from "memfs";
 import path from "node:path";
 
-import type { FileSystem } from "../../../src/file-system.ts";
+import type { FileSystem } from "#src/file-system.ts";
 
 interface MemoryFixture {
 	directory: string;

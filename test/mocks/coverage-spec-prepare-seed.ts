@@ -1,10 +1,10 @@
 import { fromAny } from "@total-typescript/shoehorn";
 
+import type { ResolvedConfig } from "#src/config/schema.ts";
+import type { TsconfigReader } from "#src/executor/tsconfig-mappings.ts";
 import type { MemoryFileSystem, MemoryVolume } from "#test/mocks/memory-file-system.ts";
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
-import type { ResolvedConfig } from "../../src/config/schema.ts";
-import type { TsconfigReader } from "../../src/executor/tsconfig-mappings.ts";
 
 export const ROJO_PROJECT = {
 	name: "test",

@@ -2,11 +2,11 @@ import path from "node:path";
 import process from "node:process";
 import { describe, expect, it, vi } from "vitest";
 
+import { runAsync } from "#src/cli.ts";
+import type { JestResult } from "#src/index.ts";
+import { loadConfig } from "#src/index.ts";
 import { startFakeOpenCloudServerAsync } from "#test/e2e/cli/fake-open-cloud.ts";
 import { createFixtureSandbox } from "#test/e2e/cli/helpers.ts";
-import { runAsync } from "../../../src/cli.ts";
-import type { JestResult } from "../../../src/index.ts";
-import { loadConfig } from "../../../src/index.ts";
 
 const MULTI_ROOT_FIXTURE = path.resolve(__dirname, "../../e2e/fixtures/multi-root-project");
 

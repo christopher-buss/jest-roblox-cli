@@ -4,8 +4,8 @@ import type { ResolvedConfig as C12ResolvedConfig, LoadConfigOptions } from "c12
 import type { Mock } from "vitest";
 import { vi } from "vitest";
 
+import type { ProjectConfigInput } from "#src/config/project-config-file.ts";
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
-import type { ProjectConfigInput } from "../../src/config/project-config-file.ts";
 
 export interface ProjectSeamStubs {
 	configLoader: Mock<(options: LoadConfigOptions) => Promise<C12ResolvedConfig>>;

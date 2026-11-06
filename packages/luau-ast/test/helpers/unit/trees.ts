@@ -2,8 +2,8 @@ import { fromAny } from "@total-typescript/shoehorn";
 
 import { assert } from "vitest";
 
-import type { AstStatBlock } from "../../../src/ast-types.ts";
-import type { CstRoot } from "../../../src/cst.ts";
+import type { AstStatBlock } from "#src/ast-types.ts";
+import type { CstRoot } from "#src/cst.ts";
 import ast from "../../fixtures/trees/ast.json" with { type: "json" };
 import cst from "../../fixtures/trees/cst.json" with { type: "json" };
 import rawAst from "../../fixtures/trees/raw-ast.json" with { type: "json" };

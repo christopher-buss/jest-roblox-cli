@@ -2,10 +2,10 @@ import process from "node:process";
 import type { MockInstance } from "vitest";
 import { vi } from "vitest";
 
+import type { ResolvedConfig } from "#src/config/schema.ts";
+import type { ExecuteResult } from "#src/executor/executor-types.ts";
+import type { JestResult } from "#src/types/jest-result-types.ts";
 import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
-import type { ResolvedConfig } from "../../src/config/schema.ts";
-import type { ExecuteResult } from "../../src/executor/executor-types.ts";
-import type { JestResult } from "../../src/types/jest-result-types.ts";
 
 export interface OutputSpies {
 	consoleError: MockedConsole;

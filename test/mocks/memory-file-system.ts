@@ -3,7 +3,7 @@ import { fromAny } from "@total-typescript/shoehorn";
 import { memfs } from "memfs";
 import process from "node:process";
 
-import type { FileSystem } from "../../src/utils/file-system.ts";
+import type { FileSystem } from "#src/utils/file-system.ts";
 
 /** The `memfs` volume API a spec seeds through and asserts against. */
 export type MemoryVolume = ReturnType<typeof memfs>["vol"];

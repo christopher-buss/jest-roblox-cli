@@ -1,5 +1,5 @@
+import type { JestResult, TestCaseResult } from "#src/types/jest-result-types.ts";
 import { createTestCase } from "#test/mocks/format-results.ts";
-import type { JestResult, TestCaseResult } from "../../src/types/jest-result-types.ts";
 
 export function createSingleFileResult(overrides: Partial<JestResult> = {}): JestResult {
 	return {

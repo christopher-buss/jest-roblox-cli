@@ -1,9 +1,9 @@
 import process from "node:process";
 import { onTestFinished, vi } from "vitest";
 
+import type { Backend, ExecuteResult } from "#src/index.ts";
+import { runProjectsAsync } from "#src/index.ts";
 import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
-import type { Backend, ExecuteResult } from "../../../src/index.ts";
-import { runProjectsAsync } from "../../../src/index.ts";
 
 export type SourceMapper = NonNullable<ExecuteResult["sourceMapper"]>;
 

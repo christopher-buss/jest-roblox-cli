@@ -1,6 +1,6 @@
+import type { ResolvedProjectConfig } from "#src/config/projects.ts";
+import type { ResolvedConfig } from "#src/config/schema.ts";
 import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
-import type { ResolvedProjectConfig } from "../../src/config/projects.ts";
-import type { ResolvedConfig } from "../../src/config/schema.ts";
 
 export function makeResolvedProject(
 	overrides: Partial<ResolvedProjectConfig> = {},

@@ -1,4 +1,4 @@
-import type { ColorFunc, Styles } from "../../src/formatters/styles.ts";
+import type { ColorFunc, Styles } from "#src/formatters/styles.ts";
 
 export function createTaggedStyles(): Styles {
 	return {

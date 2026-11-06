@@ -4,7 +4,7 @@ import * as path from "node:path";
 import process from "node:process";
 import { assert, describe, expect, it, onTestFinished, vi } from "vitest";
 
-import { DEFAULT_CONFIG, loadConfig } from "../../src/index.ts";
+import { DEFAULT_CONFIG, loadConfig } from "#src/index.ts";
 
 function isErrorWithoutNotFoundMessage(error: unknown): boolean {
 	return error instanceof Error && !error.message.includes("Config file not found");

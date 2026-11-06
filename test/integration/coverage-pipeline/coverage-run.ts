@@ -6,8 +6,7 @@ import path from "node:path";
 import process from "node:process";
 import { onTestFinished, vi } from "vitest";
 
-import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
-import { type CliDependencies, runAsync } from "../../../src/cli.ts";
+import { type CliDependencies, runAsync } from "#src/cli.ts";
 import {
 	buildCoveragePlaceAsync,
 	type CoverageManifest,
@@ -15,7 +14,8 @@ import {
 	type RawCoverageData,
 	readCoverageManifest,
 	type runJestRobloxAsync,
-} from "../../../src/index.ts";
+} from "#src/index.ts";
+import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
 
 const PASSING_RUN = {
 	numFailedTests: 0,

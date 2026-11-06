@@ -6,7 +6,7 @@ import type {
 	CoverageAccumulator,
 	SourcePosition,
 	StatementBranchArm,
-} from "../../src/coverage-pipeline/coverage-accumulator.ts";
+} from "#src/coverage-pipeline/coverage-accumulator.ts";
 
 type Result = CollectorResult<LuauSpan>;
 type BranchArm = Result["branches"][number]["arms"][number];

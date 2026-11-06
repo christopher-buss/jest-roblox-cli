@@ -2,8 +2,8 @@ import { fromAny } from "@total-typescript/shoehorn";
 
 import { vi } from "vitest";
 
+import type { TimingCollector } from "#src/timing/orchestration-collector.ts";
 import { NOOP_PROGRESS } from "#test/mocks/noop-progress.ts";
-import type { TimingCollector } from "../../src/timing/orchestration-collector.ts";
 
 /**
  * A collector whose every phase runs straight through and reports the same

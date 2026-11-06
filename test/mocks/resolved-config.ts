@@ -1,6 +1,6 @@
 import process from "node:process";
 
-import type { ResolvedConfig } from "../../src/config/schema.ts";
+import type { ResolvedConfig } from "#src/config/schema.ts";
 
 // jscpd:ignore-start
 /**

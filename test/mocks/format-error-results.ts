@@ -1,5 +1,5 @@
+import type { JestResult, TestFileResult } from "#src/types/jest-result-types.ts";
 import { utilsFileResult } from "#test/mocks/format-results.ts";
-import type { JestResult, TestFileResult } from "../../src/types/jest-result-types.ts";
 
 const EXEC_ERROR_FILE: TestFileResult = {
 	failureMessage:

@@ -1,4 +1,4 @@
-import type { TimingResult } from "../../src/types/timing-types.ts";
+import type { TimingResult } from "#src/types/timing-types.ts";
 
 export const TIMING: TimingResult = {
 	executionMs: 150,

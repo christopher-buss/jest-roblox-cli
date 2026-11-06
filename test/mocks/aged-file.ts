@@ -1,6 +1,6 @@
 import * as path from "node:path";
 
-import type { FileSystem } from "../../src/utils/file-system.ts";
+import type { FileSystem } from "#src/utils/file-system.ts";
 
 /** Far enough back that no test clock lands on it. */
 const DEFAULT_AGE_SECONDS = 60;

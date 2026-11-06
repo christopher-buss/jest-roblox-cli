@@ -1,5 +1,6 @@
 import { fromAny } from "@total-typescript/shoehorn";
 
+import type { CollectorResult } from "#src/coverage-pipeline/coverage-collector.ts";
 import collected from "#test/fixtures/coverage-collected.json" with { type: "json" };
 import andOrRhsEvalSource from "#test/fixtures/coverage-pipeline/and-or-rhs-eval.luau";
 import andOrShortCircuitSource from "#test/fixtures/coverage-pipeline/and-or-short-circuit.luau";
@@ -13,7 +14,6 @@ import ifOnlySource from "#test/fixtures/coverage-pipeline/if-only.luau";
 import ignoreDirectivesSource from "#test/fixtures/coverage-pipeline/ignore-directives.luau";
 import simpleSource from "#test/fixtures/coverage-pipeline/simple.luau";
 import utf8ColumnsSource from "#test/fixtures/coverage-pipeline/utf8-columns.luau";
-import type { CollectorResult } from "../../src/coverage-pipeline/coverage-collector.ts";
 
 export interface CollectedFixture {
 	readonly result: CollectorResult;

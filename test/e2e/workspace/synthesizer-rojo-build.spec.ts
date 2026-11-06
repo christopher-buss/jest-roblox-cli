@@ -4,6 +4,9 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { describe, expect, it, onTestFinished } from "vitest";
 
+import { buildPlaceAsync } from "#src/staging/place-builder.ts";
+import type { PackageDescriptor } from "#src/staging/synthesizer-types.ts";
+import type { RojoTreeNode } from "#src/types/rojo.ts";
 import {
 	childNames,
 	descend,
@@ -11,9 +14,6 @@ import {
 	nodesBuiltFrom,
 	readSourcemap,
 } from "#test/e2e/workspace/sourcemap.ts";
-import { buildPlaceAsync } from "../../../src/staging/place-builder.ts";
-import type { PackageDescriptor } from "../../../src/staging/synthesizer-types.ts";
-import type { RojoTreeNode } from "../../../src/types/rojo.ts";
 
 function rojoOnPath(): boolean {
 	try {

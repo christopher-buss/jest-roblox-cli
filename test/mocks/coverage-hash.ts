@@ -1,7 +1,7 @@
 import type buffer from "node:buffer";
 import { createHash } from "node:crypto";
 
-import type { FileSystem } from "../../src/utils/file-system.ts";
+import type { FileSystem } from "#src/utils/file-system.ts";
 
 export function sha256(data: buffer.Buffer | string): string {
 	return createHash("sha256").update(data).digest("hex");

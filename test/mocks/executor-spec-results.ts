@@ -1,8 +1,4 @@
-import type {
-	JestResult,
-	TestCaseResult,
-	TestFileResult,
-} from "../../src/types/jest-result-types.ts";
+import type { JestResult, TestCaseResult, TestFileResult } from "#src/types/jest-result-types.ts";
 
 export function createPassingResult(): JestResult {
 	return suiteResult([testSpecFile(passed("Test", "also passes", 5))]);

@@ -7,6 +7,7 @@ import process from "node:process";
 import { stripVTControlCharacters } from "node:util";
 import { assert, describe, expect, it, vi } from "vitest";
 
+import { loadConfig, OpenCloudBackend, runProjectsAsync } from "#src/index.ts";
 import { startFakeOpenCloudServerAsync } from "#test/e2e/cli/fake-open-cloud.ts";
 import {
 	buildMixedOutput,
@@ -16,7 +17,6 @@ import {
 } from "#test/e2e/cli/helpers.ts";
 import { IS_BINARY_INPUT } from "#test/e2e/live/live-gate.ts";
 import { EXECUTION_NOT_CLAIMED } from "#test/mocks/luau-execution-claim.ts";
-import { loadConfig, OpenCloudBackend, runProjectsAsync } from "../../../src/index.ts";
 
 type ClaimObserver = NonNullable<
 	NonNullable<ConstructorParameters<typeof OpenCloudBackend>[1]>["executionClaimObserver"]

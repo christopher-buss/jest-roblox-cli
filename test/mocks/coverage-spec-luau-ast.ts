@@ -1,7 +1,7 @@
 import type { AstStatBlock, LuauSpan } from "@isentinel/luau-ast/ast";
 import { fromAny } from "@total-typescript/shoehorn";
 
-import type { CoverageIgnores } from "../../src/coverage-pipeline/coverage-ignore.ts";
+import type { CoverageIgnores } from "#src/coverage-pipeline/coverage-ignore.ts";
 
 export const NO_IGNORES = {
 	covers: () => false,

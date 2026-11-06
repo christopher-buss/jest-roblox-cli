@@ -1,4 +1,4 @@
-import type { Styles } from "../../src/formatters/styles.ts";
+import type { Styles } from "#src/formatters/styles.ts";
 
 export function createPlainStyles(): Styles {
 	return {

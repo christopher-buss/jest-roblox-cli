@@ -2,13 +2,13 @@ import { writeFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
+import { formatFailure } from "#src/index.ts";
 import { createFixtureSandbox } from "#test/e2e/cli/helpers.ts";
 import {
 	buildProjectSourceMapperAsync,
 	type SourceMapper,
 } from "#test/integration/source-mapper/project-source-mapper.ts";
 import { posixPath } from "#test/mocks/posix-path.ts";
-import { formatFailure } from "../../../src/index.ts";
 
 const FIXTURE_DIR = path.resolve(__dirname, "../../fixtures");
 const LUAU_OUT_DIRECTORY = /(?<![\w/])out\//g;
