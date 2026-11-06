@@ -2,6 +2,7 @@ import { hasExecError } from "../types/exec-error-file.ts";
 import type { JestResult, SnapshotSummary } from "../types/jest-result-types.ts";
 import type { TimingResult } from "../types/timing-types.ts";
 import { formatBannerBar } from "../utils/banner.ts";
+import { buildDurationBreakdown } from "./duration-breakdown.ts";
 import { type BailSummary, type FormatOptions, getTerminalWidth } from "./shared.ts";
 import { type ColorFunc, createStyles, type Styles } from "./styles.ts";
 
@@ -425,50 +426,12 @@ function formatStartAtLine(startTime: number, styles: Styles): string {
 	return `${styles.dim("   Start at")}  ${startAtStr}`;
 }
 
-/**
- * `environment` and `cli` are the two residuals — whatever the measured phases
- * leave unaccounted for — so both are clamped at zero. `environment` is what
- * the execution window has left after the phases inside it; `cli` is what the
- * total has left after the window and every phase measured outside it, so a new
- * outside-the-window phase belongs in `outsideExecutionMs` as well as in its
- * own segment.
- * @param timing - Run timing.
- * @returns The `<phase> <n>ms` segments of the Duration row.
- */
-function buildDurationBreakdown(timing: TimingResult): Array<string> {
-	const setupMs = timing.setupMs ?? 0;
-	const environmentMs = Math.max(0, timing.executionMs - timing.testsMs - setupMs);
-	const uploadMs = timing.uploadMs ?? 0;
-	const coverageMs = timing.coverageMs ?? 0;
-	const stagingMs = timing.stagingMs ?? 0;
-	const outsideExecutionMs = uploadMs + coverageMs + stagingMs;
-	const cliMs = Math.max(0, timing.totalMs - timing.executionMs - outsideExecutionMs);
-	const parts: Array<string> = [];
-
-	if (timing.uploadMs !== undefined) {
-		parts.push(`upload ${timing.uploadMs}ms`);
-	}
-
-	parts.push(`environment ${environmentMs}ms`);
-
-	if (setupMs > 0) {
-		parts.push(`setup ${setupMs}ms`);
-	}
-
-	parts.push(`tests ${timing.testsMs}ms`, `cli ${cliMs}ms`);
-
-	if (stagingMs > 0) {
-		parts.push(`staging ${stagingMs}ms`);
-	}
-
-	if (coverageMs > 0) {
-		parts.push(`coverage ${coverageMs}ms`);
-	}
-
-	return parts;
-}
-
 function formatDurationLine(timing: TimingResult, styles: Styles): string {
-	const breakdown = styles.dim(`(${buildDurationBreakdown(timing).join(", ")})`);
+	const parts = buildDurationBreakdown(timing, {
+		residual: "environment",
+		work: "tests",
+		workMs: timing.testsMs,
+	});
+	const breakdown = styles.dim(`(${parts.join(", ")})`);
 	return `${styles.dim("   Duration")}  ${timing.totalMs}ms ${breakdown}`;
 }

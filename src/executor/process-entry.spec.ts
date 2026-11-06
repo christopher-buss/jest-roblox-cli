@@ -1,4 +1,4 @@
-import { fromAny } from "@total-typescript/shoehorn";
+import { fromAny, fromPartial } from "@total-typescript/shoehorn";
 
 import path from "node:path";
 import process from "node:process";
@@ -8,7 +8,7 @@ import { clockTimingCollector } from "#test/mocks/clock-timing-collector.ts";
 import { createPassingResult } from "#test/mocks/executor-spec-results.ts";
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
-import type { ProjectJob, RawBackendEntry } from "../backends/interface.ts";
+import type { GapRecord, ProjectJob, RawBackendEntry } from "../backends/interface.ts";
 import type { ExecuteResult } from "./executor-types.ts";
 import { type EntryContext, processOrRecoverEntry } from "./process-entry.ts";
 
@@ -57,14 +57,14 @@ describe(processOrRecoverEntry, () => {
 		const file = "src/test.spec.ts";
 		const result = processEntry({
 			entry: { jestOutput: JSON.stringify({ ...createPassingResult(), runner: {} }) },
-			gaps: {
+			gaps: fromPartial<GapRecord>({
 				attributed: [
 					{ file, gaps: {} },
 					{ file, gaps: { "Sound.Pitch": 1 }, position: 1, test: "Test passes" },
 					{ file, gaps: {}, position: 2, test: "Test also passes" },
 				],
 				unattributed: {},
-			},
+			}),
 		});
 
 		expect(result.result.testResults[0]!.testResults.map((test) => test.gaps)).toStrictEqual([

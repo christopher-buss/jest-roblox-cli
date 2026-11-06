@@ -11,7 +11,8 @@ import { countFileBuckets } from "./summary.ts";
  */
 export interface ProjectStats {
 	/**
-	 * Summed duration of the files' timed tests.
+	 * Summed duration of the files: each file's host time when it carries one,
+	 * else its timed tests' durations.
 	 */
 	durationMs: number;
 	/**
@@ -102,7 +103,7 @@ export function computeProjectStats(result: JestResult): ProjectStats {
 
 	let durationMs = 0;
 	for (const file of result.testResults) {
-		durationMs += sumFileDuration(file);
+		durationMs += fileDurationMs(file);
 	}
 
 	return {
@@ -142,6 +143,10 @@ function countsTowardDuration(test: TestCaseResult): boolean {
 	return test.status === "passed" || test.status === "failed";
 }
 
+function testDurationMs(test: TestCaseResult): number | undefined {
+	return test.duration;
+}
+
 /**
  * A group of tests that all skipped has no duration to report, which is not the
  * same as a duration of zero — hence the emptiness check rather than `> 0`.
@@ -152,7 +157,7 @@ function countsTowardDuration(test: TestCaseResult): boolean {
 function formatGroupDuration(tests: Array<TestCaseResult>, styles: Styles): string {
 	const durations = tests
 		.filter((testCase) => countsTowardDuration(testCase))
-		.map((testCase) => testCase.duration)
+		.map((testCase) => testDurationMs(testCase))
 		.filter((duration) => duration !== undefined);
 	if (durations.length === 0) {
 		return "";
@@ -165,8 +170,8 @@ function formatGroupDuration(tests: Array<TestCaseResult>, styles: Styles): stri
 }
 
 function formatTestInGroup(testCase: TestCaseResult, styles: Styles): string {
-	const duration =
-		testCase.duration !== undefined ? formatDuration(testCase.duration, styles) : "";
+	const durationMs = testDurationMs(testCase);
+	const duration = durationMs !== undefined ? formatDuration(durationMs, styles) : "";
 	if (testCase.status === "passed") {
 		const marker = styles.status.pass("     ✓");
 		// Red title is intentional: this function only runs inside failed suites.
@@ -255,11 +260,6 @@ function formatExecErrorFileSummary({
 	return ` ${symbol} ${formattedPath}`;
 }
 
-function formatPass(test: TestCaseResult, styles: Styles): string {
-	const duration = test.duration !== undefined ? formatDuration(test.duration, styles) : "";
-	return styles.status.pass(`  ✓ ${test.fullName}`) + duration;
-}
-
 function sumFileDuration(file: TestFileResult): number {
 	let total = 0;
 	for (const test of file.testResults) {
@@ -271,11 +271,21 @@ function sumFileDuration(file: TestFileResult): number {
 	return total;
 }
 
+function fileDurationMs(file: TestFileResult): number {
+	return sumFileDuration(file);
+}
+
+function formatPass(test: TestCaseResult, styles: Styles): string {
+	const durationMs = testDurationMs(test);
+	const duration = durationMs !== undefined ? formatDuration(durationMs, styles) : "";
+	return styles.status.pass(`  ✓ ${test.fullName}`) + duration;
+}
+
 function formatPassedFileSummary(
 	file: TestFileResult,
 	ctx: { formattedPath: string; styles: Styles; testCount: number; verbose: boolean },
 ): Array<string> {
-	const fileMs = sumFileDuration(file);
+	const fileMs = fileDurationMs(file);
 	const symbol = ctx.styles.status.pass("✓");
 	const testsLabel = ctx.styles.dim(`(${ctx.testCount} tests`);
 	const closeParen = ctx.styles.dim(")");

@@ -21,10 +21,10 @@ function result(...testResults: Array<TestFileResult>): JestResult {
 }
 
 function gapRecord(
-	attributed: GapRecord["attributed"],
+	attributed: Array<Partial<GapRecord["attributed"][number]>>,
 	unattributed: GapRecord["unattributed"] = {},
 ): GapRecord {
-	return { attributed, unattributed };
+	return fromPartial<GapRecord>({ attributed, unattributed });
 }
 
 describe(applyGapRecord, () => {
