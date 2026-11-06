@@ -242,7 +242,7 @@ async function stageAndExecuteAsync({
 		backendKind: backend.kind,
 		codeRoots,
 		fileSystem,
-		projects: discovery.projects,
+		projects: plan.projects,
 		rootConfig,
 		seams,
 		timing,

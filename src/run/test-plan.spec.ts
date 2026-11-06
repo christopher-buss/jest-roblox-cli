@@ -69,13 +69,14 @@ describe(buildTestPlan, () => {
 
 		const result = plan({ fileSystem: makeVolume([]) });
 
-		expect(result).toStrictEqual({
+		expect({ ...result, projects: [] }).toStrictEqual({
 			emptiness: {
 				validationExitCode: 2,
 				validationMessage: "No test files found in any project\n",
 			},
 			jobs: [],
 			matchedRuntimeFiles: [],
+			projects: [],
 			typeTestEntries: [],
 		});
 	});

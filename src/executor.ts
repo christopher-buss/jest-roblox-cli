@@ -132,7 +132,8 @@ export type RunProjects = typeof runProjectsAsync;
  * (`buildMaterializerInputs`), which resolves its entries here before it
  * freezes the script. Per-project config resolution belongs in this one
  * function for that reason: resolve a field anywhere downstream of the payload
- * and it reaches multi mode only.
+ * and it reaches multi mode only. `buildTestPlan` builds its jobs here too, so
+ * the multi-mode stubs bake the same config.
  *
  * @param options - Project, tsconfig cache, filesystem and tsconfig reader.
  * @returns The job with its snapshot format resolved.

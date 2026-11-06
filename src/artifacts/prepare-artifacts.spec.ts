@@ -161,7 +161,7 @@ function seed(
 	const dispatch: RunDispatch = {
 		buildImplicitProject: vi
 			.fn<RunDispatch["buildImplicitProject"]>()
-			.mockReturnValue(fromAny({ displayName: "implicit" })),
+			.mockReturnValue(fromAny({ displayName: "implicit", rojoMounts: [] })),
 		loadRojoTree: vi
 			.fn<RunDispatch["loadRojoTree"]>()
 			.mockReturnValue(fromAny({ $className: "DataModel" })),
@@ -307,15 +307,21 @@ describe(prepareArtifactsAsync, () => {
 		expect(bundle.coverageData).toStrictEqual({ "a.luau": { s: { "0": 1 } } });
 	});
 
-	it("should build the clean place without stub mounts in no-projects mode", async () => {
+	it("should build the clean place with the implicit project's stub mounts in no-projects mode", async () => {
 		expect.assertions(3);
 
 		const harness = seed(manifestWithFile());
+		vi.mocked(harness.dispatch.buildImplicitProject).mockReturnValue(projectWithMount());
 
 		await prepareArtifactsAsync(makeConfig(), harness);
 
 		expect(harness.seams.resolveAllProjects).not.toHaveBeenCalled();
-		expect(writtenCleanProject(harness)).not.toContain("jest.config");
+		expect(JSON.parse(writtenCleanProject(harness))).toHaveProperty([
+			"tree",
+			"ReplicatedStorage",
+			"shared",
+			"jest.config",
+		]);
 		expect(JSON.parse(writtenCleanProject(harness))).toHaveProperty([
 			"tree",
 			"ReplicatedStorage",
@@ -324,15 +330,16 @@ describe(prepareArtifactsAsync, () => {
 		]);
 	});
 
-	it("should build the clean place without stub mounts for an empty projects list", async () => {
+	it("should build the clean place with the implicit project's stub mounts for an empty projects list", async () => {
 		expect.assertions(2);
 
 		const harness = seed(manifestWithFile());
+		vi.mocked(harness.dispatch.buildImplicitProject).mockReturnValue(projectWithMount());
 
 		await prepareArtifactsAsync(makeConfig({ projects: [] }), harness);
 
 		expect(harness.seams.resolveAllProjects).not.toHaveBeenCalled();
-		expect(writtenCleanProject(harness)).not.toContain("jest.config");
+		expect(writtenCleanProject(harness)).toContain("jest.config");
 	});
 
 	it("should build the clean place with stub mounts in multi mode", async () => {

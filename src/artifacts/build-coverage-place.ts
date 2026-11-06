@@ -1,7 +1,6 @@
 import * as path from "node:path";
 
 import { mergeCliWithConfig } from "../config/merge.ts";
-import type { ResolvedProjectConfig } from "../config/projects.ts";
 import type { CliOptions, ResolvedConfig } from "../config/schema.ts";
 import { cleanLeftoverStubs, generateProjectStubs } from "../config/stubs.ts";
 import type {
@@ -18,6 +17,7 @@ import { nodeRunDispatch } from "../run.ts";
 import { nodeRunSeams } from "../run/seams.ts";
 import { prepareBakedCoverageAsync } from "../run/staging.ts";
 import { nodeFileSystem } from "../utils/file-system.ts";
+import { resolveProjectsAsync } from "./place-projects.ts";
 
 const CACHE_DIR = path.join(".jest-roblox", "cache");
 
@@ -109,42 +109,4 @@ export async function buildCoveragePlaceAsync(
 		projects: artifacts.projects,
 		rebuilt: artifacts.rebuilt,
 	};
-}
-
-/**
- * Resolve the project set the place is built from, mirroring
- * `runSingleOrMulti` dispatch: an explicit `projects:` config resolves through
- * `resolveAllProjects`; a bare config collapses to the single implicit project
- * derived from its luau roots. Type-only configs are irrelevant here — a build
- * always instruments.
- *
- * @param config - Resolved config to read the projects from.
- * @param options - Dispatch, file system and run seams.
- * @returns The resolved projects.
- */
-async function resolveProjectsAsync(
-	config: ResolvedConfig,
-	{ dispatch, fileSystem, seams }: Required<RunEntryOptions>,
-): Promise<Array<ResolvedProjectConfig>> {
-	const rojoTree = dispatch.loadRojoTree(config, fileSystem);
-	const rawProjects = config.projects;
-	if (rawProjects !== undefined && rawProjects.length > 0) {
-		return seams.resolveAllProjects({
-			cwd: config.rootDir,
-			entries: rawProjects,
-			fileSystem,
-			rojoTree,
-			rootConfig: config,
-			tsconfigReader: seams.tsconfigReader,
-		});
-	}
-
-	return [
-		dispatch.buildImplicitProject({
-			config,
-			fileSystem,
-			rojoTree,
-			tsconfigReader: seams.tsconfigReader,
-		}),
-	];
 }

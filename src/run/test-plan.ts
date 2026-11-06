@@ -1,3 +1,5 @@
+import type { Except } from "type-fest";
+
 import { applyExcludes } from "../config/apply-excludes.ts";
 import { deriveTypecheckInclude } from "../config/derive-typecheck-include.ts";
 import type { InstancePathResolver } from "../config/instance-path.ts";
@@ -11,7 +13,12 @@ import type {
 import { resolveTypecheckConfig } from "../config/resolve-typecheck-config.ts";
 import type { ResolvedConfig } from "../config/schema.ts";
 import { mountsWithoutUserConfig } from "../config/stub-files.ts";
-import { resolveAllTsconfigMappings } from "../executor/tsconfig-mappings.ts";
+import { buildProjectJob } from "../executor.ts";
+import type { TsconfigMappingCache } from "../executor/tsconfig-mappings.ts";
+import {
+	createTsconfigMappingCache,
+	resolveAllTsconfigMappings,
+} from "../executor/tsconfig-mappings.ts";
 import type { TimingCollector } from "../timing/orchestration-collector.ts";
 import {
 	assertTypecheckAvailable,
@@ -65,6 +72,10 @@ export interface TestPlan {
 	 * Every runtime file across every job — the coverage display-filter input.
 	 */
 	matchedRuntimeFiles: Array<string>;
+	/**
+	 * Stub source: the Clean Place takes `snapshotFormat` only from stubs.
+	 */
+	projects: Array<ResolvedProjectConfig>;
 	/** Type Test entries, one per project with Type Tests. */
 	typeTestEntries: Array<TypecheckGroupEntry>;
 }
@@ -111,6 +122,7 @@ interface DiscoveryInput extends DiscoveryFilters {
 
 interface PlannedProject {
 	job?: PendingJob | undefined;
+	project: ResolvedProjectConfig;
 	typeTestEntry?: TypecheckGroupEntry | undefined;
 }
 
@@ -120,21 +132,21 @@ interface ProjectSelection {
 	typeTestFiles: Array<string>;
 }
 
-interface PlannedProjectInput {
-	fileSystem: FileSystem;
-	project: ResolvedProjectConfig;
-	rootConfig: ResolvedConfig;
-	selection: ProjectSelection;
-	typecheck: ResolvedTypecheckConfig;
-}
-
 /**
  * `DiscoveryInput` plus the run's `rootDir`→`outDir` rewrites. Kept local to
  * the plan: the mappings only place a discovered TS source under the mount that
  * owns it, so nothing downstream of `buildTestPlan` has any use for them.
  */
 interface ProjectPlanInput extends DiscoveryInput {
+	tsconfigCache: TsconfigMappingCache;
 	tsconfigMappings: ReadonlyArray<TsconfigMapping>;
+}
+
+interface PlannedProjectInput {
+	input: ProjectPlanInput;
+	project: ResolvedProjectConfig;
+	selection: ProjectSelection;
+	typecheck: ResolvedTypecheckConfig;
 }
 
 interface ProjectSelectionInput {
@@ -161,7 +173,7 @@ interface ProjectSelectionInput {
  * @returns The jobs, Type Test entries and the empty-run policy.
  */
 export function buildTestPlan({ timing, ...discovery }: TestPlanInput): TestPlan {
-	const { jobs, typeTestEntries } = timing.profile("collectPendingJobs", () => {
+	const { jobs, projects, typeTestEntries } = timing.profile("collectPendingJobs", () => {
 		return collectPendingJobs(discovery);
 	});
 	assertTypecheckAvailable(typeTestEntries);
@@ -169,6 +181,7 @@ export function buildTestPlan({ timing, ...discovery }: TestPlanInput): TestPlan
 	const plan: TestPlan = {
 		jobs,
 		matchedRuntimeFiles: jobs.flatMap((job) => job.runtimeFiles),
+		projects,
 		typeTestEntries,
 	};
 	if (jobs.length > 0 || typeTestEntries.length > 0) {
@@ -300,6 +313,37 @@ function collectRuntimeInjectionPaths({
 	);
 }
 
+function planRuntimeJob({
+	input,
+	project,
+	selection,
+}: Except<PlannedProjectInput, "typecheck">): PlannedProject {
+	const { fileSystem, rootConfig } = input;
+	const { config } = buildProjectJob({
+		cache: input.tsconfigCache,
+		fileSystem,
+		project: { config: selection.config, testFiles: selection.runtimeFiles },
+		tsconfigReader: input.seams.tsconfigReader,
+	});
+	return {
+		job: {
+			config,
+			displayColor: project.displayColor,
+			displayName: project.displayName,
+			runtimeFiles: selection.runtimeFiles,
+			runtimeInjectionPaths: collectRuntimeInjectionPaths({
+				fileSystem,
+				project,
+				rootDirectory: rootConfig.rootDir,
+			}),
+		},
+		project: {
+			...project,
+			config: { ...project.config, snapshotFormat: config.snapshotFormat },
+		},
+	};
+}
+
 /**
  * Turn one project's selected files into the work it contributes: a type-test
  * entry, a runtime job, either, or neither.
@@ -309,41 +353,28 @@ function collectRuntimeInjectionPaths({
  * distinct tsconfigs separately. The cwd is always the workspace root in
  * projects mode (all projects build from one tree).
  *
- * @param input - Project, selection, typecheck config and root config.
- * @param input.fileSystem - File system to check for user-authored configs.
- * @param input.project - Resolved project.
- * @param input.rootConfig - Root config of the run.
- * @param input.selection - Files the project selected.
- * @param input.typecheck - Resolved typecheck config of the project.
- * @returns The project's job and Type Test entry, when present.
+ * @param planned - Plan input, project, selection and typecheck config.
+ * @param planned.input - Plan input of the run.
+ * @param planned.project - Resolved project.
+ * @param planned.selection - Files the project selected.
+ * @param planned.typecheck - Resolved typecheck config of the project.
+ * @returns The project, its job and Type Test entry, when present.
  */
 function toPlannedProject({
-	fileSystem,
+	input,
 	project,
-	rootConfig,
 	selection,
 	typecheck,
 }: PlannedProjectInput): PlannedProject {
-	const planned: PlannedProject = {};
+	const planned: PlannedProject =
+		selection.runtimeFiles.length > 0
+			? planRuntimeJob({ input, project, selection })
+			: { project };
 	if (selection.typeTestFiles.length > 0) {
 		planned.typeTestEntry = {
-			cwd: rootConfig.rootDir,
+			cwd: input.rootConfig.rootDir,
 			files: selection.typeTestFiles,
 			tsconfig: typecheck.tsconfig,
-		};
-	}
-
-	if (selection.runtimeFiles.length > 0) {
-		planned.job = {
-			config: selection.config,
-			displayColor: project.displayColor,
-			displayName: project.displayName,
-			runtimeFiles: selection.runtimeFiles,
-			runtimeInjectionPaths: collectRuntimeInjectionPaths({
-				fileSystem,
-				project,
-				rootDirectory: rootConfig.rootDir,
-			}),
 		};
 	}
 
@@ -378,23 +409,23 @@ function planProject(project: ResolvedProjectConfig, input: ProjectPlanInput): P
 		typecheck,
 	});
 
-	return toPlannedProject({
-		fileSystem: input.fileSystem,
-		project,
-		rootConfig: input.rootConfig,
-		selection,
-		typecheck,
-	});
+	return toPlannedProject({ input, project, selection, typecheck });
 }
 
-function collectPendingJobs(input: DiscoveryInput): Pick<TestPlan, "jobs" | "typeTestEntries"> {
+function collectPendingJobs(
+	input: DiscoveryInput,
+): Pick<TestPlan, "jobs" | "projects" | "typeTestEntries"> {
 	const jobs: Array<PendingJob> = [];
+	const projects: Array<ResolvedProjectConfig> = [];
 	const typeTestEntries: Array<TypecheckGroupEntry> = [];
+	const tsconfigCache = createTsconfigMappingCache();
 	// One read for the whole plan rather than one per project: every project
 	// resolves its tsconfigs from the same run root.
 	const planInput: ProjectPlanInput = {
 		...input,
+		tsconfigCache,
 		tsconfigMappings: resolveAllTsconfigMappings({
+			cache: tsconfigCache,
 			fileSystem: input.fileSystem,
 			projectRoot: input.rootConfig.rootDir,
 			tsconfigReader: input.seams.tsconfigReader,
@@ -403,6 +434,7 @@ function collectPendingJobs(input: DiscoveryInput): Pick<TestPlan, "jobs" | "typ
 
 	for (const project of input.projects) {
 		const planned = planProject(project, planInput);
+		projects.push(planned.project);
 		if (planned.typeTestEntry !== undefined) {
 			typeTestEntries.push(planned.typeTestEntry);
 		}
@@ -412,5 +444,5 @@ function collectPendingJobs(input: DiscoveryInput): Pick<TestPlan, "jobs" | "typ
 		}
 	}
 
-	return { jobs, typeTestEntries };
+	return { jobs, projects, typeTestEntries };
 }

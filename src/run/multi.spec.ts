@@ -933,6 +933,51 @@ describe(runMultiProjectAsync, () => {
 		);
 	});
 
+	it("should write each project's dispatched snapshot format into its stub", async () => {
+		expect.assertions(2);
+
+		const { config, fileSystem, volume } = setupDefaults();
+		seedProjectFiles(volume);
+		mocks.resolveAllProjects.mockResolvedValue([
+			makeResolvedProject({ displayName: "client" }),
+			makeResolvedProject({
+				config: makeConfig({
+					snapshotFormat: { escapeString: false, printBasicPrototype: true },
+				}),
+				displayName: "server",
+				include: ["src/server/**/*.spec.ts"],
+				outDir: "out/server",
+				rojoMounts: [{ dataModelPath: "ServerScriptService/server", fsPath: "out/server" }],
+			}),
+		]);
+
+		await runMultiProjectAsync({
+			cli: makeCli(),
+			config,
+			fileSystem,
+			rawProjects: [makeProjectEntry("client"), makeProjectEntry("server")],
+			seams,
+		});
+
+		const dispatched = mocks.runProjects.mock.calls[0]![0].projects.map((project) => {
+			return project.config.snapshotFormat;
+		});
+		const stubs = ["out/client", "out/server"].map((mount) => {
+			return String(volume.readFileSync(cacheStubPath(mount), "utf8"));
+		});
+
+		expect(dispatched).toStrictEqual([
+			{ printBasicPrototype: false },
+			{ escapeString: false, printBasicPrototype: true },
+		]);
+		expect(stubs).toStrictEqual([
+			expect.stringContaining("\tsnapshotFormat = { printBasicPrototype = false },\n"),
+			expect.stringContaining(
+				"\tsnapshotFormat = { escapeString = false, printBasicPrototype = true },\n",
+			),
+		]);
+	});
+
 	it("should hand coverage both halves of the stub bake", async () => {
 		expect.assertions(2);
 

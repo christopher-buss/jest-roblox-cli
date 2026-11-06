@@ -152,7 +152,12 @@ function writeRojoProject(volume: MemoryVolume): void {
 function setup({
 	backendKind = "studio",
 	config = makeConfig(),
-	plan = { jobs: [makeJob("client")], matchedRuntimeFiles: [], typeTestEntries: [] },
+	plan = {
+		jobs: [makeJob("client")],
+		matchedRuntimeFiles: [],
+		projects: [],
+		typeTestEntries: [],
+	},
 }: {
 	backendKind?: Backend["kind"];
 	config?: ResolvedConfig;
@@ -291,6 +296,7 @@ describe(runTestPlanAsync, () => {
 			plan: {
 				jobs: [makeJob("client"), makeJob("server")],
 				matchedRuntimeFiles: [],
+				projects: [],
 				typeTestEntries: [],
 			},
 		});
@@ -363,6 +369,7 @@ describe(runTestPlanAsync, () => {
 			plan: {
 				jobs: [],
 				matchedRuntimeFiles: [],
+				projects: [],
 				typeTestEntries: [{ cwd: "/test", files: ["a.spec-d.ts"] }],
 			},
 		});

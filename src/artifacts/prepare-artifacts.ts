@@ -32,6 +32,7 @@ import type { TimingCollector } from "../timing/orchestration-collector.ts";
 import { createTimingCollector } from "../timing/orchestration-collector.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import { nodeFileSystem } from "../utils/file-system.ts";
+import { resolveProjectsAsync } from "./place-projects.ts";
 
 const CLEAN_PLACE_FILE = path.join(PLACE_DIR, "clean.rbxl");
 const CLEAN_PROJECT_FILE = path.join(PLACE_DIR, "clean.project.json");
@@ -194,34 +195,21 @@ function writeManifestAttribution({
 
 async function resolveCleanStubMountsAsync(
 	config: ResolvedConfig,
-	{ dispatch, fileSystem, seams }: Required<RunEntryOptions>,
-): Promise<Array<StubMount> | undefined> {
-	const rawProjects = config.projects;
-	if (rawProjects === undefined || rawProjects.length === 0) {
-		return undefined;
-	}
-
-	const projects = await seams.resolveAllProjects({
-		cwd: config.rootDir,
-		entries: rawProjects,
-		fileSystem,
-		rojoTree: dispatch.loadRojoTree(config, fileSystem),
-		rootConfig: config,
-		tsconfigReader: seams.tsconfigReader,
-	});
+	entry: Required<RunEntryOptions>,
+): Promise<Array<StubMount>> {
 	return collectStubMounts({
 		cacheRoot: path.resolve(config.rootDir, CACHE_DIR),
-		fileSystem,
-		projects,
+		fileSystem: entry.fileSystem,
+		projects: await resolveProjectsAsync(config, entry),
 		rootDir: config.rootDir,
 	});
 }
 
 /**
  * Build the uninstrumented Clean Place from the same rojo project as the
- * Coverage-Instrumented Place, minus `coverageRoots`. In multi mode the place
- * carries the same `jest.config` stub mounts the coverage run already wrote to
- * the cache, so the Clean Place is runnable.
+ * Coverage-Instrumented Place, minus `coverageRoots`. The place carries the
+ * same `jest.config` stub mounts the coverage run already wrote to the cache,
+ * so the Clean Place is runnable.
  *
  * @param options - Config, content id and run entry seams.
  * @returns The built Clean Place artifact.
