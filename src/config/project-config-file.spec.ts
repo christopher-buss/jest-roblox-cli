@@ -3,6 +3,7 @@
 import * as path from "node:path";
 import { describe, expect, it } from "vitest";
 
+import { createLuteChildProcess } from "#test/mocks/lute-child-process.ts";
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { createProjectSeams } from "#test/mocks/spec-project-seams.ts";
 import type { ProjectConfigInput } from "./project-config-file.ts";
@@ -505,6 +506,23 @@ describe(loadProjectConfigFile, () => {
 		});
 
 		expect(result.include).toStrictEqual(["src/client/**/*.spec.ts"]);
+	});
+
+	it("should run a Luau config that holds code through the given child process", async () => {
+		expect.assertions(1);
+
+		const input = seedLuauProjectConfig({
+			directoryOrFile: "packages/shared",
+			source: 'return { displayName = "shared" .. "-luau" }',
+		});
+
+		await expect(
+			loadProjectConfigFile({
+				cwd: "/project",
+				filePath: "packages/shared",
+				input: { ...input, childProcess: createLuteChildProcess({ version: "9.9.9" }) },
+			}),
+		).rejects.toThrow('--version" printed "9.9.9"');
 	});
 
 	it("should load Luau config when jest.config.luau exists", async () => {

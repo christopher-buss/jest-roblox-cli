@@ -21,6 +21,7 @@ import type { TsconfigReader } from "../executor/tsconfig-mappings.ts";
 import { nodeTsconfigReader } from "../executor/tsconfig-mappings.ts";
 import type { PackageDescriptor } from "../staging/synthesizer-types.ts";
 import type { RojoTreeNode } from "../types/rojo.ts";
+import type { ChildProcessRunner } from "../utils/child-process.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import { nodeFileSystem } from "../utils/file-system.ts";
 import type { RojoResolverFactory } from "../utils/rojo-project-reader.ts";
@@ -44,6 +45,7 @@ export interface PackageContext {
 }
 
 interface PackageReaders {
+	childProcess: ChildProcessRunner;
 	createResolver: RojoResolverFactory;
 	fileSystem: FileSystem;
 	rojoCache: RojoResolverCache;
@@ -102,6 +104,7 @@ export function applyProjectFilter(
  * Resolve each loaded package's projects and setup files.
  * @param options - Cache directory, loaded packages and reader seams.
  * @param options.cacheDirectory - Run cache directory.
+ * @param options.childProcess - Runs lute for a Luau Config that holds code.
  * @param options.createResolver - Rojo resolver factory.
  * @param options.fileSystem - File system to read through.
  * @param options.loaded - Loaded packages.
@@ -111,6 +114,7 @@ export function applyProjectFilter(
  */
 export async function resolvePackageContextsAsync({
 	cacheDirectory,
+	childProcess,
 	createResolver = nodeRojoResolverFactory,
 	fileSystem = nodeFileSystem,
 	loaded,
@@ -118,6 +122,8 @@ export async function resolvePackageContextsAsync({
 }: {
 	/** Run cache directory; each package gets a directory below it. */
 	cacheDirectory: string;
+	/** How a Luau Config that holds code runs lute. */
+	childProcess: ChildProcessRunner;
 	/** Rojo resolver factory. Defaults to the real one. */
 	createResolver?: RojoResolverFactory;
 	/**
@@ -135,7 +141,13 @@ export async function resolvePackageContextsAsync({
 	// the workspace root, or one package extending another's). Sharing the
 	// cache across the loop walks each distinct project file once.
 	const rojoCache = createRojoResolverCache();
-	const readers: PackageReaders = { createResolver, fileSystem, rojoCache, tsconfigReader };
+	const readers: PackageReaders = {
+		childProcess,
+		createResolver,
+		fileSystem,
+		rojoCache,
+		tsconfigReader,
+	};
 
 	for (const entry of loaded) {
 		const projects = await resolvePackageProjectsAsync(entry, readers);
@@ -240,7 +252,7 @@ async function resolvePackageProjectsAsync(
 	entry: LoadedPackage,
 	readers: PackageReaders,
 ): Promise<Array<ResolvedProjectConfig>> {
-	const { fileSystem, tsconfigReader } = readers;
+	const { childProcess, fileSystem, tsconfigReader } = readers;
 	const { descriptor, info, pkgConfig } = entry;
 	const rojoTree = loadPackageRojoTree({
 		fileSystem,
@@ -255,6 +267,7 @@ async function resolvePackageProjectsAsync(
 		rojoTree,
 	});
 	const projects = await resolveAllProjects({
+		childProcess,
 		cwd: info.packageDirectory,
 		entries: projectEntries,
 		fileSystem,

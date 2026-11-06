@@ -5,6 +5,7 @@ import * as path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
 import { createConfigFixture } from "#test/mocks/config-fixture.ts";
+import { createLuteChildProcess } from "#test/mocks/lute-child-process.ts";
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import type { ConfigLayer } from "./config-layers.ts";
 import { invokeC12, processExtends } from "./config-layers.ts";
@@ -19,7 +20,11 @@ async function extendFixture(
 	const entry = layers["jest.config.mjs"];
 	const result: ConfigLayer = { config: fromAny(entry), configFile };
 
-	return processExtends({ context: { configLoader, fileSystem }, result, visited: new Set() });
+	return processExtends({
+		context: { childProcess: createLuteChildProcess({}), configLoader, fileSystem },
+		result,
+		visited: new Set(),
+	});
 }
 
 describe(processExtends, () => {

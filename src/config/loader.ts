@@ -2,13 +2,13 @@ import { loadConfig as c12LoadConfig, SUPPORTED_EXTENSIONS } from "c12";
 import * as path from "node:path";
 import process from "node:process";
 
+import { type ChildProcessRunner, nodeChildProcessRunner } from "../utils/child-process.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import { nodeFileSystem } from "../utils/file-system.ts";
 import { isAbsolutePath, normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import type { ConfigLayer, ConfigLoadContext } from "./config-layers.ts";
-import { invokeC12, processExtends } from "./config-layers.ts";
-import { validateConfig, validateConfigLayer } from "./config-validation.ts";
-import { loadLuauConfig } from "./luau-config-loader.ts";
+import { invokeC12, isLuauConfigPath, loadLuauLayer, processExtends } from "./config-layers.ts";
+import { validateConfig } from "./config-validation.ts";
 import { resolveFunctionValues } from "./merger-functions.ts";
 import type { Config, ResolvedConfig } from "./schema.ts";
 import { DEFAULT_CONFIG } from "./schema.ts";
@@ -25,6 +25,10 @@ export const nodeConfigLoader: ConfigLoader = c12LoadConfig;
 
 /** The collaborators a config load reaches c12 and the disk through. */
 export interface ConfigLoadOptions {
+	/**
+	 * How a Luau Config that holds code runs lute. Defaults to the real one.
+	 */
+	childProcess?: ChildProcessRunner;
 	/** How the c12 layers are loaded. Defaults to the real `loadConfig`. */
 	configLoader?: ConfigLoader;
 	/**
@@ -91,6 +95,7 @@ export function resolveConfig(config: Config): ResolvedConfig {
  * @rejects If the config is missing, invalid, ambiguous or fails to load.
  */
 export async function loadConfig({
+	childProcess = nodeChildProcessRunner,
 	configLoader = nodeConfigLoader,
 	configPath,
 	cwd = process.cwd(),
@@ -98,7 +103,7 @@ export async function loadConfig({
 }: ConfigLoadRequest = {}): Promise<ResolvedConfig> {
 	const { config, loadDirectory } = await loadConfigLayers({
 		configPath,
-		context: { configLoader, fileSystem },
+		context: { childProcess, configLoader, fileSystem },
 		cwd,
 	});
 	config.rootDir = anchorRootDirectory({ cwd, loadDirectory, rootDirectory: config.rootDir });
@@ -121,6 +126,7 @@ export async function loadConfig({
  * @rejects If the config is missing, invalid, ambiguous or fails to load.
  */
 export async function loadRawConfig({
+	childProcess = nodeChildProcessRunner,
 	configLoader = nodeConfigLoader,
 	configPath,
 	cwd = process.cwd(),
@@ -128,7 +134,7 @@ export async function loadRawConfig({
 }: ConfigLoadRequest): Promise<Config> {
 	const { config } = await loadConfigLayers({
 		configPath,
-		context: { configLoader, fileSystem },
+		context: { childProcess, configLoader, fileSystem },
 		cwd,
 	});
 
@@ -147,26 +153,6 @@ function isC12NotFoundError(err: unknown): boolean {
 	return err instanceof Error && err.message.includes("cannot be resolved");
 }
 
-function isLuauConfigPath(filePath: string): boolean {
-	return filePath.endsWith(".luau");
-}
-
-function loadLuauLayer({
-	configFile,
-	fileSystem,
-	requested,
-}: {
-	readonly configFile: string;
-	readonly fileSystem: FileSystem;
-	readonly requested: string;
-}): ConfigLayer {
-	if (!fileSystem.existsSync(configFile)) {
-		throw new Error(`Config file not found: ${requested}`);
-	}
-
-	return { config: validateConfigLayer(loadLuauConfig(configFile, fileSystem)), configFile };
-}
-
 async function loadEntryLayer({
 	configPath,
 	context,
@@ -179,7 +165,7 @@ async function loadEntryLayer({
 	const { fileSystem } = context;
 	if (configPath !== undefined && isLuauConfigPath(configPath)) {
 		const configFile = path.resolve(cwd, configPath);
-		return loadLuauLayer({ configFile, fileSystem, requested: configPath });
+		return loadLuauLayer({ configFile, context, requested: configPath });
 	}
 
 	const luauFile = path.resolve(cwd, LUAU_CONFIG_FILENAME);
@@ -193,7 +179,7 @@ async function loadEntryLayer({
 			throw new Error(`Found two jest configs: ${scriptFile} and ${luauFile}. Keep one.`);
 		}
 
-		return loadLuauLayer({ configFile: luauFile, fileSystem, requested: luauFile });
+		return loadLuauLayer({ configFile: luauFile, context, requested: luauFile });
 	}
 
 	return invokeC12({

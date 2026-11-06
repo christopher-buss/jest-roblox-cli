@@ -5,6 +5,7 @@ import process from "node:process";
 import type { Except } from "type-fest";
 import { assert, describe, expect, it, vi } from "vitest";
 
+import { createLuteChildProcess } from "#test/mocks/lute-child-process.ts";
 import type { MemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { movableClockCollector } from "#test/mocks/movable-clock.ts";
@@ -1059,6 +1060,40 @@ describe(runWorkspaceAsync, () => {
 		expect(stderr).toHaveBeenCalledWith(
 			`jest-roblox: cleaned 1 leftover stub(s) from @halcyon/foo:\n  ${leftoverStub}\n`,
 		);
+	});
+
+	it("should run a project jest.config.luau that holds code through the run's runner", async () => {
+		expect.assertions(1);
+
+		const { fileSystem, volume } = createMemoryFileSystem();
+		volume.fromJSON({
+			...seedPackage(FOO_DIR, {
+				name: "@halcyon/foo",
+				specFiles: { [path.join(FOO_DIR, "out/Client/spec.spec.luau")]: "" },
+				tree: {
+					$className: "DataModel",
+					ReplicatedStorage: { Client: { $path: "out/Client" } },
+				},
+			}),
+			[path.join(FOO_DIR, "out/Client/jest.config.luau")]:
+				'return { displayName = "client" .. "-luau" }\n',
+			[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
+		});
+		setLoadedConfigPerPackage({
+			[FOO_DIR]: rooted(FOO_DIR, { projects: ["out/Client"] }),
+		});
+
+		await expect(
+			runStagedWorkspaceAsync({
+				childProcess: createLuteChildProcess({ version: "9.9.9" }),
+				cli: makeCli(),
+				fileSystem,
+				packageInfos: [FOO_INFO],
+				runOptions: makeRunOptions(),
+				version: "0.0.0-test",
+				workspaceRoot: ROOT,
+			}),
+		).rejects.toThrow('--version" printed "9.9.9"');
 	});
 
 	it("should write a cache stub for a mount that holds a user-authored config", async () => {

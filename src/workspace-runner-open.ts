@@ -15,6 +15,7 @@ const WORKSPACE_CACHE_DIRECTORY = path.join(".jest-roblox", "workspace");
 /** Inputs to open a workspace run. */
 export interface OpenWorkspaceRunOptions extends Pick<
 	ResolvedRunWorkspaceOptions,
+	| "childProcess"
 	| "cli"
 	| "createResolver"
 	| "cwd"
@@ -92,6 +93,7 @@ function createWorkspaceCacheDirectory(fileSystem: FileSystem, workspaceRoot: st
  * @returns The opened workspace, or `undefined` when preflight failed.
  */
 async function openWorkspaceAsync({
+	childProcess,
 	cli,
 	fileSystem,
 	loadPackageConfig,
@@ -105,6 +107,7 @@ async function openWorkspaceAsync({
 	// to the parent's rojo file.
 	const loaded = await timing.profileAsync("loadPackages", async () => {
 		return loadWorkspacePackagesAsync({
+			childProcess,
 			cli,
 			fileSystem,
 			loadPackageConfig,
@@ -137,10 +140,11 @@ async function selectTestsAsync({
 	loaded,
 	options,
 }: OpenedWorkspace & { options: OpenWorkspaceRunOptions }): Promise<WorkspaceTestSelection> {
-	const { cli, createResolver, fileSystem, timing, tsconfigReader } = options;
+	const { childProcess, cli, createResolver, fileSystem, timing, tsconfigReader } = options;
 	const contexts = await timing.profileAsync("resolveContexts", async () => {
 		return resolvePackageContextsAsync({
 			cacheDirectory,
+			childProcess,
 			createResolver,
 			fileSystem,
 			loaded,

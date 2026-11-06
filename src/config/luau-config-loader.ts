@@ -10,6 +10,8 @@ import { luauParser } from "../luau/parser.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import { nodeFileSystem } from "../utils/file-system.ts";
 import { configSchema } from "./config-validation.ts";
+import type { LuteEvaluationContext } from "./luau-config-lute.ts";
+import { evaluateLuauConfigWithLute, NODE_LUTE_EVALUATION_CONTEXT } from "./luau-config-lute.ts";
 
 const luauConfigTableSchema = type("object").as<LuauLiteralTable>();
 const testConfigSchema = configSchema.get("test").exclude("undefined");
@@ -24,37 +26,34 @@ const ARRAY_CONFIG_KEYS: ReadonlySet<string> = new Set(
 );
 
 /**
- * Parse a .luau config file in process and evaluate its return expression.
+ * Read a Luau Config statically, or run it with lute when it holds code.
  *
  * @param filePath - Path to the config file.
- * @param fileSystem - File system to read the file from.
+ * @param context - File system and lute collaborators; each defaults to the
+ *   real one.
  * @returns The evaluated config table.
- * @throws If the file does not parse, holds non-literal syntax or does not
- *   return a table.
+ * @rejects If the file does not parse, lute fails or the value is not a
+ *   table.
  */
-export function loadLuauConfig(
+export async function loadLuauConfig(
 	filePath: string,
-	fileSystem: FileSystem = nodeFileSystem,
-): LuauLiteralTable {
-	const source = fileSystem.readFileSync(path.resolve(filePath), "utf-8");
+	context: Partial<LuteEvaluationContext>,
+): Promise<LuauLiteralTable> {
+	const settled = { ...NODE_LUTE_EVALUATION_CONTEXT, ...context };
+	const configFile = path.resolve(filePath);
+	const source = settled.fileSystem.readFileSync(configFile, "utf-8");
 	const parsed = luauParser.parse(source);
 	if (!parsed.ok) {
 		throw new Error(`Failed to evaluate Luau config ${filePath}: ${parsed.errors.join("; ")}`);
 	}
 
 	const evaluation = evalLuauReturnLiterals(parsed.root);
-	if (evaluation.kind === "unreadable") {
-		throw new Error(
-			`Luau config ${filePath}:${evaluation.line} holds ${evaluation.syntax}, which a plain-data Luau config cannot hold. Use only literals, tables, \`::\` casts and defineConfig(...).`,
-		);
-	}
+	const value =
+		evaluation.kind === "value"
+			? evaluation.value
+			: await evaluateLuauConfigWithLute({ configFile, unreadable: evaluation }, settled);
 
-	const result = luauConfigTableSchema(evaluation.value);
-	if (result instanceof type.errors || Array.isArray(result)) {
-		throw new Error(`Luau config ${filePath} must return a table`);
-	}
-
-	return normalizeEmptyLists(result);
+	return toConfigTable(value, filePath);
 }
 
 /**
@@ -114,4 +113,13 @@ function normalizeEmptyLists(table: LuauLiteralTable): LuauLiteralTable {
 	}
 
 	return table;
+}
+
+function toConfigTable(value: LuauLiteral, filePath: string): LuauLiteralTable {
+	const result = luauConfigTableSchema(value);
+	if (result instanceof type.errors || Array.isArray(result)) {
+		throw new Error(`Luau config ${filePath} must return a table`);
+	}
+
+	return normalizeEmptyLists(result);
 }

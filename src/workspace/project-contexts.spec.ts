@@ -3,6 +3,7 @@ import { fromAny } from "@total-typescript/shoehorn";
 import * as path from "node:path";
 import { assert, describe, expect, it, vi } from "vitest";
 
+import { createLuteChildProcess } from "#test/mocks/lute-child-process.ts";
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { posixPath } from "#test/mocks/posix-path.ts";
 import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
@@ -118,6 +119,7 @@ describe(resolvePackageContextsAsync, () => {
 
 		const contexts = await resolvePackageContextsAsync({
 			cacheDirectory: CACHE_DIRECTORY,
+			childProcess: createLuteChildProcess({ version: "1.0.1" }),
 			fileSystem,
 			loaded: [loadedPackage({ projects: [] })],
 		});
@@ -152,6 +154,7 @@ describe(resolvePackageContextsAsync, () => {
 
 		const contexts = await resolvePackageContextsAsync({
 			cacheDirectory: CACHE_DIRECTORY,
+			childProcess: createLuteChildProcess({ version: "1.0.1" }),
 			fileSystem,
 			loaded: [loadedPackage({ projects: ["src/shared"] })],
 		});
@@ -160,6 +163,25 @@ describe(resolvePackageContextsAsync, () => {
 
 		expect(project.displayName).toBe("shared-luau");
 		expect(project.include).toStrictEqual(["src/shared/**/*.spec.luau"]);
+	});
+
+	it("should run a project's jest.config.luau that holds code through the injected runner", async () => {
+		expect.assertions(1);
+
+		const { fileSystem } = createMemoryFileSystem({
+			[path.join(PACKAGE_DIRECTORY, "src/shared/jest.config.luau")]:
+				'return { displayName = "shared" .. "-luau" }',
+			[ROJO_PROJECT_PATH]: rojoProject("src/shared"),
+		});
+
+		await expect(
+			resolvePackageContextsAsync({
+				cacheDirectory: CACHE_DIRECTORY,
+				childProcess: createLuteChildProcess({ version: "9.9.9" }),
+				fileSystem,
+				loaded: [loadedPackage({ projects: ["src/shared"] })],
+			}),
+		).rejects.toThrow('--version" printed "9.9.9"');
 	});
 
 	it("should build the setup resolver through the injected factory", async () => {
@@ -181,6 +203,7 @@ describe(resolvePackageContextsAsync, () => {
 
 		const contexts = await resolvePackageContextsAsync({
 			cacheDirectory: CACHE_DIRECTORY,
+			childProcess: createLuteChildProcess({ version: "1.0.1" }),
 			createResolver,
 			fileSystem,
 			loaded: [

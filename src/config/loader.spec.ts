@@ -7,6 +7,7 @@ import type { Mock } from "vitest";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 
 import { createConfigFixture } from "#test/mocks/config-fixture.ts";
+import { createLuteChildProcess } from "#test/mocks/lute-child-process.ts";
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
 import type { FileSystem } from "../utils/file-system.ts";
@@ -266,6 +267,24 @@ describe("config loader seams", () => {
 			expect(result.verbose).toBeTrue();
 		});
 
+		it("should run a luau config that holds code through the given child process", async () => {
+			expect.assertions(1);
+
+			const temporaryDirectory = path.resolve("/project");
+			const { fileSystem } = createMemoryFileSystem({
+				[path.join(temporaryDirectory, "jest.config.luau")]:
+					'return { placeFile = "place" .. ".rbxl" }',
+			});
+
+			await expect(
+				loadConfig({
+					childProcess: createLuteChildProcess({ version: "9.9.9" }),
+					cwd: temporaryDirectory,
+					fileSystem,
+				}),
+			).rejects.toThrow('--version" printed "9.9.9"');
+		});
+
 		it("should throw when an explicit luau config path is missing", async () => {
 			expect.assertions(1);
 
@@ -370,6 +389,23 @@ describe("config loader seams", () => {
 			fixture.fileSystem.writeFileSync(
 				path.join(fixture.cwd, "jest.config.luau"),
 				'return { extends = "./jest.shared.mjs", test = { verbose = false } }',
+			);
+
+			const result = await loadConfig(fixture);
+
+			expect(result.timeout).toBe(12345);
+			expect(result.verbose).toBeFalse();
+		});
+
+		it("should let a script config extend a luau config", async () => {
+			expect.assertions(2);
+
+			const fixture = loadFixture({
+				"jest.config.mjs": { extends: "./base.luau", test: { verbose: false } },
+			});
+			fixture.fileSystem.writeFileSync(
+				path.join(fixture.cwd, "base.luau"),
+				"return { timeout = 12345, test = { verbose = true } }",
 			);
 
 			const result = await loadConfig(fixture);

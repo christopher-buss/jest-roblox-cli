@@ -1,9 +1,12 @@
 import * as path from "node:path";
 import { describe, expect, it } from "vitest";
 
+import { createLuteChildProcess } from "#test/mocks/lute-child-process.ts";
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import { findLuauConfigFile, loadLuauConfig } from "./luau-config-loader.ts";
+
+const CODE_CONFIG = 'return {\n\tdisplayName = "a",\n\ttestTimeout = getTimeout(),\n}';
 
 interface SeededConfig {
 	filePath: string;
@@ -22,19 +25,19 @@ function seedConfig(source: string, filePath = "/project/jest.config.luau"): See
 }
 
 describe(loadLuauConfig, () => {
-	it("should preserve a nonempty record for normal schema validation", () => {
+	it("should preserve a nonempty record for normal schema validation", async () => {
 		expect.assertions(1);
 
 		const { filePath, fileSystem } = seedConfig(
 			'return { testMatch = { pattern = "**/*.spec" } }',
 		);
 
-		expect(loadLuauConfig(filePath, fileSystem)).toStrictEqual({
+		await expect(loadLuauConfig(filePath, { fileSystem })).resolves.toStrictEqual({
 			testMatch: { pattern: "**/*.spec" },
 		});
 	});
 
-	it("should use empty tables for lists according to the config schema", () => {
+	it("should use empty tables for lists according to the config schema", async () => {
 		expect.assertions(1);
 
 		const { filePath, fileSystem } = seedConfig(`return {
@@ -49,7 +52,7 @@ describe(loadLuauConfig, () => {
 			},
 		}`);
 
-		expect(loadLuauConfig(filePath, fileSystem)).toStrictEqual({
+		await expect(loadLuauConfig(filePath, { fileSystem })).resolves.toStrictEqual({
 			luauRoots: [],
 			test: {
 				projects: [{ test: { include: [], setupFiles: [] } }, "src/other"],
@@ -62,96 +65,119 @@ describe(loadLuauConfig, () => {
 		});
 	});
 
-	it("should normalize empty lists in a flat project config", () => {
+	it("should normalize empty lists in a flat project config", async () => {
 		expect.assertions(1);
 
 		const { filePath, fileSystem } = seedConfig(
 			'return { displayName = "project", include = {}, typecheck = { exclude = {} } }',
 		);
 
-		expect(loadLuauConfig(filePath, fileSystem)).toStrictEqual({
+		await expect(loadLuauConfig(filePath, { fileSystem })).resolves.toStrictEqual({
 			displayName: "project",
 			include: [],
 			typecheck: { exclude: [] },
 		});
 	});
 
-	it("should evaluate the config's return table", () => {
+	it("should evaluate the config's return table", async () => {
 		expect.assertions(1);
 
 		const { filePath, fileSystem } = seedConfig(
 			['return {\n\ttestMatch = { "**/*.spec.luau" },', "\tverbose = true,\n}"].join("\n"),
 		);
 
-		expect(loadLuauConfig(filePath, fileSystem)).toStrictEqual({
+		await expect(loadLuauConfig(filePath, { fileSystem })).resolves.toStrictEqual({
 			testMatch: ["**/*.spec.luau"],
 			verbose: true,
 		});
 	});
 
-	it("should throw a contextual error when the config does not parse", () => {
+	it("should throw a contextual error when the config does not parse", async () => {
 		expect.assertions(1);
 
 		const { filePath, fileSystem } = seedConfig("return { = }");
 
-		expect(() => loadLuauConfig(filePath, fileSystem)).toThrowWithMessage(
+		await expect(loadLuauConfig(filePath, { fileSystem })).rejects.toThrowWithMessage(
 			Error,
 			/Failed to evaluate Luau config/,
 		);
 	});
 
-	it("should separate every parser error in the contextual message", () => {
+	it("should separate every parser error in the contextual message", async () => {
 		expect.assertions(1);
 
 		const { filePath, fileSystem } = seedConfig("return { foo =, bar = }");
 
-		expect(() => loadLuauConfig(filePath, fileSystem)).toThrowWithMessage(
+		await expect(loadLuauConfig(filePath, { fileSystem })).rejects.toThrowWithMessage(
 			Error,
 			"Failed to evaluate Luau config /project/jest.config.luau: Expected identifier when parsing expression, got ','; Expected identifier when parsing expression, got '}'",
 		);
 	});
 
-	it("should name the file and line of syntax it cannot read", () => {
+	it("should run a config that holds code with lute and normalize its empty lists", async () => {
 		expect.assertions(1);
 
-		const { filePath, fileSystem } = seedConfig(
-			'return {\n\tdisplayName = "a",\n\ttestTimeout = getTimeout(),\n}',
-		);
+		const { filePath, fileSystem } = seedConfig(CODE_CONFIG);
+		fileSystem.mkdirSync("/temporary");
+		const childProcess = createLuteChildProcess({
+			value: '{"displayName":"a","setupFiles":{},"snapshotFormat":{}}',
+		});
 
-		expect(() => loadLuauConfig(filePath, fileSystem)).toThrowWithMessage(
-			Error,
-			"Luau config /project/jest.config.luau:3 holds a function call, which a plain-data Luau config cannot hold. Use only literals, tables, `::` casts and defineConfig(...).",
+		await expect(
+			loadLuauConfig(filePath, {
+				childProcess,
+				environment: {},
+				fileSystem,
+				temporaryDirectory: "/temporary",
+			}),
+		).resolves.toStrictEqual({ displayName: "a", setupFiles: [], snapshotFormat: {} });
+	});
+
+	it("should name the file and line of syntax it cannot read when lute is missing", async () => {
+		expect.assertions(1);
+
+		const { filePath, fileSystem } = seedConfig(CODE_CONFIG);
+		const childProcess = createLuteChildProcess({
+			versionError: Object.assign(new Error("spawn ENOENT"), { code: "ENOENT" }),
+		});
+
+		await expect(
+			loadLuauConfig(filePath, { childProcess, environment: {}, fileSystem }),
+		).rejects.toThrow(
+			`Luau config ${path.resolve(filePath)}:3 holds a function call, which needs lute to run`,
 		);
 	});
 
-	it("should throw when config returns a non-table value", () => {
+	it("should throw when config returns a non-table value", async () => {
 		expect.assertions(1);
 
 		const { filePath, fileSystem } = seedConfig("return 42");
 
-		expect(() => loadLuauConfig(filePath, fileSystem)).toThrowWithMessage(
+		await expect(loadLuauConfig(filePath, { fileSystem })).rejects.toThrowWithMessage(
 			Error,
 			/must return a table/,
 		);
 	});
 
-	it("should throw when config returns a list rather than a record", () => {
+	it("should throw when config returns a list rather than a record", async () => {
 		expect.assertions(1);
 
 		const { filePath, fileSystem } = seedConfig('return { "a", "b" }');
 
-		expect(() => loadLuauConfig(filePath, fileSystem)).toThrowWithMessage(
+		await expect(loadLuauConfig(filePath, { fileSystem })).rejects.toThrowWithMessage(
 			Error,
 			/must return a table/,
 		);
 	});
 
-	it("should throw when the config file does not exist", () => {
+	it("should throw when the config file does not exist", async () => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
 
-		expect(() => loadLuauConfig("/project/jest.config.luau", fileSystem)).toThrow(/ENOENT/);
+		await expect(loadLuauConfig("/project/jest.config.luau", { fileSystem })).rejects.toThrow(
+			/ENOENT/,
+		);
 	});
 });
 
@@ -178,7 +204,7 @@ describe(findLuauConfigFile, () => {
 });
 
 describe("loadLuauConfig lute integration", () => {
-	it("should preserve string-valued config fields end-to-end", () => {
+	it("should preserve string-valued config fields end-to-end", async () => {
 		expect.assertions(1);
 
 		const filePath = path.resolve("config-fixture/jest.config.luau");
@@ -189,7 +215,7 @@ describe("loadLuauConfig lute integration", () => {
 `;
 
 		const { fileSystem } = createMemoryFileSystem({ [filePath]: source });
-		const result = loadLuauConfig(filePath, fileSystem);
+		const result = await loadLuauConfig(filePath, { fileSystem });
 
 		expect(result).toStrictEqual({
 			displayName: "luau-integration",

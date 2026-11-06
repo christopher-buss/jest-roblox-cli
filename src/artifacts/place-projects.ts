@@ -26,6 +26,7 @@ export async function resolveProjectsAsync(
 	const rawProjects = config.projects;
 	if (rawProjects !== undefined && rawProjects.length > 0) {
 		return seams.resolveAllProjects({
+			childProcess: seams.childProcess,
 			cwd: config.rootDir,
 			entries: rawProjects,
 			fileSystem,

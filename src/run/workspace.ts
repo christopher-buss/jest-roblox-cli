@@ -316,6 +316,7 @@ async function runSelectedPackagesAsync({
 	const workspaceRoot = resolved.workspaceRoot!;
 
 	const optionsResolution = await resolveWorkspaceOptionsAsync({
+		childProcess: dependencies.childProcess,
 		cli,
 		fileSystem: dependencies.fileSystem,
 		isStudioInstalled: dependencies.isStudioInstalled,

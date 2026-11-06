@@ -28,6 +28,18 @@ const NO_OPEN_CLOUD_CREDENTIALS = {
 
 const MISSING_ALL_BUT_PLACE_ID = "Missing: apiKey, universeId.";
 
+async function runSeaOnFakeOpenCloudAsync(
+	sandbox: string,
+): ReturnType<typeof runSeaExecutableAsync> {
+	const server = await startFakeOpenCloudServerAsync([{ jestOutput: buildPassingJestOutput() }]);
+
+	return runSeaExecutableAsync(["--backend", "open-cloud"], {
+		cwd: sandbox,
+		env: createOpenCloudEnvironment(server.baseUrl),
+		timeoutMs: RUN_TIMEOUT_MS,
+	});
+}
+
 describe("luau configs", () => {
 	it.skipIf(!rojoOnPath())(
 		"should run to completion on a jest.config.luau under the sea executable",
@@ -39,20 +51,37 @@ describe("luau configs", () => {
 				path.join(sandbox, "jest.config.luau"),
 				'local jest = require("@jest-roblox/config")\n\nreturn jest.defineConfig({\n\toutputFile = "luau-result.json",\n\ttest = {},\n}) :: jest.Config\n',
 			);
-			const server = await startFakeOpenCloudServerAsync([
-				{ jestOutput: buildPassingJestOutput() },
-			]);
-
-			const result = await runSeaExecutableAsync(["--backend", "open-cloud"], {
-				cwd: sandbox,
-				env: createOpenCloudEnvironment(server.baseUrl),
-				timeoutMs: RUN_TIMEOUT_MS,
-			});
+			const result = await runSeaOnFakeOpenCloudAsync(sandbox);
 
 			expect(result.exitCode, `stderr: ${result.stderr}\nstdout: ${result.stdout}`).toBe(0);
 			expect(
 				fs.existsSync(path.join(sandbox, "luau-result.json")),
 				"the outputFile the luau config names",
+			).toBeTrue();
+		},
+		RUN_TIMEOUT_MS * 2,
+	);
+
+	it.skipIf(!rojoOnPath())(
+		"should run a jest.config.luau that holds code with lute under the sea executable",
+		async () => {
+			expect.assertions(2);
+
+			const sandbox = createFixtureSandbox(LUAU_FIXTURE_PATH);
+			fs.writeFileSync(
+				path.join(sandbox, "jest.shared.luau"),
+				'return { outputFile = "lute-result.json" }\n',
+			);
+			fs.writeFileSync(
+				path.join(sandbox, "jest.config.luau"),
+				'local shared = require("./jest.shared")\n\nreturn {\n\toutputFile = shared.outputFile,\n\ttest = {},\n}\n',
+			);
+			const result = await runSeaOnFakeOpenCloudAsync(sandbox);
+
+			expect(result.exitCode, `stderr: ${result.stderr}\nstdout: ${result.stdout}`).toBe(0);
+			expect(
+				fs.existsSync(path.join(sandbox, "lute-result.json")),
+				"the outputFile the required module names",
 			).toBeTrue();
 		},
 		RUN_TIMEOUT_MS * 2,
@@ -130,7 +159,7 @@ describe("luau configs", () => {
 		expect(result.stderr).toContain(MISSING_ALL_BUT_PLACE_ID);
 	});
 
-	it("should name the file and line of syntax a jest.config.luau cannot hold", async () => {
+	it("should name the file when lute cannot evaluate a jest.config.luau", async () => {
 		expect.assertions(2);
 
 		const sandbox = createFixtureSandbox(LUAU_FIXTURE_PATH);
@@ -143,7 +172,7 @@ describe("luau configs", () => {
 		});
 
 		expect(result.exitCode).toBeGreaterThan(0);
-		expect(result.stderr).toContain(`${configPath}:2 holds a function call`);
+		expect(result.stderr).toContain(`Luau config ${configPath} failed in lute: `);
 	});
 
 	it("should load a workspace package's jest.config.luau", async () => {

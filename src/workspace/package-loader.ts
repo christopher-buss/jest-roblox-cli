@@ -6,6 +6,7 @@ import type { CliOptions, ResolvedConfig } from "../config/schema.ts";
 import { DEFAULT_CONFIG } from "../config/schema.ts";
 import type { PackageDescriptor } from "../staging/synthesizer-types.ts";
 import type { TimingCollector } from "../timing/orchestration-collector.ts";
+import type { ChildProcessRunner } from "../utils/child-process.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import { nodeFileSystem } from "../utils/file-system.ts";
 import type { PackageInfo } from "./package-resolver.ts";
@@ -24,6 +25,8 @@ export interface LoadedPackage {
 
 /** Packages to load and the seams to load them through. */
 export interface LoadWorkspacePackagesOptions {
+	/** How a Luau Config that holds code runs lute. */
+	childProcess: ChildProcessRunner;
 	/** CLI options that override each package config. */
 	cli: CliOptions;
 	/** Where each package's config is read from. Defaults to the real one. */
@@ -43,6 +46,7 @@ export interface LoadWorkspacePackagesOptions {
  * @rejects When a package config fails to load.
  */
 export async function loadWorkspacePackagesAsync({
+	childProcess,
 	cli,
 	fileSystem = nodeFileSystem,
 	loadPackageConfig = loadConfig,
@@ -53,7 +57,7 @@ export async function loadWorkspacePackagesAsync({
 
 	for (const info of packageInfos) {
 		const fileConfig = await timing.profileAsync(`load-config:${info.name}`, async () => {
-			return loadPackageConfig({ cwd: info.packageDirectory, fileSystem });
+			return loadPackageConfig({ childProcess, cwd: info.packageDirectory, fileSystem });
 		});
 		// The `--testPathPattern` narrow happens per project in
 		// `selectWorkspaceTests`, where the project's resolved Rojo mounts are

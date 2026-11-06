@@ -8,6 +8,7 @@ import type { createStudioBackend } from "../backends/studio.ts";
 import type { loadRawConfig } from "../config/loader.ts";
 import type { CliOptions, WorkspaceRunOptions } from "../config/schema.ts";
 import { buildWorkspaceRunOptions } from "../config/workspace-run-options.ts";
+import type { ChildProcessRunner } from "../utils/child-process.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import type { PackageInfo } from "../workspace/package-resolver.ts";
 import { buildWorkspaceCredentials } from "./workspace-validation.ts";
@@ -55,6 +56,7 @@ interface WorkspaceRunOptionsResolution {
  * both surface as the same validation error the caller bails on.
  *
  * @param options - CLI options, packages, root and the config loader.
+ * @param options.childProcess - Runs lute for a Luau Config that holds code.
  * @param options.cli - Parsed command-line options.
  * @param options.fileSystem - File system to load configs from.
  * @param options.isStudioInstalled - Checks for a local Studio when the backend is auto.
@@ -64,6 +66,7 @@ interface WorkspaceRunOptionsResolution {
  * @returns The run options, or exit code `2` with the error message.
  */
 export async function resolveWorkspaceOptionsAsync({
+	childProcess,
 	cli,
 	fileSystem,
 	isStudioInstalled,
@@ -71,6 +74,8 @@ export async function resolveWorkspaceOptionsAsync({
 	packageInfos,
 	workspaceRoot,
 }: {
+	/** How a Luau Config that holds code runs lute. */
+	childProcess: ChildProcessRunner;
 	/** Parsed command-line options. */
 	cli: CliOptions;
 	/** File system to load configs from. */
@@ -90,6 +95,7 @@ export async function resolveWorkspaceOptionsAsync({
 				return {
 					name: info.name,
 					config: await loadPackageConfig({
+						childProcess,
 						configPath: undefined,
 						cwd: info.packageDirectory,
 						fileSystem,

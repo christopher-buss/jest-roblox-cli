@@ -168,6 +168,7 @@ export async function runMultiProjectAsync(options: MultiRunOptions): Promise<Mu
 
 	const allProjects = await timing.profileAsync("resolveAllProjects", async () => {
 		return seams.resolveAllProjects({
+			childProcess: seams.childProcess,
 			cwd: rootConfig.rootDir,
 			entries: rawProjects,
 			fileSystem,

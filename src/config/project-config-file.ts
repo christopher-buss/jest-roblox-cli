@@ -3,6 +3,8 @@ import * as path from "node:path";
 
 import type { TsconfigDirectories, TsconfigReader } from "../executor/tsconfig-mappings.ts";
 import { nodeTsconfigReader, resolveTsconfigDirectories } from "../executor/tsconfig-mappings.ts";
+import type { ChildProcessRunner } from "../utils/child-process.ts";
+import { nodeChildProcessRunner } from "../utils/child-process.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import { nodeFileSystem } from "../utils/file-system.ts";
 import { projectConfigFileSchema } from "./config-validation.ts";
@@ -21,6 +23,10 @@ export interface ProjectConfigInput extends ProjectConfigSeams {
 
 /** The collaborators that open handles of their own, past `fileSystem`. */
 interface ProjectConfigSeams {
+	/**
+	 * How a Luau Config that holds code runs lute. Defaults to the real one.
+	 */
+	childProcess?: ChildProcessRunner;
 	/** How a project config file is loaded. Defaults to the real c12. */
 	configLoader?: ConfigLoader;
 	/** How the `outDir`/`rootDir` a project compiles to are resolved. */
@@ -30,6 +36,7 @@ interface ProjectConfigSeams {
 }
 
 const NODE_PROJECT_CONFIG_INPUT: Required<ProjectConfigInput> = {
+	childProcess: nodeChildProcessRunner,
 	configLoader: nodeConfigLoader,
 	fileSystem: nodeFileSystem,
 	resolveTsconfigDirectories,
@@ -66,6 +73,7 @@ export async function loadProjectConfigFile({
 	});
 	if (luauConfigPath !== undefined) {
 		return buildProjectConfigFromLuau({
+			childProcess: settled.childProcess,
 			directoryPath: filePath,
 			fileSystem: settled.fileSystem,
 			luauConfigPath,
@@ -157,16 +165,18 @@ const luauProjectConfigSchema = type({
 	"testTimeout?": "number",
 });
 
-function buildProjectConfigFromLuau({
+async function buildProjectConfigFromLuau({
+	childProcess,
 	directoryPath,
 	fileSystem,
 	luauConfigPath,
 }: {
+	readonly childProcess: ChildProcessRunner;
 	readonly directoryPath: string;
 	readonly fileSystem: FileSystem;
 	readonly luauConfigPath: string;
-}): ProjectTestConfig {
-	const raw = loadLuauConfig(luauConfigPath, fileSystem);
+}): Promise<ProjectTestConfig> {
+	const raw = await loadLuauConfig(luauConfigPath, { childProcess, fileSystem });
 
 	const { displayName } = raw;
 	if (typeof displayName !== "string" || displayName === "") {

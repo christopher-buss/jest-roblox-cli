@@ -210,12 +210,31 @@ return {
 }
 ```
 
-The CLI reads the file without running it, so no Luau runtime is needed. The
-returned value may hold only string, number and boolean literals, tables, `::`
-casts, and a `defineConfig(...)` call, which returns its argument. Statements
-before the `return`, such as a `require` used only for types, are ignored. Any
-other syntax in the returned value stops the load with an error that names the
-file and line.
+When the returned value holds only string, number and boolean literals, tables,
+`::` casts, and a `defineConfig(...)` call, which returns its argument, the CLI
+reads the file without running it, so no Luau runtime is needed. Statements
+before the `return`, such as a `require` used only for types, are ignored.
+
+A config that holds code (a `require` of a shared module, a branch on the
+environment, a computed value) runs with
+[lute](https://github.com/luau-lang/lute) 1.x. The config can return a table or
+a function that returns one, and `require` resolves from the config's own
+directory. Lute has no `os.getenv`; read the environment through `@std/process`:
+
+```luau
+local process = require("@std/process")
+local shared = require("./jest.shared")
+
+return {
+	placeFile = if process.env.CI then "ci.rbxl" else "game.rbxl",
+	test = { testMatch = shared.testMatch },
+}
+```
+
+The CLI runs `JEST_ROBLOX_LUTE_PATH` when it is set and not empty, and `lute` on
+`PATH` otherwise. If lute is missing, the error names the first line that needs
+it. The result must cross into JSON: a function value, such as the function form
+of a mergeable field, stops the load with an error that names the field.
 
 #### Types for Luau configs
 
@@ -258,7 +277,10 @@ other formats. Mergeable fields cannot take the function form in Luau.
 
 A string entry in `test.projects` can also point at a directory with a
 `jest.config.luau` project config, which holds the per-project `test` fields at
-its top level (`displayName`, `testMatch`, …). It is read the same way.
+its top level (`displayName`, `testMatch`, …). It is read the same way. Rojo
+also syncs a project config into the place as written, and Jest Roblox runs it
+there, so a project config must not `require` a module that only lute has, such
+as `@std/process`.
 
 On the Open Cloud backend, the Roblox runtime never runs a `jest.config.luau`
 you write. Each project mount gets a generated `jest.config` stub that holds the

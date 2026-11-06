@@ -2,6 +2,7 @@ import { fromAny, fromPartial } from "@total-typescript/shoehorn";
 
 import { describe, expect, it, vi } from "vitest";
 
+import { createLuteChildProcess } from "#test/mocks/lute-child-process.ts";
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import type { createOpenCloudBackend } from "../backends/open-cloud.ts";
 import type { createStudioCliBackend } from "../backends/studio-cli.ts";
@@ -107,6 +108,7 @@ describe(resolveWorkspaceOptionsAsync, () => {
 
 		const { fileSystem } = createMemoryFileSystem();
 		const resolution = await resolveWorkspaceOptionsAsync({
+			childProcess: createLuteChildProcess({ version: "1.0.1" }),
 			cli: {},
 			fileSystem,
 			isStudioInstalled: () => false,
@@ -125,6 +127,7 @@ describe(resolveWorkspaceOptionsAsync, () => {
 
 		const { fileSystem } = createMemoryFileSystem();
 		const resolution = await resolveWorkspaceOptionsAsync({
+			childProcess: createLuteChildProcess({ version: "1.0.1" }),
 			cli: { typecheckOnly: true },
 			fileSystem,
 			isStudioInstalled: () => false,

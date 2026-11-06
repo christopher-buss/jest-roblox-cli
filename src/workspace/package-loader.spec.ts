@@ -3,6 +3,7 @@ import { fromAny } from "@total-typescript/shoehorn";
 import * as path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
+import { createLuteChildProcess } from "#test/mocks/lute-child-process.ts";
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import type { PackageConfigLoader } from "../config/loader.ts";
 import type { ResolvedConfig } from "../config/schema.ts";
@@ -13,6 +14,7 @@ const NO_SUCH_PACKAGE = path.join(import.meta.dirname, "no-such-package");
 
 async function loadDefaultConfigAsync(): Promise<ResolvedConfig> {
 	const [loaded] = await loadWorkspacePackagesAsync({
+		childProcess: createLuteChildProcess({ version: "1.0.1" }),
 		cli: {},
 		packageInfos: [{ name: "defaults", packageDirectory: NO_SUCH_PACKAGE }],
 		timing: createTiming(),
@@ -57,8 +59,10 @@ describe(loadWorkspacePackagesAsync, () => {
 		const info = { name: "@halcyon/example", packageDirectory: "/repo/packages/example" };
 
 		const { fileSystem } = createMemoryFileSystem();
+		const childProcess = createLuteChildProcess({ version: "1.0.1" });
 
 		const result = await loadWorkspacePackagesAsync({
+			childProcess,
 			cli: { verbose: true },
 			fileSystem,
 			loadPackageConfig,
@@ -79,6 +83,7 @@ describe(loadWorkspacePackagesAsync, () => {
 		});
 		expect(result[0]!.pkgConfig.verbose).toBeTrue();
 		expect(loadPackageConfig).toHaveBeenCalledExactlyOnceWith({
+			childProcess,
 			cwd: "/repo/packages/example",
 			fileSystem,
 		});
@@ -101,6 +106,7 @@ describe(loadWorkspacePackagesAsync, () => {
 		});
 
 		const [loaded] = await loadWorkspacePackagesAsync({
+			childProcess: createLuteChildProcess({ version: "1.0.1" }),
 			cli: { collectCoverage: true },
 			loadPackageConfig: loaderFor(packageConfig),
 			packageInfos: [{ name: "pkg", packageDirectory: "/repo/pkg" }],
@@ -124,6 +130,7 @@ describe(loadWorkspacePackagesAsync, () => {
 		expect.assertions(1);
 
 		const [loaded] = await loadWorkspacePackagesAsync({
+			childProcess: createLuteChildProcess({ version: "1.0.1" }),
 			cli: {},
 			loadPackageConfig: loaderFor(makeConfig({ collectCoverageFrom: [] })),
 			packageInfos: [{ name: "pkg", packageDirectory: "/repo/pkg" }],
@@ -139,6 +146,7 @@ describe(loadWorkspacePackagesAsync, () => {
 		const packageDirectory = NO_SUCH_PACKAGE;
 
 		const [loaded] = await loadWorkspacePackagesAsync({
+			childProcess: createLuteChildProcess({ version: "1.0.1" }),
 			cli: {},
 			packageInfos: [{ name: "pkg", packageDirectory }],
 			timing: createTiming(),
@@ -157,6 +165,7 @@ describe(loadWorkspacePackagesAsync, () => {
 		expect.assertions(1);
 
 		const [loaded] = await loadWorkspacePackagesAsync({
+			childProcess: createLuteChildProcess({ version: "1.0.1" }),
 			cli: { collectCoverage: true },
 			loadPackageConfig: loaderFor(makeConfig({ collectCoverage: true })),
 			packageInfos: [{ name: "pkg", packageDirectory: "/repo/pkg" }],

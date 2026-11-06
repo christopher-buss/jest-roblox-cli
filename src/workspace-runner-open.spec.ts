@@ -5,6 +5,7 @@ import process from "node:process";
 import { describe, expect, it, vi } from "vitest";
 
 import { clockTimingCollector } from "#test/mocks/clock-timing-collector.ts";
+import { createLuteChildProcess } from "#test/mocks/lute-child-process.ts";
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
 import type { PackageConfigLoader } from "./config/loader.ts";
@@ -52,6 +53,7 @@ function openOptions(
 	overrides: Partial<Parameters<typeof openWorkspaceRunAsync>[0]> = {},
 ): Parameters<typeof openWorkspaceRunAsync>[0] {
 	return {
+		childProcess: createLuteChildProcess({ version: "1.0.1" }),
 		cli: {},
 		createResolver: vi.fn<RojoResolverFactory>(() => {
 			throw new Error("unexpected createResolver call");

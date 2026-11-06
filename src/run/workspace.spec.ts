@@ -1103,7 +1103,7 @@ describe(runWorkspaceModeAsync, () => {
 			expect(result.validationMessage).toContain("workspace packages disagree on `color`");
 		});
 
-		it("should read each package config through the run's own filesystem", async () => {
+		it("should read each package config through the run's own filesystem and runner", async () => {
 			expect.assertions(1);
 
 			const harness = setupHappyPath();
@@ -1113,6 +1113,7 @@ describe(runWorkspaceModeAsync, () => {
 			});
 
 			expect(harness.loadPackageConfig).toHaveBeenCalledExactlyOnceWith({
+				childProcess: harness.dependencies.childProcess,
 				configPath: undefined,
 				cwd: packageDirectoryFor(ROOT, "@halcyon/foo"),
 				fileSystem: harness.dependencies.fileSystem,

@@ -5,7 +5,9 @@ import * as path from "node:path";
 import process from "node:process";
 
 import type { FileSystem } from "../utils/file-system.ts";
+import { validateConfigLayer } from "./config-validation.ts";
 import type { ConfigLoader, ConfigLoadOptions } from "./loader.ts";
+import { loadLuauConfig } from "./luau-config-loader.ts";
 import type { Config } from "./schema.ts";
 
 /** Load options with every field supplied. */
@@ -83,6 +85,46 @@ export async function invokeC12({
 	return isSea()
 		? configLoader<Config>({ ...options, import: async (id) => seaImport(id, fileSystem) })
 		: configLoader<Config>(options);
+}
+
+/**
+ * Check whether a config path names a Luau Config.
+ *
+ * @param filePath - Config path to test.
+ * @returns Whether the path names a Luau Config.
+ */
+export function isLuauConfigPath(filePath: string): boolean {
+	return filePath.endsWith(".luau");
+}
+
+/**
+ * Load one Luau Config as a layer.
+ *
+ * @param options - Config file, load context and the path as written.
+ * @returns The validated layer.
+ * @rejects If the file is missing, fails to evaluate or fails validation.
+ */
+export async function loadLuauLayer({
+	configFile,
+	context,
+	requested,
+}: {
+	/** Absolute path of the Luau Config. */
+	readonly configFile: string;
+	/** Load context; its child process runs lute. */
+	readonly context: ConfigLoadContext;
+	/** Path as the user wrote it, for the not-found error. */
+	readonly requested: string;
+}): Promise<ConfigLayer> {
+	const { childProcess, fileSystem } = context;
+	if (!fileSystem.existsSync(configFile)) {
+		throw new Error(`Config file not found: ${requested}`);
+	}
+
+	const config = validateConfigLayer(
+		await loadLuauConfig(configFile, { childProcess, fileSystem }),
+	);
+	return { config, configFile };
 }
 
 /**
@@ -238,12 +280,14 @@ async function loadExtendsLayers({
 
 		let extendedResult;
 		try {
-			extendedResult = await invokeC12({
-				configFile: target,
-				configLoader: context.configLoader,
-				cwd: path.dirname(target),
-				fileSystem: context.fileSystem,
-			});
+			extendedResult = isLuauConfigPath(target)
+				? await loadLuauLayer({ configFile: target, context, requested: entry })
+				: await invokeC12({
+						configFile: target,
+						configLoader: context.configLoader,
+						cwd: path.dirname(target),
+						fileSystem: context.fileSystem,
+					});
 		} catch (err) {
 			throw new Error(`Failed to resolve extends "${entry}" from "${canonicalFile}".`, {
 				cause: err,
