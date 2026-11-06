@@ -154,3 +154,18 @@ describe("complete formatter contracts", () => {
 		).toMatchSnapshot();
 	});
 });
+
+describe("formatSourceSnippet root", () => {
+	it("should show the header path relative to the root", () => {
+		expect.assertions(1);
+
+		expect(
+			formatSourceSnippet({
+				filePath: "/ws/packages/a/src/example.luau",
+				rootDir: "/ws/packages/a",
+				snippet: { failureLine: 1, lines: [{ content: "return nil", num: 1 }] },
+				useColor: false,
+			}),
+		).toBe(" ❯ src/example.luau:1\n\t1| return nil");
+	});
+});

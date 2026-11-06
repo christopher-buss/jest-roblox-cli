@@ -21,6 +21,7 @@ interface SourceLocation {
 }
 
 interface SnippetStyle {
+	rootDir?: string | undefined;
 	styles: Styles;
 	useColor: boolean;
 }
@@ -28,6 +29,7 @@ interface SnippetStyle {
 interface TsSnippetOptions {
 	fileSystem: FileSystem;
 	loc: MappedLocation;
+	rootDir?: string | undefined;
 	showLuau: boolean;
 	styles: Styles;
 	/** Narrowed by the caller; see `tsSnippetLines`. */
@@ -73,6 +75,7 @@ export function resolveSourceSnippets({
 	hasSnapshotDiff,
 	mappedLocations,
 	message,
+	rootDir,
 	showLuau,
 	sourceMapper,
 	styles,
@@ -83,6 +86,7 @@ export function resolveSourceSnippets({
 	hasSnapshotDiff: boolean;
 	mappedLocations: Array<MappedLocation>;
 	message: string;
+	rootDir?: string | undefined;
 	showLuau: boolean;
 	sourceMapper?: SourceMapper | undefined;
 	styles: Styles;
@@ -90,11 +94,18 @@ export function resolveSourceSnippets({
 }): Array<string> {
 	if (mappedLocations.length > 0) {
 		return mappedLocations.flatMap((loc) => {
-			return formatMappedLocationSnippets({ fileSystem, loc, showLuau, styles, useColor });
+			return formatMappedLocationSnippets({
+				fileSystem,
+				loc,
+				rootDir,
+				showLuau,
+				styles,
+				useColor,
+			});
 		});
 	}
 
-	const fallback = formatFallbackSnippet({ fileSystem, message, styles, useColor });
+	const fallback = formatFallbackSnippet({ fileSystem, message, rootDir, styles, useColor });
 	if (fallback.length > 0) {
 		return fallback;
 	}
@@ -105,7 +116,13 @@ export function resolveSourceSnippets({
 		// file is still `init.*`, so reading would fail and the snippet would
 		// silently disappear.
 		const resolvedPath = sourceMapper?.resolveTestFilePath(filePath) ?? filePath;
-		return formatSnapshotCallSnippet({ filePath: resolvedPath, fileSystem, styles, useColor });
+		return formatSnapshotCallSnippet({
+			filePath: resolvedPath,
+			fileSystem,
+			rootDir,
+			styles,
+			useColor,
+		});
 	}
 
 	return [];
@@ -121,6 +138,7 @@ export function resolveSourceSnippets({
 function tsSnippetLines({
 	fileSystem,
 	loc,
+	rootDir,
 	showLuau,
 	styles,
 	tsLine,
@@ -143,7 +161,14 @@ function tsSnippetLines({
 	const language = showLuau ? "TypeScript" : undefined;
 	return [
 		"",
-		formatSourceSnippet({ filePath: tsPath, language, snippet: tsSnippet, styles, useColor }),
+		formatSourceSnippet({
+			filePath: tsPath,
+			language,
+			rootDir,
+			snippet: tsSnippet,
+			styles,
+			useColor,
+		}),
 	];
 }
 
@@ -151,6 +176,7 @@ function luauSnippetLines({
 	fileSystem,
 	language,
 	loc,
+	rootDir,
 	styles,
 	useColor,
 }: SnippetStyle & {
@@ -173,6 +199,7 @@ function luauSnippetLines({
 		formatSourceSnippet({
 			filePath: loc.luauPath,
 			language,
+			rootDir,
 			snippet: luauSnippet,
 			styles,
 			useColor,
@@ -183,6 +210,7 @@ function luauSnippetLines({
 function formatMappedLocationSnippets({
 	fileSystem,
 	loc,
+	rootDir,
 	showLuau,
 	styles,
 	useColor,
@@ -195,13 +223,14 @@ function formatMappedLocationSnippets({
 
 	// Luau-only: show the Luau snippet without a language label
 	if (tsPath === undefined || tsLine === undefined) {
-		return luauSnippetLines({ fileSystem, loc, styles, useColor });
+		return luauSnippetLines({ fileSystem, loc, rootDir, styles, useColor });
 	}
 
 	// When TS fields are present, show TypeScript snippet (+ optional Luau)
 	const snippets = tsSnippetLines({
 		fileSystem,
 		loc,
+		rootDir,
 		showLuau,
 		styles,
 		tsLine,
@@ -209,7 +238,9 @@ function formatMappedLocationSnippets({
 		useColor,
 	});
 	if (showLuau) {
-		snippets.push(...luauSnippetLines({ fileSystem, language: "Luau", loc, styles, useColor }));
+		snippets.push(
+			...luauSnippetLines({ fileSystem, language: "Luau", loc, rootDir, styles, useColor }),
+		);
 	}
 
 	return snippets;
@@ -218,6 +249,7 @@ function formatMappedLocationSnippets({
 function formatFallbackSnippet({
 	fileSystem,
 	message,
+	rootDir,
 	styles,
 	useColor,
 }: SnippetStyle & { fileSystem: FileSystem; message: string }): Array<string> {
@@ -237,12 +269,16 @@ function formatFallbackSnippet({
 		return [];
 	}
 
-	return ["", formatSourceSnippet({ filePath: location.path, snippet, styles, useColor })];
+	return [
+		"",
+		formatSourceSnippet({ filePath: location.path, rootDir, snippet, styles, useColor }),
+	];
 }
 
 function formatSnapshotCallSnippet({
 	filePath,
 	fileSystem,
+	rootDir,
 	styles,
 	useColor,
 }: SnippetStyle & { filePath: string; fileSystem: FileSystem }): Array<string> {
@@ -268,5 +304,5 @@ function formatSnapshotCallSnippet({
 	const snippet = getSourceSnippet({ context: 2, filePath, line, sourceContent: content });
 	assert(snippet !== undefined);
 
-	return ["", formatSourceSnippet({ filePath, snippet, styles, useColor })];
+	return ["", formatSourceSnippet({ filePath, rootDir, snippet, styles, useColor })];
 }

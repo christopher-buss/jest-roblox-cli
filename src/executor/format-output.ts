@@ -41,7 +41,7 @@ export function formatExecuteOutput(options: FormatOutputOptions): string {
 	}
 
 	if (hasFormatter(config.formatters, "json")) {
-		return formatJson(result);
+		return formatJson(result, config.rootDir);
 	}
 
 	return formatResult({ options: buildResultOptions(options, paths), result, timing });

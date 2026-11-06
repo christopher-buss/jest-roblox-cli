@@ -26,6 +26,8 @@ export interface ProjectResult {
 	displayName: string;
 	/** The project's execution result. */
 	result: ExecuteResult;
+	/** Package root its failure detail is shown relative to; workspace only. */
+	rootDir?: string | undefined;
 }
 
 /** Coverage and source mapping folded across projects. */

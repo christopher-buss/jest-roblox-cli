@@ -1,7 +1,6 @@
 import { listBlocked } from "../results/gaps.ts";
-import type { SourceMapper } from "../source-mapper/index.ts";
 import type { JestResult, TestCaseResult, TestFileResult } from "../types/jest-result-types.ts";
-import { resolveDisplayPath } from "./shared.ts";
+import { type DisplayPathOptions, resolveDisplayPath } from "./shared.ts";
 
 const COLLATOR = new Intl.Collator();
 
@@ -10,12 +9,12 @@ const COLLATOR = new Intl.Collator();
  * Undefined when no test is Blocked.
  *
  * @param result - The run's result, with gaps on its tests and files.
- * @param sourceMapper - Maps each test file to the path it is shown by.
+ * @param options - The run's root and the mapper to each file's source path.
  * @returns The Blocked list, or undefined when no test is Blocked.
  */
 export function formatGapSummary(
 	result: JestResult,
-	sourceMapper?: SourceMapper,
+	options: DisplayPathOptions,
 ): string | undefined {
 	const blocked = listBlocked(result);
 	if (blocked.length === 0) {
@@ -23,7 +22,7 @@ export function formatGapSummary(
 	}
 
 	const lines = blocked.flatMap(({ file, gaps, test }) => {
-		const path = resolveDisplayPath(file.testFilePath, sourceMapper);
+		const path = resolveDisplayPath(file.testFilePath, options);
 		const members = Object.entries(gaps)
 			.sort(([a], [b]) => COLLATOR.compare(a, b))
 			.map(([member, raises]) => `    ${member}  ${plural(raises, "raise")}`);

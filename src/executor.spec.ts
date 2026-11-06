@@ -1864,7 +1864,7 @@ describe("execute single-project helper", () => {
 		const executeResult = await executeSingleAsync(options);
 
 		expect(executeResult.result.testResults[0]!.testFilePath).toBe(
-			"packages/uuid-generator/src/init.spec.luau",
+			`${temporaryDirectory.replaceAll("\\", "/")}/packages/uuid-generator/src/init.spec.luau`,
 		);
 	});
 

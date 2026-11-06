@@ -1,9 +1,9 @@
 import { getSourceSnippet, type SourceMapper } from "../source-mapper/index.ts";
 import { execErrorReason, hasExecError } from "../types/exec-error-file.ts";
 import type { ExecErrorTestFileResult, JestResult } from "../types/jest-result-types.ts";
-import { formatFailures, makeRelative, type SourceSnippetReader } from "./agent-failures.ts";
-import { cleanExecErrorMessage, getExecErrorHint } from "./failure.ts";
-import { resolveDisplayPath } from "./shared.ts";
+import { formatFailures, type SourceSnippetReader } from "./agent-failures.ts";
+import { cleanExecErrorMessage, getExecErrorHint } from "./failure-message.ts";
+import { resolveDisplayPath, withPackageRoot } from "./shared.ts";
 import type { BailSummary } from "./shared.ts";
 import { createStyles } from "./styles.ts";
 import {
@@ -68,6 +68,7 @@ type ResolvedAgentOptions = AgentOptions & { getSourceSnippet: SourceSnippetRead
 interface AgentProjectEntry {
 	displayName: string;
 	result: JestResult;
+	rootDir?: string | undefined;
 }
 
 interface AgentProjectStats {
@@ -167,8 +168,7 @@ function formatFileHeaderExecError(
 	file: JestResult["testResults"][number],
 	options: AgentOptions,
 ): Array<string> {
-	const displayPath = resolveDisplayPath(file.testFilePath, options.sourceMapper);
-	const relativePath = makeRelative(displayPath, options.rootDir);
+	const relativePath = resolveDisplayPath(file.testFilePath, options);
 
 	return [` ❯ ${relativePath} (suite ${execErrorReason(file)})`];
 }
@@ -178,8 +178,7 @@ function formatFileHeaderFailures(
 	options: AgentOptions,
 ): Array<string> {
 	const lines: Array<string> = [];
-	const displayPath = resolveDisplayPath(file.testFilePath, options.sourceMapper);
-	const relativePath = makeRelative(displayPath, options.rootDir);
+	const relativePath = resolveDisplayPath(file.testFilePath, options);
 	const totalTests = file.numFailingTests + file.numPassingTests + file.numPendingTests;
 	const testWord = totalTests === 1 ? "test" : "tests";
 
@@ -218,8 +217,7 @@ function formatFileHeaders(result: JestResult, options: AgentOptions): Array<str
 
 function formatExecError(file: ExecErrorTestFileResult, options: AgentOptions): Array<string> {
 	const lines: Array<string> = [];
-	const displayPath = resolveDisplayPath(file.testFilePath, options.sourceMapper);
-	const relativePath = makeRelative(displayPath, options.rootDir);
+	const relativePath = resolveDisplayPath(file.testFilePath, options);
 
 	const errorMessage = cleanExecErrorMessage(file.failureMessage);
 
@@ -313,12 +311,22 @@ function formatMultiProjectFailures({
 		"",
 	];
 
-	for (const { result } of projects) {
-		lines.push(...formatFailures({ options, result, totalFailures }));
+	for (const { result, rootDir } of projects) {
+		lines.push(
+			...formatFailures({
+				options: withPackageRoot(options, rootDir),
+				result,
+				totalFailures,
+			}),
+		);
 	}
 
-	for (const file of stats.allExecErrors) {
-		lines.push(...formatExecError(file, options));
+	for (const { result, rootDir } of projects) {
+		for (const file of result.testResults) {
+			if (hasExecError(file)) {
+				lines.push(...formatExecError(file, withPackageRoot(options, rootDir)));
+			}
+		}
 	}
 
 	const hints = formatAgentLogHints(options);

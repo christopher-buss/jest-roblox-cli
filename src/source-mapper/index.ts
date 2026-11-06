@@ -61,6 +61,8 @@ export interface SourceMapperConfig {
 	mappings: ReadonlyArray<TsconfigMapping>;
 	/** The Rojo project that places files in the DataModel. */
 	rojoProject: RojoProject;
+	/** Folder relative mounts resolve in; without it, paths stay relative. */
+	rootDirectory?: string | undefined;
 }
 
 /** Source lines around a failure, for display. */
@@ -89,14 +91,16 @@ interface MappedFailure {
  * @param config.fileSystem - Where sources and maps are read.
  * @param config.mappings - The tsconfig roots to map through.
  * @param config.rojoProject - The Rojo project to resolve paths against.
+ * @param config.rootDirectory - Directory relative mounts resolve in.
  * @returns A mapper that rewrites frames through this project's maps.
  */
 export function createSourceMapper({
 	fileSystem = nodeFileSystem,
 	mappings,
 	rojoProject,
+	rootDirectory,
 }: SourceMapperConfig): SourceMapper {
-	const pathResolver = createPathResolver(rojoProject, { fileSystem, mappings });
+	const pathResolver = createPathResolver(rojoProject, { fileSystem, mappings, rootDirectory });
 
 	const context = { fileSystem, pathResolver, v3Mapper: createV3Mapper(fileSystem) };
 	const mapFrame = createFrameMapper(context);

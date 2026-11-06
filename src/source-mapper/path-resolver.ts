@@ -3,11 +3,13 @@ import { listDataModelMounts } from "../types/rojo.ts";
 import type { TsconfigMapping } from "../types/tsconfig-types.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import { nodeFileSystem } from "../utils/file-system.ts";
+import { resolveFromDirectory } from "../utils/normalize-windows-path.ts";
 import { findMapping, replacePrefix } from "../utils/tsconfig-mapping.ts";
 
 const INIT_SEGMENT = /(^|\/)(init)(\.|\/)/;
 const LEADING_DOT_SLASH = /^\.\//;
 const LUA_EXTENSION = /\.luau?$/;
+const TS_EXTENSION = /\.ts$/;
 
 /** Maps DataModel paths to the files on disk that produced them. */
 export interface PathResolver {
@@ -17,6 +19,7 @@ export interface PathResolver {
 
 interface ResolvedPath {
 	filePath: string;
+	luauPath: string;
 	mapping?: TsconfigMapping;
 }
 
@@ -24,6 +27,8 @@ interface PathResolverConfig {
 	/** Where an unmapped path is probed. Defaults to the real filesystem. */
 	fileSystem?: FileSystem;
 	mappings?: ReadonlyArray<TsconfigMapping>;
+	/** Folder relative mounts resolve in; without it, paths stay relative. */
+	rootDirectory?: string | undefined;
 }
 
 /**
@@ -41,11 +46,12 @@ export function luauInitToIndex(filePath: string): string {
  * @param config - The mappings and the filesystem to probe.
  * @param config.fileSystem - Where unmapped paths are probed.
  * @param config.mappings - The tsconfig roots to map through.
+ * @param config.rootDirectory - Directory relative mounts resolve in.
  * @returns A resolver over the Rojo tree and tsconfig roots.
  */
 export function createPathResolver(
 	rojoProject: RojoProject,
-	{ fileSystem = nodeFileSystem, mappings }: PathResolverConfig = {},
+	{ fileSystem = nodeFileSystem, mappings, rootDirectory }: PathResolverConfig = {},
 ): PathResolver {
 	const rojoMappings = new Map(listDataModelMounts(rojoProject.tree, "."));
 
@@ -63,12 +69,11 @@ export function createPathResolver(
 				const result =
 					suffix === "" ? basePath : `${basePath}/${convertToFilePath(suffix)}`;
 
-				const mapping = findMapping({ filePath: result, mappings: tsconfigMappings });
-				if (mapping !== undefined) {
-					return { filePath: mapTypeScriptPath(result, mapping), mapping };
-				}
-
-				return { filePath: findLuaFile(fileSystem, result) };
+				return resolveMountedPath(result, {
+					fileSystem,
+					mappings: tsconfigMappings,
+					rootDirectory,
+				});
 			}
 
 			return undefined;
@@ -81,6 +86,58 @@ function mapTypeScriptPath(filePath: string, mapping: TsconfigMapping): string {
 		.replace(LEADING_DOT_SLASH, "")
 		.replace(LUA_EXTENSION, "");
 	return luauInitToIndex(`${mapped}.ts`);
+}
+
+function toDisk(rootDirectory: string | undefined, filePath: string): string {
+	return rootDirectory === undefined ? filePath : resolveFromDirectory(rootDirectory, filePath);
+}
+
+function toLuauPath(tsPath: string, mapping: TsconfigMapping): string {
+	return replacePrefix({ filePath: tsPath, from: mapping.rootDir, to: mapping.outDir }).replace(
+		TS_EXTENSION,
+		".luau",
+	);
+}
+
+function findLuaFile(fileSystem: FileSystem, basePath: string): string {
+	if (LUA_EXTENSION.test(basePath)) {
+		return basePath;
+	}
+
+	const luauPath = `${basePath}.luau`;
+	if (fileSystem.existsSync(luauPath)) {
+		return luauPath;
+	}
+
+	const luaPath = `${basePath}.lua`;
+	if (fileSystem.existsSync(luaPath)) {
+		return luaPath;
+	}
+
+	return luauPath;
+}
+
+function resolveMountedPath(
+	mountedPath: string,
+	{
+		fileSystem,
+		mappings,
+		rootDirectory,
+	}: Pick<PathResolverConfig, "rootDirectory"> &
+		Required<Pick<PathResolverConfig, "fileSystem" | "mappings">>,
+): ResolvedPath {
+	const mapping = findMapping({ filePath: mountedPath, mappings });
+	if (mapping !== undefined) {
+		const tsPath = mapTypeScriptPath(mountedPath, mapping);
+		return {
+			filePath: toDisk(rootDirectory, tsPath),
+			luauPath: toDisk(rootDirectory, toLuauPath(tsPath, mapping)),
+			mapping,
+		};
+	}
+
+	const luauPath = findLuaFile(fileSystem, toDisk(rootDirectory, mountedPath));
+	return { filePath: luauPath, luauPath };
 }
 
 function convertToFilePath(suffix: string): string {
@@ -102,22 +159,4 @@ function convertToFilePath(suffix: string): string {
 	}
 
 	return result.join("/");
-}
-
-function findLuaFile(fileSystem: FileSystem, basePath: string): string {
-	if (LUA_EXTENSION.test(basePath)) {
-		return basePath;
-	}
-
-	const luauPath = `${basePath}.luau`;
-	if (fileSystem.existsSync(luauPath)) {
-		return luauPath;
-	}
-
-	const luaPath = `${basePath}.lua`;
-	if (fileSystem.existsSync(luaPath)) {
-		return luaPath;
-	}
-
-	return luauPath;
 }

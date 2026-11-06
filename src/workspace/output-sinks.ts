@@ -3,6 +3,7 @@ import * as path from "node:path";
 
 import type { WorkspaceRunOptions } from "../config/schema.ts";
 import type { ExecuteResult } from "../executor.ts";
+import { formatJson } from "../formatters/json.ts";
 import { usesAgentFormatter } from "../formatters/utils.ts";
 import { mergeProjectResults, mergeResults } from "../output-merge.ts";
 import { writeResultFileAsync } from "../output-sinks.ts";
@@ -86,6 +87,7 @@ export async function writeWorkspaceSinksAsync(input: WorkspaceSinkInput): Promi
 	await writeResultFileAsync({
 		fileSystem,
 		outputFile: runOptions.outputFile,
+		rootDir: workspaceRoot,
 		runtime:
 			runOptions.outputFile !== undefined ? mergeProjectResults(results).result : undefined,
 		typecheck: input.typecheckResult,
@@ -123,6 +125,7 @@ export async function writeTypecheckOnlySinksAsync(
 	await writeResultFileAsync({
 		fileSystem,
 		outputFile: input.runOptions.outputFile,
+		rootDir: input.workspaceRoot,
 		runtime: undefined,
 		typecheck: input.typecheckResult,
 	});
@@ -218,7 +221,7 @@ function writePerPackageOutputFiles({
 		)}.jest-output.log`;
 		fileSystem.writeFileSync(
 			path.join(directory, filename),
-			JSON.stringify(entry.result, null, 2),
+			formatJson(entry.result, workspaceRoot),
 			"utf8",
 		);
 	}

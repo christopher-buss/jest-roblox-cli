@@ -307,6 +307,7 @@ function toProjectEntries(projectResults: Array<ProjectResult>): Array<Formatter
 			displayName: entry.displayName,
 			gameOutput: entry.result.gameOutput,
 			result: entry.result.result,
+			rootDir: entry.rootDir,
 		};
 	});
 }

@@ -84,6 +84,7 @@ export function buildWorkspaceResult({
 		return {
 			displayName: composeEntryDisplayName(entry.pkg, entry.displayName),
 			result: entry.result,
+			rootDir: entry.rootDir,
 		};
 	});
 

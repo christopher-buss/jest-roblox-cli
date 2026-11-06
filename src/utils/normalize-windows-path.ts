@@ -33,6 +33,19 @@ export function isAbsolutePath(input: string): boolean {
 	return input.startsWith("/") || DRIVE_LETTER_START_REGEX.test(input);
 }
 
+/**
+ * Resolve a path against a directory, keeping an absolute one as it is.
+ * @param directory - Directory a relative path resolves in.
+ * @param filePath - Path to resolve.
+ * @returns The absolute `/`-separated path.
+ */
+export function resolveFromDirectory(directory: string, filePath: string): string {
+	const normalized = normalizeWindowsPath(filePath);
+	return isAbsolutePath(normalized)
+		? normalized
+		: normalizeWindowsPath(path.resolve(directory, normalized));
+}
+
 const TRAILING_SLASH = /\/$/;
 
 const UNC_SHARE_REGEX = /^\/\/[^/]+\/[^/]+/;

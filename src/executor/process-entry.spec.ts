@@ -1,5 +1,6 @@
 import { fromAny } from "@total-typescript/shoehorn";
 
+import path from "node:path";
 import process from "node:process";
 import { describe, expect, it } from "vitest";
 
@@ -71,6 +72,55 @@ describe(processOrRecoverEntry, () => {
 			{},
 		]);
 		expect(result.exitCode).toBe(1);
+	});
+
+	it("should locate each test of a file under a relative Rojo mount", () => {
+		expect.assertions(1);
+
+		const context = createContext();
+		context.fileSystem.writeFileSync(
+			path.join(process.cwd(), "test.project.json"),
+			JSON.stringify({
+				name: "app",
+				tree: { $className: "DataModel", ReplicatedStorage: { $path: "src" } },
+			}),
+		);
+		context.fileSystem.mkdirSync(path.join(process.cwd(), "src"), { recursive: true });
+		context.fileSystem.writeFileSync(
+			path.join(process.cwd(), "src", "init.spec.luau"),
+			"return function()\n\tit('passes')\nend\n",
+		);
+		const testFilePath = "/ReplicatedStorage/init.spec";
+		const passing = createPassingResult();
+		passing.testResults[0]!.testFilePath = testFilePath;
+		passing.testResults[0]!.testResults[0]!.location = { column: 0, line: 2 };
+		const runner = {
+			perTestCoverage: [
+				{
+					delta: { "init.spec.luau": { s: [1] } },
+					testCaseId: "Test passes",
+					testFilePath,
+				},
+			],
+		};
+
+		const result = processEntry(
+			{ entry: { jestOutput: JSON.stringify({ ...passing, runner }) } },
+			{
+				context,
+				job: createJob({
+					config: {
+						...createResolvedConfig(),
+						collectPerTestCoverage: true,
+						rojoProject: "test.project.json",
+						rootDir: process.cwd(),
+						sourceMap: true,
+					},
+				}),
+			},
+		);
+
+		expect(result.attribution!.tests[0]!.location).toStrictEqual({ column: 0, line: 2 });
 	});
 
 	it("should leave gaps off a parsed entry that reported none", () => {

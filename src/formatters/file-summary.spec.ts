@@ -46,6 +46,20 @@ describe(formatFileSummary, () => {
 		);
 	});
 
+	it("should show an absolute test file path relative to the run root", () => {
+		expect.assertions(1);
+
+		expect(
+			formatFileSummary({
+				file: makeFile({ testFilePath: "/repo/modules/app/src/a.spec.luau" }),
+				options,
+				styles: createTaggedStyles(),
+			}),
+		).toBe(
+			" <pass>✓</pass> <dir>modules/app/src/</dir><file>a.spec.luau</file> <dim>(0 tests</dim><dim>)</dim>",
+		);
+	});
+
 	it("should render an all-pending file through the pending style", () => {
 		expect.assertions(1);
 

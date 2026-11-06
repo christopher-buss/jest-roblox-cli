@@ -2661,3 +2661,49 @@ describe("complete formatter contracts", () => {
 		expect(reports).toMatchSnapshot();
 	});
 });
+
+describe("multi-project package-relative failure detail", () => {
+	it("should show file lines against the run root and failures against the package root", () => {
+		expect.assertions(3);
+
+		const result: JestResult = {
+			...EXEC_ERROR_RESULT,
+			numFailedTests: 1,
+			numTotalTests: 1,
+			testResults: [
+				{
+					numFailingTests: 1,
+					numPassingTests: 0,
+					numPendingTests: 0,
+					testFilePath: "/ws/packages/a/src/fail.spec.luau",
+					testResults: [
+						{
+							ancestorTitles: [],
+							duration: 1,
+							failureMessages: ["Expected: 2\nReceived: 1"],
+							fullName: "fails",
+							status: "failed",
+							title: "fails",
+						},
+					],
+				},
+				{
+					...EXEC_ERROR_RESULT.testResults[0]!,
+					testFilePath: "/ws/packages/a/src/broken.spec.luau",
+				},
+			],
+		};
+
+		const output = stripVTControlCharacters(
+			formatMultiProjectResult({
+				options: { ...defaultOptions, color: false, rootDir: "/ws" },
+				projects: [{ displayName: "a", result, rootDir: "/ws/packages/a" }],
+				timing: TIMING,
+			}),
+		);
+
+		expect(output).toContain("❯ packages/a/src/fail.spec.luau");
+		expect(output).toContain("FAIL  src/fail.spec.luau > fails");
+		expect(output).toContain("FAIL  src/broken.spec.luau\n");
+	});
+});

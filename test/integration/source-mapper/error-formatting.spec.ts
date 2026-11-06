@@ -11,11 +11,11 @@ import {
 import { posixPath } from "#test/mocks/posix-path.ts";
 
 const FIXTURE_DIR = path.resolve(__dirname, "../../fixtures");
-const LUAU_OUT_DIRECTORY = /(?<![\w/])out\//g;
 
 const DATA_MODEL_PATH = "ReplicatedStorage.player.spec";
 
 let rootDirectory = "";
+let outDirectory = "";
 
 async function createFixtureSourceMapperAsync(): Promise<SourceMapper> {
 	const sandbox = createFixtureSandbox(FIXTURE_DIR);
@@ -24,13 +24,14 @@ async function createFixtureSourceMapperAsync(): Promise<SourceMapper> {
 		JSON.stringify({ compilerOptions: { outDir: "out", rootDir: "src" } }),
 	);
 	rootDirectory = posixPath(path.join(sandbox, "src"));
+	outDirectory = posixPath(path.join(sandbox, "out"));
 	return buildProjectSourceMapperAsync(sandbox);
 }
 
 function normalizePaths(output: string): string {
 	return output
 		.replaceAll(rootDirectory, "<ROOT_DIRECTORY>")
-		.replace(LUAU_OUT_DIRECTORY, "<OUT_DIRECTORY>/");
+		.replaceAll(outDirectory, "<OUT_DIRECTORY>");
 }
 
 function stack(luauLine: number): string {

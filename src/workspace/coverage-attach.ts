@@ -67,6 +67,8 @@ export interface WorkspaceProjectResult {
 	pkg: string;
 	/** Execution result of the project. */
 	result: ExecuteResult;
+	/** Package root directory. */
+	rootDir?: string | undefined;
 }
 
 /**
@@ -155,6 +157,7 @@ export function attachCoverageManifests({
 			displayName: pendingEntry.project.displayName,
 			pkg: pendingEntry.pkg,
 			result,
+			rootDir: pendingEntry.projectConfig.rootDir,
 		};
 		return coverage === undefined
 			? projectResult

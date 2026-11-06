@@ -1,7 +1,3 @@
-import { resolveNestedProjects } from "@isentinel/rojo-utils";
-
-import { type } from "arktype";
-import * as path from "node:path";
 import type { Except } from "type-fest";
 
 import { buildProjectResult } from "../backends/envelope.ts";
@@ -18,18 +14,17 @@ import { createTestSourceResolver } from "../coverage-pipeline/test-source.ts";
 import { LuauScriptError } from "../reporter/luau-script-error.ts";
 import type { SnapshotWrites } from "../reporter/parser.ts";
 import { applyFailureGaps, applyGapRecord } from "../results/gaps.ts";
-import { createSourceMapper, type SourceMapper } from "../source-mapper/index.ts";
+import type { SourceMapper } from "../source-mapper/index.ts";
 import type { TimingCollector } from "../timing/orchestration-collector.ts";
-import type { JestResult } from "../types/jest-result-types.ts";
-import { rojoProjectSchema } from "../types/rojo.ts";
 import type { TimingResult } from "../types/timing-types.ts";
 import type { TsconfigMapping } from "../types/tsconfig-types.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import { buildExecutionErrorResult } from "./exec-error.ts";
 import type { ExecuteResult } from "./executor-types.ts";
 import { formatExecuteOutput } from "./format-output.ts";
+import { buildProjectSourceMap, resolveTestFilePaths } from "./project-source-map.ts";
 import type { SnapshotWriteCounts } from "./snapshot-writer.ts";
-import { findRojoProject, writeSnapshots } from "./snapshot-writer.ts";
+import { writeSnapshots } from "./snapshot-writer.ts";
 import { calculateTestsMs, printLuauTiming } from "./timing-spans.ts";
 import type { TsconfigMappingCache, TsconfigReader } from "./tsconfig-mappings.ts";
 import { resolveAllTsconfigMappings } from "./tsconfig-mappings.ts";
@@ -136,53 +131,6 @@ function writeProjectSnapshots({
 	});
 }
 
-function buildSourceMapper({
-	config,
-	fileSystem,
-	tsconfigMappings,
-}: {
-	config: ResolvedConfig;
-	fileSystem: FileSystem;
-	tsconfigMappings: ReadonlyArray<TsconfigMapping>;
-}): SourceMapper | undefined {
-	const rojoProjectPath = config.rojoProject ?? findRojoProject(config.rootDir, fileSystem);
-	if (rojoProjectPath === undefined || !fileSystem.existsSync(rojoProjectPath)) {
-		return undefined;
-	}
-
-	try {
-		const rojoProjectRaw = JSON.parse(fileSystem.readFileSync(rojoProjectPath, "utf-8"));
-		const rojoResult = rojoProjectSchema(rojoProjectRaw);
-		if (rojoResult instanceof type.errors) {
-			return undefined;
-		}
-
-		const resolvedTree = resolveNestedProjects(
-			{ rootDirectory: path.dirname(rojoProjectPath), tree: rojoResult.tree },
-			fileSystem,
-		);
-
-		return createSourceMapper({
-			fileSystem,
-			mappings: tsconfigMappings,
-			rojoProject: { ...rojoResult, tree: resolvedTree },
-		});
-	} catch {
-		return undefined;
-	}
-}
-
-function resolveTestFilePaths(result: JestResult, sourceMapper: SourceMapper | undefined): void {
-	if (sourceMapper === undefined) {
-		return;
-	}
-
-	for (const file of result.testResults) {
-		file.testFilePath =
-			sourceMapper.resolveTestFilePath(file.testFilePath) ?? file.testFilePath;
-	}
-}
-
 /**
  * Everything the resolved tsconfig mappings unlock for one project: the
  * snapshot writes they address, the source mapper they feed, and the
@@ -212,17 +160,14 @@ function collectProjectArtifacts({
 		tsconfigMappings,
 	});
 
-	const sourceMapper = config.sourceMap
+	const sourceMap = config.sourceMap
 		? timing.profile("buildSourceMapper", () => {
-				return buildSourceMapper({ config, fileSystem, tsconfigMappings });
+				return buildProjectSourceMap({ config, fileSystem, tsconfigMappings });
 			})
 		: undefined;
+	const sourceMapper = sourceMap?.sourceMapper;
 
-	// Built before the result's paths are rewritten: the resolver joins the
-	// per-test entries to Jest's own test cases on the DataModel path both
-	// report.
 	const resolveTestSource = createTestSourceResolver({ fileSystem, result, sourceMapper });
-	resolveTestFilePaths(result, sourceMapper);
 
 	// Harvest whenever per-test coverage was collected, even if no test credited
 	// anything (perTestCoverage is then undefined): every cumulative hit ran
@@ -237,6 +182,8 @@ function collectProjectArtifacts({
 					resolveTestSource,
 				})
 			: undefined;
+	// The resolver reads the DataModel paths lazily, during the harvest.
+	resolveTestFilePaths(result, sourceMap);
 
 	return { attribution, sourceMapper, writeCounts };
 }

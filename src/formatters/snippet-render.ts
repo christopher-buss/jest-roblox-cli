@@ -1,5 +1,6 @@
 import type { SourceSnippet } from "../source-mapper/index.ts";
 import { highlightCode } from "../utils/colors.ts";
+import { makeRelative } from "./shared.ts";
 import { createStyles, type Styles } from "./styles.ts";
 
 const SNIPPET_INDENT = "\t";
@@ -16,6 +17,10 @@ export interface SourceSnippetOptions {
 	 * Language label after the location; omitted when absent.
 	 */
 	language?: string | undefined;
+	/**
+	 * Root the header path is shown relative to; the full path when absent.
+	 */
+	rootDir?: string | undefined;
 	/**
 	 * Lines to show, with the failure line and column.
 	 */
@@ -52,12 +57,14 @@ interface FormatCaretLineOptions {
 export function formatSourceSnippet({
 	filePath,
 	language,
+	rootDir,
 	snippet,
 	styles: snippetStyles,
 	useColor: isColorEnabled = true,
 }: SourceSnippetOptions): string {
 	const styles = snippetStyles ?? createStyles(isColorEnabled);
-	const lines = [formatLocationHeader({ filePath, language, snippet, styles })];
+	const shownPath = rootDir === undefined ? filePath : makeRelative(filePath, rootDir);
+	const lines = [formatLocationHeader({ filePath: shownPath, language, snippet, styles })];
 
 	// Determine padding for line numbers
 	const maxLineNumber = Math.max(...snippet.lines.map((line) => line.num));

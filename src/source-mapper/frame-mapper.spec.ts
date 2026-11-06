@@ -14,11 +14,14 @@ import type { V3Mapper } from "./v-3-mapper.ts";
 /**
  * A resolver that always answers with a roblox-ts mapping for `filePath`.
  * @param filePath - The path every resolve returns.
+ * @param luauPath - The compiled path every resolve returns.
  * @returns The stub resolver.
  */
-function resolvingTo(filePath: string): PathResolver {
+function resolvingTo(filePath: string, luauPath: string): PathResolver {
 	return fromAny({
-		resolve: () => ({ filePath, mapping: { outDir: "out", rootDir: "src" } }),
+		resolve: () => {
+			return { filePath, luauPath, mapping: { outDir: "out", rootDir: "src" } };
+		},
 	});
 }
 
@@ -54,6 +57,7 @@ describe(createFrameMapper, () => {
 		const resolve = vi.fn<PathResolver["resolve"]>(() => {
 			return fromAny({
 				filePath: "src/example.ts",
+				luauPath: "out/example.luau",
 				mapping: { outDir: "out", rootDir: "src" },
 			});
 		});
@@ -106,7 +110,7 @@ describe(createFrameMapper, () => {
 		const mapper = createFrameMapper(
 			contextWith({
 				fileSystem,
-				pathResolver: resolvingTo("src/example.ts"),
+				pathResolver: resolvingTo("src/example.ts", "out/example.luau"),
 				v3Mapper: {
 					getSourceContent: vi.fn<V3Mapper["getSourceContent"]>(() => null),
 					mapFromSourceMap: vi.fn<V3Mapper["mapFromSourceMap"]>(() => {
@@ -137,7 +141,7 @@ describe(createLineMapper, () => {
 		expect.assertions(2);
 
 		const context = contextWith({
-			pathResolver: resolvingTo("src/m.spec.ts"),
+			pathResolver: resolvingTo("src/m.spec.ts", "out/m.spec.luau"),
 			v3Mapper: {
 				mapLineStart: vi.fn<V3Mapper["mapLineStart"]>(() => {
 					return {
@@ -158,7 +162,9 @@ describe(createLineMapper, () => {
 
 		const mapLine = createLineMapper(
 			contextWith({
-				pathResolver: fromAny({ resolve: () => ({ filePath: "out/m.spec.luau" }) }),
+				pathResolver: fromAny({
+					resolve: () => ({ filePath: "out/m.spec.luau", luauPath: "out/m.spec.luau" }),
+				}),
 			}),
 		);
 
@@ -179,7 +185,7 @@ describe(createLineMapper, () => {
 		expect.assertions(1);
 
 		const mapLine = createLineMapper(
-			contextWith({ pathResolver: resolvingTo("src/m.spec.ts") }),
+			contextWith({ pathResolver: resolvingTo("src/m.spec.ts", "out/m.spec.luau") }),
 		);
 
 		expect(mapLine("ReplicatedStorage.m.spec", 10)).toBeUndefined();

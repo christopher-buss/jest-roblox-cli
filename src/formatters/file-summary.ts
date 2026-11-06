@@ -63,7 +63,7 @@ interface FormatFailedFileSummaryOptions {
  * @returns The file's summary lines joined by newlines.
  */
 export function formatFileSummary({ file, options, styles }: FormatFileSummaryOptions): string {
-	const displayPath = resolveDisplayPath(file.testFilePath, options.sourceMapper);
+	const displayPath = resolveDisplayPath(file.testFilePath, options);
 	const formattedPath = formatFilePath(displayPath, styles);
 	const testCount = file.numPassingTests + file.numFailingTests + file.numPendingTests;
 

@@ -1,10 +1,7 @@
-import path from "node:path";
-
 import type { getSourceSnippet, MappedLocation, SourceMapper } from "../source-mapper/index.ts";
 import type { JestResult, TestCaseResult } from "../types/jest-result-types.ts";
-import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
-import { parseErrorMessage } from "./failure.ts";
-import { resolveDisplayPath } from "./shared.ts";
+import { parseErrorMessage } from "./failure-message.ts";
+import { type DisplayPathOptions, makeRelative, resolveDisplayPath } from "./shared.ts";
 import { parseSourceLocation } from "./snippets.ts";
 
 /**
@@ -58,23 +55,6 @@ interface FormatAgentFailureOptions {
 }
 
 /**
- * Show a path relative to a root it lies under.
- * @param filePath - Path to shorten.
- * @param rootDirectory - Root to shorten against.
- * @returns The relative path with forward slashes, or `filePath` unchanged when outside the root.
- */
-export function makeRelative(filePath: string, rootDirectory: string): string {
-	const normalizedPath = normalizeWindowsPath(filePath);
-	const normalizedRoot = normalizeWindowsPath(rootDirectory);
-
-	if (normalizedPath.startsWith(normalizedRoot)) {
-		return normalizeWindowsPath(path.relative(normalizedRoot, normalizedPath));
-	}
-
-	return filePath;
-}
-
-/**
  * Render each failed test for the agent formatter, up to `maxFailures`.
  * @param options - Formatter options, the run result and its failure total.
  * @returns Output lines, ending with an omitted-count line when capped.
@@ -98,7 +78,7 @@ export function formatFailures({
 	totalFailures: number;
 }): Array<string> {
 	const lines: Array<string> = [];
-	const failures = collectFailedTests(result, options.sourceMapper);
+	const failures = collectFailedTests(result, options);
 	const snippetLevel = getSnippetLevel(totalFailures);
 
 	for (const [index, failure] of failures.entries()) {
@@ -115,12 +95,12 @@ export function formatFailures({
 
 function collectFailedTests(
 	result: JestResult,
-	sourceMapper?: SourceMapper,
+	options: DisplayPathOptions,
 ): Array<{ filePath: string; test: TestCaseResult }> {
 	const failures: Array<{ filePath: string; test: TestCaseResult }> = [];
 
 	for (const file of result.testResults) {
-		const displayPath = resolveDisplayPath(file.testFilePath, sourceMapper);
+		const displayPath = resolveDisplayPath(file.testFilePath, options);
 		for (const test of file.testResults) {
 			if (test.status === "failed") {
 				failures.push({ filePath: displayPath, test });

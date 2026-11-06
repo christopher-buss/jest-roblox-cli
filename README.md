@@ -174,6 +174,10 @@ const result = await runJestRobloxAsync({
 It renders no report: the result holds the per-project results, for the exported
 formatters (`formatResult`, `formatJson`) to render.
 
+When source mapping resolves a test file, its `testFilePath` is the absolute
+path on disk. Pass a root as the second argument of `formatJson` to write each
+path relative to it.
+
 ## Configuration
 
 Config files are loaded by [c12](https://github.com/unjs/c12), which
@@ -1091,7 +1095,8 @@ warning.
 `outputFile` (the Jest result JSON) follows the same two-sink model:
 `outputFile` (a path, or `true`) writes one merged result at the workspace root,
 and `workspace.outputFile: true` writes a per-package result file per (package,
-project) under `.jest-roblox/output/`.
+project) under `.jest-roblox/output/`. Both write each test file path relative
+to the run's root when it lies under it, as the terminal report shows it.
 
 ## CLI flags
 

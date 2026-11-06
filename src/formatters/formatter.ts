@@ -15,7 +15,12 @@ import { parseGameOutput } from "../utils/game-output.ts";
 import { formatExecErrorDetail, formatFileFailures } from "./failure.ts";
 import { computeProjectStats, formatFileSummary } from "./file-summary.ts";
 import { formatGameOutputBlock } from "./game-output.ts";
-import type { FailureContext, FormatOptions, FormatterProjectEntry } from "./shared.ts";
+import {
+	type FailureContext,
+	type FormatOptions,
+	type FormatterProjectEntry,
+	withPackageRoot,
+} from "./shared.ts";
 import { createStyles, formatProjectBadge, type Styles } from "./styles.ts";
 import {
 	countTestBuckets,
@@ -96,6 +101,7 @@ interface ProjectSectionOptions {
 	failureCtx: FailureContext;
 	gameOutput?: string | undefined;
 	options: FormatOptions;
+	packageRoot?: string | undefined;
 	result: JestResult;
 	styles: Styles;
 }
@@ -151,13 +157,14 @@ export function formatMultiProjectResult({
 		totalFailures: projects.reduce((sum, { result }) => sum + countDetailedFailures(result), 0),
 	};
 
-	const sections = projects.map(({ displayColor, displayName, gameOutput, result }) => {
+	const sections = projects.map(({ displayColor, displayName, gameOutput, result, rootDir }) => {
 		return formatProjectSection({
 			displayColor,
 			displayName,
 			failureCtx,
 			gameOutput,
 			options,
+			packageRoot: rootDir,
 			result,
 			styles,
 		});
@@ -262,7 +269,13 @@ function formatDetailedFailures({
 
 	for (const file of execErrors) {
 		lines.push(
-			formatExecErrorDetail({ failureCtx, file, sourceMapper: options.sourceMapper, styles }),
+			formatExecErrorDetail({
+				failureCtx,
+				file,
+				rootDir: options.rootDir,
+				sourceMapper: options.sourceMapper,
+				styles,
+			}),
 		);
 	}
 
@@ -344,6 +357,7 @@ function formatProjectSection({
 	failureCtx,
 	gameOutput,
 	options,
+	packageRoot,
 	result,
 	styles: resolved,
 }: ProjectSectionOptions): string {
@@ -356,7 +370,12 @@ function formatProjectSection({
 			useColor: options.color,
 		}),
 		...formatFileSummaries({ options, result, styles: resolved }),
-		...formatDetailedFailures({ failureCtx, options, result, styles: resolved }),
+		...formatDetailedFailures({
+			failureCtx,
+			options: withPackageRoot(options, packageRoot),
+			result,
+			styles: resolved,
+		}),
 	];
 
 	// Only a failing project earns its Game Output inline: on a pass the

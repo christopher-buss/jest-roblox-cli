@@ -141,7 +141,10 @@ async function emitSingleResultAsync({
 }
 
 function printGapSummary(config: ResolvedConfig, result: ExecuteResult): void {
-	const summary = formatGapSummary(result.result, result.sourceMapper);
+	const summary = formatGapSummary(result.result, {
+		rootDir: config.rootDir,
+		sourceMapper: result.sourceMapper,
+	});
 	if (summary !== undefined && !config.silent) {
 		console.error(summary);
 	}

@@ -24,7 +24,7 @@ describe(createPathResolver, () => {
 			{ fileSystem },
 		);
 
-		expect(resolver.resolve("Suite")).toStrictEqual({ filePath });
+		expect(resolver.resolve("Suite")).toStrictEqual({ filePath, luauPath: filePath });
 	});
 
 	it("should map a directly mounted init script back to its TypeScript source", () => {
@@ -38,6 +38,7 @@ describe(createPathResolver, () => {
 
 		expect(resolver.resolve("Module")).toStrictEqual({
 			filePath: "src/module/index.ts",
+			luauPath: "out/module/index.luau",
 			mapping,
 		});
 	});
@@ -53,6 +54,7 @@ describe(createPathResolver, () => {
 
 		expect(resolver.resolve("Cash$.wallet")).toStrictEqual({
 			filePath: "out/cash/wallet.luau",
+			luauPath: "out/cash/wallet.luau",
 		});
 	});
 
@@ -67,6 +69,7 @@ describe(createPathResolver, () => {
 
 		expect(resolver.resolve("Shared.wallet")).toStrictEqual({
 			filePath: "out/shared/wallet.luau",
+			luauPath: "out/shared/wallet.luau",
 		});
 	});
 

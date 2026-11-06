@@ -9,7 +9,7 @@ import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
 import type { ResolvedConfig } from "../config/schema.ts";
 import type { FileSystem } from "../utils/file-system.ts";
-import { findRojoProject, writeSnapshots } from "./snapshot-writer.ts";
+import { resolveRojoProjectFile, writeSnapshots } from "./snapshot-writer.ts";
 
 const ROOT = path.resolve("/repo");
 
@@ -33,7 +33,7 @@ function seedProject(fileSystem: FileSystem, fileName = "default.project.json"):
 	);
 }
 
-describe(findRojoProject, () => {
+describe(resolveRojoProjectFile, () => {
 	it("should prefer default.project.json over other project files", () => {
 		expect.assertions(1);
 
@@ -43,7 +43,9 @@ describe(findRojoProject, () => {
 
 		seedProject(fileSystem);
 
-		expect(findRojoProject(ROOT, fileSystem)).toBe(path.join(ROOT, "default.project.json"));
+		expect(resolveRojoProjectFile(config(), fileSystem)).toBe(
+			path.join(ROOT, "default.project.json"),
+		);
 	});
 
 	it("should find an alternate project file but reject similar suffixes", () => {
@@ -56,7 +58,9 @@ describe(findRojoProject, () => {
 		fileSystem.writeFileSync(path.join(ROOT, "ignored.project.json.bak"), "{}");
 		seedProject(fileSystem, "custom.project.json");
 
-		expect(findRojoProject(ROOT, fileSystem)).toBe(path.join(ROOT, "custom.project.json"));
+		expect(resolveRojoProjectFile(config(), fileSystem)).toBe(
+			path.join(ROOT, "custom.project.json"),
+		);
 	});
 
 	it("should return undefined when no project file exists", () => {
@@ -66,7 +70,7 @@ describe(findRojoProject, () => {
 
 		fileSystem.mkdirSync(ROOT, { recursive: true });
 
-		expect(findRojoProject(ROOT, fileSystem)).toBeUndefined();
+		expect(resolveRojoProjectFile(config(), fileSystem)).toBeUndefined();
 	});
 });
 

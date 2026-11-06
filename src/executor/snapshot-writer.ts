@@ -51,23 +51,18 @@ interface SnapshotDestination {
 }
 
 /**
- * Find the rojo project file in a directory.
- * @param rootDirectory - Directory to search.
- * @param fileSystem - File system to read.
- * @returns `default.project.json` when present, else the first `*.project.json`, else undefined.
+ * The project's Rojo project file: the configured one resolved against
+ * `config.rootDir`, else the one found there.
+ * @param config - Supplies `rojoProject` and `rootDir`.
+ * @param fileSystem - File system to search.
+ * @returns The absolute path, or undefined when none is configured or found.
  */
-export function findRojoProject(
-	rootDirectory: string,
-	fileSystem: FileSystem = nodeFileSystem,
+export function resolveRojoProjectFile(
+	config: ResolvedConfig,
+	fileSystem: FileSystem,
 ): string | undefined {
-	const defaultPath = path.join(rootDirectory, "default.project.json");
-	if (fileSystem.existsSync(defaultPath)) {
-		return defaultPath;
-	}
-
-	const files = fileSystem.readdirSync(rootDirectory);
-	const projectFile = files.find((file) => file.endsWith(".project.json"));
-	return projectFile !== undefined ? path.join(rootDirectory, projectFile) : undefined;
+	const configured = config.rojoProject ?? findRojoProject(config.rootDir, fileSystem);
+	return configured === undefined ? undefined : path.resolve(config.rootDir, configured);
 }
 
 /**
@@ -104,21 +99,31 @@ export function writeSnapshots({
 	return { attempted, failed, written };
 }
 
+/**
+ * Find the rojo project file in a directory.
+ * @param rootDirectory - Directory to search.
+ * @param fileSystem - File system to read.
+ * @returns `default.project.json` when present, else the first `*.project.json`, else undefined.
+ */
+function findRojoProject(
+	rootDirectory: string,
+	fileSystem: FileSystem = nodeFileSystem,
+): string | undefined {
+	const defaultPath = path.join(rootDirectory, "default.project.json");
+	if (fileSystem.existsSync(defaultPath)) {
+		return defaultPath;
+	}
+
+	const files = fileSystem.readdirSync(rootDirectory);
+	const projectFile = files.find((file) => file.endsWith(".project.json"));
+	return projectFile !== undefined ? path.join(rootDirectory, projectFile) : undefined;
+}
+
 function resolveRojoProjectPath(
 	fileSystem: FileSystem,
 	config: ResolvedConfig,
 ): string | undefined {
-	// Resolve against `config.rootDir`, not CWD. In single-package mode CWD
-	// happens to equal rootDir so the distinction is invisible; in workspace
-	// mode CWD is the workspace root and a relative `config.rojoProject`
-	// (e.g. "test.project.json") would miss every package. `findRojoProject`
-	// already returns an absolute path so the resolve is a no-op for that
-	// branch — needed only for the user-supplied raw string.
-	const rawRojoProjectPath = config.rojoProject ?? findRojoProject(config.rootDir, fileSystem);
-	const rojoProjectPath =
-		rawRojoProjectPath !== undefined
-			? path.resolve(config.rootDir, rawRojoProjectPath)
-			: undefined;
+	const rojoProjectPath = resolveRojoProjectFile(config, fileSystem);
 	if (rojoProjectPath === undefined || !fileSystem.existsSync(rojoProjectPath)) {
 		process.stderr.write("Warning: Cannot write snapshots - no rojo project found\n");
 		return undefined;

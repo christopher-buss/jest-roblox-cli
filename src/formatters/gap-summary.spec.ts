@@ -28,7 +28,9 @@ describe(formatGapSummary, () => {
 		expect.assertions(1);
 
 		expect(
-			formatGapSummary(result(file({ testResults: [testCase("clean")] }))),
+			formatGapSummary(result(file({ testResults: [testCase("clean")] })), {
+				rootDir: "/repo",
+			}),
 		).toBeUndefined();
 	});
 
@@ -50,6 +52,7 @@ describe(formatGapSummary, () => {
 					],
 				}),
 			),
+			{ rootDir: "/repo" },
 		);
 
 		expect(summary).toBe(
@@ -73,6 +76,7 @@ describe(formatGapSummary, () => {
 				}),
 				file({ gaps: { script: 1 }, testFilePath: "src/broken.spec.ts" }),
 			),
+			{ rootDir: "/repo" },
 		);
 
 		expect(summary).toBe(
@@ -101,6 +105,7 @@ describe(formatGapSummary, () => {
 					],
 				}),
 			),
+			{ rootDir: "/repo" },
 		);
 
 		expect(summary).toBe(
@@ -124,7 +129,7 @@ describe(formatGapSummary, () => {
 		});
 		const summary = formatGapSummary(
 			result(file({ testResults: [testCase("a", { script: 1 })] })),
-			sourceMapper,
+			{ rootDir: "/repo", sourceMapper },
 		);
 
 		expect(summary!.split("\n", 2)[1]).toBe("  shown/src/gap.spec.ts > a");

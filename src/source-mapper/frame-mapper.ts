@@ -2,13 +2,10 @@ import * as path from "node:path";
 
 import type { FileSystem } from "../utils/file-system.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
-import { replacePrefix } from "../utils/tsconfig-mapping.ts";
 import { findExpectationColumn } from "./column-finder.ts";
 import type { PathResolver } from "./path-resolver.ts";
 import type { StackFrame } from "./source-mapper-types.ts";
 import type { V3Mapper } from "./v-3-mapper.ts";
-
-const TS_EXTENSION = /\.ts$/;
 
 /** A stack frame resolved to its Luau file and any TypeScript origin. */
 export interface MappedFrame {
@@ -54,17 +51,11 @@ export function createFrameMapper(
 			return undefined;
 		}
 
+		const { luauPath } = resolved;
 		// No matched tsconfig mapping — path is Luau, skip source map lookup.
 		if (resolved.mapping === undefined) {
-			return { luauPath: resolved.filePath };
+			return { luauPath };
 		}
-
-		const { filePath, mapping } = resolved;
-		const luauPath = replacePrefix({
-			filePath,
-			from: mapping.rootDir,
-			to: mapping.outDir,
-		}).replace(TS_EXTENSION, ".luau");
 
 		return { luauPath, source: mapToSource({ ...context, frame, luauPath }) };
 	};
@@ -94,13 +85,7 @@ export function createLineMapper(
 			return luauLine;
 		}
 
-		const luauPath = replacePrefix({
-			filePath: resolved.filePath,
-			from: resolved.mapping.rootDir,
-			to: resolved.mapping.outDir,
-		}).replace(TS_EXTENSION, ".luau");
-
-		return context.v3Mapper.mapLineStart(luauPath, luauLine)?.line ?? undefined;
+		return context.v3Mapper.mapLineStart(resolved.luauPath, luauLine)?.line ?? undefined;
 	};
 }
 

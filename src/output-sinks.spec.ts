@@ -84,6 +84,7 @@ describe(writeResultFileAsync, () => {
 		await writeResultFileAsync({
 			fileSystem,
 			outputFile: "/tmp/results.json",
+			rootDir: "/repo",
 			runtime,
 			typecheck,
 		});
@@ -114,6 +115,7 @@ describe(writeResultFileAsync, () => {
 		await writeResultFileAsync({
 			fileSystem,
 			outputFile: undefined,
+			rootDir: "/repo",
 			runtime: makeJestResult(),
 			typecheck: makeJestResult(),
 		});
@@ -131,6 +133,7 @@ describe(writeResultFileAsync, () => {
 		await writeResultFileAsync({
 			fileSystem,
 			outputFile: "/tmp/results.json",
+			rootDir: "/repo",
 			runtime: undefined,
 			typecheck,
 		});

@@ -17,6 +17,7 @@ import {
 	SNAPSHOT_FAILING_RESULT,
 } from "#test/mocks/format-results.ts";
 import { createSingleFileResult, failingFileResult } from "#test/mocks/spec-format.ts";
+import type { JestResult } from "../types/jest-result-types.ts";
 import { type AgentOptions, formatAgent, formatAgentMultiProject } from "./agent.ts";
 
 describe("formatAgent summary", () => {
@@ -1017,5 +1018,47 @@ describe(formatAgentMultiProject, () => {
 		// Preserve the exact machine-facing report while keeping the semantic
 		// assertion above useful when this contract changes intentionally.
 		expect(output).toMatchSnapshot();
+	});
+});
+
+describe("agent package-relative failure detail", () => {
+	const packageResult: JestResult = {
+		...EXEC_ERROR_RESULT,
+		numFailedTests: 1,
+		numTotalTests: 1,
+		testResults: [
+			{
+				numFailingTests: 1,
+				numPassingTests: 0,
+				numPendingTests: 0,
+				testFilePath: "/ws/packages/a/src/fail.spec.luau",
+				testResults: [
+					createTestCase({
+						ancestorTitles: [],
+						failureMessages: ["Expected: 2\nReceived: 1"],
+						status: "failed",
+						title: "fails",
+					}),
+				],
+			},
+			{
+				...EXEC_ERROR_RESULT.testResults[0]!,
+				testFilePath: "/ws/packages/a/src/broken.spec.luau",
+			},
+		],
+	};
+
+	it("should show file lines against the run root and failures against the package root", () => {
+		expect.assertions(4);
+
+		const output = formatAgentMultiProject(
+			[{ displayName: "a", result: packageResult, rootDir: "/ws/packages/a" }],
+			{ maxFailures: 10, rootDir: "/ws" },
+		);
+
+		expect(output).toContain(" ❯ packages/a/src/fail.spec.luau (1 test | 1 failed)");
+		expect(output).toContain(" ❯ packages/a/src/broken.spec.luau (suite");
+		expect(output).toContain(" FAIL src/fail.spec.luau > fails");
+		expect(output).toContain(" FAIL src/broken.spec.luau\n");
 	});
 });

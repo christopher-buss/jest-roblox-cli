@@ -67,11 +67,13 @@ interface WriteAggregatedGameOutputOptions {
 export async function writeResultFileAsync({
 	fileSystem = nodeFileSystem,
 	outputFile,
+	rootDir,
 	runtime,
 	typecheck,
 }: {
 	fileSystem?: FileSystem | undefined;
 	outputFile: string | undefined;
+	rootDir: string;
 	runtime: JestResult | undefined;
 	typecheck: JestResult | undefined;
 }): Promise<void> {
@@ -83,6 +85,7 @@ export async function writeResultFileAsync({
 		filePath: outputFile,
 		fileSystem,
 		result: mergeResults(typecheck, runtime),
+		rootDir,
 	});
 }
 
@@ -106,6 +109,7 @@ export async function writeSingleRunSinksAsync({
 	await writeResultFileAsync({
 		fileSystem,
 		outputFile: config.outputFile,
+		rootDir: config.rootDir,
 		runtime: runtimeResult?.result,
 		typecheck: typecheckResult,
 	});
@@ -144,6 +148,7 @@ export async function writeMultiRunSinksAsync({
 	await writeResultFileAsync({
 		fileSystem,
 		outputFile: config.outputFile,
+		rootDir: config.rootDir,
 		runtime: merged.result,
 		typecheck: typecheckResult,
 	});
