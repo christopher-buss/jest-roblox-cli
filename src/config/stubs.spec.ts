@@ -17,17 +17,12 @@ function mountsAt(...fsPaths: Array<string>): ResolvedProjectConfig["rojoMounts"
 }
 
 function writeStubs(fileSystem: FileSystem, projects: Array<ResolvedProjectConfig>): void {
-	generateProjectStubs({ fileSystem, outputRoot: undefined, projects, rootDirectory: "/root" });
+	generateProjectStubs({ fileSystem, outputRoot: "/root", projects, rootDirectory: "/root" });
 }
 
 function writeCacheStubs(fileSystem: FileSystem, projects: Array<ResolvedProjectConfig>): void {
 	generateProjectStubs({ fileSystem, outputRoot: "/cache", projects, rootDirectory: "/root" });
 }
-
-const SPLIT_MOUNTS = [
-	{ dataModelPath: "ReplicatedStorage/Client", fsPath: "src/Client" },
-	{ dataModelPath: "ServerScriptService/Server", fsPath: "src/Server" },
-];
 
 function generateClientStub(overrides: Partial<ResolvedConfig>): string {
 	const { fileSystem, volume } = createMemoryFileSystem();
@@ -38,7 +33,7 @@ function generateClientStub(overrides: Partial<ResolvedConfig>): string {
 
 	generateProjectStubs({
 		fileSystem,
-		outputRoot: undefined,
+		outputRoot: "/root",
 		projects: [project],
 		rootDirectory: "/root",
 	});
@@ -114,165 +109,6 @@ describe("stub writing", () => {
 	});
 });
 
-describe("stub collision rule", () => {
-	it("should accept when no mount has a user-authored config", () => {
-		expect.assertions(1);
-
-		const { fileSystem, volume } = createMemoryFileSystem();
-
-		volume.mkdirSync("/root/src/Client", { recursive: true });
-
-		volume.mkdirSync("/root/src/Server", { recursive: true });
-
-		const project = makeResolvedProject({ outDir: undefined, rojoMounts: SPLIT_MOUNTS });
-
-		expect(() => {
-			writeStubs(fileSystem, [project]);
-		}).not.toThrow();
-	});
-
-	it("should accept when every mount has a user jest.config.luau", () => {
-		expect.assertions(1);
-
-		const { fileSystem, volume } = createMemoryFileSystem();
-
-		volume.mkdirSync("/root/src/Client", { recursive: true });
-
-		volume.mkdirSync("/root/src/Server", { recursive: true });
-		volume.writeFileSync("/root/src/Client/jest.config.luau", "return {}");
-		volume.writeFileSync("/root/src/Server/jest.config.luau", "return {}");
-
-		const project = makeResolvedProject({ outDir: undefined, rojoMounts: SPLIT_MOUNTS });
-
-		expect(() => {
-			writeStubs(fileSystem, [project]);
-		}).not.toThrow();
-	});
-
-	it("should accept when every mount has a user jest.config.lua (non-generated)", () => {
-		expect.assertions(1);
-
-		const { fileSystem, volume } = createMemoryFileSystem();
-
-		volume.mkdirSync("/root/src/Client", { recursive: true });
-
-		volume.mkdirSync("/root/src/Server", { recursive: true });
-		volume.writeFileSync("/root/src/Client/jest.config.lua", "-- user wrote this\nreturn {}");
-		volume.writeFileSync("/root/src/Server/jest.config.lua", "-- user wrote this\nreturn {}");
-
-		const project = makeResolvedProject({ outDir: undefined, rojoMounts: SPLIT_MOUNTS });
-
-		expect(() => {
-			writeStubs(fileSystem, [project]);
-		}).not.toThrow();
-	});
-
-	it("should accept when mixed user extensions cover every mount", () => {
-		expect.assertions(1);
-
-		const { fileSystem, volume } = createMemoryFileSystem();
-
-		volume.mkdirSync("/root/src/Client", { recursive: true });
-
-		volume.mkdirSync("/root/src/Server", { recursive: true });
-		volume.writeFileSync("/root/src/Client/jest.config.luau", "return {}");
-		volume.writeFileSync("/root/src/Server/jest.config.lua", "-- user-authored\nreturn {}");
-
-		const project = makeResolvedProject({ outDir: undefined, rojoMounts: SPLIT_MOUNTS });
-
-		expect(() => {
-			writeStubs(fileSystem, [project]);
-		}).not.toThrow();
-	});
-
-	it("should throw when only some mounts have a user config", () => {
-		expect.assertions(1);
-
-		const { fileSystem, volume } = createMemoryFileSystem();
-
-		volume.mkdirSync("/root/src/Client", { recursive: true });
-
-		volume.mkdirSync("/root/src/Server", { recursive: true });
-		volume.writeFileSync("/root/src/Client/jest.config.luau", "return {}");
-
-		const project = makeResolvedProject({
-			displayName: "partial",
-			outDir: undefined,
-			rojoMounts: SPLIT_MOUNTS,
-		});
-
-		expect(() => {
-			writeStubs(fileSystem, [project]);
-		}).toThrow(
-			expect.objectContaining({
-				hint: undefined,
-				message: [
-					'Project "partial": user-authored jest config present at some mounts but not others.',
-					"",
-					"With user config: src/Client",
-					"Without user config: src/Server",
-					"",
-					"For multi-mount projects, either every tracked mount must have a user config, or none.",
-				].join("\n"),
-			}),
-		);
-	});
-
-	it("should ignore our own generated .lua when counting user configs", () => {
-		expect.assertions(1);
-
-		const { fileSystem, volume } = createMemoryFileSystem();
-
-		volume.mkdirSync("/root/src/Client", { recursive: true });
-
-		volume.mkdirSync("/root/src/Server", { recursive: true });
-		volume.writeFileSync("/root/src/Client/jest.config.lua", `${GENERATED}return {}`);
-
-		const project = makeResolvedProject({ outDir: undefined, rojoMounts: SPLIT_MOUNTS });
-
-		expect(() => {
-			writeStubs(fileSystem, [project]);
-		}).not.toThrow();
-	});
-
-	it("should list every mount on each side of a partial user-config collision", () => {
-		expect.assertions(1);
-
-		const { fileSystem, volume } = createMemoryFileSystem();
-
-		for (const mount of ["Client", "Shared", "Server", "Storage"]) {
-			volume.mkdirSync(`/root/src/${mount}`, { recursive: true });
-		}
-
-		volume.writeFileSync("/root/src/Client/jest.config.luau", "return {}");
-		volume.writeFileSync("/root/src/Shared/jest.config.luau", "return {}");
-
-		const project = makeResolvedProject({
-			displayName: "four-mounts",
-			outDir: undefined,
-			rojoMounts: [
-				{ dataModelPath: "ReplicatedStorage/Client", fsPath: "src/Client" },
-				{ dataModelPath: "ReplicatedStorage/Shared", fsPath: "src/Shared" },
-				{ dataModelPath: "ServerScriptService/Server", fsPath: "src/Server" },
-				{ dataModelPath: "ServerStorage/Storage", fsPath: "src/Storage" },
-			],
-		});
-
-		expect(() => {
-			writeStubs(fileSystem, [project]);
-		}).toThrow(
-			[
-				'Project "four-mounts": user-authored jest config present at some mounts but not others.',
-				"",
-				"With user config: src/Client, src/Shared",
-				"Without user config: src/Server, src/Storage",
-				"",
-				"For multi-mount projects, either every tracked mount must have a user config, or none.",
-			].join("\n"),
-		);
-	});
-});
-
 describe(generateProjectStubs, () => {
 	it("should support a mount at the project root", () => {
 		expect.assertions(1);
@@ -305,31 +141,11 @@ describe(generateProjectStubs, () => {
 		expect(() => {
 			generateProjectStubs({
 				fileSystem,
-				outputRoot: undefined,
+				outputRoot: "/root",
 				projects: [project],
 				rootDirectory: "/root",
 			});
 		}).toThrow("mount fsPath escapes root directory");
-	});
-
-	it("should write stubs to source-tree paths when no outputRoot is given", () => {
-		expect.assertions(1);
-
-		const { fileSystem, volume } = createMemoryFileSystem();
-
-		const project = makeResolvedProject({
-			displayName: "client",
-			rojoMounts: [{ dataModelPath: "ReplicatedStorage/Client", fsPath: "out/Client" }],
-		});
-
-		generateProjectStubs({
-			fileSystem,
-			outputRoot: undefined,
-			projects: [project],
-			rootDirectory: "/root",
-		});
-
-		expect(volume.existsSync("/root/out/Client/jest.config.luau")).toBeTrue();
 	});
 
 	it("should not emit CLI/runner default fields into the generated stub", () => {
@@ -344,7 +160,7 @@ describe(generateProjectStubs, () => {
 
 		generateProjectStubs({
 			fileSystem,
-			outputRoot: undefined,
+			outputRoot: "/root",
 			projects: [project],
 			rootDirectory: "/root",
 		});
@@ -408,7 +224,7 @@ describe(generateProjectStubs, () => {
 
 		generateProjectStubs({
 			fileSystem,
-			outputRoot: undefined,
+			outputRoot: "/root",
 			projects: [project],
 			rootDirectory: "/root",
 		});
@@ -490,17 +306,13 @@ describe(generateProjectStubs, () => {
 		}).toThrow("mount fsPath must be relative");
 	});
 
-	it("should still detect partial user-authored configs in source tree when writing to outputRoot", () => {
-		expect.assertions(2);
+	it("should write a stub at every mount when only some mounts hold a user config", () => {
+		expect.assertions(3);
 
-		const { fileSystem, volume } = createMemoryFileSystem();
-
-		// User config in source tree at one mount but not the other → partial
-		// coverage.
-		volume.mkdirSync("/root/out/Client", { recursive: true });
-
-		volume.writeFileSync("/root/out/Client/jest.config.luau", "return {}");
-		volume.mkdirSync("/root/out/Server", { recursive: true });
+		const { fileSystem, volume } = createMemoryFileSystem({
+			"/root/out/Client/jest.config.luau": "return {}",
+			"/root/out/Server/spec.spec.luau": "",
+		});
 
 		const project = makeResolvedProject({
 			displayName: "partial",
@@ -510,18 +322,26 @@ describe(generateProjectStubs, () => {
 			],
 		});
 
-		expect(() => {
-			generateProjectStubs({
-				fileSystem,
-				outputRoot: "/cache/.jest-roblox/workspace/pkg",
-				projects: [project],
-				rootDirectory: "/root",
-			});
-		}).toThrow(expect.objectContaining({ hint: undefined }));
-		// No stub written to cache because the guard fires before any write.
+		generateProjectStubs({
+			fileSystem,
+			outputRoot: "/cache/.jest-roblox/workspace/pkg",
+			projects: [project],
+			rootDirectory: "/root",
+		});
+
 		expect(
-			volume.existsSync("/cache/.jest-roblox/workspace/pkg/out/Server/jest.config.luau"),
-		).toBeFalse();
+			volume.readFileSync(
+				"/cache/.jest-roblox/workspace/pkg/out/Client/jest.config.luau",
+				"utf8",
+			),
+		).toStartWith(GENERATED);
+		expect(
+			volume.readFileSync(
+				"/cache/.jest-roblox/workspace/pkg/out/Server/jest.config.luau",
+				"utf8",
+			),
+		).toStartWith(GENERATED);
+		expect(volume.readFileSync("/root/out/Client/jest.config.luau", "utf8")).toBe("return {}");
 	});
 });
 
@@ -713,50 +533,17 @@ describe(cleanLeftoverStubs, () => {
 	});
 });
 
-describe("generateProjectStubs (per-mount FS user-config detection)", () => {
-	// A schema-level "is this a string-entry project" hint is insufficient:
-	// a TS string-entry may not have a compiled `.luau` at the mount yet,
-	// in which case we still need a generated stub. The actual gate is
-	// whether a non-marker config already exists at the mount on disk.
-	it("should skip stub generation only when a user-authored config actually exists at the mount", () => {
-		expect.assertions(2);
+describe("generateProjectStubs with a user-authored config at a mount", () => {
+	it("should write the evaluated project values in place of the user config", () => {
+		expect.assertions(4);
 
+		const userConfig = "return { displayName = 'user-authored', placeId = '1' }\n";
 		const { fileSystem, volume } = createMemoryFileSystem({
-			"/root/dummy": "",
-			// User-authored config exists at out/Shared but NOT at out/Server.
-			// Both projects are inline-object (no userAuthoredPath) — the gate
-			// is purely the FS check.
-			"/root/out/Shared/jest.config.luau": "return { displayName = 'user-authored' }\n",
+			"/root/out/Shared/jest.config.luau": userConfig,
 		});
 
-		const sharedProject = makeResolvedProject({
-			displayName: "shared",
-			rojoMounts: [{ dataModelPath: "ReplicatedStorage/Shared", fsPath: "out/Shared" }],
-		});
-		const serverProject = makeResolvedProject({
-			displayName: "server",
-			rojoMounts: [{ dataModelPath: "ServerStorage/Server", fsPath: "out/Server" }],
-		});
-
-		generateProjectStubs({
-			fileSystem,
-			outputRoot: "/root/.cache",
-			projects: [sharedProject, serverProject],
-			rootDirectory: "/root",
-		});
-
-		// Shared: user file exists at mount → no cache stub.
-		expect(volume.existsSync("/root/.cache/out/Shared/jest.config.luau")).toBeFalse();
-		// Server: clean mount → cache stub generated.
-		expect(volume.existsSync("/root/.cache/out/Server/jest.config.luau")).toBeTrue();
-	});
-
-	it("should still generate a cache stub for a string-entry project when no .luau exists at the mount (TS uncompiled / .json config)", () => {
-		expect.assertions(1);
-
-		const { fileSystem, volume } = createMemoryFileSystem({ "/root/dummy": "" });
-
-		const stringEntryProject = makeResolvedProject({
+		const project = makeResolvedProject({
+			config: { ...createResolvedConfig(), placeId: "123", rootDir: "/root", testTimeout: 7 },
 			displayName: "shared",
 			rojoMounts: [{ dataModelPath: "ReplicatedStorage/Shared", fsPath: "out/Shared" }],
 		});
@@ -764,15 +551,16 @@ describe("generateProjectStubs (per-mount FS user-config detection)", () => {
 		generateProjectStubs({
 			fileSystem,
 			outputRoot: "/root/.cache",
-			projects: [stringEntryProject],
+			projects: [project],
 			rootDirectory: "/root",
 		});
 
-		// String-entry project but mount is empty on disk — generate the
-		// cache stub. Without this, a TS source whose compile hasn't run yet
-		// or a .json config that has no runtime artifact would leave Jest
-		// with no per-project config in DataModel.
-		expect(volume.existsSync("/root/.cache/out/Shared/jest.config.luau")).toBeTrue();
+		const stub = volume.readFileSync("/root/.cache/out/Shared/jest.config.luau", "utf8");
+
+		expect(stub).toContain('\tdisplayName = "shared",\n');
+		expect(stub).toContain("\ttestTimeout = 7,\n");
+		expect(stub).not.toContain("placeId");
+		expect(volume.readFileSync("/root/out/Shared/jest.config.luau", "utf8")).toBe(userConfig);
 	});
 });
 

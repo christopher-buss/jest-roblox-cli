@@ -6,7 +6,7 @@ import type { RojoTreeNode } from "../types/rojo.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import { nodeFileSystem } from "../utils/file-system.ts";
 import { absolutizePackagePaths } from "./absolutize-paths.ts";
-import { readGlobIgnorePaths } from "./glob-ignore.ts";
+import { readDeclaredGlobIgnorePaths, withReplacedConfigs } from "./glob-ignore.ts";
 import type { HoistedService, PackageHoist } from "./service-hoist.ts";
 import { applyHoistedServices, isSameValue, mergeHoistedServices } from "./service-hoist.ts";
 import { transformToFolder } from "./stage-transform.ts";
@@ -83,9 +83,10 @@ export function synthesize(input: SynthesizeInput): string {
 	const stage: RojoTreeNode = { $className: "Folder" };
 	const hoists: Array<PackageHoist> = [];
 	const globs: Array<DeclaredGlobs> = [];
+	const replacedConfigs: Array<string> = [];
 
 	for (const descriptor of input.packages) {
-		stagePackage({ descriptor, fileSystem, globs, hoists, stage });
+		replacedConfigs.push(...stagePackage({ descriptor, fileSystem, globs, hoists, stage }));
 	}
 
 	const tree: RojoTreeNode = {
@@ -103,24 +104,13 @@ export function synthesize(input: SynthesizeInput): string {
 	enableLoadString(tree);
 	stampPlaceContentId(tree, input.contentId);
 
-	const globIgnorePaths = resolveGlobIgnorePaths(globs);
+	const globIgnorePaths = withReplacedConfigs(resolveGlobIgnorePaths(globs), replacedConfigs);
 
 	return stableStringify({
 		name: "jest-roblox-workspace",
 		globIgnorePaths,
 		tree,
 	});
-}
-
-/**
- * {@link readGlobIgnorePaths}, telling a package that declared none apart from
- * one that declared an empty list: only a declaration takes part in the
- * consensus every package's list has to agree on.
- * @param raw - Raw project object.
- * @returns The patterns, or `undefined` when the field is not an array.
- */
-function readDeclaredGlobIgnorePaths(raw: JSONObject): Array<string> | undefined {
-	return Array.isArray(raw["globIgnorePaths"]) ? readGlobIgnorePaths(raw) : undefined;
 }
 
 /**
@@ -153,12 +143,16 @@ function stagePackage({
 	descriptor: PackageDescriptor;
 	globs: Array<DeclaredGlobs>;
 	hoists: Array<PackageHoist>;
-}): void {
+}): Array<string> {
 	const project = loadRojoProject(descriptor.rojoProjectPath, fileSystem);
 	const services: Array<HoistedService> = [];
 	const folder = transformToFolder(project.tree, services);
 	const root = absolutizePackagePaths({ descriptor, fileSystem, node: folder });
-	injectStubMounts({ fileSystem, root, stubMounts: descriptor.stubMounts });
+	const replacedConfigs = injectStubMounts({
+		fileSystem,
+		root,
+		stubMounts: descriptor.stubMounts,
+	});
 	markRunContextScripts(root, project.raw);
 	stage[descriptor.name] = root;
 	hoists.push({ packageName: descriptor.name, services });
@@ -167,6 +161,8 @@ function stagePackage({
 	if (patterns !== undefined) {
 		globs.push({ packageName: descriptor.name, patterns });
 	}
+
+	return replacedConfigs;
 }
 
 function formatGlobConflict(owner: DeclaredGlobs, rival: DeclaredGlobs): string {
@@ -300,7 +296,11 @@ function synthesizeNoWrap({
 
 	// Inject in no-wrap mode too so single-package callers (multi-project +
 	// open-cloud) share the same `$path` named-child mounting workspace uses.
-	injectStubMounts({ fileSystem, root: tree, stubMounts: descriptor.stubMounts });
+	const replacedConfigs = injectStubMounts({
+		fileSystem,
+		root: tree,
+		stubMounts: descriptor.stubMounts,
+	});
 
 	if (loadStringEnabled) {
 		enableLoadString(tree);
@@ -311,5 +311,12 @@ function synthesizeNoWrap({
 	// `raw` carries top-level fields (gameId, placeId, globIgnorePaths, etc.)
 	// that the narrow `RojoProject` shape strips; `tree` then overrides the
 	// raw unresolved tree with the loader's resolved version.
-	return stableStringify({ ...project.raw, tree });
+	return stableStringify({
+		...project.raw,
+		globIgnorePaths: withReplacedConfigs(
+			readDeclaredGlobIgnorePaths(project.raw),
+			replacedConfigs,
+		),
+		tree,
+	});
 }

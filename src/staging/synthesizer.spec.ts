@@ -1005,7 +1005,7 @@ describe(synthesize, () => {
 	});
 
 	it.for(["jest.config.lua", "jest.config.luau"])(
-		"should throw ConfigError when virtualized leaf source dir contains %s",
+		"should leave a %s in a virtualized leaf source dir out of the place",
 		(collidingFile) => {
 			expect.assertions(2);
 
@@ -1045,10 +1045,15 @@ describe(synthesize, () => {
 				});
 			}
 
-			expect(callSynthesize).toThrow(configErrorLike());
-			expect(callSynthesize).toThrow(
+			const parsed = parseFixture(callSynthesize());
+
+			expect(parsed["globIgnorePaths"]).toStrictEqual([
 				path.join(sourceDirectory, collidingFile).replaceAll("\\", "/"),
-			);
+			]);
+			expect(
+				descend(stagedFoo(parsed, "ReplicatedStorage", "Tests", "src"), "jest.config")!
+					.$path,
+			).toBe(stubPath.replaceAll("\\", "/"));
 		},
 	);
 
@@ -1756,6 +1761,55 @@ describe(synthesize, () => {
 		// Multi-project + open-cloud wire shape: synthesizer must produce a
 		// place-buildable project.json from a single user package with
 		// multiple project mounts and stubs in the cache.
+		it("should add a user config at a stub mount to the declared globIgnorePaths", () => {
+			expect.assertions(2);
+
+			const stubPath = path.join(FOO_DIR, ".jest-roblox/cache/out/Shared/jest.config.luau");
+			const userConfig = path.join(FOO_DIR, "out/Shared/jest.config.luau");
+			const { fileSystem } = createMemoryFileSystem({
+				[FOO_PROJECT]: projectJson({
+					name: "user-game",
+					globIgnorePaths: ["**/*.txt"],
+					tree: {
+						$className: "DataModel",
+						ReplicatedStorage: {
+							$className: "ReplicatedStorage",
+							Shared: { $path: "out/Shared" },
+						},
+					},
+				}),
+				[stubPath]: "return {}",
+				[userConfig]: "return { placeId = '1' }",
+			});
+
+			const parsed = parseFixture(
+				synthesize({
+					fileSystem,
+					packages: [
+						{
+							packageDirectory: FOO_DIR,
+							rojoProjectPath: FOO_PROJECT,
+							stubMounts: [
+								{
+									absStubPath: stubPath,
+									dataModelPath: "ReplicatedStorage/Shared",
+								},
+							],
+						},
+					],
+					wrap: false,
+				}),
+			);
+
+			expect(parsed["globIgnorePaths"]).toStrictEqual([
+				"**/*.txt",
+				userConfig.replaceAll("\\", "/"),
+			]);
+			expect(descend(parsed.tree, "ReplicatedStorage", "Shared", "jest.config")!.$path).toBe(
+				stubPath.replaceAll("\\", "/"),
+			);
+		});
+
 		it("should produce a place-ready synthesized project for multi-project + open-cloud shape", () => {
 			expect.assertions(5);
 

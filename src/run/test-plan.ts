@@ -289,9 +289,9 @@ function selectProjectFiles({
 }
 
 /**
- * Same per-mount FS filter as the synthesizer's stubMounts loop: drop mounts
- * where a user-authored `jest.config.luau` already exists. The runtime injector
- * mustn't parent a duplicate `jest.config` over a Rojo-synced user file.
+ * A Studio run serves the user's own place, where Rojo syncs any user config
+ * at a mount, so the runtime injector must not parent a second `jest.config`
+ * there.
  *
  * @param options - File system, project and root directory.
  * @param options.fileSystem - File system to check for user-authored configs.

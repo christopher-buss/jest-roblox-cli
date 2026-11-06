@@ -200,11 +200,7 @@ describe("workspace synthesizer zero-test project tolerance", () => {
 
 // Regression: stub-injection refactor (PR #464). A pre-refactor multi-project
 // run leaves a marker-bearing `jest.config.luau` in the user's source tree
-// (multi-project mode used to write stubs there directly). When the same
-// package is then run via workspace mode, the synthesizer's
-// `assertNoSourceCollision` would refuse to inject from the cache because a
-// pre-existing file already sits at the mount fsPath — re-triggering the
-// cross-mode bug the refactor exists to fix. The workspace runner's
+// (multi-project mode used to write stubs there directly). The workspace runner's
 // pre-flight `cleanLeftoverStubs` walks each live project's mount paths,
 // deletes only marker-bearing files, and surfaces a stderr notice.
 describe("workspace pre-flight cleanup of leftover own-stubs", () => {
@@ -239,8 +235,6 @@ describe("workspace pre-flight cleanup of leftover own-stubs", () => {
 			);
 
 			expect(result.exitCode, `stderr: ${result.stderr}\nstdout: ${result.stdout}`).toBe(0);
-			// Pre-flight cleanup removed the marker-bearing file before the
-			// synthesizer's `assertNoSourceCollision` got to look at it.
 			expect(fs.existsSync(leftoverPath)).toBeFalse();
 			// Notice format is fixed by `workspace-runner.ts:209-212`.
 			expect(result.stderr).toContain("cleaned 1 leftover stub(s) from @e2e/foo");

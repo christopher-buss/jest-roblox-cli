@@ -4,7 +4,6 @@ import process from "node:process";
 import type { BackendKind } from "../backends/interface.ts";
 import type { ResolvedProjectConfig } from "../config/projects.ts";
 import type { ResolvedConfig } from "../config/schema.ts";
-import { mountsWithoutUserConfig, STUB_FILENAME } from "../config/stub-files.ts";
 import { createStubBake } from "../config/stub-shadow-sync.ts";
 import { cleanLeftoverStubs, generateProjectStubs } from "../config/stubs.ts";
 import type { CoverageArtifacts } from "../coverage-pipeline/build-manifest.ts";
@@ -12,7 +11,6 @@ import { resolveCoverageInclude } from "../coverage-pipeline/derive-coverage-fro
 import type { PrepareCoverageResult } from "../coverage-pipeline/prepare-types.ts";
 import { toCoverageArtifacts } from "../coverage-pipeline/prepare.ts";
 import type { CodeBundleArtifact } from "../staging/code-bundle.ts";
-import type { StubMount } from "../staging/synthesizer-types.ts";
 import type { TimingCollector } from "../timing/orchestration-collector.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import type { PosixRoot } from "../utils/normalize-windows-path.ts";
@@ -67,18 +65,6 @@ export interface StageRunOptions {
 	timing: TimingCollector;
 }
 
-/** Inputs of {@link collectStubMounts}. */
-export interface StubMountOptions {
-	/** Directory that holds the generated stubs. */
-	cacheRoot: string;
-	/** File system to check for user-authored configs. */
-	fileSystem: FileSystem;
-	/** Projects whose mounts may need a stub. */
-	projects: Array<ResolvedProjectConfig>;
-	/** Root directory the mount paths resolve against. */
-	rootDir: string;
-}
-
 /**
  * The `--coverage` half of a staged run; absent fields when coverage is off.
  */
@@ -101,42 +87,6 @@ interface StagedCoverage {
  */
 interface StagedCoverageRun extends StagedCoverage {
 	coverageStagingMs: number;
-}
-
-/**
- * `jest.config` stub mounts for a place build: one `$path` named-child per
- * rojo mount that lacks a user-authored config on disk, pointing at the cache
- * stub. Shared by the dispatch place build and `prepareArtifacts`'s Clean
- * Place.
- *
- * @param options - Cache root, file system, projects and root directory.
- * @param options.cacheRoot - Directory that holds the generated stubs.
- * @param options.fileSystem - File system to check for user-authored configs.
- * @param options.projects - Projects whose mounts may need a stub.
- * @param options.rootDir - Root directory the mount paths resolve against.
- * @returns One stub mount per mount without a user-authored config.
- */
-export function collectStubMounts({
-	cacheRoot,
-	fileSystem,
-	projects,
-	rootDir: rootDirectory,
-}: StubMountOptions): Array<StubMount> {
-	// Per-mount FS check decides whether to inject. A TS string-entry may or may
-	// not have a compiled `.luau` at the mount yet — trust the filesystem rather
-	// than the entry shape.
-	return projects.flatMap((project) => {
-		return mountsWithoutUserConfig({
-			fileSystem,
-			mounts: project.rojoMounts,
-			rootDirectory,
-		}).map((mount) => {
-			return {
-				absStubPath: path.resolve(cacheRoot, mount.fsPath, STUB_FILENAME),
-				dataModelPath: mount.dataModelPath,
-			};
-		});
-	});
 }
 
 /**
@@ -243,9 +193,8 @@ export async function stageRunAsync({
 	// phase below is timed: unmeasured, it would land outside every reported
 	// phase. Pre-flight cleanup mirrors workspace behaviour: upgraders coming
 	// from a pre-refactor version may have marker-bearing leftover stubs in
-	// their source tree. The synthesizer's `assertNoSourceCollision` and the
-	// plugin's runtime `FindFirstChild` check would both block the run
-	// otherwise.
+	// their source tree. The plugin's runtime `FindFirstChild` check would
+	// block the run otherwise.
 	const { elapsedMs: cleanMs, value: cleaned } = timing.profileTimed("cleanLeftoverStubs", () => {
 		return cleanLeftoverStubs({ projects, ...stubRoot });
 	});

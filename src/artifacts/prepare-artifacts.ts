@@ -2,6 +2,7 @@ import * as path from "node:path";
 
 import { mergeCliWithConfig } from "../config/merge.ts";
 import type { CliOptions, ResolvedConfig } from "../config/schema.ts";
+import { collectStubMounts } from "../config/stubs.ts";
 import type { AttributionResult } from "../coverage-pipeline/attribution.ts";
 import { applyAttribution } from "../coverage-pipeline/attribution.ts";
 import type {
@@ -25,7 +26,6 @@ import type { RunEntryOptions } from "../run.ts";
 import { nodeRunDispatch, runSingleOrMultiAsync } from "../run.ts";
 import type { RunSeams } from "../run/seams.ts";
 import { nodeRunSeams } from "../run/seams.ts";
-import { collectStubMounts } from "../run/staging.ts";
 import { buildPlaceAsync } from "../staging/place-builder.ts";
 import type { StubMount, UnwrappedPackageDescriptor } from "../staging/synthesizer-types.ts";
 import type { TimingCollector } from "../timing/orchestration-collector.ts";
@@ -199,9 +199,7 @@ async function resolveCleanStubMountsAsync(
 ): Promise<Array<StubMount>> {
 	return collectStubMounts({
 		cacheRoot: path.resolve(config.rootDir, CACHE_DIR),
-		fileSystem: entry.fileSystem,
 		projects: await resolveProjectsAsync(config, entry),
-		rootDir: config.rootDir,
 	});
 }
 

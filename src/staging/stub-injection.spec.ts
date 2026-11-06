@@ -49,13 +49,12 @@ describe(injectStubMounts, () => {
 	});
 
 	it("should leave the tree alone without stubMounts", () => {
-		expect.assertions(1);
+		expect.assertions(2);
 
 		const { fileSystem } = createMemoryFileSystem();
 		const root = storage({ Common: { $path: fooPath("src") } });
 
-		injectStubMounts({ fileSystem, root, stubMounts: undefined });
-
+		expect(injectStubMounts({ fileSystem, root, stubMounts: undefined })).toStrictEqual([]);
 		expect(root).toStrictEqual(storage({ Common: { $path: fooPath("src") } }));
 	});
 
@@ -84,32 +83,31 @@ describe(injectStubMounts, () => {
 	});
 
 	it.for(["jest.config.lua", "jest.config.luau"])(
-		"should throw ConfigError when the leaf source dir contains %s",
-		(collidingFile) => {
+		"should report a %s in the leaf source dir as replaced",
+		(userConfig) => {
 			expect.assertions(2);
 
 			const sourceDirectory = path.join(FOO_DIR, "src");
 			const { fileSystem } = createMemoryFileSystem({
 				[path.join(sourceDirectory, "init.luau")]: "",
-				[path.join(sourceDirectory, collidingFile)]: "return {}",
+				[path.join(sourceDirectory, userConfig)]: "return {}",
+			});
+			const root = storage({ Common: { $path: fooPath("src") } });
+
+			const replaced = injectStubMounts({
+				fileSystem,
+				root,
+				stubMounts: [{ absStubPath: STUB_PATH, dataModelPath: "ReplicatedStorage/Common" }],
 			});
 
-			function inject(): void {
-				injectStubMounts({
-					fileSystem,
-					root: storage({ Common: { $path: fooPath("src") } }),
-					stubMounts: [
-						{ absStubPath: STUB_PATH, dataModelPath: "ReplicatedStorage/Common" },
-					],
-				});
-			}
-
-			expect(inject).toThrow(configErrorLike());
-			expect(inject).toThrow(posixPath(path.join(sourceDirectory, collidingFile)));
+			expect(replaced).toStrictEqual([posixPath(path.join(sourceDirectory, userConfig))]);
+			expect(child(root, "ReplicatedStorage", "Common", "jest.config")!.$path).toBe(
+				posixPath(STUB_PATH),
+			);
 		},
 	);
 
-	it("should not throw when leaf source dir contains unrelated files", () => {
+	it("should report nothing replaced when the leaf source dir holds only unrelated files", () => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -117,13 +115,13 @@ describe(injectStubMounts, () => {
 			[path.join(FOO_DIR, "src/init.luau")]: "",
 		});
 
-		expect(() => {
+		expect(
 			injectStubMounts({
 				fileSystem,
 				root: storage({ Common: { $path: fooPath("src") } }),
 				stubMounts: [{ absStubPath: STUB_PATH, dataModelPath: "ReplicatedStorage/Common" }],
-			});
-		}).not.toThrow();
+			}),
+		).toStrictEqual([]);
 	});
 
 	it("should throw ConfigError when dataModelPath does not resolve in the tree", () => {
@@ -150,13 +148,13 @@ describe(injectStubMounts, () => {
 		);
 	});
 
-	it("should skip collision check when the leaf has no $path", () => {
-		expect.assertions(1);
+	it("should report nothing replaced when the leaf has no $path", () => {
+		expect.assertions(2);
 
 		const { fileSystem } = createMemoryFileSystem();
 		const root = storage({ Branch: { $className: "Folder", Leaf: { $path: fooPath("src") } } });
 
-		injectStubMounts({
+		const replaced = injectStubMounts({
 			fileSystem,
 			root,
 			stubMounts: [
@@ -164,6 +162,7 @@ describe(injectStubMounts, () => {
 			],
 		});
 
+		expect(replaced).toStrictEqual([]);
 		expect(child(root, "ReplicatedStorage", "Branch", "jest.config")).toBeDefined();
 	});
 
@@ -326,7 +325,7 @@ describe(injectStubMounts, () => {
 		}).toThrow(
 			configErrorLike(
 				'stubMount at "ReplicatedStorage" would overwrite an existing "jest.config" child already declared in the project tree. ' +
-					"Either remove the explicit declaration from your .project.json, or declare the project via a string entry in `projects: [...]` so jest-roblox treats your config as canonical.",
+					"Remove the explicit declaration from your .project.json.",
 			),
 		);
 	});

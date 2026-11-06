@@ -182,7 +182,7 @@ describe(stageWorkspaceStubs, () => {
 		expect(volume.existsSync(cacheStub(context, "src/Server"))).toBeFalse();
 	});
 
-	it("should omit only mounts that contain a user-authored config", () => {
+	it("should mount a cache stub at a mount that holds a user-authored config", () => {
 		expect.assertions(3);
 
 		const server = makeProject("server");
@@ -205,8 +205,12 @@ describe(stageWorkspaceStubs, () => {
 				absStubPath: cacheStub(context, "src/Server"),
 				dataModelPath: "ServerScriptService/server",
 			},
+			{
+				absStubPath: cacheStub(context, "src/Shared"),
+				dataModelPath: "ServerScriptService/shared",
+			},
 		]);
-		expect(volume.existsSync(cacheStub(context, "src/Shared"))).toBeFalse();
+		expect(volume.existsSync(cacheStub(context, "src/Shared"))).toBeTrue();
 		expect(volume.readFileSync(sourceStub(context, "src/Shared"), "utf8")).toBe(USER_STUB);
 	});
 

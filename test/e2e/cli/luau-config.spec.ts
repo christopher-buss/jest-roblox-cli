@@ -11,6 +11,7 @@ import {
 	runCliAsync,
 	runSeaExecutableAsync,
 } from "#test/e2e/cli/helpers.ts";
+import { nodeAt, readPlaceTree } from "#test/e2e/cli/place-tree.ts";
 
 const LUAU_FIXTURE_PATH = path.resolve(__dirname, "../fixtures/luau-project");
 const WORKSPACE_FIXTURE_PATH = path.resolve(__dirname, "../fixtures/workspace");
@@ -55,6 +56,56 @@ describe("luau configs", () => {
 			).toBeTrue();
 		},
 		RUN_TIMEOUT_MS * 2,
+	);
+
+	it.skipIf(!rojoOnPath())(
+		"should stage a stub without cli keys for a jest.config.luau that is also the top-level config",
+		async () => {
+			expect.assertions(6);
+
+			const sandbox = createFixtureSandbox(LUAU_FIXTURE_PATH);
+			fs.rmSync(path.join(sandbox, "jest.config.luau"));
+			const configPath = path.join(sandbox, "src/jest.config.luau");
+			const config = [
+				"return {",
+				'\tbackend = "open-cloud",',
+				'\tplaceFile = "game.rbxlx",',
+				'\trootDir = "..",',
+				"\ttest = {",
+				"\t\ttestTimeout = 4321,",
+				"\t},",
+				"}",
+				"",
+			].join("\n");
+			fs.writeFileSync(configPath, config);
+			const server = await startFakeOpenCloudServerAsync([
+				{ jestOutput: buildPassingJestOutput() },
+			]);
+
+			const result = await runCliAsync(["--config", "src/jest.config.luau"], {
+				cwd: sandbox,
+				env: createOpenCloudEnvironment(server.baseUrl),
+				timeoutMs: RUN_TIMEOUT_MS,
+			});
+
+			expect(result.exitCode, `stderr: ${result.stderr}\nstdout: ${result.stdout}`).toBe(0);
+			expect(fs.readFileSync(configPath, "utf8")).toBe(config);
+
+			const stub = fs.readFileSync(
+				path.join(sandbox, ".jest-roblox/cache/src/jest.config.luau"),
+				"utf8",
+			);
+
+			expect(stub).toContain("\ttestTimeout = 4321,\n");
+			expect(stub).not.toMatch(/backend|placeFile|rootDir/);
+
+			const placeFile = path.join(sandbox, "game.rbxlx");
+			const mount = nodeAt(readPlaceTree(placeFile), ["ReplicatedStorage", "src"]);
+
+			expect(mount.children.filter((node) => node.name === "jest.config")).toHaveLength(1);
+			expect(fs.readFileSync(placeFile, "utf8")).not.toContain('backend = "open-cloud"');
+		},
+		RUN_TIMEOUT_MS + 5000,
 	);
 
 	it("should load the luau file that --config names", async () => {

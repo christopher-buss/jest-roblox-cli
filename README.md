@@ -225,6 +225,19 @@ A string entry in `test.projects` can also point at a directory with a
 `jest.config.luau` project config, which holds the per-project `test` fields at
 its top level (`displayName`, `testMatch`, …). It is read the same way.
 
+On the Open Cloud backend, the Roblox runtime never runs a `jest.config.luau`
+you write. Each project mount gets a generated `jest.config` stub that holds the
+project's evaluated test fields, in place of any `jest.config.luau` or
+`jest.config.lua` in that mount. Your file on disk does not change. One file can
+therefore be both the top-level config and the config in a mount: root fields
+such as `backend` or `placeId` do not reach the runtime, and a `require` in the
+file never runs in Roblox. A function in a project Luau config does not reach
+the runtime either.
+
+The Studio and Studio CLI backends still run your own `jest.config.luau` or
+`jest.config.lua` in the runtime, and add a stub only at a mount that has none.
+On these backends, keep a config at a mount to Jest fields that Roblox can run.
+
 ### Root config fields
 
 Two distinct buckets live at the root level. Jest passthrough fields live under

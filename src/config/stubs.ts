@@ -1,15 +1,14 @@
 import path from "node:path";
 
+import type { StubMount } from "../staging/synthesizer-types.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import { nodeFileSystem } from "../utils/file-system.ts";
 import { PROJECT_TEST_KEYS } from "./config-keys.ts";
-import { ConfigError } from "./errors.ts";
 import type { ResolvedProjectConfig } from "./projects.ts";
 import type { ProjectTestConfig, ResolvedConfig } from "./schema.ts";
 import {
 	hasUserAuthoredConfig,
 	isGeneratedStub,
-	mountsWithoutUserConfig,
 	removeLegacyGeneratedStub,
 	STUB_FILENAME,
 } from "./stub-files.ts";
@@ -59,13 +58,6 @@ const STUB_SKIP_KEYS: ReadonlySet<string> = new Set([
 	"typecheck",
 ]);
 
-/** The two trees a stub pass reads and writes, and what reaches them. */
-interface StubRoots {
-	fileSystem: FileSystem;
-	rootDirectory: string;
-	writeRoot: string;
-}
-
 /**
  * Refuse to let any downstream write land outside `rootDirectory`. Mount
  * fsPaths originate from the rojo tree and `resolveNestedProjects` can emit
@@ -97,6 +89,32 @@ export function assertMountContained({
 			`Project "${project.displayName}" mount fsPath escapes root directory: ${fsPath}`,
 		);
 	}
+}
+
+/**
+ * `jest.config` stub mounts for a place build: one `$path` named-child per rojo
+ * mount, pointing at the cache stub.
+ *
+ * @param options - Cache root and projects.
+ * @param options.cacheRoot - Directory that holds the generated stubs.
+ * @param options.projects - Projects whose mounts get a stub.
+ * @returns One stub mount per project mount.
+ */
+export function collectStubMounts({
+	cacheRoot,
+	projects,
+}: {
+	readonly cacheRoot: string;
+	readonly projects: Array<ResolvedProjectConfig>;
+}): Array<StubMount> {
+	return projects.flatMap((project) => {
+		return project.rojoMounts.map((mount) => {
+			return {
+				absStubPath: path.resolve(cacheRoot, mount.fsPath, STUB_FILENAME),
+				dataModelPath: mount.dataModelPath,
+			};
+		});
+	});
 }
 
 /**
@@ -147,8 +165,7 @@ export function cleanLeftoverStubs({
 }
 
 /**
- * Write a generated stub at every mount of every project, after the collision
- * rule passes for each.
+ * Write a generated stub at every mount of every project.
  *
  * @param options - Projects, root directory, optional output root and file
  *   system.
@@ -161,19 +178,16 @@ export function generateProjectStubs({
 }: {
 	/** File system to read and write through. */
 	readonly fileSystem?: FileSystem;
-	/** Root stubs are written under. Defaults to `rootDirectory`. */
-	readonly outputRoot?: string | undefined;
+	/** Root stubs are written under. */
+	readonly outputRoot: string;
 	/** Projects to write stubs for. */
 	readonly projects: Array<ResolvedProjectConfig>;
 	/** Root the project mount paths are relative to. */
 	readonly rootDirectory: string;
 }): void {
-	const writeRoot = outputRoot ?? rootDirectory;
 	const entries: Array<{ config: StubConfig; outputPath: string }> = [];
 
 	for (const project of projects) {
-		assertStubCollisionRule({ fileSystem, project, rootDirectory });
-
 		const stubConfig: StubConfig = {
 			...buildStubConfig(project.config),
 			displayName: project.displayName,
@@ -182,11 +196,10 @@ export function generateProjectStubs({
 
 		entries.push(
 			...buildStubEntriesForProject({
-				fileSystem,
 				project,
 				rootDirectory,
 				stubConfig,
-				writeRoot,
+				writeRoot: outputRoot,
 			}),
 		);
 	}
@@ -230,69 +243,24 @@ function cleanLeftoverStubsForProject({
 	return cleaned;
 }
 
-/**
- * For a multi-mount project, the stubs-per-mount rule requires that a
- * user-authored config at any tracked FS path must appear at every tracked
- * FS path (or none). Throws `ConfigError` when the project has partial
- * coverage — some mounts have a user config and others don't.
- *
- * @param options - Project, root directory and file system.
- */
-function assertStubCollisionRule({
-	fileSystem = nodeFileSystem,
-	project,
-	rootDirectory,
-}: {
-	readonly fileSystem?: FileSystem;
-	readonly project: ResolvedProjectConfig;
-	readonly rootDirectory: string;
-}): void {
-	const withUser: Array<string> = [];
-	const withoutUser: Array<string> = [];
-
-	for (const mount of project.rojoMounts) {
-		assertMountContained({ fsPath: mount.fsPath, project, rootDirectory });
-
-		const absolute = path.resolve(rootDirectory, mount.fsPath);
-		if (hasUserAuthoredConfig(absolute, fileSystem)) {
-			withUser.push(mount.fsPath);
-		} else {
-			withoutUser.push(mount.fsPath);
-		}
-	}
-
-	if (withUser.length === 0 || withoutUser.length === 0) {
-		return;
-	}
-
-	const withUserList = withUser.join(", ");
-	const withoutUserList = withoutUser.join(", ");
-	throw new ConfigError(
-		`Project "${project.displayName}": user-authored jest config present at some mounts but not others.\n\n` +
-			`With user config: ${withUserList}\n` +
-			`Without user config: ${withoutUserList}\n\n` +
-			"For multi-mount projects, either every tracked mount must have a user config, or none.",
-	);
-}
-
 function buildStubEntriesForProject({
-	fileSystem,
 	project,
 	rootDirectory,
 	stubConfig,
 	writeRoot,
-}: StubRoots & {
+}: {
 	readonly project: ResolvedProjectConfig;
+	readonly rootDirectory: string;
 	readonly stubConfig: StubConfig;
+	readonly writeRoot: string;
 }): Array<{ config: StubConfig; outputPath: string }> {
-	return mountsWithoutUserConfig({ fileSystem, mounts: project.rojoMounts, rootDirectory }).map(
-		(mount) => {
-			return {
-				config: stubConfig,
-				outputPath: path.resolve(writeRoot, mount.fsPath, STUB_FILENAME),
-			};
-		},
-	);
+	return project.rojoMounts.map((mount) => {
+		assertMountContained({ fsPath: mount.fsPath, project, rootDirectory });
+		return {
+			config: stubConfig,
+			outputPath: path.resolve(writeRoot, mount.fsPath, STUB_FILENAME),
+		};
+	});
 }
 
 function buildStubConfig(config: ResolvedConfig): Partial<ProjectTestConfig> {

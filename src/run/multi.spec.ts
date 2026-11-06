@@ -266,7 +266,11 @@ function writeRojoProject(volume: MemoryVolume): void {
 	volume.writeFileSync("/test/default.project.json", JSON.stringify({ name: "test", tree }));
 }
 
-function writtenSynthProject(volume: MemoryVolume): { name: string; tree: unknown } {
+function writtenSynthProject(volume: MemoryVolume): {
+	globIgnorePaths?: Array<string>;
+	name: string;
+	tree: unknown;
+} {
 	return fromAny(JSON.parse(String(volume.readFileSync(SYNTH_PROJECT, "utf8"))));
 }
 
@@ -2002,8 +2006,8 @@ describe(runMultiProjectAsync, () => {
 		expect(jobs[1]!.runtimeInjectionPaths).toStrictEqual(["ServerScriptService/server"]);
 	});
 
-	it("should skip stubMounts and runtimeInjectionPaths for mounts with user-authored configs", async () => {
-		expect.assertions(4);
+	it("should mount the cache stub in place of a user-authored config and leave the user file out", async () => {
+		expect.assertions(5);
 
 		const { config, fileSystem, volume } = setupDefaults();
 		mocks.resolveBackend.mockResolvedValueOnce(makeBackend("open-cloud"));
@@ -2016,15 +2020,30 @@ describe(runMultiProjectAsync, () => {
 
 		expect(synth.tree).toStrictEqual({
 			$className: "DataModel",
-			ReplicatedStorage: { client: { $path: "../../out/client" } },
-			ServerScriptService: { server: { $path: "../../out/server" } },
+			ReplicatedStorage: {
+				client: {
+					"$path": "../../out/client",
+					"jest.config": { $path: "out/client/jest.config.luau" },
+				},
+			},
+			ServerScriptService: {
+				server: {
+					"$path": "../../out/server",
+					"jest.config": { $path: "out/server/jest.config.luau" },
+				},
+			},
 		});
+		expect(synth.globIgnorePaths).toStrictEqual([
+			"../../out/client/jest.config.luau",
+			"../../out/server/jest.config.luau",
+		]);
 
-		// `runtimeInjectionPaths` on the job is also empty for the same reason.
 		const jobs = mocks.runProjects.mock.calls[0]![0].projects;
 
 		expect(jobs[0]!.runtimeInjectionPaths).toStrictEqual([]);
-		expect(volume.existsSync(cacheStubPath("out/client"))).toBeFalse();
-		expect(volume.existsSync(cacheStubPath("out/server"))).toBeFalse();
+		expect(volume.readFileSync(cacheStubPath("out/client"), "utf8")).toStartWith(STUB_MARKER);
+		expect(volume.readFileSync(path.resolve("/test/out/client", STUB_FILENAME), "utf8")).toBe(
+			"return {}\n",
+		);
 	});
 });

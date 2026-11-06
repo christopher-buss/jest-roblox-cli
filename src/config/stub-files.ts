@@ -38,7 +38,7 @@ export function isGeneratedStub(
 	}
 }
 
-const LEGACY_LUA_FILENAME = "jest.config.lua";
+export const LEGACY_LUA_FILENAME = "jest.config.lua";
 
 /**
  * Both names rojo merges into one `jest.config` ModuleScript. The bake writes
@@ -48,12 +48,9 @@ const LEGACY_LUA_FILENAME = "jest.config.lua";
 export const STUB_FILENAMES: ReadonlySet<string> = new Set([LEGACY_LUA_FILENAME, STUB_FILENAME]);
 
 /**
- * True when the mount directory contains a non-marker `jest.config.luau`
- * or legacy `.lua`: a user-authored config Rojo will sync. Source of truth
- * for whether to skip generating a stub at that mount. Used by
- * `generateProjectStubs`, `cleanLeftoverStubs`'s callers, and the
- * multi-project + workspace runners when deciding stub-write and
- * runtime-injection eligibility.
+ * True when the directory holds a `jest.config.luau` or `jest.config.lua` that
+ * this CLI did not generate. A stub write never lands on one, and a Studio
+ * run, which serves the user's own place, injects no stub beside one.
  *
  * @param directoryPath - Mount directory to check.
  * @param fileSystem - File system to read through.
@@ -80,7 +77,7 @@ export function hasUserAuthoredConfig(
 
 /**
  * Keep the mounts Rojo syncs no user-authored config into: the mounts that
- * need a generated stub or a runtime-injected one.
+ * need a runtime-injected stub.
  *
  * @template T - Mount shape.
  * @param options - Mounts, root directory and file system.

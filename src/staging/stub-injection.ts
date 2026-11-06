@@ -8,7 +8,7 @@ import type { StubMount } from "./synthesizer-types.ts";
 import { isTreeNode } from "./tree-node-guards.ts";
 
 const STUB_INJECTION_KEY = "jest.config";
-const COLLIDING_SOURCE_FILES = ["jest.config.lua", "jest.config.luau"];
+const SOURCE_CONFIG_FILES = ["jest.config.lua", "jest.config.luau"];
 
 /**
  * Mount each stub as a `jest.config` child at its DataModel path.
@@ -16,6 +16,7 @@ const COLLIDING_SOURCE_FILES = ["jest.config.lua", "jest.config.luau"];
  * @param options.fileSystem - Reads directories demoted on the way down.
  * @param options.root - Synthesized tree; mutated.
  * @param options.stubMounts - Stubs to mount, if any.
+ * @returns The user config files the stubs replace, as POSIX paths.
  * @throws {ConfigError} When a path does not resolve or a `jest.config` already exists there.
  */
 export function injectStubMounts({
@@ -26,11 +27,12 @@ export function injectStubMounts({
 	fileSystem: FileSystem;
 	root: RojoTreeNode;
 	stubMounts: Array<StubMount> | undefined;
-}): void {
+}): Array<string> {
 	if (!stubMounts) {
-		return;
+		return [];
 	}
 
+	const replaced: Array<string> = [];
 	const injected = new Map<RojoTreeNode, string>();
 	for (const mount of stubMounts) {
 		const leaf = walkToLeaf({ dataModelPath: mount.dataModelPath, fileSystem, root });
@@ -39,21 +41,19 @@ export function injectStubMounts({
 			continue;
 		}
 
-		assertNoSourceCollision({ dataModelPath: mount.dataModelPath, fileSystem, leaf });
-		// Structural collision: the user's project tree already declares a
-		// `jest.config` named-child at this leaf (e.g. they mounted a
-		// config explicitly via `$path`). Refusing to overwrite catches
-		// non-filesystem conflicts the source-collision check can't see.
+		replaced.push(...findSourceConfigs(fileSystem, leaf));
 		if (leaf[STUB_INJECTION_KEY] !== undefined) {
 			throw new ConfigError(
 				`stubMount at "${mount.dataModelPath}" would overwrite an existing "${STUB_INJECTION_KEY}" child already declared in the project tree. ` +
-					"Either remove the explicit declaration from your .project.json, or declare the project via a string entry in `projects: [...]` so jest-roblox treats your config as canonical.",
+					"Remove the explicit declaration from your .project.json.",
 			);
 		}
 
 		leaf[STUB_INJECTION_KEY] = { $path: stubPath };
 		injected.set(leaf, stubPath);
 	}
+
+	return replaced;
 }
 
 function demoteAutoMountToExplicit({
@@ -155,28 +155,13 @@ function walkToLeaf({
 	return cursor;
 }
 
-function assertNoSourceCollision({
-	dataModelPath,
-	fileSystem,
-	leaf,
-}: {
-	dataModelPath: string;
-	fileSystem: FileSystem;
-	leaf: RojoTreeNode;
-}): void {
+function findSourceConfigs(fileSystem: FileSystem, leaf: RojoTreeNode): Array<string> {
 	const leafPath = leaf.$path;
 	if (typeof leafPath !== "string") {
-		return;
+		return [];
 	}
 
-	for (const candidate of COLLIDING_SOURCE_FILES) {
-		// `fileSystem.existsSync` needs the OS-native path; only the rojo $path
-		// injection in injectStubMounts needs POSIX normalization.
-		const sourceFile = path.join(leafPath, candidate);
-		if (fileSystem.existsSync(sourceFile)) {
-			throw new ConfigError(
-				`stubMount at "${dataModelPath}" would collide with existing source file "${normalizeWindowsPath(sourceFile)}" (rojo silently duplicates jest.config children)`,
-			);
-		}
-	}
+	return SOURCE_CONFIG_FILES.map((candidate) => path.join(leafPath, candidate))
+		.filter((sourceFile) => fileSystem.existsSync(sourceFile))
+		.map(normalizeWindowsPath);
 }

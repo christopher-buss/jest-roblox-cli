@@ -5,7 +5,12 @@ import type { ShadowBake, ShadowLayout } from "../coverage-pipeline/spine.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import { nodeFileSystem } from "../utils/file-system.ts";
 import type { ResolvedProjectConfig } from "./projects.ts";
-import { isGeneratedStub, STUB_FILENAME, STUB_FILENAMES } from "./stub-files.ts";
+import {
+	isGeneratedStub,
+	LEGACY_LUA_FILENAME,
+	STUB_FILENAME,
+	STUB_FILENAMES,
+} from "./stub-files.ts";
 import { assertMountContained } from "./stubs.ts";
 
 interface SyncMountStubResult {
@@ -60,6 +65,26 @@ export function createStubBake({
 	};
 }
 
+/**
+ * The mirror keeps a user's `jest.config.lua` in the shadow, and rojo builds it
+ * beside a `.luau` stub as a second `jest.config`, so the stub takes its name.
+ *
+ * @param fileSystem - File system to read through.
+ * @param mountedDirectory - Shadow directory the place mounts.
+ * @returns The file name the stub is written to.
+ */
+function shadowStubFilename(fileSystem: FileSystem, mountedDirectory: string): string {
+	const legacyPath = path.join(mountedDirectory, LEGACY_LUA_FILENAME);
+	if (!fileSystem.existsSync(legacyPath)) {
+		return STUB_FILENAME;
+	}
+
+	const isLuauAbsent = !fileSystem.existsSync(path.join(mountedDirectory, STUB_FILENAME));
+	return isLuauAbsent || !isGeneratedStub(legacyPath, fileSystem)
+		? LEGACY_LUA_FILENAME
+		: STUB_FILENAME;
+}
+
 function syncMountStub({
 	fileSystem,
 	fsPath,
@@ -83,7 +108,11 @@ function syncMountStub({
 	// Asked rather than joined onto the shadow root: a mount the coverage
 	// narrowing demoted is served from its spine copy, and a stub baked into
 	// the mirror beside it would be in a directory the place never mounts.
-	const targetPath = path.resolve(shadow.mountedDirectory(fsPath), STUB_FILENAME);
+	const mountedDirectory = shadow.mountedDirectory(fsPath);
+	const targetPath = path.resolve(
+		mountedDirectory,
+		shadowStubFilename(fileSystem, mountedDirectory),
+	);
 	const sourceContent = fileSystem.readFileSync(sourcePath);
 
 	if (fileSystem.existsSync(targetPath)) {
@@ -180,11 +209,8 @@ function syncStubsToShadowDirectory({
 		}
 
 		// `prepareCoverage` mirrors the source tree into the shadow before
-		// this hook runs, so a user's authored `jest.config.luau` (e.g.
-		// compiled from `src/shared/jest.config.ts`) may land here. The
-		// orphan sweep is only allowed to delete generated stubs we own —
-		// anything bearing the marker. User configs must survive into the
-		// coverage place.
+		// this hook runs, so a user's `jest.config.luau` away from any mount
+		// may land here. The orphan sweep deletes only marker-bearing stubs.
 		if (!isGeneratedStub(existing, fileSystem)) {
 			continue;
 		}

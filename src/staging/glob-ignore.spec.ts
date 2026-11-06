@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { createIgnoreMatcher, readGlobIgnorePaths } from "./glob-ignore.ts";
+import {
+	createIgnoreMatcher,
+	readDeclaredGlobIgnorePaths,
+	readGlobIgnorePaths,
+	withReplacedConfigs,
+} from "./glob-ignore.ts";
 
 describe(readGlobIgnorePaths, () => {
 	it("should read the declared strings and drop everything else", () => {
@@ -15,6 +20,37 @@ describe(readGlobIgnorePaths, () => {
 		expect.assertions(1);
 
 		expect(readGlobIgnorePaths({})).toStrictEqual([]);
+	});
+});
+
+describe(readDeclaredGlobIgnorePaths, () => {
+	it("should tell a declared empty list apart from no list", () => {
+		expect.assertions(2);
+
+		expect(readDeclaredGlobIgnorePaths({ globIgnorePaths: [] })).toStrictEqual([]);
+		expect(readDeclaredGlobIgnorePaths({})).toBeUndefined();
+	});
+});
+
+describe(withReplacedConfigs, () => {
+	it("should keep the declared list as is when no config is replaced", () => {
+		expect.assertions(2);
+
+		const declared = ["**/*.txt"];
+
+		expect(withReplacedConfigs(declared, [])).toBe(declared);
+		expect(withReplacedConfigs(undefined, [])).toBeUndefined();
+	});
+
+	it("should append each replaced config once after the declared patterns", () => {
+		expect.assertions(2);
+
+		expect(
+			withReplacedConfigs(["**/*.txt"], ["/a/jest.config.luau", "/a/jest.config.luau"]),
+		).toStrictEqual(["**/*.txt", "/a/jest.config.luau"]);
+		expect(withReplacedConfigs(undefined, ["/a/jest.config.lua"])).toStrictEqual([
+			"/a/jest.config.lua",
+		]);
 	});
 });
 

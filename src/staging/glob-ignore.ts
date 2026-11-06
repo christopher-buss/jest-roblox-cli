@@ -21,6 +21,36 @@ export function readGlobIgnorePaths({
 }
 
 /**
+ * {@link readGlobIgnorePaths}, telling a project that declared none apart from
+ * one that declared an empty list: only a declaration takes part in the
+ * consensus every package's list has to agree on.
+ * @param raw - Raw project object.
+ * @returns The patterns, or `undefined` when the field is not an array.
+ */
+export function readDeclaredGlobIgnorePaths(raw: JSONObject): Array<string> | undefined {
+	return Array.isArray(raw["globIgnorePaths"]) ? readGlobIgnorePaths(raw) : undefined;
+}
+
+/**
+ * The ignore list with every user config a stub replaces added, so rojo builds
+ * only the stub at that mount. The entries are absolute, and
+ * `relativizeProjectPaths` puts them in the frame rojo matches them in.
+ * @param declared - Patterns the project declares, if any.
+ * @param replacedConfigs - User config files the stubs replace.
+ * @returns The merged patterns, or `declared` when nothing is replaced.
+ */
+export function withReplacedConfigs(
+	declared: Array<string> | undefined,
+	replacedConfigs: ReadonlyArray<string>,
+): Array<string> | undefined {
+	if (replacedConfigs.length === 0) {
+		return declared;
+	}
+
+	return [...new Set([...(declared ?? []), ...replacedConfigs])];
+}
+
+/**
  * Whether the project already drops a path, so a staging pass must not put it
  * back or carry it somewhere else. A consumer who hit a mount the engine
  * rejects worked around it by ignoring the offending file; a pass that

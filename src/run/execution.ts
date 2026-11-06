@@ -7,6 +7,7 @@ import type { TypecheckCliOptions } from "../config/resolve-typecheck-config.ts"
 import { resolveTypecheckConfig } from "../config/resolve-typecheck-config.ts";
 import type { ResolvedConfig } from "../config/schema.ts";
 import { resolvePlaceFilePath } from "../config/schema.ts";
+import { collectStubMounts } from "../config/stubs.ts";
 import type { ProjectInput } from "../executor.ts";
 import { describePlaceFile } from "../progress/stages.ts";
 import type { CodeBundleArtifact } from "../staging/code-bundle.ts";
@@ -22,7 +23,6 @@ import { emitRunHeader } from "./run-header.ts";
 import type { ProjectResult, RunOptions } from "./run-types.ts";
 import type { RunSeams } from "./seams.ts";
 import type { StagedRun } from "./staging.ts";
-import { collectStubMounts } from "./staging.ts";
 import type { PendingJob, RunDiscovery, TestPlan } from "./test-plan.ts";
 
 const DEFAULT_ROJO_PROJECT = "default.project.json";
@@ -316,12 +316,7 @@ async function buildDispatchPlaceAsync({
 			{
 				packageDirectory: rootConfig.rootDir,
 				rojoProjectPath: userRojoProjectPath,
-				stubMounts: collectStubMounts({
-					cacheRoot,
-					fileSystem,
-					projects,
-					rootDir: rootConfig.rootDir,
-				}),
+				stubMounts: collectStubMounts({ cacheRoot, projects }),
 			},
 		],
 		placeFile: resolvePlaceFilePath(rootConfig),

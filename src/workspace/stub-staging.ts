@@ -1,11 +1,9 @@
-import * as path from "node:path";
 import process from "node:process";
 
 import type { ResolvedProjectConfig } from "../config/projects.ts";
-import { mountsWithoutUserConfig, STUB_FILENAME } from "../config/stub-files.ts";
-import { cleanLeftoverStubs, generateProjectStubs } from "../config/stubs.ts";
+import { cleanLeftoverStubs, collectStubMounts, generateProjectStubs } from "../config/stubs.ts";
 import type { WorkspacePackageCoverage } from "../coverage-pipeline/workspace-prepare.ts";
-import type { PackageDescriptor, StubMount } from "../staging/synthesizer-types.ts";
+import type { PackageDescriptor } from "../staging/synthesizer-types.ts";
 import type { TimedPhase, TimingCollector } from "../timing/orchestration-collector.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import type { PendingEntry } from "./pending-entry.ts";
@@ -106,9 +104,7 @@ function liveProjectsFor(
 /**
  * Pre-flight cleanup: walks live projects' known mount paths in each package
  * source tree and removes marker-bearing leftover stubs from pre-refactor
- * multi-project runs. Without this, the synthesizer's `assertNoSourceCollision`
- * would reject them and re-trigger the original cross-mode bug this refactor
- * exists to fix.
+ * multi-project runs.
  * @param options - Contexts and the live projects.
  * @param options.contexts - Package contexts to sweep.
  * @param options.fileSystem - File system to delete through.
@@ -135,27 +131,6 @@ function cleanLeftoverWorkspaceStubs({
 	}
 }
 
-function collectLiveProjectStubMounts({
-	ctx,
-	fileSystem,
-	project,
-}: {
-	readonly ctx: PackageContext;
-	readonly fileSystem: FileSystem;
-	readonly project: ResolvedProjectConfig;
-}): Array<StubMount> {
-	return mountsWithoutUserConfig({
-		fileSystem,
-		mounts: project.rojoMounts,
-		rootDirectory: ctx.info.packageDirectory,
-	}).map((mount) => {
-		return {
-			absStubPath: path.resolve(ctx.cacheRoot, mount.fsPath, STUB_FILENAME),
-			dataModelPath: mount.dataModelPath,
-		};
-	});
-}
-
 /**
  * The `stubMounts` inject `jest.config` at each rojoMount leaf. Projects whose
  * runtime discovery returned zero files are already dropped from `pending`, so
@@ -179,11 +154,6 @@ function writeStubsAndBuildDescriptors({
 	return contexts.map((ctx) => {
 		const liveProjectsForPackage = liveProjectsFor(ctx, liveProjects);
 
-		// `generateProjectStubs` skips per-mount when the user already has
-		// a `jest.config.luau` on disk at that mount, so pass the full
-		// live list. The `stubMounts` loop below applies the same filter
-		// so we only emit `$path` references for mounts that actually got
-		// a cache stub written.
 		generateProjectStubs({
 			fileSystem,
 			outputRoot: ctx.cacheRoot,
@@ -191,11 +161,12 @@ function writeStubsAndBuildDescriptors({
 			rootDirectory: ctx.info.packageDirectory,
 		});
 
-		const stubMounts: Array<StubMount> = [];
-		for (const project of liveProjectsForPackage) {
-			stubMounts.push(...collectLiveProjectStubMounts({ ctx, fileSystem, project }));
-		}
-
-		return { ...ctx.descriptor, stubMounts };
+		return {
+			...ctx.descriptor,
+			stubMounts: collectStubMounts({
+				cacheRoot: ctx.cacheRoot,
+				projects: liveProjectsForPackage,
+			}),
+		};
 	});
 }
