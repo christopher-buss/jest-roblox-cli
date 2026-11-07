@@ -1,4 +1,4 @@
-import { defineConfig, type TestProjectInlineConfiguration } from "vitest/config";
+import { configDefaults, defineConfig, type TestProjectInlineConfiguration } from "vitest/config";
 
 const FULL_COVERAGE = { branches: 100, functions: 100, lines: 100, statements: 100 };
 
@@ -29,6 +29,15 @@ export const sharedConfig = defineConfig({
 			exclude: ["src/**/*.spec-d.ts", "test/helpers/**", "package.json"],
 			thresholds: FULL_COVERAGE,
 		},
+		forceRerunTriggers: [
+			...configDefaults.forceRerunTriggers,
+			"**/fixtures/**",
+			"**/__fixtures__/**",
+			"**/pnpm-lock.yaml",
+			"**/test/setup/**",
+			"**/tsconfig*.json",
+			"**/vitest.shared.ts",
+		],
 		restoreMocks: true,
 		setupFiles: ["./test/setup/jest-extended.ts"],
 		unstubEnvs: true,
