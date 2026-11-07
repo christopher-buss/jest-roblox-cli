@@ -8,7 +8,7 @@ _.path = [
 [tools]
 "github:jacktabscode/drillbit" = "latest"
 "github:johnnymorganz/stylua" = "2.6.0"
-"github:luau-lang/lute" = "1.0.1-nightly.20261021"
+"github:luau-lang/lute" = "1.0.1-nightly.20261107"
 "github:rojo-rbx/rojo" = "7.7.0"
 "npm:@antfu/ni" = "latest"
 node = "26.5.0"

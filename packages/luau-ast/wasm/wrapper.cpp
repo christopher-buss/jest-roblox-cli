@@ -16,8 +16,9 @@
 #include <unordered_map>
 #include <vector>
 
-// Defined in Analysis, which this build does not link; AstJsonEncoder reads it.
+// Defined in Analysis, which this build does not link; AstJsonEncoder reads them.
 LUAU_FASTFLAGVARIABLE(LuauExperimentalIfLocalAnalysis)
+LUAU_FASTFLAGVARIABLE(DebugLuauWhileLocalAnalysis)
 
 static bool flagsInitialized = false;
 
