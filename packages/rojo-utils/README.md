@@ -52,6 +52,9 @@ Other supported entry-point exports include:
   `matchNodePath`: match mounts with directory boundaries. Lua suffixes and
   trailing `init` are removed by file mapping. Root mapping throws when no mount
   matches; file mapping returns `undefined`.
+- `createReverseMapper(files, getRbxPath)`: the inverse of a file mapper such as
+  `RojoResolver.getRbxPathFromFilePath`. Its `resolve(rbxPath)` returns the file
+  among `files` that maps to the DataModel path, or `undefined` when none does.
 - `collectMounts({ classify, currentDataModelPath, node })` and
   `pruneAncestors`: select directory mounts through a caller-supplied classifier
   and retain minimal directory prefixes.

@@ -22,6 +22,7 @@ describe("package interface", () => {
 				"collectPaths",
 				"collectRequiredPaths",
 				"convertToLuau",
+				"createReverseMapper",
 				"findInTree",
 				"isOptionalPath",
 				"isRojoTreeNode",

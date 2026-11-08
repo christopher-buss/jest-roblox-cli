@@ -11,7 +11,7 @@ export default createDependencyCruiserConfig({
 		{
 			name: "pure-mapping-does-not-import-io-or-orchestration",
 			from: {
-				path: `^${SOURCE}/(?:rbx-path|rojo-file-paths|tree-mapper|mount-collector|tree-node|rojo-types|mount-paths|path-mapper|project-schema)[.]ts$`,
+				path: `^${SOURCE}/(?:rbx-path|rojo-file-paths|tree-mapper|mount-collector|tree-node|rojo-types|mount-paths|path-mapper|project-schema|reverse-mapper)[.]ts$`,
 			},
 			severity: "error",
 			to: {

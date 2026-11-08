@@ -11,6 +11,8 @@ export {
 export { mapFsPathToDataModel, mapFsRootToDataModel } from "./path-mapper.ts";
 export { RbxPathParent } from "./rbx-path.ts";
 export type { PartitionInfo, RbxPath, RelativeRbxPath } from "./rbx-path.ts";
+export { createReverseMapper } from "./reverse-mapper.ts";
+export type { ReverseMapper } from "./reverse-mapper.ts";
 export {
 	CLIENT_SUB_EXTENSION,
 	convertToLuau,
