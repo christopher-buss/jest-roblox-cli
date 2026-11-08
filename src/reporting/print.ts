@@ -13,7 +13,7 @@ import {
 	type FormatterProjectEntry,
 	formatTypecheckReport,
 } from "../formatters/formatter.ts";
-import type { BailSummary } from "../formatters/shared.ts";
+import type { AffectedSummary, BailSummary } from "../formatters/shared.ts";
 import {
 	DEFAULT_MAX_FAILURES,
 	findFormatterOptions,
@@ -40,6 +40,8 @@ export interface ResultRenderer {
 
 /** What {@link printMultiResults} renders for a multi or workspace run. */
 export interface MultiOutputContext extends PreDispatchTiming {
+	/** Partial Run only: how many test files it selected out of the total. */
+	affected?: AffectedSummary | undefined;
 	/** Workspace `--bail` only: how far the run got before it stopped. */
 	bail?: BailSummary | undefined;
 	/** The resolved run config. */
@@ -322,6 +324,7 @@ function getAgentMaxFailures(config: ResolvedConfig): number {
 }
 
 function formatAgentMultiOutput({
+	affected,
 	bail,
 	config,
 	gameOutputHint,
@@ -332,6 +335,7 @@ function formatAgentMultiOutput({
 	typecheckResult,
 }: MultiOutputContext): string {
 	return renderer.formatAgentMultiProject(toProjectEntries(projectResults), {
+		affected,
 		bail,
 		gameOutput: gameOutputHint,
 		maxFailures: getAgentMaxFailures(config),
@@ -360,6 +364,7 @@ function printMultiProjectOutput(context: MultiOutputContext): void {
 		renderer.formatMultiProjectResult({
 			options: {
 				...toFormatOptions(config, VERSION),
+				affected: context.affected,
 				bail: context.bail,
 				snapshotWriteFailures: merged.snapshotWriteFailures,
 				sourceMapper: merged.sourceMapper,

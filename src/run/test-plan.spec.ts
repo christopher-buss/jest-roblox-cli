@@ -56,6 +56,7 @@ function plan(input: Partial<TestPlanInput> & { fileSystem: FileSystem }): TestP
 		cliFiles: undefined,
 		cliTypecheck: {},
 		projects: [makeProject()],
+		relatedFiles: undefined,
 		rootConfig: makeConfig(),
 		seams: makeSeams(),
 		timing: clockTimingCollector(),
@@ -92,6 +93,20 @@ describe(buildTestPlan, () => {
 		expect(result.emptiness).toStrictEqual({});
 	});
 
+	it("should pass an empty related run with a notice", () => {
+		expect.assertions(1);
+
+		const result = plan({
+			fileSystem: makeVolume(["/test/src/util.luau"]),
+			relatedFiles: [path.resolve("/test/src/util.luau")],
+			rootConfig: makeConfig({ passWithNoTests: true }),
+		});
+
+		expect(result.emptiness).toStrictEqual({
+			validationMessage: "No test files reach the related files, exiting with code 0\n",
+		});
+	});
+
 	it("should plan one job per project with runtime files", () => {
 		expect.assertions(3);
 
@@ -123,29 +138,6 @@ describe(buildTestPlan, () => {
 		expect(result.jobs[0]!.runtimeInjectionPaths).toStrictEqual(["ReplicatedStorage.src"]);
 	});
 
-	it("should apply the project exclude to discovered files", () => {
-		expect.assertions(1);
-
-		const result = plan({
-			fileSystem: makeVolume(["/test/src/a.spec.ts", "/test/src/b.spec.ts"]),
-			projects: [makeProject({ exclude: ["src/b.spec.ts"] })],
-		});
-
-		expect(result.matchedRuntimeFiles).toStrictEqual(["src/a.spec.ts"]);
-	});
-
-	it("should keep positional files past the project exclude", () => {
-		expect.assertions(1);
-
-		const result = plan({
-			cliFiles: ["src/b.spec.ts"],
-			fileSystem: makeVolume(["/test/src/b.spec.ts"]),
-			projects: [makeProject({ exclude: ["src/b.spec.ts"] })],
-		});
-
-		expect(result.matchedRuntimeFiles).toStrictEqual([path.resolve("/test", "src/b.spec.ts")]);
-	});
-
 	it("should prefer a project's own file subset over the cli files", () => {
 		expect.assertions(1);
 
@@ -172,38 +164,36 @@ describe(buildTestPlan, () => {
 		]);
 	});
 
-	it("should honor the typecheck include and exclude", () => {
-		expect.assertions(1);
+	it("should keep only the tests that reach a related file, in a profiled phase", () => {
+		expect.assertions(5);
+
+		const { fileSystem } = createMemoryFileSystem({
+			[path.resolve("/test/src/a.spec-d.luau")]: 'return require("./util")',
+			[path.resolve("/test/src/a.spec.luau")]: 'return require("./util")',
+			[path.resolve("/test/src/b.spec-d.luau")]: "return nil",
+			[path.resolve("/test/src/b.spec.luau")]: "return nil",
+			[path.resolve("/test/src/util.luau")]: "return {}",
+		});
+		const timing = clockTimingCollector();
+		const profile = vi.spyOn(timing, "profile");
 
 		const result = plan({
 			cliTypecheck: { enabled: true },
-			fileSystem: makeVolume(["/test/types/a.spec-d.ts", "/test/types/b.spec-d.ts"]),
-			projects: [
-				makeProject({
-					typecheck: {
-						exclude: ["types/b.spec-d.ts"],
-						include: ["types/**/*.spec-d.ts"],
-					},
-				}),
-			],
+			fileSystem,
+			projects: [makeProject({ include: ["src/**/*.spec.luau"] })],
+			relatedFiles: [path.resolve("/test/src/util.luau")],
+			timing,
 		});
 
-		expect(result.typeTestEntries[0]!.files).toStrictEqual(["types/a.spec-d.ts"]);
-	});
-
-	it("should keep positional type tests past the typecheck exclude", () => {
-		expect.assertions(1);
-
-		const result = plan({
-			cliFiles: ["types/b.spec-d.ts"],
-			cliTypecheck: { enabled: true },
-			fileSystem: makeVolume(["/test/types/b.spec-d.ts"]),
-			projects: [makeProject({ typecheck: { exclude: ["types/b.spec-d.ts"] } })],
+		expect(result.matchedRuntimeFiles).toStrictEqual(["src/a.spec.luau"]);
+		expect(result.jobs[0]!.config.testPathPattern).toBe("(a\\.spec)");
+		expect(result.typeTestEntries[0]!.files).toStrictEqual(["src/a.spec-d.luau"]);
+		expect(profile).toHaveBeenCalledWith("buildDependencyGraph", expect.any(Function));
+		expect(result.affected).toStrictEqual({
+			affected: 1,
+			relatedTo: ["src/util.luau"],
+			total: 2,
 		});
-
-		expect(result.typeTestEntries[0]!.files).toStrictEqual([
-			path.resolve("/test", "types/b.spec-d.ts"),
-		]);
 	});
 });
 

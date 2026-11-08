@@ -887,6 +887,17 @@ describe(formatAgentMultiProject, () => {
 		expect(output).toContain("Bailed  after 1 package, 3 not run");
 	});
 
+	it("should report how many test files a Partial Run selected", () => {
+		expect.assertions(1);
+
+		const output = formatAgentMultiProject([{ displayName: "core", result: PASSING_RESULT }], {
+			...baseOptions,
+			affected: { affected: 1, relatedTo: ["src/leaf.luau"], total: 3 },
+		});
+
+		expect(output).toContain("   Affected  1 of 3 test files (related to src/leaf.luau)");
+	});
+
 	it("should leave the bail line out of a run that did not bail", () => {
 		expect.assertions(1);
 

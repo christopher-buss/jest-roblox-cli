@@ -787,6 +787,11 @@ export interface CliOptions {
 	port?: number | undefined;
 	/** Names of the projects to run. */
 	project?: Array<string> | undefined;
+	/**
+	 * Source files of `related <files...>`: run only the Runtime Tests that
+	 * reach one of them.
+	 */
+	related?: Array<string> | undefined;
 	/** Reporter modules used to format results. */
 	reporters?: Array<string> | undefined;
 	/** Path to the Rojo project file. */

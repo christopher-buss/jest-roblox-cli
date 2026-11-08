@@ -56,6 +56,7 @@ export function buildMultiRunResult({
 	const collectCoverageFrom = resolveCoverageInclude(rootConfig, projects);
 
 	return {
+		affected: plan.affected,
 		collectCoverageFrom,
 		coverageArtifacts: staged.coverageArtifacts,
 		coverageDisplayFilter: buildMultiDisplayFilter({

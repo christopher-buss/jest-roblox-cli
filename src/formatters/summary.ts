@@ -3,7 +3,12 @@ import type { JestResult, SnapshotSummary } from "../types/jest-result-types.ts"
 import type { TimingResult } from "../types/timing-types.ts";
 import { formatBannerBar } from "../utils/banner.ts";
 import { buildDurationBreakdown } from "./duration-breakdown.ts";
-import { type BailSummary, type FormatOptions, getTerminalWidth } from "./shared.ts";
+import {
+	type AffectedSummary,
+	type BailSummary,
+	type FormatOptions,
+	getTerminalWidth,
+} from "./shared.ts";
 import { type ColorFunc, createStyles, type Styles } from "./styles.ts";
 
 /** The three buckets a summary row counts, whatever it is counting. */
@@ -42,6 +47,10 @@ export interface TestRowCounts {
  * Inputs of `formatTestSummary`.
  */
 export interface TestSummaryOptions {
+	/**
+	 * Adds the Affected row when set.
+	 */
+	affected?: AffectedSummary | undefined;
 	/**
 	 * Adds the Bailed row when set.
 	 */
@@ -145,6 +154,7 @@ export function formatTypeErrorsLine(typeErrors: number, styles: Styles): string
  * @returns The block's rows joined by newlines.
  */
 export function formatTestSummary({
+	affected,
 	bail,
 	result,
 	snapshotWriteFailures = 0,
@@ -160,6 +170,7 @@ export function formatTestSummary({
 			writeFailures: snapshotWriteFailures,
 		}),
 		formatTestFilesLine(countFileBuckets(result), st),
+		...(affected === undefined ? [] : [formatAffectedLine(affected, st)]),
 		formatTestsLine(countTestBuckets(result), st),
 	];
 
@@ -382,6 +393,23 @@ export function formatBailLine(bail: BailSummary, styles: Styles): string {
 	const reached = `after ${bail.ran} ${bail.ran === 1 ? "package" : "packages"}`;
 	const notRun = `, ${bail.notRun} not run`;
 	return `${styles.dim("     Bailed")}  ${styles.summary.failed(reached)}${styles.dim(notRun)}`;
+}
+
+/**
+ * The `   Affected  …` row of a Partial Run, as vitest prints it after
+ * `Test Files`: the selected and total test files, then what they relate to.
+ * @param affected - Selected and total test files, and the related files.
+ * @param styles - Palette to render with.
+ * @returns The row.
+ */
+export function formatAffectedLine(
+	{ affected, relatedTo, total }: AffectedSummary,
+	styles: Styles,
+): string {
+	const [first, ...rest] = relatedTo;
+	const sources = first !== undefined && rest.length === 0 ? first : `${relatedTo.length} files`;
+	const relation = styles.dim(`(related to ${sources})`);
+	return `${styles.dim("   Affected")}  ${affected} of ${total} test files ${relation}`;
 }
 
 function formatCountRow(

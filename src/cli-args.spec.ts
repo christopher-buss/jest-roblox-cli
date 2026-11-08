@@ -80,6 +80,49 @@ describe(parseArgs, () => {
 		expect(result.files).toStrictEqual(["src/test.spec.ts", "src/other.spec.ts"]);
 	});
 
+	it("should parse related source files and keep the filters", () => {
+		expect.assertions(2);
+
+		const result = parseArgs([
+			"related",
+			"src/a.luau",
+			"src/b.luau",
+			"--project",
+			"client",
+			"-t",
+			"spawn",
+			"--testPathPattern",
+			"unit",
+		]);
+
+		expect(result.files).toBeUndefined();
+		expect(result).toMatchObject({
+			project: ["client"],
+			related: ["src/a.luau", "src/b.luau"],
+			testNamePattern: "spawn",
+			testPathPattern: "unit",
+		});
+	});
+
+	it("should reject related with no source file", () => {
+		expect.assertions(1);
+
+		expect(() => parseArgs(["related"])).toThrow("related needs at least one source file.");
+	});
+
+	it("should pass a related run that selects no tests", () => {
+		expect.assertions(2);
+
+		expect(parseArgs(["related", "src/a.luau"]).passWithNoTests).toBeTrue();
+		expect(parseArgs(["src/a.spec.luau"]).passWithNoTests).toBeUndefined();
+	});
+
+	it("should leave related undefined on a run of positional files", () => {
+		expect.assertions(1);
+
+		expect(parseArgs(["src/a.spec.luau"]).related).toBeUndefined();
+	});
+
 	it("should leave files undefined when no positionals", () => {
 		expect.assertions(1);
 

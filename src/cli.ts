@@ -26,9 +26,17 @@ const VERSION = packageJson.version;
 
 const HELP_TEXT = `
 Usage: jest-roblox [options] [files...]
+       jest-roblox related [options] <file> [files...]
        jest-roblox setup
 
 Commands:
+  related <file> [files...]         Run only the tests that reach the given
+                                    source files through string requires.
+                                    Instance-path, TS.import, and dynamic
+                                    requires are not followed, so a test
+                                    that reaches a file only through them
+                                    does not run. Write a test filter named
+                                    related as ./related
   setup                             Install the Luau Config type and add the
                                     "jest-roblox" alias to .config.luau or
                                     .luaurc. Write a test filter named setup
@@ -113,6 +121,7 @@ Examples:
   jest-roblox --backend studio        Run tests via Studio plugin
   jest-roblox src/player.spec.ts      Run specific test file (also narrows
                                       a --workspace run to its package)
+  jest-roblox related src/util.luau   Run the tests that reach src/util.luau
   jest-roblox -t "should spawn"       Run tests matching pattern
   jest-roblox --formatters json       Output JSON to file
   jest-roblox --coverage              Run tests with coverage instrumentation
@@ -179,11 +188,11 @@ async function dispatchResultAsync({
 	dependencies: ResolvedCliDependencies;
 	result: MultiRunResult | WorkspaceRunResult;
 }): Promise<number> {
-	if (result.validationExitCode !== undefined) {
-		if (result.validationMessage !== undefined) {
-			process.stderr.write(result.validationMessage);
-		}
+	if (result.validationMessage !== undefined) {
+		process.stderr.write(result.validationMessage);
+	}
 
+	if (result.validationExitCode !== undefined) {
 		return result.validationExitCode;
 	}
 

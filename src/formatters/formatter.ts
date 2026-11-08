@@ -296,6 +296,7 @@ function formatSummaryAndHints({
 	const lines: Array<string> = [
 		"",
 		formatTestSummary({
+			affected: options.affected,
 			bail: options.bail,
 			result,
 			snapshotWriteFailures: options.snapshotWriteFailures,

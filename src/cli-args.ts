@@ -91,7 +91,6 @@ export function parseArgs(args: Array<string>): CliOptions {
 		help: values.help,
 		packages: values.packages,
 		parallel: parseParallelValue(values.parallel),
-		passWithNoTests: values.passWithNoTests,
 		rojoProject: values.rojoProject,
 		setupFiles: values.setupFiles,
 		setupFilesAfterEnv: values.setupFilesAfterEnv,
@@ -132,6 +131,7 @@ const OPTIONAL_VALUE_FLAGS: ReadonlyArray<{
 ];
 
 const BARE_FLAG_VALUE = "auto";
+const RELATED_COMMAND = "related";
 
 interface CliParseConfig {
 	allowPositionals: true;
@@ -257,10 +257,21 @@ function toCoverageOptions(
 function toFilterOptions(
 	values: ParsedCliValues,
 	positionals: Array<string>,
-): Pick<CliOptions, "files" | "project" | "testNamePattern" | "testPathPattern"> {
+): Pick<
+	CliOptions,
+	"files" | "passWithNoTests" | "project" | "related" | "testNamePattern" | "testPathPattern"
+> {
+	const [command, ...relatedFiles] = positionals;
+	const isRelated = command === RELATED_COMMAND;
+	if (isRelated && relatedFiles.length === 0) {
+		throw new Error(`${RELATED_COMMAND} needs at least one source file.`);
+	}
+
 	return {
-		files: positionals.length > 0 ? positionals : undefined,
+		files: !isRelated && positionals.length > 0 ? positionals : undefined,
+		passWithNoTests: values.passWithNoTests ?? (isRelated ? true : undefined),
 		project: values.project,
+		related: isRelated ? relatedFiles : undefined,
 		testNamePattern: values.testNamePattern,
 		testPathPattern: values.testPathPattern,
 	};

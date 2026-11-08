@@ -164,10 +164,10 @@ function emitResultsAndCoverage({
 	}
 }
 
-function resolveBailSummary(
+function resolveRunSummary(
 	result: MultiRunResult | WorkspaceRunResult,
-): Pick<MultiOutputContext, "bail"> {
-	return result.mode === "workspace" ? { bail: result.bail } : {};
+): Pick<MultiOutputContext, "affected" | "bail"> {
+	return result.mode === "workspace" ? { bail: result.bail } : { affected: result.affected };
 }
 
 function resolveSinkHints(
@@ -190,7 +190,7 @@ function toMultiOutputContext({
 	result,
 }: ToMultiOutputContextOptions): MultiOutputContext {
 	return {
-		...resolveBailSummary(result),
+		...resolveRunSummary(result),
 		config,
 		...resolveSinkHints(result, config),
 		coverageMs: result.coverageMs,

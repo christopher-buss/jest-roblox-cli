@@ -119,6 +119,20 @@ describe(validateBasicWorkspaceFlags, () => {
 		});
 	});
 
+	it("should reject related on a workspace run", () => {
+		expect.assertions(1);
+
+		const result = validateBasicWorkspaceFlags(
+			makeCli({ related: ["src/a.luau"], workspace: true }),
+		);
+
+		expect(result).toStrictEqual({
+			exitCode: 2,
+			message: "Error: related does not support a workspace run yet.\n",
+			ok: false,
+		});
+	});
+
 	it("should reject --affected-since without --workspace", () => {
 		expect.assertions(1);
 

@@ -39,6 +39,7 @@ describe(buildMultiRunResult, () => {
 		expect.assertions(1);
 
 		expect(buildMultiRunResult(input({}))).toStrictEqual({
+			affected: undefined,
 			collectCoverageFrom: undefined,
 			coverageArtifacts: undefined,
 			coverageDisplayFilter: undefined,

@@ -8,7 +8,7 @@ import type { CoverageDisplayPredicate } from "../coverage-pipeline/agent-table-
 import type { CoverageArtifacts } from "../coverage-pipeline/build-manifest.ts";
 import type { WorkspacePackageUniverse } from "../coverage-pipeline/workspace-aggregate.ts";
 import type { ExecuteResult } from "../executor.ts";
-import type { BailSummary } from "../formatters/shared.ts";
+import type { AffectedSummary, BailSummary } from "../formatters/shared.ts";
 import type { SourceMapper } from "../source-mapper/index.ts";
 import type { TimingCollector } from "../timing/orchestration-collector.ts";
 import type { JestResult } from "../types/jest-result-types.ts";
@@ -84,6 +84,8 @@ export interface SingleRunResult extends PreDispatchTiming {
 
 /** Result of a multi-project run. */
 export interface MultiRunResult extends PreDispatchTiming {
+	/** Partial Run only: how many test files it selected out of the total. */
+	affected?: AffectedSummary | undefined;
 	/** Coverage include globs resolved across the projects. */
 	collectCoverageFrom?: Array<string> | undefined;
 	/** Producer record for the entry point to emit a Build Manifest from. */
@@ -105,7 +107,7 @@ export interface MultiRunResult extends PreDispatchTiming {
 	typecheckResult?: JestResult | undefined;
 	/** Exit code `2` when validation stopped the run. */
 	validationExitCode?: 2 | undefined;
-	/** Message the CLI writes to stderr on a validation stop. */
+	/** Message the CLI writes to stderr on a validation stop or empty run. */
 	validationMessage?: string | undefined;
 }
 

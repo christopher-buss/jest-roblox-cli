@@ -4,11 +4,12 @@ import type { ExecErrorTestFileResult, JestResult } from "../types/jest-result-t
 import { formatFailures, type SourceSnippetReader } from "./agent-failures.ts";
 import { cleanExecErrorMessage, getExecErrorHint } from "./failure-message.ts";
 import { resolveDisplayPath, withPackageRoot } from "./shared.ts";
-import type { BailSummary } from "./shared.ts";
+import type { AffectedSummary, BailSummary } from "./shared.ts";
 import { createStyles } from "./styles.ts";
 import {
 	countFileBuckets,
 	countTestBuckets,
+	formatAffectedLine,
 	formatBailLine,
 	formatSummaryParts,
 	formatTestFilesLine,
@@ -22,6 +23,8 @@ import {
  * Options of the agent formatter.
  */
 export interface AgentOptions {
+	/** Partial Run only; see {@link AffectedSummary}. */
+	affected?: AffectedSummary | undefined;
 	/** Set when `--bail` cut the run short; see {@link BailSummary}. */
 	bail?: BailSummary | undefined;
 	/**
@@ -340,6 +343,9 @@ function formatMultiProjectFailures({
 function formatMultiProjectSummary(stats: AgentProjectStats, options: AgentOptions): Array<string> {
 	const lines: Array<string> = [
 		formatTestFilesLine(stats.files, PLAIN_STYLES),
+		...(options.affected === undefined
+			? []
+			: [formatAffectedLine(options.affected, PLAIN_STYLES)]),
 		formatTestsLine(stats.tests, PLAIN_STYLES),
 	];
 

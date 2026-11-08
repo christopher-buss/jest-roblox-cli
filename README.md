@@ -132,6 +132,14 @@ jest-roblox
 jest-roblox src/player.spec.ts
 jest-roblox src/player.spec.luau
 
+# Run only the tests that reach these source files through string requires
+# (require("./x"), "../", "@self", aliases); not yet in workspace mode.
+# Instance-path, TS.import, and dynamic requires are not followed, so a test
+# that reaches a file only through them does not run.
+# Passes when no test reaches them, as --passWithNoTests does.
+# To run tests filtered to a file named related, write ./related
+jest-roblox related src/util.luau src/inventory/init.luau
+
 # Filter by test name
 jest-roblox -t "should spawn"
 

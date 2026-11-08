@@ -346,6 +346,7 @@ function beginRun({
 		cliTypecheck,
 		filesByProject,
 		projects,
+		relatedFiles: cli.related?.map((file) => path.resolve(rootConfig.rootDir, file)),
 		rootConfig,
 	};
 }

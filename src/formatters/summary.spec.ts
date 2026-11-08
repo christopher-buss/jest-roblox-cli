@@ -23,6 +23,7 @@ import type { TimingResult } from "../types/timing-types.ts";
 import type { FormatOptions } from "./shared.ts";
 import {
 	countFileBuckets,
+	formatAffectedLine,
 	formatBailLine,
 	formatFailedTestsHeader,
 	formatLogHints,
@@ -269,7 +270,58 @@ describe(formatBailLine, () => {
 	});
 });
 
+describe(formatAffectedLine, () => {
+	it("should name the one related file", () => {
+		expect.assertions(1);
+
+		expect(
+			formatAffectedLine(
+				{ affected: 1, relatedTo: ["src/leaf.luau"], total: 3 },
+				createTaggedStyles(),
+			),
+		).toBe("<dim>   Affected</dim>  1 of 3 test files <dim>(related to src/leaf.luau)</dim>");
+	});
+
+	it("should count several related files", () => {
+		expect.assertions(1);
+
+		expect(
+			formatAffectedLine(
+				{ affected: 2, relatedTo: ["a.luau", "b.luau"], total: 5 },
+				createTaggedStyles(),
+			),
+		).toBe("<dim>   Affected</dim>  2 of 5 test files <dim>(related to 2 files)</dim>");
+	});
+
+	it("should count an empty list of related files", () => {
+		expect.assertions(1);
+
+		expect(
+			formatAffectedLine({ affected: 0, relatedTo: [], total: 5 }, createTaggedStyles()),
+		).toBe("<dim>   Affected</dim>  0 of 5 test files <dim>(related to 0 files)</dim>");
+	});
+});
+
 describe("formatTestSummary optional rows", () => {
+	it("should put the Affected row right after the Test Files row", () => {
+		expect.assertions(1);
+
+		const output = formatTestSummary({
+			affected: { affected: 1, relatedTo: ["src/leaf.luau"], total: 3 },
+			result: fromAny({
+				numFailedTests: 0,
+				numPassedTests: 1,
+				numPendingTests: 0,
+				numTotalTests: 1,
+				testResults: [makeFile({ numPassingTests: 1 })],
+			}),
+			styles: createTaggedStyles(),
+			timing: { executionMs: 400, startTime: 0, testsMs: 100, totalMs: 500 },
+		});
+
+		expect(output).toMatch(/^<dim> Test Files<\/dim>.*\n<dim> {3}Affected<\/dim>/);
+	});
+
 	it.for([
 		{ name: "absent", snapshot: undefined },
 		{ name: "idle", snapshot: { added: 0, matched: 0, total: 0, unmatched: 0, updated: 0 } },

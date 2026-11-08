@@ -88,6 +88,14 @@ export function validateBasicWorkspaceFlags(cli: CliOptions): WorkspaceValidatio
 		};
 	}
 
+	if (cli.related !== undefined) {
+		return {
+			exitCode: 2,
+			message: "Error: related does not support a workspace run yet.\n",
+			ok: false,
+		};
+	}
+
 	if (cli.workspace !== true) {
 		return {
 			exitCode: 2,

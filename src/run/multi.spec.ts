@@ -479,6 +479,26 @@ describe(runMultiProjectAsync, () => {
 		expect(result.projectResults[0]!.displayName).toBe("client");
 	});
 
+	it("should run only the tests related to the given files", async () => {
+		expect.assertions(3);
+
+		const { config, fileSystem, volume } = setupDefaults();
+		seedProjectFiles(volume);
+
+		const result = await runClientServerAsync(
+			{ config, fileSystem },
+			makeCli({ related: ["src/client/a.spec.ts"] }),
+		);
+
+		expect(result.projectResults).toHaveLength(1);
+		expect(result.projectResults[0]!.displayName).toBe("client");
+		expect(result.affected).toStrictEqual({
+			affected: 1,
+			relatedTo: ["src/client/a.spec.ts"],
+			total: 2,
+		});
+	});
+
 	describe("coverage display filter", () => {
 		it("should expose a source-twin filter for positional files", async () => {
 			expect.assertions(1);

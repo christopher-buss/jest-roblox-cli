@@ -24,6 +24,18 @@ export interface DisplayPathOptions {
 	sourceMapper?: SourceMapper | undefined;
 }
 
+/**
+ * How many test files a Partial Run selected, and what it selected them for.
+ */
+export interface AffectedSummary {
+	/** Test files the run selected. */
+	affected: number;
+	/** Source files the selection is related to, relative to the run root. */
+	relatedTo: ReadonlyArray<string>;
+	/** Test files a full run would have run. */
+	total: number;
+}
+
 /** Packages a bailed run reached, and packages it never started. */
 export interface BailSummary {
 	/**
@@ -40,6 +52,10 @@ export interface BailSummary {
  * Options every formatter reads.
  */
 export interface FormatOptions {
+	/**
+	 * Partial Run only: how many test files it selected out of the total.
+	 */
+	affected?: AffectedSummary | undefined;
 	/**
 	 * Workspace `--bail` only: how far the run got before a failing package
 	 * stopped it. Absent on a run that reached every package.

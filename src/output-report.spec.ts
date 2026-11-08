@@ -303,4 +303,23 @@ describe(reportMultiRun, () => {
 
 		expect(isCoverageFirst(harness)).toBeTrue();
 	});
+
+	it("should hand a Partial Run's affected count to the formatter", () => {
+		expect.assertions(1);
+
+		const harness = setupReport();
+		const merged = makeExecuteResult();
+		const affected = { affected: 1, relatedTo: ["src/leaf.luau"], total: 2 };
+		reportMultiRun({
+			config: makeOutputConfig({ formatters: ["agent"] }),
+			dependencies: harness.dependencies,
+			merged,
+			result: { ...makeMultiResult(merged), affected },
+		});
+
+		expect(harness.renderer.formatAgentMultiProject).toHaveBeenCalledWith(
+			expect.anything(),
+			expect.objectContaining({ affected }),
+		);
+	});
 });

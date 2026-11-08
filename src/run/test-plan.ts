@@ -1,10 +1,7 @@
+import * as path from "node:path";
 import type { Except } from "type-fest";
 
-import { applyExcludes } from "../config/apply-excludes.ts";
-import { deriveTypecheckInclude } from "../config/derive-typecheck-include.ts";
-import type { InstancePathResolver } from "../config/instance-path.ts";
 import { createInstancePathResolver } from "../config/instance-path.ts";
-import { narrowForLuauRun } from "../config/narrow-by-files.ts";
 import type { ResolvedProjectConfig } from "../config/projects.ts";
 import type {
 	ResolvedTypecheckConfig,
@@ -19,6 +16,10 @@ import {
 	createTsconfigMappingCache,
 	resolveAllTsconfigMappings,
 } from "../executor/tsconfig-mappings.ts";
+import type { AffectedSummary } from "../formatters/shared.ts";
+import { luauParser } from "../luau/parser.ts";
+import type { RelatedFileFilter } from "../related/related-tests.ts";
+import { createRelatedFileFilter } from "../related/related-tests.ts";
 import type { TimingCollector } from "../timing/orchestration-collector.ts";
 import {
 	assertTypecheckAvailable,
@@ -26,7 +27,9 @@ import {
 } from "../typecheck/typecheck-groups.ts";
 import type { TsconfigMapping } from "../types/tsconfig-types.ts";
 import type { FileSystem } from "../utils/file-system.ts";
-import { classifyTestFiles, discoverTestFiles } from "./discovery.ts";
+import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
+import type { ProjectSelection } from "./project-files.ts";
+import { selectProjectFiles } from "./project-files.ts";
 import type { RunSeams } from "./seams.ts";
 
 /** One project's runtime test job. */
@@ -47,20 +50,25 @@ export interface PendingJob {
 }
 
 /**
- * What an empty run reports. Empty under `passWithNoTests` is a pass, so both
- * fields are absent; otherwise they carry the exit code and the stderr notice.
+ * What an empty run reports. Empty under `passWithNoTests` is a pass, so it
+ * has no exit code, and only a `related` run has a notice; otherwise both
+ * fields carry the exit code and the stderr notice.
  * The field names match `MultiRunResult`'s so a caller spreads this straight
  * into its result.
  */
 export interface EmptyRunPolicy {
 	/** Exit code `2` when an empty run fails. */
 	validationExitCode?: 2 | undefined;
-	/** Notice for stderr when an empty run fails. */
+	/** Notice for stderr when the run is empty. */
 	validationMessage?: string | undefined;
 }
 
 /** The work a run does, before any place is bound. */
 export interface TestPlan {
+	/**
+	 * How many runtime test files a `related` run selected out of the total.
+	 */
+	affected?: AffectedSummary | undefined;
 	/**
 	 * Present exactly when the plan selected nothing to do. The run must stop
 	 * here — before a backend is resolved or a place is built.
@@ -112,24 +120,22 @@ interface DiscoveryFilters {
 	 */
 	filesByProject?: ReadonlyMap<string, Array<string>> | undefined;
 	projects: Array<ResolvedProjectConfig>;
+	/** Absolute source files of a `related` run; absent on any other run. */
+	relatedFiles: ReadonlyArray<string> | undefined;
 	rootConfig: ResolvedConfig;
 }
 
 interface DiscoveryInput extends DiscoveryFilters {
 	fileSystem: FileSystem;
+	filterRelated: RelatedFileFilter | undefined;
 	seams: RunSeams;
 }
 
 interface PlannedProject {
 	job?: PendingJob | undefined;
 	project: ResolvedProjectConfig;
+	runtimeCandidateCount: number;
 	typeTestEntry?: TypecheckGroupEntry | undefined;
-}
-
-interface ProjectSelection {
-	config: ResolvedConfig;
-	runtimeFiles: Array<string>;
-	typeTestFiles: Array<string>;
 }
 
 /**
@@ -149,14 +155,6 @@ interface PlannedProjectInput {
 	typecheck: ResolvedTypecheckConfig;
 }
 
-interface ProjectSelectionInput {
-	fileSystem: FileSystem;
-	project: ResolvedProjectConfig;
-	projectCliFiles: Array<string> | undefined;
-	toInstancePath: InstancePathResolver;
-	typecheck: ResolvedTypecheckConfig;
-}
-
 /**
  * Turn a selected project set into the exact work a run will do: one
  * `PendingJob` per project with runtime files, one `TypecheckGroupEntry` per
@@ -173,14 +171,23 @@ interface ProjectSelectionInput {
  * @returns The jobs, Type Test entries and the empty-run policy.
  */
 export function buildTestPlan({ timing, ...discovery }: TestPlanInput): TestPlan {
-	const { jobs, projects, typeTestEntries } = timing.profile("collectPendingJobs", () => {
-		return collectPendingJobs(discovery);
+	const filterRelated = createPlanRelatedFilter(discovery, timing);
+	const collected = timing.profile("collectPendingJobs", () => {
+		return collectPendingJobs({ ...discovery, filterRelated });
 	});
+	const { jobs, projects, typeTestEntries } = collected;
 	assertTypecheckAvailable(typeTestEntries);
 
+	const matchedRuntimeFiles = jobs.flatMap((job) => job.runtimeFiles);
 	const plan: TestPlan = {
+		...summarizeAffected({
+			affected: matchedRuntimeFiles.length,
+			relatedFiles: discovery.relatedFiles,
+			rootDirectory: discovery.rootConfig.rootDir,
+			total: collected.runtimeCandidateCount,
+		}),
 		jobs,
-		matchedRuntimeFiles: jobs.flatMap((job) => job.runtimeFiles),
+		matchedRuntimeFiles,
 		projects,
 		typeTestEntries,
 	};
@@ -188,12 +195,7 @@ export function buildTestPlan({ timing, ...discovery }: TestPlanInput): TestPlan
 		return plan;
 	}
 
-	return {
-		...plan,
-		emptiness: discovery.rootConfig.passWithNoTests
-			? {}
-			: { validationExitCode: 2, validationMessage: "No test files found in any project\n" },
-	};
+	return { ...plan, emptiness: toEmptyRunPolicy(discovery) };
 }
 
 /**
@@ -217,75 +219,45 @@ export function bindTestPlanToPlace(plan: TestPlan, placeFile: string): TestPlan
 	};
 }
 
-/**
- * Type Tests are discovered by `-d` globs derived from the Runtime `include`
- * (or an explicit `test.typecheck.include`). These stay in the local discovery
- * `testMatch` only — never folded into `project.include` — so coverage-source
- * derivation (which reads `project.include`) never sees a `-d` glob.
- *
- * @param project - Resolved project.
- * @param typecheck - Resolved typecheck config of the project.
- * @returns The project config with the discovery `testMatch`.
- */
-function buildDiscoveryConfig(
-	project: ResolvedProjectConfig,
-	typecheck: ResolvedTypecheckConfig,
-): ResolvedConfig {
-	return {
-		...project.config,
-		projects: project.projects,
-		testMatch: typecheck.enabled
-			? [
-					...project.include,
-					...(typecheck.include ?? deriveTypecheckInclude(project.include)),
-				]
-			: project.include,
-	};
+function toEmptyRunPolicy({
+	relatedFiles,
+	rootConfig,
+}: Pick<DiscoveryFilters, "relatedFiles" | "rootConfig">): EmptyRunPolicy {
+	if (!rootConfig.passWithNoTests) {
+		return { validationExitCode: 2, validationMessage: "No test files found in any project\n" };
+	}
+
+	return relatedFiles === undefined
+		? {}
+		: { validationMessage: "No test files reach the related files, exiting with code 0\n" };
 }
 
-function selectProjectFiles({
-	fileSystem,
-	project,
-	projectCliFiles,
-	toInstancePath,
-	typecheck,
-}: ProjectSelectionInput): ProjectSelection {
-	const discoveryConfig = buildDiscoveryConfig(project, typecheck);
-	const discovered = discoverTestFiles({
-		cliFiles: projectCliFiles,
-		config: discoveryConfig,
-		fileSystem,
+function createPlanRelatedFilter(
+	{ fileSystem, relatedFiles }: Pick<DiscoveryInput, "fileSystem" | "relatedFiles">,
+	timing: TimingCollector,
+): RelatedFileFilter | undefined {
+	return relatedFiles === undefined
+		? undefined
+		: createRelatedFileFilter({ fileSystem, parser: luauParser, relatedFiles, timing });
+}
+
+function summarizeAffected({
+	affected,
+	relatedFiles,
+	rootDirectory,
+	total,
+}: Except<AffectedSummary, "relatedTo"> & {
+	relatedFiles: DiscoveryFilters["relatedFiles"];
+	rootDirectory: string;
+}): Pick<TestPlan, "affected"> {
+	if (relatedFiles === undefined) {
+		return {};
+	}
+
+	const relatedTo = relatedFiles.map((file) => {
+		return normalizeWindowsPath(path.relative(rootDirectory, file));
 	});
-	const classified = classifyTestFiles(discovered.files, typecheck);
-
-	// `exclude` globs only match the relative paths glob-discovery returns;
-	// explicit positional files come back absolute and are user-chosen, so they
-	// bypass `exclude` — mirroring how `testPathIgnorePatterns` is already
-	// skipped for positionals in `discoverTestFiles`. Runtime files use the
-	// project's `exclude`; type tests use `test.typecheck.exclude`.
-	const isPositional = (projectCliFiles?.length ?? 0) > 0;
-	const runtimeFiles = isPositional
-		? classified.runtimeFiles
-		: applyExcludes(classified.runtimeFiles, project.exclude);
-
-	// Narrow by the per-project discovered files (not the raw positional/flag
-	// input) so the Luau runner receives an Instance-namespace pattern. A bare
-	// project run (no positionals, no `--testPathPattern`) keeps
-	// `testPathPattern` undefined so Jest-on-Roblox runs all testMatch.
-	const isFilterActive = isPositional || discoveryConfig.testPathPattern !== undefined;
-	const narrowed = { ...discoveryConfig, testMatch: project.testMatch };
-	return {
-		config: narrowForLuauRun({
-			config: narrowed,
-			filterActive: isFilterActive,
-			runtimeFiles,
-			toInstancePath,
-		}),
-		runtimeFiles,
-		typeTestFiles: isPositional
-			? classified.typeTestFiles
-			: applyExcludes(classified.typeTestFiles, typecheck.exclude),
-	};
+	return { affected: { affected, relatedTo, total } };
 }
 
 /**
@@ -317,7 +289,7 @@ function planRuntimeJob({
 	input,
 	project,
 	selection,
-}: Except<PlannedProjectInput, "typecheck">): PlannedProject {
+}: Except<PlannedProjectInput, "typecheck">): Except<PlannedProject, "runtimeCandidateCount"> {
 	const { fileSystem, rootConfig } = input;
 	const { config } = buildProjectJob({
 		cache: input.tsconfigCache,
@@ -366,10 +338,12 @@ function toPlannedProject({
 	selection,
 	typecheck,
 }: PlannedProjectInput): PlannedProject {
-	const planned: PlannedProject =
-		selection.runtimeFiles.length > 0
+	const planned: PlannedProject = {
+		...(selection.runtimeFiles.length > 0
 			? planRuntimeJob({ input, project, selection })
-			: { project };
+			: { project }),
+		runtimeCandidateCount: selection.runtimeCandidateCount,
+	};
 	if (selection.typeTestFiles.length > 0) {
 		planned.typeTestEntry = {
 			cwd: input.rootConfig.rootDir,
@@ -393,6 +367,7 @@ function planProject(project: ResolvedProjectConfig, input: ProjectPlanInput): P
 	});
 	const selection = selectProjectFiles({
 		fileSystem: input.fileSystem,
+		filterRelated: input.filterRelated,
 		project,
 		projectCliFiles,
 		// Each project resolves against its OWN mounts, so one shared resolver
@@ -414,7 +389,7 @@ function planProject(project: ResolvedProjectConfig, input: ProjectPlanInput): P
 
 function collectPendingJobs(
 	input: DiscoveryInput,
-): Pick<TestPlan, "jobs" | "projects" | "typeTestEntries"> {
+): Pick<TestPlan, "jobs" | "projects" | "typeTestEntries"> & { runtimeCandidateCount: number } {
 	const jobs: Array<PendingJob> = [];
 	const projects: Array<ResolvedProjectConfig> = [];
 	const typeTestEntries: Array<TypecheckGroupEntry> = [];
@@ -432,8 +407,10 @@ function collectPendingJobs(
 		}),
 	};
 
+	let runtimeCandidateCount = 0;
 	for (const project of input.projects) {
 		const planned = planProject(project, planInput);
+		runtimeCandidateCount += planned.runtimeCandidateCount;
 		projects.push(planned.project);
 		if (planned.typeTestEntry !== undefined) {
 			typeTestEntries.push(planned.typeTestEntry);
@@ -444,5 +421,5 @@ function collectPendingJobs(
 		}
 	}
 
-	return { jobs, projects, typeTestEntries };
+	return { jobs, projects, runtimeCandidateCount, typeTestEntries };
 }

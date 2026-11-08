@@ -176,6 +176,7 @@ function setup({
 			cliTypecheck: {},
 			fileSystem,
 			projects: [],
+			relatedFiles: undefined,
 			rootConfig: config,
 			seams: toSeams(fakes),
 			timing: recorded.timing,
