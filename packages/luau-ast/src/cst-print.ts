@@ -158,8 +158,9 @@ function startCode(printer: Printer, text: string): string {
 
 function emitToken(printer: Printer, token: Token): void {
 	writeTrivia(printer, token.leading);
-	const text = startCode(printer, token.text);
-	if (printer.source !== undefined && token.origin !== undefined && token.text.length > 0) {
+	const tokenText = printer.edits?.tokenTextFor(token) ?? token.text;
+	const text = startCode(printer, tokenText);
+	if (printer.source !== undefined && token.origin !== undefined && tokenText.length > 0) {
 		const { beginColumn, beginLine } = token.origin;
 		printer.segments.push({
 			generated: printer.writer.position(),
@@ -172,7 +173,7 @@ function emitToken(printer: Printer, token: Token): void {
 	}
 
 	printer.writer.write(text);
-	const lastCode = token.text.at(-1);
+	const lastCode = tokenText.at(-1);
 	if (lastCode !== undefined) {
 		printer.lastCode = lastCode;
 	}

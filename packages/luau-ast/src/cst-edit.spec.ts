@@ -16,6 +16,18 @@ describe(createCstEdits, () => {
 			edits.replace({ caller: "second", replacement: { text: "3" }, target });
 		}).toThrow("second cannot replace the Number at 1:1: first already replaced it");
 	});
+
+	it("should reject a second token text naming both callers", () => {
+		expect.assertions(1);
+
+		const target = numberNode().token;
+		const edits = createCstEdits();
+		edits.replaceTokenText({ caller: "first", target, text: "2" });
+
+		expect(() => {
+			edits.replaceTokenText({ caller: "second", target, text: "3" });
+		}).toThrow('second cannot replace the text of token "1": first already replaced it');
+	});
 });
 
 function makeBindings() {
@@ -77,6 +89,21 @@ describe("binding renames", () => {
 });
 
 describe("replacement ledger", () => {
+	it("should retain token texts by token identity", () => {
+		expect.assertions(3);
+
+		const target = numberNode().token;
+		const twin = numberNode().token;
+		const edits = createCstEdits();
+
+		expect(edits.tokenTextFor(target)).toBeUndefined();
+
+		edits.replaceTokenText({ caller: "rename", target, text: "2" });
+
+		expect(edits.tokenTextFor(target)).toBe("2");
+		expect(edits.tokenTextFor(twin)).toBeUndefined();
+	});
+
 	it("should retain replacements and callers by node identity", () => {
 		expect.assertions(4);
 

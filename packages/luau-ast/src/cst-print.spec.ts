@@ -7,7 +7,7 @@ import { numberNode } from "#test/helpers/unit/cst";
 import { cstTree } from "#test/helpers/unit/trees";
 import type { CstEdits, Replacement } from "./cst-edit.ts";
 import { printCst, printCstMapped } from "./cst-print.ts";
-import type { CstNode } from "./cst.ts";
+import type { CstIndexName, CstNode, CstRoot, Token } from "./cst.ts";
 import type { SourceBytes } from "./source-bytes.ts";
 
 describe(printCst, () => {
@@ -26,6 +26,7 @@ function editFor(target: CstNode, replacement: Replacement): CstEdits {
 	return fromPartial<CstEdits>({
 		callerFor: () => {},
 		replacementFor: (node: CstNode) => (node === target ? replacement : undefined),
+		tokenTextFor: () => {},
 	});
 }
 
@@ -257,6 +258,58 @@ describe(printCstMapped, () => {
 	});
 });
 
+function renamedIndex(field: CstIndexName, replacement?: Replacement): CstEdits {
+	return fromPartial<CstEdits>({
+		callerFor: () => {},
+		replacementFor: (node: CstNode) => (node === field ? replacement : undefined),
+		tokenTextFor: (token: Token) => (token === field.index ? "count" : undefined),
+	});
+}
+
+function assignedField(root: CstRoot): CstIndexName {
+	const statement = root.body.body[0]!;
+	assert(statement.type === "Assign");
+	const field = statement.variables[0]!.node;
+	assert(field.type === "IndexName");
+	return field;
+}
+
+describe("token texts", () => {
+	it("should print a token's text between its own trivia", () => {
+		expect.assertions(2);
+
+		const root = cstTree("_G.cfg.x = 1\n");
+		const field = assignedField(root);
+
+		expect(printCst(root, renamedIndex(field))).toBe("_G.cfg.count = 1\n");
+		expect(field.index.text).toBe("x");
+	});
+
+	it("should map a token's text to the token's own origin", () => {
+		expect.assertions(2);
+
+		const { source } = sourceIndex();
+		const root = cstTree("_G.cfg.x = 1\n");
+		const edits = renamedIndex(assignedField(root));
+		const { segments } = printCstMapped(root, { edits, source });
+
+		expect(segments[4]).toStrictEqual({
+			generated: { column: 7, line: 1 },
+			original: { column: 17, line: 1 },
+		});
+		expect(segments[5]!.generated).toStrictEqual({ column: 13, line: 1 });
+	});
+
+	it("should print a replaced node over its tokens' texts", () => {
+		expect.assertions(1);
+
+		const root = cstTree("_G.cfg.x = 1\n");
+		const field = assignedField(root);
+
+		expect(printCst(root, renamedIndex(field, { text: "other" }))).toBe("other = 1\n");
+	});
+});
+
 describe("statement replacement boundaries", () => {
 	it.for([
 		{ expected: "  \n(get()).x = 1\n", text: "  " },
@@ -272,6 +325,7 @@ describe("statement replacement boundaries", () => {
 		]);
 		const edits = fromPartial<CstEdits>({
 			replacementFor: (node: CstNode) => replacements.get(node),
+			tokenTextFor: () => {},
 		});
 
 		expect(printCst(root, edits)).toBe(expected);
@@ -321,6 +375,7 @@ describe("printer state across empty tokens", () => {
 		]);
 		const edits = fromPartial<CstEdits>({
 			replacementFor: (node: CstNode) => replacements.get(node),
+			tokenTextFor: () => {},
 		});
 
 		expect(printCst(root, edits)).toBe("f();\n\n(get()).x = 1\n");
@@ -337,6 +392,7 @@ describe("printer state across empty tokens", () => {
 		]);
 		const edits = fromPartial<CstEdits>({
 			replacementFor: (node: CstNode) => replacements.get(node),
+			tokenTextFor: () => {},
 		});
 
 		expect(printCst(root, edits)).toBe("local x = 1\n\n;(get()).x = 1\n");

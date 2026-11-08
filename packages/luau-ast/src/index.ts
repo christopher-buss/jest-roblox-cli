@@ -56,8 +56,11 @@ export type {
 	ReplaceOptions,
 	Replacement,
 	TextReplacement,
+	TokenTextOptions,
 } from "./cst-edit.ts";
 export { createCstEdits, renameBinding, renameBindings } from "./cst-edit.ts";
+export type { CstIndex, CstIndexWalker, CstNodeOfKind, TokenRange } from "./cst-index.ts";
+export { indexCst } from "./cst-index.ts";
 export type { CstFailure, CstParseResult, CstSuccess } from "./cst-materialize.ts";
 export type { CstPosition, CstSourcemapSegment, PrintedCst, PrintOptions } from "./cst-print.ts";
 export { printCst, printCstMapped } from "./cst-print.ts";

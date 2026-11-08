@@ -1,6 +1,6 @@
 import type { LuauSpan } from "./ast-types.ts";
 import { forEachCstNode, isCstNode, tokenBounds, walkCst } from "./cst.ts";
-import type { CstNode } from "./cst.ts";
+import type { CstNode, Token } from "./cst.ts";
 
 /**
  * Text printed in a node's place. The node's outer trivia stays on both
@@ -46,6 +46,18 @@ export interface ReplaceOptions {
 	target: CstNode;
 }
 
+/** A token and the text to print in its place. */
+export interface TokenTextOptions {
+	/**
+	 * Named in the error when a second caller replaces the same token's text.
+	 */
+	caller: string;
+	/** The token whose text is replaced; its trivia and origin stay. */
+	target: Token;
+	/** The text printed in place of the token's own. */
+	text: string;
+}
+
 /** The statement to remove and the trivia retention policy. */
 export interface RemoveOptions {
 	/** The rule name used to identify conflicting registrations. */
@@ -65,8 +77,9 @@ export interface RenameOptions {
 }
 
 /**
- * The replacements the printer consults before printing a node. Two callers
- * that replace the same node are a conflict, reported by both names.
+ * The replacements the printer consults before printing a node or a token.
+ * Two callers that replace the same node, or the same token's text, are a
+ * conflict, reported by both names.
  */
 export interface CstEdits {
 	/** Caller that registered a node's replacement. */
@@ -79,6 +92,12 @@ export interface CstEdits {
 	replace: (options: ReplaceOptions) => void;
 	/** Read the replacement registered for a node, if any. */
 	replacementFor: (node: CstNode) => Replacement | undefined;
+	/**
+	 * Register a token's text, rejecting a second registration for the token.
+	 */
+	replaceTokenText: (options: TokenTextOptions) => void;
+	/** Read the text registered for a token, if any. */
+	tokenTextFor: (token: Token) => string | undefined;
 }
 
 interface Registered {
@@ -132,6 +151,7 @@ export function createCstEdits(): CstEdits {
 		},
 		replace,
 		replacementFor: (node) => replacements.get(node)?.replacement,
+		...createTokenTexts(),
 	};
 }
 
@@ -159,6 +179,23 @@ export function renameBindings(root: CstNode, names: ReadonlyMap<number, string>
  */
 export function renameBinding(root: CstNode, { name, binding }: RenameOptions): void {
 	renameBindings(root, new Map([[binding, name]]));
+}
+
+function createTokenTexts(): Pick<CstEdits, "replaceTokenText" | "tokenTextFor"> {
+	const texts = new Map<Token, { caller: string; text: string }>();
+	return {
+		replaceTokenText: ({ caller, target, text }) => {
+			const existing = texts.get(target);
+			if (existing !== undefined) {
+				throw new Error(
+					`${caller} cannot replace the text of token "${target.text}": ${existing.caller} already replaced it`,
+				);
+			}
+
+			texts.set(target, { caller, text });
+		},
+		tokenTextFor: (token) => texts.get(token)?.text,
+	};
 }
 
 function markGenerated(subtree: CstNode, caller: string): void {

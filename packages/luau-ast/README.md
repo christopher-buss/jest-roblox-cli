@@ -48,13 +48,15 @@ Parse and compile results discriminate success with `ok`; malformed internal
 wrapper output throws. Visitor enter callbacks return `false` to skip children.
 The AST visitor does not traverse type annotations.
 
-`createCstEdits()` registers subtree or text replacements and statement
-removals. Pass the ledger to `printCst(root, edits)` or
+`createCstEdits()` registers subtree or text replacements, statement removals,
+and token texts. Pass the ledger to `printCst(root, edits)` or
 `printCstMapped(root, { edits, source: indexSourceBytes(original) })`.
-Conflicting replacements report both callers.
-`parser.constructExpression(snippet)` and `parser.constructStatements(snippet)`
-produce replacement subtrees. Binding identities inside a snippet belong to that
-snippet.
+Conflicting replacements report both callers. `indexCst(root)` reads a tree once
+into pre-order nodes, parents, kind buckets, token bounds and ranges, and
+tokens. It describes the tree as it was when built; build a new index after you
+change the tree's structure. `parser.constructExpression(snippet)` and
+`parser.constructStatements(snippet)` produce replacement subtrees. Binding
+identities inside a snippet belong to that snippet.
 
 `LuauSpan` uses one-based lines and UTF-8 byte columns, with an exclusive end.
 Index a source once with `indexSourceBytes` to slice spans, convert byte ranges

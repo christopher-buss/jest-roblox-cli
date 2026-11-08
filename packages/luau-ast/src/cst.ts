@@ -26,7 +26,6 @@ import type {
 	CstRoot,
 	CstStat,
 } from "./cst-statement-types.ts";
-import { isToken } from "./cst-token.ts";
 import type { Token } from "./cst-token.ts";
 import type {
 	CstAttribute,
@@ -154,6 +153,10 @@ export type CstValue = CstNode | Punctuated<CstNode> | ReadonlyArray<CstValue> |
 
 const kindSet: ReadonlySet<string> = new Set(CST_NODE_KINDS);
 
+const slotsByKind: ReadonlyMap<string, ReadonlyArray<string>> = new Map(
+	CST_NODE_KINDS.map((kind): [string, ReadonlyArray<string>] => [kind, CST_SLOTS[kind]]),
+);
+
 /** The first and last token under a node. */
 export interface TokenBounds {
 	/** The earliest token in lexical order. */
@@ -175,11 +178,6 @@ export interface CstWalker {
 	onToken?: (token: Token) => void;
 	/** Whether to leave one of a node's slots closed. */
 	skipSlot?: (node: CstNode, slot: string) => boolean;
-}
-
-interface WalkHooks extends CstWalker {
-	/** Checked before every value; `true` ends the walk. */
-	isDone?: () => boolean;
 }
 
 /**
@@ -217,8 +215,37 @@ export function isCstNode(value: unknown): value is CstNode {
  * @param value - The tree, subtree, or slot to walk.
  * @param walker - The hooks to call.
  */
-export function walkCst(value: CstValue, walker: CstWalker): void {
-	walk(value, { hooks: walker });
+export function walkCst(value: CstValue, { onExit, onNode, onToken, skipSlot }: CstWalker): void {
+	function walk(child: CstValue, parent: CstNodeKind | undefined): void {
+		if (child === undefined) {
+			return;
+		}
+
+		if (isCstList(child)) {
+			for (const element of child) {
+				walk(element, parent);
+			}
+		} else if (!("type" in child)) {
+			if ("text" in child) {
+				onToken?.(child);
+				return;
+			}
+
+			for (const slot of punctuatedSlots(parent)) {
+				walk(child[slot], parent);
+			}
+		} else if (onNode?.(child) !== true) {
+			for (const slot of slotsOf(child)) {
+				if (skipSlot?.(child, slot) !== true) {
+					walk(readSlot(child, slot), child.type);
+				}
+			}
+
+			onExit?.(child);
+		}
+	}
+
+	walk(value, undefined);
 }
 
 /**
@@ -230,18 +257,39 @@ export function walkCst(value: CstValue, walker: CstWalker): void {
  * @returns Whether any node matched.
  */
 export function someCstNode(value: CstValue, predicate: (node: CstNode) => boolean): boolean {
-	let isFound = false;
-	walk(value, {
-		hooks: {
-			isDone: () => isFound,
-			onNode: (node) => {
-				isFound = predicate(node);
-				return isFound;
-			},
-		},
-	});
+	function some(child: CstValue): boolean {
+		if (child === undefined) {
+			return false;
+		}
 
-	return isFound;
+		if (isCstList(child)) {
+			for (const element of child) {
+				if (some(element)) {
+					return true;
+				}
+			}
+
+			return false;
+		}
+
+		if (!("type" in child)) {
+			return !("text" in child) && some(child.node);
+		}
+
+		if (predicate(child)) {
+			return true;
+		}
+
+		for (const slot of slotsOf(child)) {
+			if (some(readSlot(child, slot))) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	return some(value);
 }
 
 /**
@@ -262,16 +310,16 @@ export function forEachToken(value: CstValue, visit: (token: Token) => void): vo
  * @returns Its outermost tokens.
  */
 export function tokenBounds(node: CstNode): TokenBounds | undefined {
-	let bounds: TokenBounds | undefined;
-	forEachToken(node, (token) => {
-		if (bounds === undefined) {
-			bounds = { first: token, last: token };
-		} else {
-			bounds.last = token;
-		}
-	});
+	const first = edgeToken(node, { isLast: false });
+	if (first === undefined) {
+		return undefined;
+	}
 
-	return bounds;
+	const last = edgeToken(node, { isLast: true });
+	// Stryker disable next-line ConditionalExpression: a node with a first token
+	// has a last one
+	assert(last !== undefined, "a node with a first token has a last one");
+	return { first, last };
 }
 
 /**
@@ -292,77 +340,85 @@ function isCstList(value: CstValue): value is ReadonlyArray<CstValue> {
 	return Array.isArray(value);
 }
 
-/**
- * `parent`, the nearest enclosing node's kind, orders a punctuated entry.
- * @param value - The value reached in the parsed tree.
- * @param context - The traversal hooks and nearest enclosing node kind.
- */
-function walk(value: CstValue, context: { hooks: WalkHooks; parent?: CstNodeKind }): void {
-	const { hooks, parent } = context;
-	if (value === undefined || hooks.isDone?.() === true) {
-		return;
-	}
-
-	if (isCstList(value)) {
-		for (const element of value) {
-			walk(element, context);
-		}
-
-		return;
-	}
-
-	// Only a node has `type` and only a token has `text`; the walk is hot.
-	if ("type" in value) {
-		walkNode(value, hooks);
-		return;
-	}
-
-	if ("text" in value) {
-		hooks.onToken?.(value);
-		return;
-	}
-
-	for (const slot of punctuatedSlots(parent)) {
-		walk(value[slot], context);
-	}
+function isSlotRecord(
+	value: unknown,
+): value is Partial<Record<"leading" | "text" | "trailing" | "type", unknown>> {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-/**
- * A slot never holds a bare punctuated entry, only a list of them.
- * @param value - The value reached in the parsed tree.
- * @returns Whether the value can be traversed by the CST walker.
- */
-function isCstValue(value: unknown): value is CstValue {
-	return value === undefined || isToken(value) || isCstNode(value) || Array.isArray(value);
+function isSlotValue(value: unknown): value is CstValue {
+	if (!isSlotRecord(value)) {
+		return value === undefined || Array.isArray(value);
+	}
+
+	return typeof value.type === "string"
+		? kindSet.has(value.type)
+		: typeof value.text === "string" &&
+				Array.isArray(value.leading) &&
+				Array.isArray(value.trailing);
 }
 
-/**
- * `CST_SLOTS` lists only slots, and every slot holds a walkable value.
- * @param node - The subtree or container to inspect.
- * @param slot - The lexical child-slot name declared for this kind.
- * @returns The child value stored in this lexical slot.
- */
 function readSlot(node: CstNode, slot: string): CstValue {
 	const value: unknown = Reflect.get(node, slot);
-	if (!isCstValue(value)) {
+	if (!isSlotValue(value)) {
 		assert.fail(`${node.type}.${slot} holds no node, token, or list`);
 	}
 
 	return value;
 }
 
-function walkNode(node: CstNode, hooks: WalkHooks): void {
-	if (hooks.onNode?.(node) === true) {
-		return;
+function slotsOf(node: CstNode): ReadonlyArray<string> {
+	const slots = slotsByKind.get(node.type);
+	if (slots === undefined) {
+		assert.fail(`${node.type} is not a node kind`);
 	}
 
-	const slots: ReadonlyArray<string> = CST_SLOTS[node.type];
-	const context = { hooks, parent: node.type };
-	for (const slot of slots) {
-		if (hooks.skipSlot?.(node, slot) !== true) {
-			walk(readSlot(node, slot), context);
+	return slots;
+}
+
+function findEdge<Value>(
+	values: ReadonlyArray<Value>,
+	{ edgeOf, isLast }: { edgeOf: (value: Value) => Token | undefined; isLast: boolean },
+): Token | undefined {
+	let token: Token | undefined;
+	function isEdge(value: Value): boolean {
+		token = edgeOf(value);
+		return token !== undefined;
+	}
+
+	if (isLast) {
+		values.findLast(isEdge);
+	} else {
+		values.find(isEdge);
+	}
+
+	return token;
+}
+
+function edgeToken(node: CstNode, { isLast }: { isLast: boolean }): Token | undefined {
+	function edge(child: CstValue, parent: CstNodeKind | undefined): Token | undefined {
+		if (child === undefined) {
+			return undefined;
 		}
+
+		if (isCstList(child)) {
+			return findEdge(child, { edgeOf: (element) => edge(element, parent), isLast });
+		}
+
+		if ("type" in child) {
+			return findEdge(slotsOf(child), {
+				edgeOf: (slot) => edge(readSlot(child, slot), child.type),
+				isLast,
+			});
+		}
+
+		return "text" in child
+			? child
+			: findEdge(punctuatedSlots(parent), {
+					edgeOf: (slot) => edge(child[slot], parent),
+					isLast,
+				});
 	}
 
-	hooks.onExit?.(node);
+	return edge(node, undefined);
 }
