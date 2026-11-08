@@ -10137,5 +10137,8519 @@
 			"text": "",
 			"trailing": []
 		}
+	},
+	"require(\"./a\\u{62}\")\n": {
+		"type": "Root",
+		"location": {
+			"beginColumn": 1,
+			"beginLine": 1,
+			"endColumn": 1,
+			"endLine": 2
+		},
+		"body": {
+			"type": "Block",
+			"location": {
+				"beginColumn": 1,
+				"beginLine": 1,
+				"endColumn": 1,
+				"endLine": 2
+			},
+			"body": [
+				{
+					"type": "ExprStat",
+					"location": {
+						"beginColumn": 1,
+						"beginLine": 1,
+						"endColumn": 21,
+						"endLine": 1
+					},
+					"expr": {
+						"type": "Call",
+						"location": {
+							"beginColumn": 1,
+							"beginLine": 1,
+							"endColumn": 21,
+							"endLine": 1
+						},
+						"callee": {
+							"type": "Global",
+							"location": {
+								"beginColumn": 1,
+								"beginLine": 1,
+								"endColumn": 8,
+								"endLine": 1
+							},
+							"name": {
+								"leading": [],
+								"origin": {
+									"beginColumn": 1,
+									"beginLine": 1,
+									"endColumn": 8,
+									"endLine": 1
+								},
+								"text": "require",
+								"trailing": []
+							}
+						},
+						"open": {
+							"leading": [],
+							"origin": {
+								"beginColumn": 8,
+								"beginLine": 1,
+								"endColumn": 9,
+								"endLine": 1
+							},
+							"text": "(",
+							"trailing": []
+						},
+						"arguments": [
+							{
+								"node": {
+									"type": "String",
+									"location": {
+										"beginColumn": 9,
+										"beginLine": 1,
+										"endColumn": 20,
+										"endLine": 1
+									},
+									"token": {
+										"leading": [],
+										"origin": {
+											"beginColumn": 9,
+											"beginLine": 1,
+											"endColumn": 20,
+											"endLine": 1
+										},
+										"text": "\"./a\\u{62}\"",
+										"trailing": []
+									}
+								}
+							}
+						],
+						"close": {
+							"leading": [],
+							"origin": {
+								"beginColumn": 20,
+								"beginLine": 1,
+								"endColumn": 21,
+								"endLine": 1
+							},
+							"text": ")",
+							"trailing": [
+								{
+									"kind": "whitespace",
+									"text": "\n"
+								}
+							]
+						}
+					}
+				}
+			]
+		},
+		"eof": {
+			"leading": [],
+			"origin": {
+				"beginColumn": 1,
+				"beginLine": 2,
+				"endColumn": 1,
+				"endLine": 2
+			},
+			"text": "",
+			"trailing": []
+		}
+	},
+	"local require = load\nreturn require(script.Parent.Folder)\n": {
+		"type": "Root",
+		"location": {
+			"beginColumn": 1,
+			"beginLine": 1,
+			"endColumn": 1,
+			"endLine": 3
+		},
+		"body": {
+			"type": "Block",
+			"location": {
+				"beginColumn": 1,
+				"beginLine": 1,
+				"endColumn": 1,
+				"endLine": 3
+			},
+			"body": [
+				{
+					"type": "Local",
+					"location": {
+						"beginColumn": 1,
+						"beginLine": 1,
+						"endColumn": 21,
+						"endLine": 1
+					},
+					"keyword": {
+						"leading": [],
+						"origin": {
+							"beginColumn": 1,
+							"beginLine": 1,
+							"endColumn": 6,
+							"endLine": 1
+						},
+						"text": "local",
+						"trailing": [
+							{
+								"kind": "whitespace",
+								"text": " "
+							}
+						]
+					},
+					"variables": [
+						{
+							"node": {
+								"type": "LocalDecl",
+								"location": {
+									"beginColumn": 7,
+									"beginLine": 1,
+									"endColumn": 14,
+									"endLine": 1
+								},
+								"binding": 1,
+								"name": {
+									"leading": [],
+									"origin": {
+										"beginColumn": 7,
+										"beginLine": 1,
+										"endColumn": 14,
+										"endLine": 1
+									},
+									"text": "require",
+									"trailing": [
+										{
+											"kind": "whitespace",
+											"text": " "
+										}
+									]
+								}
+							}
+						}
+					],
+					"equals": {
+						"leading": [],
+						"origin": {
+							"beginColumn": 15,
+							"beginLine": 1,
+							"endColumn": 16,
+							"endLine": 1
+						},
+						"text": "=",
+						"trailing": [
+							{
+								"kind": "whitespace",
+								"text": " "
+							}
+						]
+					},
+					"values": [
+						{
+							"node": {
+								"type": "Global",
+								"location": {
+									"beginColumn": 17,
+									"beginLine": 1,
+									"endColumn": 21,
+									"endLine": 1
+								},
+								"name": {
+									"leading": [],
+									"origin": {
+										"beginColumn": 17,
+										"beginLine": 1,
+										"endColumn": 21,
+										"endLine": 1
+									},
+									"text": "load",
+									"trailing": [
+										{
+											"kind": "whitespace",
+											"text": "\n"
+										}
+									]
+								}
+							}
+						}
+					]
+				},
+				{
+					"type": "Return",
+					"location": {
+						"beginColumn": 1,
+						"beginLine": 2,
+						"endColumn": 37,
+						"endLine": 2
+					},
+					"keyword": {
+						"leading": [],
+						"origin": {
+							"beginColumn": 1,
+							"beginLine": 2,
+							"endColumn": 7,
+							"endLine": 2
+						},
+						"text": "return",
+						"trailing": [
+							{
+								"kind": "whitespace",
+								"text": " "
+							}
+						]
+					},
+					"values": [
+						{
+							"node": {
+								"type": "Call",
+								"location": {
+									"beginColumn": 8,
+									"beginLine": 2,
+									"endColumn": 37,
+									"endLine": 2
+								},
+								"callee": {
+									"type": "LocalRef",
+									"location": {
+										"beginColumn": 8,
+										"beginLine": 2,
+										"endColumn": 15,
+										"endLine": 2
+									},
+									"binding": 1,
+									"name": {
+										"leading": [],
+										"origin": {
+											"beginColumn": 8,
+											"beginLine": 2,
+											"endColumn": 15,
+											"endLine": 2
+										},
+										"text": "require",
+										"trailing": []
+									}
+								},
+								"open": {
+									"leading": [],
+									"origin": {
+										"beginColumn": 15,
+										"beginLine": 2,
+										"endColumn": 16,
+										"endLine": 2
+									},
+									"text": "(",
+									"trailing": []
+								},
+								"arguments": [
+									{
+										"node": {
+											"type": "IndexName",
+											"location": {
+												"beginColumn": 16,
+												"beginLine": 2,
+												"endColumn": 36,
+												"endLine": 2
+											},
+											"expr": {
+												"type": "IndexName",
+												"location": {
+													"beginColumn": 16,
+													"beginLine": 2,
+													"endColumn": 29,
+													"endLine": 2
+												},
+												"expr": {
+													"type": "Global",
+													"location": {
+														"beginColumn": 16,
+														"beginLine": 2,
+														"endColumn": 22,
+														"endLine": 2
+													},
+													"name": {
+														"leading": [],
+														"origin": {
+															"beginColumn": 16,
+															"beginLine": 2,
+															"endColumn": 22,
+															"endLine": 2
+														},
+														"text": "script",
+														"trailing": []
+													}
+												},
+												"operator": {
+													"leading": [],
+													"origin": {
+														"beginColumn": 22,
+														"beginLine": 2,
+														"endColumn": 23,
+														"endLine": 2
+													},
+													"text": ".",
+													"trailing": []
+												},
+												"index": {
+													"leading": [],
+													"origin": {
+														"beginColumn": 23,
+														"beginLine": 2,
+														"endColumn": 29,
+														"endLine": 2
+													},
+													"text": "Parent",
+													"trailing": []
+												}
+											},
+											"operator": {
+												"leading": [],
+												"origin": {
+													"beginColumn": 29,
+													"beginLine": 2,
+													"endColumn": 30,
+													"endLine": 2
+												},
+												"text": ".",
+												"trailing": []
+											},
+											"index": {
+												"leading": [],
+												"origin": {
+													"beginColumn": 30,
+													"beginLine": 2,
+													"endColumn": 36,
+													"endLine": 2
+												},
+												"text": "Folder",
+												"trailing": []
+											}
+										}
+									}
+								],
+								"close": {
+									"leading": [],
+									"origin": {
+										"beginColumn": 36,
+										"beginLine": 2,
+										"endColumn": 37,
+										"endLine": 2
+									},
+									"text": ")",
+									"trailing": [
+										{
+											"kind": "whitespace",
+											"text": "\n"
+										}
+									]
+								}
+							}
+						}
+					]
+				}
+			]
+		},
+		"eof": {
+			"leading": [],
+			"origin": {
+				"beginColumn": 1,
+				"beginLine": 3,
+				"endColumn": 1,
+				"endLine": 3
+			},
+			"text": "",
+			"trailing": []
+		}
+	},
+	"require(game:GetService(\"ReplicatedStorage\"):WaitForChild(\"Shared\")[\"Util\"])\n": {
+		"type": "Root",
+		"location": {
+			"beginColumn": 1,
+			"beginLine": 1,
+			"endColumn": 1,
+			"endLine": 2
+		},
+		"body": {
+			"type": "Block",
+			"location": {
+				"beginColumn": 1,
+				"beginLine": 1,
+				"endColumn": 1,
+				"endLine": 2
+			},
+			"body": [
+				{
+					"type": "ExprStat",
+					"location": {
+						"beginColumn": 1,
+						"beginLine": 1,
+						"endColumn": 77,
+						"endLine": 1
+					},
+					"expr": {
+						"type": "Call",
+						"location": {
+							"beginColumn": 1,
+							"beginLine": 1,
+							"endColumn": 77,
+							"endLine": 1
+						},
+						"callee": {
+							"type": "Global",
+							"location": {
+								"beginColumn": 1,
+								"beginLine": 1,
+								"endColumn": 8,
+								"endLine": 1
+							},
+							"name": {
+								"leading": [],
+								"origin": {
+									"beginColumn": 1,
+									"beginLine": 1,
+									"endColumn": 8,
+									"endLine": 1
+								},
+								"text": "require",
+								"trailing": []
+							}
+						},
+						"open": {
+							"leading": [],
+							"origin": {
+								"beginColumn": 8,
+								"beginLine": 1,
+								"endColumn": 9,
+								"endLine": 1
+							},
+							"text": "(",
+							"trailing": []
+						},
+						"arguments": [
+							{
+								"node": {
+									"type": "IndexExpr",
+									"location": {
+										"beginColumn": 9,
+										"beginLine": 1,
+										"endColumn": 76,
+										"endLine": 1
+									},
+									"expr": {
+										"type": "Call",
+										"location": {
+											"beginColumn": 9,
+											"beginLine": 1,
+											"endColumn": 68,
+											"endLine": 1
+										},
+										"callee": {
+											"type": "IndexName",
+											"location": {
+												"beginColumn": 9,
+												"beginLine": 1,
+												"endColumn": 58,
+												"endLine": 1
+											},
+											"expr": {
+												"type": "Call",
+												"location": {
+													"beginColumn": 9,
+													"beginLine": 1,
+													"endColumn": 45,
+													"endLine": 1
+												},
+												"callee": {
+													"type": "IndexName",
+													"location": {
+														"beginColumn": 9,
+														"beginLine": 1,
+														"endColumn": 24,
+														"endLine": 1
+													},
+													"expr": {
+														"type": "Global",
+														"location": {
+															"beginColumn": 9,
+															"beginLine": 1,
+															"endColumn": 13,
+															"endLine": 1
+														},
+														"name": {
+															"leading": [],
+															"origin": {
+																"beginColumn": 9,
+																"beginLine": 1,
+																"endColumn": 13,
+																"endLine": 1
+															},
+															"text": "game",
+															"trailing": []
+														}
+													},
+													"operator": {
+														"leading": [],
+														"origin": {
+															"beginColumn": 13,
+															"beginLine": 1,
+															"endColumn": 14,
+															"endLine": 1
+														},
+														"text": ":",
+														"trailing": []
+													},
+													"index": {
+														"leading": [],
+														"origin": {
+															"beginColumn": 14,
+															"beginLine": 1,
+															"endColumn": 24,
+															"endLine": 1
+														},
+														"text": "GetService",
+														"trailing": []
+													}
+												},
+												"open": {
+													"leading": [],
+													"origin": {
+														"beginColumn": 24,
+														"beginLine": 1,
+														"endColumn": 25,
+														"endLine": 1
+													},
+													"text": "(",
+													"trailing": []
+												},
+												"arguments": [
+													{
+														"node": {
+															"type": "String",
+															"location": {
+																"beginColumn": 25,
+																"beginLine": 1,
+																"endColumn": 44,
+																"endLine": 1
+															},
+															"token": {
+																"leading": [],
+																"origin": {
+																	"beginColumn": 25,
+																	"beginLine": 1,
+																	"endColumn": 44,
+																	"endLine": 1
+																},
+																"text": "\"ReplicatedStorage\"",
+																"trailing": []
+															}
+														}
+													}
+												],
+												"close": {
+													"leading": [],
+													"origin": {
+														"beginColumn": 44,
+														"beginLine": 1,
+														"endColumn": 45,
+														"endLine": 1
+													},
+													"text": ")",
+													"trailing": []
+												}
+											},
+											"operator": {
+												"leading": [],
+												"origin": {
+													"beginColumn": 45,
+													"beginLine": 1,
+													"endColumn": 46,
+													"endLine": 1
+												},
+												"text": ":",
+												"trailing": []
+											},
+											"index": {
+												"leading": [],
+												"origin": {
+													"beginColumn": 46,
+													"beginLine": 1,
+													"endColumn": 58,
+													"endLine": 1
+												},
+												"text": "WaitForChild",
+												"trailing": []
+											}
+										},
+										"open": {
+											"leading": [],
+											"origin": {
+												"beginColumn": 58,
+												"beginLine": 1,
+												"endColumn": 59,
+												"endLine": 1
+											},
+											"text": "(",
+											"trailing": []
+										},
+										"arguments": [
+											{
+												"node": {
+													"type": "String",
+													"location": {
+														"beginColumn": 59,
+														"beginLine": 1,
+														"endColumn": 67,
+														"endLine": 1
+													},
+													"token": {
+														"leading": [],
+														"origin": {
+															"beginColumn": 59,
+															"beginLine": 1,
+															"endColumn": 67,
+															"endLine": 1
+														},
+														"text": "\"Shared\"",
+														"trailing": []
+													}
+												}
+											}
+										],
+										"close": {
+											"leading": [],
+											"origin": {
+												"beginColumn": 67,
+												"beginLine": 1,
+												"endColumn": 68,
+												"endLine": 1
+											},
+											"text": ")",
+											"trailing": []
+										}
+									},
+									"open": {
+										"leading": [],
+										"origin": {
+											"beginColumn": 68,
+											"beginLine": 1,
+											"endColumn": 69,
+											"endLine": 1
+										},
+										"text": "[",
+										"trailing": []
+									},
+									"index": {
+										"type": "String",
+										"location": {
+											"beginColumn": 69,
+											"beginLine": 1,
+											"endColumn": 75,
+											"endLine": 1
+										},
+										"token": {
+											"leading": [],
+											"origin": {
+												"beginColumn": 69,
+												"beginLine": 1,
+												"endColumn": 75,
+												"endLine": 1
+											},
+											"text": "\"Util\"",
+											"trailing": []
+										}
+									},
+									"close": {
+										"leading": [],
+										"origin": {
+											"beginColumn": 75,
+											"beginLine": 1,
+											"endColumn": 76,
+											"endLine": 1
+										},
+										"text": "]",
+										"trailing": []
+									}
+								}
+							}
+						],
+						"close": {
+							"leading": [],
+							"origin": {
+								"beginColumn": 76,
+								"beginLine": 1,
+								"endColumn": 77,
+								"endLine": 1
+							},
+							"text": ")",
+							"trailing": [
+								{
+									"kind": "whitespace",
+									"text": "\n"
+								}
+							]
+						}
+					}
+				}
+			]
+		},
+		"eof": {
+			"leading": [],
+			"origin": {
+				"beginColumn": 1,
+				"beginLine": 2,
+				"endColumn": 1,
+				"endLine": 2
+			},
+			"text": "",
+			"trailing": []
+		}
+	},
+	"require(script:FindFirstChild(\"A\"))\n": {
+		"type": "Root",
+		"location": {
+			"beginColumn": 1,
+			"beginLine": 1,
+			"endColumn": 1,
+			"endLine": 2
+		},
+		"body": {
+			"type": "Block",
+			"location": {
+				"beginColumn": 1,
+				"beginLine": 1,
+				"endColumn": 1,
+				"endLine": 2
+			},
+			"body": [
+				{
+					"type": "ExprStat",
+					"location": {
+						"beginColumn": 1,
+						"beginLine": 1,
+						"endColumn": 36,
+						"endLine": 1
+					},
+					"expr": {
+						"type": "Call",
+						"location": {
+							"beginColumn": 1,
+							"beginLine": 1,
+							"endColumn": 36,
+							"endLine": 1
+						},
+						"callee": {
+							"type": "Global",
+							"location": {
+								"beginColumn": 1,
+								"beginLine": 1,
+								"endColumn": 8,
+								"endLine": 1
+							},
+							"name": {
+								"leading": [],
+								"origin": {
+									"beginColumn": 1,
+									"beginLine": 1,
+									"endColumn": 8,
+									"endLine": 1
+								},
+								"text": "require",
+								"trailing": []
+							}
+						},
+						"open": {
+							"leading": [],
+							"origin": {
+								"beginColumn": 8,
+								"beginLine": 1,
+								"endColumn": 9,
+								"endLine": 1
+							},
+							"text": "(",
+							"trailing": []
+						},
+						"arguments": [
+							{
+								"node": {
+									"type": "Call",
+									"location": {
+										"beginColumn": 9,
+										"beginLine": 1,
+										"endColumn": 35,
+										"endLine": 1
+									},
+									"callee": {
+										"type": "IndexName",
+										"location": {
+											"beginColumn": 9,
+											"beginLine": 1,
+											"endColumn": 30,
+											"endLine": 1
+										},
+										"expr": {
+											"type": "Global",
+											"location": {
+												"beginColumn": 9,
+												"beginLine": 1,
+												"endColumn": 15,
+												"endLine": 1
+											},
+											"name": {
+												"leading": [],
+												"origin": {
+													"beginColumn": 9,
+													"beginLine": 1,
+													"endColumn": 15,
+													"endLine": 1
+												},
+												"text": "script",
+												"trailing": []
+											}
+										},
+										"operator": {
+											"leading": [],
+											"origin": {
+												"beginColumn": 15,
+												"beginLine": 1,
+												"endColumn": 16,
+												"endLine": 1
+											},
+											"text": ":",
+											"trailing": []
+										},
+										"index": {
+											"leading": [],
+											"origin": {
+												"beginColumn": 16,
+												"beginLine": 1,
+												"endColumn": 30,
+												"endLine": 1
+											},
+											"text": "FindFirstChild",
+											"trailing": []
+										}
+									},
+									"open": {
+										"leading": [],
+										"origin": {
+											"beginColumn": 30,
+											"beginLine": 1,
+											"endColumn": 31,
+											"endLine": 1
+										},
+										"text": "(",
+										"trailing": []
+									},
+									"arguments": [
+										{
+											"node": {
+												"type": "String",
+												"location": {
+													"beginColumn": 31,
+													"beginLine": 1,
+													"endColumn": 34,
+													"endLine": 1
+												},
+												"token": {
+													"leading": [],
+													"origin": {
+														"beginColumn": 31,
+														"beginLine": 1,
+														"endColumn": 34,
+														"endLine": 1
+													},
+													"text": "\"A\"",
+													"trailing": []
+												}
+											}
+										}
+									],
+									"close": {
+										"leading": [],
+										"origin": {
+											"beginColumn": 34,
+											"beginLine": 1,
+											"endColumn": 35,
+											"endLine": 1
+										},
+										"text": ")",
+										"trailing": []
+									}
+								}
+							}
+						],
+						"close": {
+							"leading": [],
+							"origin": {
+								"beginColumn": 35,
+								"beginLine": 1,
+								"endColumn": 36,
+								"endLine": 1
+							},
+							"text": ")",
+							"trailing": [
+								{
+									"kind": "whitespace",
+									"text": "\n"
+								}
+							]
+						}
+					}
+				}
+			]
+		},
+		"eof": {
+			"leading": [],
+			"origin": {
+				"beginColumn": 1,
+				"beginLine": 2,
+				"endColumn": 1,
+				"endLine": 2
+			},
+			"text": "",
+			"trailing": []
+		}
+	},
+	"TS.import(script, script.Parent, \"a\", \"b\")\n": {
+		"type": "Root",
+		"location": {
+			"beginColumn": 1,
+			"beginLine": 1,
+			"endColumn": 1,
+			"endLine": 2
+		},
+		"body": {
+			"type": "Block",
+			"location": {
+				"beginColumn": 1,
+				"beginLine": 1,
+				"endColumn": 1,
+				"endLine": 2
+			},
+			"body": [
+				{
+					"type": "ExprStat",
+					"location": {
+						"beginColumn": 1,
+						"beginLine": 1,
+						"endColumn": 43,
+						"endLine": 1
+					},
+					"expr": {
+						"type": "Call",
+						"location": {
+							"beginColumn": 1,
+							"beginLine": 1,
+							"endColumn": 43,
+							"endLine": 1
+						},
+						"callee": {
+							"type": "IndexName",
+							"location": {
+								"beginColumn": 1,
+								"beginLine": 1,
+								"endColumn": 10,
+								"endLine": 1
+							},
+							"expr": {
+								"type": "Global",
+								"location": {
+									"beginColumn": 1,
+									"beginLine": 1,
+									"endColumn": 3,
+									"endLine": 1
+								},
+								"name": {
+									"leading": [],
+									"origin": {
+										"beginColumn": 1,
+										"beginLine": 1,
+										"endColumn": 3,
+										"endLine": 1
+									},
+									"text": "TS",
+									"trailing": []
+								}
+							},
+							"operator": {
+								"leading": [],
+								"origin": {
+									"beginColumn": 3,
+									"beginLine": 1,
+									"endColumn": 4,
+									"endLine": 1
+								},
+								"text": ".",
+								"trailing": []
+							},
+							"index": {
+								"leading": [],
+								"origin": {
+									"beginColumn": 4,
+									"beginLine": 1,
+									"endColumn": 10,
+									"endLine": 1
+								},
+								"text": "import",
+								"trailing": []
+							}
+						},
+						"open": {
+							"leading": [],
+							"origin": {
+								"beginColumn": 10,
+								"beginLine": 1,
+								"endColumn": 11,
+								"endLine": 1
+							},
+							"text": "(",
+							"trailing": []
+						},
+						"arguments": [
+							{
+								"node": {
+									"type": "Global",
+									"location": {
+										"beginColumn": 11,
+										"beginLine": 1,
+										"endColumn": 17,
+										"endLine": 1
+									},
+									"name": {
+										"leading": [],
+										"origin": {
+											"beginColumn": 11,
+											"beginLine": 1,
+											"endColumn": 17,
+											"endLine": 1
+										},
+										"text": "script",
+										"trailing": []
+									}
+								},
+								"separator": {
+									"leading": [],
+									"origin": {
+										"beginColumn": 17,
+										"beginLine": 1,
+										"endColumn": 18,
+										"endLine": 1
+									},
+									"text": ",",
+									"trailing": [
+										{
+											"kind": "whitespace",
+											"text": " "
+										}
+									]
+								}
+							},
+							{
+								"node": {
+									"type": "IndexName",
+									"location": {
+										"beginColumn": 19,
+										"beginLine": 1,
+										"endColumn": 32,
+										"endLine": 1
+									},
+									"expr": {
+										"type": "Global",
+										"location": {
+											"beginColumn": 19,
+											"beginLine": 1,
+											"endColumn": 25,
+											"endLine": 1
+										},
+										"name": {
+											"leading": [],
+											"origin": {
+												"beginColumn": 19,
+												"beginLine": 1,
+												"endColumn": 25,
+												"endLine": 1
+											},
+											"text": "script",
+											"trailing": []
+										}
+									},
+									"operator": {
+										"leading": [],
+										"origin": {
+											"beginColumn": 25,
+											"beginLine": 1,
+											"endColumn": 26,
+											"endLine": 1
+										},
+										"text": ".",
+										"trailing": []
+									},
+									"index": {
+										"leading": [],
+										"origin": {
+											"beginColumn": 26,
+											"beginLine": 1,
+											"endColumn": 32,
+											"endLine": 1
+										},
+										"text": "Parent",
+										"trailing": []
+									}
+								},
+								"separator": {
+									"leading": [],
+									"origin": {
+										"beginColumn": 32,
+										"beginLine": 1,
+										"endColumn": 33,
+										"endLine": 1
+									},
+									"text": ",",
+									"trailing": [
+										{
+											"kind": "whitespace",
+											"text": " "
+										}
+									]
+								}
+							},
+							{
+								"node": {
+									"type": "String",
+									"location": {
+										"beginColumn": 34,
+										"beginLine": 1,
+										"endColumn": 37,
+										"endLine": 1
+									},
+									"token": {
+										"leading": [],
+										"origin": {
+											"beginColumn": 34,
+											"beginLine": 1,
+											"endColumn": 37,
+											"endLine": 1
+										},
+										"text": "\"a\"",
+										"trailing": []
+									}
+								},
+								"separator": {
+									"leading": [],
+									"origin": {
+										"beginColumn": 37,
+										"beginLine": 1,
+										"endColumn": 38,
+										"endLine": 1
+									},
+									"text": ",",
+									"trailing": [
+										{
+											"kind": "whitespace",
+											"text": " "
+										}
+									]
+								}
+							},
+							{
+								"node": {
+									"type": "String",
+									"location": {
+										"beginColumn": 39,
+										"beginLine": 1,
+										"endColumn": 42,
+										"endLine": 1
+									},
+									"token": {
+										"leading": [],
+										"origin": {
+											"beginColumn": 39,
+											"beginLine": 1,
+											"endColumn": 42,
+											"endLine": 1
+										},
+										"text": "\"b\"",
+										"trailing": []
+									}
+								}
+							}
+						],
+						"close": {
+							"leading": [],
+							"origin": {
+								"beginColumn": 42,
+								"beginLine": 1,
+								"endColumn": 43,
+								"endLine": 1
+							},
+							"text": ")",
+							"trailing": [
+								{
+									"kind": "whitespace",
+									"text": "\n"
+								}
+							]
+						}
+					}
+				}
+			]
+		},
+		"eof": {
+			"leading": [],
+			"origin": {
+				"beginColumn": 1,
+				"beginLine": 2,
+				"endColumn": 1,
+				"endLine": 2
+			},
+			"text": "",
+			"trailing": []
+		}
+	},
+	"TS.import(script, TS.getModule(script, \"@rbxts\", \"vide\").src, \"x\")\n": {
+		"type": "Root",
+		"location": {
+			"beginColumn": 1,
+			"beginLine": 1,
+			"endColumn": 1,
+			"endLine": 2
+		},
+		"body": {
+			"type": "Block",
+			"location": {
+				"beginColumn": 1,
+				"beginLine": 1,
+				"endColumn": 1,
+				"endLine": 2
+			},
+			"body": [
+				{
+					"type": "ExprStat",
+					"location": {
+						"beginColumn": 1,
+						"beginLine": 1,
+						"endColumn": 67,
+						"endLine": 1
+					},
+					"expr": {
+						"type": "Call",
+						"location": {
+							"beginColumn": 1,
+							"beginLine": 1,
+							"endColumn": 67,
+							"endLine": 1
+						},
+						"callee": {
+							"type": "IndexName",
+							"location": {
+								"beginColumn": 1,
+								"beginLine": 1,
+								"endColumn": 10,
+								"endLine": 1
+							},
+							"expr": {
+								"type": "Global",
+								"location": {
+									"beginColumn": 1,
+									"beginLine": 1,
+									"endColumn": 3,
+									"endLine": 1
+								},
+								"name": {
+									"leading": [],
+									"origin": {
+										"beginColumn": 1,
+										"beginLine": 1,
+										"endColumn": 3,
+										"endLine": 1
+									},
+									"text": "TS",
+									"trailing": []
+								}
+							},
+							"operator": {
+								"leading": [],
+								"origin": {
+									"beginColumn": 3,
+									"beginLine": 1,
+									"endColumn": 4,
+									"endLine": 1
+								},
+								"text": ".",
+								"trailing": []
+							},
+							"index": {
+								"leading": [],
+								"origin": {
+									"beginColumn": 4,
+									"beginLine": 1,
+									"endColumn": 10,
+									"endLine": 1
+								},
+								"text": "import",
+								"trailing": []
+							}
+						},
+						"open": {
+							"leading": [],
+							"origin": {
+								"beginColumn": 10,
+								"beginLine": 1,
+								"endColumn": 11,
+								"endLine": 1
+							},
+							"text": "(",
+							"trailing": []
+						},
+						"arguments": [
+							{
+								"node": {
+									"type": "Global",
+									"location": {
+										"beginColumn": 11,
+										"beginLine": 1,
+										"endColumn": 17,
+										"endLine": 1
+									},
+									"name": {
+										"leading": [],
+										"origin": {
+											"beginColumn": 11,
+											"beginLine": 1,
+											"endColumn": 17,
+											"endLine": 1
+										},
+										"text": "script",
+										"trailing": []
+									}
+								},
+								"separator": {
+									"leading": [],
+									"origin": {
+										"beginColumn": 17,
+										"beginLine": 1,
+										"endColumn": 18,
+										"endLine": 1
+									},
+									"text": ",",
+									"trailing": [
+										{
+											"kind": "whitespace",
+											"text": " "
+										}
+									]
+								}
+							},
+							{
+								"node": {
+									"type": "IndexName",
+									"location": {
+										"beginColumn": 19,
+										"beginLine": 1,
+										"endColumn": 61,
+										"endLine": 1
+									},
+									"expr": {
+										"type": "Call",
+										"location": {
+											"beginColumn": 19,
+											"beginLine": 1,
+											"endColumn": 57,
+											"endLine": 1
+										},
+										"callee": {
+											"type": "IndexName",
+											"location": {
+												"beginColumn": 19,
+												"beginLine": 1,
+												"endColumn": 31,
+												"endLine": 1
+											},
+											"expr": {
+												"type": "Global",
+												"location": {
+													"beginColumn": 19,
+													"beginLine": 1,
+													"endColumn": 21,
+													"endLine": 1
+												},
+												"name": {
+													"leading": [],
+													"origin": {
+														"beginColumn": 19,
+														"beginLine": 1,
+														"endColumn": 21,
+														"endLine": 1
+													},
+													"text": "TS",
+													"trailing": []
+												}
+											},
+											"operator": {
+												"leading": [],
+												"origin": {
+													"beginColumn": 21,
+													"beginLine": 1,
+													"endColumn": 22,
+													"endLine": 1
+												},
+												"text": ".",
+												"trailing": []
+											},
+											"index": {
+												"leading": [],
+												"origin": {
+													"beginColumn": 22,
+													"beginLine": 1,
+													"endColumn": 31,
+													"endLine": 1
+												},
+												"text": "getModule",
+												"trailing": []
+											}
+										},
+										"open": {
+											"leading": [],
+											"origin": {
+												"beginColumn": 31,
+												"beginLine": 1,
+												"endColumn": 32,
+												"endLine": 1
+											},
+											"text": "(",
+											"trailing": []
+										},
+										"arguments": [
+											{
+												"node": {
+													"type": "Global",
+													"location": {
+														"beginColumn": 32,
+														"beginLine": 1,
+														"endColumn": 38,
+														"endLine": 1
+													},
+													"name": {
+														"leading": [],
+														"origin": {
+															"beginColumn": 32,
+															"beginLine": 1,
+															"endColumn": 38,
+															"endLine": 1
+														},
+														"text": "script",
+														"trailing": []
+													}
+												},
+												"separator": {
+													"leading": [],
+													"origin": {
+														"beginColumn": 38,
+														"beginLine": 1,
+														"endColumn": 39,
+														"endLine": 1
+													},
+													"text": ",",
+													"trailing": [
+														{
+															"kind": "whitespace",
+															"text": " "
+														}
+													]
+												}
+											},
+											{
+												"node": {
+													"type": "String",
+													"location": {
+														"beginColumn": 40,
+														"beginLine": 1,
+														"endColumn": 48,
+														"endLine": 1
+													},
+													"token": {
+														"leading": [],
+														"origin": {
+															"beginColumn": 40,
+															"beginLine": 1,
+															"endColumn": 48,
+															"endLine": 1
+														},
+														"text": "\"@rbxts\"",
+														"trailing": []
+													}
+												},
+												"separator": {
+													"leading": [],
+													"origin": {
+														"beginColumn": 48,
+														"beginLine": 1,
+														"endColumn": 49,
+														"endLine": 1
+													},
+													"text": ",",
+													"trailing": [
+														{
+															"kind": "whitespace",
+															"text": " "
+														}
+													]
+												}
+											},
+											{
+												"node": {
+													"type": "String",
+													"location": {
+														"beginColumn": 50,
+														"beginLine": 1,
+														"endColumn": 56,
+														"endLine": 1
+													},
+													"token": {
+														"leading": [],
+														"origin": {
+															"beginColumn": 50,
+															"beginLine": 1,
+															"endColumn": 56,
+															"endLine": 1
+														},
+														"text": "\"vide\"",
+														"trailing": []
+													}
+												}
+											}
+										],
+										"close": {
+											"leading": [],
+											"origin": {
+												"beginColumn": 56,
+												"beginLine": 1,
+												"endColumn": 57,
+												"endLine": 1
+											},
+											"text": ")",
+											"trailing": []
+										}
+									},
+									"operator": {
+										"leading": [],
+										"origin": {
+											"beginColumn": 57,
+											"beginLine": 1,
+											"endColumn": 58,
+											"endLine": 1
+										},
+										"text": ".",
+										"trailing": []
+									},
+									"index": {
+										"leading": [],
+										"origin": {
+											"beginColumn": 58,
+											"beginLine": 1,
+											"endColumn": 61,
+											"endLine": 1
+										},
+										"text": "src",
+										"trailing": []
+									}
+								},
+								"separator": {
+									"leading": [],
+									"origin": {
+										"beginColumn": 61,
+										"beginLine": 1,
+										"endColumn": 62,
+										"endLine": 1
+									},
+									"text": ",",
+									"trailing": [
+										{
+											"kind": "whitespace",
+											"text": " "
+										}
+									]
+								}
+							},
+							{
+								"node": {
+									"type": "String",
+									"location": {
+										"beginColumn": 63,
+										"beginLine": 1,
+										"endColumn": 66,
+										"endLine": 1
+									},
+									"token": {
+										"leading": [],
+										"origin": {
+											"beginColumn": 63,
+											"beginLine": 1,
+											"endColumn": 66,
+											"endLine": 1
+										},
+										"text": "\"x\"",
+										"trailing": []
+									}
+								}
+							}
+						],
+						"close": {
+							"leading": [],
+							"origin": {
+								"beginColumn": 66,
+								"beginLine": 1,
+								"endColumn": 67,
+								"endLine": 1
+							},
+							"text": ")",
+							"trailing": [
+								{
+									"kind": "whitespace",
+									"text": "\n"
+								}
+							]
+						}
+					}
+				}
+			]
+		},
+		"eof": {
+			"leading": [],
+			"origin": {
+				"beginColumn": 1,
+				"beginLine": 2,
+				"endColumn": 1,
+				"endLine": 2
+			},
+			"text": "",
+			"trailing": []
+		}
+	},
+	"require(path)\n": {
+		"type": "Root",
+		"location": {
+			"beginColumn": 1,
+			"beginLine": 1,
+			"endColumn": 1,
+			"endLine": 2
+		},
+		"body": {
+			"type": "Block",
+			"location": {
+				"beginColumn": 1,
+				"beginLine": 1,
+				"endColumn": 1,
+				"endLine": 2
+			},
+			"body": [
+				{
+					"type": "ExprStat",
+					"location": {
+						"beginColumn": 1,
+						"beginLine": 1,
+						"endColumn": 14,
+						"endLine": 1
+					},
+					"expr": {
+						"type": "Call",
+						"location": {
+							"beginColumn": 1,
+							"beginLine": 1,
+							"endColumn": 14,
+							"endLine": 1
+						},
+						"callee": {
+							"type": "Global",
+							"location": {
+								"beginColumn": 1,
+								"beginLine": 1,
+								"endColumn": 8,
+								"endLine": 1
+							},
+							"name": {
+								"leading": [],
+								"origin": {
+									"beginColumn": 1,
+									"beginLine": 1,
+									"endColumn": 8,
+									"endLine": 1
+								},
+								"text": "require",
+								"trailing": []
+							}
+						},
+						"open": {
+							"leading": [],
+							"origin": {
+								"beginColumn": 8,
+								"beginLine": 1,
+								"endColumn": 9,
+								"endLine": 1
+							},
+							"text": "(",
+							"trailing": []
+						},
+						"arguments": [
+							{
+								"node": {
+									"type": "Global",
+									"location": {
+										"beginColumn": 9,
+										"beginLine": 1,
+										"endColumn": 13,
+										"endLine": 1
+									},
+									"name": {
+										"leading": [],
+										"origin": {
+											"beginColumn": 9,
+											"beginLine": 1,
+											"endColumn": 13,
+											"endLine": 1
+										},
+										"text": "path",
+										"trailing": []
+									}
+								}
+							}
+						],
+						"close": {
+							"leading": [],
+							"origin": {
+								"beginColumn": 13,
+								"beginLine": 1,
+								"endColumn": 14,
+								"endLine": 1
+							},
+							"text": ")",
+							"trailing": [
+								{
+									"kind": "whitespace",
+									"text": "\n"
+								}
+							]
+						}
+					}
+				}
+			]
+		},
+		"eof": {
+			"leading": [],
+			"origin": {
+				"beginColumn": 1,
+				"beginLine": 2,
+				"endColumn": 1,
+				"endLine": 2
+			},
+			"text": "",
+			"trailing": []
+		}
+	},
+	"require(\"a\", \"b\")\n": {
+		"type": "Root",
+		"location": {
+			"beginColumn": 1,
+			"beginLine": 1,
+			"endColumn": 1,
+			"endLine": 2
+		},
+		"body": {
+			"type": "Block",
+			"location": {
+				"beginColumn": 1,
+				"beginLine": 1,
+				"endColumn": 1,
+				"endLine": 2
+			},
+			"body": [
+				{
+					"type": "ExprStat",
+					"location": {
+						"beginColumn": 1,
+						"beginLine": 1,
+						"endColumn": 18,
+						"endLine": 1
+					},
+					"expr": {
+						"type": "Call",
+						"location": {
+							"beginColumn": 1,
+							"beginLine": 1,
+							"endColumn": 18,
+							"endLine": 1
+						},
+						"callee": {
+							"type": "Global",
+							"location": {
+								"beginColumn": 1,
+								"beginLine": 1,
+								"endColumn": 8,
+								"endLine": 1
+							},
+							"name": {
+								"leading": [],
+								"origin": {
+									"beginColumn": 1,
+									"beginLine": 1,
+									"endColumn": 8,
+									"endLine": 1
+								},
+								"text": "require",
+								"trailing": []
+							}
+						},
+						"open": {
+							"leading": [],
+							"origin": {
+								"beginColumn": 8,
+								"beginLine": 1,
+								"endColumn": 9,
+								"endLine": 1
+							},
+							"text": "(",
+							"trailing": []
+						},
+						"arguments": [
+							{
+								"node": {
+									"type": "String",
+									"location": {
+										"beginColumn": 9,
+										"beginLine": 1,
+										"endColumn": 12,
+										"endLine": 1
+									},
+									"token": {
+										"leading": [],
+										"origin": {
+											"beginColumn": 9,
+											"beginLine": 1,
+											"endColumn": 12,
+											"endLine": 1
+										},
+										"text": "\"a\"",
+										"trailing": []
+									}
+								},
+								"separator": {
+									"leading": [],
+									"origin": {
+										"beginColumn": 12,
+										"beginLine": 1,
+										"endColumn": 13,
+										"endLine": 1
+									},
+									"text": ",",
+									"trailing": [
+										{
+											"kind": "whitespace",
+											"text": " "
+										}
+									]
+								}
+							},
+							{
+								"node": {
+									"type": "String",
+									"location": {
+										"beginColumn": 14,
+										"beginLine": 1,
+										"endColumn": 17,
+										"endLine": 1
+									},
+									"token": {
+										"leading": [],
+										"origin": {
+											"beginColumn": 14,
+											"beginLine": 1,
+											"endColumn": 17,
+											"endLine": 1
+										},
+										"text": "\"b\"",
+										"trailing": []
+									}
+								}
+							}
+						],
+						"close": {
+							"leading": [],
+							"origin": {
+								"beginColumn": 17,
+								"beginLine": 1,
+								"endColumn": 18,
+								"endLine": 1
+							},
+							"text": ")",
+							"trailing": [
+								{
+									"kind": "whitespace",
+									"text": "\n"
+								}
+							]
+						}
+					}
+				}
+			]
+		},
+		"eof": {
+			"leading": [],
+			"origin": {
+				"beginColumn": 1,
+				"beginLine": 2,
+				"endColumn": 1,
+				"endLine": 2
+			},
+			"text": "",
+			"trailing": []
+		}
+	},
+	"require()\n": {
+		"type": "Root",
+		"location": {
+			"beginColumn": 1,
+			"beginLine": 1,
+			"endColumn": 1,
+			"endLine": 2
+		},
+		"body": {
+			"type": "Block",
+			"location": {
+				"beginColumn": 1,
+				"beginLine": 1,
+				"endColumn": 1,
+				"endLine": 2
+			},
+			"body": [
+				{
+					"type": "ExprStat",
+					"location": {
+						"beginColumn": 1,
+						"beginLine": 1,
+						"endColumn": 10,
+						"endLine": 1
+					},
+					"expr": {
+						"type": "Call",
+						"location": {
+							"beginColumn": 1,
+							"beginLine": 1,
+							"endColumn": 10,
+							"endLine": 1
+						},
+						"callee": {
+							"type": "Global",
+							"location": {
+								"beginColumn": 1,
+								"beginLine": 1,
+								"endColumn": 8,
+								"endLine": 1
+							},
+							"name": {
+								"leading": [],
+								"origin": {
+									"beginColumn": 1,
+									"beginLine": 1,
+									"endColumn": 8,
+									"endLine": 1
+								},
+								"text": "require",
+								"trailing": []
+							}
+						},
+						"open": {
+							"leading": [],
+							"origin": {
+								"beginColumn": 8,
+								"beginLine": 1,
+								"endColumn": 9,
+								"endLine": 1
+							},
+							"text": "(",
+							"trailing": []
+						},
+						"arguments": [],
+						"close": {
+							"leading": [],
+							"origin": {
+								"beginColumn": 9,
+								"beginLine": 1,
+								"endColumn": 10,
+								"endLine": 1
+							},
+							"text": ")",
+							"trailing": [
+								{
+									"kind": "whitespace",
+									"text": "\n"
+								}
+							]
+						}
+					}
+				}
+			]
+		},
+		"eof": {
+			"leading": [],
+			"origin": {
+				"beginColumn": 1,
+				"beginLine": 2,
+				"endColumn": 1,
+				"endLine": 2
+			},
+			"text": "",
+			"trailing": []
+		}
+	},
+	"require(script:Destroy(\"A\"))\n": {
+		"type": "Root",
+		"location": {
+			"beginColumn": 1,
+			"beginLine": 1,
+			"endColumn": 1,
+			"endLine": 2
+		},
+		"body": {
+			"type": "Block",
+			"location": {
+				"beginColumn": 1,
+				"beginLine": 1,
+				"endColumn": 1,
+				"endLine": 2
+			},
+			"body": [
+				{
+					"type": "ExprStat",
+					"location": {
+						"beginColumn": 1,
+						"beginLine": 1,
+						"endColumn": 29,
+						"endLine": 1
+					},
+					"expr": {
+						"type": "Call",
+						"location": {
+							"beginColumn": 1,
+							"beginLine": 1,
+							"endColumn": 29,
+							"endLine": 1
+						},
+						"callee": {
+							"type": "Global",
+							"location": {
+								"beginColumn": 1,
+								"beginLine": 1,
+								"endColumn": 8,
+								"endLine": 1
+							},
+							"name": {
+								"leading": [],
+								"origin": {
+									"beginColumn": 1,
+									"beginLine": 1,
+									"endColumn": 8,
+									"endLine": 1
+								},
+								"text": "require",
+								"trailing": []
+							}
+						},
+						"open": {
+							"leading": [],
+							"origin": {
+								"beginColumn": 8,
+								"beginLine": 1,
+								"endColumn": 9,
+								"endLine": 1
+							},
+							"text": "(",
+							"trailing": []
+						},
+						"arguments": [
+							{
+								"node": {
+									"type": "Call",
+									"location": {
+										"beginColumn": 9,
+										"beginLine": 1,
+										"endColumn": 28,
+										"endLine": 1
+									},
+									"callee": {
+										"type": "IndexName",
+										"location": {
+											"beginColumn": 9,
+											"beginLine": 1,
+											"endColumn": 23,
+											"endLine": 1
+										},
+										"expr": {
+											"type": "Global",
+											"location": {
+												"beginColumn": 9,
+												"beginLine": 1,
+												"endColumn": 15,
+												"endLine": 1
+											},
+											"name": {
+												"leading": [],
+												"origin": {
+													"beginColumn": 9,
+													"beginLine": 1,
+													"endColumn": 15,
+													"endLine": 1
+												},
+												"text": "script",
+												"trailing": []
+											}
+										},
+										"operator": {
+											"leading": [],
+											"origin": {
+												"beginColumn": 15,
+												"beginLine": 1,
+												"endColumn": 16,
+												"endLine": 1
+											},
+											"text": ":",
+											"trailing": []
+										},
+										"index": {
+											"leading": [],
+											"origin": {
+												"beginColumn": 16,
+												"beginLine": 1,
+												"endColumn": 23,
+												"endLine": 1
+											},
+											"text": "Destroy",
+											"trailing": []
+										}
+									},
+									"open": {
+										"leading": [],
+										"origin": {
+											"beginColumn": 23,
+											"beginLine": 1,
+											"endColumn": 24,
+											"endLine": 1
+										},
+										"text": "(",
+										"trailing": []
+									},
+									"arguments": [
+										{
+											"node": {
+												"type": "String",
+												"location": {
+													"beginColumn": 24,
+													"beginLine": 1,
+													"endColumn": 27,
+													"endLine": 1
+												},
+												"token": {
+													"leading": [],
+													"origin": {
+														"beginColumn": 24,
+														"beginLine": 1,
+														"endColumn": 27,
+														"endLine": 1
+													},
+													"text": "\"A\"",
+													"trailing": []
+												}
+											}
+										}
+									],
+									"close": {
+										"leading": [],
+										"origin": {
+											"beginColumn": 27,
+											"beginLine": 1,
+											"endColumn": 28,
+											"endLine": 1
+										},
+										"text": ")",
+										"trailing": []
+									}
+								}
+							}
+						],
+						"close": {
+							"leading": [],
+							"origin": {
+								"beginColumn": 28,
+								"beginLine": 1,
+								"endColumn": 29,
+								"endLine": 1
+							},
+							"text": ")",
+							"trailing": [
+								{
+									"kind": "whitespace",
+									"text": "\n"
+								}
+							]
+						}
+					}
+				}
+			]
+		},
+		"eof": {
+			"leading": [],
+			"origin": {
+				"beginColumn": 1,
+				"beginLine": 2,
+				"endColumn": 1,
+				"endLine": 2
+			},
+			"text": "",
+			"trailing": []
+		}
+	},
+	"require(script:FindFirstChild(\"A\", true))\n": {
+		"type": "Root",
+		"location": {
+			"beginColumn": 1,
+			"beginLine": 1,
+			"endColumn": 1,
+			"endLine": 2
+		},
+		"body": {
+			"type": "Block",
+			"location": {
+				"beginColumn": 1,
+				"beginLine": 1,
+				"endColumn": 1,
+				"endLine": 2
+			},
+			"body": [
+				{
+					"type": "ExprStat",
+					"location": {
+						"beginColumn": 1,
+						"beginLine": 1,
+						"endColumn": 42,
+						"endLine": 1
+					},
+					"expr": {
+						"type": "Call",
+						"location": {
+							"beginColumn": 1,
+							"beginLine": 1,
+							"endColumn": 42,
+							"endLine": 1
+						},
+						"callee": {
+							"type": "Global",
+							"location": {
+								"beginColumn": 1,
+								"beginLine": 1,
+								"endColumn": 8,
+								"endLine": 1
+							},
+							"name": {
+								"leading": [],
+								"origin": {
+									"beginColumn": 1,
+									"beginLine": 1,
+									"endColumn": 8,
+									"endLine": 1
+								},
+								"text": "require",
+								"trailing": []
+							}
+						},
+						"open": {
+							"leading": [],
+							"origin": {
+								"beginColumn": 8,
+								"beginLine": 1,
+								"endColumn": 9,
+								"endLine": 1
+							},
+							"text": "(",
+							"trailing": []
+						},
+						"arguments": [
+							{
+								"node": {
+									"type": "Call",
+									"location": {
+										"beginColumn": 9,
+										"beginLine": 1,
+										"endColumn": 41,
+										"endLine": 1
+									},
+									"callee": {
+										"type": "IndexName",
+										"location": {
+											"beginColumn": 9,
+											"beginLine": 1,
+											"endColumn": 30,
+											"endLine": 1
+										},
+										"expr": {
+											"type": "Global",
+											"location": {
+												"beginColumn": 9,
+												"beginLine": 1,
+												"endColumn": 15,
+												"endLine": 1
+											},
+											"name": {
+												"leading": [],
+												"origin": {
+													"beginColumn": 9,
+													"beginLine": 1,
+													"endColumn": 15,
+													"endLine": 1
+												},
+												"text": "script",
+												"trailing": []
+											}
+										},
+										"operator": {
+											"leading": [],
+											"origin": {
+												"beginColumn": 15,
+												"beginLine": 1,
+												"endColumn": 16,
+												"endLine": 1
+											},
+											"text": ":",
+											"trailing": []
+										},
+										"index": {
+											"leading": [],
+											"origin": {
+												"beginColumn": 16,
+												"beginLine": 1,
+												"endColumn": 30,
+												"endLine": 1
+											},
+											"text": "FindFirstChild",
+											"trailing": []
+										}
+									},
+									"open": {
+										"leading": [],
+										"origin": {
+											"beginColumn": 30,
+											"beginLine": 1,
+											"endColumn": 31,
+											"endLine": 1
+										},
+										"text": "(",
+										"trailing": []
+									},
+									"arguments": [
+										{
+											"node": {
+												"type": "String",
+												"location": {
+													"beginColumn": 31,
+													"beginLine": 1,
+													"endColumn": 34,
+													"endLine": 1
+												},
+												"token": {
+													"leading": [],
+													"origin": {
+														"beginColumn": 31,
+														"beginLine": 1,
+														"endColumn": 34,
+														"endLine": 1
+													},
+													"text": "\"A\"",
+													"trailing": []
+												}
+											},
+											"separator": {
+												"leading": [],
+												"origin": {
+													"beginColumn": 34,
+													"beginLine": 1,
+													"endColumn": 35,
+													"endLine": 1
+												},
+												"text": ",",
+												"trailing": [
+													{
+														"kind": "whitespace",
+														"text": " "
+													}
+												]
+											}
+										},
+										{
+											"node": {
+												"type": "Bool",
+												"location": {
+													"beginColumn": 36,
+													"beginLine": 1,
+													"endColumn": 40,
+													"endLine": 1
+												},
+												"token": {
+													"leading": [],
+													"origin": {
+														"beginColumn": 36,
+														"beginLine": 1,
+														"endColumn": 40,
+														"endLine": 1
+													},
+													"text": "true",
+													"trailing": []
+												}
+											}
+										}
+									],
+									"close": {
+										"leading": [],
+										"origin": {
+											"beginColumn": 40,
+											"beginLine": 1,
+											"endColumn": 41,
+											"endLine": 1
+										},
+										"text": ")",
+										"trailing": []
+									}
+								}
+							}
+						],
+						"close": {
+							"leading": [],
+							"origin": {
+								"beginColumn": 41,
+								"beginLine": 1,
+								"endColumn": 42,
+								"endLine": 1
+							},
+							"text": ")",
+							"trailing": [
+								{
+									"kind": "whitespace",
+									"text": "\n"
+								}
+							]
+						}
+					}
+				}
+			]
+		},
+		"eof": {
+			"leading": [],
+			"origin": {
+				"beginColumn": 1,
+				"beginLine": 2,
+				"endColumn": 1,
+				"endLine": 2
+			},
+			"text": "",
+			"trailing": []
+		}
+	},
+	"require(script[name])\n": {
+		"type": "Root",
+		"location": {
+			"beginColumn": 1,
+			"beginLine": 1,
+			"endColumn": 1,
+			"endLine": 2
+		},
+		"body": {
+			"type": "Block",
+			"location": {
+				"beginColumn": 1,
+				"beginLine": 1,
+				"endColumn": 1,
+				"endLine": 2
+			},
+			"body": [
+				{
+					"type": "ExprStat",
+					"location": {
+						"beginColumn": 1,
+						"beginLine": 1,
+						"endColumn": 22,
+						"endLine": 1
+					},
+					"expr": {
+						"type": "Call",
+						"location": {
+							"beginColumn": 1,
+							"beginLine": 1,
+							"endColumn": 22,
+							"endLine": 1
+						},
+						"callee": {
+							"type": "Global",
+							"location": {
+								"beginColumn": 1,
+								"beginLine": 1,
+								"endColumn": 8,
+								"endLine": 1
+							},
+							"name": {
+								"leading": [],
+								"origin": {
+									"beginColumn": 1,
+									"beginLine": 1,
+									"endColumn": 8,
+									"endLine": 1
+								},
+								"text": "require",
+								"trailing": []
+							}
+						},
+						"open": {
+							"leading": [],
+							"origin": {
+								"beginColumn": 8,
+								"beginLine": 1,
+								"endColumn": 9,
+								"endLine": 1
+							},
+							"text": "(",
+							"trailing": []
+						},
+						"arguments": [
+							{
+								"node": {
+									"type": "IndexExpr",
+									"location": {
+										"beginColumn": 9,
+										"beginLine": 1,
+										"endColumn": 21,
+										"endLine": 1
+									},
+									"expr": {
+										"type": "Global",
+										"location": {
+											"beginColumn": 9,
+											"beginLine": 1,
+											"endColumn": 15,
+											"endLine": 1
+										},
+										"name": {
+											"leading": [],
+											"origin": {
+												"beginColumn": 9,
+												"beginLine": 1,
+												"endColumn": 15,
+												"endLine": 1
+											},
+											"text": "script",
+											"trailing": []
+										}
+									},
+									"open": {
+										"leading": [],
+										"origin": {
+											"beginColumn": 15,
+											"beginLine": 1,
+											"endColumn": 16,
+											"endLine": 1
+										},
+										"text": "[",
+										"trailing": []
+									},
+									"index": {
+										"type": "Global",
+										"location": {
+											"beginColumn": 16,
+											"beginLine": 1,
+											"endColumn": 20,
+											"endLine": 1
+										},
+										"name": {
+											"leading": [],
+											"origin": {
+												"beginColumn": 16,
+												"beginLine": 1,
+												"endColumn": 20,
+												"endLine": 1
+											},
+											"text": "name",
+											"trailing": []
+										}
+									},
+									"close": {
+										"leading": [],
+										"origin": {
+											"beginColumn": 20,
+											"beginLine": 1,
+											"endColumn": 21,
+											"endLine": 1
+										},
+										"text": "]",
+										"trailing": []
+									}
+								}
+							}
+						],
+						"close": {
+							"leading": [],
+							"origin": {
+								"beginColumn": 21,
+								"beginLine": 1,
+								"endColumn": 22,
+								"endLine": 1
+							},
+							"text": ")",
+							"trailing": [
+								{
+									"kind": "whitespace",
+									"text": "\n"
+								}
+							]
+						}
+					}
+				}
+			]
+		},
+		"eof": {
+			"leading": [],
+			"origin": {
+				"beginColumn": 1,
+				"beginLine": 2,
+				"endColumn": 1,
+				"endLine": 2
+			},
+			"text": "",
+			"trailing": []
+		}
+	},
+	"require(script:WaitForChild())\n": {
+		"type": "Root",
+		"location": {
+			"beginColumn": 1,
+			"beginLine": 1,
+			"endColumn": 1,
+			"endLine": 2
+		},
+		"body": {
+			"type": "Block",
+			"location": {
+				"beginColumn": 1,
+				"beginLine": 1,
+				"endColumn": 1,
+				"endLine": 2
+			},
+			"body": [
+				{
+					"type": "ExprStat",
+					"location": {
+						"beginColumn": 1,
+						"beginLine": 1,
+						"endColumn": 31,
+						"endLine": 1
+					},
+					"expr": {
+						"type": "Call",
+						"location": {
+							"beginColumn": 1,
+							"beginLine": 1,
+							"endColumn": 31,
+							"endLine": 1
+						},
+						"callee": {
+							"type": "Global",
+							"location": {
+								"beginColumn": 1,
+								"beginLine": 1,
+								"endColumn": 8,
+								"endLine": 1
+							},
+							"name": {
+								"leading": [],
+								"origin": {
+									"beginColumn": 1,
+									"beginLine": 1,
+									"endColumn": 8,
+									"endLine": 1
+								},
+								"text": "require",
+								"trailing": []
+							}
+						},
+						"open": {
+							"leading": [],
+							"origin": {
+								"beginColumn": 8,
+								"beginLine": 1,
+								"endColumn": 9,
+								"endLine": 1
+							},
+							"text": "(",
+							"trailing": []
+						},
+						"arguments": [
+							{
+								"node": {
+									"type": "Call",
+									"location": {
+										"beginColumn": 9,
+										"beginLine": 1,
+										"endColumn": 30,
+										"endLine": 1
+									},
+									"callee": {
+										"type": "IndexName",
+										"location": {
+											"beginColumn": 9,
+											"beginLine": 1,
+											"endColumn": 28,
+											"endLine": 1
+										},
+										"expr": {
+											"type": "Global",
+											"location": {
+												"beginColumn": 9,
+												"beginLine": 1,
+												"endColumn": 15,
+												"endLine": 1
+											},
+											"name": {
+												"leading": [],
+												"origin": {
+													"beginColumn": 9,
+													"beginLine": 1,
+													"endColumn": 15,
+													"endLine": 1
+												},
+												"text": "script",
+												"trailing": []
+											}
+										},
+										"operator": {
+											"leading": [],
+											"origin": {
+												"beginColumn": 15,
+												"beginLine": 1,
+												"endColumn": 16,
+												"endLine": 1
+											},
+											"text": ":",
+											"trailing": []
+										},
+										"index": {
+											"leading": [],
+											"origin": {
+												"beginColumn": 16,
+												"beginLine": 1,
+												"endColumn": 28,
+												"endLine": 1
+											},
+											"text": "WaitForChild",
+											"trailing": []
+										}
+									},
+									"open": {
+										"leading": [],
+										"origin": {
+											"beginColumn": 28,
+											"beginLine": 1,
+											"endColumn": 29,
+											"endLine": 1
+										},
+										"text": "(",
+										"trailing": []
+									},
+									"arguments": [],
+									"close": {
+										"leading": [],
+										"origin": {
+											"beginColumn": 29,
+											"beginLine": 1,
+											"endColumn": 30,
+											"endLine": 1
+										},
+										"text": ")",
+										"trailing": []
+									}
+								}
+							}
+						],
+						"close": {
+							"leading": [],
+							"origin": {
+								"beginColumn": 30,
+								"beginLine": 1,
+								"endColumn": 31,
+								"endLine": 1
+							},
+							"text": ")",
+							"trailing": [
+								{
+									"kind": "whitespace",
+									"text": "\n"
+								}
+							]
+						}
+					}
+				}
+			]
+		},
+		"eof": {
+			"leading": [],
+			"origin": {
+				"beginColumn": 1,
+				"beginLine": 2,
+				"endColumn": 1,
+				"endLine": 2
+			},
+			"text": "",
+			"trailing": []
+		}
+	},
+	"require(game:GetService(name))\n": {
+		"type": "Root",
+		"location": {
+			"beginColumn": 1,
+			"beginLine": 1,
+			"endColumn": 1,
+			"endLine": 2
+		},
+		"body": {
+			"type": "Block",
+			"location": {
+				"beginColumn": 1,
+				"beginLine": 1,
+				"endColumn": 1,
+				"endLine": 2
+			},
+			"body": [
+				{
+					"type": "ExprStat",
+					"location": {
+						"beginColumn": 1,
+						"beginLine": 1,
+						"endColumn": 31,
+						"endLine": 1
+					},
+					"expr": {
+						"type": "Call",
+						"location": {
+							"beginColumn": 1,
+							"beginLine": 1,
+							"endColumn": 31,
+							"endLine": 1
+						},
+						"callee": {
+							"type": "Global",
+							"location": {
+								"beginColumn": 1,
+								"beginLine": 1,
+								"endColumn": 8,
+								"endLine": 1
+							},
+							"name": {
+								"leading": [],
+								"origin": {
+									"beginColumn": 1,
+									"beginLine": 1,
+									"endColumn": 8,
+									"endLine": 1
+								},
+								"text": "require",
+								"trailing": []
+							}
+						},
+						"open": {
+							"leading": [],
+							"origin": {
+								"beginColumn": 8,
+								"beginLine": 1,
+								"endColumn": 9,
+								"endLine": 1
+							},
+							"text": "(",
+							"trailing": []
+						},
+						"arguments": [
+							{
+								"node": {
+									"type": "Call",
+									"location": {
+										"beginColumn": 9,
+										"beginLine": 1,
+										"endColumn": 30,
+										"endLine": 1
+									},
+									"callee": {
+										"type": "IndexName",
+										"location": {
+											"beginColumn": 9,
+											"beginLine": 1,
+											"endColumn": 24,
+											"endLine": 1
+										},
+										"expr": {
+											"type": "Global",
+											"location": {
+												"beginColumn": 9,
+												"beginLine": 1,
+												"endColumn": 13,
+												"endLine": 1
+											},
+											"name": {
+												"leading": [],
+												"origin": {
+													"beginColumn": 9,
+													"beginLine": 1,
+													"endColumn": 13,
+													"endLine": 1
+												},
+												"text": "game",
+												"trailing": []
+											}
+										},
+										"operator": {
+											"leading": [],
+											"origin": {
+												"beginColumn": 13,
+												"beginLine": 1,
+												"endColumn": 14,
+												"endLine": 1
+											},
+											"text": ":",
+											"trailing": []
+										},
+										"index": {
+											"leading": [],
+											"origin": {
+												"beginColumn": 14,
+												"beginLine": 1,
+												"endColumn": 24,
+												"endLine": 1
+											},
+											"text": "GetService",
+											"trailing": []
+										}
+									},
+									"open": {
+										"leading": [],
+										"origin": {
+											"beginColumn": 24,
+											"beginLine": 1,
+											"endColumn": 25,
+											"endLine": 1
+										},
+										"text": "(",
+										"trailing": []
+									},
+									"arguments": [
+										{
+											"node": {
+												"type": "Global",
+												"location": {
+													"beginColumn": 25,
+													"beginLine": 1,
+													"endColumn": 29,
+													"endLine": 1
+												},
+												"name": {
+													"leading": [],
+													"origin": {
+														"beginColumn": 25,
+														"beginLine": 1,
+														"endColumn": 29,
+														"endLine": 1
+													},
+													"text": "name",
+													"trailing": []
+												}
+											}
+										}
+									],
+									"close": {
+										"leading": [],
+										"origin": {
+											"beginColumn": 29,
+											"beginLine": 1,
+											"endColumn": 30,
+											"endLine": 1
+										},
+										"text": ")",
+										"trailing": []
+									}
+								}
+							}
+						],
+						"close": {
+							"leading": [],
+							"origin": {
+								"beginColumn": 30,
+								"beginLine": 1,
+								"endColumn": 31,
+								"endLine": 1
+							},
+							"text": ")",
+							"trailing": [
+								{
+									"kind": "whitespace",
+									"text": "\n"
+								}
+							]
+						}
+					}
+				}
+			]
+		},
+		"eof": {
+			"leading": [],
+			"origin": {
+				"beginColumn": 1,
+				"beginLine": 2,
+				"endColumn": 1,
+				"endLine": 2
+			},
+			"text": "",
+			"trailing": []
+		}
+	},
+	"require(game.GetService(\"Workspace\"))\n": {
+		"type": "Root",
+		"location": {
+			"beginColumn": 1,
+			"beginLine": 1,
+			"endColumn": 1,
+			"endLine": 2
+		},
+		"body": {
+			"type": "Block",
+			"location": {
+				"beginColumn": 1,
+				"beginLine": 1,
+				"endColumn": 1,
+				"endLine": 2
+			},
+			"body": [
+				{
+					"type": "ExprStat",
+					"location": {
+						"beginColumn": 1,
+						"beginLine": 1,
+						"endColumn": 38,
+						"endLine": 1
+					},
+					"expr": {
+						"type": "Call",
+						"location": {
+							"beginColumn": 1,
+							"beginLine": 1,
+							"endColumn": 38,
+							"endLine": 1
+						},
+						"callee": {
+							"type": "Global",
+							"location": {
+								"beginColumn": 1,
+								"beginLine": 1,
+								"endColumn": 8,
+								"endLine": 1
+							},
+							"name": {
+								"leading": [],
+								"origin": {
+									"beginColumn": 1,
+									"beginLine": 1,
+									"endColumn": 8,
+									"endLine": 1
+								},
+								"text": "require",
+								"trailing": []
+							}
+						},
+						"open": {
+							"leading": [],
+							"origin": {
+								"beginColumn": 8,
+								"beginLine": 1,
+								"endColumn": 9,
+								"endLine": 1
+							},
+							"text": "(",
+							"trailing": []
+						},
+						"arguments": [
+							{
+								"node": {
+									"type": "Call",
+									"location": {
+										"beginColumn": 9,
+										"beginLine": 1,
+										"endColumn": 37,
+										"endLine": 1
+									},
+									"callee": {
+										"type": "IndexName",
+										"location": {
+											"beginColumn": 9,
+											"beginLine": 1,
+											"endColumn": 24,
+											"endLine": 1
+										},
+										"expr": {
+											"type": "Global",
+											"location": {
+												"beginColumn": 9,
+												"beginLine": 1,
+												"endColumn": 13,
+												"endLine": 1
+											},
+											"name": {
+												"leading": [],
+												"origin": {
+													"beginColumn": 9,
+													"beginLine": 1,
+													"endColumn": 13,
+													"endLine": 1
+												},
+												"text": "game",
+												"trailing": []
+											}
+										},
+										"operator": {
+											"leading": [],
+											"origin": {
+												"beginColumn": 13,
+												"beginLine": 1,
+												"endColumn": 14,
+												"endLine": 1
+											},
+											"text": ".",
+											"trailing": []
+										},
+										"index": {
+											"leading": [],
+											"origin": {
+												"beginColumn": 14,
+												"beginLine": 1,
+												"endColumn": 24,
+												"endLine": 1
+											},
+											"text": "GetService",
+											"trailing": []
+										}
+									},
+									"open": {
+										"leading": [],
+										"origin": {
+											"beginColumn": 24,
+											"beginLine": 1,
+											"endColumn": 25,
+											"endLine": 1
+										},
+										"text": "(",
+										"trailing": []
+									},
+									"arguments": [
+										{
+											"node": {
+												"type": "String",
+												"location": {
+													"beginColumn": 25,
+													"beginLine": 1,
+													"endColumn": 36,
+													"endLine": 1
+												},
+												"token": {
+													"leading": [],
+													"origin": {
+														"beginColumn": 25,
+														"beginLine": 1,
+														"endColumn": 36,
+														"endLine": 1
+													},
+													"text": "\"Workspace\"",
+													"trailing": []
+												}
+											}
+										}
+									],
+									"close": {
+										"leading": [],
+										"origin": {
+											"beginColumn": 36,
+											"beginLine": 1,
+											"endColumn": 37,
+											"endLine": 1
+										},
+										"text": ")",
+										"trailing": []
+									}
+								}
+							}
+						],
+						"close": {
+							"leading": [],
+							"origin": {
+								"beginColumn": 37,
+								"beginLine": 1,
+								"endColumn": 38,
+								"endLine": 1
+							},
+							"text": ")",
+							"trailing": [
+								{
+									"kind": "whitespace",
+									"text": "\n"
+								}
+							]
+						}
+					}
+				}
+			]
+		},
+		"eof": {
+			"leading": [],
+			"origin": {
+				"beginColumn": 1,
+				"beginLine": 2,
+				"endColumn": 1,
+				"endLine": 2
+			},
+			"text": "",
+			"trailing": []
+		}
+	},
+	"require(other:GetService(\"Workspace\"))\n": {
+		"type": "Root",
+		"location": {
+			"beginColumn": 1,
+			"beginLine": 1,
+			"endColumn": 1,
+			"endLine": 2
+		},
+		"body": {
+			"type": "Block",
+			"location": {
+				"beginColumn": 1,
+				"beginLine": 1,
+				"endColumn": 1,
+				"endLine": 2
+			},
+			"body": [
+				{
+					"type": "ExprStat",
+					"location": {
+						"beginColumn": 1,
+						"beginLine": 1,
+						"endColumn": 39,
+						"endLine": 1
+					},
+					"expr": {
+						"type": "Call",
+						"location": {
+							"beginColumn": 1,
+							"beginLine": 1,
+							"endColumn": 39,
+							"endLine": 1
+						},
+						"callee": {
+							"type": "Global",
+							"location": {
+								"beginColumn": 1,
+								"beginLine": 1,
+								"endColumn": 8,
+								"endLine": 1
+							},
+							"name": {
+								"leading": [],
+								"origin": {
+									"beginColumn": 1,
+									"beginLine": 1,
+									"endColumn": 8,
+									"endLine": 1
+								},
+								"text": "require",
+								"trailing": []
+							}
+						},
+						"open": {
+							"leading": [],
+							"origin": {
+								"beginColumn": 8,
+								"beginLine": 1,
+								"endColumn": 9,
+								"endLine": 1
+							},
+							"text": "(",
+							"trailing": []
+						},
+						"arguments": [
+							{
+								"node": {
+									"type": "Call",
+									"location": {
+										"beginColumn": 9,
+										"beginLine": 1,
+										"endColumn": 38,
+										"endLine": 1
+									},
+									"callee": {
+										"type": "IndexName",
+										"location": {
+											"beginColumn": 9,
+											"beginLine": 1,
+											"endColumn": 25,
+											"endLine": 1
+										},
+										"expr": {
+											"type": "Global",
+											"location": {
+												"beginColumn": 9,
+												"beginLine": 1,
+												"endColumn": 14,
+												"endLine": 1
+											},
+											"name": {
+												"leading": [],
+												"origin": {
+													"beginColumn": 9,
+													"beginLine": 1,
+													"endColumn": 14,
+													"endLine": 1
+												},
+												"text": "other",
+												"trailing": []
+											}
+										},
+										"operator": {
+											"leading": [],
+											"origin": {
+												"beginColumn": 14,
+												"beginLine": 1,
+												"endColumn": 15,
+												"endLine": 1
+											},
+											"text": ":",
+											"trailing": []
+										},
+										"index": {
+											"leading": [],
+											"origin": {
+												"beginColumn": 15,
+												"beginLine": 1,
+												"endColumn": 25,
+												"endLine": 1
+											},
+											"text": "GetService",
+											"trailing": []
+										}
+									},
+									"open": {
+										"leading": [],
+										"origin": {
+											"beginColumn": 25,
+											"beginLine": 1,
+											"endColumn": 26,
+											"endLine": 1
+										},
+										"text": "(",
+										"trailing": []
+									},
+									"arguments": [
+										{
+											"node": {
+												"type": "String",
+												"location": {
+													"beginColumn": 26,
+													"beginLine": 1,
+													"endColumn": 37,
+													"endLine": 1
+												},
+												"token": {
+													"leading": [],
+													"origin": {
+														"beginColumn": 26,
+														"beginLine": 1,
+														"endColumn": 37,
+														"endLine": 1
+													},
+													"text": "\"Workspace\"",
+													"trailing": []
+												}
+											}
+										}
+									],
+									"close": {
+										"leading": [],
+										"origin": {
+											"beginColumn": 37,
+											"beginLine": 1,
+											"endColumn": 38,
+											"endLine": 1
+										},
+										"text": ")",
+										"trailing": []
+									}
+								}
+							}
+						],
+						"close": {
+							"leading": [],
+							"origin": {
+								"beginColumn": 38,
+								"beginLine": 1,
+								"endColumn": 39,
+								"endLine": 1
+							},
+							"text": ")",
+							"trailing": [
+								{
+									"kind": "whitespace",
+									"text": "\n"
+								}
+							]
+						}
+					}
+				}
+			]
+		},
+		"eof": {
+			"leading": [],
+			"origin": {
+				"beginColumn": 1,
+				"beginLine": 2,
+				"endColumn": 1,
+				"endLine": 2
+			},
+			"text": "",
+			"trailing": []
+		}
+	},
+	"require(load(\"x\").Child)\n": {
+		"type": "Root",
+		"location": {
+			"beginColumn": 1,
+			"beginLine": 1,
+			"endColumn": 1,
+			"endLine": 2
+		},
+		"body": {
+			"type": "Block",
+			"location": {
+				"beginColumn": 1,
+				"beginLine": 1,
+				"endColumn": 1,
+				"endLine": 2
+			},
+			"body": [
+				{
+					"type": "ExprStat",
+					"location": {
+						"beginColumn": 1,
+						"beginLine": 1,
+						"endColumn": 25,
+						"endLine": 1
+					},
+					"expr": {
+						"type": "Call",
+						"location": {
+							"beginColumn": 1,
+							"beginLine": 1,
+							"endColumn": 25,
+							"endLine": 1
+						},
+						"callee": {
+							"type": "Global",
+							"location": {
+								"beginColumn": 1,
+								"beginLine": 1,
+								"endColumn": 8,
+								"endLine": 1
+							},
+							"name": {
+								"leading": [],
+								"origin": {
+									"beginColumn": 1,
+									"beginLine": 1,
+									"endColumn": 8,
+									"endLine": 1
+								},
+								"text": "require",
+								"trailing": []
+							}
+						},
+						"open": {
+							"leading": [],
+							"origin": {
+								"beginColumn": 8,
+								"beginLine": 1,
+								"endColumn": 9,
+								"endLine": 1
+							},
+							"text": "(",
+							"trailing": []
+						},
+						"arguments": [
+							{
+								"node": {
+									"type": "IndexName",
+									"location": {
+										"beginColumn": 9,
+										"beginLine": 1,
+										"endColumn": 24,
+										"endLine": 1
+									},
+									"expr": {
+										"type": "Call",
+										"location": {
+											"beginColumn": 9,
+											"beginLine": 1,
+											"endColumn": 18,
+											"endLine": 1
+										},
+										"callee": {
+											"type": "Global",
+											"location": {
+												"beginColumn": 9,
+												"beginLine": 1,
+												"endColumn": 13,
+												"endLine": 1
+											},
+											"name": {
+												"leading": [],
+												"origin": {
+													"beginColumn": 9,
+													"beginLine": 1,
+													"endColumn": 13,
+													"endLine": 1
+												},
+												"text": "load",
+												"trailing": []
+											}
+										},
+										"open": {
+											"leading": [],
+											"origin": {
+												"beginColumn": 13,
+												"beginLine": 1,
+												"endColumn": 14,
+												"endLine": 1
+											},
+											"text": "(",
+											"trailing": []
+										},
+										"arguments": [
+											{
+												"node": {
+													"type": "String",
+													"location": {
+														"beginColumn": 14,
+														"beginLine": 1,
+														"endColumn": 17,
+														"endLine": 1
+													},
+													"token": {
+														"leading": [],
+														"origin": {
+															"beginColumn": 14,
+															"beginLine": 1,
+															"endColumn": 17,
+															"endLine": 1
+														},
+														"text": "\"x\"",
+														"trailing": []
+													}
+												}
+											}
+										],
+										"close": {
+											"leading": [],
+											"origin": {
+												"beginColumn": 17,
+												"beginLine": 1,
+												"endColumn": 18,
+												"endLine": 1
+											},
+											"text": ")",
+											"trailing": []
+										}
+									},
+									"operator": {
+										"leading": [],
+										"origin": {
+											"beginColumn": 18,
+											"beginLine": 1,
+											"endColumn": 19,
+											"endLine": 1
+										},
+										"text": ".",
+										"trailing": []
+									},
+									"index": {
+										"leading": [],
+										"origin": {
+											"beginColumn": 19,
+											"beginLine": 1,
+											"endColumn": 24,
+											"endLine": 1
+										},
+										"text": "Child",
+										"trailing": []
+									}
+								}
+							}
+						],
+						"close": {
+							"leading": [],
+							"origin": {
+								"beginColumn": 24,
+								"beginLine": 1,
+								"endColumn": 25,
+								"endLine": 1
+							},
+							"text": ")",
+							"trailing": [
+								{
+									"kind": "whitespace",
+									"text": "\n"
+								}
+							]
+						}
+					}
+				}
+			]
+		},
+		"eof": {
+			"leading": [],
+			"origin": {
+				"beginColumn": 1,
+				"beginLine": 2,
+				"endColumn": 1,
+				"endLine": 2
+			},
+			"text": "",
+			"trailing": []
+		}
+	},
+	"TS.import(script, script.Parent, name)\n": {
+		"type": "Root",
+		"location": {
+			"beginColumn": 1,
+			"beginLine": 1,
+			"endColumn": 1,
+			"endLine": 2
+		},
+		"body": {
+			"type": "Block",
+			"location": {
+				"beginColumn": 1,
+				"beginLine": 1,
+				"endColumn": 1,
+				"endLine": 2
+			},
+			"body": [
+				{
+					"type": "ExprStat",
+					"location": {
+						"beginColumn": 1,
+						"beginLine": 1,
+						"endColumn": 39,
+						"endLine": 1
+					},
+					"expr": {
+						"type": "Call",
+						"location": {
+							"beginColumn": 1,
+							"beginLine": 1,
+							"endColumn": 39,
+							"endLine": 1
+						},
+						"callee": {
+							"type": "IndexName",
+							"location": {
+								"beginColumn": 1,
+								"beginLine": 1,
+								"endColumn": 10,
+								"endLine": 1
+							},
+							"expr": {
+								"type": "Global",
+								"location": {
+									"beginColumn": 1,
+									"beginLine": 1,
+									"endColumn": 3,
+									"endLine": 1
+								},
+								"name": {
+									"leading": [],
+									"origin": {
+										"beginColumn": 1,
+										"beginLine": 1,
+										"endColumn": 3,
+										"endLine": 1
+									},
+									"text": "TS",
+									"trailing": []
+								}
+							},
+							"operator": {
+								"leading": [],
+								"origin": {
+									"beginColumn": 3,
+									"beginLine": 1,
+									"endColumn": 4,
+									"endLine": 1
+								},
+								"text": ".",
+								"trailing": []
+							},
+							"index": {
+								"leading": [],
+								"origin": {
+									"beginColumn": 4,
+									"beginLine": 1,
+									"endColumn": 10,
+									"endLine": 1
+								},
+								"text": "import",
+								"trailing": []
+							}
+						},
+						"open": {
+							"leading": [],
+							"origin": {
+								"beginColumn": 10,
+								"beginLine": 1,
+								"endColumn": 11,
+								"endLine": 1
+							},
+							"text": "(",
+							"trailing": []
+						},
+						"arguments": [
+							{
+								"node": {
+									"type": "Global",
+									"location": {
+										"beginColumn": 11,
+										"beginLine": 1,
+										"endColumn": 17,
+										"endLine": 1
+									},
+									"name": {
+										"leading": [],
+										"origin": {
+											"beginColumn": 11,
+											"beginLine": 1,
+											"endColumn": 17,
+											"endLine": 1
+										},
+										"text": "script",
+										"trailing": []
+									}
+								},
+								"separator": {
+									"leading": [],
+									"origin": {
+										"beginColumn": 17,
+										"beginLine": 1,
+										"endColumn": 18,
+										"endLine": 1
+									},
+									"text": ",",
+									"trailing": [
+										{
+											"kind": "whitespace",
+											"text": " "
+										}
+									]
+								}
+							},
+							{
+								"node": {
+									"type": "IndexName",
+									"location": {
+										"beginColumn": 19,
+										"beginLine": 1,
+										"endColumn": 32,
+										"endLine": 1
+									},
+									"expr": {
+										"type": "Global",
+										"location": {
+											"beginColumn": 19,
+											"beginLine": 1,
+											"endColumn": 25,
+											"endLine": 1
+										},
+										"name": {
+											"leading": [],
+											"origin": {
+												"beginColumn": 19,
+												"beginLine": 1,
+												"endColumn": 25,
+												"endLine": 1
+											},
+											"text": "script",
+											"trailing": []
+										}
+									},
+									"operator": {
+										"leading": [],
+										"origin": {
+											"beginColumn": 25,
+											"beginLine": 1,
+											"endColumn": 26,
+											"endLine": 1
+										},
+										"text": ".",
+										"trailing": []
+									},
+									"index": {
+										"leading": [],
+										"origin": {
+											"beginColumn": 26,
+											"beginLine": 1,
+											"endColumn": 32,
+											"endLine": 1
+										},
+										"text": "Parent",
+										"trailing": []
+									}
+								},
+								"separator": {
+									"leading": [],
+									"origin": {
+										"beginColumn": 32,
+										"beginLine": 1,
+										"endColumn": 33,
+										"endLine": 1
+									},
+									"text": ",",
+									"trailing": [
+										{
+											"kind": "whitespace",
+											"text": " "
+										}
+									]
+								}
+							},
+							{
+								"node": {
+									"type": "Global",
+									"location": {
+										"beginColumn": 34,
+										"beginLine": 1,
+										"endColumn": 38,
+										"endLine": 1
+									},
+									"name": {
+										"leading": [],
+										"origin": {
+											"beginColumn": 34,
+											"beginLine": 1,
+											"endColumn": 38,
+											"endLine": 1
+										},
+										"text": "name",
+										"trailing": []
+									}
+								}
+							}
+						],
+						"close": {
+							"leading": [],
+							"origin": {
+								"beginColumn": 38,
+								"beginLine": 1,
+								"endColumn": 39,
+								"endLine": 1
+							},
+							"text": ")",
+							"trailing": [
+								{
+									"kind": "whitespace",
+									"text": "\n"
+								}
+							]
+						}
+					}
+				}
+			]
+		},
+		"eof": {
+			"leading": [],
+			"origin": {
+				"beginColumn": 1,
+				"beginLine": 2,
+				"endColumn": 1,
+				"endLine": 2
+			},
+			"text": "",
+			"trailing": []
+		}
+	},
+	"TS.import(script)\n": {
+		"type": "Root",
+		"location": {
+			"beginColumn": 1,
+			"beginLine": 1,
+			"endColumn": 1,
+			"endLine": 2
+		},
+		"body": {
+			"type": "Block",
+			"location": {
+				"beginColumn": 1,
+				"beginLine": 1,
+				"endColumn": 1,
+				"endLine": 2
+			},
+			"body": [
+				{
+					"type": "ExprStat",
+					"location": {
+						"beginColumn": 1,
+						"beginLine": 1,
+						"endColumn": 18,
+						"endLine": 1
+					},
+					"expr": {
+						"type": "Call",
+						"location": {
+							"beginColumn": 1,
+							"beginLine": 1,
+							"endColumn": 18,
+							"endLine": 1
+						},
+						"callee": {
+							"type": "IndexName",
+							"location": {
+								"beginColumn": 1,
+								"beginLine": 1,
+								"endColumn": 10,
+								"endLine": 1
+							},
+							"expr": {
+								"type": "Global",
+								"location": {
+									"beginColumn": 1,
+									"beginLine": 1,
+									"endColumn": 3,
+									"endLine": 1
+								},
+								"name": {
+									"leading": [],
+									"origin": {
+										"beginColumn": 1,
+										"beginLine": 1,
+										"endColumn": 3,
+										"endLine": 1
+									},
+									"text": "TS",
+									"trailing": []
+								}
+							},
+							"operator": {
+								"leading": [],
+								"origin": {
+									"beginColumn": 3,
+									"beginLine": 1,
+									"endColumn": 4,
+									"endLine": 1
+								},
+								"text": ".",
+								"trailing": []
+							},
+							"index": {
+								"leading": [],
+								"origin": {
+									"beginColumn": 4,
+									"beginLine": 1,
+									"endColumn": 10,
+									"endLine": 1
+								},
+								"text": "import",
+								"trailing": []
+							}
+						},
+						"open": {
+							"leading": [],
+							"origin": {
+								"beginColumn": 10,
+								"beginLine": 1,
+								"endColumn": 11,
+								"endLine": 1
+							},
+							"text": "(",
+							"trailing": []
+						},
+						"arguments": [
+							{
+								"node": {
+									"type": "Global",
+									"location": {
+										"beginColumn": 11,
+										"beginLine": 1,
+										"endColumn": 17,
+										"endLine": 1
+									},
+									"name": {
+										"leading": [],
+										"origin": {
+											"beginColumn": 11,
+											"beginLine": 1,
+											"endColumn": 17,
+											"endLine": 1
+										},
+										"text": "script",
+										"trailing": []
+									}
+								}
+							}
+						],
+						"close": {
+							"leading": [],
+							"origin": {
+								"beginColumn": 17,
+								"beginLine": 1,
+								"endColumn": 18,
+								"endLine": 1
+							},
+							"text": ")",
+							"trailing": [
+								{
+									"kind": "whitespace",
+									"text": "\n"
+								}
+							]
+						}
+					}
+				}
+			]
+		},
+		"eof": {
+			"leading": [],
+			"origin": {
+				"beginColumn": 1,
+				"beginLine": 2,
+				"endColumn": 1,
+				"endLine": 2
+			},
+			"text": "",
+			"trailing": []
+		}
+	},
+	"TS.import(script, folder.Child)\n": {
+		"type": "Root",
+		"location": {
+			"beginColumn": 1,
+			"beginLine": 1,
+			"endColumn": 1,
+			"endLine": 2
+		},
+		"body": {
+			"type": "Block",
+			"location": {
+				"beginColumn": 1,
+				"beginLine": 1,
+				"endColumn": 1,
+				"endLine": 2
+			},
+			"body": [
+				{
+					"type": "ExprStat",
+					"location": {
+						"beginColumn": 1,
+						"beginLine": 1,
+						"endColumn": 32,
+						"endLine": 1
+					},
+					"expr": {
+						"type": "Call",
+						"location": {
+							"beginColumn": 1,
+							"beginLine": 1,
+							"endColumn": 32,
+							"endLine": 1
+						},
+						"callee": {
+							"type": "IndexName",
+							"location": {
+								"beginColumn": 1,
+								"beginLine": 1,
+								"endColumn": 10,
+								"endLine": 1
+							},
+							"expr": {
+								"type": "Global",
+								"location": {
+									"beginColumn": 1,
+									"beginLine": 1,
+									"endColumn": 3,
+									"endLine": 1
+								},
+								"name": {
+									"leading": [],
+									"origin": {
+										"beginColumn": 1,
+										"beginLine": 1,
+										"endColumn": 3,
+										"endLine": 1
+									},
+									"text": "TS",
+									"trailing": []
+								}
+							},
+							"operator": {
+								"leading": [],
+								"origin": {
+									"beginColumn": 3,
+									"beginLine": 1,
+									"endColumn": 4,
+									"endLine": 1
+								},
+								"text": ".",
+								"trailing": []
+							},
+							"index": {
+								"leading": [],
+								"origin": {
+									"beginColumn": 4,
+									"beginLine": 1,
+									"endColumn": 10,
+									"endLine": 1
+								},
+								"text": "import",
+								"trailing": []
+							}
+						},
+						"open": {
+							"leading": [],
+							"origin": {
+								"beginColumn": 10,
+								"beginLine": 1,
+								"endColumn": 11,
+								"endLine": 1
+							},
+							"text": "(",
+							"trailing": []
+						},
+						"arguments": [
+							{
+								"node": {
+									"type": "Global",
+									"location": {
+										"beginColumn": 11,
+										"beginLine": 1,
+										"endColumn": 17,
+										"endLine": 1
+									},
+									"name": {
+										"leading": [],
+										"origin": {
+											"beginColumn": 11,
+											"beginLine": 1,
+											"endColumn": 17,
+											"endLine": 1
+										},
+										"text": "script",
+										"trailing": []
+									}
+								},
+								"separator": {
+									"leading": [],
+									"origin": {
+										"beginColumn": 17,
+										"beginLine": 1,
+										"endColumn": 18,
+										"endLine": 1
+									},
+									"text": ",",
+									"trailing": [
+										{
+											"kind": "whitespace",
+											"text": " "
+										}
+									]
+								}
+							},
+							{
+								"node": {
+									"type": "IndexName",
+									"location": {
+										"beginColumn": 19,
+										"beginLine": 1,
+										"endColumn": 31,
+										"endLine": 1
+									},
+									"expr": {
+										"type": "Global",
+										"location": {
+											"beginColumn": 19,
+											"beginLine": 1,
+											"endColumn": 25,
+											"endLine": 1
+										},
+										"name": {
+											"leading": [],
+											"origin": {
+												"beginColumn": 19,
+												"beginLine": 1,
+												"endColumn": 25,
+												"endLine": 1
+											},
+											"text": "folder",
+											"trailing": []
+										}
+									},
+									"operator": {
+										"leading": [],
+										"origin": {
+											"beginColumn": 25,
+											"beginLine": 1,
+											"endColumn": 26,
+											"endLine": 1
+										},
+										"text": ".",
+										"trailing": []
+									},
+									"index": {
+										"leading": [],
+										"origin": {
+											"beginColumn": 26,
+											"beginLine": 1,
+											"endColumn": 31,
+											"endLine": 1
+										},
+										"text": "Child",
+										"trailing": []
+									}
+								}
+							}
+						],
+						"close": {
+							"leading": [],
+							"origin": {
+								"beginColumn": 31,
+								"beginLine": 1,
+								"endColumn": 32,
+								"endLine": 1
+							},
+							"text": ")",
+							"trailing": [
+								{
+									"kind": "whitespace",
+									"text": "\n"
+								}
+							]
+						}
+					}
+				}
+			]
+		},
+		"eof": {
+			"leading": [],
+			"origin": {
+				"beginColumn": 1,
+				"beginLine": 2,
+				"endColumn": 1,
+				"endLine": 2
+			},
+			"text": "",
+			"trailing": []
+		}
+	},
+	"TS.import(script, TS.getModule(script, scope).src)\n": {
+		"type": "Root",
+		"location": {
+			"beginColumn": 1,
+			"beginLine": 1,
+			"endColumn": 1,
+			"endLine": 2
+		},
+		"body": {
+			"type": "Block",
+			"location": {
+				"beginColumn": 1,
+				"beginLine": 1,
+				"endColumn": 1,
+				"endLine": 2
+			},
+			"body": [
+				{
+					"type": "ExprStat",
+					"location": {
+						"beginColumn": 1,
+						"beginLine": 1,
+						"endColumn": 51,
+						"endLine": 1
+					},
+					"expr": {
+						"type": "Call",
+						"location": {
+							"beginColumn": 1,
+							"beginLine": 1,
+							"endColumn": 51,
+							"endLine": 1
+						},
+						"callee": {
+							"type": "IndexName",
+							"location": {
+								"beginColumn": 1,
+								"beginLine": 1,
+								"endColumn": 10,
+								"endLine": 1
+							},
+							"expr": {
+								"type": "Global",
+								"location": {
+									"beginColumn": 1,
+									"beginLine": 1,
+									"endColumn": 3,
+									"endLine": 1
+								},
+								"name": {
+									"leading": [],
+									"origin": {
+										"beginColumn": 1,
+										"beginLine": 1,
+										"endColumn": 3,
+										"endLine": 1
+									},
+									"text": "TS",
+									"trailing": []
+								}
+							},
+							"operator": {
+								"leading": [],
+								"origin": {
+									"beginColumn": 3,
+									"beginLine": 1,
+									"endColumn": 4,
+									"endLine": 1
+								},
+								"text": ".",
+								"trailing": []
+							},
+							"index": {
+								"leading": [],
+								"origin": {
+									"beginColumn": 4,
+									"beginLine": 1,
+									"endColumn": 10,
+									"endLine": 1
+								},
+								"text": "import",
+								"trailing": []
+							}
+						},
+						"open": {
+							"leading": [],
+							"origin": {
+								"beginColumn": 10,
+								"beginLine": 1,
+								"endColumn": 11,
+								"endLine": 1
+							},
+							"text": "(",
+							"trailing": []
+						},
+						"arguments": [
+							{
+								"node": {
+									"type": "Global",
+									"location": {
+										"beginColumn": 11,
+										"beginLine": 1,
+										"endColumn": 17,
+										"endLine": 1
+									},
+									"name": {
+										"leading": [],
+										"origin": {
+											"beginColumn": 11,
+											"beginLine": 1,
+											"endColumn": 17,
+											"endLine": 1
+										},
+										"text": "script",
+										"trailing": []
+									}
+								},
+								"separator": {
+									"leading": [],
+									"origin": {
+										"beginColumn": 17,
+										"beginLine": 1,
+										"endColumn": 18,
+										"endLine": 1
+									},
+									"text": ",",
+									"trailing": [
+										{
+											"kind": "whitespace",
+											"text": " "
+										}
+									]
+								}
+							},
+							{
+								"node": {
+									"type": "IndexName",
+									"location": {
+										"beginColumn": 19,
+										"beginLine": 1,
+										"endColumn": 50,
+										"endLine": 1
+									},
+									"expr": {
+										"type": "Call",
+										"location": {
+											"beginColumn": 19,
+											"beginLine": 1,
+											"endColumn": 46,
+											"endLine": 1
+										},
+										"callee": {
+											"type": "IndexName",
+											"location": {
+												"beginColumn": 19,
+												"beginLine": 1,
+												"endColumn": 31,
+												"endLine": 1
+											},
+											"expr": {
+												"type": "Global",
+												"location": {
+													"beginColumn": 19,
+													"beginLine": 1,
+													"endColumn": 21,
+													"endLine": 1
+												},
+												"name": {
+													"leading": [],
+													"origin": {
+														"beginColumn": 19,
+														"beginLine": 1,
+														"endColumn": 21,
+														"endLine": 1
+													},
+													"text": "TS",
+													"trailing": []
+												}
+											},
+											"operator": {
+												"leading": [],
+												"origin": {
+													"beginColumn": 21,
+													"beginLine": 1,
+													"endColumn": 22,
+													"endLine": 1
+												},
+												"text": ".",
+												"trailing": []
+											},
+											"index": {
+												"leading": [],
+												"origin": {
+													"beginColumn": 22,
+													"beginLine": 1,
+													"endColumn": 31,
+													"endLine": 1
+												},
+												"text": "getModule",
+												"trailing": []
+											}
+										},
+										"open": {
+											"leading": [],
+											"origin": {
+												"beginColumn": 31,
+												"beginLine": 1,
+												"endColumn": 32,
+												"endLine": 1
+											},
+											"text": "(",
+											"trailing": []
+										},
+										"arguments": [
+											{
+												"node": {
+													"type": "Global",
+													"location": {
+														"beginColumn": 32,
+														"beginLine": 1,
+														"endColumn": 38,
+														"endLine": 1
+													},
+													"name": {
+														"leading": [],
+														"origin": {
+															"beginColumn": 32,
+															"beginLine": 1,
+															"endColumn": 38,
+															"endLine": 1
+														},
+														"text": "script",
+														"trailing": []
+													}
+												},
+												"separator": {
+													"leading": [],
+													"origin": {
+														"beginColumn": 38,
+														"beginLine": 1,
+														"endColumn": 39,
+														"endLine": 1
+													},
+													"text": ",",
+													"trailing": [
+														{
+															"kind": "whitespace",
+															"text": " "
+														}
+													]
+												}
+											},
+											{
+												"node": {
+													"type": "Global",
+													"location": {
+														"beginColumn": 40,
+														"beginLine": 1,
+														"endColumn": 45,
+														"endLine": 1
+													},
+													"name": {
+														"leading": [],
+														"origin": {
+															"beginColumn": 40,
+															"beginLine": 1,
+															"endColumn": 45,
+															"endLine": 1
+														},
+														"text": "scope",
+														"trailing": []
+													}
+												}
+											}
+										],
+										"close": {
+											"leading": [],
+											"origin": {
+												"beginColumn": 45,
+												"beginLine": 1,
+												"endColumn": 46,
+												"endLine": 1
+											},
+											"text": ")",
+											"trailing": []
+										}
+									},
+									"operator": {
+										"leading": [],
+										"origin": {
+											"beginColumn": 46,
+											"beginLine": 1,
+											"endColumn": 47,
+											"endLine": 1
+										},
+										"text": ".",
+										"trailing": []
+									},
+									"index": {
+										"leading": [],
+										"origin": {
+											"beginColumn": 47,
+											"beginLine": 1,
+											"endColumn": 50,
+											"endLine": 1
+										},
+										"text": "src",
+										"trailing": []
+									}
+								}
+							}
+						],
+						"close": {
+							"leading": [],
+							"origin": {
+								"beginColumn": 50,
+								"beginLine": 1,
+								"endColumn": 51,
+								"endLine": 1
+							},
+							"text": ")",
+							"trailing": [
+								{
+									"kind": "whitespace",
+									"text": "\n"
+								}
+							]
+						}
+					}
+				}
+			]
+		},
+		"eof": {
+			"leading": [],
+			"origin": {
+				"beginColumn": 1,
+				"beginLine": 2,
+				"endColumn": 1,
+				"endLine": 2
+			},
+			"text": "",
+			"trailing": []
+		}
+	},
+	"print(\"x\")\n": {
+		"type": "Root",
+		"location": {
+			"beginColumn": 1,
+			"beginLine": 1,
+			"endColumn": 1,
+			"endLine": 2
+		},
+		"body": {
+			"type": "Block",
+			"location": {
+				"beginColumn": 1,
+				"beginLine": 1,
+				"endColumn": 1,
+				"endLine": 2
+			},
+			"body": [
+				{
+					"type": "ExprStat",
+					"location": {
+						"beginColumn": 1,
+						"beginLine": 1,
+						"endColumn": 11,
+						"endLine": 1
+					},
+					"expr": {
+						"type": "Call",
+						"location": {
+							"beginColumn": 1,
+							"beginLine": 1,
+							"endColumn": 11,
+							"endLine": 1
+						},
+						"callee": {
+							"type": "Global",
+							"location": {
+								"beginColumn": 1,
+								"beginLine": 1,
+								"endColumn": 6,
+								"endLine": 1
+							},
+							"name": {
+								"leading": [],
+								"origin": {
+									"beginColumn": 1,
+									"beginLine": 1,
+									"endColumn": 6,
+									"endLine": 1
+								},
+								"text": "print",
+								"trailing": []
+							}
+						},
+						"open": {
+							"leading": [],
+							"origin": {
+								"beginColumn": 6,
+								"beginLine": 1,
+								"endColumn": 7,
+								"endLine": 1
+							},
+							"text": "(",
+							"trailing": []
+						},
+						"arguments": [
+							{
+								"node": {
+									"type": "String",
+									"location": {
+										"beginColumn": 7,
+										"beginLine": 1,
+										"endColumn": 10,
+										"endLine": 1
+									},
+									"token": {
+										"leading": [],
+										"origin": {
+											"beginColumn": 7,
+											"beginLine": 1,
+											"endColumn": 10,
+											"endLine": 1
+										},
+										"text": "\"x\"",
+										"trailing": []
+									}
+								}
+							}
+						],
+						"close": {
+							"leading": [],
+							"origin": {
+								"beginColumn": 10,
+								"beginLine": 1,
+								"endColumn": 11,
+								"endLine": 1
+							},
+							"text": ")",
+							"trailing": [
+								{
+									"kind": "whitespace",
+									"text": "\n"
+								}
+							]
+						}
+					}
+				}
+			]
+		},
+		"eof": {
+			"leading": [],
+			"origin": {
+				"beginColumn": 1,
+				"beginLine": 2,
+				"endColumn": 1,
+				"endLine": 2
+			},
+			"text": "",
+			"trailing": []
+		}
+	},
+	"TS:import(script, script, \"x\")\n": {
+		"type": "Root",
+		"location": {
+			"beginColumn": 1,
+			"beginLine": 1,
+			"endColumn": 1,
+			"endLine": 2
+		},
+		"body": {
+			"type": "Block",
+			"location": {
+				"beginColumn": 1,
+				"beginLine": 1,
+				"endColumn": 1,
+				"endLine": 2
+			},
+			"body": [
+				{
+					"type": "ExprStat",
+					"location": {
+						"beginColumn": 1,
+						"beginLine": 1,
+						"endColumn": 31,
+						"endLine": 1
+					},
+					"expr": {
+						"type": "Call",
+						"location": {
+							"beginColumn": 1,
+							"beginLine": 1,
+							"endColumn": 31,
+							"endLine": 1
+						},
+						"callee": {
+							"type": "IndexName",
+							"location": {
+								"beginColumn": 1,
+								"beginLine": 1,
+								"endColumn": 10,
+								"endLine": 1
+							},
+							"expr": {
+								"type": "Global",
+								"location": {
+									"beginColumn": 1,
+									"beginLine": 1,
+									"endColumn": 3,
+									"endLine": 1
+								},
+								"name": {
+									"leading": [],
+									"origin": {
+										"beginColumn": 1,
+										"beginLine": 1,
+										"endColumn": 3,
+										"endLine": 1
+									},
+									"text": "TS",
+									"trailing": []
+								}
+							},
+							"operator": {
+								"leading": [],
+								"origin": {
+									"beginColumn": 3,
+									"beginLine": 1,
+									"endColumn": 4,
+									"endLine": 1
+								},
+								"text": ":",
+								"trailing": []
+							},
+							"index": {
+								"leading": [],
+								"origin": {
+									"beginColumn": 4,
+									"beginLine": 1,
+									"endColumn": 10,
+									"endLine": 1
+								},
+								"text": "import",
+								"trailing": []
+							}
+						},
+						"open": {
+							"leading": [],
+							"origin": {
+								"beginColumn": 10,
+								"beginLine": 1,
+								"endColumn": 11,
+								"endLine": 1
+							},
+							"text": "(",
+							"trailing": []
+						},
+						"arguments": [
+							{
+								"node": {
+									"type": "Global",
+									"location": {
+										"beginColumn": 11,
+										"beginLine": 1,
+										"endColumn": 17,
+										"endLine": 1
+									},
+									"name": {
+										"leading": [],
+										"origin": {
+											"beginColumn": 11,
+											"beginLine": 1,
+											"endColumn": 17,
+											"endLine": 1
+										},
+										"text": "script",
+										"trailing": []
+									}
+								},
+								"separator": {
+									"leading": [],
+									"origin": {
+										"beginColumn": 17,
+										"beginLine": 1,
+										"endColumn": 18,
+										"endLine": 1
+									},
+									"text": ",",
+									"trailing": [
+										{
+											"kind": "whitespace",
+											"text": " "
+										}
+									]
+								}
+							},
+							{
+								"node": {
+									"type": "Global",
+									"location": {
+										"beginColumn": 19,
+										"beginLine": 1,
+										"endColumn": 25,
+										"endLine": 1
+									},
+									"name": {
+										"leading": [],
+										"origin": {
+											"beginColumn": 19,
+											"beginLine": 1,
+											"endColumn": 25,
+											"endLine": 1
+										},
+										"text": "script",
+										"trailing": []
+									}
+								},
+								"separator": {
+									"leading": [],
+									"origin": {
+										"beginColumn": 25,
+										"beginLine": 1,
+										"endColumn": 26,
+										"endLine": 1
+									},
+									"text": ",",
+									"trailing": [
+										{
+											"kind": "whitespace",
+											"text": " "
+										}
+									]
+								}
+							},
+							{
+								"node": {
+									"type": "String",
+									"location": {
+										"beginColumn": 27,
+										"beginLine": 1,
+										"endColumn": 30,
+										"endLine": 1
+									},
+									"token": {
+										"leading": [],
+										"origin": {
+											"beginColumn": 27,
+											"beginLine": 1,
+											"endColumn": 30,
+											"endLine": 1
+										},
+										"text": "\"x\"",
+										"trailing": []
+									}
+								}
+							}
+						],
+						"close": {
+							"leading": [],
+							"origin": {
+								"beginColumn": 30,
+								"beginLine": 1,
+								"endColumn": 31,
+								"endLine": 1
+							},
+							"text": ")",
+							"trailing": [
+								{
+									"kind": "whitespace",
+									"text": "\n"
+								}
+							]
+						}
+					}
+				}
+			]
+		},
+		"eof": {
+			"leading": [],
+			"origin": {
+				"beginColumn": 1,
+				"beginLine": 2,
+				"endColumn": 1,
+				"endLine": 2
+			},
+			"text": "",
+			"trailing": []
+		}
+	},
+	"TS.other(script, script, \"x\")\n": {
+		"type": "Root",
+		"location": {
+			"beginColumn": 1,
+			"beginLine": 1,
+			"endColumn": 1,
+			"endLine": 2
+		},
+		"body": {
+			"type": "Block",
+			"location": {
+				"beginColumn": 1,
+				"beginLine": 1,
+				"endColumn": 1,
+				"endLine": 2
+			},
+			"body": [
+				{
+					"type": "ExprStat",
+					"location": {
+						"beginColumn": 1,
+						"beginLine": 1,
+						"endColumn": 30,
+						"endLine": 1
+					},
+					"expr": {
+						"type": "Call",
+						"location": {
+							"beginColumn": 1,
+							"beginLine": 1,
+							"endColumn": 30,
+							"endLine": 1
+						},
+						"callee": {
+							"type": "IndexName",
+							"location": {
+								"beginColumn": 1,
+								"beginLine": 1,
+								"endColumn": 9,
+								"endLine": 1
+							},
+							"expr": {
+								"type": "Global",
+								"location": {
+									"beginColumn": 1,
+									"beginLine": 1,
+									"endColumn": 3,
+									"endLine": 1
+								},
+								"name": {
+									"leading": [],
+									"origin": {
+										"beginColumn": 1,
+										"beginLine": 1,
+										"endColumn": 3,
+										"endLine": 1
+									},
+									"text": "TS",
+									"trailing": []
+								}
+							},
+							"operator": {
+								"leading": [],
+								"origin": {
+									"beginColumn": 3,
+									"beginLine": 1,
+									"endColumn": 4,
+									"endLine": 1
+								},
+								"text": ".",
+								"trailing": []
+							},
+							"index": {
+								"leading": [],
+								"origin": {
+									"beginColumn": 4,
+									"beginLine": 1,
+									"endColumn": 9,
+									"endLine": 1
+								},
+								"text": "other",
+								"trailing": []
+							}
+						},
+						"open": {
+							"leading": [],
+							"origin": {
+								"beginColumn": 9,
+								"beginLine": 1,
+								"endColumn": 10,
+								"endLine": 1
+							},
+							"text": "(",
+							"trailing": []
+						},
+						"arguments": [
+							{
+								"node": {
+									"type": "Global",
+									"location": {
+										"beginColumn": 10,
+										"beginLine": 1,
+										"endColumn": 16,
+										"endLine": 1
+									},
+									"name": {
+										"leading": [],
+										"origin": {
+											"beginColumn": 10,
+											"beginLine": 1,
+											"endColumn": 16,
+											"endLine": 1
+										},
+										"text": "script",
+										"trailing": []
+									}
+								},
+								"separator": {
+									"leading": [],
+									"origin": {
+										"beginColumn": 16,
+										"beginLine": 1,
+										"endColumn": 17,
+										"endLine": 1
+									},
+									"text": ",",
+									"trailing": [
+										{
+											"kind": "whitespace",
+											"text": " "
+										}
+									]
+								}
+							},
+							{
+								"node": {
+									"type": "Global",
+									"location": {
+										"beginColumn": 18,
+										"beginLine": 1,
+										"endColumn": 24,
+										"endLine": 1
+									},
+									"name": {
+										"leading": [],
+										"origin": {
+											"beginColumn": 18,
+											"beginLine": 1,
+											"endColumn": 24,
+											"endLine": 1
+										},
+										"text": "script",
+										"trailing": []
+									}
+								},
+								"separator": {
+									"leading": [],
+									"origin": {
+										"beginColumn": 24,
+										"beginLine": 1,
+										"endColumn": 25,
+										"endLine": 1
+									},
+									"text": ",",
+									"trailing": [
+										{
+											"kind": "whitespace",
+											"text": " "
+										}
+									]
+								}
+							},
+							{
+								"node": {
+									"type": "String",
+									"location": {
+										"beginColumn": 26,
+										"beginLine": 1,
+										"endColumn": 29,
+										"endLine": 1
+									},
+									"token": {
+										"leading": [],
+										"origin": {
+											"beginColumn": 26,
+											"beginLine": 1,
+											"endColumn": 29,
+											"endLine": 1
+										},
+										"text": "\"x\"",
+										"trailing": []
+									}
+								}
+							}
+						],
+						"close": {
+							"leading": [],
+							"origin": {
+								"beginColumn": 29,
+								"beginLine": 1,
+								"endColumn": 30,
+								"endLine": 1
+							},
+							"text": ")",
+							"trailing": [
+								{
+									"kind": "whitespace",
+									"text": "\n"
+								}
+							]
+						}
+					}
+				}
+			]
+		},
+		"eof": {
+			"leading": [],
+			"origin": {
+				"beginColumn": 1,
+				"beginLine": 2,
+				"endColumn": 1,
+				"endLine": 2
+			},
+			"text": "",
+			"trailing": []
+		}
+	},
+	"return { luau = { aliases = { Shared = \"./shared\", [\"Deep-Lib\"] = \"lib/deep\", abs = \"/abs/root\" } } }\n": {
+		"type": "Root",
+		"location": {
+			"beginColumn": 1,
+			"beginLine": 1,
+			"endColumn": 1,
+			"endLine": 2
+		},
+		"body": {
+			"type": "Block",
+			"location": {
+				"beginColumn": 1,
+				"beginLine": 1,
+				"endColumn": 1,
+				"endLine": 2
+			},
+			"body": [
+				{
+					"type": "Return",
+					"location": {
+						"beginColumn": 1,
+						"beginLine": 1,
+						"endColumn": 102,
+						"endLine": 1
+					},
+					"keyword": {
+						"leading": [],
+						"origin": {
+							"beginColumn": 1,
+							"beginLine": 1,
+							"endColumn": 7,
+							"endLine": 1
+						},
+						"text": "return",
+						"trailing": [
+							{
+								"kind": "whitespace",
+								"text": " "
+							}
+						]
+					},
+					"values": [
+						{
+							"node": {
+								"type": "Table",
+								"location": {
+									"beginColumn": 8,
+									"beginLine": 1,
+									"endColumn": 102,
+									"endLine": 1
+								},
+								"open": {
+									"leading": [],
+									"origin": {
+										"beginColumn": 8,
+										"beginLine": 1,
+										"endColumn": 9,
+										"endLine": 1
+									},
+									"text": "{",
+									"trailing": [
+										{
+											"kind": "whitespace",
+											"text": " "
+										}
+									]
+								},
+								"items": [
+									{
+										"type": "TableItem",
+										"location": {
+											"beginColumn": 10,
+											"beginLine": 1,
+											"endColumn": 100,
+											"endLine": 1
+										},
+										"key": {
+											"type": "String",
+											"location": {
+												"beginColumn": 10,
+												"beginLine": 1,
+												"endColumn": 14,
+												"endLine": 1
+											},
+											"token": {
+												"leading": [],
+												"origin": {
+													"beginColumn": 10,
+													"beginLine": 1,
+													"endColumn": 14,
+													"endLine": 1
+												},
+												"text": "luau",
+												"trailing": [
+													{
+														"kind": "whitespace",
+														"text": " "
+													}
+												]
+											}
+										},
+										"equals": {
+											"leading": [],
+											"origin": {
+												"beginColumn": 15,
+												"beginLine": 1,
+												"endColumn": 16,
+												"endLine": 1
+											},
+											"text": "=",
+											"trailing": [
+												{
+													"kind": "whitespace",
+													"text": " "
+												}
+											]
+										},
+										"value": {
+											"type": "Table",
+											"location": {
+												"beginColumn": 17,
+												"beginLine": 1,
+												"endColumn": 100,
+												"endLine": 1
+											},
+											"open": {
+												"leading": [],
+												"origin": {
+													"beginColumn": 17,
+													"beginLine": 1,
+													"endColumn": 18,
+													"endLine": 1
+												},
+												"text": "{",
+												"trailing": [
+													{
+														"kind": "whitespace",
+														"text": " "
+													}
+												]
+											},
+											"items": [
+												{
+													"type": "TableItem",
+													"location": {
+														"beginColumn": 19,
+														"beginLine": 1,
+														"endColumn": 98,
+														"endLine": 1
+													},
+													"key": {
+														"type": "String",
+														"location": {
+															"beginColumn": 19,
+															"beginLine": 1,
+															"endColumn": 26,
+															"endLine": 1
+														},
+														"token": {
+															"leading": [],
+															"origin": {
+																"beginColumn": 19,
+																"beginLine": 1,
+																"endColumn": 26,
+																"endLine": 1
+															},
+															"text": "aliases",
+															"trailing": [
+																{
+																	"kind": "whitespace",
+																	"text": " "
+																}
+															]
+														}
+													},
+													"equals": {
+														"leading": [],
+														"origin": {
+															"beginColumn": 27,
+															"beginLine": 1,
+															"endColumn": 28,
+															"endLine": 1
+														},
+														"text": "=",
+														"trailing": [
+															{
+																"kind": "whitespace",
+																"text": " "
+															}
+														]
+													},
+													"value": {
+														"type": "Table",
+														"location": {
+															"beginColumn": 29,
+															"beginLine": 1,
+															"endColumn": 98,
+															"endLine": 1
+														},
+														"open": {
+															"leading": [],
+															"origin": {
+																"beginColumn": 29,
+																"beginLine": 1,
+																"endColumn": 30,
+																"endLine": 1
+															},
+															"text": "{",
+															"trailing": [
+																{
+																	"kind": "whitespace",
+																	"text": " "
+																}
+															]
+														},
+														"items": [
+															{
+																"type": "TableItem",
+																"location": {
+																	"beginColumn": 31,
+																	"beginLine": 1,
+																	"endColumn": 50,
+																	"endLine": 1
+																},
+																"key": {
+																	"type": "String",
+																	"location": {
+																		"beginColumn": 31,
+																		"beginLine": 1,
+																		"endColumn": 37,
+																		"endLine": 1
+																	},
+																	"token": {
+																		"leading": [],
+																		"origin": {
+																			"beginColumn": 31,
+																			"beginLine": 1,
+																			"endColumn": 37,
+																			"endLine": 1
+																		},
+																		"text": "Shared",
+																		"trailing": [
+																			{
+																				"kind": "whitespace",
+																				"text": " "
+																			}
+																		]
+																	}
+																},
+																"equals": {
+																	"leading": [],
+																	"origin": {
+																		"beginColumn": 38,
+																		"beginLine": 1,
+																		"endColumn": 39,
+																		"endLine": 1
+																	},
+																	"text": "=",
+																	"trailing": [
+																		{
+																			"kind": "whitespace",
+																			"text": " "
+																		}
+																	]
+																},
+																"value": {
+																	"type": "String",
+																	"location": {
+																		"beginColumn": 40,
+																		"beginLine": 1,
+																		"endColumn": 50,
+																		"endLine": 1
+																	},
+																	"token": {
+																		"leading": [],
+																		"origin": {
+																			"beginColumn": 40,
+																			"beginLine": 1,
+																			"endColumn": 50,
+																			"endLine": 1
+																		},
+																		"text": "\"./shared\"",
+																		"trailing": []
+																	}
+																},
+																"separator": {
+																	"leading": [],
+																	"origin": {
+																		"beginColumn": 50,
+																		"beginLine": 1,
+																		"endColumn": 51,
+																		"endLine": 1
+																	},
+																	"text": ",",
+																	"trailing": [
+																		{
+																			"kind": "whitespace",
+																			"text": " "
+																		}
+																	]
+																}
+															},
+															{
+																"type": "TableItem",
+																"location": {
+																	"beginColumn": 53,
+																	"beginLine": 1,
+																	"endColumn": 77,
+																	"endLine": 1
+																},
+																"open": {
+																	"leading": [],
+																	"origin": {
+																		"beginColumn": 52,
+																		"beginLine": 1,
+																		"endColumn": 53,
+																		"endLine": 1
+																	},
+																	"text": "[",
+																	"trailing": []
+																},
+																"key": {
+																	"type": "String",
+																	"location": {
+																		"beginColumn": 53,
+																		"beginLine": 1,
+																		"endColumn": 63,
+																		"endLine": 1
+																	},
+																	"token": {
+																		"leading": [],
+																		"origin": {
+																			"beginColumn": 53,
+																			"beginLine": 1,
+																			"endColumn": 63,
+																			"endLine": 1
+																		},
+																		"text": "\"Deep-Lib\"",
+																		"trailing": []
+																	}
+																},
+																"close": {
+																	"leading": [],
+																	"origin": {
+																		"beginColumn": 63,
+																		"beginLine": 1,
+																		"endColumn": 64,
+																		"endLine": 1
+																	},
+																	"text": "]",
+																	"trailing": [
+																		{
+																			"kind": "whitespace",
+																			"text": " "
+																		}
+																	]
+																},
+																"equals": {
+																	"leading": [],
+																	"origin": {
+																		"beginColumn": 65,
+																		"beginLine": 1,
+																		"endColumn": 66,
+																		"endLine": 1
+																	},
+																	"text": "=",
+																	"trailing": [
+																		{
+																			"kind": "whitespace",
+																			"text": " "
+																		}
+																	]
+																},
+																"value": {
+																	"type": "String",
+																	"location": {
+																		"beginColumn": 67,
+																		"beginLine": 1,
+																		"endColumn": 77,
+																		"endLine": 1
+																	},
+																	"token": {
+																		"leading": [],
+																		"origin": {
+																			"beginColumn": 67,
+																			"beginLine": 1,
+																			"endColumn": 77,
+																			"endLine": 1
+																		},
+																		"text": "\"lib/deep\"",
+																		"trailing": []
+																	}
+																},
+																"separator": {
+																	"leading": [],
+																	"origin": {
+																		"beginColumn": 77,
+																		"beginLine": 1,
+																		"endColumn": 78,
+																		"endLine": 1
+																	},
+																	"text": ",",
+																	"trailing": [
+																		{
+																			"kind": "whitespace",
+																			"text": " "
+																		}
+																	]
+																}
+															},
+															{
+																"type": "TableItem",
+																"location": {
+																	"beginColumn": 79,
+																	"beginLine": 1,
+																	"endColumn": 96,
+																	"endLine": 1
+																},
+																"key": {
+																	"type": "String",
+																	"location": {
+																		"beginColumn": 79,
+																		"beginLine": 1,
+																		"endColumn": 82,
+																		"endLine": 1
+																	},
+																	"token": {
+																		"leading": [],
+																		"origin": {
+																			"beginColumn": 79,
+																			"beginLine": 1,
+																			"endColumn": 82,
+																			"endLine": 1
+																		},
+																		"text": "abs",
+																		"trailing": [
+																			{
+																				"kind": "whitespace",
+																				"text": " "
+																			}
+																		]
+																	}
+																},
+																"equals": {
+																	"leading": [],
+																	"origin": {
+																		"beginColumn": 83,
+																		"beginLine": 1,
+																		"endColumn": 84,
+																		"endLine": 1
+																	},
+																	"text": "=",
+																	"trailing": [
+																		{
+																			"kind": "whitespace",
+																			"text": " "
+																		}
+																	]
+																},
+																"value": {
+																	"type": "String",
+																	"location": {
+																		"beginColumn": 85,
+																		"beginLine": 1,
+																		"endColumn": 96,
+																		"endLine": 1
+																	},
+																	"token": {
+																		"leading": [],
+																		"origin": {
+																			"beginColumn": 85,
+																			"beginLine": 1,
+																			"endColumn": 96,
+																			"endLine": 1
+																		},
+																		"text": "\"/abs/root\"",
+																		"trailing": [
+																			{
+																				"kind": "whitespace",
+																				"text": " "
+																			}
+																		]
+																	}
+																}
+															}
+														],
+														"close": {
+															"leading": [],
+															"origin": {
+																"beginColumn": 97,
+																"beginLine": 1,
+																"endColumn": 98,
+																"endLine": 1
+															},
+															"text": "}",
+															"trailing": [
+																{
+																	"kind": "whitespace",
+																	"text": " "
+																}
+															]
+														}
+													}
+												}
+											],
+											"close": {
+												"leading": [],
+												"origin": {
+													"beginColumn": 99,
+													"beginLine": 1,
+													"endColumn": 100,
+													"endLine": 1
+												},
+												"text": "}",
+												"trailing": [
+													{
+														"kind": "whitespace",
+														"text": " "
+													}
+												]
+											}
+										}
+									}
+								],
+								"close": {
+									"leading": [],
+									"origin": {
+										"beginColumn": 101,
+										"beginLine": 1,
+										"endColumn": 102,
+										"endLine": 1
+									},
+									"text": "}",
+									"trailing": [
+										{
+											"kind": "whitespace",
+											"text": "\n"
+										}
+									]
+								}
+							}
+						}
+					]
+				}
+			]
+		},
+		"eof": {
+			"leading": [],
+			"origin": {
+				"beginColumn": 1,
+				"beginLine": 2,
+				"endColumn": 1,
+				"endLine": 2
+			},
+			"text": "",
+			"trailing": []
+		}
+	},
+	"return { [1] = 2 }\n": {
+		"type": "Root",
+		"location": {
+			"beginColumn": 1,
+			"beginLine": 1,
+			"endColumn": 1,
+			"endLine": 2
+		},
+		"body": {
+			"type": "Block",
+			"location": {
+				"beginColumn": 1,
+				"beginLine": 1,
+				"endColumn": 1,
+				"endLine": 2
+			},
+			"body": [
+				{
+					"type": "Return",
+					"location": {
+						"beginColumn": 1,
+						"beginLine": 1,
+						"endColumn": 19,
+						"endLine": 1
+					},
+					"keyword": {
+						"leading": [],
+						"origin": {
+							"beginColumn": 1,
+							"beginLine": 1,
+							"endColumn": 7,
+							"endLine": 1
+						},
+						"text": "return",
+						"trailing": [
+							{
+								"kind": "whitespace",
+								"text": " "
+							}
+						]
+					},
+					"values": [
+						{
+							"node": {
+								"type": "Table",
+								"location": {
+									"beginColumn": 8,
+									"beginLine": 1,
+									"endColumn": 19,
+									"endLine": 1
+								},
+								"open": {
+									"leading": [],
+									"origin": {
+										"beginColumn": 8,
+										"beginLine": 1,
+										"endColumn": 9,
+										"endLine": 1
+									},
+									"text": "{",
+									"trailing": [
+										{
+											"kind": "whitespace",
+											"text": " "
+										}
+									]
+								},
+								"items": [
+									{
+										"type": "TableItem",
+										"location": {
+											"beginColumn": 11,
+											"beginLine": 1,
+											"endColumn": 17,
+											"endLine": 1
+										},
+										"open": {
+											"leading": [],
+											"origin": {
+												"beginColumn": 10,
+												"beginLine": 1,
+												"endColumn": 11,
+												"endLine": 1
+											},
+											"text": "[",
+											"trailing": []
+										},
+										"key": {
+											"type": "Number",
+											"location": {
+												"beginColumn": 11,
+												"beginLine": 1,
+												"endColumn": 12,
+												"endLine": 1
+											},
+											"token": {
+												"leading": [],
+												"origin": {
+													"beginColumn": 11,
+													"beginLine": 1,
+													"endColumn": 12,
+													"endLine": 1
+												},
+												"text": "1",
+												"trailing": []
+											}
+										},
+										"close": {
+											"leading": [],
+											"origin": {
+												"beginColumn": 12,
+												"beginLine": 1,
+												"endColumn": 13,
+												"endLine": 1
+											},
+											"text": "]",
+											"trailing": [
+												{
+													"kind": "whitespace",
+													"text": " "
+												}
+											]
+										},
+										"equals": {
+											"leading": [],
+											"origin": {
+												"beginColumn": 14,
+												"beginLine": 1,
+												"endColumn": 15,
+												"endLine": 1
+											},
+											"text": "=",
+											"trailing": [
+												{
+													"kind": "whitespace",
+													"text": " "
+												}
+											]
+										},
+										"value": {
+											"type": "Number",
+											"location": {
+												"beginColumn": 16,
+												"beginLine": 1,
+												"endColumn": 17,
+												"endLine": 1
+											},
+											"token": {
+												"leading": [],
+												"origin": {
+													"beginColumn": 16,
+													"beginLine": 1,
+													"endColumn": 17,
+													"endLine": 1
+												},
+												"text": "2",
+												"trailing": [
+													{
+														"kind": "whitespace",
+														"text": " "
+													}
+												]
+											}
+										}
+									}
+								],
+								"close": {
+									"leading": [],
+									"origin": {
+										"beginColumn": 18,
+										"beginLine": 1,
+										"endColumn": 19,
+										"endLine": 1
+									},
+									"text": "}",
+									"trailing": [
+										{
+											"kind": "whitespace",
+											"text": "\n"
+										}
+									]
+								}
+							}
+						}
+					]
+				}
+			]
+		},
+		"eof": {
+			"leading": [],
+			"origin": {
+				"beginColumn": 1,
+				"beginLine": 2,
+				"endColumn": 1,
+				"endLine": 2
+			},
+			"text": "",
+			"trailing": []
+		}
+	},
+	"return { luau = {} }\n": {
+		"type": "Root",
+		"location": {
+			"beginColumn": 1,
+			"beginLine": 1,
+			"endColumn": 1,
+			"endLine": 2
+		},
+		"body": {
+			"type": "Block",
+			"location": {
+				"beginColumn": 1,
+				"beginLine": 1,
+				"endColumn": 1,
+				"endLine": 2
+			},
+			"body": [
+				{
+					"type": "Return",
+					"location": {
+						"beginColumn": 1,
+						"beginLine": 1,
+						"endColumn": 21,
+						"endLine": 1
+					},
+					"keyword": {
+						"leading": [],
+						"origin": {
+							"beginColumn": 1,
+							"beginLine": 1,
+							"endColumn": 7,
+							"endLine": 1
+						},
+						"text": "return",
+						"trailing": [
+							{
+								"kind": "whitespace",
+								"text": " "
+							}
+						]
+					},
+					"values": [
+						{
+							"node": {
+								"type": "Table",
+								"location": {
+									"beginColumn": 8,
+									"beginLine": 1,
+									"endColumn": 21,
+									"endLine": 1
+								},
+								"open": {
+									"leading": [],
+									"origin": {
+										"beginColumn": 8,
+										"beginLine": 1,
+										"endColumn": 9,
+										"endLine": 1
+									},
+									"text": "{",
+									"trailing": [
+										{
+											"kind": "whitespace",
+											"text": " "
+										}
+									]
+								},
+								"items": [
+									{
+										"type": "TableItem",
+										"location": {
+											"beginColumn": 10,
+											"beginLine": 1,
+											"endColumn": 19,
+											"endLine": 1
+										},
+										"key": {
+											"type": "String",
+											"location": {
+												"beginColumn": 10,
+												"beginLine": 1,
+												"endColumn": 14,
+												"endLine": 1
+											},
+											"token": {
+												"leading": [],
+												"origin": {
+													"beginColumn": 10,
+													"beginLine": 1,
+													"endColumn": 14,
+													"endLine": 1
+												},
+												"text": "luau",
+												"trailing": [
+													{
+														"kind": "whitespace",
+														"text": " "
+													}
+												]
+											}
+										},
+										"equals": {
+											"leading": [],
+											"origin": {
+												"beginColumn": 15,
+												"beginLine": 1,
+												"endColumn": 16,
+												"endLine": 1
+											},
+											"text": "=",
+											"trailing": [
+												{
+													"kind": "whitespace",
+													"text": " "
+												}
+											]
+										},
+										"value": {
+											"type": "Table",
+											"location": {
+												"beginColumn": 17,
+												"beginLine": 1,
+												"endColumn": 19,
+												"endLine": 1
+											},
+											"open": {
+												"leading": [],
+												"origin": {
+													"beginColumn": 17,
+													"beginLine": 1,
+													"endColumn": 18,
+													"endLine": 1
+												},
+												"text": "{",
+												"trailing": []
+											},
+											"items": [],
+											"close": {
+												"leading": [],
+												"origin": {
+													"beginColumn": 18,
+													"beginLine": 1,
+													"endColumn": 19,
+													"endLine": 1
+												},
+												"text": "}",
+												"trailing": [
+													{
+														"kind": "whitespace",
+														"text": " "
+													}
+												]
+											}
+										}
+									}
+								],
+								"close": {
+									"leading": [],
+									"origin": {
+										"beginColumn": 20,
+										"beginLine": 1,
+										"endColumn": 21,
+										"endLine": 1
+									},
+									"text": "}",
+									"trailing": [
+										{
+											"kind": "whitespace",
+											"text": "\n"
+										}
+									]
+								}
+							}
+						}
+					]
+				}
+			]
+		},
+		"eof": {
+			"leading": [],
+			"origin": {
+				"beginColumn": 1,
+				"beginLine": 2,
+				"endColumn": 1,
+				"endLine": 2
+			},
+			"text": "",
+			"trailing": []
+		}
+	},
+	"return { luau = { aliases = { shared = makePath() } } }\n": {
+		"type": "Root",
+		"location": {
+			"beginColumn": 1,
+			"beginLine": 1,
+			"endColumn": 1,
+			"endLine": 2
+		},
+		"body": {
+			"type": "Block",
+			"location": {
+				"beginColumn": 1,
+				"beginLine": 1,
+				"endColumn": 1,
+				"endLine": 2
+			},
+			"body": [
+				{
+					"type": "Return",
+					"location": {
+						"beginColumn": 1,
+						"beginLine": 1,
+						"endColumn": 56,
+						"endLine": 1
+					},
+					"keyword": {
+						"leading": [],
+						"origin": {
+							"beginColumn": 1,
+							"beginLine": 1,
+							"endColumn": 7,
+							"endLine": 1
+						},
+						"text": "return",
+						"trailing": [
+							{
+								"kind": "whitespace",
+								"text": " "
+							}
+						]
+					},
+					"values": [
+						{
+							"node": {
+								"type": "Table",
+								"location": {
+									"beginColumn": 8,
+									"beginLine": 1,
+									"endColumn": 56,
+									"endLine": 1
+								},
+								"open": {
+									"leading": [],
+									"origin": {
+										"beginColumn": 8,
+										"beginLine": 1,
+										"endColumn": 9,
+										"endLine": 1
+									},
+									"text": "{",
+									"trailing": [
+										{
+											"kind": "whitespace",
+											"text": " "
+										}
+									]
+								},
+								"items": [
+									{
+										"type": "TableItem",
+										"location": {
+											"beginColumn": 10,
+											"beginLine": 1,
+											"endColumn": 54,
+											"endLine": 1
+										},
+										"key": {
+											"type": "String",
+											"location": {
+												"beginColumn": 10,
+												"beginLine": 1,
+												"endColumn": 14,
+												"endLine": 1
+											},
+											"token": {
+												"leading": [],
+												"origin": {
+													"beginColumn": 10,
+													"beginLine": 1,
+													"endColumn": 14,
+													"endLine": 1
+												},
+												"text": "luau",
+												"trailing": [
+													{
+														"kind": "whitespace",
+														"text": " "
+													}
+												]
+											}
+										},
+										"equals": {
+											"leading": [],
+											"origin": {
+												"beginColumn": 15,
+												"beginLine": 1,
+												"endColumn": 16,
+												"endLine": 1
+											},
+											"text": "=",
+											"trailing": [
+												{
+													"kind": "whitespace",
+													"text": " "
+												}
+											]
+										},
+										"value": {
+											"type": "Table",
+											"location": {
+												"beginColumn": 17,
+												"beginLine": 1,
+												"endColumn": 54,
+												"endLine": 1
+											},
+											"open": {
+												"leading": [],
+												"origin": {
+													"beginColumn": 17,
+													"beginLine": 1,
+													"endColumn": 18,
+													"endLine": 1
+												},
+												"text": "{",
+												"trailing": [
+													{
+														"kind": "whitespace",
+														"text": " "
+													}
+												]
+											},
+											"items": [
+												{
+													"type": "TableItem",
+													"location": {
+														"beginColumn": 19,
+														"beginLine": 1,
+														"endColumn": 52,
+														"endLine": 1
+													},
+													"key": {
+														"type": "String",
+														"location": {
+															"beginColumn": 19,
+															"beginLine": 1,
+															"endColumn": 26,
+															"endLine": 1
+														},
+														"token": {
+															"leading": [],
+															"origin": {
+																"beginColumn": 19,
+																"beginLine": 1,
+																"endColumn": 26,
+																"endLine": 1
+															},
+															"text": "aliases",
+															"trailing": [
+																{
+																	"kind": "whitespace",
+																	"text": " "
+																}
+															]
+														}
+													},
+													"equals": {
+														"leading": [],
+														"origin": {
+															"beginColumn": 27,
+															"beginLine": 1,
+															"endColumn": 28,
+															"endLine": 1
+														},
+														"text": "=",
+														"trailing": [
+															{
+																"kind": "whitespace",
+																"text": " "
+															}
+														]
+													},
+													"value": {
+														"type": "Table",
+														"location": {
+															"beginColumn": 29,
+															"beginLine": 1,
+															"endColumn": 52,
+															"endLine": 1
+														},
+														"open": {
+															"leading": [],
+															"origin": {
+																"beginColumn": 29,
+																"beginLine": 1,
+																"endColumn": 30,
+																"endLine": 1
+															},
+															"text": "{",
+															"trailing": [
+																{
+																	"kind": "whitespace",
+																	"text": " "
+																}
+															]
+														},
+														"items": [
+															{
+																"type": "TableItem",
+																"location": {
+																	"beginColumn": 31,
+																	"beginLine": 1,
+																	"endColumn": 50,
+																	"endLine": 1
+																},
+																"key": {
+																	"type": "String",
+																	"location": {
+																		"beginColumn": 31,
+																		"beginLine": 1,
+																		"endColumn": 37,
+																		"endLine": 1
+																	},
+																	"token": {
+																		"leading": [],
+																		"origin": {
+																			"beginColumn": 31,
+																			"beginLine": 1,
+																			"endColumn": 37,
+																			"endLine": 1
+																		},
+																		"text": "shared",
+																		"trailing": [
+																			{
+																				"kind": "whitespace",
+																				"text": " "
+																			}
+																		]
+																	}
+																},
+																"equals": {
+																	"leading": [],
+																	"origin": {
+																		"beginColumn": 38,
+																		"beginLine": 1,
+																		"endColumn": 39,
+																		"endLine": 1
+																	},
+																	"text": "=",
+																	"trailing": [
+																		{
+																			"kind": "whitespace",
+																			"text": " "
+																		}
+																	]
+																},
+																"value": {
+																	"type": "Call",
+																	"location": {
+																		"beginColumn": 40,
+																		"beginLine": 1,
+																		"endColumn": 50,
+																		"endLine": 1
+																	},
+																	"callee": {
+																		"type": "Global",
+																		"location": {
+																			"beginColumn": 40,
+																			"beginLine": 1,
+																			"endColumn": 48,
+																			"endLine": 1
+																		},
+																		"name": {
+																			"leading": [],
+																			"origin": {
+																				"beginColumn": 40,
+																				"beginLine": 1,
+																				"endColumn": 48,
+																				"endLine": 1
+																			},
+																			"text": "makePath",
+																			"trailing": []
+																		}
+																	},
+																	"open": {
+																		"leading": [],
+																		"origin": {
+																			"beginColumn": 48,
+																			"beginLine": 1,
+																			"endColumn": 49,
+																			"endLine": 1
+																		},
+																		"text": "(",
+																		"trailing": []
+																	},
+																	"arguments": [],
+																	"close": {
+																		"leading": [],
+																		"origin": {
+																			"beginColumn": 49,
+																			"beginLine": 1,
+																			"endColumn": 50,
+																			"endLine": 1
+																		},
+																		"text": ")",
+																		"trailing": [
+																			{
+																				"kind": "whitespace",
+																				"text": " "
+																			}
+																		]
+																	}
+																}
+															}
+														],
+														"close": {
+															"leading": [],
+															"origin": {
+																"beginColumn": 51,
+																"beginLine": 1,
+																"endColumn": 52,
+																"endLine": 1
+															},
+															"text": "}",
+															"trailing": [
+																{
+																	"kind": "whitespace",
+																	"text": " "
+																}
+															]
+														}
+													}
+												}
+											],
+											"close": {
+												"leading": [],
+												"origin": {
+													"beginColumn": 53,
+													"beginLine": 1,
+													"endColumn": 54,
+													"endLine": 1
+												},
+												"text": "}",
+												"trailing": [
+													{
+														"kind": "whitespace",
+														"text": " "
+													}
+												]
+											}
+										}
+									}
+								],
+								"close": {
+									"leading": [],
+									"origin": {
+										"beginColumn": 55,
+										"beginLine": 1,
+										"endColumn": 56,
+										"endLine": 1
+									},
+									"text": "}",
+									"trailing": [
+										{
+											"kind": "whitespace",
+											"text": "\n"
+										}
+									]
+								}
+							}
+						}
+					]
+				}
+			]
+		},
+		"eof": {
+			"leading": [],
+			"origin": {
+				"beginColumn": 1,
+				"beginLine": 2,
+				"endColumn": 1,
+				"endLine": 2
+			},
+			"text": "",
+			"trailing": []
+		}
+	},
+	"return { luau = 1 }\n": {
+		"type": "Root",
+		"location": {
+			"beginColumn": 1,
+			"beginLine": 1,
+			"endColumn": 1,
+			"endLine": 2
+		},
+		"body": {
+			"type": "Block",
+			"location": {
+				"beginColumn": 1,
+				"beginLine": 1,
+				"endColumn": 1,
+				"endLine": 2
+			},
+			"body": [
+				{
+					"type": "Return",
+					"location": {
+						"beginColumn": 1,
+						"beginLine": 1,
+						"endColumn": 20,
+						"endLine": 1
+					},
+					"keyword": {
+						"leading": [],
+						"origin": {
+							"beginColumn": 1,
+							"beginLine": 1,
+							"endColumn": 7,
+							"endLine": 1
+						},
+						"text": "return",
+						"trailing": [
+							{
+								"kind": "whitespace",
+								"text": " "
+							}
+						]
+					},
+					"values": [
+						{
+							"node": {
+								"type": "Table",
+								"location": {
+									"beginColumn": 8,
+									"beginLine": 1,
+									"endColumn": 20,
+									"endLine": 1
+								},
+								"open": {
+									"leading": [],
+									"origin": {
+										"beginColumn": 8,
+										"beginLine": 1,
+										"endColumn": 9,
+										"endLine": 1
+									},
+									"text": "{",
+									"trailing": [
+										{
+											"kind": "whitespace",
+											"text": " "
+										}
+									]
+								},
+								"items": [
+									{
+										"type": "TableItem",
+										"location": {
+											"beginColumn": 10,
+											"beginLine": 1,
+											"endColumn": 18,
+											"endLine": 1
+										},
+										"key": {
+											"type": "String",
+											"location": {
+												"beginColumn": 10,
+												"beginLine": 1,
+												"endColumn": 14,
+												"endLine": 1
+											},
+											"token": {
+												"leading": [],
+												"origin": {
+													"beginColumn": 10,
+													"beginLine": 1,
+													"endColumn": 14,
+													"endLine": 1
+												},
+												"text": "luau",
+												"trailing": [
+													{
+														"kind": "whitespace",
+														"text": " "
+													}
+												]
+											}
+										},
+										"equals": {
+											"leading": [],
+											"origin": {
+												"beginColumn": 15,
+												"beginLine": 1,
+												"endColumn": 16,
+												"endLine": 1
+											},
+											"text": "=",
+											"trailing": [
+												{
+													"kind": "whitespace",
+													"text": " "
+												}
+											]
+										},
+										"value": {
+											"type": "Number",
+											"location": {
+												"beginColumn": 17,
+												"beginLine": 1,
+												"endColumn": 18,
+												"endLine": 1
+											},
+											"token": {
+												"leading": [],
+												"origin": {
+													"beginColumn": 17,
+													"beginLine": 1,
+													"endColumn": 18,
+													"endLine": 1
+												},
+												"text": "1",
+												"trailing": [
+													{
+														"kind": "whitespace",
+														"text": " "
+													}
+												]
+											}
+										}
+									}
+								],
+								"close": {
+									"leading": [],
+									"origin": {
+										"beginColumn": 19,
+										"beginLine": 1,
+										"endColumn": 20,
+										"endLine": 1
+									},
+									"text": "}",
+									"trailing": [
+										{
+											"kind": "whitespace",
+											"text": "\n"
+										}
+									]
+								}
+							}
+						}
+					]
+				}
+			]
+		},
+		"eof": {
+			"leading": [],
+			"origin": {
+				"beginColumn": 1,
+				"beginLine": 2,
+				"endColumn": 1,
+				"endLine": 2
+			},
+			"text": "",
+			"trailing": []
+		}
+	},
+	"return { luau = { aliases = 1 } }\n": {
+		"type": "Root",
+		"location": {
+			"beginColumn": 1,
+			"beginLine": 1,
+			"endColumn": 1,
+			"endLine": 2
+		},
+		"body": {
+			"type": "Block",
+			"location": {
+				"beginColumn": 1,
+				"beginLine": 1,
+				"endColumn": 1,
+				"endLine": 2
+			},
+			"body": [
+				{
+					"type": "Return",
+					"location": {
+						"beginColumn": 1,
+						"beginLine": 1,
+						"endColumn": 34,
+						"endLine": 1
+					},
+					"keyword": {
+						"leading": [],
+						"origin": {
+							"beginColumn": 1,
+							"beginLine": 1,
+							"endColumn": 7,
+							"endLine": 1
+						},
+						"text": "return",
+						"trailing": [
+							{
+								"kind": "whitespace",
+								"text": " "
+							}
+						]
+					},
+					"values": [
+						{
+							"node": {
+								"type": "Table",
+								"location": {
+									"beginColumn": 8,
+									"beginLine": 1,
+									"endColumn": 34,
+									"endLine": 1
+								},
+								"open": {
+									"leading": [],
+									"origin": {
+										"beginColumn": 8,
+										"beginLine": 1,
+										"endColumn": 9,
+										"endLine": 1
+									},
+									"text": "{",
+									"trailing": [
+										{
+											"kind": "whitespace",
+											"text": " "
+										}
+									]
+								},
+								"items": [
+									{
+										"type": "TableItem",
+										"location": {
+											"beginColumn": 10,
+											"beginLine": 1,
+											"endColumn": 32,
+											"endLine": 1
+										},
+										"key": {
+											"type": "String",
+											"location": {
+												"beginColumn": 10,
+												"beginLine": 1,
+												"endColumn": 14,
+												"endLine": 1
+											},
+											"token": {
+												"leading": [],
+												"origin": {
+													"beginColumn": 10,
+													"beginLine": 1,
+													"endColumn": 14,
+													"endLine": 1
+												},
+												"text": "luau",
+												"trailing": [
+													{
+														"kind": "whitespace",
+														"text": " "
+													}
+												]
+											}
+										},
+										"equals": {
+											"leading": [],
+											"origin": {
+												"beginColumn": 15,
+												"beginLine": 1,
+												"endColumn": 16,
+												"endLine": 1
+											},
+											"text": "=",
+											"trailing": [
+												{
+													"kind": "whitespace",
+													"text": " "
+												}
+											]
+										},
+										"value": {
+											"type": "Table",
+											"location": {
+												"beginColumn": 17,
+												"beginLine": 1,
+												"endColumn": 32,
+												"endLine": 1
+											},
+											"open": {
+												"leading": [],
+												"origin": {
+													"beginColumn": 17,
+													"beginLine": 1,
+													"endColumn": 18,
+													"endLine": 1
+												},
+												"text": "{",
+												"trailing": [
+													{
+														"kind": "whitespace",
+														"text": " "
+													}
+												]
+											},
+											"items": [
+												{
+													"type": "TableItem",
+													"location": {
+														"beginColumn": 19,
+														"beginLine": 1,
+														"endColumn": 30,
+														"endLine": 1
+													},
+													"key": {
+														"type": "String",
+														"location": {
+															"beginColumn": 19,
+															"beginLine": 1,
+															"endColumn": 26,
+															"endLine": 1
+														},
+														"token": {
+															"leading": [],
+															"origin": {
+																"beginColumn": 19,
+																"beginLine": 1,
+																"endColumn": 26,
+																"endLine": 1
+															},
+															"text": "aliases",
+															"trailing": [
+																{
+																	"kind": "whitespace",
+																	"text": " "
+																}
+															]
+														}
+													},
+													"equals": {
+														"leading": [],
+														"origin": {
+															"beginColumn": 27,
+															"beginLine": 1,
+															"endColumn": 28,
+															"endLine": 1
+														},
+														"text": "=",
+														"trailing": [
+															{
+																"kind": "whitespace",
+																"text": " "
+															}
+														]
+													},
+													"value": {
+														"type": "Number",
+														"location": {
+															"beginColumn": 29,
+															"beginLine": 1,
+															"endColumn": 30,
+															"endLine": 1
+														},
+														"token": {
+															"leading": [],
+															"origin": {
+																"beginColumn": 29,
+																"beginLine": 1,
+																"endColumn": 30,
+																"endLine": 1
+															},
+															"text": "1",
+															"trailing": [
+																{
+																	"kind": "whitespace",
+																	"text": " "
+																}
+															]
+														}
+													}
+												}
+											],
+											"close": {
+												"leading": [],
+												"origin": {
+													"beginColumn": 31,
+													"beginLine": 1,
+													"endColumn": 32,
+													"endLine": 1
+												},
+												"text": "}",
+												"trailing": [
+													{
+														"kind": "whitespace",
+														"text": " "
+													}
+												]
+											}
+										}
+									}
+								],
+								"close": {
+									"leading": [],
+									"origin": {
+										"beginColumn": 33,
+										"beginLine": 1,
+										"endColumn": 34,
+										"endLine": 1
+									},
+									"text": "}",
+									"trailing": [
+										{
+											"kind": "whitespace",
+											"text": "\n"
+										}
+									]
+								}
+							}
+						}
+					]
+				}
+			]
+		},
+		"eof": {
+			"leading": [],
+			"origin": {
+				"beginColumn": 1,
+				"beginLine": 2,
+				"endColumn": 1,
+				"endLine": 2
+			},
+			"text": "",
+			"trailing": []
+		}
+	},
+	"return { luau = { aliases = { \"positional\" } } }\n": {
+		"type": "Root",
+		"location": {
+			"beginColumn": 1,
+			"beginLine": 1,
+			"endColumn": 1,
+			"endLine": 2
+		},
+		"body": {
+			"type": "Block",
+			"location": {
+				"beginColumn": 1,
+				"beginLine": 1,
+				"endColumn": 1,
+				"endLine": 2
+			},
+			"body": [
+				{
+					"type": "Return",
+					"location": {
+						"beginColumn": 1,
+						"beginLine": 1,
+						"endColumn": 49,
+						"endLine": 1
+					},
+					"keyword": {
+						"leading": [],
+						"origin": {
+							"beginColumn": 1,
+							"beginLine": 1,
+							"endColumn": 7,
+							"endLine": 1
+						},
+						"text": "return",
+						"trailing": [
+							{
+								"kind": "whitespace",
+								"text": " "
+							}
+						]
+					},
+					"values": [
+						{
+							"node": {
+								"type": "Table",
+								"location": {
+									"beginColumn": 8,
+									"beginLine": 1,
+									"endColumn": 49,
+									"endLine": 1
+								},
+								"open": {
+									"leading": [],
+									"origin": {
+										"beginColumn": 8,
+										"beginLine": 1,
+										"endColumn": 9,
+										"endLine": 1
+									},
+									"text": "{",
+									"trailing": [
+										{
+											"kind": "whitespace",
+											"text": " "
+										}
+									]
+								},
+								"items": [
+									{
+										"type": "TableItem",
+										"location": {
+											"beginColumn": 10,
+											"beginLine": 1,
+											"endColumn": 47,
+											"endLine": 1
+										},
+										"key": {
+											"type": "String",
+											"location": {
+												"beginColumn": 10,
+												"beginLine": 1,
+												"endColumn": 14,
+												"endLine": 1
+											},
+											"token": {
+												"leading": [],
+												"origin": {
+													"beginColumn": 10,
+													"beginLine": 1,
+													"endColumn": 14,
+													"endLine": 1
+												},
+												"text": "luau",
+												"trailing": [
+													{
+														"kind": "whitespace",
+														"text": " "
+													}
+												]
+											}
+										},
+										"equals": {
+											"leading": [],
+											"origin": {
+												"beginColumn": 15,
+												"beginLine": 1,
+												"endColumn": 16,
+												"endLine": 1
+											},
+											"text": "=",
+											"trailing": [
+												{
+													"kind": "whitespace",
+													"text": " "
+												}
+											]
+										},
+										"value": {
+											"type": "Table",
+											"location": {
+												"beginColumn": 17,
+												"beginLine": 1,
+												"endColumn": 47,
+												"endLine": 1
+											},
+											"open": {
+												"leading": [],
+												"origin": {
+													"beginColumn": 17,
+													"beginLine": 1,
+													"endColumn": 18,
+													"endLine": 1
+												},
+												"text": "{",
+												"trailing": [
+													{
+														"kind": "whitespace",
+														"text": " "
+													}
+												]
+											},
+											"items": [
+												{
+													"type": "TableItem",
+													"location": {
+														"beginColumn": 19,
+														"beginLine": 1,
+														"endColumn": 45,
+														"endLine": 1
+													},
+													"key": {
+														"type": "String",
+														"location": {
+															"beginColumn": 19,
+															"beginLine": 1,
+															"endColumn": 26,
+															"endLine": 1
+														},
+														"token": {
+															"leading": [],
+															"origin": {
+																"beginColumn": 19,
+																"beginLine": 1,
+																"endColumn": 26,
+																"endLine": 1
+															},
+															"text": "aliases",
+															"trailing": [
+																{
+																	"kind": "whitespace",
+																	"text": " "
+																}
+															]
+														}
+													},
+													"equals": {
+														"leading": [],
+														"origin": {
+															"beginColumn": 27,
+															"beginLine": 1,
+															"endColumn": 28,
+															"endLine": 1
+														},
+														"text": "=",
+														"trailing": [
+															{
+																"kind": "whitespace",
+																"text": " "
+															}
+														]
+													},
+													"value": {
+														"type": "Table",
+														"location": {
+															"beginColumn": 29,
+															"beginLine": 1,
+															"endColumn": 45,
+															"endLine": 1
+														},
+														"open": {
+															"leading": [],
+															"origin": {
+																"beginColumn": 29,
+																"beginLine": 1,
+																"endColumn": 30,
+																"endLine": 1
+															},
+															"text": "{",
+															"trailing": [
+																{
+																	"kind": "whitespace",
+																	"text": " "
+																}
+															]
+														},
+														"items": [
+															{
+																"type": "TableItem",
+																"location": {
+																	"beginColumn": 31,
+																	"beginLine": 1,
+																	"endColumn": 43,
+																	"endLine": 1
+																},
+																"value": {
+																	"type": "String",
+																	"location": {
+																		"beginColumn": 31,
+																		"beginLine": 1,
+																		"endColumn": 43,
+																		"endLine": 1
+																	},
+																	"token": {
+																		"leading": [],
+																		"origin": {
+																			"beginColumn": 31,
+																			"beginLine": 1,
+																			"endColumn": 43,
+																			"endLine": 1
+																		},
+																		"text": "\"positional\"",
+																		"trailing": [
+																			{
+																				"kind": "whitespace",
+																				"text": " "
+																			}
+																		]
+																	}
+																}
+															}
+														],
+														"close": {
+															"leading": [],
+															"origin": {
+																"beginColumn": 44,
+																"beginLine": 1,
+																"endColumn": 45,
+																"endLine": 1
+															},
+															"text": "}",
+															"trailing": [
+																{
+																	"kind": "whitespace",
+																	"text": " "
+																}
+															]
+														}
+													}
+												}
+											],
+											"close": {
+												"leading": [],
+												"origin": {
+													"beginColumn": 46,
+													"beginLine": 1,
+													"endColumn": 47,
+													"endLine": 1
+												},
+												"text": "}",
+												"trailing": [
+													{
+														"kind": "whitespace",
+														"text": " "
+													}
+												]
+											}
+										}
+									}
+								],
+								"close": {
+									"leading": [],
+									"origin": {
+										"beginColumn": 48,
+										"beginLine": 1,
+										"endColumn": 49,
+										"endLine": 1
+									},
+									"text": "}",
+									"trailing": [
+										{
+											"kind": "whitespace",
+											"text": "\n"
+										}
+									]
+								}
+							}
+						}
+					]
+				}
+			]
+		},
+		"eof": {
+			"leading": [],
+			"origin": {
+				"beginColumn": 1,
+				"beginLine": 2,
+				"endColumn": 1,
+				"endLine": 2
+			},
+			"text": "",
+			"trailing": []
+		}
+	},
+	"return\n": {
+		"type": "Root",
+		"location": {
+			"beginColumn": 1,
+			"beginLine": 1,
+			"endColumn": 1,
+			"endLine": 2
+		},
+		"body": {
+			"type": "Block",
+			"location": {
+				"beginColumn": 1,
+				"beginLine": 1,
+				"endColumn": 1,
+				"endLine": 2
+			},
+			"body": [
+				{
+					"type": "Return",
+					"location": {
+						"beginColumn": 1,
+						"beginLine": 1,
+						"endColumn": 7,
+						"endLine": 1
+					},
+					"keyword": {
+						"leading": [],
+						"origin": {
+							"beginColumn": 1,
+							"beginLine": 1,
+							"endColumn": 7,
+							"endLine": 1
+						},
+						"text": "return",
+						"trailing": [
+							{
+								"kind": "whitespace",
+								"text": "\n"
+							}
+						]
+					},
+					"values": []
+				}
+			]
+		},
+		"eof": {
+			"leading": [],
+			"origin": {
+				"beginColumn": 1,
+				"beginLine": 2,
+				"endColumn": 1,
+				"endLine": 2
+			},
+			"text": "",
+			"trailing": []
+		}
+	},
+	"Other.import(script, script, \"x\")\n": {
+		"type": "Root",
+		"location": {
+			"beginColumn": 1,
+			"beginLine": 1,
+			"endColumn": 1,
+			"endLine": 2
+		},
+		"body": {
+			"type": "Block",
+			"location": {
+				"beginColumn": 1,
+				"beginLine": 1,
+				"endColumn": 1,
+				"endLine": 2
+			},
+			"body": [
+				{
+					"type": "ExprStat",
+					"location": {
+						"beginColumn": 1,
+						"beginLine": 1,
+						"endColumn": 34,
+						"endLine": 1
+					},
+					"expr": {
+						"type": "Call",
+						"location": {
+							"beginColumn": 1,
+							"beginLine": 1,
+							"endColumn": 34,
+							"endLine": 1
+						},
+						"callee": {
+							"type": "IndexName",
+							"location": {
+								"beginColumn": 1,
+								"beginLine": 1,
+								"endColumn": 13,
+								"endLine": 1
+							},
+							"expr": {
+								"type": "Global",
+								"location": {
+									"beginColumn": 1,
+									"beginLine": 1,
+									"endColumn": 6,
+									"endLine": 1
+								},
+								"name": {
+									"leading": [],
+									"origin": {
+										"beginColumn": 1,
+										"beginLine": 1,
+										"endColumn": 6,
+										"endLine": 1
+									},
+									"text": "Other",
+									"trailing": []
+								}
+							},
+							"operator": {
+								"leading": [],
+								"origin": {
+									"beginColumn": 6,
+									"beginLine": 1,
+									"endColumn": 7,
+									"endLine": 1
+								},
+								"text": ".",
+								"trailing": []
+							},
+							"index": {
+								"leading": [],
+								"origin": {
+									"beginColumn": 7,
+									"beginLine": 1,
+									"endColumn": 13,
+									"endLine": 1
+								},
+								"text": "import",
+								"trailing": []
+							}
+						},
+						"open": {
+							"leading": [],
+							"origin": {
+								"beginColumn": 13,
+								"beginLine": 1,
+								"endColumn": 14,
+								"endLine": 1
+							},
+							"text": "(",
+							"trailing": []
+						},
+						"arguments": [
+							{
+								"node": {
+									"type": "Global",
+									"location": {
+										"beginColumn": 14,
+										"beginLine": 1,
+										"endColumn": 20,
+										"endLine": 1
+									},
+									"name": {
+										"leading": [],
+										"origin": {
+											"beginColumn": 14,
+											"beginLine": 1,
+											"endColumn": 20,
+											"endLine": 1
+										},
+										"text": "script",
+										"trailing": []
+									}
+								},
+								"separator": {
+									"leading": [],
+									"origin": {
+										"beginColumn": 20,
+										"beginLine": 1,
+										"endColumn": 21,
+										"endLine": 1
+									},
+									"text": ",",
+									"trailing": [
+										{
+											"kind": "whitespace",
+											"text": " "
+										}
+									]
+								}
+							},
+							{
+								"node": {
+									"type": "Global",
+									"location": {
+										"beginColumn": 22,
+										"beginLine": 1,
+										"endColumn": 28,
+										"endLine": 1
+									},
+									"name": {
+										"leading": [],
+										"origin": {
+											"beginColumn": 22,
+											"beginLine": 1,
+											"endColumn": 28,
+											"endLine": 1
+										},
+										"text": "script",
+										"trailing": []
+									}
+								},
+								"separator": {
+									"leading": [],
+									"origin": {
+										"beginColumn": 28,
+										"beginLine": 1,
+										"endColumn": 29,
+										"endLine": 1
+									},
+									"text": ",",
+									"trailing": [
+										{
+											"kind": "whitespace",
+											"text": " "
+										}
+									]
+								}
+							},
+							{
+								"node": {
+									"type": "String",
+									"location": {
+										"beginColumn": 30,
+										"beginLine": 1,
+										"endColumn": 33,
+										"endLine": 1
+									},
+									"token": {
+										"leading": [],
+										"origin": {
+											"beginColumn": 30,
+											"beginLine": 1,
+											"endColumn": 33,
+											"endLine": 1
+										},
+										"text": "\"x\"",
+										"trailing": []
+									}
+								}
+							}
+						],
+						"close": {
+							"leading": [],
+							"origin": {
+								"beginColumn": 33,
+								"beginLine": 1,
+								"endColumn": 34,
+								"endLine": 1
+							},
+							"text": ")",
+							"trailing": [
+								{
+									"kind": "whitespace",
+									"text": "\n"
+								}
+							]
+						}
+					}
+				}
+			]
+		},
+		"eof": {
+			"leading": [],
+			"origin": {
+				"beginColumn": 1,
+				"beginLine": 2,
+				"endColumn": 1,
+				"endLine": 2
+			},
+			"text": "",
+			"trailing": []
+		}
+	},
+	"require(game:FindService(\"Workspace\"))\n": {
+		"type": "Root",
+		"location": {
+			"beginColumn": 1,
+			"beginLine": 1,
+			"endColumn": 1,
+			"endLine": 2
+		},
+		"body": {
+			"type": "Block",
+			"location": {
+				"beginColumn": 1,
+				"beginLine": 1,
+				"endColumn": 1,
+				"endLine": 2
+			},
+			"body": [
+				{
+					"type": "ExprStat",
+					"location": {
+						"beginColumn": 1,
+						"beginLine": 1,
+						"endColumn": 39,
+						"endLine": 1
+					},
+					"expr": {
+						"type": "Call",
+						"location": {
+							"beginColumn": 1,
+							"beginLine": 1,
+							"endColumn": 39,
+							"endLine": 1
+						},
+						"callee": {
+							"type": "Global",
+							"location": {
+								"beginColumn": 1,
+								"beginLine": 1,
+								"endColumn": 8,
+								"endLine": 1
+							},
+							"name": {
+								"leading": [],
+								"origin": {
+									"beginColumn": 1,
+									"beginLine": 1,
+									"endColumn": 8,
+									"endLine": 1
+								},
+								"text": "require",
+								"trailing": []
+							}
+						},
+						"open": {
+							"leading": [],
+							"origin": {
+								"beginColumn": 8,
+								"beginLine": 1,
+								"endColumn": 9,
+								"endLine": 1
+							},
+							"text": "(",
+							"trailing": []
+						},
+						"arguments": [
+							{
+								"node": {
+									"type": "Call",
+									"location": {
+										"beginColumn": 9,
+										"beginLine": 1,
+										"endColumn": 38,
+										"endLine": 1
+									},
+									"callee": {
+										"type": "IndexName",
+										"location": {
+											"beginColumn": 9,
+											"beginLine": 1,
+											"endColumn": 25,
+											"endLine": 1
+										},
+										"expr": {
+											"type": "Global",
+											"location": {
+												"beginColumn": 9,
+												"beginLine": 1,
+												"endColumn": 13,
+												"endLine": 1
+											},
+											"name": {
+												"leading": [],
+												"origin": {
+													"beginColumn": 9,
+													"beginLine": 1,
+													"endColumn": 13,
+													"endLine": 1
+												},
+												"text": "game",
+												"trailing": []
+											}
+										},
+										"operator": {
+											"leading": [],
+											"origin": {
+												"beginColumn": 13,
+												"beginLine": 1,
+												"endColumn": 14,
+												"endLine": 1
+											},
+											"text": ":",
+											"trailing": []
+										},
+										"index": {
+											"leading": [],
+											"origin": {
+												"beginColumn": 14,
+												"beginLine": 1,
+												"endColumn": 25,
+												"endLine": 1
+											},
+											"text": "FindService",
+											"trailing": []
+										}
+									},
+									"open": {
+										"leading": [],
+										"origin": {
+											"beginColumn": 25,
+											"beginLine": 1,
+											"endColumn": 26,
+											"endLine": 1
+										},
+										"text": "(",
+										"trailing": []
+									},
+									"arguments": [
+										{
+											"node": {
+												"type": "String",
+												"location": {
+													"beginColumn": 26,
+													"beginLine": 1,
+													"endColumn": 37,
+													"endLine": 1
+												},
+												"token": {
+													"leading": [],
+													"origin": {
+														"beginColumn": 26,
+														"beginLine": 1,
+														"endColumn": 37,
+														"endLine": 1
+													},
+													"text": "\"Workspace\"",
+													"trailing": []
+												}
+											}
+										}
+									],
+									"close": {
+										"leading": [],
+										"origin": {
+											"beginColumn": 37,
+											"beginLine": 1,
+											"endColumn": 38,
+											"endLine": 1
+										},
+										"text": ")",
+										"trailing": []
+									}
+								}
+							}
+						],
+						"close": {
+							"leading": [],
+							"origin": {
+								"beginColumn": 38,
+								"beginLine": 1,
+								"endColumn": 39,
+								"endLine": 1
+							},
+							"text": ")",
+							"trailing": [
+								{
+									"kind": "whitespace",
+									"text": "\n"
+								}
+							]
+						}
+					}
+				}
+			]
+		},
+		"eof": {
+			"leading": [],
+			"origin": {
+				"beginColumn": 1,
+				"beginLine": 2,
+				"endColumn": 1,
+				"endLine": 2
+			},
+			"text": "",
+			"trailing": []
+		}
+	},
+	"require(script.FindFirstChild(\"A\"))\n": {
+		"type": "Root",
+		"location": {
+			"beginColumn": 1,
+			"beginLine": 1,
+			"endColumn": 1,
+			"endLine": 2
+		},
+		"body": {
+			"type": "Block",
+			"location": {
+				"beginColumn": 1,
+				"beginLine": 1,
+				"endColumn": 1,
+				"endLine": 2
+			},
+			"body": [
+				{
+					"type": "ExprStat",
+					"location": {
+						"beginColumn": 1,
+						"beginLine": 1,
+						"endColumn": 36,
+						"endLine": 1
+					},
+					"expr": {
+						"type": "Call",
+						"location": {
+							"beginColumn": 1,
+							"beginLine": 1,
+							"endColumn": 36,
+							"endLine": 1
+						},
+						"callee": {
+							"type": "Global",
+							"location": {
+								"beginColumn": 1,
+								"beginLine": 1,
+								"endColumn": 8,
+								"endLine": 1
+							},
+							"name": {
+								"leading": [],
+								"origin": {
+									"beginColumn": 1,
+									"beginLine": 1,
+									"endColumn": 8,
+									"endLine": 1
+								},
+								"text": "require",
+								"trailing": []
+							}
+						},
+						"open": {
+							"leading": [],
+							"origin": {
+								"beginColumn": 8,
+								"beginLine": 1,
+								"endColumn": 9,
+								"endLine": 1
+							},
+							"text": "(",
+							"trailing": []
+						},
+						"arguments": [
+							{
+								"node": {
+									"type": "Call",
+									"location": {
+										"beginColumn": 9,
+										"beginLine": 1,
+										"endColumn": 35,
+										"endLine": 1
+									},
+									"callee": {
+										"type": "IndexName",
+										"location": {
+											"beginColumn": 9,
+											"beginLine": 1,
+											"endColumn": 30,
+											"endLine": 1
+										},
+										"expr": {
+											"type": "Global",
+											"location": {
+												"beginColumn": 9,
+												"beginLine": 1,
+												"endColumn": 15,
+												"endLine": 1
+											},
+											"name": {
+												"leading": [],
+												"origin": {
+													"beginColumn": 9,
+													"beginLine": 1,
+													"endColumn": 15,
+													"endLine": 1
+												},
+												"text": "script",
+												"trailing": []
+											}
+										},
+										"operator": {
+											"leading": [],
+											"origin": {
+												"beginColumn": 15,
+												"beginLine": 1,
+												"endColumn": 16,
+												"endLine": 1
+											},
+											"text": ".",
+											"trailing": []
+										},
+										"index": {
+											"leading": [],
+											"origin": {
+												"beginColumn": 16,
+												"beginLine": 1,
+												"endColumn": 30,
+												"endLine": 1
+											},
+											"text": "FindFirstChild",
+											"trailing": []
+										}
+									},
+									"open": {
+										"leading": [],
+										"origin": {
+											"beginColumn": 30,
+											"beginLine": 1,
+											"endColumn": 31,
+											"endLine": 1
+										},
+										"text": "(",
+										"trailing": []
+									},
+									"arguments": [
+										{
+											"node": {
+												"type": "String",
+												"location": {
+													"beginColumn": 31,
+													"beginLine": 1,
+													"endColumn": 34,
+													"endLine": 1
+												},
+												"token": {
+													"leading": [],
+													"origin": {
+														"beginColumn": 31,
+														"beginLine": 1,
+														"endColumn": 34,
+														"endLine": 1
+													},
+													"text": "\"A\"",
+													"trailing": []
+												}
+											}
+										}
+									],
+									"close": {
+										"leading": [],
+										"origin": {
+											"beginColumn": 34,
+											"beginLine": 1,
+											"endColumn": 35,
+											"endLine": 1
+										},
+										"text": ")",
+										"trailing": []
+									}
+								}
+							}
+						],
+						"close": {
+							"leading": [],
+							"origin": {
+								"beginColumn": 35,
+								"beginLine": 1,
+								"endColumn": 36,
+								"endLine": 1
+							},
+							"text": ")",
+							"trailing": [
+								{
+									"kind": "whitespace",
+									"text": "\n"
+								}
+							]
+						}
+					}
+				}
+			]
+		},
+		"eof": {
+			"leading": [],
+			"origin": {
+				"beginColumn": 1,
+				"beginLine": 2,
+				"endColumn": 1,
+				"endLine": 2
+			},
+			"text": "",
+			"trailing": []
+		}
+	},
+	"local x = 1\nreturn { luau = { aliases = { shared = \"./shared\" } } }\n": {
+		"type": "Root",
+		"location": {
+			"beginColumn": 1,
+			"beginLine": 1,
+			"endColumn": 1,
+			"endLine": 3
+		},
+		"body": {
+			"type": "Block",
+			"location": {
+				"beginColumn": 1,
+				"beginLine": 1,
+				"endColumn": 1,
+				"endLine": 3
+			},
+			"body": [
+				{
+					"type": "Local",
+					"location": {
+						"beginColumn": 1,
+						"beginLine": 1,
+						"endColumn": 12,
+						"endLine": 1
+					},
+					"keyword": {
+						"leading": [],
+						"origin": {
+							"beginColumn": 1,
+							"beginLine": 1,
+							"endColumn": 6,
+							"endLine": 1
+						},
+						"text": "local",
+						"trailing": [
+							{
+								"kind": "whitespace",
+								"text": " "
+							}
+						]
+					},
+					"variables": [
+						{
+							"node": {
+								"type": "LocalDecl",
+								"location": {
+									"beginColumn": 7,
+									"beginLine": 1,
+									"endColumn": 8,
+									"endLine": 1
+								},
+								"binding": 1,
+								"name": {
+									"leading": [],
+									"origin": {
+										"beginColumn": 7,
+										"beginLine": 1,
+										"endColumn": 8,
+										"endLine": 1
+									},
+									"text": "x",
+									"trailing": [
+										{
+											"kind": "whitespace",
+											"text": " "
+										}
+									]
+								}
+							}
+						}
+					],
+					"equals": {
+						"leading": [],
+						"origin": {
+							"beginColumn": 9,
+							"beginLine": 1,
+							"endColumn": 10,
+							"endLine": 1
+						},
+						"text": "=",
+						"trailing": [
+							{
+								"kind": "whitespace",
+								"text": " "
+							}
+						]
+					},
+					"values": [
+						{
+							"node": {
+								"type": "Number",
+								"location": {
+									"beginColumn": 11,
+									"beginLine": 1,
+									"endColumn": 12,
+									"endLine": 1
+								},
+								"token": {
+									"leading": [],
+									"origin": {
+										"beginColumn": 11,
+										"beginLine": 1,
+										"endColumn": 12,
+										"endLine": 1
+									},
+									"text": "1",
+									"trailing": [
+										{
+											"kind": "whitespace",
+											"text": "\n"
+										}
+									]
+								}
+							}
+						}
+					]
+				},
+				{
+					"type": "Return",
+					"location": {
+						"beginColumn": 1,
+						"beginLine": 2,
+						"endColumn": 56,
+						"endLine": 2
+					},
+					"keyword": {
+						"leading": [],
+						"origin": {
+							"beginColumn": 1,
+							"beginLine": 2,
+							"endColumn": 7,
+							"endLine": 2
+						},
+						"text": "return",
+						"trailing": [
+							{
+								"kind": "whitespace",
+								"text": " "
+							}
+						]
+					},
+					"values": [
+						{
+							"node": {
+								"type": "Table",
+								"location": {
+									"beginColumn": 8,
+									"beginLine": 2,
+									"endColumn": 56,
+									"endLine": 2
+								},
+								"open": {
+									"leading": [],
+									"origin": {
+										"beginColumn": 8,
+										"beginLine": 2,
+										"endColumn": 9,
+										"endLine": 2
+									},
+									"text": "{",
+									"trailing": [
+										{
+											"kind": "whitespace",
+											"text": " "
+										}
+									]
+								},
+								"items": [
+									{
+										"type": "TableItem",
+										"location": {
+											"beginColumn": 10,
+											"beginLine": 2,
+											"endColumn": 54,
+											"endLine": 2
+										},
+										"key": {
+											"type": "String",
+											"location": {
+												"beginColumn": 10,
+												"beginLine": 2,
+												"endColumn": 14,
+												"endLine": 2
+											},
+											"token": {
+												"leading": [],
+												"origin": {
+													"beginColumn": 10,
+													"beginLine": 2,
+													"endColumn": 14,
+													"endLine": 2
+												},
+												"text": "luau",
+												"trailing": [
+													{
+														"kind": "whitespace",
+														"text": " "
+													}
+												]
+											}
+										},
+										"equals": {
+											"leading": [],
+											"origin": {
+												"beginColumn": 15,
+												"beginLine": 2,
+												"endColumn": 16,
+												"endLine": 2
+											},
+											"text": "=",
+											"trailing": [
+												{
+													"kind": "whitespace",
+													"text": " "
+												}
+											]
+										},
+										"value": {
+											"type": "Table",
+											"location": {
+												"beginColumn": 17,
+												"beginLine": 2,
+												"endColumn": 54,
+												"endLine": 2
+											},
+											"open": {
+												"leading": [],
+												"origin": {
+													"beginColumn": 17,
+													"beginLine": 2,
+													"endColumn": 18,
+													"endLine": 2
+												},
+												"text": "{",
+												"trailing": [
+													{
+														"kind": "whitespace",
+														"text": " "
+													}
+												]
+											},
+											"items": [
+												{
+													"type": "TableItem",
+													"location": {
+														"beginColumn": 19,
+														"beginLine": 2,
+														"endColumn": 52,
+														"endLine": 2
+													},
+													"key": {
+														"type": "String",
+														"location": {
+															"beginColumn": 19,
+															"beginLine": 2,
+															"endColumn": 26,
+															"endLine": 2
+														},
+														"token": {
+															"leading": [],
+															"origin": {
+																"beginColumn": 19,
+																"beginLine": 2,
+																"endColumn": 26,
+																"endLine": 2
+															},
+															"text": "aliases",
+															"trailing": [
+																{
+																	"kind": "whitespace",
+																	"text": " "
+																}
+															]
+														}
+													},
+													"equals": {
+														"leading": [],
+														"origin": {
+															"beginColumn": 27,
+															"beginLine": 2,
+															"endColumn": 28,
+															"endLine": 2
+														},
+														"text": "=",
+														"trailing": [
+															{
+																"kind": "whitespace",
+																"text": " "
+															}
+														]
+													},
+													"value": {
+														"type": "Table",
+														"location": {
+															"beginColumn": 29,
+															"beginLine": 2,
+															"endColumn": 52,
+															"endLine": 2
+														},
+														"open": {
+															"leading": [],
+															"origin": {
+																"beginColumn": 29,
+																"beginLine": 2,
+																"endColumn": 30,
+																"endLine": 2
+															},
+															"text": "{",
+															"trailing": [
+																{
+																	"kind": "whitespace",
+																	"text": " "
+																}
+															]
+														},
+														"items": [
+															{
+																"type": "TableItem",
+																"location": {
+																	"beginColumn": 31,
+																	"beginLine": 2,
+																	"endColumn": 50,
+																	"endLine": 2
+																},
+																"key": {
+																	"type": "String",
+																	"location": {
+																		"beginColumn": 31,
+																		"beginLine": 2,
+																		"endColumn": 37,
+																		"endLine": 2
+																	},
+																	"token": {
+																		"leading": [],
+																		"origin": {
+																			"beginColumn": 31,
+																			"beginLine": 2,
+																			"endColumn": 37,
+																			"endLine": 2
+																		},
+																		"text": "shared",
+																		"trailing": [
+																			{
+																				"kind": "whitespace",
+																				"text": " "
+																			}
+																		]
+																	}
+																},
+																"equals": {
+																	"leading": [],
+																	"origin": {
+																		"beginColumn": 38,
+																		"beginLine": 2,
+																		"endColumn": 39,
+																		"endLine": 2
+																	},
+																	"text": "=",
+																	"trailing": [
+																		{
+																			"kind": "whitespace",
+																			"text": " "
+																		}
+																	]
+																},
+																"value": {
+																	"type": "String",
+																	"location": {
+																		"beginColumn": 40,
+																		"beginLine": 2,
+																		"endColumn": 50,
+																		"endLine": 2
+																	},
+																	"token": {
+																		"leading": [],
+																		"origin": {
+																			"beginColumn": 40,
+																			"beginLine": 2,
+																			"endColumn": 50,
+																			"endLine": 2
+																		},
+																		"text": "\"./shared\"",
+																		"trailing": [
+																			{
+																				"kind": "whitespace",
+																				"text": " "
+																			}
+																		]
+																	}
+																}
+															}
+														],
+														"close": {
+															"leading": [],
+															"origin": {
+																"beginColumn": 51,
+																"beginLine": 2,
+																"endColumn": 52,
+																"endLine": 2
+															},
+															"text": "}",
+															"trailing": [
+																{
+																	"kind": "whitespace",
+																	"text": " "
+																}
+															]
+														}
+													}
+												}
+											],
+											"close": {
+												"leading": [],
+												"origin": {
+													"beginColumn": 53,
+													"beginLine": 2,
+													"endColumn": 54,
+													"endLine": 2
+												},
+												"text": "}",
+												"trailing": [
+													{
+														"kind": "whitespace",
+														"text": " "
+													}
+												]
+											}
+										}
+									}
+								],
+								"close": {
+									"leading": [],
+									"origin": {
+										"beginColumn": 55,
+										"beginLine": 2,
+										"endColumn": 56,
+										"endLine": 2
+									},
+									"text": "}",
+									"trailing": [
+										{
+											"kind": "whitespace",
+											"text": "\n"
+										}
+									]
+								}
+							}
+						}
+					]
+				}
+			]
+		},
+		"eof": {
+			"leading": [],
+			"origin": {
+				"beginColumn": 1,
+				"beginLine": 3,
+				"endColumn": 1,
+				"endLine": 3
+			},
+			"text": "",
+			"trailing": []
+		}
 	}
 }

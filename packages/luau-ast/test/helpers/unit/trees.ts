@@ -1,9 +1,11 @@
-import { fromAny } from "@total-typescript/shoehorn";
+import { fromAny, fromPartial } from "@total-typescript/shoehorn";
 
 import { assert } from "vitest";
 
 import type { AstStatBlock } from "#src/ast-types.ts";
+import type { CstParseResult } from "#src/cst-materialize.ts";
 import type { CstRoot } from "#src/cst.ts";
+import type { CstParseOptions, LuauParser } from "#src/parser.ts";
 import ast from "../../fixtures/trees/ast.json" with { type: "json" };
 import cst from "../../fixtures/trees/cst.json" with { type: "json" };
 import rawAst from "../../fixtures/trees/raw-ast.json" with { type: "json" };
@@ -28,4 +30,12 @@ export function rawTree(source: string, kind: "ast" | "cst"): string {
 	const tree = trees[source];
 	assert(tree !== undefined, `missing ${kind} payload for ${source}`);
 	return tree;
+}
+
+export function fixtureCstParser(): LuauParser {
+	return fromPartial({
+		parseCst: ({ source }: CstParseOptions): CstParseResult => {
+			return { ok: true, root: cstTree(source) };
+		},
+	});
 }

@@ -92,6 +92,13 @@ export type {
 } from "./parser.ts";
 export { loadLuauParser } from "./parser.ts";
 
+// Require calls and require-by-string resolution
+export type { RequireFileSystem } from "./require-aliases.ts";
+export type { InstancePath, InstanceTraversal, RequireCall } from "./require-call.ts";
+export { readRequireCall } from "./require-call.ts";
+export type { StringRequireResolution, StringRequireResolver } from "./require-resolver.ts";
+export { createStringRequireResolver } from "./require-resolver.ts";
+
 // Byte offsets and span math
 export type { ByteRange, SourceBytes } from "./source-bytes.ts";
 export {

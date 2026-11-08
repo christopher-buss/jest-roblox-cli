@@ -81,6 +81,48 @@ if (result.ok) {
 }
 ```
 
+## Requires
+
+`readRequireCall(call)` reads what a CST call loads: a `require` string, a
+constant Instance path (`script`, `.Parent`, `.Name`, `["Name"]`,
+`FindFirstChild` and `WaitForChild` with one string, and
+`game:GetService("Name")`), a `TS.import` base path and its child names, or a
+`TS.getModule` package path. Any other `require` or `TS.import` argument reads
+as `dynamic`. Other calls read as `undefined`.
+
+```ts
+import {
+	createStringRequireResolver,
+	loadLuauParser,
+} from "@isentinel/luau-ast";
+
+import fs from "node:fs";
+
+const resolve = createStringRequireResolver({
+	fileSystem: fs,
+	parser: loadLuauParser(),
+});
+const result = resolve("/project/src/init.luau", "@shared/util");
+if (result.kind === "unresolved") {
+	console.error(result.reason);
+}
+```
+
+The resolver follows Luau's require-by-string rules. `./` and `../` start in the
+requiring file's folder, or in the folder above it for an `init` file. `@self`
+starts in an `init` file's folder. Another `@alias` comes from the nearest
+folder above the requiring file whose `.config.luau` or `.luaurc` names it. A
+folder with both files is ambiguous, so an alias lookup that reaches it is
+`unresolved`. A `.config.luau` must return `luau.aliases` as a table of string
+literals. A path loads a `.luau` or `.lua` file, or a folder's `init` file; no
+match or two matches is `unresolved`. The resolver caches probes and
+configuration reads for its lifetime.
+
+The resolver has no built-in prefixes. `@std`, `@lute`, and `@rbx` are alias
+lookups like any other: they resolve when a configuration names them and are
+`unresolved` when none does. If your tool gives such a prefix a runtime meaning,
+check for it before you call the resolver.
+
 ## Prerequisites and checks
 
 Runtime consumers need Node 24.12 or later. Repository development uses the Node
