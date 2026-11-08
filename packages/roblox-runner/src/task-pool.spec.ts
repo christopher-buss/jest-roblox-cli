@@ -3,7 +3,7 @@ import { ApiError, RateLimitError } from "@bedrock-rbx/ocale";
 import { describe, expect, it, vi } from "vitest";
 
 import type { ScriptResult } from "./runner-types.ts";
-import { runTaskPoolAsync } from "./task-pool.ts";
+import { allocateTaskSlots, runTaskPoolAsync } from "./task-pool.ts";
 import type { TaskPoolBackoff, TaskPoolPlace } from "./task-pool.ts";
 
 type TaskRejection = Error | { readonly code: string };
@@ -457,6 +457,39 @@ describe("runTaskPool multi-place fan-out", () => {
 		expect(warn).toHaveBeenCalledExactlyOnceWith(
 			"runTaskPool concurrency 25 exceeds 2 place(s) × 10 = 20; clamping to 20",
 		);
+	});
+
+	it("should launch each place in the slots allocateTaskSlots gives it", () => {
+		expect.assertions(1);
+
+		const launched: Array<Array<number>> = [[], [], []];
+		void runTaskPoolAsync({
+			concurrency: 4,
+			isDone: () => false,
+			onResult: () => {},
+			places: launched.map((slots) => {
+				return {
+					runTask: async (slot: number): Promise<ScriptResult> => {
+						slots.push(slot);
+						return makeDeferred().promise;
+					},
+				};
+			}),
+		});
+
+		expect(launched).toStrictEqual(
+			allocateTaskSlots({ concurrency: 4, placeCount: 3 }).map(({ slots }) => slots),
+		);
+	});
+
+	it("should leave a place the concurrency does not reach without slots", () => {
+		expect.assertions(1);
+
+		expect(allocateTaskSlots({ concurrency: 2, placeCount: 3 })).toStrictEqual([
+			{ placeIndex: 0, slots: [0] },
+			{ placeIndex: 1, slots: [1] },
+			{ placeIndex: 2, slots: [] },
+		]);
 	});
 
 	it("should warn through console.warn by default", () => {

@@ -39,8 +39,17 @@ export { SortedMapInbox } from "./sorted-map-inbox.ts";
 export type { SortedMapEntry, SortedMapInboxOptions } from "./sorted-map-inbox.ts";
 export { maximumSubmitDuration } from "./submit-budget.ts";
 export type { SubmitDurationOptions } from "./submit-budget.ts";
-export { runTaskPoolAsync as runTaskPool } from "./task-pool.ts";
-export type { TaskPoolBackoff, TaskPoolOptions, TaskPoolPlace } from "./task-pool.ts";
+export {
+	allocateTaskSlots,
+	MAX_TASKS_PER_PLACE,
+	runTaskPoolAsync as runTaskPool,
+} from "./task-pool.ts";
+export type {
+	PlaceSlotAllocation,
+	TaskPoolBackoff,
+	TaskPoolOptions,
+	TaskPoolPlace,
+} from "./task-pool.ts";
 export { TaskQuotaError } from "./task-quota-error.ts";
 export { TaskStallError } from "./task-stall-error.ts";
 export { TaskSubmitError } from "./task-submit-error.ts";

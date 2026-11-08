@@ -81,7 +81,9 @@ its refusal. The `/testing` entry point exposes `formatPlaceMismatch` and
 - `runTaskPool` distributes slots across places, capped at ten per place,
   replenishes tasks until `isDone`, and reports results/errors/backoff through
   callbacks. `isWorkCovered` prevents launching work already covered by live
-  tasks. `signal` ends backoff waits.
+  tasks. `signal` ends backoff waits. `allocateTaskSlots` returns the slot ids
+  it gives each place (`MAX_TASKS_PER_PLACE` per place at most), so a caller can
+  tell which places a concurrency reaches.
 - `createMemoryStoreJanitor` cleans the run's queue/maps and can wait for claims
   to become visible before reclaiming them. Cleanup is best effort.
 - `flushMemoryStoreAsync` destroys **all** MemoryStore data in the universe.

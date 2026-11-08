@@ -10,7 +10,7 @@ import type { ScriptResult } from "./runner-types.ts";
  * caps each place's slot share here and warns when the requested total exceeds
  * the aggregate ceiling.
  */
-const MAX_TASKS_PER_PLACE = 10;
+export const MAX_TASKS_PER_PLACE = 10;
 
 /**
  * A freed slot needs ~10s before its place will accept a new task. A backoff
@@ -47,6 +47,17 @@ export interface TaskPoolBackoff {
 	slot: number;
 	/** How long the slot waited before retrying. */
 	waitMs: number;
+}
+
+/** The pool slots one place receives. */
+export interface PlaceSlotAllocation {
+	/** Index into the places the pool was given. */
+	placeIndex: number;
+	/**
+	 * Slot ids, numbered across the whole pool, as `onResult` and `onError`
+	 * report them. Empty for a place the concurrency does not reach.
+	 */
+	slots: ReadonlyArray<number>;
 }
 
 /**
@@ -214,9 +225,27 @@ export async function runTaskPoolAsync(options: TaskPoolOptions): Promise<void> 
 			console.warn(message);
 		});
 
-	const allocations = distributeSlots({ concurrency, places, warn });
+	warnOverCapacity({ concurrency, placeCount: places.length, warn });
+	await Promise.all(spawnWorkers(runtime, spreadSlots(places, concurrency)));
+}
 
-	await Promise.all(spawnWorkers(runtime, allocations));
+/**
+ * The slots {@link runTaskPoolAsync} gives each place: `concurrency` spread as
+ * evenly as possible, capped at {@link MAX_TASKS_PER_PLACE} per place, with
+ * leading places taking the remainder.
+ * @param options - Requested concurrency and the number of places.
+ * @returns One allocation per place, in place order.
+ */
+export function allocateTaskSlots({
+	concurrency,
+	placeCount,
+}: {
+	concurrency: number;
+	placeCount: number;
+}): Array<PlaceSlotAllocation> {
+	return spreadSlots(Array.from({ length: placeCount }), concurrency).map(
+		({ placeIndex, slots }) => ({ placeIndex, slots }),
+	);
 }
 
 /**
@@ -350,48 +379,37 @@ async function workerAsync({
 }
 
 /**
- * Start one worker per allocated slot. Slots are numbered across the whole
- * pool, not per place, so the index a settled task is reported under identifies
- * one slot for the length of the run.
+ * Start one worker per allocated slot.
  * @param runtime - Resolved pool callbacks and timing adapters.
- * @param allocations - Per-place slot counts.
+ * @param allocations - Per-place slot ids.
  * @returns One worker promise for each allocated slot.
  */
 function spawnWorkers(
 	runtime: PoolRuntime,
-	allocations: ReadonlyArray<{ place: TaskPoolPlace; slots: number }>,
+	allocations: ReadonlyArray<PlaceSlotAllocation & { place: TaskPoolPlace }>,
 ): Array<Promise<void>> {
 	const workers: Array<Promise<void>> = [];
-	for (const [placeIndex, { place, slots }] of allocations.entries()) {
+	for (const { place, placeIndex, slots } of allocations) {
 		// One state per place, shared by that place's slots: the recycle-lag
 		// clock is a property of the place, not of an individual slot.
 		const state: PlaceState = { lastCompletionMs: -Infinity, place, placeIndex };
-		for (let slot = 0; slot < slots; slot += 1) {
-			workers.push(workerAsync({ runtime, slot: workers.length, state }));
+		for (const slot of slots) {
+			workers.push(workerAsync({ runtime, slot, state }));
 		}
 	}
 
 	return workers;
 }
 
-/**
- * Spread `concurrency` task-slots across the places as evenly as possible,
- * capped at {@link MAX_TASKS_PER_PLACE} per place. A total above the aggregate
- * ceiling is clamped and reported once through `warn` so the run still
- * proceeds at the real capacity instead of silently over-subscribing.
- * @param options - Requested concurrency, destinations and warning sink.
- * @returns Per-place slot counts capped at the aggregate platform capacity.
- */
-function distributeSlots({
+function warnOverCapacity({
 	concurrency,
-	places,
+	placeCount,
 	warn,
 }: {
 	concurrency: number;
-	places: ReadonlyArray<TaskPoolPlace>;
+	placeCount: number;
 	warn: (message: string) => void;
-}): Array<{ place: TaskPoolPlace; slots: number }> {
-	const placeCount = places.length;
+}): void {
 	const capacity = placeCount * MAX_TASKS_PER_PLACE;
 	if (concurrency > capacity) {
 		warn(
@@ -400,9 +418,20 @@ function distributeSlots({
 				`clamping to ${String(capacity)}`,
 		);
 	}
+}
 
-	const effective = Math.min(concurrency, capacity);
-	const base = Math.floor(effective / placeCount);
-	const remainder = effective % placeCount;
-	return places.map((place, index) => ({ place, slots: base + (index < remainder ? 1 : 0) }));
+function spreadSlots<Place>(
+	places: ReadonlyArray<Place>,
+	concurrency: number,
+): Array<PlaceSlotAllocation & { place: Place }> {
+	const effective = Math.min(concurrency, places.length * MAX_TASKS_PER_PLACE);
+	const base = Math.floor(effective / places.length);
+	const remainder = effective % places.length;
+	let next = 0;
+	return places.map((place, placeIndex) => {
+		const count = base + (placeIndex < remainder ? 1 : 0);
+		const slots = Array.from({ length: count }, (_unused, offset) => next + offset);
+		next += count;
+		return { place, placeIndex, slots };
+	});
 }
