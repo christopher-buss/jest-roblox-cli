@@ -5,6 +5,7 @@ import * as path from "node:path";
 import process from "node:process";
 
 import bootstrapSource from "../../luau/luau-config-bootstrap.luau";
+import packageJson from "../../package.json" with { type: "json" };
 import type { LuauLiteral } from "../luau/eval-literals.ts";
 import type { ChildProcessRunner } from "../utils/child-process.ts";
 import { nodeChildProcessRunner } from "../utils/child-process.ts";
@@ -12,6 +13,7 @@ import { errorMessage } from "../utils/error-message.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import { nodeFileSystem } from "../utils/file-system.ts";
 import { isSupportedLuteVersion, SUPPORTED_LUTE_MAJOR } from "../utils/lute-version.ts";
+import { ensureLuauConfigTypes } from "./luau-config-type.ts";
 
 // The tuple keeps a comma after the binary literal, past PRIVATE_NAMES in
 // .standalone/sync.sh.
@@ -43,19 +45,13 @@ export interface LuteEvaluationContext {
 	childProcess: ChildProcessRunner;
 	/** Environment that names the lute binary. */
 	environment: NodeJS.ProcessEnv;
-	/** Writes and removes the bootstrap folder. */
+	/** Writes the type module and the bootstrap folder. */
 	fileSystem: FileSystem;
+	/** Home folder that holds the Luau Config type module. */
+	homeDirectory: string;
 	/** Parent of the bootstrap folder. */
 	temporaryDirectory: string;
 }
-
-/** The real collaborators. */
-export const NODE_LUTE_EVALUATION_CONTEXT: LuteEvaluationContext = {
-	childProcess: nodeChildProcessRunner,
-	environment: process.env,
-	fileSystem: nodeFileSystem,
-	temporaryDirectory: os.tmpdir(),
-};
 
 /** A Luau Config the static evaluator could not read. */
 export interface LuteEvaluationRequest {
@@ -77,6 +73,20 @@ interface LuteRun {
 }
 
 /**
+ * The real collaborators, with the home and temporary folders read now.
+ * @returns The context of this process.
+ */
+export function nodeLuteEvaluationContext(): LuteEvaluationContext {
+	return {
+		childProcess: nodeChildProcessRunner,
+		environment: process.env,
+		fileSystem: nodeFileSystem,
+		homeDirectory: os.homedir(),
+		temporaryDirectory: os.tmpdir(),
+	};
+}
+
+/**
  * Run a Luau Config through `lute run` on a bootstrap in a temporary folder.
  *
  * @param request - Config file and the syntax that needs lute.
@@ -93,25 +103,19 @@ export async function evaluateLuauConfigWithLute(
 	const binary = configured !== undefined && configured !== "" ? configured : DEFAULT_BINARY;
 	await assertLuteVersion({ binary, childProcess: context.childProcess, request });
 
-	const { fileSystem } = context;
-	const directory = fileSystem.mkdtempSync(
-		path.join(context.temporaryDirectory, "jest-roblox-luau-config-"),
-	);
+	const typesFailure = ensureLuauConfigTypes({
+		fileSystem: context.fileSystem,
+		homeDirectory: context.homeDirectory,
+		version: packageJson.version,
+	});
 	try {
-		const run = await runLute({
-			args: [
-				RUN_SUBCOMMAND,
-				writeBootstrap({ configFile, directory, fileSystem }),
-				path.basename(configFile, ".luau"),
-			],
-			binary,
-			childProcess: context.childProcess,
-			cwd: path.dirname(configFile),
-		});
+		return await runBootstrap({ binary, configFile, context });
+	} catch (err) {
+		if (typesFailure === undefined) {
+			throw err;
+		}
 
-		return readBootstrapOutput(run, configFile);
-	} finally {
-		fileSystem.rmSync(directory, { recursive: true });
+		throw new Error(`${errorMessage(err)}\n${typesFailure.message}`, { cause: err });
 	}
 }
 
@@ -163,41 +167,6 @@ function timeoutError(configFile: string): Error {
 	return new Error(
 		`Luau config ${configFile} did not finish in lute within ${String(LUTE_EVALUATION_TIMEOUT)}ms.`,
 	);
-}
-
-async function assertLuteVersion({
-	binary,
-	childProcess,
-	request,
-}: {
-	readonly binary: string;
-	readonly childProcess: ChildProcessRunner;
-	readonly request: LuteEvaluationRequest;
-}): Promise<void> {
-	const { configFile, unreadable } = request;
-	const { error, stdout } = await runLute({ args: ["--version"], binary, childProcess });
-	if (error?.code === "ENOENT") {
-		throw new Error(
-			`Luau config ${configFile}:${String(unreadable.line)} holds ${unreadable.syntax}, which needs lute to run, and "${binary}" was not found. ${INSTALL_HINT}`,
-		);
-	}
-
-	if (error?.killed === true) {
-		throw timeoutError(configFile);
-	}
-
-	if (error !== null) {
-		throw new Error(
-			`Luau config ${configFile} needs lute, but "${binary} --version" failed: ${error.message}`,
-		);
-	}
-
-	const printed = stdout.trim();
-	if (!isSupportedLuteVersion(printed)) {
-		throw new Error(
-			`Luau config ${configFile} needs lute ${String(SUPPORTED_LUTE_MAJOR)}.x, but "${binary} --version" printed "${printed}". ${INSTALL_HINT}`,
-		);
-	}
 }
 
 function parseSentinelLine({
@@ -288,4 +257,70 @@ function readBootstrapOutput(run: LuteRun, configFile: string): LuauLiteral {
 		start: errorAt + 1 + ERROR_SENTINEL.length,
 		stdout,
 	});
+}
+
+async function runBootstrap({
+	binary,
+	configFile,
+	context,
+}: {
+	readonly binary: string;
+	readonly configFile: string;
+	readonly context: LuteEvaluationContext;
+}): Promise<LuauLiteral> {
+	const { fileSystem } = context;
+	const directory = fileSystem.mkdtempSync(
+		path.join(context.temporaryDirectory, "jest-roblox-luau-config-"),
+	);
+	try {
+		const run = await runLute({
+			args: [
+				RUN_SUBCOMMAND,
+				writeBootstrap({ configFile, directory, fileSystem }),
+				path.basename(configFile, ".luau"),
+			],
+			binary,
+			childProcess: context.childProcess,
+			cwd: path.dirname(configFile),
+		});
+
+		return readBootstrapOutput(run, configFile);
+	} finally {
+		fileSystem.rmSync(directory, { recursive: true });
+	}
+}
+
+async function assertLuteVersion({
+	binary,
+	childProcess,
+	request,
+}: {
+	readonly binary: string;
+	readonly childProcess: ChildProcessRunner;
+	readonly request: LuteEvaluationRequest;
+}): Promise<void> {
+	const { configFile, unreadable } = request;
+	const { error, stdout } = await runLute({ args: ["--version"], binary, childProcess });
+	if (error?.code === "ENOENT") {
+		throw new Error(
+			`Luau config ${configFile}:${String(unreadable.line)} holds ${unreadable.syntax}, which needs lute to run, and "${binary}" was not found. ${INSTALL_HINT}`,
+		);
+	}
+
+	if (error?.killed === true) {
+		throw timeoutError(configFile);
+	}
+
+	if (error !== null) {
+		throw new Error(
+			`Luau config ${configFile} needs lute, but "${binary} --version" failed: ${error.message}`,
+		);
+	}
+
+	const printed = stdout.trim();
+	if (!isSupportedLuteVersion(printed)) {
+		throw new Error(
+			`Luau config ${configFile} needs lute ${String(SUPPORTED_LUTE_MAJOR)}.x, but "${binary} --version" printed "${printed}". ${INSTALL_HINT}`,
+		);
+	}
 }

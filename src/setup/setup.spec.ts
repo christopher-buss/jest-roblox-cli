@@ -2,7 +2,7 @@ import * as path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
-import { formatSetupOutcome, runSetup } from "./setup.ts";
+import { aliasVersionWarning, formatSetupOutcome, runSetup } from "./setup.ts";
 
 const HOME = path.resolve("/home/user");
 const PROJECT = path.resolve("/project");
@@ -175,5 +175,84 @@ describe(formatSetupOutcome, () => {
 		).toBe(
 			`Wrote the Luau Config type to /types\n.config.luau builds luau.aliases with code, so setup left it unchanged.\nAdd this entry to luau.aliases:\n\n\t${ALIAS_LINE},\n\nType your config with: local jest = require("@jest-roblox/config")\n`,
 		);
+	});
+});
+
+describe(aliasVersionWarning, () => {
+	function warn(seed: Record<string, string>) {
+		const files = Object.fromEntries(
+			Object.entries(seed).map(([name, contents]) => [path.join(PROJECT, name), contents]),
+		);
+		const { fileSystem, volume } = createMemoryFileSystem(files);
+		volume.mkdirSync(PROJECT, { recursive: true });
+		return aliasVersionWarning({ cwd: PROJECT, fileSystem, version: "1.2.3" });
+	}
+
+	it.for([
+		[
+			".config.luau",
+			'return { luau = { aliases = { ["jest-roblox"] = "~/.jest-roblox/typedefs/1.0.0" } } }',
+		],
+		[".luaurc", '{ "aliases": { "Jest-Roblox": "~/.jest-roblox/typedefs/1.0.0/" } }'],
+	] as const)(
+		"should name both versions and say to run setup for an alias in %s",
+		([file, source]) => {
+			expect.assertions(1);
+
+			expect(warn({ [file]: source })).toBe(
+				`Warning: the "jest-roblox" alias in ${file} points at the Luau Config type for jest-roblox 1.0.0, but this is jest-roblox 1.2.3. Run \`jest-roblox setup\` to update it.\n`,
+			);
+		},
+	);
+
+	it("should read an alias written as an absolute Windows path", () => {
+		expect.assertions(1);
+
+		expect(
+			warn({
+				".luaurc": JSON.stringify({
+					aliases: { "jest-roblox": String.raw`C:\Users\me\.jest-roblox\typedefs\0.9.0` },
+				}),
+			}),
+		).toContain("for jest-roblox 0.9.0,");
+	});
+
+	it.for([
+		[
+			"the alias matches",
+			{ ".luaurc": '{ "aliases": { "jest-roblox": "~/.jest-roblox/typedefs/1.2.3" } }' },
+		],
+		["the project has no Luau configuration", {}],
+		["the .luaurc has no aliases", { ".luaurc": '{ "languageMode": "strict" }' }],
+		[
+			"another alias points at another version",
+			{ ".luaurc": '{ "aliases": { "old": "~/.jest-roblox/typedefs/1.0.0" } }' },
+		],
+		["the .luaurc is not strict JSON", { ".luaurc": '{ "aliases": {}, }' }],
+		[
+			"the alias points elsewhere",
+			{ ".luaurc": '{ "aliases": { "jest-roblox": "./types" } }' },
+		],
+		["the .config.luau has no alias", { ".config.luau": "return {}" }],
+		[
+			"a .config.luau without the alias sits beside an old .luaurc",
+			{
+				".config.luau": "return {}",
+				".luaurc": '{ "aliases": { "jest-roblox": "~/.jest-roblox/typedefs/1.0.0" } }',
+			},
+		],
+	] as const)("should not warn when %s", ([, seed]) => {
+		expect.assertions(1);
+
+		expect(warn(seed)).toBeUndefined();
+	});
+
+	it.for([".config.luau", ".luaurc"])("should not warn when %s cannot be read", (file) => {
+		expect.assertions(1);
+
+		const { fileSystem, volume } = createMemoryFileSystem();
+		volume.mkdirSync(path.join(PROJECT, file), { recursive: true });
+
+		expect(aliasVersionWarning({ cwd: PROJECT, fileSystem, version: "1.2.3" })).toBeUndefined();
 	});
 });

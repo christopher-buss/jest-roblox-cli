@@ -5,11 +5,21 @@ import * as path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
+import packageJson from "../../package.json" with { type: "json" };
 import type { ChildProcessRunner } from "../utils/child-process.ts";
+import type { FileSystem } from "../utils/file-system.ts";
 import { evaluateLuauConfigWithLute } from "./luau-config-lute.ts";
 
 const CONFIG_FILE = path.resolve("/project/configs/jest.config.luau");
 const TEMPORARY_DIRECTORY = path.resolve("/temporary");
+const HOME_DIRECTORY = path.resolve("/home/user");
+const TYPE_MODULE = path.join(
+	HOME_DIRECTORY,
+	".jest-roblox",
+	"typedefs",
+	packageJson.version,
+	"config.luau",
+);
 const VALUE = "<<jest-roblox:luau-config-value>>";
 const ERROR = "<<jest-roblox:luau-config-error>>";
 
@@ -25,6 +35,7 @@ interface Invocation {
 	readonly cwd: string | undefined;
 	readonly files: Array<string>;
 	readonly timeout: number | undefined;
+	readonly typeModuleExists: boolean;
 	readonly windowsHide: boolean | undefined;
 }
 
@@ -39,18 +50,25 @@ interface ExecOptions {
 function setup({
 	configFile = CONFIG_FILE,
 	environment = {},
+	fileSystemOverrides = {},
 	run,
+	seed = {},
 	version = { stdout: "1.0.1\n" },
 }: {
 	configFile?: string;
 	environment?: NodeJS.ProcessEnv;
+	fileSystemOverrides?: Partial<FileSystem>;
 	run?: Reply;
+	seed?: Record<string, string>;
 	version?: Reply;
 }) {
-	const { fileSystem } = createMemoryFileSystem({
+	const memory = createMemoryFileSystem({
 		[configFile]: "return {}",
 		[path.join(TEMPORARY_DIRECTORY, "keep")]: "",
+		...seed,
 	});
+	const { volume } = memory;
+	const fileSystem: FileSystem = { ...memory.fileSystem, ...fileSystemOverrides };
 	const invocations: Array<Invocation> = [];
 	const execFile: typeof childProcess.execFile = fromAny(
 		// eslint-disable-next-line better-max-params/better-max-params -- fakes the Node execFile signature.
@@ -66,6 +84,7 @@ function setup({
 							})
 						: [],
 				timeout: options.timeout,
+				typeModuleExists: volume.existsSync(TYPE_MODULE),
 				windowsHide: options.windowsHide,
 			});
 			const reply = (args[0] === "--version" ? version : run) ?? { stdout: "" };
@@ -84,6 +103,7 @@ function setup({
 				childProcess: runner,
 				environment,
 				fileSystem,
+				homeDirectory: HOME_DIRECTORY,
 				temporaryDirectory: TEMPORARY_DIRECTORY,
 			},
 		);
@@ -96,7 +116,7 @@ function setup({
 			.filter((name) => name !== "keep");
 	}
 
-	return { evaluate, invocations, leftovers };
+	return { evaluate, invocations, leftovers, volume };
 }
 
 describe(evaluateLuauConfigWithLute, () => {
@@ -141,6 +161,79 @@ describe(evaluateLuauConfigWithLute, () => {
 			/^jest-roblox-luau-config-\w+[/\\]bootstrap\.luau$/,
 		);
 		expect(run.windowsHide).toBeTrue();
+	});
+
+	it("should write the type module for its own version before the run when it is missing", async () => {
+		expect.assertions(2);
+
+		const { evaluate, invocations, volume } = setup({ run: { stdout: `${VALUE}{}` } });
+
+		await evaluate();
+
+		expect(invocations[1]!.typeModuleExists).toBeTrue();
+		expect(volume.readFileSync(TYPE_MODULE, "utf-8")).toContain("export type Config =");
+	});
+
+	it("should keep a type module that is already there", async () => {
+		expect.assertions(1);
+
+		const { evaluate, volume } = setup({
+			run: { stdout: `${VALUE}{}` },
+			seed: { [TYPE_MODULE]: "-- kept" },
+		});
+
+		await evaluate();
+
+		expect(volume.readFileSync(TYPE_MODULE, "utf-8")).toBe("-- kept");
+	});
+
+	it("should return the value when the home folder cannot be written", async () => {
+		expect.assertions(1);
+
+		const { evaluate } = setup({
+			fileSystemOverrides: {
+				mkdirSync: () => {
+					throw new Error("EACCES: permission denied");
+				},
+			},
+			run: { stdout: `${VALUE}{"test":{"verbose":true}}` },
+		});
+
+		await expect(evaluate()).resolves.toStrictEqual({ test: { verbose: true } });
+	});
+
+	it("should name the failed type write when the config then fails in lute", async () => {
+		expect.assertions(2);
+
+		const { evaluate } = setup({
+			fileSystemOverrides: {
+				mkdirSync: () => {
+					throw new Error("EACCES: permission denied");
+				},
+			},
+			run: {
+				stdout: `${ERROR}{"kind":"evaluate","message":"module not found: @jest-roblox/config"}\n`,
+			},
+		});
+		const evaluation = evaluate();
+
+		await expect(evaluation).rejects.toThrowWithMessage(
+			Error,
+			`Luau config ${CONFIG_FILE} failed in lute: module not found: @jest-roblox/config\nCould not write the Luau Config types to ${path.dirname(TYPE_MODULE)}: EACCES: permission denied`,
+		);
+		await expect(evaluation).rejects.toHaveProperty(
+			"cause.message",
+			`Luau config ${CONFIG_FILE} failed in lute: module not found: @jest-roblox/config`,
+		);
+	});
+
+	it("should write no type module when lute is missing", async () => {
+		expect.assertions(2);
+
+		const { evaluate, volume } = setup({ version: { error: { code: "ENOENT" } } });
+
+		await expect(evaluate()).rejects.toThrow("needs lute to run");
+		expect(volume.existsSync(path.dirname(TYPE_MODULE))).toBeFalse();
 	});
 
 	it("should give the config directory alias forward slashes", async () => {

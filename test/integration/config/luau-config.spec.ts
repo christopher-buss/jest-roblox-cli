@@ -6,6 +6,7 @@ import path from "node:path";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 
 import { createLuteChildProcess } from "#test/mocks/lute-child-process.ts";
+import packageJson from "../../../package.json" with { type: "json" };
 
 const ROJO_TREE = {
 	$className: "DataModel",
@@ -15,11 +16,19 @@ const ROJO_TREE = {
 	},
 };
 
-function createProject(files: Record<string, string>): string {
-	const directory = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "luau-config-")));
+function createTemporaryDirectory(prefix: string): string {
+	const directory = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), prefix)));
 	onTestFinished(() => {
 		fs.rmSync(directory, { force: true, recursive: true });
 	});
+	return directory;
+}
+
+function createProject(files: Record<string, string>): string {
+	const home = createTemporaryDirectory("luau-config-home-");
+	vi.stubEnv("HOME", home);
+	vi.stubEnv("USERPROFILE", home);
+	const directory = createTemporaryDirectory("luau-config-");
 	for (const [relativePath, source] of Object.entries(files)) {
 		const filePath = path.join(directory, relativePath);
 		fs.mkdirSync(path.dirname(filePath), { recursive: true });
@@ -145,6 +154,39 @@ describe("luau configs through loadConfig", () => {
 		const config = await loadConfig({ cwd: directory });
 
 		expect(config.placeFile).toBe(placeFile);
+	});
+
+	it("should write the config type before lute runs a config that requires it", async () => {
+		expect.assertions(2);
+
+		const directory = createProject({
+			".luaurc": JSON.stringify({
+				aliases: { "jest-roblox": `~/.jest-roblox/typedefs/${packageJson.version}` },
+			}),
+			"jest.config.luau": [
+				'local jest = require("@jest-roblox/config")',
+				"",
+				"return jest.defineConfig({",
+				"\ttest = { testTimeout = 5 * 1000 },",
+				"})",
+				"",
+			].join("\n"),
+		});
+
+		const config = await loadConfig({ cwd: directory });
+
+		expect(config.testTimeout).toBe(5000);
+		expect(
+			fs.existsSync(
+				path.join(
+					os.homedir(),
+					".jest-roblox",
+					"typedefs",
+					packageJson.version,
+					"config.luau",
+				),
+			),
+		).toBeTrue();
 	});
 
 	it("should run a config that holds code through the given child process", async () => {

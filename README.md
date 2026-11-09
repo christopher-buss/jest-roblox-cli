@@ -281,7 +281,15 @@ return jest.defineConfig({
 ```
 
 Each CLI version has its own type folder, so run setup again after you upgrade.
-To run tests filtered to a file named `setup`, write the filter as `./setup`.
+A run warns when the alias in the current directory's `.config.luau` or
+`.luaurc` points at the folder of another version; the warning does not change
+the exit code. The check reads only the current directory, where setup writes
+the alias: not a parent directory, not `--workspace-root`, and not a `.luaurc`
+with comments or trailing commas. Before lute runs a config, the CLI writes the
+type module for its own version if it is missing, so CI needs no setup step. If
+that write fails, lute still runs, and a lute error then also names the write
+failure. To run tests filtered to a file named `setup`, write the filter as
+`./setup`.
 
 `--config path/to/file.luau` loads a Luau config explicitly. A relative
 `rootDir` or `workspace.root` is relative to the Luau config's directory, as in

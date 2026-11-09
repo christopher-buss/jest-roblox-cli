@@ -150,6 +150,27 @@ describe("jest-roblox setup", () => {
 		expect(sandbox.read(".config.luau")).toBe(source);
 	});
 
+	it("should warn on a run when the alias names another version and keep the exit code", async () => {
+		expect.assertions(3);
+
+		const plain = createSetupSandbox();
+		const stale = createSetupSandbox({
+			".luaurc": '{ "aliases": { "jest-roblox": "~/.jest-roblox/typedefs/0.0.1" } }',
+		});
+
+		const [plainResult, staleResult] = await Promise.all(
+			[plain, stale].map(async ({ environment, project }) => {
+				return runCliAsync(["--backend", "open-cloud"], { cwd: project, env: environment });
+			}),
+		);
+
+		expect(staleResult!.exitCode).toBe(plainResult!.exitCode);
+		expect(plainResult!.stderr).not.toContain("jest-roblox setup");
+		expect(staleResult!.stderr).toContain(
+			`Warning: the "jest-roblox" alias in .luaurc points at the Luau Config type for jest-roblox 0.0.1, but this is jest-roblox ${packageJson.version}. Run \`jest-roblox setup\` to update it.`,
+		);
+	});
+
 	it("should let lute check resolve the config type through the alias", async () => {
 		expect.assertions(2);
 

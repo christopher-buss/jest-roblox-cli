@@ -1,10 +1,15 @@
 import { type } from "arktype";
 import * as path from "node:path";
 
-import { LUAU_CONFIG_TYPE_SOURCE } from "../config/luau-config-type.ts";
+import { LUAU_CONFIG_TYPES_FOLDERS, writeLuauConfigTypes } from "../config/luau-config-type.ts";
 import { errorMessage } from "../utils/error-message.ts";
 import type { FileSystem } from "../utils/file-system.ts";
-import { addConfigLuauAlias, aliasEntry, type LuauAlias } from "./config-luau-alias.ts";
+import {
+	addConfigLuauAlias,
+	aliasEntry,
+	type LuauAlias,
+	readConfigLuauAlias,
+} from "./config-luau-alias.ts";
 
 /** The first positional that runs setup instead of tests. */
 export const SETUP_COMMAND = "setup";
@@ -14,6 +19,11 @@ const CONFIG_LUAU = ".config.luau";
 const LUAURC = ".luaurc";
 
 const INDENTATION = /^[\t ]+/m;
+const SEPARATOR = String.raw`[/\\]`;
+const TYPES_FOLDERS = LUAU_CONFIG_TYPES_FOLDERS.map(
+	(folder) => `${SEPARATOR}${RegExp.escape(folder)}`,
+).join("");
+const TYPES_VERSION = new RegExp(`${TYPES_FOLDERS}${SEPARATOR}([^/\\\\]+)${SEPARATOR}?$`);
 
 /** What setup wrote, and where. */
 export type SetupOutcome = AliasWrite & {
@@ -30,11 +40,19 @@ type LuaurcRead = { luaurc: typeof luaurcSchema.infer; ok: true } | { ok: false;
 
 type PrintableOutcome = Exclude<SetupOutcome, { kind: "unreadable" }>;
 
-interface SetupOptions {
+interface ProjectAlias {
+	configFile: string;
+	value: string;
+}
+
+interface ProjectOptions {
 	cwd: string;
 	fileSystem: FileSystem;
-	homeDirectory: string;
 	version: string;
+}
+
+interface SetupOptions extends ProjectOptions {
+	homeDirectory: string;
 }
 
 const luaurcSchema = type({
@@ -49,12 +67,32 @@ const luaurcSchema = type({
  * @returns What setup wrote, and where.
  */
 export function runSetup({ cwd, fileSystem, homeDirectory, version }: SetupOptions): SetupOutcome {
-	const typesDirectory = path.join(homeDirectory, ".jest-roblox", "typedefs", version);
-	fileSystem.mkdirSync(typesDirectory, { recursive: true });
-	fileSystem.writeFileSync(path.join(typesDirectory, "config.luau"), LUAU_CONFIG_TYPE_SOURCE);
-
-	const alias = { name: ALIAS_NAME, value: `~/.jest-roblox/typedefs/${version}` };
+	const typesDirectory = writeLuauConfigTypes({ fileSystem, homeDirectory, version });
+	const alias = {
+		name: ALIAS_NAME,
+		value: ["~", ...LUAU_CONFIG_TYPES_FOLDERS, version].join("/"),
+	};
 	return { ...writeAlias({ alias, cwd, fileSystem }), typesDirectory };
+}
+
+/**
+ * Warn when the project's `jest-roblox` alias points at the type folder of
+ * another CLI version.
+ * @param options - Working directory, file system and running version.
+ * @returns The warning, ending with a newline, or `undefined`.
+ */
+export function aliasVersionWarning({
+	cwd,
+	fileSystem,
+	version,
+}: ProjectOptions): string | undefined {
+	const alias = readProjectAlias({ cwd, fileSystem });
+	const aliased = alias === undefined ? undefined : TYPES_VERSION.exec(alias.value)?.[1];
+	if (alias === undefined || aliased === undefined || aliased === version) {
+		return undefined;
+	}
+
+	return `Warning: the "${ALIAS_NAME}" alias in ${alias.configFile} points at the Luau Config type for jest-roblox ${aliased}, but this is jest-roblox ${version}. Run \`jest-roblox setup\` to update it.\n`;
 }
 
 /**
@@ -182,4 +220,40 @@ function writeAlias({
 
 	fileSystem.writeFileSync(configLuauPath, createdConfigLuau(alias));
 	return { configFile: CONFIG_LUAU, kind: "created" };
+}
+
+function readOptionalFile(fileSystem: FileSystem, file: string): string | undefined {
+	try {
+		return fileSystem.readFileSync(file, "utf-8");
+	} catch {
+		return undefined;
+	}
+}
+
+function readProjectAlias({
+	cwd,
+	fileSystem,
+}: {
+	cwd: string;
+	fileSystem: FileSystem;
+}): ProjectAlias | undefined {
+	const configLuauPath = path.join(cwd, CONFIG_LUAU);
+	if (fileSystem.existsSync(configLuauPath)) {
+		const source = readOptionalFile(fileSystem, configLuauPath);
+		const value =
+			source === undefined
+				? undefined
+				: readConfigLuauAlias({ name: ALIAS_NAME, fileName: configLuauPath, source });
+		return value === undefined ? undefined : { configFile: CONFIG_LUAU, value };
+	}
+
+	const source = readOptionalFile(fileSystem, path.join(cwd, LUAURC));
+	const read = source === undefined ? undefined : readLuaurc(source);
+	const value =
+		read === undefined || !read.ok
+			? undefined
+			: Object.entries(read.luaurc.aliases ?? {}).find(
+					([name]) => name.toLowerCase() === ALIAS_NAME,
+				)?.[1];
+	return value === undefined ? undefined : { configFile: LUAURC, value };
 }

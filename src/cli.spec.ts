@@ -648,3 +648,26 @@ describe("setup subcommand", () => {
 		expect(options.files).toStrictEqual(["./setup"]);
 	});
 });
+
+describe("alias version warning", () => {
+	it("should warn about an alias for another version and keep the run's exit code", async () => {
+		expect.assertions(3);
+
+		const spies = setupOutputSpies();
+		const cli = setupDefaults();
+		cli.outputMultiResult.mockResolvedValue(1);
+		const { fileSystem } = createMemoryFileSystem({
+			"/test/default.project.json": "{}",
+			[path.join(process.cwd(), ".luaurc")]:
+				'{ "aliases": { "jest-roblox": "~/.jest-roblox/typedefs/0.0.1" } }',
+		});
+
+		const code = await runAsync([], { ...cli.dependencies, fileSystem });
+
+		expect(code).toBe(1);
+		expect(cli.runJestRoblox).toHaveBeenCalledOnce();
+		expect(renderedStderr(spies)).toContain(
+			`Warning: the "jest-roblox" alias in .luaurc points at the Luau Config type for jest-roblox 0.0.1, but this is jest-roblox ${packageJson.version}. Run \`jest-roblox setup\` to update it.\n`,
+		);
+	});
+});

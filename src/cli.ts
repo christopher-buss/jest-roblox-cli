@@ -14,7 +14,7 @@ import { createStdoutRunProgress } from "./progress/reporter.ts";
 import { withRunLogAsync } from "./run-log/run-log.ts";
 import { runJestRobloxAsync } from "./run.ts";
 import type { MultiRunResult, WorkspaceRunResult } from "./run/run-types.ts";
-import { formatSetupOutcome, runSetup, SETUP_COMMAND } from "./setup/setup.ts";
+import { aliasVersionWarning, formatSetupOutcome, runSetup, SETUP_COMMAND } from "./setup/setup.ts";
 import type { FileSystem } from "./utils/file-system.ts";
 import { nodeFileSystem } from "./utils/file-system.ts";
 import {
@@ -248,6 +248,13 @@ function runSetupCommand({ fileSystem, homeDirectory }: ResolvedCliDependencies)
 	return 0;
 }
 
+function printAliasVersionWarning(fileSystem: FileSystem): void {
+	const warning = aliasVersionWarning({ cwd: process.cwd(), fileSystem, version: VERSION });
+	if (warning !== undefined) {
+		process.stderr.write(warning);
+	}
+}
+
 async function runInnerAsync(
 	args: Array<string>,
 	dependencies: ResolvedCliDependencies,
@@ -269,6 +276,7 @@ async function runInnerAsync(
 	}
 
 	const { fileSystem } = dependencies;
+	printAliasVersionWarning(fileSystem);
 
 	const loadedConfig = await dependencies.loadConfig({
 		configPath: cli.config,

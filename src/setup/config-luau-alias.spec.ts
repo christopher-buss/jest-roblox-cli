@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { addConfigLuauAlias } from "./config-luau-alias.ts";
+import { addConfigLuauAlias, readConfigLuauAlias } from "./config-luau-alias.ts";
 
 const ALIAS = { name: "jest-roblox", value: "~/.jest-roblox/typedefs/1.2.3" };
 
@@ -218,5 +218,37 @@ describe(addConfigLuauAlias, () => {
 		expect(() => edit("local = 1\nlocal = 2\nreturn {}")).toThrow(
 			"Failed to parse .config.luau: Expected identifier when parsing variable name, got '='; Expected identifier when parsing variable name, got '='",
 		);
+	});
+});
+
+describe(readConfigLuauAlias, () => {
+	function read(source: string) {
+		return readConfigLuauAlias({ name: "jest-roblox", fileName: ".config.luau", source });
+	}
+
+	it.for([
+		['return { luau = { aliases = { ["jest-roblox"] = "~/a" } } }', "~/a"],
+		["local x = 1\nreturn { Luau = { Aliases = { ['Jest-Roblox'] = '~/\\x62' } } }", "~/b"],
+	] as const)("should read the alias from %j", ([source, value]) => {
+		expect.assertions(1);
+
+		expect(read(source)).toBe(value);
+	});
+
+	it.for([
+		["the source does not parse", "local = 1\nreturn {}"],
+		["the file returns nothing", "local x = 1\n"],
+		["the file returns a call", "return f()"],
+		["luau is missing", "return { other = {} }"],
+		["aliases is not a table", 'return { luau = { aliases = "x" } }'],
+		["the alias is missing", 'return { luau = { aliases = { shared = "./shared" } } }'],
+		[
+			"the alias value is computed",
+			'return { luau = { aliases = { ["jest-roblox"] = h .. "/x" } } }',
+		],
+	] as const)("should read nothing when %s", ([, source]) => {
+		expect.assertions(1);
+
+		expect(read(source)).toBeUndefined();
 	});
 });

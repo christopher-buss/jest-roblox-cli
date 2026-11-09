@@ -11,7 +11,7 @@ import type { FileSystem } from "../utils/file-system.ts";
 import { nodeFileSystem } from "../utils/file-system.ts";
 import { configSchema } from "./config-validation.ts";
 import type { LuteEvaluationContext } from "./luau-config-lute.ts";
-import { evaluateLuauConfigWithLute, NODE_LUTE_EVALUATION_CONTEXT } from "./luau-config-lute.ts";
+import { evaluateLuauConfigWithLute, nodeLuteEvaluationContext } from "./luau-config-lute.ts";
 
 const luauConfigTableSchema = type("object").as<LuauLiteralTable>();
 const testConfigSchema = configSchema.get("test").exclude("undefined");
@@ -39,7 +39,7 @@ export async function loadLuauConfig(
 	filePath: string,
 	context: Partial<LuteEvaluationContext>,
 ): Promise<LuauLiteralTable> {
-	const settled = { ...NODE_LUTE_EVALUATION_CONTEXT, ...context };
+	const settled = { ...nodeLuteEvaluationContext(), ...context };
 	const configFile = path.resolve(filePath);
 	const source = settled.fileSystem.readFileSync(configFile, "utf-8");
 	const parsed = luauParser.parse(source);

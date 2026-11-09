@@ -3,7 +3,7 @@
 	"compilerOptions": {
 		"composite": true,
 		"tsBuildInfoFile": "dist/tsconfig.lib.tsbuildinfo",
-		"lib": ["esnext"],
+		"lib": ["es2025", "esnext"],
 		"libReplacement": true,
 		"allowJs": false,
 		"emitDeclarationOnly": true,

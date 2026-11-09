@@ -98,6 +98,38 @@ export function addConfigLuauAlias({
 	return { kind: "edited", source: printCst(parsed.root) };
 }
 
+/**
+ * Read an alias from the literal `luau.aliases` table of a `.config.luau`
+ * source.
+ * @param options - The alias name, and the file name and source to read.
+ * @returns The alias path, or `undefined` when the source does not parse or
+ *   holds no literal entry for the alias.
+ */
+export function readConfigLuauAlias({
+	name,
+	fileName,
+	source,
+}: {
+	fileName: string;
+	/** Written without the leading `@`. */
+	name: string;
+	source: string;
+}): string | undefined {
+	const parsed = luauParser.parseCst({ fileName, source });
+	if (!parsed.ok) {
+		return undefined;
+	}
+
+	let table = returnedTable(parsed.root);
+	for (const key of ALIAS_TABLE_PATH) {
+		const value = table === undefined ? undefined : findItem(table, key)?.value;
+		table = value?.type === "Table" ? value : undefined;
+	}
+
+	const value = table === undefined ? undefined : findItem(table, name)?.value;
+	return value?.type === "String" ? decodeLuauString(value.token.text) : undefined;
+}
+
 function quote(text: string): string {
 	return JSON.stringify(text);
 }
