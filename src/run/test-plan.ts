@@ -16,8 +16,9 @@ import {
 	createTsconfigMappingCache,
 	resolveAllTsconfigMappings,
 } from "../executor/tsconfig-mappings.ts";
-import type { AffectedSummary } from "../formatters/shared.ts";
+import type { AffectedSummary, PartialRunCause } from "../formatters/shared.ts";
 import { luauParser } from "../luau/parser.ts";
+import type { PartialRun } from "../related/partial-run.ts";
 import type { RelatedFileFilter } from "../related/related-tests.ts";
 import { createRelatedFileFilter } from "../related/related-tests.ts";
 import type { TimingCollector } from "../timing/orchestration-collector.ts";
@@ -51,7 +52,7 @@ export interface PendingJob {
 
 /**
  * What an empty run reports. Empty under `passWithNoTests` is a pass, so it
- * has no exit code, and only a `related` run has a notice; otherwise both
+ * has no exit code, and only a Partial Run has a notice; otherwise both
  * fields carry the exit code and the stderr notice.
  * The field names match `MultiRunResult`'s so a caller spreads this straight
  * into its result.
@@ -66,7 +67,7 @@ export interface EmptyRunPolicy {
 /** The work a run does, before any place is bound. */
 export interface TestPlan {
 	/**
-	 * How many runtime test files a `related` run selected out of the total.
+	 * How many runtime test files a Partial Run selected out of the total.
 	 */
 	affected?: AffectedSummary | undefined;
 	/**
@@ -119,9 +120,9 @@ interface DiscoveryFilters {
 	 * flows).
 	 */
 	filesByProject?: ReadonlyMap<string, Array<string>> | undefined;
+	/** Absolute source files of a Partial Run; absent on any other run. */
+	partialRun: PartialRun | undefined;
 	projects: Array<ResolvedProjectConfig>;
-	/** Absolute source files of a `related` run; absent on any other run. */
-	relatedFiles: ReadonlyArray<string> | undefined;
 	rootConfig: ResolvedConfig;
 }
 
@@ -182,7 +183,7 @@ export function buildTestPlan({ timing, ...discovery }: TestPlanInput): TestPlan
 	const plan: TestPlan = {
 		...summarizeAffected({
 			affected: matchedRuntimeFiles.length,
-			relatedFiles: discovery.relatedFiles,
+			partialRun: discovery.partialRun,
 			rootDirectory: discovery.rootConfig.rootDir,
 			total: collected.runtimeCandidateCount,
 		}),
@@ -220,44 +221,61 @@ export function bindTestPlanToPlace(plan: TestPlan, placeFile: string): TestPlan
 }
 
 function toEmptyRunPolicy({
-	relatedFiles,
+	partialRun,
 	rootConfig,
-}: Pick<DiscoveryFilters, "relatedFiles" | "rootConfig">): EmptyRunPolicy {
+}: Pick<DiscoveryFilters, "partialRun" | "rootConfig">): EmptyRunPolicy {
 	if (!rootConfig.passWithNoTests) {
 		return { validationExitCode: 2, validationMessage: "No test files found in any project\n" };
 	}
 
-	return relatedFiles === undefined
-		? {}
-		: { validationMessage: "No test files reach the related files, exiting with code 0\n" };
+	if (partialRun === undefined) {
+		return {};
+	}
+
+	const reached =
+		partialRun.kind === "changed"
+			? `the files changed since ${partialRun.since}`
+			: "the related files";
+	return { validationMessage: `No test files reach ${reached}, exiting with code 0\n` };
 }
 
 function createPlanRelatedFilter(
-	{ fileSystem, relatedFiles }: Pick<DiscoveryInput, "fileSystem" | "relatedFiles">,
+	{ fileSystem, partialRun }: Pick<DiscoveryInput, "fileSystem" | "partialRun">,
 	timing: TimingCollector,
 ): RelatedFileFilter | undefined {
-	return relatedFiles === undefined
+	return partialRun === undefined
 		? undefined
-		: createRelatedFileFilter({ fileSystem, parser: luauParser, relatedFiles, timing });
+		: createRelatedFileFilter({
+				fileSystem,
+				parser: luauParser,
+				relatedFiles: partialRun.files,
+				timing,
+			});
 }
 
 function summarizeAffected({
 	affected,
-	relatedFiles,
+	partialRun,
 	rootDirectory,
 	total,
-}: Except<AffectedSummary, "relatedTo"> & {
-	relatedFiles: DiscoveryFilters["relatedFiles"];
+}: Except<AffectedSummary, "cause"> & {
+	partialRun: DiscoveryFilters["partialRun"];
 	rootDirectory: string;
 }): Pick<TestPlan, "affected"> {
-	if (relatedFiles === undefined) {
+	if (partialRun === undefined) {
 		return {};
 	}
 
-	const relatedTo = relatedFiles.map((file) => {
-		return normalizeWindowsPath(path.relative(rootDirectory, file));
-	});
-	return { affected: { affected, relatedTo, total } };
+	const cause: PartialRunCause =
+		partialRun.kind === "changed"
+			? { kind: "changed", since: partialRun.since }
+			: {
+					files: partialRun.files.map((file) => {
+						return normalizeWindowsPath(path.relative(rootDirectory, file));
+					}),
+					kind: "related",
+				};
+	return { affected: { affected, cause, total } };
 }
 
 /**

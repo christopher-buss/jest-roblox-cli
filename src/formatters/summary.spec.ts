@@ -276,7 +276,7 @@ describe(formatAffectedLine, () => {
 
 		expect(
 			formatAffectedLine(
-				{ affected: 1, relatedTo: ["src/leaf.luau"], total: 3 },
+				{ affected: 1, cause: { files: ["src/leaf.luau"], kind: "related" }, total: 3 },
 				createTaggedStyles(),
 			),
 		).toBe("<dim>   Affected</dim>  1 of 3 test files <dim>(related to src/leaf.luau)</dim>");
@@ -287,17 +287,31 @@ describe(formatAffectedLine, () => {
 
 		expect(
 			formatAffectedLine(
-				{ affected: 2, relatedTo: ["a.luau", "b.luau"], total: 5 },
+				{ affected: 2, cause: { files: ["a.luau", "b.luau"], kind: "related" }, total: 5 },
 				createTaggedStyles(),
 			),
 		).toBe("<dim>   Affected</dim>  2 of 5 test files <dim>(related to 2 files)</dim>");
+	});
+
+	it("should name the ref a --changed run selected since", () => {
+		expect.assertions(1);
+
+		expect(
+			formatAffectedLine(
+				{ affected: 1, cause: { kind: "changed", since: "HEAD" }, total: 3 },
+				createTaggedStyles(),
+			),
+		).toBe("<dim>   Affected</dim>  1 of 3 test files <dim>(changed since HEAD)</dim>");
 	});
 
 	it("should count an empty list of related files", () => {
 		expect.assertions(1);
 
 		expect(
-			formatAffectedLine({ affected: 0, relatedTo: [], total: 5 }, createTaggedStyles()),
+			formatAffectedLine(
+				{ affected: 0, cause: { files: [], kind: "related" }, total: 5 },
+				createTaggedStyles(),
+			),
 		).toBe("<dim>   Affected</dim>  0 of 5 test files <dim>(related to 0 files)</dim>");
 	});
 });
@@ -307,7 +321,11 @@ describe("formatTestSummary optional rows", () => {
 		expect.assertions(1);
 
 		const output = formatTestSummary({
-			affected: { affected: 1, relatedTo: ["src/leaf.luau"], total: 3 },
+			affected: {
+				affected: 1,
+				cause: { files: ["src/leaf.luau"], kind: "related" },
+				total: 3,
+			},
 			result: fromAny({
 				numFailedTests: 0,
 				numPassedTests: 1,

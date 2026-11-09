@@ -25,13 +25,21 @@ export interface DisplayPathOptions {
 }
 
 /**
+ * What a Partial Run selected its tests for: the files changed since a ref,
+ * or the related source files, relative to the run root.
+ */
+export type PartialRunCause =
+	| { files: ReadonlyArray<string>; kind: "related" }
+	| { kind: "changed"; since: string };
+
+/**
  * How many test files a Partial Run selected, and what it selected them for.
  */
 export interface AffectedSummary {
 	/** Test files the run selected. */
 	affected: number;
-	/** Source files the selection is related to, relative to the run root. */
-	relatedTo: ReadonlyArray<string>;
+	/** What the selection is for. */
+	cause: PartialRunCause;
 	/** Test files a full run would have run. */
 	total: number;
 }

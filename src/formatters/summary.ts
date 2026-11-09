@@ -8,6 +8,7 @@ import {
 	type BailSummary,
 	type FormatOptions,
 	getTerminalWidth,
+	type PartialRunCause,
 } from "./shared.ts";
 import { type ColorFunc, createStyles, type Styles } from "./styles.ts";
 
@@ -398,17 +399,15 @@ export function formatBailLine(bail: BailSummary, styles: Styles): string {
 /**
  * The `   Affected  …` row of a Partial Run, as vitest prints it after
  * `Test Files`: the selected and total test files, then what they relate to.
- * @param affected - Selected and total test files, and the related files.
+ * @param affected - Selected and total test files, and what they relate to.
  * @param styles - Palette to render with.
  * @returns The row.
  */
 export function formatAffectedLine(
-	{ affected, relatedTo, total }: AffectedSummary,
+	{ affected, cause, total }: AffectedSummary,
 	styles: Styles,
 ): string {
-	const [first, ...rest] = relatedTo;
-	const sources = first !== undefined && rest.length === 0 ? first : `${relatedTo.length} files`;
-	const relation = styles.dim(`(related to ${sources})`);
+	const relation = styles.dim(`(${describeCause(cause)})`);
 	return `${styles.dim("   Affected")}  ${affected} of ${total} test files ${relation}`;
 }
 
@@ -419,6 +418,17 @@ function formatCountRow(
 	const parts = formatSummaryParts(counts, styles);
 	const totalLabel = styles.dim(`(${total})`);
 	return `${styles.dim(label)}  ${parts.join(" | ")} ${totalLabel}`;
+}
+
+function describeCause(cause: PartialRunCause): string {
+	if (cause.kind === "changed") {
+		return `changed since ${cause.since}`;
+	}
+
+	const [first, ...rest] = cause.files;
+	const sources =
+		first !== undefined && rest.length === 0 ? first : `${cause.files.length} files`;
+	return `related to ${sources}`;
 }
 
 function formatSnapshotLine(

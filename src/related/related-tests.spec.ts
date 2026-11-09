@@ -96,6 +96,69 @@ describe(createRelatedFileFilter, () => {
 		expect(selected).toStrictEqual(["lib.spec.luau"]);
 	});
 
+	it("should select every test that required a deleted related module", () => {
+		expect.assertions(1);
+
+		const selected = selectRelated({
+			files: {
+				".luaurc": '{ "aliases": { "root": "." } }',
+				"a.spec.luau": 'return require("./gone")',
+				"b.spec.luau": 'return require("./lib")',
+				"c.spec.luau": 'return require("@root/kept")',
+				"kept.luau": "return {}",
+				"lib/init.luau": 'return require("@self/removed")',
+			},
+			relatedFiles: ["gone.luau", path.join("lib", "removed.lua")],
+			testFiles: ["a.spec.luau", "b.spec.luau", "c.spec.luau"],
+		});
+
+		expect(selected).toStrictEqual(["a.spec.luau", "b.spec.luau"]);
+	});
+
+	it("should select every test that required a module renamed to another form", () => {
+		expect.assertions(1);
+
+		const selected = selectRelated({
+			files: {
+				"a.spec.luau": 'return require("./x")',
+				"b.spec.luau": 'return require("./y")',
+				"x.luau": "return {}",
+				"y/init.luau": "return {}",
+			},
+			relatedFiles: ["x.lua", "x.luau", "y.luau", path.join("y", "init.luau")],
+			testFiles: ["a.spec.luau", "b.spec.luau"],
+		});
+
+		expect(selected).toStrictEqual(["a.spec.luau", "b.spec.luau"]);
+	});
+
+	it("should keep a deleted alias config from hiding the config beside it", () => {
+		expect.assertions(1);
+
+		const selected = selectRelated({
+			files: {
+				"luau/.config.luau": 'return { luau = { aliases = { root = "." } } }',
+				"luau/b.spec.luau": 'return require("@root/target")',
+				"luau/target.luau": "return {}",
+				"rc/.luaurc": '{ "aliases": { "root": "." } }',
+				"rc/a.spec.luau": 'return require("@root/target")',
+				"rc/target.luau": "return {}",
+			},
+			relatedFiles: [
+				path.join("rc", ".config.luau"),
+				path.join("rc", "target.luau"),
+				path.join("luau", ".luaurc"),
+				path.join("luau", "target.luau"),
+			],
+			testFiles: [path.join("rc", "a.spec.luau"), path.join("luau", "b.spec.luau")],
+		});
+
+		expect(selected).toStrictEqual([
+			path.join("rc", "a.spec.luau"),
+			path.join("luau", "b.spec.luau"),
+		]);
+	});
+
 	it("should select nothing for a related file no test reaches", () => {
 		expect.assertions(1);
 

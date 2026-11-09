@@ -735,6 +735,12 @@ export interface CliOptions {
 	 * failing test suites inside a single package.
 	 */
 	bail?: boolean | undefined;
+	/**
+	 * Ref of `--changed [since]`: run only the Runtime Tests that reach a file
+	 * changed since it. `HEAD`, the bare flag's value, means the uncommitted
+	 * changes.
+	 */
+	changed?: string | undefined;
 	/** Collect code coverage. */
 	collectCoverage?: boolean | undefined;
 	/** Globs selecting coverage source files. */

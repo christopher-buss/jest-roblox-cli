@@ -133,6 +133,18 @@ describe(validateBasicWorkspaceFlags, () => {
 		});
 	});
 
+	it("should reject --changed on a workspace run", () => {
+		expect.assertions(1);
+
+		const result = validateBasicWorkspaceFlags(makeCli({ changed: "HEAD", workspace: true }));
+
+		expect(result).toStrictEqual({
+			exitCode: 2,
+			message: "Error: --changed does not support a workspace run yet.\n",
+			ok: false,
+		});
+	});
+
 	it("should reject --affected-since without --workspace", () => {
 		expect.assertions(1);
 

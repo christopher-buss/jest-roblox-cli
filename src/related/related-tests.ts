@@ -1,4 +1,4 @@
-import type { CstSuccess, StringRequireResolver } from "@isentinel/luau-ast";
+import type { CstSuccess, RequireFileSystem, StringRequireResolver } from "@isentinel/luau-ast";
 import { createStringRequireResolver, forEachCstNode, readRequireCall } from "@isentinel/luau-ast";
 import type { LuauParser } from "@isentinel/luau-ast/parser";
 
@@ -32,14 +32,22 @@ interface ModuleReader {
 	resolve: StringRequireResolver;
 }
 
+// Mirror luau-ast's require resolver: its module probes, and the alias config
+// names it reads as config, not as modules.
 const LUAU_MODULE = /\.luau?$/;
+const MODULE_FORM = /(?:\/init)?\.luau?$/;
+const MODULE_FORMS = [".luau", ".lua", "/init.luau", "/init.lua"];
+const REQUIRE_CONFIG = ".config.luau";
 
 /**
  * Build the test filter of a Partial Run over `related <files...>`. Each call
  * builds the dependency graph from the given test files through their string
  * requires, then walks it in reverse from each related file and keeps every
  * test file the walk reaches. A test file that is itself related reaches
- * itself. A module read in one call is not read again in the next.
+ * itself. A related Luau module that is gone from disk still resolves, so a
+ * deleted module selects every test that required it, unless the require now
+ * finds another form of it on disk, as after `x.lua` moves to `x.luau`. A
+ * module read in one call is not read again in the next.
  *
  * @param options - File system, parser, related files and profiler.
  * @returns A function from test files to the ones that reach a related file.
@@ -50,8 +58,8 @@ export function createRelatedFileFilter({
 	relatedFiles,
 	timing,
 }: RelatedFileFilterOptions): RelatedFileFilter {
-	const dependenciesOf = createDependencyReader({ fileSystem, parser });
 	const relatedKeys = relatedFiles.map((file) => normalizeWindowsPath(file));
+	const dependenciesOf = createDependencyReader({ fileSystem, parser, relatedKeys });
 
 	return (testFiles, rootDirectory) => {
 		function keyOf(file: string): string {
@@ -97,14 +105,45 @@ function readDependencies(reader: ModuleReader, file: string): ReadonlySet<strin
 	return dependencies;
 }
 
+function withDeletedModules(
+	fileSystem: FileSystem,
+	relatedKeys: ReadonlyArray<string>,
+): RequireFileSystem {
+	const modules = new Set(
+		relatedKeys.filter(
+			(key) => LUAU_MODULE.test(key) && path.posix.basename(key) !== REQUIRE_CONFIG,
+		),
+	);
+	function isDeletedModule(file: string): boolean {
+		const key = normalizeWindowsPath(file);
+		if (!modules.has(key)) {
+			return false;
+		}
+
+		const target = key.replace(MODULE_FORM, "");
+		return MODULE_FORMS.every((form) => !fileSystem.existsSync(target + form));
+	}
+
+	return {
+		existsSync: (file) => fileSystem.existsSync(file) || isDeletedModule(file),
+		readFileSync: (file, encoding) => fileSystem.readFileSync(file, encoding),
+	};
+}
+
 function createDependencyReader({
 	fileSystem,
 	parser,
-}: Pick<ModuleReader, "fileSystem" | "parser">): (file: string) => ReadonlySet<string> {
+	relatedKeys,
+}: Pick<ModuleReader, "fileSystem" | "parser"> & {
+	relatedKeys: ReadonlyArray<string>;
+}): (file: string) => ReadonlySet<string> {
 	const reader = {
 		fileSystem,
 		parser,
-		resolve: createStringRequireResolver({ fileSystem, parser }),
+		resolve: createStringRequireResolver({
+			fileSystem: withDeletedModules(fileSystem, relatedKeys),
+			parser,
+		}),
 	} satisfies ModuleReader;
 	const cache = new Map<string, ReadonlySet<string>>();
 	return (file) => {

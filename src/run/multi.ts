@@ -10,6 +10,7 @@ import { assertKnownProjectNames } from "../config/projects.ts";
 import type { TypecheckCliOptions } from "../config/resolve-typecheck-config.ts";
 import { resolveTypecheckConfig } from "../config/resolve-typecheck-config.ts";
 import type { ProjectEntry, ResolvedConfig } from "../config/schema.ts";
+import { resolvePartialRun } from "../related/partial-run.ts";
 import { resolveCodeRoots } from "../staging/code-roots.ts";
 import { NOOP_TIMING_COLLECTOR, type TimingCollector } from "../timing/orchestration-collector.ts";
 import { rojoProjectSchema } from "../types/rojo.ts";
@@ -345,8 +346,8 @@ function beginRun({
 		cliFiles: cli.files,
 		cliTypecheck,
 		filesByProject,
+		partialRun: resolvePartialRun({ ...run, cli, rootDirectory: rootConfig.rootDir }),
 		projects,
-		relatedFiles: cli.related?.map((file) => path.resolve(rootConfig.rootDir, file)),
 		rootConfig,
 	};
 }

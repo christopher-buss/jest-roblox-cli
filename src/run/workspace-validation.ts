@@ -3,6 +3,7 @@ import { resolveCredentials, type RunnerCredentials } from "@isentinel/roblox-ru
 import assert from "node:assert";
 
 import type { CliOptions, WorkspaceRunOptions } from "../config/schema.ts";
+import { CHANGED_FLAG } from "../optional-value-flags.ts";
 import type { ChildProcessRunner } from "../utils/child-process.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import { getAffectedPackages } from "../workspace/affected.ts";
@@ -88,10 +89,11 @@ export function validateBasicWorkspaceFlags(cli: CliOptions): WorkspaceValidatio
 		};
 	}
 
-	if (cli.related !== undefined) {
+	if (cli.related !== undefined || cli.changed !== undefined) {
+		const mode = cli.related === undefined ? CHANGED_FLAG : "related";
 		return {
 			exitCode: 2,
-			message: "Error: related does not support a workspace run yet.\n",
+			message: `Error: ${mode} does not support a workspace run yet.\n`,
 			ok: false,
 		};
 	}

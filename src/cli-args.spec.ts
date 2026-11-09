@@ -117,6 +117,40 @@ describe(parseArgs, () => {
 		expect(parseArgs(["src/a.spec.luau"]).passWithNoTests).toBeUndefined();
 	});
 
+	it("should read a bare --changed as the uncommitted changes against HEAD", () => {
+		expect.assertions(3);
+
+		const result = parseArgs(["--changed", "--verbose"]);
+
+		expect(result.changed).toBe("HEAD");
+		expect(result.verbose).toBeTrue();
+		expect(result.passWithNoTests).toBeTrue();
+	});
+
+	it("should read the ref after --changed", () => {
+		expect.assertions(3);
+
+		expect(parseArgs(["--changed", "origin/main"]).changed).toBe("origin/main");
+		expect(parseArgs(["--changed=HEAD~2"]).changed).toBe("HEAD~2");
+		expect(parseArgs(["--changed"]).changed).toBe("HEAD");
+	});
+
+	it("should reject a --changed ref that git would read as an option", () => {
+		expect.assertions(1);
+
+		expect(() => parseArgs(["--changed=--output=x"])).toThrow(
+			'Invalid --changed ref "--output=x".',
+		);
+	});
+
+	it("should reject related together with --changed", () => {
+		expect.assertions(1);
+
+		expect(() => parseArgs(["related", "src/a.luau", "--changed"])).toThrow(
+			"related and --changed cannot be used together.",
+		);
+	});
+
 	it("should leave related undefined on a run of positional files", () => {
 		expect.assertions(1);
 

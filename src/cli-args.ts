@@ -1,7 +1,6 @@
 import type { ParseArgsOptionsConfig } from "node:util";
 import { parseArgs as nodeParseArgs } from "node:util";
 
-import type { ParallelOption } from "./backends/interface.ts";
 import {
 	isCoverageReporter,
 	isValidBackend,
@@ -9,6 +8,12 @@ import {
 	VALID_COVERAGE_REPORTERS,
 } from "./config/option-values.ts";
 import type { Backend, CliOptions, CoverageReporter } from "./config/schema.ts";
+import {
+	CHANGED_FLAG,
+	normalizeOptionalValueFlags,
+	parseParallelValue,
+	parseVmParallelValue,
+} from "./optional-value-flags.ts";
 
 // `as const` is what keeps the per-flag `type`/`multiple`/`default` literals —
 // node's `parseArgs` types derive the shape of `values` from them, so widening
@@ -19,6 +24,7 @@ const CLI_OPTION_SPEC = {
 	"apiKey": { type: "string" },
 	"backend": { type: "string" },
 	"bail": { type: "boolean" },
+	"changed": { type: "string" },
 	"collectCoverageFrom": { multiple: true, type: "string" },
 	"color": { type: "boolean" },
 	"config": { type: "string" },
@@ -102,35 +108,6 @@ export function parseArgs(args: Array<string>): CliOptions {
 	};
 }
 
-const PARALLEL_FLAG = "--parallel";
-const VM_PARALLEL_FLAG = "--experimental-vm-parallel";
-const INTEGER_LIKE_PATTERN = /^-?\d+$/;
-
-/**
- * The flags whose value is optional: `--parallel` and
- * `--experimental-vm-parallel` both mean "pick the count for me" when written
- * bare. `parseArgs` has no optional-value mode, so the bare form is rewritten
- * to an explicit `auto` before it gets there.
- *
- * `isValueLike` decides what counts as this flag's value rather than the next
- * argument: anything else (a following flag, a positional test path) leaves
- * the flag bare.
- */
-const OPTIONAL_VALUE_FLAGS: ReadonlyArray<{
-	isValueLike: (next: string) => boolean;
-	name: string;
-}> = [
-	{
-		name: PARALLEL_FLAG,
-		isValueLike: (next) => next === "auto" || INTEGER_LIKE_PATTERN.test(next),
-	},
-	{
-		name: VM_PARALLEL_FLAG,
-		isValueLike: (next) => next === BARE_FLAG_VALUE || INTEGER_LIKE_PATTERN.test(next),
-	},
-];
-
-const BARE_FLAG_VALUE = "auto";
 const RELATED_COMMAND = "related";
 
 interface CliParseConfig {
@@ -141,29 +118,6 @@ interface CliParseConfig {
 }
 
 type ParsedCliValues = ReturnType<typeof parseWithOptionSpec>["values"];
-
-function normalizeOptionalValueFlags(args: Array<string>): Array<string> {
-	const out: Array<string> = [];
-	for (let index = 0; index < args.length; index++) {
-		// oxlint-disable-next-line typescript/no-non-null-assertion -- index bounded by args.length
-		const current = args[index]!;
-		const flag = OPTIONAL_VALUE_FLAGS.find((entry) => entry.name === current);
-		if (flag === undefined) {
-			out.push(current);
-			continue;
-		}
-
-		const next = args[index + 1];
-		if (next !== undefined && !next.startsWith("-") && flag.isValueLike(next)) {
-			out.push(flag.name, next);
-			index += 1;
-		} else {
-			out.push(flag.name, BARE_FLAG_VALUE);
-		}
-	}
-
-	return out;
-}
 
 function parseWithOptionSpec(
 	args: Array<string>,
@@ -259,7 +213,13 @@ function toFilterOptions(
 	positionals: Array<string>,
 ): Pick<
 	CliOptions,
-	"files" | "passWithNoTests" | "project" | "related" | "testNamePattern" | "testPathPattern"
+	| "changed"
+	| "files"
+	| "passWithNoTests"
+	| "project"
+	| "related"
+	| "testNamePattern"
+	| "testPathPattern"
 > {
 	const [command, ...relatedFiles] = positionals;
 	const isRelated = command === RELATED_COMMAND;
@@ -267,9 +227,20 @@ function toFilterOptions(
 		throw new Error(`${RELATED_COMMAND} needs at least one source file.`);
 	}
 
+	const { changed } = values;
+	if (changed?.startsWith("-") === true) {
+		throw new Error(`Invalid ${CHANGED_FLAG} ref "${changed}".`);
+	}
+
+	if (isRelated && changed !== undefined) {
+		throw new Error(`${RELATED_COMMAND} and ${CHANGED_FLAG} cannot be used together.`);
+	}
+
+	const isPartialRun = isRelated || changed !== undefined;
 	return {
+		changed,
 		files: !isRelated && positionals.length > 0 ? positionals : undefined,
-		passWithNoTests: values.passWithNoTests ?? (isRelated ? true : undefined),
+		passWithNoTests: values.passWithNoTests ?? (isPartialRun ? true : undefined),
 		project: values.project,
 		related: isRelated ? relatedFiles : undefined,
 		testNamePattern: values.testNamePattern,
@@ -310,53 +281,4 @@ function toTypecheckOptions(
 		typecheckOnly: values.typecheckOnly,
 		typecheckTsconfig: values.typecheckTsconfig,
 	};
-}
-
-function parseParallelValue(raw: string | undefined): ParallelOption {
-	if (raw === undefined) {
-		return undefined;
-	}
-
-	if (raw === "auto") {
-		return "auto";
-	}
-
-	if (!INTEGER_LIKE_PATTERN.test(raw)) {
-		throw new Error(`Invalid --parallel value "${raw}". Must be a positive integer or "auto".`);
-	}
-
-	const parsed = Number(raw);
-	if (parsed < 1) {
-		throw new Error(`Invalid --parallel value "${raw}". Must be a positive integer or "auto".`);
-	}
-
-	return parsed;
-}
-
-/**
- * `--experimental-vm-parallel [n]`: how many Luau VMs the Studio plugin splits
- * the run's configs across. Bare — or the `auto` the bare form is rewritten to,
- * which a user may also type — means one VM per config; an explicit count must
- * be a positive integer, and the plugin clamps it to the configs it was given
- * and the hosts it ships.
- *
- * @param raw - The flag value, or `undefined` when the flag is absent.
- * @returns `undefined` when absent, `"auto"` when bare, else the count.
- * @throws {Error} When the value is not a positive integer.
- */
-function parseVmParallelValue(raw: string | undefined): ParallelOption {
-	if (raw === undefined) {
-		return undefined;
-	}
-
-	if (raw === BARE_FLAG_VALUE) {
-		return "auto";
-	}
-
-	const parsed = Number.parseInt(raw, 10);
-	if (Number.isNaN(parsed) || parsed < 1) {
-		throw new Error(`Invalid ${VM_PARALLEL_FLAG} value "${raw}". Must be a positive integer.`);
-	}
-
-	return parsed;
 }

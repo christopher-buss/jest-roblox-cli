@@ -61,6 +61,11 @@ Options:
   --sourceMap                       Map Luau stack traces to TypeScript source
   --rojoProject <path>              Path to rojo project file (auto-detected if not set)
   --passWithNoTests                 Exit with 0 when no test files are found
+  --changed [ref]                   Run only the tests that reach a file changed
+                                    in git, with the rules of related. Bare:
+                                    staged, unstaged, and untracked files
+                                    against HEAD. With a ref: also the files
+                                    committed since its merge base with HEAD
   --verbose                         Show individual test results
   --silent                          Suppress output
   --no-color                        Disable colored output
@@ -122,6 +127,7 @@ Examples:
   jest-roblox src/player.spec.ts      Run specific test file (also narrows
                                       a --workspace run to its package)
   jest-roblox related src/util.luau   Run the tests that reach src/util.luau
+  jest-roblox --changed main          Run the tests that reach a change since main
   jest-roblox -t "should spawn"       Run tests matching pattern
   jest-roblox --formatters json       Output JSON to file
   jest-roblox --coverage              Run tests with coverage instrumentation

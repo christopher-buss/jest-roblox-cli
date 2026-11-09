@@ -55,8 +55,8 @@ function plan(input: Partial<TestPlanInput> & { fileSystem: FileSystem }): TestP
 	return buildTestPlan({
 		cliFiles: undefined,
 		cliTypecheck: {},
+		partialRun: undefined,
 		projects: [makeProject()],
-		relatedFiles: undefined,
 		rootConfig: makeConfig(),
 		seams: makeSeams(),
 		timing: clockTimingCollector(),
@@ -98,12 +98,31 @@ describe(buildTestPlan, () => {
 
 		const result = plan({
 			fileSystem: makeVolume(["/test/src/util.luau"]),
-			relatedFiles: [path.resolve("/test/src/util.luau")],
+			partialRun: { files: [path.resolve("/test/src/util.luau")], kind: "related" },
 			rootConfig: makeConfig({ passWithNoTests: true }),
 		});
 
 		expect(result.emptiness).toStrictEqual({
 			validationMessage: "No test files reach the related files, exiting with code 0\n",
+		});
+	});
+
+	it("should pass an empty --changed run with a notice that names the ref", () => {
+		expect.assertions(1);
+
+		const result = plan({
+			fileSystem: makeVolume(["/test/src/util.luau"]),
+			partialRun: {
+				files: [path.resolve("/test/src/util.luau")],
+				kind: "changed",
+				since: "main",
+			},
+			rootConfig: makeConfig({ passWithNoTests: true }),
+		});
+
+		expect(result.emptiness).toStrictEqual({
+			validationMessage:
+				"No test files reach the files changed since main, exiting with code 0\n",
 		});
 	});
 
@@ -180,8 +199,8 @@ describe(buildTestPlan, () => {
 		const result = plan({
 			cliTypecheck: { enabled: true },
 			fileSystem,
+			partialRun: { files: [path.resolve("/test/src/util.luau")], kind: "related" },
 			projects: [makeProject({ include: ["src/**/*.spec.luau"] })],
-			relatedFiles: [path.resolve("/test/src/util.luau")],
 			timing,
 		});
 
@@ -191,7 +210,7 @@ describe(buildTestPlan, () => {
 		expect(profile).toHaveBeenCalledWith("buildDependencyGraph", expect.any(Function));
 		expect(result.affected).toStrictEqual({
 			affected: 1,
-			relatedTo: ["src/util.luau"],
+			cause: { files: ["src/util.luau"], kind: "related" },
 			total: 2,
 		});
 	});

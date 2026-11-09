@@ -892,7 +892,11 @@ describe(formatAgentMultiProject, () => {
 
 		const output = formatAgentMultiProject([{ displayName: "core", result: PASSING_RESULT }], {
 			...baseOptions,
-			affected: { affected: 1, relatedTo: ["src/leaf.luau"], total: 3 },
+			affected: {
+				affected: 1,
+				cause: { files: ["src/leaf.luau"], kind: "related" },
+				total: 3,
+			},
 		});
 
 		expect(output).toContain("   Affected  1 of 3 test files (related to src/leaf.luau)");

@@ -3,6 +3,7 @@ language: en
 
 words:
   - IMAGENAME
+  - NOSYSTEM
   - NSURL
   - NSUTF
   - absolutize

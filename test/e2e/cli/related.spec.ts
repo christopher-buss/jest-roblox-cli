@@ -1,46 +1,18 @@
-import { type } from "arktype";
 import * as path from "node:path";
 import { stripVTControlCharacters } from "node:util";
 import { describe, expect, it } from "vitest";
 
-import { startFakeOpenCloudServerAsync } from "#test/e2e/cli/fake-open-cloud.ts";
+import { createFixtureSandbox, rojoOnPath } from "#test/e2e/cli/helpers.ts";
+import type { PartialRunResult } from "#test/e2e/cli/partial-run.ts";
 import {
-	buildPassingJestOutput,
-	createFixtureSandbox,
-	createOpenCloudEnvironment,
-	rojoOnPath,
-	runCliAsync,
-} from "#test/e2e/cli/helpers.ts";
+	PARTIAL_RUN_TIMEOUT_MS as RUN_TIMEOUT_MS,
+	runPartialAsync,
+} from "#test/e2e/cli/partial-run.ts";
 
 const RELATED_FIXTURE_PATH = path.resolve(__dirname, "../fixtures/related-project");
-const RUN_TIMEOUT_MS = 60_000;
-const TEST_PATH_PATTERN = /"testPathPattern":("(?:[^"\\]|\\.)*")/g;
-const jsonString = type("string.json.parse").to("string");
 
-async function runRelatedAsync(files: Array<string>): Promise<{
-	exitCode: number;
-	patterns: Array<string>;
-	stderr: string;
-	stdout: string;
-}> {
-	const sandbox = createFixtureSandbox(RELATED_FIXTURE_PATH);
-	const server = await startFakeOpenCloudServerAsync([{ jestOutput: buildPassingJestOutput() }]);
-
-	const result = await runCliAsync(["--backend", "open-cloud", "related", ...files], {
-		cwd: sandbox,
-		env: { ...createOpenCloudEnvironment(server.baseUrl), TIMING: "1" },
-		timeoutMs: RUN_TIMEOUT_MS,
-	});
-
-	const scripts = server.requests.map((request) => request.script).join("\n");
-	return {
-		exitCode: result.exitCode,
-		patterns: Array.from(scripts.matchAll(TEST_PATH_PATTERN), ([, literal]) => {
-			return jsonString.assert(literal);
-		}),
-		stderr: result.stderr,
-		stdout: result.stdout,
-	};
+async function runRelatedAsync(files: Array<string>): Promise<PartialRunResult> {
+	return runPartialAsync(createFixtureSandbox(RELATED_FIXTURE_PATH), ["related", ...files]);
 }
 
 describe.skipIf(!rojoOnPath())("related", () => {

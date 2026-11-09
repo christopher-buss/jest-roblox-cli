@@ -494,7 +494,35 @@ describe(runMultiProjectAsync, () => {
 		expect(result.projectResults[0]!.displayName).toBe("client");
 		expect(result.affected).toStrictEqual({
 			affected: 1,
-			relatedTo: ["src/client/a.spec.ts"],
+			cause: { files: ["src/client/a.spec.ts"], kind: "related" },
+			total: 2,
+		});
+	});
+
+	it("should run only the tests that reach a file changed since the ref", async () => {
+		expect.assertions(2);
+
+		const { config, fileSystem, volume } = setupDefaults();
+		seedProjectFiles(volume);
+		const execFileSync = vi
+			.fn<() => string>()
+			.mockReturnValueOnce("/test\n")
+			.mockReturnValue("src/server/b.spec.ts\0");
+
+		const result = await runMultiProjectAsync({
+			cli: makeCli({ changed: "main" }),
+			config,
+			fileSystem,
+			rawProjects: [makeProjectEntry("client"), makeProjectEntry("server")],
+			seams: { ...seams, childProcess: fromAny({ execFileSync }) },
+		});
+
+		expect(result.projectResults.map((project) => project.displayName)).toStrictEqual([
+			"server",
+		]);
+		expect(result.affected).toStrictEqual({
+			affected: 1,
+			cause: { kind: "changed", since: "main" },
 			total: 2,
 		});
 	});

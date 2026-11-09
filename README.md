@@ -140,6 +140,13 @@ jest-roblox src/player.spec.luau
 # To run tests filtered to a file named related, write ./related
 jest-roblox related src/util.luau src/inventory/init.luau
 
+# Run only the tests that reach a file changed in git, with the same rules.
+# Bare, the changes are the staged, unstaged and untracked files against HEAD;
+# with a ref, also every file committed since its merge base with HEAD.
+# A deleted module selects every test that required it.
+jest-roblox --changed
+jest-roblox --changed main
+
 # Filter by test name
 jest-roblox -t "should spawn"
 
@@ -1140,6 +1147,7 @@ to the run's root when it lies under it, as the terminal report shows it.
 | `--rojoProject <path>`           | Path to Rojo project file                                                                                                                                       |
 | `--timeout <ms>`                 | Max time for tests to run                                                                                                                                       |
 | `--passWithNoTests`              | Exit `0` when no test files are found                                                                                                                           |
+| `--changed [ref]`                | Run only the tests that reach a file changed since `ref` (default: uncommitted changes against `HEAD`); passes when none does                                   |
 | `--verbose`                      | Show each test result                                                                                                                                           |
 | `--silent`                       | Hide all output                                                                                                                                                 |
 | `--no-color`                     | Turn off colors                                                                                                                                                 |

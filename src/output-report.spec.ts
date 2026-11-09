@@ -16,6 +16,7 @@ import type {
 	formatResult,
 	formatTypecheckReport,
 } from "./formatters/formatter.ts";
+import type { AffectedSummary } from "./formatters/shared.ts";
 import { reportMultiRun, reportSingleRun } from "./output-report.ts";
 import type { MultiRunResult } from "./run/run-types.ts";
 import type { JestResult } from "./types/jest-result-types.ts";
@@ -309,7 +310,11 @@ describe(reportMultiRun, () => {
 
 		const harness = setupReport();
 		const merged = makeExecuteResult();
-		const affected = { affected: 1, relatedTo: ["src/leaf.luau"], total: 2 };
+		const affected = {
+			affected: 1,
+			cause: { files: ["src/leaf.luau"], kind: "related" },
+			total: 2,
+		} satisfies AffectedSummary;
 		reportMultiRun({
 			config: makeOutputConfig({ formatters: ["agent"] }),
 			dependencies: harness.dependencies,
