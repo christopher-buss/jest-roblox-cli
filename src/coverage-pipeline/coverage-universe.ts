@@ -2,6 +2,7 @@ import * as path from "node:path";
 import process from "node:process";
 import picomatch from "picomatch";
 
+import { nodeFileSystem } from "../utils/file-system.ts";
 import type { PosixRoot } from "../utils/normalize-windows-path.ts";
 import {
 	isAbsolutePath,
@@ -34,6 +35,19 @@ export interface CoverageUniverseFilter {
 	 * `process.cwd()`, which is what single mode's `rootDir` already is.
 	 */
 	rootDir?: string | undefined;
+}
+
+/** Inputs of {@link narrowCoverageToFiles}. */
+export interface NarrowCoverageOptions {
+	/** Absolute source paths to keep. */
+	files: ReadonlyArray<string>;
+	/** Mapped coverage keyed by source path. */
+	mapped: MappedCoverageResult;
+	/**
+	 * Resolves an existing path to its real spelling; throws for a missing
+	 * one.
+	 */
+	realpath?: (file: string) => string;
 }
 
 /**
@@ -136,6 +150,35 @@ export function filterCoverageUniverse(
 	);
 
 	return { files: filtered };
+}
+
+/**
+ * Narrows a mapped coverage universe to the given source files. A named file
+ * outside the universe, such as a spec or a deleted module, adds nothing.
+ * @param options - The universe, the files to keep and the real-path reader.
+ * @returns The files of `mapped` that `files` names.
+ */
+export function narrowCoverageToFiles({
+	files,
+	mapped,
+	realpath = nodeFileSystem.realpathSync.native,
+}: NarrowCoverageOptions): MappedCoverageResult {
+	const cwd = normalizeWindowsPath(process.cwd());
+	function toRealKey(file: string): string {
+		const key = toAnchorNamespace(file, cwd);
+		try {
+			return normalizeWindowsPath(realpath(key));
+		} catch {
+			return key;
+		}
+	}
+
+	const kept = new Set(files.map(toRealKey));
+	const narrowed = Object.fromEntries(
+		Object.entries(mapped.files).filter(([filePath]) => kept.has(toRealKey(filePath))),
+	);
+
+	return { files: narrowed };
 }
 
 /**

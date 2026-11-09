@@ -1,10 +1,12 @@
 import * as path from "node:path";
 import process from "node:process";
 import color from "tinyrainbow";
+import type { Except } from "type-fest";
 
 import type { CoverageReporter, ResolvedConfig } from "../config/schema.ts";
 import type { CoverageDisplayPredicate } from "../coverage-pipeline/agent-table-filter.ts";
 import type { RawCoverageData } from "../coverage-pipeline/coverage-types.ts";
+import { narrowCoverageToFiles } from "../coverage-pipeline/coverage-universe.ts";
 import { loadCoverageManifest } from "../coverage-pipeline/manifest-load.ts";
 import type { MappedCoverageResult } from "../coverage-pipeline/mapper-types.ts";
 import { type CoverageMapper, mapCoverageToTypeScript } from "../coverage-pipeline/mapper.ts";
@@ -61,6 +63,7 @@ interface CoverageReportUnit {
 
 interface ProcessCoverageOptions {
 	agentTextFilter?: CoverageDisplayPredicate | undefined;
+	changedFiles?: ReadonlyArray<string> | undefined;
 	config: ResolvedConfig;
 	coverageData: RawCoverageData | undefined;
 	packageGates?: Array<WorkspacePackageCoverageGate> | undefined;
@@ -78,6 +81,7 @@ export const defaultCoveragePipeline: CoveragePipeline = {
  * Write the coverage reports and judge each against its threshold.
  * @param options - The run's config, raw coverage and pipeline.
  * @param options.agentTextFilter - Narrows the agent coverage table.
+ * @param options.changedFiles - Partial Run only: the files to report and gate.
  * @param options.config - The resolved run config.
  * @param options.coverageData - The run's raw hit counts.
  * @param options.packageGates - Per-package units for a workspace run.
@@ -86,17 +90,13 @@ export const defaultCoveragePipeline: CoveragePipeline = {
  */
 export function processCoverage({
 	agentTextFilter,
+	changedFiles,
 	config,
 	coverageData,
 	packageGates,
 	pipeline,
 }: ProcessCoverageOptions): boolean {
-	// Workspace coverage is opted into per package, so the gates decide whether
-	// anything runs — there is no run-level `collectCoverage` to consult.
-	const units =
-		packageGates === undefined
-			? resolveSingleUnit({ config, coverageData, pipeline })
-			: packageGates.map(toPackageUnit);
+	const units = resolveUnits({ changedFiles, config, coverageData, packageGates, pipeline });
 	if (units.length === 0) {
 		return true;
 	}
@@ -163,6 +163,17 @@ export function extractCoverageDisplayFilter(
 	result: MultiRunResult | WorkspaceRunResult,
 ): CoverageDisplayPredicate | undefined {
 	return result.mode === "multi" ? result.coverageDisplayFilter : undefined;
+}
+
+/**
+ * Present only on a multi run that is a Partial Run.
+ * @param result - The multi or workspace run result.
+ * @returns The files coverage is narrowed to, or `undefined`.
+ */
+export function extractCoverageChangedFiles(
+	result: MultiRunResult | WorkspaceRunResult,
+): ReadonlyArray<string> | undefined {
+	return result.mode === "multi" ? result.coverageChangedFiles : undefined;
 }
 
 /**
@@ -234,6 +245,30 @@ function resolveSingleUnit({
 			universe: pipeline.mapCoverageToTypeScript({ coverageData, manifest }),
 		},
 	];
+}
+
+function resolveUnits({
+	changedFiles,
+	packageGates,
+	...single
+}: Except<ProcessCoverageOptions, "agentTextFilter">): Array<CoverageReportUnit> {
+	// Workspace coverage is opted into per package, so the gates decide whether
+	// anything runs — there is no run-level `collectCoverage` to consult.
+	if (packageGates !== undefined) {
+		return packageGates.map(toPackageUnit);
+	}
+
+	const units = resolveSingleUnit(single);
+	if (changedFiles === undefined) {
+		return units;
+	}
+
+	return units.map((unit) => {
+		return {
+			...unit,
+			universe: narrowCoverageToFiles({ files: changedFiles, mapped: unit.universe }),
+		};
+	});
 }
 
 /**

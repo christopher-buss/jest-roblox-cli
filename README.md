@@ -144,6 +144,8 @@ jest-roblox related src/util.luau src/inventory/init.luau
 # Bare, the changes are the staged, unstaged and untracked files against HEAD;
 # with a ref, also every file committed since its merge base with HEAD.
 # A deleted module selects every test that required it.
+# With --coverage, both modes report and apply coverageThreshold only to the
+# changed or related source files.
 jest-roblox --changed
 jest-roblox --changed main
 

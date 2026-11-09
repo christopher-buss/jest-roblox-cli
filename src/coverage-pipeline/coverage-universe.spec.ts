@@ -6,6 +6,7 @@ import { posixPath } from "#test/mocks/posix-path.ts";
 import {
 	createCoverageUniverseMatcher,
 	filterCoverageUniverse,
+	narrowCoverageToFiles,
 	resolveUniverseAnchor,
 } from "./coverage-universe.ts";
 import type { MappedCoverageResult, MappedFileCoverage } from "./mapper-types.ts";
@@ -214,6 +215,53 @@ describe(filterCoverageUniverse, () => {
 		);
 
 		expect(keys(filtered)).toStrictEqual(["src/a.ts", "src/b.ts", "src/unlisted.ts"]);
+	});
+});
+
+function missingRealpath(file: string): string {
+	throw new Error(`ENOENT: ${file}`);
+}
+
+describe(narrowCoverageToFiles, () => {
+	it("should keep only the named files, keyed absolute or cwd-relative", () => {
+		expect.assertions(1);
+
+		const absolute = path.join(process.cwd(), "src/absolute.ts");
+		const narrowed = narrowCoverageToFiles({
+			files: [
+				absolute.replaceAll("\\", "/"),
+				path.join(process.cwd(), "src/relative.ts"),
+				path.join(process.cwd(), "src/deleted.ts"),
+			],
+			mapped: resultFor(absolute, "src/relative.ts", "src/untouched.ts"),
+			realpath: missingRealpath,
+		});
+
+		expect(keys(narrowed)).toStrictEqual([absolute, "src/relative.ts"].sort());
+	});
+
+	it("should match a named file and a key that spell one real path two ways", () => {
+		expect.assertions(1);
+
+		const narrowed = narrowCoverageToFiles({
+			files: ["D:/Repo/src/changed.ts"],
+			mapped: resultFor("d:/repo/src/changed.ts", "d:/repo/src/untouched.ts"),
+			realpath: (file) => file.toLowerCase(),
+		});
+
+		expect(keys(narrowed)).toStrictEqual(["d:/repo/src/changed.ts"]);
+	});
+
+	it("should keep no file when no named file is in the universe", () => {
+		expect.assertions(1);
+
+		const narrowed = narrowCoverageToFiles({
+			files: [path.join(process.cwd(), "src/a.spec.ts")],
+			mapped: resultFor("src/a.ts"),
+			realpath: missingRealpath,
+		});
+
+		expect(keys(narrowed)).toStrictEqual([]);
 	});
 });
 

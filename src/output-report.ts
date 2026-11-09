@@ -3,6 +3,7 @@ import type { ExecuteResult } from "./executor/executor-types.ts";
 import { usesAgentFormatter } from "./formatters/utils.ts";
 import {
 	type CoveragePipeline,
+	extractCoverageChangedFiles,
 	extractCoverageDisplayFilter,
 	extractCoveragePackages,
 	processCoverage,
@@ -111,6 +112,7 @@ export function reportMultiRun({
 		runCoverage: () => {
 			return processCoverage({
 				agentTextFilter: displayFilter,
+				changedFiles: extractCoverageChangedFiles(result),
 				config,
 				coverageData: merged.coverageData,
 				packageGates: extractCoveragePackages(result),

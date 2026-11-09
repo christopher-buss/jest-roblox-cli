@@ -5,22 +5,26 @@ import { describe, expect, it } from "vitest";
 
 import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
 import type { AttributionResult } from "../coverage-pipeline/attribution.ts";
+import type { PartialRun } from "../related/partial-run.ts";
 import type { SourceMapper } from "../source-mapper/index.ts";
 import { buildMultiRunResult, type MultiRunResultInput } from "./multi-result.ts";
 import type { ProjectResult } from "./run-types.ts";
 
 function input({
 	cliFiles,
+	partialRun,
 	projectNames,
 	projectResults = [],
 }: {
 	cliFiles?: Array<string> | undefined;
+	partialRun?: PartialRun | undefined;
 	projectNames?: Array<string> | undefined;
 	projectResults?: Array<ProjectResult> | undefined;
 }): MultiRunResultInput {
 	return fromAny<MultiRunResultInput, unknown>({
 		cli: { files: cliFiles, project: projectNames },
 		discovery: {
+			partialRun,
 			projects: [],
 			rootConfig: { ...createResolvedConfig(), rootDir: "/repo" },
 		},
@@ -42,6 +46,7 @@ describe(buildMultiRunResult, () => {
 			affected: undefined,
 			collectCoverageFrom: undefined,
 			coverageArtifacts: undefined,
+			coverageChangedFiles: undefined,
 			coverageDisplayFilter: undefined,
 			coverageMs: 17,
 			merged: {},
@@ -50,6 +55,17 @@ describe(buildMultiRunResult, () => {
 			stagingMs: 12,
 			typecheckResult: undefined,
 		});
+	});
+
+	it.for<PartialRun>([
+		{ files: ["/repo/src/a.luau"], kind: "changed", since: "HEAD" },
+		{ files: ["/repo/src/a.luau"], kind: "related" },
+	])("should narrow coverage to the files of a $kind Partial Run", (partialRun) => {
+		expect.assertions(1);
+
+		expect(buildMultiRunResult(input({ partialRun })).coverageChangedFiles).toBe(
+			partialRun.files,
+		);
 	});
 
 	it("should not narrow display coverage for empty positional or project filters", () => {

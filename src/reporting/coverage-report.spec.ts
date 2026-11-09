@@ -11,6 +11,7 @@ import type { MappedCoverageResult } from "../coverage-pipeline/mapper-types.ts"
 import type { WorkspacePackageCoverageGate } from "../run/run-types.ts";
 import {
 	type CoveragePipeline,
+	extractCoverageChangedFiles,
 	extractCoverageDisplayFilter,
 	extractCoveragePackages,
 	printFinalStatus,
@@ -185,6 +186,43 @@ describe(processCoverage, () => {
 		).toBeTrue();
 	});
 
+	it("should report and gate only the changed files on a Partial Run", () => {
+		expect.assertions(3);
+
+		captureOutput();
+		const changed = fromAny<MappedCoverageResult["files"][string], unknown>({
+			path: "changed",
+		});
+		const pipeline = makePipeline({
+			mapCoverageToTypeScript: vi.fn<CoveragePipeline["mapCoverageToTypeScript"]>(() => {
+				return fromAny({
+					files: {
+						[path.resolve("src/changed.ts")]: changed,
+						[path.resolve("src/untouched.ts")]: { path: "untouched" },
+					},
+				});
+			}),
+		});
+
+		expect(
+			processCoverage({
+				changedFiles: [path.resolve("src/changed.ts"), path.resolve("src/changed.spec.ts")],
+				config: makeConfig({ coverageThreshold: { lines: 80 } }),
+				coverageData: COVERAGE_DATA,
+				pipeline,
+			}),
+		).toBeTrue();
+
+		const narrowed = { files: { [path.resolve("src/changed.ts")]: changed } };
+
+		expect(pipeline.generateReports).toHaveBeenCalledWith(
+			expect.objectContaining({ mapped: narrowed }),
+		);
+		expect(pipeline.checkThresholds).toHaveBeenCalledWith(
+			expect.objectContaining({ mapped: narrowed }),
+		);
+	});
+
 	it("should pass with no output when the workspace has no package gates", () => {
 		expect.assertions(2);
 
@@ -274,6 +312,21 @@ describe(extractCoveragePackages, () => {
 			extractCoveragePackages(fromPartial({ coveragePackages: gates, mode: "workspace" })),
 		).toBe(gates);
 		expect(extractCoveragePackages(fromPartial({ mode: "multi" }))).toBeUndefined();
+	});
+});
+
+describe(extractCoverageChangedFiles, () => {
+	it("should return the changed files of a multi run only", () => {
+		expect.assertions(2);
+
+		const files = ["/repo/src/a.luau"];
+
+		expect(
+			extractCoverageChangedFiles(
+				fromPartial({ coverageChangedFiles: files, mode: "multi" }),
+			),
+		).toBe(files);
+		expect(extractCoverageChangedFiles(fromPartial({ mode: "workspace" }))).toBeUndefined();
 	});
 });
 

@@ -59,6 +59,7 @@ export function buildMultiRunResult({
 		affected: plan.affected,
 		collectCoverageFrom,
 		coverageArtifacts: staged.coverageArtifacts,
+		coverageChangedFiles: discovery.partialRun?.files,
 		coverageDisplayFilter: buildMultiDisplayFilter({
 			cliFiles: cli.files,
 			matchedRuntimeFiles: plan.matchedRuntimeFiles,

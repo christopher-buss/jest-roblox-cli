@@ -91,6 +91,11 @@ export interface MultiRunResult extends PreDispatchTiming {
 	/** Producer record for the entry point to emit a Build Manifest from. */
 	coverageArtifacts?: CoverageArtifacts | undefined;
 	/**
+	 * Partial Run only: the absolute source files the coverage report and
+	 * thresholds are narrowed to.
+	 */
+	coverageChangedFiles?: ReadonlyArray<string> | undefined;
+	/**
 	 * Narrows the agent coverage **text table** to the directly-filtered source
 	 * files on a filtered run (positional files / `--testPathPattern`, or the
 	 * selected `--project` scope). Display-only: thresholds, totals, and

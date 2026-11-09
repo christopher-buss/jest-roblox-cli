@@ -1,5 +1,6 @@
 import { fromAny } from "@total-typescript/shoehorn";
 
+import * as path from "node:path";
 import process from "node:process";
 import { describe, expect, it, vi } from "vitest";
 
@@ -325,6 +326,27 @@ describe(reportMultiRun, () => {
 		expect(harness.renderer.formatAgentMultiProject).toHaveBeenCalledWith(
 			expect.anything(),
 			expect.objectContaining({ affected }),
+		);
+	});
+
+	it("should gate coverage on only the changed files of a Partial Run", () => {
+		expect.assertions(1);
+
+		const harness = setupReport();
+		const changed = path.resolve("src/changed.luau");
+		harness.coveragePipeline.mapCoverageToTypeScript.mockReturnValue(
+			fromAny({ files: { [changed]: {}, [path.resolve("src/untouched.luau")]: {} } }),
+		);
+		const merged = makeExecuteResult({ coverageData: fromAny({ "x.luau": {} }) });
+		reportMultiRun({
+			config: makeOutputConfig({ collectCoverage: true, coverageThreshold: { lines: 80 } }),
+			dependencies: harness.dependencies,
+			merged,
+			result: { ...makeMultiResult(merged), coverageChangedFiles: [changed] },
+		});
+
+		expect(harness.coveragePipeline.checkThresholds).toHaveBeenCalledWith(
+			expect.objectContaining({ mapped: { files: { [changed]: {} } } }),
 		);
 	});
 });
