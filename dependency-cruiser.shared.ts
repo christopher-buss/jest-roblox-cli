@@ -1,6 +1,7 @@
 import { type } from "arktype";
 import type { IConfiguration, IForbiddenRuleType } from "dependency-cruiser";
 import fs from "node:fs";
+import { createRequire } from "node:module";
 import path from "node:path";
 
 export interface DependencyCruiserProjectOptions {
@@ -12,6 +13,8 @@ export interface DependencyCruiserProjectOptions {
 	disabledRules?: ReadonlyArray<SharedRuleName>;
 	/** The production files allowed to import `node:fs`. */
 	fileSystemSeam?: ReadonlyArray<string> | string;
+	/** Unit helpers that run production code; each is a recorded exemption. */
+	productionUnitHelpers?: ReadonlyArray<string>;
 	projectRoot: string;
 	rules: ReadonlyArray<IForbiddenRuleType>;
 	sourceRoots: ReadonlyArray<string>;
@@ -148,11 +151,13 @@ type TierRuleOptions = Pick<
 	"projectRoot" | "sourceRoots" | "testRoot"
 > & {
 	fileSystemSeam: ReadonlyArray<string> | string | undefined;
+	productionUnitHelpers: ReadonlyArray<string>;
 	unitHelperRoots: ReadonlyArray<string> | undefined;
 };
 
 function createTierRules({
 	fileSystemSeam,
+	productionUnitHelpers,
 	projectRoot,
 	sourceRoots,
 	testRoot,
@@ -200,7 +205,10 @@ function createTierRules({
 
 		{
 			name: "unit-helpers-have-no-runtime-production-imports",
-			from: { path: unitHelpers },
+			from: {
+				path: unitHelpers,
+				pathNot: productionUnitHelpers.map((helper) => `^${RegExp.escape(helper)}$`),
+			},
 			severity: "error",
 			to: { dependencyTypesNot: ["type-only"], path: production },
 		},
@@ -269,10 +277,17 @@ function createTierRules({
 	];
 }
 
+function assertTypeScriptResolves(): void {
+	// Without typescript it cruises 0 modules and passes; pnpm-workspace.yaml
+	// packageExtensions gives dependency-cruiser its typescript peer.
+	createRequire(import.meta.resolve("dependency-cruiser")).resolve("typescript");
+}
+
 export function createDependencyCruiserConfig({
 	ambientModules = [],
 	disabledRules = [],
 	fileSystemSeam,
+	productionUnitHelpers = [],
 	projectRoot,
 	rules,
 	sourceRoots,
@@ -280,8 +295,10 @@ export function createDependencyCruiserConfig({
 	tsConfig,
 	unitHelperRoots,
 }: DependencyCruiserProjectOptions): IConfiguration {
+	assertTypeScriptResolves();
 	const tierRules = createTierRules({
 		fileSystemSeam,
+		productionUnitHelpers,
 		projectRoot,
 		sourceRoots,
 		testRoot,

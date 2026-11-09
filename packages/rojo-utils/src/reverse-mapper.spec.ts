@@ -78,4 +78,13 @@ describe(createReverseMapper, () => {
 		);
 		expect(mapper.resolve(["game", "ReplicatedStorage", "unknown"])).toBeUndefined();
 	});
+
+	it("should let a file added later win a shared RbxPath", ({ expect }) => {
+		expect.assertions(1);
+
+		const mapper = createReverseMapper(["/first.luau"], () => ["game", "module"]);
+		mapper.add(["/second.luau"]);
+
+		expect(mapper.resolve(["game", "module"])).toBe("/second.luau");
+	});
 });

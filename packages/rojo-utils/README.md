@@ -55,6 +55,7 @@ Other supported entry-point exports include:
 - `createReverseMapper(files, getRbxPath)`: the inverse of a file mapper such as
   `RojoResolver.getRbxPathFromFilePath`. Its `resolve(rbxPath)` returns the file
   among `files` that maps to the DataModel path, or `undefined` when none does.
+  `add(files)` maps more files; a later file wins a shared DataModel path.
 - `collectMounts({ classify, currentDataModelPath, node })` and
   `pruneAncestors`: select directory mounts through a caller-supplied classifier
   and retain minimal directory prefixes.
