@@ -40,6 +40,11 @@
 				"dependsOn": [],
 				"inputs": []
 			},
+			"test:changed": {
+				"executor": "nx:noop",
+				"cache": false,
+				"dependsOn": []
+			},
 			"typecheck": {
 				"executor": "nx:noop",
 				"cache": true,
