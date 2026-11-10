@@ -3,12 +3,13 @@ import { describe, expect, it } from "vitest";
 
 import { runTypecheckAsync } from "#src/api.ts";
 
-const FIXTURE_DIR = path.resolve(__dirname, "..", "fixtures", "luau-config-type");
+const FIXTURES_DIR = path.resolve(__dirname, "..", "fixtures");
 
-async function checkAsync(fileName: string) {
+async function checkAsync(fileName: string, fixture = "luau-config-type") {
+	const fixtureDirectory = path.join(FIXTURES_DIR, fixture);
 	return runTypecheckAsync({
-		files: [path.join(FIXTURE_DIR, fileName)],
-		rootDir: FIXTURE_DIR,
+		files: [path.join(fixtureDirectory, fileName)],
+		rootDir: fixtureDirectory,
 	});
 }
 
@@ -36,6 +37,20 @@ describe("luau config type checks", () => {
 			["Config > rejects a backend that does not exist", "passed"],
 			["Config > rejects a string where a list goes", "passed"],
 			["Config > rejects a project without include", "passed"],
+		]);
+	});
+
+	it("should resolve the alias from a .config.luau", async () => {
+		expect.assertions(2);
+
+		const result = await checkAsync("alias.spec-d.luau", "luau-config-type-config-luau");
+
+		expect(result.success).toBeTrue();
+		expect(
+			result.testResults[0]!.testResults.map(({ fullName, status }) => [fullName, status]),
+		).toStrictEqual([
+			["Config > accepts a valid config", "passed"],
+			["Config > rejects an unknown root key", "passed"],
 		]);
 	});
 });
