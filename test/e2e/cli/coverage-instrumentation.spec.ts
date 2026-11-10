@@ -24,7 +24,11 @@ function readTwin(sandbox: string, name: string): string {
 	const match = fs
 		.readdirSync(sandbox, { recursive: true, withFileTypes: true })
 		.find((entry) => {
-			return entry.isFile() && entry.name === name && entry.parentPath.includes("coverage");
+			return (
+				entry.isFile() &&
+				entry.name === name &&
+				path.relative(sandbox, entry.parentPath).includes("coverage")
+			);
 		});
 	assert(match !== undefined, `no instrumented ${name} under ${sandbox}`);
 	return fs.readFileSync(path.join(match.parentPath, match.name), "utf-8");

@@ -76,14 +76,9 @@ export function openBackend({
 	fileSystem,
 	isStudioInstalled = isStudioDiscoverable,
 	webSocketServerFactory = nodeWebSocketServerFactory,
-	workspace,
 }: OpenBackendRequest): Backend {
 	const settings = resolveBackendSettings({ cli, config, isStudioInstalled });
 	const capabilities = BACKEND_CAPABILITIES[settings.kind];
-	if (workspace && capabilities.workspaceRefusal !== undefined) {
-		throw new Error(capabilities.workspaceRefusal);
-	}
-
 	assertVmParallel(capabilities, config.experimentalVmParallel);
 	return createBackend(settings, { fileSystem, webSocketServerFactory });
 }
