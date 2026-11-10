@@ -1,8 +1,7 @@
 import process from "node:process";
 import { describe, expect, it, vi } from "vitest";
 
-import type { RunProgress } from "../progress/reporter.ts";
-import { createTimingCollector } from "./orchestration-collector.ts";
+import { createTimingCollector, type SpanListener } from "./orchestration-collector.ts";
 
 function createCapturingSink() {
 	const lines: Array<string> = [];
@@ -25,36 +24,18 @@ function createScriptedClock(times: Array<number>) {
 	};
 }
 
-function createRecordingProgress() {
+function createRecordingListener() {
 	const calls: Array<string> = [];
-	const progress: RunProgress = {
-		begin: (id, detail) => {
-			calls.push(detail === undefined ? `begin:${id}` : `begin:${id}:${detail}`);
-			return (closingDetail) => {
-				calls.push(
-					closingDetail === undefined ? `end:${id}` : `end:${id}:${closingDetail}`,
-				);
-			};
+	const listener: SpanListener = {
+		close: (name) => {
+			calls.push(`close:${name}`);
 		},
-		describe: (id, detail) => {
-			calls.push(`describe:${id}:${detail}`);
-		},
-		finish: () => {
-			calls.push("finish");
-		},
-		interleave: (write) => {
-			calls.push("interleave");
-			write();
-		},
-		note: (id, detail) => {
-			calls.push(`note:${id}:${detail}`);
-		},
-		reveal: () => {
-			calls.push("reveal");
+		open: (name) => {
+			calls.push(`open:${name}`);
 		},
 	};
 
-	return { calls, progress };
+	return { calls, listener };
 }
 
 function profilePastThrowingSink(sink: (line: string) => void, times: Array<number>): void {
@@ -256,28 +237,10 @@ describe(createTimingCollector, () => {
 		]);
 	});
 
-	it("should enable itself when the TIMING env var is present", () => {
+	it("should stay off by default, whatever the TIMING env var says", () => {
 		expect.assertions(1);
 
 		vi.stubEnv("TIMING", "");
-
-		const { lines, sink } = createCapturingSink();
-		const collector = createTimingCollector({ clock: createScriptedClock([0, 4]), sink });
-
-		collector.profile("synthesize", () => {});
-		collector.flushTimingReport();
-
-		expect(lines).toStrictEqual([
-			"[TIMING] synthesize: start",
-			"[TIMING] synthesize: 4ms",
-			"[TIMING] TOTAL (host): 4ms",
-		]);
-	});
-
-	it("should disable itself when the TIMING env var is absent", () => {
-		expect.assertions(1);
-
-		vi.stubEnv("TIMING", undefined);
 
 		const { lines, sink } = createCapturingSink();
 		const collector = createTimingCollector({ clock: createScriptedClock([0, 4]), sink });
@@ -374,20 +337,10 @@ describe(createTimingCollector, () => {
 		expect(collector.enabled).toBeFalse();
 	});
 
-	it("should expose enabled true when the TIMING env var is present", () => {
+	it("should expose enabled false by default even with the TIMING env var set", () => {
 		expect.assertions(1);
 
 		vi.stubEnv("TIMING", "");
-
-		const collector = createTimingCollector();
-
-		expect(collector.enabled).toBeTrue();
-	});
-
-	it("should expose enabled false when the TIMING env var is absent", () => {
-		expect.assertions(1);
-
-		vi.stubEnv("TIMING", undefined);
 
 		const collector = createTimingCollector();
 
@@ -539,55 +492,35 @@ describe(createTimingCollector, () => {
 		expect(lines).toStrictEqual([]);
 	});
 
-	it("should open and close the stage a profiled phase stands for", () => {
+	it("should tell the listener of every span, nested ones too", () => {
 		expect.assertions(1);
 
-		const { calls, progress } = createRecordingProgress();
-		const collector = createTimingCollector({ progress });
-
-		collector.profile("prepareCoverage", () => {});
-
-		expect(calls).toStrictEqual(["begin:instrument", "end:instrument"]);
-	});
-
-	it("should announce a stage from a span nested inside another phase", () => {
-		expect.assertions(1);
-
-		const { calls, progress } = createRecordingProgress();
-		const collector = createTimingCollector({ progress });
+		const { calls, listener } = createRecordingListener();
+		const collector = createTimingCollector({ listener });
 
 		collector.profile("runProjects", () => {
 			collector.profile("prepareCoverage", () => {});
 		});
 
-		// A stage is named where the work sits, not where the root phase does,
-		// so nesting one inside a phase that stands for no stage must not
-		// swallow it.
-		expect(calls).toStrictEqual(["begin:instrument", "end:instrument"]);
+		expect(calls).toStrictEqual([
+			"open:runProjects",
+			"open:prepareCoverage",
+			"close:prepareCoverage",
+			"close:runProjects",
+		]);
 	});
 
-	it("should stay silent for a phase that stands for no stage", () => {
-		expect.assertions(1);
-
-		const { calls, progress } = createRecordingProgress();
-		const collector = createTimingCollector({ progress });
-
-		collector.profile("buildJobs", () => {});
-
-		expect(calls).toStrictEqual([]);
-	});
-
-	it("should announce nothing for an async phase that stands for no stage", async () => {
+	it("should tell the listener of an async span with the report off", async () => {
 		expect.assertions(2);
 
-		const { calls, progress } = createRecordingProgress();
+		const { calls, listener } = createRecordingListener();
 		const { lines, sink } = createCapturingSink();
-		const collector = createTimingCollector({ enabled: false, progress, sink });
+		const collector = createTimingCollector({ enabled: false, listener, sink });
 
 		await collector.profileAsync("prepareDispatch", async () => {});
 		collector.flushTimingReport();
 
-		expect(calls).toStrictEqual([]);
+		expect(calls).toStrictEqual(["open:prepareDispatch", "close:prepareDispatch"]);
 		expect(lines).toStrictEqual([]);
 	});
 
@@ -685,12 +618,12 @@ describe(createTimingCollector, () => {
 		]);
 	});
 
-	it("should keep the timing report quiet while only progress is wanted", () => {
+	it("should keep the timing report quiet while only a listener is wanted", () => {
 		expect.assertions(1);
 
-		const { progress } = createRecordingProgress();
+		const { listener } = createRecordingListener();
 		const { lines, sink } = createCapturingSink();
-		const collector = createTimingCollector({ enabled: false, progress, sink });
+		const collector = createTimingCollector({ enabled: false, listener, sink });
 
 		collector.profile("prepareCoverage", () => {});
 		collector.flushTimingReport();

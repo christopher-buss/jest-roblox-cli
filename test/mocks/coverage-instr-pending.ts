@@ -2,7 +2,7 @@ import type {
 	MappedCoverageResult,
 	MappedFileCoverage,
 	PendingCoverage,
-} from "#src/coverage-pipeline/mapper-types.ts";
+} from "#src/coverage-report/mapper-types.ts";
 
 export function emptyPending(): PendingCoverage {
 	return { branches: new Map(), functions: new Map(), statements: new Map() };

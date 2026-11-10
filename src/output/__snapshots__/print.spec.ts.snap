@@ -1,0 +1,78 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`printRunResults > should render agent output with default max failures and the type detail 1`] = `
+"▶ core  1 failed (3 tests)
+ ❯ src/player.spec.ts (3 tests | 2 failed)
+   × explodes 0 1ms
+   × explodes 1 1ms
+
+⎯⎯⎯ Failed Tests 2 ⎯⎯⎯
+
+ FAIL src/player.spec.ts > player > explodes 0
+boom 0
+
+ FAIL src/player.spec.ts > player > explodes 1
+boom 1
+
+View out.json for full Jest output
+View game.log for Roblox game logs
+ Test Files  1 failed (1)
+      Tests  2 failed | 1 passed (3)
+Type Errors  2 failed
+     Bailed  after 1 package, 1 not run"
+`;
+
+exports[`printRunResults > should render agent output with default max failures and the type detail 2`] = `
+"   FAIL  player explodes 0
+    boom 0
+   FAIL  player explodes 1
+    boom 1
+"
+`;
+
+exports[`printRunResults > should render agent output with one max failures and the type detail 1`] = `
+"▶ core  1 failed (3 tests)
+ ❯ src/player.spec.ts (3 tests | 2 failed)
+   × explodes 0 1ms
+   × explodes 1 1ms
+
+⎯⎯⎯ Failed Tests 2 ⎯⎯⎯
+
+ FAIL src/player.spec.ts > player > explodes 0
+boom 0
+
+... 1 more failures omitted
+
+View out.json for full Jest output
+View game.log for Roblox game logs
+ Test Files  1 failed (1)
+      Tests  2 failed | 1 passed (3)
+Type Errors  2 failed
+     Bailed  after 1 package, 1 not run"
+`;
+
+exports[`printRunResults > should render agent output with one max failures and the type detail 2`] = `
+"   FAIL  player explodes 0
+    boom 0
+   FAIL  player explodes 1
+    boom 1
+"
+`;
+
+exports[`printRunResults without a runtime job > should write the whole typecheck report with color=false 1`] = `
+"   FAIL  player explodes 0
+    boom 0
+
+      Tests  1 failed | 1 passed (2)
+Type Errors  1 failed
+"
+`;
+
+exports[`printRunResults without a runtime job > should write the whole typecheck report with color=true 1`] = `
+"   FAIL  player explodes 0
+    boom 0
+
+      Tests  1 failed | 1 passed (2)
+Type Errors  1 failed
+"
+`;

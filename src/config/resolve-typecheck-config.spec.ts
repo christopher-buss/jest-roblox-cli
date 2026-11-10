@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { ResolvedTypecheckConfig, TypecheckLayers } from "./resolve-typecheck-config.ts";
-import { resolveTypecheckConfig } from "./resolve-typecheck-config.ts";
+import { resolveTypecheckConfig, toTypecheckCliOptions } from "./resolve-typecheck-config.ts";
 
 const cases: Array<[TypecheckLayers, ResolvedTypecheckConfig]> = [
 	[{}, { enabled: false, only: false }],
@@ -54,5 +54,19 @@ describe(resolveTypecheckConfig, () => {
 		expect.assertions(1);
 
 		expect(resolveTypecheckConfig(layers)).toStrictEqual(expected);
+	});
+});
+
+describe(toTypecheckCliOptions, () => {
+	it("should map each typecheck flag onto its config field", () => {
+		expect.assertions(1);
+
+		expect(
+			toTypecheckCliOptions({
+				typecheck: true,
+				typecheckOnly: false,
+				typecheckTsconfig: "tsconfig.spec.json",
+			}),
+		).toStrictEqual({ enabled: true, only: false, tsconfig: "tsconfig.spec.json" });
 	});
 });

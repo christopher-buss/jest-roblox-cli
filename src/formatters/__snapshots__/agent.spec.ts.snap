@@ -16,8 +16,8 @@ Received: 0
 Expected: true
 Received: false
 
-View results.json for full Jest output (1kb)
-View game.log for Roblox game logs (1kb)
+View results.json for full Jest output
+View game.log for Roblox game logs
  Test Files  1 failed (1)
       Tests  2 failed | 1 passed (3)
 Type Errors  2 failed",
@@ -38,8 +38,8 @@ Type Errors  2 failed",
 +   "speed": 75,
   }
 
-View results.json for full Jest output (1kb)
-View game.log for Roblox game logs (1kb)
+View results.json for full Jest output
+View game.log for Roblox game logs
  Test Files  1 failed (1)
       Tests  1 failed | 1 passed (2)
 Type Errors  2 failed",
@@ -50,8 +50,8 @@ Type Errors  2 failed",
  FAIL src/broken.spec.ts
 Require-by-string is not enabled for use inside Jest at this time.
 
-View results.json for full Jest output (1kb)
-View game.log for Roblox game logs (1kb)
+View results.json for full Jest output
+View game.log for Roblox game logs
  Test Files  1 failed | 1 passed (2)
       Tests  3 passed (3)
 Type Errors  2 failed",
@@ -69,8 +69,8 @@ Hint: loadstring() must be enabled for Jest to run. Add to your project.json:
     }
   }
 
-View results.json for full Jest output (1kb)
-View game.log for Roblox game logs (1kb)
+View results.json for full Jest output
+View game.log for Roblox game logs
  Test Files  1 failed (1)
       Tests   (0)
 Type Errors  2 failed",
@@ -100,8 +100,8 @@ Received: false
  FAIL shared/react/features/windows/__tests__/unit-menu-app.test
 Require-by-string is not enabled for use inside Jest at this time.
 
-View results.json for full Jest output (1kb)
-View game.log for Roblox game logs (1kb)
+View results.json for full Jest output
+View game.log for Roblox game logs
  Test Files  2 failed | 2 passed | 2 skipped (6)
       Tests  2 failed | 9 passed | 7 skipped (18)
 Type Errors  1 failed

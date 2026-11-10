@@ -4,7 +4,7 @@ import * as path from "node:path";
 import process from "node:process";
 import { assert, describe, expect, it, onTestFinished, vi } from "vitest";
 
-import { DEFAULT_CONFIG, loadConfig } from "#src/index.ts";
+import { DEFAULT_CONFIG, loadConfig } from "#src/api.ts";
 
 function isErrorWithoutNotFoundMessage(error: unknown): boolean {
 	return error instanceof Error && !error.message.includes("Config file not found");
@@ -19,7 +19,7 @@ function makeTemporaryDirectory(prefix = "config-test-"): string {
 	return temporaryDirectory;
 }
 
-describe(loadConfig, { timeout: 1000 }, () => {
+describe(loadConfig, () => {
 	it("should return defaults when no config file found", async () => {
 		expect.assertions(2);
 
@@ -428,7 +428,7 @@ describe(loadConfig, { timeout: 1000 }, () => {
 			);
 		});
 
-		it("should pass empty defaults to standalone root-level merger functions", async () => {
+		it("should pass resolved defaults to standalone root-level merger functions", async () => {
 			expect.assertions(1);
 
 			const temporaryDirectory = makeTemporaryDirectory();
@@ -438,9 +438,14 @@ describe(loadConfig, { timeout: 1000 }, () => {
 				'export default { luauRoots: defaults => [...defaults, "child-out"] };',
 			);
 
+			fs.writeFileSync(
+				path.join(temporaryDirectory, "tsconfig.json"),
+				JSON.stringify({ compilerOptions: { outDir: "out" } }),
+			);
+
 			const result = await loadConfig({ configPath, cwd: temporaryDirectory });
 
-			expect(result.luauRoots).toStrictEqual(["child-out"]);
+			expect(result.luauRoots).toStrictEqual(["out", "child-out"]);
 		});
 	});
 

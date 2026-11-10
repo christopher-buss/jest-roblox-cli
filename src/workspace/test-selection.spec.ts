@@ -7,7 +7,7 @@ import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
 import type { ResolvedProjectConfig } from "../config/projects.ts";
 import type { TypecheckConfig } from "../config/resolve-typecheck-config.ts";
-import type { CliOptions } from "../config/schema.ts";
+import type { CliOptions } from "../config/resolved-config.ts";
 import type { PackageContext } from "./project-contexts.ts";
 import { selectWorkspaceTests } from "./test-selection.ts";
 
@@ -67,10 +67,108 @@ function select({
 			Object.entries(files).map(([file, content]) => [path.join(WORKSPACE, file), content]),
 		),
 	);
-	return selectWorkspaceTests({ cli: fromAny(cli), contexts, cwd: WORKSPACE, fileSystem });
+	return selectWorkspaceTests({
+		cli: fromAny(cli),
+		contexts,
+		cwd: WORKSPACE,
+		fileSystem,
+		runnerTiming: true,
+		tsconfigReader: () => null,
+		workspaceRoot: WORKSPACE,
+	});
 }
 
 describe(selectWorkspaceTests, () => {
+	it("should select nothing for an explicit empty project list", () => {
+		expect.assertions(1);
+
+		const selection = select({
+			cli: { project: [] },
+			contexts: [makeContext({ name: "foo" })],
+			files: { "foo/main/a.spec.ts": "" },
+		});
+
+		expect(selection.filteredContexts).toStrictEqual([]);
+	});
+
+	it("should intersect names and positional files from the invocation directory", () => {
+		expect.assertions(1);
+
+		const selection = select({
+			cli: { files: ["foo/main/a.spec.ts", "foo/other/b.spec.ts"], project: ["main"] },
+			contexts: [makeContext({ name: "foo" }), makeContext({ name: "bar" })],
+			files: { "foo/main/a.spec.ts": "", "foo/other/b.spec.ts": "" },
+		});
+
+		expect(
+			selection.pending.map((entry) => ({ files: entry.job.testFiles, pkg: entry.job.pkg })),
+		).toStrictEqual([{ files: [path.join(WORKSPACE, "foo/main/a.spec.ts")], pkg: "foo" }]);
+	});
+
+	it("should keep positional files with their package even when names repeat", () => {
+		expect.assertions(1);
+
+		const selection = select({
+			cli: { files: ["foo/main/a.spec.ts", "bar/main/b.spec.ts"] },
+			contexts: [makeContext({ name: "foo" }), makeContext({ name: "bar" })],
+			files: {
+				"bar/main/b.spec.ts": "",
+				"bar/main/unselected.spec.ts": "",
+				"foo/main/a.spec.ts": "",
+				"foo/main/unselected.spec.ts": "",
+			},
+		});
+
+		expect(
+			selection.pending.map((entry) => ({ files: entry.job.testFiles, pkg: entry.job.pkg })),
+		).toStrictEqual([
+			{ files: [path.join(WORKSPACE, "foo/main/a.spec.ts")], pkg: "foo" },
+			{ files: [path.join(WORKSPACE, "bar/main/b.spec.ts")], pkg: "bar" },
+		]);
+	});
+
+	it("should retain an empty package for empty-run validation without filters", () => {
+		expect.assertions(1);
+
+		const ctx = makeContext({ name: "empty" });
+		ctx.projects = [];
+		const selection = select({
+			contexts: [ctx, makeContext({ name: "foo" })],
+			files: { "foo/main/a.spec.ts": "" },
+		});
+
+		expect(selection.emptiness).toMatchObject({
+			validationMessage: "No test files found in package empty\n",
+		});
+	});
+
+	it("should retain an empty package when the positional file list is empty", () => {
+		expect.assertions(1);
+
+		const ctx = makeContext({ name: "empty" });
+		ctx.projects = [];
+		const selection = select({ cli: { files: [] }, contexts: [ctx], files: {} });
+
+		expect(selection.emptiness).toMatchObject({
+			validationMessage: "No test files found in package empty\n",
+		});
+	});
+
+	it("should build each job and stub its project with the resolved snapshot format", () => {
+		expect.assertions(4);
+
+		const selection = select({
+			contexts: [makeContext({ name: "foo" })],
+			files: { "foo/main/a.spec.ts": "" },
+		});
+		const [entry] = selection.pending;
+
+		expect(entry!.job.pkg).toBe("foo");
+		expect(entry!.job.argv).toMatchObject({ runnerTiming: true });
+		expect(entry!.job.config.snapshotFormat).toStrictEqual({ printBasicPrototype: false });
+		expect(entry!.project.config.snapshotFormat).toStrictEqual({ printBasicPrototype: false });
+	});
+
 	it("should collect runtime specs and type tests per package", () => {
 		expect.assertions(4);
 
@@ -81,16 +179,19 @@ describe(selectWorkspaceTests, () => {
 					name: "foo",
 					typecheck: { enabled: true, ignoreSourceErrors: true },
 				}),
+				makeContext({ name: "bar", typecheck: { enabled: true } }),
 			],
 			files: {
+				"bar/main/b.spec.ts": "",
 				"foo/main/a.spec-d.ts": "",
 				"foo/main/a.spec.ts": "",
 				"foo/main/skip.spec-d.ts": "",
 			},
 		});
 
-		expect(selection.pending.map((entry) => entry.testFiles)).toStrictEqual([
+		expect(selection.pending.map((entry) => entry.job.testFiles)).toStrictEqual([
 			["main/a.spec.ts"],
+			["main/b.spec.ts"],
 		]);
 		expect(selection.typeTestEntries).toStrictEqual([
 			{
@@ -103,34 +204,11 @@ describe(selectWorkspaceTests, () => {
 			},
 		]);
 		expect(selection.typeTestProjects).toStrictEqual([{ pkg: "foo", project: "main" }]);
-		expect(selection.typecheckByDirectory.get(fooDirectory)).toStrictEqual({
-			ignoreSourceErrors: true,
-			pkg: "foo",
-			spawnTimeout: undefined,
-			timeout: 5000,
-		});
-	});
-
-	it("should honour an explicit type test include and exclude", () => {
-		expect.assertions(1);
-
-		const selection = select({
-			contexts: [
-				makeContext({
-					name: "foo",
-					projectTypecheck: { exclude: ["**/skip.*"], include: ["types/**/*.spec-d.ts"] },
-					typecheck: { enabled: true },
-				}),
+		expect([...selection.typecheckByDirectory]).toStrictEqual([
+			[
+				fooDirectory,
+				{ ignoreSourceErrors: true, pkg: "foo", spawnTimeout: undefined, timeout: 5000 },
 			],
-			files: {
-				"foo/main/a.spec.ts": "",
-				"foo/types/b.spec-d.ts": "",
-				"foo/types/skip.spec-d.ts": "",
-			},
-		});
-
-		expect(selection.typeTestEntries.map((entry) => entry.files)).toStrictEqual([
-			[path.join(WORKSPACE, "foo/types/b.spec-d.ts")],
 		]);
 	});
 
@@ -151,9 +229,10 @@ describe(selectWorkspaceTests, () => {
 			},
 		});
 
-		expect(selection.emptyPackageErrors).toStrictEqual([
-			"No test files found in package empty",
-		]);
+		expect(selection.emptiness).toStrictEqual({
+			validationExitCode: 2,
+			validationMessage: "No test files found in package empty\n",
+		});
 		expect(selection.pending).toStrictEqual([]);
 	});
 
@@ -165,7 +244,7 @@ describe(selectWorkspaceTests, () => {
 			files: { "foo/main/a.spec.ts": "" },
 		});
 
-		expect(selection.pending.map((entry) => entry.projectConfig.projects)).toStrictEqual([
+		expect(selection.pending.map((entry) => entry.job.config.projects)).toStrictEqual([
 			["ServerScriptService/main"],
 		]);
 	});
@@ -184,7 +263,7 @@ describe(selectWorkspaceTests, () => {
 				return ctx.projects.map((project) => project.displayName);
 			}),
 		).toStrictEqual([["main"]]);
-		expect(selection.pending.map((entry) => entry.testFiles)).toStrictEqual([
+		expect(selection.pending.map((entry) => entry.job.testFiles)).toStrictEqual([
 			["main/a.spec.ts"],
 		]);
 	});
@@ -201,6 +280,6 @@ describe(selectWorkspaceTests, () => {
 		expect(selection.typeTestEntries.map((entry) => entry.files)).toStrictEqual([
 			[path.join(WORKSPACE, "foo/main/a.spec-d.ts")],
 		]);
-		expect(selection.emptyPackageErrors).toStrictEqual([]);
+		expect(selection.emptiness).toBeUndefined();
 	});
 });

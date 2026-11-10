@@ -8,11 +8,11 @@ exports[`complete formatter contracts > should render line padding, tabs, a care
 `;
 
 exports[`formatSourceSnippet > should render padding, tabs, syntax, language, and the caret exactly > colored 1`] = `
-"[36m ❯ src/example.luau:10:6[39m[2m  (Luau)[22m
-	[90m 9|[39m     [35mlocal[39m value = [34mtrue[39m
-	[90m10|[39m     [35mreturn[39m value
-	[90m  |[39m         [31m^[39m
-	[90m11|[39m [35mend[39m"
+"<location> ❯ src/example.luau:10:6</location><dim>  (Luau)</dim>
+	<lineNumber> 9|</lineNumber> <hl src/example.luau>    local value = true</hl>
+	<lineNumber>10|</lineNumber> <hl src/example.luau>    return value</hl>
+	<lineNumber>  |</lineNumber>         <fail>^</fail>
+	<lineNumber>11|</lineNumber> <hl src/example.luau>end</hl>"
 `;
 
 exports[`formatSourceSnippet > should render padding, tabs, syntax, language, and the caret exactly > plain 1`] = `

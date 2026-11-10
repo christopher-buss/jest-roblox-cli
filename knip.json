@@ -8,7 +8,6 @@
 		"test/e2e/fixtures/**"
 	],
 	"ignoreIssues": {
-		"src/results/gaps.ts": ["exports"],
 		"*.shared.ts": ["exports", "types", "files"],
 		"*.shared.config.ts": ["exports"]
 	},
@@ -31,7 +30,6 @@
 				"bin/sea-entry.ts!",
 				"scripts/*.run.ts!",
 				"scripts/sea-executable.ts!",
-				"src/config/luau-config-type.ts!",
 				"test/fixtures/sea.config.mjs",
 				"test/bench/*.bench.ts",
 				"test/fixtures/typecheck/globals.d.ts",

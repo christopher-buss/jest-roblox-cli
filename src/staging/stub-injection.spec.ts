@@ -1,4 +1,5 @@
 import { isRojoTreeNode } from "@isentinel/rojo-utils";
+import type { RojoTreeNode } from "@isentinel/rojo-utils";
 
 import * as path from "node:path";
 import { describe, expect, it, vi } from "vitest";
@@ -6,7 +7,6 @@ import { describe, expect, it, vi } from "vitest";
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { posixPath } from "#test/mocks/posix-path.ts";
 import { configErrorLike } from "#test/mocks/run-config-error.ts";
-import type { RojoTreeNode } from "../types/rojo.ts";
 import { injectStubMounts } from "./stub-injection.ts";
 
 const ROOT = path.resolve("/repo");

@@ -2,14 +2,15 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { startFakeOpenCloudServerAsync } from "#test/e2e/cli/fake-open-cloud.ts";
+import { startFakeOpenCloudServerAsync } from "#test/harness/fake-open-cloud.ts";
 import {
 	buildPassingJestOutput,
 	createFixtureSandbox,
 	createOpenCloudEnvironment,
 	rojoOnPath,
+	RUN_TIMEOUT_MS,
 	runCliAsync,
-} from "#test/e2e/cli/helpers.ts";
+} from "#test/harness/helpers.ts";
 
 // A workspace run resolves per-package configs; the file at the invocation
 // directory is bootstrap only, read for `workspace.root` / `workspace.packages`
@@ -23,7 +24,6 @@ import {
 // path printed relative to it, byte-identical between the two runs.
 
 const WORKSPACE_FIXTURE_PATH = path.resolve(__dirname, "../fixtures/workspace");
-const RUN_TIMEOUT_MS = 60_000;
 
 // Every field here differs from what the packages resolve, and each one used to
 // reach the run: the globs match no file under `packages/`, so the report

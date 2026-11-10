@@ -11,11 +11,11 @@ import type { V3Mapper } from "./v-3-mapper.ts";
 export interface MappedFrame {
 	/** The resolved Luau file path. */
 	luauPath: string;
-	/** Absent when the frame has no TypeScript origin (pure-Luau project). */
+	/** Absent when the frame has no TypeScript origin. */
 	source?: MappedSource | undefined;
 }
 
-/** What both mappers below need to walk a DataModel path back to its source. */
+/** What the mappers need to walk a DataModel path back to its source. */
 export interface FrameMapperContext {
 	/** Where a TypeScript source is read from when the map embeds none. */
 	fileSystem: FileSystem;
@@ -33,12 +33,7 @@ interface MappedSource {
 }
 
 /**
- * Builds the one function that turns a Luau stack frame into the file it came
- * from. It owns the whole chain behind that: Rojo DataModel → filesystem
- * resolution, the tsconfig `rootDir`↔`outDir` inverse, `.ts` → `.luau`, the v3
- * source map lookup, reading the TS source (embedded `sourcesContent` first,
- * disk otherwise), and finding the expectation column on the mapped line.
- *
+ * Build the function that maps a Luau stack frame to the file it came from.
  * @param context - The resolver, source-map reader and filesystem to walk.
  * @returns A mapper returning `undefined` for frames it cannot resolve at all.
  */
@@ -52,7 +47,6 @@ export function createFrameMapper(
 		}
 
 		const { luauPath } = resolved;
-		// No matched tsconfig mapping — path is Luau, skip source map lookup.
 		if (resolved.mapping === undefined) {
 			return { luauPath };
 		}
@@ -62,15 +56,9 @@ export function createFrameMapper(
 }
 
 /**
- * Builds the function that turns a Luau line of a test file into the line of
- * its source. Shares the frame mapper's path chain up to the `.luau` path, then
- * asks the source map for the first mapping on that line rather than an exact
- * column, because the runtime reports test call sites without one.
- *
+ * Build the function that maps a Luau line of a test file to its source line.
  * @param context - The resolver, source-map reader and filesystem to walk.
- * @returns A mapper giving the source line, the Luau line itself for a file
- *   with no TypeScript origin, or `undefined` when it cannot resolve the path
- *   or the map has nothing on the line.
+ * @returns A mapper giving the source line, or `undefined` when unresolved.
  */
 export function createLineMapper(
 	context: FrameMapperContext,

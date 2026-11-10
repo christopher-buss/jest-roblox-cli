@@ -2,12 +2,10 @@ import { TaskQuotaError } from "@isentinel/roblox-runner";
 
 import type { TestContext } from "vitest";
 
+import { INFRASTRUCTURE_EXIT_CODE } from "#src/utils/infrastructure-failure.ts";
 import { NOTE_PREFIX } from "#test/setup/quota-skip-reporter.ts";
 
-const INFRASTRUCTURE_EXIT_CODE = 3;
-const MINUTE_WINDOW_SECONDS = 60;
 const UNLOCK_TIME_PATTERN = /unlockTime: (\S+)/;
-const RETRY_AFTER_PATTERN = /retry-after=(\d+)/;
 
 interface CliResult {
 	exitCode: number;
@@ -38,23 +36,10 @@ export async function skipOnQuotaAsync<T>(context: TestContext, run: Promise<T>)
 	}
 }
 
-function isLockoutRefusal(message: string): boolean {
-	const retryAfter = Number(RETRY_AFTER_PATTERN.exec(message)?.[1]);
-	return (
-		message.includes("status=429;") &&
-		message.includes("RESOURCE_EXHAUSTED") &&
-		retryAfter > MINUTE_WINDOW_SECONDS
-	);
-}
-
 function quotaErrorNote(err: unknown): string | undefined {
-	if (err instanceof TaskQuotaError) {
-		return `${NOTE_PREFIX} Roblox refused the task create until ${err.evidence.unlockTime}`;
-	}
-
-	if (!(err instanceof Error) || !isLockoutRefusal(err.message)) {
+	if (!(err instanceof TaskQuotaError)) {
 		return undefined;
 	}
 
-	return `${NOTE_PREFIX} Roblox refused the task create beyond its per-minute limit`;
+	return `${NOTE_PREFIX} Roblox refused the task create until ${err.evidence.unlockTime}`;
 }

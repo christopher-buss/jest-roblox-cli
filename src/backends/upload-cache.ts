@@ -3,29 +3,10 @@ import { createHash } from "node:crypto";
 import * as path from "node:path";
 
 import type { FileSystem } from "../utils/file-system.ts";
-import { nodeFileSystem } from "../utils/file-system.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
+import { WORK_DIRECTORY } from "../utils/work-directory.ts";
 
-/**
- * Records which place version a set of place-file bytes already has on Roblox,
- * so an unchanged build can skip `places.save` entirely.
- *
- * An entry also means those bytes boot: the caller writes it only once its boot
- * probe has come back, so a hit is what lets a later run skip the probe too.
- *
- * Why it is worth skipping: an upload is the only thing measured to precede a
- * cold place boot. Across 60 tasks, every upload-free task ran warm (~3s) while
- * tasks following an upload ran cold (~22s) in most windows. The mechanism is
- * undocumented and the rate varies, so treat the fast path as a bonus over a
- * correct-but-slow path, never as something to depend on. See
- * `docs/research/open-cloud-warm-boot/README.md`.
- *
- * The cache cannot be validated against the server — Open Cloud exposes no
- * content hash for a place version. It does not need to be: the caller submits
- * every task to the recorded version itself, which holds exactly the bytes this
- * file hashed, and a version keeps existing after head moves on. A version Open
- * Cloud no longer serves answers with a 404, and the caller drops the entry.
- */
+/** The place file and the place its upload-cache entry belongs to. */
 export interface UploadCacheTarget {
 	/** Absolute path of the place file whose bytes were uploaded. */
 	placeFilePath: string;
@@ -35,9 +16,7 @@ export interface UploadCacheTarget {
 	universeId: number | string;
 }
 
-/**
- * What a cached upload records: the inputs it was built from, and its version.
- */
+/** What a cached upload records. */
 export interface CacheEntry {
 	/** SHA-256 hash of the uploaded place file. */
 	hash: string;
@@ -50,11 +29,7 @@ interface CacheFile {
 	version: number;
 }
 
-/**
- * Bumped when an entry's meaning changes, which discards every file written
- * under the old one. Version 2 added the claim that the bytes boot — only a
- * boot probe can make it, and a version-1 file never did.
- */
+// Bump with `version` in `cacheFileInputSchema` when an entry's meaning changes.
 const CACHE_VERSION = 2;
 
 const cacheEntrySchema = type({
@@ -69,17 +44,12 @@ const cacheFileInputSchema = type({
 });
 
 /**
- * Undefined when the place file cannot be read. The caller then uploads, which
- * fails on the same file with the API's own message — a cache miss must never
- * be the thing that reports a missing place.
+ * Fingerprint a built place so an unchanged one skips upload.
  * @param placeFilePath - Path of the place file to hash.
  * @param fileSystem - File system to read from.
  * @returns The hex SHA-256 hash, or `undefined` when the file cannot be read.
  */
-export function hashPlaceFile(
-	placeFilePath: string,
-	fileSystem: FileSystem = nodeFileSystem,
-): string | undefined {
+export function hashPlaceFile(placeFilePath: string, fileSystem: FileSystem): string | undefined {
 	try {
 		return createHash("sha256").update(fileSystem.readFileSync(placeFilePath)).digest("hex");
 	} catch {
@@ -88,8 +58,7 @@ export function hashPlaceFile(
 }
 
 /**
- * The version already holding `hash` for this target, or undefined when these
- * bytes have never been uploaded from this machine.
+ * The version already holding `hash` for this target.
  * @param root0 - Lookup input.
  * @param root0.fileSystem - File system to read from.
  * @param root0.hash - Hash of the place file.
@@ -98,13 +67,13 @@ export function hashPlaceFile(
  * @returns The cached version number, or `undefined` on a miss.
  */
 export function readCachedVersion({
-	fileSystem = nodeFileSystem,
+	fileSystem,
 	hash,
 	rootDirectory,
 	target,
 }: {
 	/** File system to read from. */
-	readonly fileSystem?: FileSystem;
+	readonly fileSystem: FileSystem;
 	/** Hash of the place file. */
 	readonly hash: string;
 	/** Project root that holds the cache file. */
@@ -126,14 +95,14 @@ export function readCachedVersion({
  */
 export function writeCachedVersion({
 	entry: { hash, versionNumber },
-	fileSystem = nodeFileSystem,
+	fileSystem,
 	rootDirectory,
 	target,
 }: {
 	/** Hash and version to record. */
 	readonly entry: CacheEntry;
 	/** File system to write to. */
-	readonly fileSystem?: FileSystem;
+	readonly fileSystem: FileSystem;
 	/** Project root that holds the cache file. */
 	readonly rootDirectory: string;
 	/** Upload target. */
@@ -150,8 +119,7 @@ export function writeCachedVersion({
 }
 
 /**
- * True once the entry is gone. A cache file that cannot be written keeps
- * serving the entry it already holds, so the caller hears no.
+ * Remove the cache entry of a target.
  * @param root0 - Invalidate input.
  * @param root0.fileSystem - File system to write to.
  * @param root0.rootDirectory - Project root that holds the cache file.
@@ -159,18 +127,16 @@ export function writeCachedVersion({
  * @returns Whether the entry is gone.
  */
 export function invalidateCachedVersion({
-	fileSystem = nodeFileSystem,
+	fileSystem,
 	rootDirectory,
 	target,
 }: {
-	readonly fileSystem?: FileSystem;
+	readonly fileSystem: FileSystem;
 	readonly rootDirectory: string;
 	readonly target: UploadCacheTarget;
 }): boolean {
 	const cache = readCacheFile(fileSystem, rootDirectory);
 	const key = entryKey(target);
-	// `deleteProperty` reports success for an absent key too, so ask first —
-	// otherwise a no-op invalidate rewrites the file for nothing.
 	if (!Object.hasOwn(cache.entries, key)) {
 		return true;
 	}
@@ -179,48 +145,26 @@ export function invalidateCachedVersion({
 	try {
 		fileSystem.writeFileSync(cachePath(rootDirectory), JSON.stringify(cache, undefined, "\t"));
 	} catch {
-		// As above — best effort, and the caller says only what it can stand
-		// behind: an entry that survives the write is still the one in use.
 		return false;
 	}
 
 	return true;
 }
 
-/**
- * One entry per (universe, place, place file) rather than per content hash, so
- * the file stays bounded — re-uploading a changed build overwrites its entry
- * instead of appending another.
- * @param root0 - Upload target.
- * @param root0.placeFilePath - Place file the upload came from.
- * @param root0.placeId - Place the upload targets.
- * @param root0.universeId - Universe that owns the place.
- * @returns The cache entry key.
- */
 function entryKey({ placeFilePath, placeId, universeId }: UploadCacheTarget): string {
 	return `${String(universeId)}/${String(placeId)}/${normalizeWindowsPath(placeFilePath)}`;
 }
 
 /**
- * Deliberately not under `.jest-roblox/coverage/` — a non-incremental coverage
- * rebuild wipes that directory, which would drop the cache on exactly the runs
- * that rebuilt an identical place.
- * @param rootDirectory - Project root.
+ * Not under `.jest-roblox/coverage/`: a coverage rebuild wipes that folder.
+ *
+ * @param rootDirectory - Project root that holds the cache file.
  * @returns The path of the cache file.
  */
 function cachePath(rootDirectory: string): string {
-	return path.join(rootDirectory, ".jest-roblox", "upload-cache.json");
+	return path.join(rootDirectory, WORK_DIRECTORY, "upload-cache.json");
 }
 
-/**
- * Every failure mode — missing file, unreadable file, malformed JSON, an
- * unknown `version`, a junk entry — collapses to "no cache". That is how the
- * format migrates without a migration, and why a corrupt file costs a re-upload
- * rather than a run.
- * @param fileSystem - File system to read from.
- * @param rootDirectory - Project root that holds the cache file.
- * @returns The cache contents, or an empty cache on any failure.
- */
 function readCacheFile(fileSystem: FileSystem, rootDirectory: string): CacheFile {
 	const entries: Record<string, CacheEntry> = {};
 	try {
@@ -235,7 +179,7 @@ function readCacheFile(fileSystem: FileSystem, rootDirectory: string): CacheFile
 			}
 		}
 	} catch {
-		// See above — an unreadable cache is simply an empty one.
+		// An unreadable cache is an empty one.
 	}
 
 	return { entries, version: CACHE_VERSION };

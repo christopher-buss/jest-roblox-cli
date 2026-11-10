@@ -5,12 +5,6 @@ import type { ChildProcessRunner } from "../utils/child-process.ts";
 /** Milliseconds a checker may take to start before it is killed. */
 export const DEFAULT_SPAWN_TIMEOUT = 10_000;
 
-/**
- * Milliseconds a checker may run before it is killed and the pass throws.
- * Mirrors the run-level `timeout` default (`config.timeout`).
- */
-export const DEFAULT_RUN_TIMEOUT = 300_000;
-
 /** Inputs for one type-checker process. */
 export interface SpawnCheckerOptions {
 	/** Arguments passed to the command. */

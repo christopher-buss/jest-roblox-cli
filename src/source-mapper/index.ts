@@ -1,7 +1,8 @@
+import type { RojoProject } from "@isentinel/rojo-utils";
+
 import assert from "node:assert";
 
-import type { RojoProject } from "../types/rojo.ts";
-import type { TsconfigMapping } from "../types/tsconfig-types.ts";
+import type { TsconfigMapping } from "../tsconfig/tsconfig-mappings.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import { nodeFileSystem } from "../utils/file-system.ts";
 import { findExpectationColumn } from "./column-finder.ts";
@@ -29,23 +30,11 @@ export interface MappedLocation {
 	tsPath?: string | undefined;
 }
 
-/**
- * Rewrites Luau stack frames to the sources they came from.
- *
- * Not pure: `resolveTestFilePath` (and so `resolveDisplayPath`, which calls it)
- * touches the filesystem — a DataModel path with no tsconfig mapping is probed
- * on disk as `.luau` then `.lua`. `mapFailureWithLocations` reads source maps
- * and TS sources off disk too.
- */
+/** Rewrites Luau stack frames to the sources they came from. */
 export interface SourceMapper {
 	/** Rewrite each resolvable frame in a failure message and list them. */
 	mapFailureWithLocations(message: string): MappedFailure;
-	/**
-	 * The line of the file `resolveTestFilePath` names that a Luau line of the
-	 * test file came from: the TypeScript line through the source map when
-	 * there is one, the Luau line itself otherwise. Undefined when the path
-	 * does not resolve or the map has nothing on that line.
-	 */
+	/** The source line a Luau line of the test file came from. */
 	mapTestFileLine(testFilePath: string, luauLine: number): number | undefined;
 	/** The path to show for a test file: its source path, else the input. */
 	resolveDisplayPath(testFilePath: string): string;
@@ -56,7 +45,7 @@ export interface SourceMapper {
 /** Inputs for {@link createSourceMapper}. */
 export interface SourceMapperConfig {
 	/** Where sources and maps are read. Defaults to the real filesystem. */
-	fileSystem?: FileSystem;
+	fileSystem: FileSystem;
 	/** The tsconfig source and output roots to map through. */
 	mappings: ReadonlyArray<TsconfigMapping>;
 	/** The Rojo project that places files in the DataModel. */
@@ -95,7 +84,7 @@ interface MappedFailure {
  * @returns A mapper that rewrites frames through this project's maps.
  */
 export function createSourceMapper({
-	fileSystem = nodeFileSystem,
+	fileSystem,
 	mappings,
 	rojoProject,
 	rootDirectory,
@@ -129,15 +118,7 @@ export function createSourceMapper({
 }
 
 /**
- * Compose multiple `SourceMapper`s into one that tries every child in order.
- * Used by the multi-project CLI path so that failure messages and GitHub
- * annotations can resolve frames from any project's TS/Luau mapping.
- *
- * Each child mapper only rewrites frames it can resolve, leaving the rest
- * untouched. Chaining `mapFailureWithLocations` calls through every child is
- * therefore safe: later mappers see the partially rewritten string and still
- * parse any remaining `[string "..."]` frames. Locations accumulate across
- * mappers; `resolveTestFilePath` returns the first child's hit.
+ * Compose source mappers into one that tries every child in order.
  * @param mappers - The child mappers, tried in order.
  * @returns The sole child, a composite, or `undefined` for none.
  */
@@ -149,7 +130,6 @@ export function combineSourceMappers(
 	}
 
 	if (mappers.length === 1) {
-		// Safe: length checked above.
 		// oxlint-disable-next-line typescript/no-non-null-assertion -- length check
 		return mappers[0]!;
 	}
@@ -231,12 +211,6 @@ export function getSourceSnippet({
 	};
 }
 
-/**
- * Jest's slash-joined test path (optionally leading-slashed) as a DataModel
- * path.
- * @param testFilePath - The Jest test path.
- * @returns The dotted DataModel path.
- */
 function toDataModelPath(testFilePath: string): string {
 	return testFilePath.replace(LEADING_SLASH, "").replaceAll("/", ".");
 }
@@ -251,9 +225,6 @@ function collectLocation({
 	mapped: MappedFrame;
 }): void {
 	if (source === undefined) {
-		// Only push the first Luau-only frame as a location — subsequent frames
-		// are internal stack trace (Jest, Promise) and would produce noisy
-		// snippets.
 		if (locations.length === 0) {
 			locations.push({ luauLine: frame.line, luauPath });
 		}
@@ -290,8 +261,7 @@ function rewriteFrames(
 				? `${mapped.luauPath}:${frame.line}`
 				: `${mapped.source.path}:${mapped.source.line}`;
 
-		// `() => replacement` rather than the string itself: a `$` sequence in a
-		// Windows path would otherwise be read as a replacement pattern.
+		// A function, so `$` in a path is not read as a replacement pattern.
 		mappedMessage = mappedMessage.replace(original, () => replacement);
 
 		collectLocation({ frame, locations, mapped });
@@ -312,16 +282,6 @@ function chainFailures(mappers: ReadonlyArray<SourceMapper>, message: string): M
 	return { locations, message: mappedMessage };
 }
 
-/**
- * Ownership gate: only let a child act on a path it can actually resolve.
- * Without this, a roblox-ts mapper would apply `init→index` to paths owned by
- * other projects (including pure-Luau projects whose on-disk file is genuinely
- * `init.*`).
- *
- * @param mappers - The child mappers, tried in order.
- * @param testFilePath - The path to find an owner for.
- * @returns The first child that resolves the path, or `undefined`.
- */
 function findOwningMapper(
 	mappers: ReadonlyArray<SourceMapper>,
 	testFilePath: string,

@@ -1,16 +1,7 @@
 /**
- * The identity of one (package, project) pair, for the maps a workspace run
- * keys by it — the file selection and the per-package output sinks.
+ * The key of one (package, project) pair.
  *
- * JSON-encode the pair so neither segment's content can collide into another
- * pair's key (parity with `groupTypecheckPassesAsync`). A project's
- * `displayName` is unique only within its own package, so keying on it alone
- * would let two packages that both name a project `shared` collapse onto one
- * entry.
- *
- * One encoder, not one per map: the two callers key the same pair, and a rule
- * added to only one of them would surface as a package silently unfiltered, or
- * written to another package's output file, rather than as an error.
+ * File selection and output sinks must both key through this one encoder.
  * @param packageName - Name of the package that owns the project.
  * @param project - Display name of the project within that package.
  * @returns The JSON-encoded pair.

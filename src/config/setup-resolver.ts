@@ -1,38 +1,23 @@
-import type { RojoResolver } from "@isentinel/rojo-utils";
+import { RojoResolver } from "@isentinel/rojo-utils";
 
 import { createRequire } from "node:module";
 import * as path from "node:path";
 import { pathToFileURL } from "node:url";
 
-import type { RojoResolverFactory } from "../utils/rojo-project-reader.ts";
-import { nodeRojoResolverFactory } from "../utils/rojo-project-reader.ts";
-import type { ResolvedConfig } from "./schema.ts";
+import type { ResolvedConfig } from "./resolved-config.ts";
 
-/**
- * Resolvers already built, keyed by the rojo project file they were built
- * from. Packages that share a rojo project then share its tree walk.
- */
-export type RojoResolverCache = Map<string, RojoResolver>;
+/** Resolvers keyed by the rojo project file they were built from. */
+type RojoResolverCache = Map<string, RojoResolver>;
 
 /** Inputs for `createSetupResolver`. */
-export interface SetupResolverOptions {
-	/**
-	 * Reuse resolvers across calls. Caller-owned: `RojoResolver.fromPath`
-	 * snapshots the project tree, so how long that snapshot stays true is the
-	 * caller's question. Omit it and every call builds its own.
-	 */
+interface SetupResolverOptions {
+	/** Resolvers reused across calls; omit to build one per call. */
 	cache?: RojoResolverCache | undefined;
 	/** Directory relative setup paths and package specifiers resolve from. */
 	configDirectory: string;
-	/**
-	 * Builds the resolver for a rojo project file. `RojoResolver.fromPath`
-	 * reads the tree through a `node:fs` binding of its own.
-	 */
-	createResolver?: RojoResolverFactory;
-	/**
-	 * Checks a package specifier is installed. Defaults to `require.resolve`
-	 * from the config directory.
-	 */
+	/** Builds the resolver for a rojo project file. */
+	createResolver?: typeof RojoResolver.fromPath;
+	/** Checks a package specifier is installed. */
 	resolveModule?: (specifier: string) => string;
 	/** Rojo project file that maps setup paths to Instances. */
 	rojoConfigPath: string;
@@ -40,13 +25,15 @@ export interface SetupResolverOptions {
 
 const PROBE_EXTENSIONS = [".ts", ".tsx", ".lua", ".luau"];
 
-/**
- * Create an empty resolver cache.
- *
- * @returns A new cache.
- */
-export function createRojoResolverCache(): RojoResolverCache {
-	return new Map<string, RojoResolver>();
+/** Signature of {@link createSetupResolver}, for injection. */
+export type SetupResolverFactory = typeof createSetupResolver;
+
+/** Where one config's setup files resolve from. */
+export interface SetupFileSource {
+	/** Directory relative setup paths and package specifiers resolve from. */
+	configDirectory: string;
+	/** Rojo project file that maps setup paths to Instances. */
+	rojoConfigPath: string;
 }
 
 /**
@@ -60,7 +47,7 @@ export function createRojoResolverCache(): RojoResolverCache {
 export function createSetupResolver({
 	cache,
 	configDirectory,
-	createResolver = nodeRojoResolverFactory,
+	createResolver = RojoResolver.fromPath.bind(RojoResolver),
 	resolveModule,
 	rojoConfigPath,
 }: SetupResolverOptions): (input: string) => string {
@@ -74,12 +61,10 @@ export function createSetupResolver({
 		if (isRelativePath(input)) {
 			absolutePath = path.resolve(configDirectory, input);
 		} else {
-			// Validate the package is installed (probes extensions)
 			resolvePackageSpecifier(resolve, input);
 
-			// Use the logical node_modules path — require.resolve follows
-			// symlinks to real paths outside the project, which RojoResolver
-			// won't recognize
+			// Not the require.resolve path: it follows symlinks out of the
+			// tree RojoResolver knows.
 			absolutePath = path.resolve(configDirectory, "node_modules", input);
 		}
 
@@ -96,31 +81,44 @@ export function createSetupResolver({
 }
 
 /**
- * Rewrite a config's `setupFiles` and `setupFilesAfterEnv` in place through
- * `resolve`.
- *
- * @param config - Config whose setup file lists are rewritten.
- * @param resolve - Maps one configured path to its resolved form.
+ * Rewrite every config's setup file paths in place to Instance paths, one
+ * resolver per source.
+ * @param options - Configs, Rojo resolver factory and each config's source.
  */
-export function applySetupResolver(
-	config: Pick<ResolvedConfig, "setupFiles" | "setupFilesAfterEnv">,
-	resolve: (input: string) => string,
-): void {
-	if (config.setupFiles !== undefined) {
-		config.setupFiles = config.setupFiles.map(resolve);
-	}
+export function resolveAllSetupFilePaths({
+	configs,
+	createSetupResolver: createResolver,
+	sourceOf,
+}: {
+	/** Configs whose setup file paths resolve in place. */
+	configs: ReadonlyArray<ResolvedConfig>;
+	/** Builds the resolver of one source. */
+	createSetupResolver: SetupResolverFactory;
+	/** Where a config's setup files resolve from. */
+	sourceOf: (config: ResolvedConfig) => SetupFileSource;
+}): void {
+	const resolvers = new Map<string, (input: string) => string>();
+	const cache = createRojoResolverCache();
 
-	if (config.setupFilesAfterEnv !== undefined) {
-		config.setupFilesAfterEnv = config.setupFilesAfterEnv.map(resolve);
+	for (const config of configs) {
+		if (config.setupFiles === undefined && config.setupFilesAfterEnv === undefined) {
+			continue;
+		}
+
+		const source = sourceOf(config);
+		const key = JSON.stringify([source.configDirectory, source.rojoConfigPath]);
+		let resolve = resolvers.get(key);
+		if (resolve === undefined) {
+			resolve = createResolver({ cache, ...source });
+			resolvers.set(key, resolve);
+		}
+
+		applySetupResolver(config, resolve);
 	}
 }
 
 /**
- * `mapFsPathToDataModel` is not an equivalent substitution for this walk: the
- * resolver follows the pnpm symlink and any nested rojo config, so it strips
- * `out` from a package path where the tree mapper keeps it. That walk dominates
- * the cost of resolving a package's setup files, so a shared cache spares every
- * package after the first that mounts the same project file.
+ * Do not swap in mapFsPathToDataModel: it keeps `out` on pnpm package paths.
  *
  * @param options - Cache, resolver factory and Rojo project file.
  * @returns The cached or newly built resolver.
@@ -131,7 +129,7 @@ function resolveRojo({
 	rojoConfigPath,
 }: {
 	readonly cache: RojoResolverCache | undefined;
-	readonly createResolver: RojoResolverFactory;
+	readonly createResolver: typeof RojoResolver.fromPath;
 	readonly rojoConfigPath: string;
 }): RojoResolver {
 	const cached = cache?.get(rojoConfigPath);
@@ -149,7 +147,6 @@ function isRelativePath(input: string): boolean {
 }
 
 function resolvePackageSpecifier(resolve: (specifier: string) => string, input: string): void {
-	// Try direct resolution first
 	try {
 		resolve(input);
 		return;
@@ -167,4 +164,26 @@ function resolvePackageSpecifier(resolve: (specifier: string) => string, input: 
 	}
 
 	throw new Error(`Could not resolve module "${input}". Ensure the package is installed.`);
+}
+
+/**
+ * Create an empty resolver cache.
+ *
+ * @returns A new cache.
+ */
+function createRojoResolverCache(): RojoResolverCache {
+	return new Map<string, RojoResolver>();
+}
+
+function applySetupResolver(
+	config: Pick<ResolvedConfig, "setupFiles" | "setupFilesAfterEnv">,
+	resolve: (input: string) => string,
+): void {
+	if (config.setupFiles !== undefined) {
+		config.setupFiles = config.setupFiles.map(resolve);
+	}
+
+	if (config.setupFilesAfterEnv !== undefined) {
+		config.setupFilesAfterEnv = config.setupFilesAfterEnv.map(resolve);
+	}
 }

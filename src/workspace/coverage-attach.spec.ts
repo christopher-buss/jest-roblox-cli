@@ -7,14 +7,14 @@ import { assert, describe, expect, it, vi } from "vitest";
 import { fakeTimingCollector, phaseNamesOf } from "#test/mocks/fake-timing-collector.ts";
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
-import type { WorkspacePackageCoverage } from "../coverage-pipeline/workspace-prepare.ts";
-import type { ExecuteResult } from "../executor.ts";
+import type { ExecuteResult } from "../executor/executor-types.ts";
+import type { WorkspacePackageCoverage } from "../shadow/workspace-prepare.ts";
 import {
 	attachCoverageManifests,
 	type PrepareCoverage,
 	prepareWorkspaceCoverageMap,
 } from "./coverage-attach.ts";
-import type { PendingEntry } from "./pending-entry.ts";
+import type { PendingEntry } from "./test-selection.ts";
 
 const PACKAGE_NAME = "@halcyon/example";
 
@@ -31,10 +31,8 @@ describe(attachCoverageManifests, () => {
 		});
 		const pending: Array<PendingEntry> = [
 			fromAny({
-				pkg: PACKAGE_NAME,
+				job: { config: projectConfig, pkg: PACKAGE_NAME },
 				project: { displayName: PACKAGE_NAME },
-				projectConfig,
-				testFiles: [],
 			}),
 		];
 		const coverage: WorkspacePackageCoverage = fromAny({
@@ -42,7 +40,7 @@ describe(attachCoverageManifests, () => {
 			rootDir: PACKAGE_DIRECTORY,
 		});
 
-		const results: Array<ExecuteResult> = [fromAny({})];
+		const results: Array<ExecuteResult & { jobIndex: number }> = [fromAny({ jobIndex: 0 })];
 
 		const [attached] = attachCoverageManifests({
 			coverageByPackage: new Map([[PACKAGE_NAME, coverage]]),
@@ -59,6 +57,44 @@ describe(attachCoverageManifests, () => {
 	});
 });
 
+describe("attachCoverageManifests pairing", () => {
+	it("should pair each result with the pending entry its jobIndex names", () => {
+		expect.assertions(1);
+
+		const pending: Array<PendingEntry> = ["first", "second"].map((name) => {
+			return fromAny({
+				job: { config: createResolvedConfig({ rootDir: PACKAGE_DIRECTORY }), pkg: name },
+				project: { displayName: name },
+			});
+		});
+
+		const attached = attachCoverageManifests({
+			coverageByPackage: new Map(),
+			pending,
+			results: [fromAny({ jobIndex: 1 })],
+		});
+
+		expect(attached.map((entry) => entry.pkg)).toStrictEqual(["second"]);
+	});
+
+	it("should carry the project's label color", () => {
+		expect.assertions(1);
+
+		const [attached] = attachCoverageManifests({
+			coverageByPackage: new Map(),
+			pending: [
+				fromAny({
+					job: { config: createResolvedConfig(), pkg: PACKAGE_NAME },
+					project: { displayColor: "magenta", displayName: "client" },
+				}),
+			],
+			results: [fromAny({ jobIndex: 0 })],
+		});
+
+		expect(attached!.displayColor).toBe("magenta");
+	});
+});
+
 describe(prepareWorkspaceCoverageMap, () => {
 	it("should time opted-in coverage without warning about its enforceable threshold", () => {
 		expect.assertions(3);
@@ -70,6 +106,7 @@ describe(prepareWorkspaceCoverageMap, () => {
 		const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
 
 		const result = prepareWorkspaceCoverageMap({
+			cacheDirectory: "/workspace/.jest-roblox/workspace",
 			contexts: [
 				fromAny({
 					info: { name: "@halcyon/without-coverage" },
@@ -84,11 +121,16 @@ describe(prepareWorkspaceCoverageMap, () => {
 				}),
 			],
 			fileSystem,
-			loaded: [fromAny({ descriptor: { name: PACKAGE_NAME } })],
-			pending: [fromAny({ pkg: PACKAGE_NAME })],
+			loaded: [
+				fromAny({
+					descriptor: { name: PACKAGE_NAME },
+					info: { name: PACKAGE_NAME },
+					pkgConfig: createResolvedConfig(),
+				}),
+			],
+			pending: [fromAny({ job: { pkg: PACKAGE_NAME } })],
 			prepareCoverage,
 			timing,
-			workspaceRoot: "/workspace",
 		});
 
 		expect(result).toStrictEqual({

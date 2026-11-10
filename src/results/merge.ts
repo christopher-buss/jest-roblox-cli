@@ -1,127 +1,79 @@
-import type { Except } from "type-fest";
+import assert from "node:assert";
 
-import type { JestResult, SnapshotSummary } from "../types/jest-result-types.ts";
+import type { RawCoverageData } from "../coverage-data/coverage-types.ts";
+import { mergeRawCoverage } from "../coverage-data/merge-raw-coverage.ts";
+import type { ExecuteResult } from "../executor/executor-types.ts";
+import { combineSourceMappers } from "../source-mapper/index.ts";
+import { mergeJestResults } from "../types/jest-result-merge.ts";
+import type { TimingResult } from "../types/timing-types.ts";
+
+interface ProjectExtras {
+	coverageData: RawCoverageData | undefined;
+	setupMs: number;
+	snapshotWriteFailures: number;
+	testsMs: number;
+}
 
 /**
- * A merged Jest result minus its snapshot summary. `snapshot` is deliberately
- * excluded: each caller merges snapshots at its own seam (`output.ts` collects
- * them alongside the per-project extras it already walks), so the shared merge
- * stays a pure fold over the counters.
+ * Merge per-project results into one result for reporting.
+ * @param results - Results to merge; at least one.
+ * @returns The merged result.
+ * @throws When `results` is empty.
  */
-export type JestTotals = Except<JestResult, "numTodoTests" | "snapshot"> & {
-	numTodoTests: number;
-};
+export function mergeProjectResults(results: Array<ExecuteResult>): ExecuteResult {
+	const [firstResult] = results;
+	assert(firstResult !== undefined, "mergeProjectResults requires at least one result");
 
-type OptionalCountKey = "filesRemoved" | "unchecked";
-type RequiredCountKey = "added" | "matched" | "total" | "unmatched" | "updated";
+	const extras = mergeProjectExtras(results);
+	const sourceMappers = results
+		.map((entry) => entry.sourceMapper)
+		.filter((sourceMapper) => sourceMapper !== undefined);
+	const merged = mergeJestResults(results.map((entry) => entry.result));
 
-/**
- * Folds the counters, `startTime`, `success`, and `testResults` shared by every
- * Jest-result merge in the CLI. The multi-project merge (`output.ts`) and the
- * multi-project formatter both fold the same eight fields the same way; keeping
- * one implementation means a new result dimension lands in both at once.
- *
- * @param results - Per-project Jest results.
- * @returns Summed counters, earliest `startTime`, joint `success` and all test
- *   results.
- */
-export function mergeJestTotals(results: Array<JestResult>): JestTotals {
-	const totals: JestTotals = {
-		numFailedTests: 0,
-		numPassedTests: 0,
-		numPendingTests: 0,
-		numTodoTests: 0,
-		numTotalTests: 0,
-		startTime: Infinity,
-		success: true,
-		testResults: [],
+	return {
+		coverageData: extras.coverageData,
+		exitCode: merged.success && extras.snapshotWriteFailures === 0 ? 0 : 1,
+		result: merged,
+		snapshotWriteFailures:
+			extras.snapshotWriteFailures > 0 ? extras.snapshotWriteFailures : undefined,
+		sourceMapper: combineSourceMappers(sourceMappers),
+		timing: mergeProjectTiming({ extras, firstResult, results }),
 	};
-
-	for (const result of results) {
-		totals.numFailedTests += result.numFailedTests;
-		totals.numPassedTests += result.numPassedTests;
-		totals.numPendingTests += result.numPendingTests;
-		totals.numTodoTests += result.numTodoTests ?? 0;
-		totals.numTotalTests += result.numTotalTests;
-		totals.startTime = Math.min(totals.startTime, result.startTime);
-		totals.success &&= result.success;
-		totals.testResults.push(...result.testResults);
-	}
-
-	return totals;
 }
 
-/**
- * Merges per-project snapshot summaries into one. The optional fields stay
- * optional: a field absent from every input stays absent from the output, so a
- * runner that never reports it doesn't gain a phantom zero.
- *
- * @param snapshots - Per-project snapshot summaries.
- * @returns The merged summary, or `undefined` when there is none.
- */
-export function mergeSnapshotSummaries(
-	snapshots: Array<SnapshotSummary>,
-): SnapshotSummary | undefined {
-	if (snapshots.length === 0) {
-		return undefined;
+function mergeProjectExtras(results: Array<ExecuteResult>): ProjectExtras {
+	let coverageData: RawCoverageData | undefined;
+	let setupMs = 0;
+	let snapshotWriteFailures = 0;
+	let testsMs = 0;
+
+	for (const entry of results) {
+		setupMs += entry.timing.setupMs ?? 0;
+		snapshotWriteFailures += entry.snapshotWriteFailures ?? 0;
+		testsMs += entry.timing.testsMs;
+
+		coverageData = mergeRawCoverage(coverageData, entry.coverageData);
 	}
 
-	const merged: SnapshotSummary = {
-		added: sumRequired(snapshots, "added"),
-		matched: sumRequired(snapshots, "matched"),
-		total: sumRequired(snapshots, "total"),
-		unmatched: sumRequired(snapshots, "unmatched"),
-		updated: sumRequired(snapshots, "updated"),
+	return { coverageData, setupMs, snapshotWriteFailures, testsMs };
+}
+
+function mergeProjectTiming({
+	extras,
+	firstResult,
+	results,
+}: {
+	extras: ProjectExtras;
+	firstResult: ExecuteResult;
+	results: Array<ExecuteResult>;
+}): TimingResult {
+	return {
+		coverageMs: firstResult.timing.coverageMs,
+		executionMs: firstResult.timing.executionMs,
+		setupMs: extras.setupMs > 0 ? extras.setupMs : undefined,
+		startTime: Math.min(...results.map((entry) => entry.timing.startTime)),
+		testsMs: extras.testsMs,
+		totalMs: Math.max(...results.map((entry) => entry.timing.totalMs)),
+		uploadMs: firstResult.timing.uploadMs,
 	};
-
-	const filesRemoved = sumOptional(snapshots, "filesRemoved");
-	if (filesRemoved !== undefined) {
-		merged.filesRemoved = filesRemoved;
-	}
-
-	const unchecked = sumOptional(snapshots, "unchecked");
-	if (unchecked !== undefined) {
-		merged.unchecked = unchecked;
-	}
-
-	const didUpdate = anyDidUpdate(snapshots);
-	if (didUpdate !== undefined) {
-		merged.didUpdate = didUpdate;
-	}
-
-	return merged;
-}
-
-function anyDidUpdate(snapshots: Array<SnapshotSummary>): boolean | undefined {
-	const present = snapshots.filter((snapshot) => snapshot.didUpdate !== undefined);
-	if (present.length === 0) {
-		return undefined;
-	}
-
-	return present.some((snapshot) => snapshot.didUpdate === true);
-}
-
-/**
- * Stays `undefined` until some snapshot reports the field, which is what keeps
- * an absent field absent rather than summing to a phantom zero.
- *
- * @param snapshots - Per-project snapshot summaries.
- * @param key - Optional counter to sum.
- * @returns The sum, or `undefined` when no snapshot reports the field.
- */
-function sumOptional(snapshots: Array<SnapshotSummary>, key: OptionalCountKey): number | undefined {
-	let total: number | undefined;
-
-	for (const snapshot of snapshots) {
-		const value = snapshot[key];
-		if (value !== undefined) {
-			total = (total ?? 0) + value;
-		}
-	}
-
-	return total;
-}
-
-function sumRequired(snapshots: Array<SnapshotSummary>, key: RequiredCountKey): number {
-	return snapshots.reduce((total, snapshot) => total + snapshot[key], 0);
 }

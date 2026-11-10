@@ -2,50 +2,16 @@ import { type } from "arktype";
 import type buffer from "node:buffer";
 import type { WebSocket, WebSocketServer } from "ws";
 
-import packageJson from "../../package.json" with { type: "json" };
+import { type HelloFrame, helloFrameSchema } from "../protocol/studio.ts";
+import { VERSION } from "../version.ts";
 
-/**
- * How long to keep collecting announcements once the first plugin connects.
- *
- * Every installed copy of the plugin dials the same port, and a copy that is
- * not already connected reconnects on a 0.1s cadence (`RECONNECT_DELAY` in
- * `plugin/src/init.server.luau`), so this window is wide enough to hear from
- * all of them. It is only ever waited out in full when nothing matches: a
- * matching announcement settles the selection the instant it lands.
- */
+// Must exceed `RECONNECT_DELAY` in `plugin/src/init.server.luau`.
 const PLUGIN_HELLO_GRACE_MS = 750;
-
-/**
- * The unsolicited frame a plugin sends as soon as its socket opens.
- *
- * `protocolVersion` decides whether a connection can serve the run.
- * `pluginVersion` and `pluginName` are diagnostic only — they exist so a user
- * running several installed copies is told which one to remove, and are
- * optional because a plugin built without the version stamp still reports a
- * usable protocol.
- */
-interface PluginHello {
-	/** Name of the plugin copy, for diagnostics. */
-	pluginName?: string | undefined;
-	/** Version stamp of the plugin copy, for diagnostics. */
-	pluginVersion?: string | undefined;
-	/** Protocol version the plugin speaks. */
-	protocolVersion: number;
-	/** Frame discriminator. */
-	type: "hello";
-}
-
-const pluginHelloSchema = type({
-	"pluginName?": "string",
-	"pluginVersion?": "string",
-	"protocolVersion": "number",
-	"type": "'hello'",
-});
 
 /** A connected plugin, and what it said about itself (nothing, if stale). */
 export interface PluginCandidate {
 	/** Announcement of the plugin, or `undefined` before or without one. */
-	hello: PluginHello | undefined;
+	hello: HelloFrame | undefined;
 	/** Socket of the connection. */
 	socket: WebSocket;
 }
@@ -79,17 +45,7 @@ export type PluginSelection =
 			kind: "no-connection";
 	  };
 
-/**
- * Every plugin socket on one port, and which of them can serve this CLI.
- *
- * A Studio with several `JestRobloxRunner` copies installed opens one socket
- * per copy, so "the plugin" is a selection rather than a given: the pool
- * records each connection's announcement and hands back the one whose protocol
- * matches. Dispatching to an unselected socket is what used to let a stale copy
- * lose the run for a Studio that also had a working one — a stale copy refuses
- * instantly while the working copy is still running the suite, so its refusal
- * always won the race.
- */
+/** Every plugin socket on one port, and which of them can serve this CLI. */
 export class PluginConnectionPool {
 	private readonly candidates = new Map<WebSocket, PluginCandidate>();
 
@@ -99,10 +55,7 @@ export class PluginConnectionPool {
 	private notify: (() => void) | undefined;
 
 	/**
-	 * Build the pool before anything can connect, and keep it for the life of
-	 * the server. An announcement arrives once per socket, at open: a pool
-	 * built over a server that already has clients would see those clients but
-	 * never learn what they are, and read a working plugin as a stale one.
+	 * Build the pool before anything connects: a socket announces only once.
 	 * @param wss - Plugin server whose connections the pool tracks.
 	 */
 	constructor(wss: WebSocketServer) {
@@ -111,12 +64,7 @@ export class PluginConnectionPool {
 		});
 	}
 
-	/**
-	 * End an in-flight selection now, as though nothing had connected.
-	 *
-	 * For the caller that learns from elsewhere that the wait is pointless and
-	 * would otherwise leave the connect timer holding the event loop open.
-	 */
+	/** End an in-flight selection now, as though nothing had connected. */
 	public abortSelection(): void {
 		this.abort?.();
 	}
@@ -139,9 +87,6 @@ export class PluginConnectionPool {
 			const settle = (selection: PluginSelection): void => {
 				clearTimeout(this.connectTimer);
 				clearTimeout(this.graceTimer);
-				// Cleared, not just stopped: a backend runs more than once
-				// against the same server, and the next selection opens its own
-				// grace window rather than inheriting a spent one.
 				this.graceTimer = undefined;
 				this.abort = undefined;
 				this.notify = undefined;
@@ -164,18 +109,6 @@ export class PluginConnectionPool {
 		});
 	}
 
-	/**
-	 * Settle on a connection that fits, or open the grace window over the ones
-	 * that do not.
-	 *
-	 * The connect timeout covers "is anything there at all"; once something is,
-	 * the grace window covers "does any of it fit", and it opens once rather
-	 * than restarting on each connection.
-	 * @param root0 - Selection state.
-	 * @param root0.expectedVersion - Protocol version a connection must announce.
-	 * @param root0.graceMs - Length of the grace window.
-	 * @param root0.settle - Ends the selection with an outcome.
-	 */
 	private checkSelection({
 		expectedVersion,
 		graceMs,
@@ -198,9 +131,6 @@ export class PluginConnectionPool {
 			return;
 		}
 
-		// The two windows are sequential, not concurrent: a connect timer left
-		// armed could close selection before a compatible socket had its
-		// promised window to announce in.
 		clearTimeout(this.connectTimer);
 		this.connectTimer = undefined;
 
@@ -209,12 +139,6 @@ export class PluginConnectionPool {
 		}, graceMs);
 	}
 
-	/**
-	 * What a closed window means: the connections still open, or that there are
-	 * none — a socket that connected and dropped again leaves nothing to name
-	 * and nothing to run on.
-	 * @returns The open connections as incompatible, or no connection.
-	 */
 	private closedWindowOutcome(): PluginSelection {
 		const candidates = [...this.candidates.values()];
 		return candidates.length > 0
@@ -234,13 +158,11 @@ export class PluginConnectionPool {
 
 	private record(socket: WebSocket, data: buffer.Buffer): void {
 		const candidate = this.candidates.get(socket);
-		// The first announcement wins: a plugin identifies itself once, and a
-		// later frame claiming a different version is not something to act on.
 		if (candidate === undefined || candidate.hello !== undefined) {
 			return;
 		}
 
-		const hello = pluginHelloSchema(decodeFrame(data));
+		const hello = helloFrameSchema(decodeFrame(data));
 		if (hello instanceof type.errors) {
 			return;
 		}
@@ -270,11 +192,6 @@ export class PluginConnectionPool {
 
 /**
  * Close the plugin server and every socket on it.
- *
- * `WebSocketServer.close()` stops new connections but leaves open sockets
- * alive, and a live plugin socket keeps the Node event loop running — which
- * hangs the CLI's `process.exitCode`-based shutdown. Every path that abandons
- * the server has to terminate its clients first.
  * @param wss - Plugin server to close.
  */
 export function closePluginServer(wss: WebSocketServer): void {
@@ -286,12 +203,7 @@ export function closePluginServer(wss: WebSocketServer): void {
 }
 
 /**
- * The error text for a Studio whose plugins cannot serve this CLI: what the CLI
- * needs, what each connection reported, and what to do about it.
- *
- * Names every connection rather than just the first, because the case this
- * exists for is several installed copies — knowing only that "a plugin is
- * stale" does not say which file to delete.
+ * The error text for a Studio whose plugins cannot serve this CLI.
  * @param candidates - Connections that cannot serve the run.
  * @param expectedVersion - Protocol version this CLI speaks.
  * @returns The multi-line error message.
@@ -306,20 +218,11 @@ export function describePluginMismatch(
 		"No compatible jest-roblox Studio plugin. This CLI speaks protocol " +
 		`v${expectedVersion.toString()}, and the ${candidates.length.toString()} plugin ` +
 		`connection(s) on this port report:\n${lines.join("\n")}\n` +
-		`Install the JestRobloxRunner.rbxm shipped with jest-roblox ${packageJson.version}, ` +
+		`Install the JestRobloxRunner.rbxm shipped with jest-roblox ${VERSION}, ` +
 		"and remove the other copies from your Studio plugins folder."
 	);
 }
 
-/**
- * A frame's JSON, or nothing when it is not JSON at all.
- *
- * Every frame on a plugin socket reaches the pool's listener — results,
- * version_mismatch, and whatever a plugin from a future protocol sends — so an
- * unreadable one is ordinary traffic rather than a fault.
- * @param data - Raw frame.
- * @returns The parsed JSON, or `undefined` when the frame is not JSON.
- */
 function decodeFrame(data: buffer.Buffer): JSONValue | undefined {
 	try {
 		return JSON.parse(data.toString());

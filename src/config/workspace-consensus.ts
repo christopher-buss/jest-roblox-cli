@@ -1,6 +1,7 @@
 import { isDeepStrictEqual } from "node:util";
 
-import type { CliOptions, Config } from "./schema.ts";
+import type { Config } from "./config-types.ts";
+import type { CliOptions } from "./resolved-config.ts";
 
 /** Where a workspace-wide field value can come from. */
 export interface FieldSources {
@@ -105,8 +106,7 @@ export function computeConsensus<T>(
 }
 
 /**
- * Consensus as a guard rather than a source: the field was already consumed
- * elsewhere, so only the disagreement is interesting here.
+ * Require packages to agree on a field without reading its value.
  *
  * @param perPackageConfigs - Raw config of each selected package.
  * @param spec - Field name and how to read it from a config.

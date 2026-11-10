@@ -9,11 +9,11 @@ export interface FileInfo {
 	locations: Map<string, number>;
 }
 
-/** Errors from tsc, split by whether they fall in a discovered Type Test. */
 interface PartitionedErrors {
 	errorsByTest: Map<string, Array<string>>;
 	fileErrors: Array<string>;
 }
+
 /**
  * Turn type-checker errors into a Jest result, one case per Type Test.
  * @param options - The errors, the files they belong to and the start time.
@@ -114,14 +114,6 @@ function buildSourceResult(filePath: string, errors: Array<TypeTestDiagnostic>):
 	};
 }
 
-/**
- * Errors reported against files that are not Type Test files become one
- * source-level failure each. The caller decides whether to include them
- * (`ignoreSourceErrors`).
- * @param errors - The diagnostics by file path.
- * @param files - The type-test files, which are skipped.
- * @returns One failed file result per non-test file with errors.
- */
 function collectSourceResults(
 	errors: RawErrorsMap,
 	files: Map<string, FileInfo>,
@@ -139,15 +131,10 @@ function collectSourceResults(
 }
 
 /**
- * Each tsc error lands either inside a `test(...)` body (attributed to that
- * test) or outside every one of them (a file-level failure). `sortedDefinitions`
- * is descending by `start`, so the first containing definition found is the
- * innermost.
- * @param options - The file's errors, position index and definitions.
- * @param options.errors - The file's diagnostics.
- * @param options.indexMap - Source offset of each `line:column` position.
- * @param options.sortedDefinitions - Definitions, descending by `start`.
- * @returns Error messages by test name, and the file-level ones.
+ * `sortedDefinitions` must be descending by `start`, so `find` hits the
+ * innermost test.
+ * @param options - Errors, line index and sorted test definitions.
+ * @returns The errors grouped by the test that holds them.
  */
 function partitionErrors({
 	errors,
@@ -182,15 +169,6 @@ function partitionErrors({
 	return { errorsByTest, fileErrors };
 }
 
-/**
- * One case per discovered Type Test, plus a synthetic leading case carrying the
- * file-level errors when there are any.
- * @param testDefinitions - The file's tests.
- * @param partitioned - The file's errors, split by test.
- * @param partitioned.errorsByTest - Error messages by test name.
- * @param partitioned.fileErrors - Errors outside every test.
- * @returns The file's test cases.
- */
 function buildTestCases(
 	testDefinitions: Array<TestDefinition>,
 	{ errorsByTest, fileErrors }: PartitionedErrors,

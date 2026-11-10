@@ -3,22 +3,10 @@ import { describe, expect, it } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import type { FileSystem } from "../utils/file-system.ts";
-import {
-	ensureLuauConfigTypes,
-	LUAU_CONFIG_TYPE_SOURCE,
-	writeLuauConfigTypes,
-} from "./luau-config-type.ts";
+import { ensureLuauConfigTypes, writeLuauConfigTypes } from "./luau-config-type.ts";
 
 const HOME = path.resolve("/home/user");
 const TYPE_MODULE = path.join(HOME, ".jest-roblox", "typedefs", "1.2.3", "config.luau");
-
-describe("lUAU_CONFIG_TYPE_SOURCE", () => {
-	it("should hold the Luau Config type", () => {
-		expect.assertions(1);
-
-		expect(LUAU_CONFIG_TYPE_SOURCE).toContain("export type Config =");
-	});
-});
 
 describe(writeLuauConfigTypes, () => {
 	it("should replace the type module in the versioned home folder", () => {
@@ -33,26 +21,26 @@ describe(writeLuauConfigTypes, () => {
 		});
 
 		expect(directory).toBe(path.dirname(TYPE_MODULE));
-		expect(volume.readFileSync(TYPE_MODULE, "utf-8")).toBe(LUAU_CONFIG_TYPE_SOURCE);
+		expect(volume.readFileSync(TYPE_MODULE, "utf-8")).toContain("export type Config =");
 	});
 
 	it("should move a whole file into place so a parallel run never reads part of it", () => {
 		expect.assertions(3);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
-		const written: Array<string> = [];
+		const moved: Array<string> = [];
 		const recording: FileSystem = {
 			...fileSystem,
-			writeFileSync: (file, data) => {
-				written.push(String(file));
-				fileSystem.writeFileSync(file, data);
+			renameSync: (from, to) => {
+				moved.push(fileSystem.readFileSync(from, "utf-8"));
+				fileSystem.renameSync(from, to);
 			},
 		};
 
 		writeLuauConfigTypes({ fileSystem: recording, homeDirectory: HOME, version: "1.2.3" });
 
-		expect(written).not.toContain(TYPE_MODULE);
-		expect(volume.readFileSync(TYPE_MODULE, "utf-8")).toBe(LUAU_CONFIG_TYPE_SOURCE);
+		expect(moved).toStrictEqual([String(volume.readFileSync(TYPE_MODULE, "utf-8"))]);
+		expect(volume.readFileSync(TYPE_MODULE, "utf-8")).toContain("export type Config =");
 		expect(volume.readdirSync(path.dirname(TYPE_MODULE))).toStrictEqual(["config.luau"]);
 	});
 });
@@ -65,7 +53,7 @@ describe(ensureLuauConfigTypes, () => {
 
 		ensureLuauConfigTypes({ fileSystem, homeDirectory: HOME, version: "1.2.3" });
 
-		expect(volume.readFileSync(TYPE_MODULE, "utf-8")).toBe(LUAU_CONFIG_TYPE_SOURCE);
+		expect(volume.readFileSync(TYPE_MODULE, "utf-8")).toContain("export type Config =");
 	});
 
 	it("should keep a type module that is already there", () => {

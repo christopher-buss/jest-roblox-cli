@@ -2,16 +2,18 @@ import type { LoadConfigOptions, ResolvedConfig } from "c12";
 import { defuFn } from "defu";
 import { createRequire } from "node:module";
 import * as path from "node:path";
-import process from "node:process";
 
 import type { FileSystem } from "../utils/file-system.ts";
+import { isSeaBuild } from "../utils/sea.ts";
+import type { Config } from "./config-types.ts";
 import { validateConfigLayer } from "./config-validation.ts";
 import type { ConfigLoader, ConfigLoadOptions } from "./loader.ts";
 import { loadLuauConfig } from "./luau-config-loader.ts";
-import type { Config } from "./schema.ts";
 
 /** Load options with every field supplied. */
-export type ConfigLoadContext = Required<ConfigLoadOptions>;
+export type ConfigLoadContext = Required<
+	Pick<ConfigLoadOptions, "childProcess" | "configLoader" | "fileSystem">
+>;
 
 /** `configFile` may name a missing file when a c12 search matched nothing. */
 export interface ConfigLayer {
@@ -21,20 +23,11 @@ export interface ConfigLayer {
 	configFile?: string | undefined;
 }
 
-/**
- * A config module as `require` hands it back. An ESM config arrives with the
- * config under `default`; c12's `resolveModule` unwraps it, and
- * `validateConfig` parses the result.
- */
 interface ConfigModule {
 	readonly default?: unknown;
 }
 
 interface ExtendsLayerRequest {
-	/**
-	 * Absolute path of the config declaring `extends`; entries resolve against
-	 * its directory.
-	 */
 	canonicalFile: string;
 	context: ConfigLoadContext;
 	extendList: Array<string>;
@@ -79,10 +72,8 @@ export async function invokeC12({
 		options = { ...options, configFile };
 	}
 
-	// In SEA mode, jiti's babel.cjs can't be resolved from the
-	// single-executable archive. Bypass jiti entirely by providing a
-	// custom import function.
-	return isSea()
+	// SEA: jiti's babel.cjs can't resolve from the single-executable archive.
+	return isSeaBuild()
 		? configLoader<Config>({ ...options, import: async (id) => seaImport(id, fileSystem) })
 		: configLoader<Config>(options);
 }
@@ -128,19 +119,8 @@ export async function loadLuauLayer({
 }
 
 /**
- * Resolve a layer's `extends` chain and merge it under the layer.
- *
- * `c12` mis-resolves relative `extends` paths whose `dirname()` is non-empty
- * (e.g. "../../jest.shared.ts"): it adds dirname(source) to its internal cwd
- * but leaves source unchanged, then re-applies dirname when resolving the file
- * — duplicating the path component. See c12 issue #57. We disable c12's extend
- * handling and resolve the chain ourselves against the loaded config file's
- * actual directory.
- *
- * `visited` is stack-local — popped on unwind via `finally` — so a diamond
- * graph (child → [a, b], both → base) loads `base` twice rather than failing
- * as a false cycle. Config load is one-time at startup; the re-parse cost is
- * negligible.
+ * Resolve a layer's `extends` chain and merge it under the layer. Done here,
+ * not by c12: c12 issue #57 doubles the dirname of relative `extends` paths.
  *
  * @param options - Load context, loaded layer and the files on the current
  *   extends stack.
@@ -189,23 +169,9 @@ export async function processExtends({
 	}
 }
 
-function isSea(): boolean {
-	return process.env["JEST_ROBLOX_SEA"] === "true";
-}
-
 /**
- * A SEA binary's ESM loader can't `import()` a file off disk — Node routes
- * every dynamic import through the single-executable's built-in resolver, so
- * any path fails (`No such built-in module` / `ERR_UNKNOWN_BUILTIN_MODULE`).
- * `require()` is unaffected, and Node's `require` handles everything a config
- * needs: TypeScript type-stripping for `.ts`/`.mts`/`.cts`, ESM `export
- * default` (returned as `{ default }`), and bare-specifier resolution from the
- * project's on-disk `node_modules`. Anchoring the require at the config path
- * lets a config that imports a runtime value (e.g. `defineConfig` from
- * `@isentinel/jest-roblox`) resolve it relative to itself; a genuinely
- * unresolvable import surfaces Node's standard module-resolution error. `.json`
- * keeps its read + parse path (a bare `require` of JSON works too, but reading
- * avoids relying on CJS JSON-module semantics).
+ * A SEA binary's `import()` fails on disk paths (ERR_UNKNOWN_BUILTIN_MODULE);
+ * `require()` works.
  *
  * @param id - Absolute path of the config module.
  * @param fileSystem - File system for JSON reads.
@@ -222,24 +188,12 @@ async function seaImport(id: string, fileSystem: FileSystem): Promise<ConfigModu
 	return requireConfig(id);
 }
 
-/**
- * `defuFn` wants a non-empty argument list, which a variadic array can't prove.
- * The leading `{}` supplies it and contributes nothing: defu gives the first
- * source the highest priority, so an empty one leaves the merge order intact.
- *
- * @param sources - Configs in priority order, highest first.
- * @returns The merged config.
- */
 function merger(...sources: Array<Config | null | undefined>): Config {
 	return defuFn({}, ...sources);
 }
 
 /**
- * `workspace.root` is relative in source; anchor it to the directory of the
- * file that declares it (typically a shared config reached via `extends:`) so
- * the workspace root stays stable regardless of which package directory the CLI
- * runs from. Applied per-layer before merge — once layers merge, the declaring
- * file's directory is no longer recoverable.
+ * Must run per layer before merge; after it the declaring directory is lost.
  *
  * @param config - Layer config.
  * @param baseDirectory - Directory of the file that declares the layer.
@@ -258,9 +212,7 @@ function anchorWorkspaceRoot(config: Config, baseDirectory: string): Config {
 }
 
 /**
- * Load each `extends` entry in declaration order, recursing so a base config
- * may itself extend. Returned layers are lowest-priority-last, matching the
- * order `merger` expects.
+ * Returns layers lowest-priority-last, the order `merger` expects.
  *
  * @param options - Declaring file, load context, entries and extends stack.
  * @returns The resolved layers.

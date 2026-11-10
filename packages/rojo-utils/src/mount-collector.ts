@@ -9,7 +9,7 @@ export type PathKind = "directory" | "file" | "missing";
  */
 export type PathClassifier = (fsPath: string) => PathKind;
 
-/** A directory mount whose prefix is relative to the project file. */
+/** A `$path` mount whose path is relative to the project file. */
 export interface Mount {
 	/** Slash-separated instance path below the project root. */
 	dataModelPath: string;
@@ -18,6 +18,19 @@ export interface Mount {
 }
 
 const TRAILING_SLASH_PATTERN = /\/$/;
+
+/**
+ * Every `$path` mount below the root, file or directory, parents before
+ * children, with each path as written in the tree.
+ * @param node - Subtree to walk.
+ * @param currentDataModelPath - Slash-separated instance path of `node`.
+ * @returns Mounts in traversal order.
+ */
+export function listMounts(node: RojoTreeNode, currentDataModelPath = ""): Array<Mount> {
+	const result: Array<Mount> = [];
+	walk({ currentDataModelPath, node, result });
+	return result;
+}
 
 /**
  * Collects directory mounts below the root using the supplied classifier.
@@ -33,9 +46,14 @@ export function collectMounts({
 	currentDataModelPath: string;
 	node: RojoTreeNode;
 }): Array<Mount> {
-	const result: Array<Mount> = [];
-	walk({ classify, currentDataModelPath, node, result });
-	return result;
+	return listMounts(node, currentDataModelPath).flatMap(({ dataModelPath, fsPath }) => {
+		if (fsPath.endsWith(".project.json")) {
+			return [];
+		}
+
+		const directory = fsPath.replace(TRAILING_SLASH_PATTERN, "");
+		return classify(directory) === "directory" ? [{ dataModelPath, fsPath: directory }] : [];
+	});
 }
 
 /**
@@ -47,39 +65,11 @@ export function pruneAncestors(paths: Array<string>): Array<string> {
 	return paths.filter((candidate) => paths.every((other) => !candidate.startsWith(`${other}/`)));
 }
 
-function addDirectoryMount({
-	classify,
-	dataModelPath,
-	node,
-	result,
-}: {
-	classify: PathClassifier;
-	dataModelPath: string;
-	node: RojoTreeNode;
-	result: Array<Mount>;
-}): void {
-	const rawPath = unwrapPath(node.$path);
-	if (rawPath === undefined) {
-		return;
-	}
-
-	if (rawPath.endsWith(".project.json")) {
-		return;
-	}
-
-	const fsPath = rawPath.replace(TRAILING_SLASH_PATTERN, "");
-	if (classify(fsPath) === "directory") {
-		result.push({ dataModelPath, fsPath });
-	}
-}
-
 function walk({
-	classify,
 	currentDataModelPath,
 	node,
 	result,
 }: {
-	classify: PathClassifier;
 	currentDataModelPath: string;
 	node: RojoTreeNode;
 	result: Array<Mount>;
@@ -89,10 +79,12 @@ function walk({
 			continue;
 		}
 
-		const childDataModelPath =
-			currentDataModelPath === "" ? key : `${currentDataModelPath}/${key}`;
+		const dataModelPath = currentDataModelPath === "" ? key : `${currentDataModelPath}/${key}`;
+		const fsPath = unwrapPath(value.$path);
+		if (fsPath !== undefined) {
+			result.push({ dataModelPath, fsPath });
+		}
 
-		addDirectoryMount({ classify, dataModelPath: childDataModelPath, node: value, result });
-		walk({ classify, currentDataModelPath: childDataModelPath, node: value, result });
+		walk({ currentDataModelPath: dataModelPath, node: value, result });
 	}
 }

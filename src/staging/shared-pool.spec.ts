@@ -1,3 +1,5 @@
+import type { RojoTreeNode } from "@isentinel/rojo-utils";
+
 import * as crypto from "node:crypto";
 import * as path from "node:path";
 import { assert, describe, expect, it } from "vitest";
@@ -10,7 +12,6 @@ import {
 	stagedProject,
 	stagedProjectSchema,
 } from "#test/mocks/staged-project.ts";
-import type { RojoTreeNode } from "../types/rojo.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import { poolSharedMounts } from "./shared-pool.ts";
 

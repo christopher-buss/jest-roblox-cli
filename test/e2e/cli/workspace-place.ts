@@ -3,13 +3,14 @@ import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { assert, onTestFinished } from "vitest";
 
-import { startFakeOpenCloudServerAsync } from "#test/e2e/cli/fake-open-cloud.ts";
+import { startFakeOpenCloudServerAsync } from "#test/harness/fake-open-cloud.ts";
 import {
 	buildPassingJestOutput,
 	createOpenCloudEnvironment,
+	RUN_TIMEOUT_MS,
 	runCliAsync,
-} from "#test/e2e/cli/helpers.ts";
-import { createSandboxDirectory } from "#test/e2e/sandbox-root.ts";
+} from "#test/harness/helpers.ts";
+import { createSandboxDirectory } from "#test/harness/sandbox-root.ts";
 
 /** One package of a throwaway workspace. */
 export interface WorkspacePackage {
@@ -29,8 +30,6 @@ export interface SynthesizedWorkspace {
 	/** Workspace root. */
 	root: string;
 }
-
-const RUN_TIMEOUT_MS = 60_000;
 
 /**
  * Write a workspace, run the CLI over it against the fake Open Cloud, and

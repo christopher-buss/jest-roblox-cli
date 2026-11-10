@@ -8,7 +8,7 @@ import { describe, expect, it, vi } from "vitest";
 import { ageFile } from "#test/mocks/aged-file.ts";
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { MANIFEST_VERSION } from "#test/mocks/run-constants.ts";
-import type { CoverageManifest } from "../coverage-pipeline/manifest.ts";
+import type { CoverageManifest } from "../coverage-data/manifest.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import {
 	computePlaceInputsKeyAsync,

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { PathClassifier, PathKind } from "./mount-collector.ts";
-import { collectMounts, pruneAncestors } from "./mount-collector.ts";
+import { collectMounts, listMounts, pruneAncestors } from "./mount-collector.ts";
 import type { RojoTreeNode } from "./rojo-types.ts";
 
 function allDirectories(): PathKind {
@@ -296,5 +296,34 @@ describe(pruneAncestors, () => {
 				"ServerScriptService/Server",
 			]),
 		).toStrictEqual(["ReplicatedStorage/Client", "ServerScriptService/Server"]);
+	});
+});
+
+describe(listMounts, () => {
+	it("should list file and directory mounts as written, parents first", () => {
+		expect.assertions(1);
+
+		const tree = {
+			$path: "root",
+			Nested: { $path: "nested.project.json" },
+			Shared: {
+				$path: { optional: "out/shared/" },
+				Snapshot: { $path: "src/suite.snap.luau" },
+			},
+		} satisfies RojoTreeNode;
+
+		expect(listMounts(tree)).toStrictEqual([
+			{ dataModelPath: "Nested", fsPath: "nested.project.json" },
+			{ dataModelPath: "Shared", fsPath: "out/shared/" },
+			{ dataModelPath: "Shared/Snapshot", fsPath: "src/suite.snap.luau" },
+		]);
+	});
+
+	it("should prefix paths below a given instance path", () => {
+		expect.assertions(1);
+
+		expect(listMounts({ Child: { $path: "child" } }, "Game")).toStrictEqual([
+			{ dataModelPath: "Game/Child", fsPath: "child" },
+		]);
 	});
 });

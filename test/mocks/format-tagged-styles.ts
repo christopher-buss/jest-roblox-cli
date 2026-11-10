@@ -1,7 +1,8 @@
-import type { ColorFunc, Styles } from "#src/formatters/styles.ts";
+import type { ColorFunc, Styles } from "#src/terminal/palette.ts";
 
 export function createTaggedStyles(): Styles {
 	return {
+		bold: tag("bold"),
 		diff: { expected: tag("expected"), received: tag("received") },
 		dim: tag("dim"),
 		duration: { fast: tag("fast"), slow: tag("slow") },
@@ -9,6 +10,7 @@ export function createTaggedStyles(): Styles {
 		lineNumber: tag("lineNumber"),
 		location: tag("location"),
 		path: { dir: tag("dir"), file: tag("file") },
+		projectLabel: tag("projectLabel"),
 		runBadge: tag("runBadge"),
 		slowTestThreshold: 300,
 		status: { fail: tag("fail"), pass: tag("pass"), pending: tag("pending") },

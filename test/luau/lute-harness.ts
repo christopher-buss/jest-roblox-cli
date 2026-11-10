@@ -6,6 +6,8 @@ import path from "node:path";
 import { onTestFinished } from "vitest";
 
 const LUAU_DIRECTORY = path.join(import.meta.dirname, "../../luau");
+const RELATIVE_REQUIRE_PATTERN = /require\("(\.\.?\/[^"]+)"\)/g;
+const STUB_KEY_PATTERN = /(?:\[|==\s*)"(\.\.?\/[^"]+)"/g;
 
 export function readLuauModule(relativePath: string): string {
 	return fs.readFileSync(path.join(LUAU_DIRECTORY, relativePath), "utf-8");
@@ -19,14 +21,28 @@ export function inlineModule(source: string): string {
 	return `(function()\n${source}\nend)()`;
 }
 
-export function inlineRequires(source: string, names: ReadonlyArray<string>): string {
-	let result = source;
-	for (const name of names) {
-		const dependency = readLuauModule(`${name}.luau`);
-		result = result.replace(`require("./${name}")`, () => inlineModule(dependency));
-	}
+export function stubbedModules(harness: string): ReadonlySet<string> {
+	return new Set(
+		Array.from(harness.matchAll(STUB_KEY_PATTERN), ([, request = ""]) => {
+			return path.posix.basename(request);
+		}),
+	);
+}
 
-	return result;
+export function readLuauTree(relativePath: string, stubbed: ReadonlySet<string>): string {
+	const directory = path.posix.dirname(relativePath);
+	return readLuauModule(relativePath).replace(
+		RELATIVE_REQUIRE_PATTERN,
+		(call: string, request: unknown) => {
+			const target = String(request);
+			if (stubbed.has(path.posix.basename(target))) {
+				return call;
+			}
+
+			const dependency = path.posix.join(directory, `${target}.luau`);
+			return inlineModule(readLuauTree(dependency, stubbed));
+		},
+	);
 }
 
 export function fillPlaceholders(

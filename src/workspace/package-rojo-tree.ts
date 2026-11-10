@@ -1,23 +1,15 @@
 import { loadRojoProject, rebaseTreePaths } from "@isentinel/rojo-utils";
+import type { RojoTreeNode } from "@isentinel/rojo-utils";
 
 import * as path from "node:path";
 
-import type { RojoTreeNode } from "../types/rojo.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 
 /**
- * Load a package's Rojo tree with every `$path` expressed relative to the
- * package directory.
- *
- * `loadRojoProject` resolves nested projects and expresses every `$path`
- * relative to the project file's directory. Include roots, however, resolve
- * relative to the package directory. When the project file lives in a
- * subdirectory (e.g. `test/default.project.json`) the two bases diverge, so
- * rebase the tree to package-relative paths so mount resolution (findInTree /
- * collectMounts) compares like-for-like.
+ * Load a package's Rojo tree with `$path` values relative to the package.
  * @param options - Package directory, project file and file system.
  * @param options.fileSystem - File system to read through.
- * @param options.packageDirectory - Package directory the paths become relative to.
+ * @param options.packageDirectory - Base for the rebased paths.
  * @param options.rojoProjectPath - Rojo project file to load.
  * @returns The tree with package-relative `$path` values.
  */

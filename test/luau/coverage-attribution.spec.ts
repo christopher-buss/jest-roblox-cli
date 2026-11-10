@@ -6,7 +6,6 @@ import {
 	readLuauModule,
 	spawnHarness,
 } from "#test/luau/lute-harness.ts";
-import { LUTE_HARNESS_TIMEOUT } from "#test/luau/lute-timeout.ts";
 
 // Drives the attribution module under the real lute binary, inlining it into the
 // harness the same way the runner welds it. The harness exercises the pure
@@ -17,7 +16,7 @@ import { LUTE_HARNESS_TIMEOUT } from "#test/luau/lute-timeout.ts";
 const MODULE_SOURCE = readLuauModule("coverage-attribution.luau");
 const HARNESS = readHarness("coverage-attribution");
 
-describe("coverage attribution under lute", { timeout: LUTE_HARNESS_TIMEOUT }, () => {
+describe("coverage attribution under lute", () => {
 	it("should pass the attribution harness assertions", () => {
 		expect.assertions(1);
 

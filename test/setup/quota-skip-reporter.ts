@@ -7,7 +7,6 @@ import type { FileSystem } from "#src/utils/file-system.ts";
 
 export const NOTE_PREFIX = "open-cloud-quota:";
 
-/** A run with a quota skip never exits 0, so Nx never caches the skip. */
 export class QuotaSkipReporter implements Reporter {
 	private readonly fileSystem: FileSystem;
 

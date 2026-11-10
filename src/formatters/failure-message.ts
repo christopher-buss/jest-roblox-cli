@@ -50,7 +50,7 @@ export function getExecErrorHint(message: string): string | undefined {
 }
 
 /**
- * Split a failure message into its first line and any snapshot diff or expected/received pair.
+ * Split a failure message into its first line and any diff.
  * @param message - Raw failure message.
  * @returns The parsed parts; diff fields are absent when not found.
  */
@@ -88,16 +88,13 @@ export function parseErrorMessage(message: string): ParsedError {
 }
 
 /**
- * Extracts the meaningful error message from a Jest `failureMessage` string.
- * Strips the "● Test suite failed to run" header, Roblox DataModel path
- * chains, and stack trace lines.
+ * Extract the error line from a Jest suite `failureMessage`.
  * @param raw - Jest `failureMessage` of a file whose suite threw.
- * @returns The first content line without path prefixes, or the trimmed input when no line follows the header.
+ * @returns The first content line without path prefixes, else the input.
  */
 export function cleanExecErrorMessage(raw: string): string {
 	const lines = raw.split("\n");
 
-	// Find the first content line after the "● Test suite failed to run" header
 	let contentLine: string | undefined;
 	let isPastHeader = false;
 	for (const line of lines) {
@@ -117,6 +114,5 @@ export function cleanExecErrorMessage(raw: string): string {
 		return raw.trim();
 	}
 
-	// Strip chained Roblox path prefixes: "Path:123: Path:456: actual message"
 	return contentLine.replace(ROBLOX_PATH_CHAIN, "");
 }

@@ -1,6 +1,6 @@
 import { vi } from "vitest";
 
-import type { RunProgress } from "#src/progress/reporter.ts";
+import type { RunProgress } from "#src/progress/run-progress.ts";
 
 const noOp = vi.fn<() => void>();
 

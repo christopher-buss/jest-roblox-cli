@@ -2,13 +2,7 @@ import { PermissionError } from "@bedrock-rbx/ocale";
 
 import { assert, describe, expect, it } from "vitest";
 
-import { ConfigError } from "../config/errors.ts";
-import {
-	describeError,
-	isNotFoundError,
-	rethrowBinaryInputFailure,
-	rethrowOversizedResult,
-} from "./open-cloud-failures.ts";
+import { describeError, isNotFoundError, rethrowOversizedResult } from "./open-cloud-failures.ts";
 
 function caught(rethrow: () => never): unknown {
 	try {
@@ -53,31 +47,6 @@ describe(rethrowOversizedResult, () => {
 			expect(caught(() => rethrowOversizedResult(failure))).toBe(failure);
 		},
 	);
-});
-
-describe(rethrowBinaryInputFailure, () => {
-	it("should fail a create the client cannot complete, naming the quota and the flag", () => {
-		expect.assertions(2);
-
-		const failure = caught(() => {
-			return rethrowBinaryInputFailure(
-				new Error("Failed to allocate a binary input slot: 429"),
-			);
-		});
-		assert(failure instanceof ConfigError, "expected a ConfigError");
-
-		expect(failure.message).toContain("Failed to allocate a binary input slot: 429");
-		// The quota is the cause a reader can act on — several agents on one
-		// key — and the flag is the way out. Asserted whole rather than by
-		// keyword: each clause is one of the three things a reader needs, and
-		// a hint that lost one still contains the others.
-		expect(failure.hint).toBe(
-			"`binaryInputs.create` is metered at five a minute per API key, and the " +
-				"client has already retried inside that budget — so several runs " +
-				"sharing one key is the usual cause.\n" +
-				"Upload the code inside the place instead.",
-		);
-	});
 });
 
 describe(describeError, () => {

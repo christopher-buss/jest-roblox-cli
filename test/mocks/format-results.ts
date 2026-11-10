@@ -248,7 +248,6 @@ export const SKIPPED_RESULT: JestResult = {
 	],
 };
 
-/** Minimal result for JSON snapshot (keeps snapshot under 50 lines). */
 export const MINIMAL_RESULT = oneFailedOfTwo("src/test.spec.ts", [
 	createTestCase({ fullName: "Test passes", title: "passes" }),
 	createTestCase({
@@ -259,10 +258,6 @@ export const MINIMAL_RESULT = oneFailedOfTwo("src/test.spec.ts", [
 	}),
 ]);
 
-/**
- * A run where one file collected nothing at all — no tests, no exec error.
- * Vitest calls such a file passed, so both reports must agree on that.
- */
 export const EMPTY_FILE_RESULT: JestResult = {
 	numFailedTests: 0,
 	numPassedTests: 3,

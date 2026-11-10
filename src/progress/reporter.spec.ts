@@ -3,7 +3,7 @@ import { fromAny } from "@total-typescript/shoehorn";
 import process from "node:process";
 import { assert, describe, expect, it, onTestFinished, vi } from "vitest";
 
-import { createStdoutRunProgress, NOOP_RUN_PROGRESS } from "./reporter.ts";
+import { createStdoutRunProgress } from "./reporter.ts";
 
 type RunProgressOptions = NonNullable<Parameters<typeof createStdoutRunProgress>[0]>;
 
@@ -268,22 +268,6 @@ describe("createStdoutRunProgress with injected options", () => {
 		second();
 
 		expect(writes.at(-1)).toBe(" ✓ instrument   3 packages  2.0s\n");
-	});
-
-	it("should say nothing anywhere through the shared silent reporter", () => {
-		expect.assertions(1);
-
-		const written: Array<string> = [];
-		NOOP_RUN_PROGRESS.reveal({ color: false });
-		NOOP_RUN_PROGRESS.begin("upload", "12.4 MB")("version 88");
-		NOOP_RUN_PROGRESS.describe("upload", "ignored");
-		NOOP_RUN_PROGRESS.note("upload", "ignored");
-		NOOP_RUN_PROGRESS.finish();
-		NOOP_RUN_PROGRESS.interleave(() => {
-			written.push(FOREIGN_LINE);
-		});
-
-		expect(written).toStrictEqual([FOREIGN_LINE]);
 	});
 
 	it("should keep a detail that exactly fills the terminal", () => {

@@ -1,17 +1,15 @@
 import { type } from "arktype";
 import * as path from "node:path";
 
-import type { TsconfigDirectories, TsconfigReader } from "../executor/tsconfig-mappings.ts";
-import { nodeTsconfigReader, resolveTsconfigDirectories } from "../executor/tsconfig-mappings.ts";
-import type { ChildProcessRunner } from "../utils/child-process.ts";
-import { nodeChildProcessRunner } from "../utils/child-process.ts";
-import type { FileSystem } from "../utils/file-system.ts";
-import { nodeFileSystem } from "../utils/file-system.ts";
+import type { TsconfigDirectories, TsconfigReader } from "../tsconfig/tsconfig-mappings.ts";
+import { nodeTsconfigReader, resolveTsconfigDirectories } from "../tsconfig/tsconfig-mappings.ts";
+import { type ChildProcessRunner, nodeChildProcessRunner } from "../utils/child-process.ts";
+import { type FileSystem, nodeFileSystem } from "../utils/file-system.ts";
+import type { ProjectConfigFile, ProjectTestConfig } from "./config-types.ts";
 import { projectConfigFileSchema } from "./config-validation.ts";
 import type { ConfigLoader } from "./loader.ts";
 import { nodeConfigLoader } from "./loader.ts";
 import { findLuauConfigFile, loadLuauConfig } from "./luau-config-loader.ts";
-import type { ProjectConfigFile, ProjectTestConfig } from "./schema.ts";
 
 const TS_OR_LUAU_EXTENSION = /\.(tsx?|luau?)$/;
 
@@ -23,9 +21,7 @@ export interface ProjectConfigInput extends ProjectConfigSeams {
 
 /** The collaborators that open handles of their own, past `fileSystem`. */
 interface ProjectConfigSeams {
-	/**
-	 * How a Luau Config that holds code runs lute. Defaults to the real one.
-	 */
+	/** How a Luau Config that holds code runs lute. */
 	childProcess?: ChildProcessRunner;
 	/** How a project config file is loaded. Defaults to the real c12. */
 	configLoader?: ConfigLoader;
@@ -99,15 +95,6 @@ export async function loadProjectConfigFile({
 	return config;
 }
 
-/**
- * The c12 loader surfaces a resolution failure as a bare loader error;
- * re-throw it naming the config file so the user knows which project entry to
- * fix.
- *
- * @param options - Loader, base directory and config file path.
- * @returns The raw loaded config.
- * @rejects If the loader fails, with the config file named.
- */
 async function loadProjectConfigViaC12({
 	configLoader,
 	cwd,
@@ -190,8 +177,6 @@ async function buildProjectConfigFromLuau({
 
 	const { testMatch } = validated;
 
-	// Derive include from testMatch — append .luau extension and prefix with
-	// directory path
 	const include =
 		testMatch !== undefined
 			? testMatch.map((pattern) => path.posix.join(directoryPath, `${pattern}.luau`))
@@ -200,14 +185,6 @@ async function buildProjectConfigFromLuau({
 	return { ...validated, include };
 }
 
-/**
- * When a project config provides `testMatch` but not `include`, derive
- * `include` by appending `.ts` and `.tsx` extensions.  This lets users
- * write project configs with the standard Jest `testMatch` field without
- * needing the CLI-specific `include`.
- *
- * @param options - Config to fill, its directory and tsconfig directories.
- */
 function deriveIncludeFromTestMatch({
 	config,
 	configDirectory,
@@ -233,8 +210,6 @@ function deriveIncludeFromTestMatch({
 		return withExtensions.map((extension) => path.posix.join(configDirectory, extension));
 	});
 
-	// Derive outDir from tsconfig rootDir/outDir mapping so the Rojo tree
-	// mapping resolves correctly (e.g. src/shared → out/shared).
 	if (rootDir === undefined || outDir === undefined || config.outDir !== undefined) {
 		return;
 	}

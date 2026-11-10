@@ -5,17 +5,6 @@ import { vi } from "vitest";
 import type { TimingCollector } from "#src/timing/orchestration-collector.ts";
 import { NOOP_PROGRESS } from "#test/mocks/noop-progress.ts";
 
-/**
- * A collector whose every phase runs straight through and reports the same
- * fixed duration. For specs that assert which phases a unit opens, and how it
- * combines the durations it gets back, without driving a clock — `vi.fn` on
- * each member, so the phase names are readable off `.mock.calls`.
- *
- * One `elapsedMs` for every phase is the point: a spec that sums two phases
- * asserts `2 * elapsedMs` and so cannot pass by reading only one of them.
- * @param elapsedMs - Duration every phase reports.
- * @returns Collector whose phases are `vi.fn` mocks.
- */
 export function fakeTimingCollector(elapsedMs = 0): TimingCollector {
 	return fromAny<TimingCollector, unknown>({
 		enabled: true,
@@ -39,13 +28,6 @@ export function fakeTimingCollector(elapsedMs = 0): TimingCollector {
 	});
 }
 
-/**
- * The phase names a {@link fakeTimingCollector} member was called with, in
- * order. Takes the member itself rather than a name so a typo names a member
- * that does not exist instead of one no call ever matched.
- * @param member - Collector member to read.
- * @returns Phase names, in call order.
- */
 export function phaseNamesOf(
 	member: (name: string, ...rest: Array<never>) => unknown,
 ): Array<string> {

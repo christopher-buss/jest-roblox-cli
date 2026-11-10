@@ -2,12 +2,12 @@ import type { RemoteRunner, RunnerCredentials } from "@isentinel/roblox-runner";
 
 import process from "node:process";
 
-import type { ResolvedConfig } from "../config/schema.ts";
-import type { RunProgress } from "../progress/reporter.ts";
+import type { RunProgress } from "../progress/run-progress.ts";
 import { describePlaceFile } from "../progress/stages.ts";
+import { BOOT_PROBE_SCRIPT } from "../protocol/open-cloud.ts";
 import { isPollTimeout } from "../utils/error-chain.ts";
 import type { FileSystem } from "../utils/file-system.ts";
-import { BootUnverifiedError } from "./boot-unverified.ts";
+import type { RunSettings } from "./interface.ts";
 import { isNotFoundError } from "./open-cloud-failures.ts";
 import type { UploadCacheTarget } from "./upload-cache.ts";
 import {
@@ -17,20 +17,9 @@ import {
 	writeCachedVersion,
 } from "./upload-cache.ts";
 
-/** A completed probe proves only the version it actually booted. */
-const BOOT_PROBE_SCRIPT = "return tostring(game.PlaceVersion)";
-
-/**
- * The script deadline is separate from the budget allowed for boot and
- * polling.
- */
 const BOOT_PROBE_TASK_TIMEOUT_MS = 10_000;
 
-/**
- * The Exact Version every task in this run is submitted to. A Shared Place
- * has no stable head, so nothing is ever submitted there: the version the
- * upload (or the cache) named is the one whose bytes hold this run's code.
- */
+/** The Exact Version every task in this run is submitted to. */
 export interface VersionContext {
 	/** True when this run's probe completed on the uploaded version. */
 	bootProven: boolean;
@@ -42,11 +31,7 @@ export interface VersionContext {
 export interface UploadOutcome {
 	/** True when the version came from the cache instead of a fresh upload. */
 	fromCache: boolean;
-	/**
-	 * Hash of the uploaded place bytes, or undefined when this run keeps no
-	 * cache. Carried out of the upload so the entry is written only once the
-	 * boot probe has proved the version starts.
-	 */
+	/** Hash of the uploaded place bytes; undefined when there is no cache. */
 	hash: string | undefined;
 	/** Time spent on the upload or cache lookup, in milliseconds. */
 	uploadMs: number;
@@ -114,16 +99,8 @@ export class PlaceVersionGate {
 	}
 
 	/**
-	 * Skip `places.save` when these exact place bytes already have a version.
-	 * An upload is the only thing measured to precede a cold place boot (~22s
-	 * against ~3s warm), so an unchanged build that reuses its version keeps
-	 * the fast path. Correctness rests on every task being pinned to the
-	 * version, not on the cache: the recorded version holds exactly the bytes
-	 * that were hashed, and a version keeps existing after head moves on.
-	 *
-	 * Reads the cache but never writes it: an entry means "these bytes boot",
-	 * so only {@link PlaceVersionGate.verifyBootAsync} may record one. The
-	 * hash rides out on the outcome for it to write with.
+	 * Upload the place, or reuse the version that holds these exact bytes.
+	 * Never writes the cache: only `verifyBootAsync` may record an entry.
 	 * @param options - Run config, progress sink and place target.
 	 * @returns The cached or freshly uploaded version.
 	 */
@@ -133,7 +110,7 @@ export class PlaceVersionGate {
 		target,
 	}: {
 		/** Run config; `uploadCache` turns the cache on. */
-		config: ResolvedConfig;
+		config: RunSettings;
 		/** Sink for the upload stage. */
 		progress: RunProgress;
 		/** Place to upload. */
@@ -143,13 +120,9 @@ export class PlaceVersionGate {
 		const { fileSystem } = this;
 		const { rootDir: rootDirectory, uploadCache: canCache } = config;
 		const hash = canCache ? hashPlaceFile(target.placeFilePath, fileSystem) : undefined;
-		// A hash of undefined means "no cache this run" for both reads and
-		// writes: either the caller disabled it, or the file could not be read.
 		if (hash !== undefined) {
 			const cached = readCachedVersion({ fileSystem, hash, rootDirectory, target });
 			if (cached !== undefined) {
-				// Noted rather than opened: nothing went over the wire, so the
-				// stage has a result and never had a wait.
 				progress.note("upload", `cache hit, version ${cached.toString()}`);
 				return {
 					fromCache: true,
@@ -175,12 +148,10 @@ export class PlaceVersionGate {
 	}
 
 	/**
-	 * Gate the tests on a completed probe of the uploaded version, and cache
-	 * only that proof. A lost probe gets one more; a second loss, or a probe
-	 * that booted another version, stops the run before any test task.
+	 * Gate the tests on a probe of the uploaded version, and cache that proof.
 	 * @param options - Run config, progress sink, place target and upload outcome.
 	 * @returns True when a probe proved the version boots; false when the probe was skipped.
-	 * @rejects {BootUnverifiedError} When no probe booted the uploaded version.
+	 * @rejects {Error} When no probe booted the uploaded version.
 	 */
 	public async verifyBootAsync({
 		config,
@@ -189,7 +160,7 @@ export class PlaceVersionGate {
 		upload,
 	}: {
 		/** Run config; `bootProbeTimeout` of 0 skips the probe. */
-		config: ResolvedConfig;
+		config: RunSettings;
 		/** Sink for the boot stage. */
 		progress: RunProgress;
 		/** Place the cache entry belongs to. */
@@ -205,7 +176,13 @@ export class PlaceVersionGate {
 		const done = progress.begin("boot", `version ${upload.versionNumber.toString()}`);
 		const booted = await this.probeBootAsync({ budget, upload });
 		if (booted !== String(upload.versionNumber)) {
-			throw new BootUnverifiedError({ booted, budget, versionNumber: upload.versionNumber });
+			const reason =
+				booted === undefined
+					? `no boot probe completed within ${String(Math.round(budget / 1000))}s`
+					: `the boot probe reported ${JSON.stringify(booted)}`;
+			throw new Error(
+				`Place version ${String(upload.versionNumber)} is boot unverified: ${reason}. No tests were submitted.`,
+			);
 		}
 
 		done();
@@ -224,12 +201,6 @@ export class PlaceVersionGate {
 		return true;
 	}
 
-	/**
-	 * A lost probe says nothing about the place, so it gets one more; a
-	 * completed one has answered. Undefined when both were lost.
-	 * @param options - Probe budget and the upload outcome to probe.
-	 * @returns The version the probe booted, or undefined.
-	 */
 	private async probeBootAsync(options: {
 		/** Poll budget of each probe, in milliseconds. */
 		budget: number;
@@ -241,13 +212,6 @@ export class PlaceVersionGate {
 		);
 	}
 
-	/**
-	 * Ask the uploaded version, and only it, whether it boots. Undefined when
-	 * the probe reached no terminal state within its budget.
-	 * @param options - Probe budget and the upload outcome to probe.
-	 * @returns The version the probe booted, or undefined.
-	 * @rejects Any runner failure other than a poll timeout.
-	 */
 	private async submitBootProbeAsync({
 		budget,
 		upload,
@@ -259,9 +223,6 @@ export class PlaceVersionGate {
 	}): Promise<string | undefined> {
 		try {
 			const result = await this.runner.executeScriptAsync({
-				// A wall-clock cap, not a deadline: the question is whether the
-				// place booted, and the runner's boot-lag allowance answers a
-				// different one — it would only delay the verdict.
 				placeVersion: upload.versionNumber,
 				pollBudget: budget,
 				script: BOOT_PROBE_SCRIPT,

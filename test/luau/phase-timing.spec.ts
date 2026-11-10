@@ -6,14 +6,13 @@ import {
 	readLuauModule,
 	spawnHarness,
 } from "#test/luau/lute-harness.ts";
-import { LUTE_HARNESS_TIMEOUT } from "#test/luau/lute-timeout.ts";
 
 // Drives the shared `runner.timing` envelope builder under lute. Pure module, no
 // dependencies to inline. Requires `lute` on PATH (mise, in dev and CI).
 const MODULE_SOURCE = readLuauModule("phase-timing.luau");
 const HARNESS = readHarness("phase-timing");
 
-describe("shared phase-timing builder under lute", { timeout: LUTE_HARNESS_TIMEOUT }, () => {
+describe("shared phase-timing builder under lute", () => {
 	it("should pass the phase-timing harness assertions", () => {
 		expect.assertions(1);
 

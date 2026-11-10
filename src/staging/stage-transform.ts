@@ -1,4 +1,5 @@
-import type { RojoTreeNode } from "../types/rojo.ts";
+import type { RojoTreeNode } from "@isentinel/rojo-utils";
+
 import { PINNED_PARENT_CLASSES } from "./pinned-parent-classes.ts";
 import type { HoistedService, HoistedServiceSegment } from "./service-hoist.ts";
 import { isProperties, isTreeNode } from "./tree-node-guards.ts";
@@ -6,7 +7,6 @@ import { isProperties, isTreeNode } from "./tree-node-guards.ts";
 interface TransformEntry {
 	key: string;
 	hoisted: Array<HoistedService>;
-	/** True only for a direct child of a place root, which is a service. */
 	isService: boolean;
 	nodePath: Array<string>;
 	value: RojoTreeNode[string];
@@ -24,10 +24,6 @@ export function transformToFolder(
 ): RojoTreeNode {
 	const folder: RojoTreeNode = { $className: "Folder" };
 
-	// Every direct child of a DataModel is a service by position, whatever it is
-	// named — rojo infers the class from the key when `$className` is omitted.
-	// Position beats the name set here, which only nested services (e.g.
-	// `StarterPlayer.StarterPlayerScripts`) still need.
 	const isPlace = node.$className === "DataModel";
 
 	for (const [key, value] of Object.entries(node)) {
@@ -36,9 +32,6 @@ export function transformToFolder(
 		}
 
 		if (key === "$properties") {
-			// A non-place root (a model project) has no service to hoist onto, so
-			// its properties are dropped as before rather than moved onto a
-			// Folder where rojo would reject them.
 			if (isPlace) {
 				recordHoistedProperties({ hoisted, segments: [], value });
 			}
@@ -88,15 +81,6 @@ function transformNodeValue({
 	return transformChild({ hoisted, isService, node: value, nodePath });
 }
 
-/**
- * A bare node — no `$className`, no `$path` — is only legal at a DataModel
- * root, where rojo infers a service from the name. Once relocated under
- * `__pkg_stage` it needs an explicit class, and Folder is what every demoted
- * node becomes. Unconditional because a bare node rojo could not resolve at the
- * root is one it would reject here too. This also recovers a malformed
- * non-string `$className`, which is dropped rather than copied through.
- * @param node - Node to fix in place.
- */
 function recoverBareNodeClass(node: RojoTreeNode): void {
 	if (node.$className === undefined && node.$path === undefined) {
 		node.$className = "Folder";

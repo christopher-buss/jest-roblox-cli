@@ -1,16 +1,19 @@
 import { OpenCloudError } from "@bedrock-rbx/ocale";
+import type { InfrastructureEvidence } from "@isentinel/roblox-runner";
 
 import process from "node:process";
 import color from "tinyrainbow";
 
 import { ConfigError } from "./config/errors.ts";
-import { LuauScriptError } from "./reporter/luau-script-error.ts";
-import { formatBanner } from "./utils/banner.ts";
+import { parseGameOutput } from "./game-output/game-output.ts";
+import { LuauScriptError } from "./jest-output/luau-script-error.ts";
+import type { RunnerErrorCode } from "./protocol/runner-error.ts";
+import { formatBanner } from "./terminal/banner.ts";
 import { type ChainEntry, formatMissingScopes, walkErrorChain } from "./utils/error-chain.ts";
-import { parseGameOutput } from "./utils/game-output.ts";
 import {
-	formatInfrastructureBanner,
+	type InfrastructureFailure,
 	isInfrastructureFailure,
+	MissingGapRecordError,
 } from "./utils/infrastructure-failure.ts";
 
 function formatGameOutputLines(raw: string | undefined): string | undefined {
@@ -27,9 +30,6 @@ const EXIT_CODE_MESSAGE = /^Exited with code: \d+$/;
 function formatLuauErrorBanner(err: LuauScriptError): string {
 	const bannerLines = formatGameOutputLines(err.bannerOutput);
 
-	// When the message is just "Exited with code: N", Jest's real error is in
-	// the captured stdout, not in the message itself — surface stdout as the
-	// primary content and demote the exit-code transport to a dim footer.
 	if (bannerLines !== undefined && EXIT_CODE_MESSAGE.test(err.message)) {
 		const body = [bannerLines, `\n  ${color.dim(err.message)}`];
 		return formatBanner({ body, level: "error", title: "Test Run Failed" });
@@ -37,7 +37,7 @@ function formatLuauErrorBanner(err: LuauScriptError): string {
 
 	const body = [color.red(err.message)];
 
-	const hint = getLuauErrorHint(err.message);
+	const hint = getLuauErrorHint(err);
 	if (hint !== undefined) {
 		body.push(`\n  ${color.dim("Hint:")} ${hint}`);
 	}
@@ -49,11 +49,6 @@ function formatLuauErrorBanner(err: LuauScriptError): string {
 	return formatBanner({ body, level: "error", title: "Luau Error" });
 }
 
-/**
- * How much of a captured response body the banner shows. A parse failure hands
- * over 500 bytes of minified JSON; the opening object keys are what name the
- * call that returned it, and the rest only buries the cause chain below it.
- */
 const BODY_PREVIEW_LIMIT = 160;
 
 /**
@@ -102,14 +97,6 @@ function formatChainExtras(entry: ChainEntry): string {
 	return pieces.length > 0 ? color.dim(` (${pieces.join(" ")})`) : "";
 }
 
-/**
- * One-line preview of a captured response body. Whitespace is collapsed so a
- * body that is itself several lines cannot push the rest of the chain off the
- * screen.
- *
- * @param details - The captured response body.
- * @returns The capped preview, or `undefined` when the body is absent or blank.
- */
 function formatBodyPreview(details: string | undefined): string | undefined {
 	if (details === undefined) {
 		return undefined;
@@ -125,15 +112,6 @@ function formatBodyPreview(details: string | undefined): string | undefined {
 		: collapsed;
 }
 
-/**
- * The indented lines that hang under one chain entry. Each appears only when
- * the error carried it: ocale names the failing request on an error response
- * but not on a 2xx body it could not parse, where the body head is the only
- * thing that says which call returned it.
- *
- * @param entry - One entry of the error cause chain.
- * @returns The detail lines, empty when the entry carries none.
- */
 function formatChainDetailLines(entry: ChainEntry): Array<string> {
 	const lines: Array<string> = [];
 	if (entry.url !== undefined) {
@@ -170,46 +148,93 @@ function formatBackendErrorBanner(err: Error): string {
 	return formatBanner({ body, level: "error", title: "Backend Error" });
 }
 
-const LUAU_ERROR_HINTS: Array<[pattern: RegExp, hint: string]> = [
-	[
-		/Failed to find Jest instance in ReplicatedStorage/,
-		'Set "jestPath" in your config to specify the Jest module location, e.g. "ReplicatedStorage/rbxts_include/node_modules/@rbxts/jest/src"',
-	],
-	[
-		/Failed to find Jest instance at path/,
-		"The configured jestPath does not resolve to a valid instance. Verify the path matches your Rojo project tree.",
-	],
-	[
-		/Failed to find service/,
-		"The first segment of jestPath must be a valid Roblox service name (e.g. ReplicatedStorage, ServerScriptService).",
-	],
-	[
-		/No projects configured/,
-		'Set "projects" in jest.config.ts (e.g. ["ReplicatedStorage/client", "ServerScriptService/server"]).',
-	],
-	[
-		/Infinite yield detected/,
+const RUNNER_ERROR_HINTS: Record<RunnerErrorCode, string | undefined> = {
+	"infinite-yield":
 		"A :WaitForChild() call is waiting for an instance that doesn't exist. Check your DataModel paths and Rojo project configuration.",
-	],
-	[
-		/loadstring\(\) is not available/,
-		'loadstring() must be enabled for Jest to run. Add "LoadStringEnabled": true to ServerScriptService.$properties in your project.json.',
-	],
-	// Matches the wording every plugin version uses, including the ones that
-	// predate this hint — the copy that reports the mismatch is by definition
-	// not the one that could be taught to explain it.
-	[
-		/protocol version mismatch/i,
-		"If you have more than one JestRobloxRunner installed, this may be a stale copy rather than the one you just updated: Studio runs them all, and on --backend studio-cli the first to answer decides the run. Check your Studio plugins folder and remove the copies you do not want.",
-	],
-];
+	"jest-not-found":
+		'Set "jestPath" in your config to specify the Jest module location, e.g. "ReplicatedStorage/rbxts_include/node_modules/@rbxts/jest/src"',
+	"jest-path-unresolved":
+		"The configured jestPath does not resolve to a valid instance. Verify the path matches your Rojo project tree.",
+	"no-projects":
+		'Set "projects" in jest.config.ts (e.g. ["ReplicatedStorage/client", "ServerScriptService/server"]).',
+	"service-not-found":
+		"The first segment of jestPath must be a valid Roblox service name (e.g. ReplicatedStorage, ServerScriptService).",
+	"timeout": undefined,
+};
 
-function getLuauErrorHint(message: string): string | undefined {
-	for (const [pattern, hint] of LUAU_ERROR_HINTS) {
-		if (pattern.test(message)) {
-			return hint;
+// Matches the mismatch wording of every plugin version, old ones included.
+const PLUGIN_MISMATCH = /protocol version mismatch/i;
+
+const PLUGIN_MISMATCH_HINT =
+	"If you have more than one JestRobloxRunner installed, this may be a stale copy rather than the one you just updated: Studio runs them all, and on --backend studio-cli the first to answer decides the run. Check your Studio plugins folder and remove the copies you do not want.";
+
+function getLuauErrorHint(err: LuauScriptError): string | undefined {
+	if (err.code !== undefined) {
+		return RUNNER_ERROR_HINTS[err.code];
+	}
+
+	return PLUGIN_MISMATCH.test(err.message) ? PLUGIN_MISMATCH_HINT : undefined;
+}
+
+function listFields(
+	evidence: InfrastructureEvidence,
+): Array<[name: string, value: number | string | undefined]> {
+	if (evidence.kind === "task-stall") {
+		return [
+			["task", evidence.task],
+			["placeVersion", evidence.placeVersion],
+			["timeoutSeconds", evidence.timeoutSeconds],
+			["createTime", evidence.createTime],
+			["updateTime", evidence.updateTime],
+			["observedStates", evidence.observedStates.join(", ")],
+		];
+	}
+
+	return [
+		["unlockTime", evidence.unlockTime],
+		["retryAfterSeconds", evidence.retryAfterSeconds],
+		["code", evidence.code],
+		["placeVersion", evidence.placeVersion],
+		["timeoutSeconds", evidence.timeoutSeconds],
+	];
+}
+
+function describeEvidence(evidence: InfrastructureEvidence): Array<string> {
+	const lines = [`    kind: ${evidence.kind}`];
+	for (const [name, value] of listFields(evidence)) {
+		if (value !== undefined) {
+			lines.push(`    ${name}: ${String(value)}`);
 		}
 	}
 
-	return undefined;
+	if (evidence.kind === "create-quota") {
+		lines.push("    headers:");
+		for (const [name, value] of Object.entries(evidence.headers)) {
+			lines.push(`      ${name}: ${value}`);
+		}
+	}
+
+	return lines;
+}
+
+/**
+ * Render the error banner for an infrastructure failure, with its evidence.
+ * @param err - The infrastructure failure.
+ * @returns The banner text.
+ */
+function formatInfrastructureBanner(err: InfrastructureFailure): string {
+	if (err instanceof MissingGapRecordError) {
+		return formatBanner({
+			body: [color.red(err.message)],
+			level: "error",
+			title: "Missing Gap Record",
+		});
+	}
+
+	const body = [
+		color.red(err.message),
+		`\n  ${color.dim("Evidence:")}`,
+		...describeEvidence(err.evidence),
+	];
+	return formatBanner({ body, level: "error", title: "Roblox Infrastructure Error" });
 }

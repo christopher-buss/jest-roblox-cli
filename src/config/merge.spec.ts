@@ -82,8 +82,9 @@ describe(mergeCliWithConfig, () => {
 			mergeCliWithConfig({ formatters: ["json"] }, createResolvedConfig()).formatters,
 		).toStrictEqual(["json"]);
 		expect(
-			mergeCliWithConfig({}, { ...createResolvedConfig(), formatters: ["junit"] }).formatters,
-		).toStrictEqual(["junit"]);
+			mergeCliWithConfig({}, { ...createResolvedConfig(), formatters: ["github-actions"] })
+				.formatters,
+		).toStrictEqual(["github-actions"]);
 	});
 
 	it("should fall back to the environment-detected formatter defaults", () => {

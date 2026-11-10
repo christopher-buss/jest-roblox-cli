@@ -5,6 +5,7 @@ import { type } from "arktype";
 import { assert, describe, expect, it, vi } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
+import { writingRojoExec } from "#test/mocks/rojo-exec.ts";
 import type { ChildProcessRunner } from "../utils/child-process.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import { installRunnerPluginAsync } from "./runner-plugin.ts";
@@ -54,10 +55,7 @@ function fakeRojo(fileSystem: FileSystem) {
  * @returns The fake child process runner and its `execFile` mock.
  */
 function rojoChildProcess(fileSystem: FileSystem) {
-	const execFile = vi.fn<RojoExec>((...[, args, , callback]) => {
-		fileSystem.writeFileSync(args[3]!, "rbxm-bytes");
-		callback(null, "", "");
-	});
+	const execFile = vi.fn<RojoExec>(writingRojoExec({ bytes: "rbxm-bytes", fileSystem }));
 	return { childProcess: fromAny<ChildProcessRunner, unknown>({ execFile }), execFile };
 }
 

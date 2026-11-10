@@ -6,7 +6,6 @@ import process from "node:process";
 
 import { ConfigError } from "../config/errors.ts";
 import type { FileSystem } from "../utils/file-system.ts";
-import { nodeFileSystem } from "../utils/file-system.ts";
 import type { CheckerSpawnOptions, TypecheckOptions } from "./runner.ts";
 import { spawnCheckerAsync } from "./spawn-checker.ts";
 
@@ -25,7 +24,6 @@ const TSGO_PACKAGES = [
 	{ name: "@typescript/native-preview", bin: "tsgo" },
 ] as const;
 
-// The manifest's `bin` field is the only stable name for the compiler script.
 const tsgoManifestSchema = type({
 	"bin?": { "[string]": "string > 0" },
 	"version": "string",
@@ -36,20 +34,16 @@ const compositeTsconfigSchema = type({
 		"composite?": "boolean",
 	},
 });
+
 /**
- * Async so the CPU-bound tsgo subprocess overlaps the network-bound Roblox run
- * (the host event loop stays free to drive the Open Cloud upload/poll while
- * tsgo compiles). Two distinct guards keep the awaited pass from hanging: a
- * launch timer (`spawnTimeout`, cleared on the child `spawn` event) bounds
- * startup, and `execFile`'s own `timeout` (`options.timeout`, the run-level
- * deadline) bounds the compile.
+ * Spawn tsgo over the project and return its output.
  * @param options - The project, tsconfig, timeouts and spawner.
  * @returns The compiler's output.
  * @rejects {ConfigError} When no TypeScript 7 tsgo is installed.
  * @rejects When tsgo fails to start or times out.
  */
 export async function spawnTsgoAsync(options: CheckerSpawnOptions): Promise<string> {
-	const { childProcess, fileSystem = nodeFileSystem, runTimeout, spawnTimeout } = options;
+	const { childProcess, fileSystem, runTimeout, spawnTimeout } = options;
 	const isComposite = isCompositeProject({
 		fileSystem,
 		rootDirectory: options.rootDir,
@@ -69,11 +63,11 @@ export async function spawnTsgoAsync(options: CheckerSpawnOptions): Promise<stri
 }
 
 function isCompositeProject({
-	fileSystem = nodeFileSystem,
+	fileSystem,
 	rootDirectory,
 	tsconfig,
 }: {
-	fileSystem?: FileSystem;
+	fileSystem: FileSystem;
 	rootDirectory: string;
 	tsconfig?: string | undefined;
 }): boolean {
@@ -99,27 +93,10 @@ function isCompositeProject({
 	}
 }
 
-/**
- * CJS resolution off this module — the only thing here that needs it.
- * @param specifier - The package specifier to resolve.
- * @returns The resolved file path.
- */
 function defaultResolveModule(specifier: string): string {
 	return createRequire(import.meta.url).resolve(specifier);
 }
 
-/**
- * TypeScript 7 is an optional peer dependency, so its absence is an ordinary
- * state to report rather than a broken install — `require.resolve` only raises
- * a bare `MODULE_NOT_FOUND`, which reads as a fault inside the CLI. `ConfigError`
- * matches `assertTypecheckAvailable` (`typecheck-groups.ts`), which rejects
- * TypeScript Type Tests under the standalone binary, and puts the install
- * command in the banner's `Hint:` slot.
- * @param resolveModule - Resolves a package specifier to a path.
- * @param packageName - The package whose manifest to find.
- * @returns The manifest path, or `undefined` when the package is absent.
- * @throws {unknown} Any resolution failure other than `MODULE_NOT_FOUND`.
- */
 function resolveManifest(
 	resolveModule: (specifier: string) => string,
 	packageName: string,
@@ -157,15 +134,6 @@ function resolveTsgoScript(
 	throw new ConfigError(MISSING_TSGO_MESSAGE, MISSING_TSGO_HINT);
 }
 
-/**
- * A composite project must be driven through `--build` (and emit declarations
- * so downstream references resolve); a plain one type-checks with `--noEmit`.
- * The two also take the tsconfig differently: `--build` accepts it positionally,
- * while a plain run needs `-p`.
- * @param options - The pass options, for the tsconfig.
- * @param isComposite - Whether the tsconfig declares `composite`.
- * @returns The tsgo arguments.
- */
 function buildTsgoArgs(options: TypecheckOptions, isComposite: boolean): Array<string> {
 	const args: Array<string> = [];
 

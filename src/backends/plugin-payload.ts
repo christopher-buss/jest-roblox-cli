@@ -1,86 +1,60 @@
-import { buildJestArgv, type JestArgv } from "../test-script.ts";
+import type { EmbeddedPayload } from "../protocol/embedded-payload-types.ts";
+import { type StudioConfigEntry, VM_HOST_POOL_SIZE } from "../protocol/studio.ts";
+import { indexArgv, type IndexedJestArgv } from "../runner-payload/jest-argv.ts";
+import { toMaterializerEntry } from "../runner-payload/materializer-script.ts";
 import type { DecodedEnvelope } from "./envelope.ts";
-import {
-	type BackendResult,
-	isWorkspaceRun,
-	type ParallelOption,
-	type ProjectJob,
-} from "./interface.ts";
-import { resolveVmHostCount } from "./vm-parallel.ts";
+import type { BackendResult, DispatchBase, ParallelOption } from "./interface.ts";
 
 /** Payload the Run-mode runner reads: a configs run or a workspace run. */
 export type RunPayload = ConfigRunPayload | WorkspaceRunPayload;
 
-/**
- * The runner's default result budget holds Open Cloud's 4 MiB return cap, which
- * no Studio transport has.
- */
 const UNBOUNDED_RESULT_BUDGET_BYTES = Number.MAX_SAFE_INTEGER;
 
-/** What a Studio run payload is built from. */
-export interface RunPayloadRequest {
+/** What one run of either Studio backend dispatches. */
+export interface StudioDispatch extends DispatchBase {
 	/** Workspace runs only: stop on the first failing package. */
-	bail?: boolean | undefined;
-	/** Jobs the run holds, in request order. */
-	jobs: Array<ProjectJob>;
+	bail: boolean;
+	/**
+	 * Experimental in-session Luau VM count, or `"auto"` for one per config.
+	 */
+	vmParallel: ParallelOption;
+	/** Whether the jobs are workspace packages, run from the staged place. */
+	workspace: boolean;
+}
+
+/** What a Studio run payload is built from. */
+export interface RunPayloadRequest extends Pick<
+	StudioDispatch,
+	"bail" | "jobs" | "vmParallel" | "workspace"
+> {
 	/** The transport's own run timeout, in milliseconds. */
 	runBudgetMs: number;
 	/**
-	 * Experimental in-session parallelism: the VM count the user asked for, or
-	 * `"auto"` for one per config. Undefined on every ordinary run.
+	 * Whether the plugin mounts the `jest.config` stubs at run time; false
+	 * when the opened place has them built in.
 	 */
-	vmParallel?: ParallelOption;
+	runtimeStubs: boolean;
 }
 
 interface ConfigRunPayload {
-	config: { configs: Array<JestArgv> };
+	configs: Array<StudioConfigEntry<IndexedJestArgv>>;
 	/**
-	 * How long the caller will wait for the whole run, in milliseconds. Sent
-	 * only alongside `vmParallel`: the coordinator's wait for its hosts has to
-	 * end inside this, or the ExecutionError entries it produces for a dead
-	 * host reach a CLI that stopped listening.
+	 * The Luau coordinator's wait for its VM hosts must end inside this.
 	 */
 	runBudgetMs?: number;
-	runtimeStubMounts: Array<Array<string>>;
-	/**
-	 * Experimental: how many Luau VMs the run-mode runner splits `configs`
-	 * across. Absent means the sequential path — which is also where a request
-	 * for a single VM lands, since one VM is what sequential already is.
-	 */
 	vmParallel?: number;
 }
 
-interface WorkspaceEntry {
-	config: JestArgv;
-	pkg: string;
-	project: string;
-}
-
 interface WorkspaceRunPayload {
-	workspace: {
-		bail?: boolean | undefined;
-		entries: Array<WorkspaceEntry>;
-		resultBudgetBytes: number;
-		/** As on {@link ConfigRunPayload}: sent only alongside `vmParallel`. */
-		runBudgetMs?: number;
-		/**
-		 * Experimental: how many Luau VMs one package's projects split across.
-		 * Packages still run one after another; only a package's own projects
-		 * share its staged DataModel at the same time.
-		 */
-		vmParallel?: number;
-	};
-}
-
-interface ConfigEntries {
-	configs: Array<JestArgv>;
-	runtimeStubMounts: Array<Array<string>>;
+	workspace: Pick<
+		EmbeddedPayload<IndexedJestArgv>,
+		"bail" | "entries" | "runBudgetMs" | "vmParallel"
+	> &
+		Required<Pick<EmbeddedPayload<IndexedJestArgv>, "resultBudgetBytes">>;
 }
 
 /**
- * Build the runner payload shared by both Studio transports. The transports
- * add their own protocol envelope, while this seam owns the config/workspace
- * dispatch shape consumed by the Run-mode runner.
+ * Build the Run-mode runner payload shared by both Studio transports.
  *
  * @param request - Jobs, bail flag, run budget, and VM parallelism.
  * @returns The workspace payload, or the configs payload when the run is not a
@@ -91,12 +65,14 @@ export function buildRunPayload({
 	bail,
 	jobs,
 	runBudgetMs,
+	runtimeStubs,
 	vmParallel,
+	workspace: isWorkspace,
 }: RunPayloadRequest): RunPayload {
-	if (isWorkspaceRun(jobs)) {
-		const entries = buildWorkspaceEntries(jobs);
+	if (isWorkspace) {
+		const entries = jobs.map((job, jobIndex) => toMaterializerEntry(job, jobIndex));
 		const workspace = { bail, entries, resultBudgetBytes: UNBOUNDED_RESULT_BUDGET_BYTES };
-		const hostCount = resolveVmHostCount(vmParallel, largestPackageSize(entries));
+		const hostCount = resolveVmHostCount(vmParallel, entries.length);
 		if (hostCount === undefined) {
 			return { workspace };
 		}
@@ -104,120 +80,55 @@ export function buildRunPayload({
 		return { workspace: { ...workspace, runBudgetMs, vmParallel: hostCount } };
 	}
 
-	const { configs, runtimeStubMounts } = buildConfigEntries(jobs);
+	const configs = jobs.map((job, jobIndex) => {
+		return {
+			config: indexArgv(job.argv, jobIndex),
+			runtimeStubMounts: runtimeStubs ? (job.runtimeInjectionPaths ?? []) : [],
+		};
+	});
 	const hostCount = resolveVmHostCount(vmParallel, configs.length);
 	if (hostCount === undefined) {
-		return { config: { configs }, runtimeStubMounts };
+		return { configs };
 	}
 
-	return { config: { configs }, runBudgetMs, runtimeStubMounts, vmParallel: hostCount };
+	return { configs, runBudgetMs, vmParallel: hostCount };
 }
 
 /**
- * Pair a Studio run's envelope entries with its jobs, in request order.
- *
- * The run-mode runner walks its entries in order and stops on a bail, so a
- * bailed envelope carries a prefix of the jobs and the rest never ran.
+ * The raw results of a Studio run's envelope; each entry names its job.
  *
  * @param envelope - The decoded run envelope.
  * @param context - Backend name for errors, run game output, and job count.
- * @returns The raw results, plus the indices of jobs a bail skipped.
- * @throws {@link Error} When the envelope deferred jobs, or its entry count
- *   does not match the job count.
+ * @returns The raw results, and whether a bail skipped jobs.
+ * @throws {@link Error} When the envelope deferred jobs.
  */
-export function pairPluginEntries(
+export function readPluginEntries(
 	{ bailed, deferred: wasDeferred, entries, gameOutputScope }: DecodedEnvelope,
 	{
 		backendName,
 		gameOutput,
 		jobCount,
 	}: { backendName: string; gameOutput: string | undefined; jobCount: number },
-): Pick<BackendResult, "bailedJobIndices" | "rawResults"> {
+): Pick<BackendResult, "bailed" | "rawResults"> {
 	if (wasDeferred) {
 		throw new Error(
 			`${backendName} deferred ${(jobCount - entries.length).toString()} of ${jobCount.toString()} jobs: the runner's result budget filled before they ran`,
 		);
 	}
 
-	const rawResults = entries.map((entry) => {
-		return { entry, fallbackGameOutput: gameOutput, gameOutputScope };
+	const rawResults = entries.map(({ jobIndex, ...entry }) => {
+		return { entry, fallbackGameOutput: gameOutput, gameOutputScope, jobIndex };
 	});
 
-	if (bailed && entries.length < jobCount) {
-		const bailedJobIndices = Array.from(
-			{ length: jobCount - entries.length },
-			(_, offset) => entries.length + offset,
-		);
-		return { bailedJobIndices, rawResults };
-	}
-
-	if (entries.length !== jobCount) {
-		throw new Error(
-			`${backendName} returned ${entries.length.toString()} entries but request had ${jobCount.toString()} jobs`,
-		);
-	}
-
-	return { rawResults };
+	return { bailed, rawResults };
 }
 
-/**
- * The per-(package, project) entries the plugin's Run-mode runner feeds to its
- * embedded materializer for a workspace run. Shared by both Studio backends —
- * studio-cli writes them into the bootstrap payload, the WebSocket studio
- * backend sends them in the `run_tests` message — so the entry shape can't
- * drift between the two transports.
- *
- * @param jobs - Jobs of a workspace run.
- * @returns One entry per job.
- * @throws {@link Error} When a job has no package name.
- */
-function buildWorkspaceEntries(jobs: Array<ProjectJob>): Array<WorkspaceEntry> {
-	return jobs.map((job) => {
-		// The materializer keys every entry by `pkg` to clone the right package
-		// from `__pkg_stage`. Workspace jobs are built all-or-none, so a missing
-		// `pkg` means a malformed (mixed) array reached the backend — fail fast
-		// rather than emit a `pkg`-less entry the runner can't use.
-		if (job.pkg === undefined) {
-			throw new Error(
-				`studio-cli: workspace entry for project "${job.displayName}" is missing its package name (pkg)`,
-			);
-		}
-
-		return { config: buildJestArgv(job), pkg: job.pkg, project: job.displayName };
-	});
-}
-
-/**
- * The most projects one staging of a package runs. The runner stages a package
- * once per consecutive run of its entries (`packageBatches` in
- * `embedded-runner.luau`), so that run is what its VMs split.
- *
- * @param entries - Workspace entries, in run order.
- * @returns The longest run of consecutive entries for one package.
- */
-function largestPackageSize(entries: Array<WorkspaceEntry>): number {
-	let largest = 0;
-	let run = 0;
-	for (const [index, { pkg }] of entries.entries()) {
-		run = pkg === entries[index - 1]?.pkg ? run + 1 : 1;
-		largest = Math.max(largest, run);
+function resolveVmHostCount(vmParallel: ParallelOption, configCount: number): number | undefined {
+	if (vmParallel === undefined) {
+		return undefined;
 	}
 
-	return largest;
-}
-
-/**
- * The configs + filtered injection mounts the single-/multi-project configs
- * path consumes (`Runner.runProjects`). `runtimeStubMounts[i]` is parallel to
- * `configs[i]`: the DataModel paths the runner injects `jest.config` into,
- * excluding mounts where Rojo already syncs a user-authored config.
- *
- * @param jobs - Jobs of the run.
- * @returns The configs and their injection mounts.
- */
-function buildConfigEntries(jobs: Array<ProjectJob>): ConfigEntries {
-	return {
-		configs: jobs.map((job) => buildJestArgv(job)),
-		runtimeStubMounts: jobs.map((job) => job.runtimeInjectionPaths ?? []),
-	};
+	const requested = vmParallel === "auto" ? configCount : Math.floor(vmParallel);
+	const hostCount = Math.min(requested, configCount, VM_HOST_POOL_SIZE);
+	return hostCount > 1 ? hostCount : undefined;
 }

@@ -41,7 +41,7 @@ function suiteResult(files: Array<TestFileResult>): JestResult {
 		numPassedTests: countStatus(cases, "passed"),
 		numPendingTests: 0,
 		numTotalTests: cases.length,
-		startTime: Date.now(),
+		startTime: 0,
 		success: numberFailedTests === 0,
 		testResults: files,
 	};

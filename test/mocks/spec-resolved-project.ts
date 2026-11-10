@@ -1,5 +1,5 @@
 import type { ResolvedProjectConfig } from "#src/config/projects.ts";
-import type { ResolvedConfig } from "#src/config/schema.ts";
+import type { ResolvedConfig } from "#src/config/resolved-config.ts";
 import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
 
 export function makeResolvedProject(

@@ -1,10 +1,10 @@
 import path from "node:path";
 
+import { formatDuration, type Styles } from "../terminal/palette.ts";
 import { hasExecError } from "../types/exec-error-file.ts";
 import type { JestResult, TestCaseResult, TestFileResult } from "../types/jest-result-types.ts";
+import { countFileBuckets } from "./failure-model.ts";
 import { type FormatOptions, resolveDisplayPath } from "./shared.ts";
-import { formatDuration, type Styles } from "./styles.ts";
-import { countFileBuckets } from "./summary.ts";
 
 /**
  * Totals for one project's header line.
@@ -96,9 +96,6 @@ export function formatFileSummary({ file, options, styles }: FormatFileSummaryOp
  * @returns The project's totals.
  */
 export function computeProjectStats(result: JestResult): ProjectStats {
-	// The file counts come from countFileBuckets rather than a second walk of
-	// the same list: the header and the trailing `Test Files` row report the
-	// same files, so they answer to one predicate.
 	const buckets = countFileBuckets(result);
 
 	let durationMs = 0;
@@ -147,13 +144,6 @@ function testDurationMs(test: TestCaseResult): number | undefined {
 	return test.duration;
 }
 
-/**
- * A group of tests that all skipped has no duration to report, which is not the
- * same as a duration of zero — hence the emptiness check rather than `> 0`.
- * @param tests - Tests of one describe group.
- * @param styles - Palette to render with.
- * @returns The styled duration, or empty when no test was timed.
- */
 function formatGroupDuration(tests: Array<TestCaseResult>, styles: Styles): string {
 	const durations = tests
 		.filter((testCase) => countsTowardDuration(testCase))
@@ -174,9 +164,6 @@ function formatTestInGroup(testCase: TestCaseResult, styles: Styles): string {
 	const duration = durationMs !== undefined ? formatDuration(durationMs, styles) : "";
 	if (testCase.status === "passed") {
 		const marker = styles.status.pass("     ✓");
-		// Red title is intentional: this function only runs inside failed suites.
-		// The green ✓ already shows the individual test passed — the red reflects
-		// the parent suite's failure.
 		const title = styles.status.fail(` ${testCase.title}`);
 		return `${marker}${title}${duration}`;
 	}
@@ -186,7 +173,6 @@ function formatTestInGroup(testCase: TestCaseResult, styles: Styles): string {
 		return `${styles.status.fail(failedText)}${duration}`;
 	}
 
-	// skipped / todo / disabled — duration intentionally suppressed (didn't run)
 	const symbol = testCase.status === "todo" ? "□" : "↓";
 	return styles.status.pending(`     ${symbol} ${testCase.title}`);
 }
@@ -254,8 +240,6 @@ function formatExecErrorFileSummary({
 	formattedPath: string;
 	styles: Styles;
 }): string {
-	// A clock rather than a cross: the file line is the first thing read, and a
-	// run that ran out of time is acted on differently from one that threw.
 	const symbol = file.timedOut === true ? styles.status.pending("⏱") : styles.status.fail("✗");
 	return ` ${symbol} ${formattedPath}`;
 }

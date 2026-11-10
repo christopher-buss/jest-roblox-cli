@@ -2,7 +2,7 @@ import process from "node:process";
 import type { MockInstance } from "vitest";
 import { vi } from "vitest";
 
-import type { ResolvedConfig } from "#src/config/schema.ts";
+import type { ResolvedConfig } from "#src/config/resolved-config.ts";
 import type { ExecuteResult } from "#src/executor/executor-types.ts";
 import type { JestResult } from "#src/types/jest-result-types.ts";
 import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
@@ -35,7 +35,6 @@ export function makeJestResult(overrides: Partial<JestResult> = {}): JestResult 
 export function makeExecuteResult(overrides: Partial<ExecuteResult> = {}): ExecuteResult {
 	return {
 		exitCode: 0,
-		output: "",
 		result: makeJestResult(),
 		timing: {
 			executionMs: 100,

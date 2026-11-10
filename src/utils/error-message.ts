@@ -1,7 +1,5 @@
 /**
- * Message text for an unknown thrown value: `Error.message` when it is an
- * `Error`, its string form otherwise. Lets a `catch` that only formats a
- * warning line read the message without narrowing at every site.
+ * Message text for an unknown thrown value.
  * @param err - The thrown value.
  * @returns The message text.
  */

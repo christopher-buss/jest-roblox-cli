@@ -1,10 +1,10 @@
-import type { RojoProject } from "../types/rojo.ts";
-import { listDataModelMounts } from "../types/rojo.ts";
-import type { TsconfigMapping } from "../types/tsconfig-types.ts";
+import type { RojoProject } from "@isentinel/rojo-utils";
+import { listMounts } from "@isentinel/rojo-utils";
+
+import type { TsconfigMapping } from "../tsconfig/tsconfig-mappings.ts";
+import { findMapping, replacePrefix } from "../tsconfig/tsconfig-mappings.ts";
 import type { FileSystem } from "../utils/file-system.ts";
-import { nodeFileSystem } from "../utils/file-system.ts";
-import { resolveFromDirectory } from "../utils/normalize-windows-path.ts";
-import { findMapping, replacePrefix } from "../utils/tsconfig-mapping.ts";
+import { normalizeWindowsPath, resolveFromDirectory } from "../utils/normalize-windows-path.ts";
 
 const INIT_SEGMENT = /(^|\/)(init)(\.|\/)/;
 const LEADING_DOT_SLASH = /^\.\//;
@@ -15,6 +15,14 @@ const TS_EXTENSION = /\.ts$/;
 export interface PathResolver {
 	/** Probes disk (`.luau` then `.lua`) for paths with no tsconfig mapping. */
 	resolve(dataModelPath: string): ResolvedPath | undefined;
+	/** Where a slash-separated snapshot path lands on disk. */
+	resolveSnapshot(virtualPath: string): ResolvedSnapshotPath | undefined;
+}
+
+/** Disk locations of one snapshot file. */
+interface ResolvedSnapshotPath {
+	filePath: string;
+	outPath?: string | undefined;
 }
 
 interface ResolvedPath {
@@ -23,11 +31,24 @@ interface ResolvedPath {
 	mapping?: TsconfigMapping;
 }
 
+interface MappedPaths {
+	mappings: ReadonlyArray<TsconfigMapping>;
+	rootDirectory: string | undefined;
+}
+
+interface SegmentedMount {
+	basePath: string;
+	segments: Array<string>;
+}
+
+interface MountMatch {
+	basePath: string;
+	suffix: string;
+}
+
 interface PathResolverConfig {
-	/** Where an unmapped path is probed. Defaults to the real filesystem. */
-	fileSystem?: FileSystem;
-	mappings?: ReadonlyArray<TsconfigMapping>;
-	/** Folder relative mounts resolve in; without it, paths stay relative. */
+	fileSystem: FileSystem;
+	mappings?: ReadonlyArray<TsconfigMapping> | undefined;
 	rootDirectory?: string | undefined;
 }
 
@@ -51,34 +72,73 @@ export function luauInitToIndex(filePath: string): string {
  */
 export function createPathResolver(
 	rojoProject: RojoProject,
-	{ fileSystem = nodeFileSystem, mappings, rootDirectory }: PathResolverConfig = {},
+	{ fileSystem, mappings = [], rootDirectory }: PathResolverConfig,
 ): PathResolver {
-	const rojoMappings = new Map(listDataModelMounts(rojoProject.tree, "."));
-
-	const tsconfigMappings = mappings ?? [];
-	const sortedRojoMappings = [...rojoMappings].sort(([a], [b]) => b.length - a.length);
+	const mounts = sortMounts(rojoProject);
 
 	return {
 		resolve(dataModelPath: string): ResolvedPath | undefined {
-			for (const [prefix, basePath] of sortedRojoMappings) {
-				if (dataModelPath !== prefix && !dataModelPath.startsWith(`${prefix}.`)) {
-					continue;
-				}
-
-				const suffix = dataModelPath.slice(prefix.length + 1);
-				const result =
-					suffix === "" ? basePath : `${basePath}/${convertToFilePath(suffix)}`;
-
-				return resolveMountedPath(result, {
-					fileSystem,
-					mappings: tsconfigMappings,
-					rootDirectory,
-				});
+			const match = matchMount(mounts, { dataModelPath, separator: "." });
+			if (match === undefined) {
+				return undefined;
 			}
 
-			return undefined;
+			const { basePath, suffix } = match;
+			const result = suffix === "" ? basePath : `${basePath}/${convertToFilePath(suffix)}`;
+			return resolveMountedPath(result, { fileSystem, mappings, rootDirectory });
+		},
+
+		resolveSnapshot(virtualPath: string): ResolvedSnapshotPath | undefined {
+			// getParent in RobloxShared joins with \ on non-unix paths.
+			const match = matchMount(mounts, {
+				dataModelPath: normalizeWindowsPath(virtualPath),
+				separator: "/",
+			});
+			return match === undefined
+				? undefined
+				: resolveSnapshotPath(match, { mappings, rootDirectory });
 		},
 	};
+}
+
+function sortMounts(rojoProject: RojoProject): Array<SegmentedMount> {
+	return listMounts(rojoProject.tree)
+		.sort((a, b) => b.dataModelPath.length - a.dataModelPath.length)
+		.map(({ dataModelPath, fsPath }) => {
+			return { basePath: fsPath, segments: dataModelPath.split("/") };
+		});
+}
+
+function matchMount(
+	mounts: ReadonlyArray<SegmentedMount>,
+	{ dataModelPath, separator }: { dataModelPath: string; separator: "." | "/" },
+): MountMatch | undefined {
+	for (const { basePath, segments } of mounts) {
+		const prefix = segments.join(separator);
+		if (dataModelPath === prefix || dataModelPath.startsWith(`${prefix}${separator}`)) {
+			return { basePath, suffix: dataModelPath.slice(prefix.length + 1) };
+		}
+	}
+
+	return undefined;
+}
+
+function toDisk(rootDirectory: string | undefined, filePath: string): string {
+	return rootDirectory === undefined ? filePath : resolveFromDirectory(rootDirectory, filePath);
+}
+
+function resolveSnapshotPath(
+	{ basePath, suffix }: MountMatch,
+	{ mappings, rootDirectory }: MappedPaths,
+): ResolvedSnapshotPath {
+	const mounted = suffix === "" ? basePath : `${basePath}/${suffix}`;
+	const mapping = findMapping({ filePath: mounted, mappings });
+	if (mapping === undefined) {
+		return { filePath: toDisk(rootDirectory, mounted) };
+	}
+
+	const source = replacePrefix({ filePath: mounted, from: mapping.outDir, to: mapping.rootDir });
+	return { filePath: toDisk(rootDirectory, source), outPath: toDisk(rootDirectory, mounted) };
 }
 
 function mapTypeScriptPath(filePath: string, mapping: TsconfigMapping): string {
@@ -86,10 +146,6 @@ function mapTypeScriptPath(filePath: string, mapping: TsconfigMapping): string {
 		.replace(LEADING_DOT_SLASH, "")
 		.replace(LUA_EXTENSION, "");
 	return luauInitToIndex(`${mapped}.ts`);
-}
-
-function toDisk(rootDirectory: string | undefined, filePath: string): string {
-	return rootDirectory === undefined ? filePath : resolveFromDirectory(rootDirectory, filePath);
 }
 
 function toLuauPath(tsPath: string, mapping: TsconfigMapping): string {
@@ -119,12 +175,7 @@ function findLuaFile(fileSystem: FileSystem, basePath: string): string {
 
 function resolveMountedPath(
 	mountedPath: string,
-	{
-		fileSystem,
-		mappings,
-		rootDirectory,
-	}: Pick<PathResolverConfig, "rootDirectory"> &
-		Required<Pick<PathResolverConfig, "fileSystem" | "mappings">>,
+	{ fileSystem, mappings, rootDirectory }: MappedPaths & { fileSystem: FileSystem },
 ): ResolvedPath {
 	const mapping = findMapping({ filePath: mountedPath, mappings });
 	if (mapping !== undefined) {
@@ -149,7 +200,6 @@ function convertToFilePath(suffix: string): string {
 		const part = parts[index]!;
 		const nextPart = parts[index + 1];
 
-		// Only combine with spec/test if it's the last part (filename suffix)
 		if ((nextPart === "spec" || nextPart === "test") && index + 2 === parts.length) {
 			result.push(`${part}.${nextPart}`);
 			index++;

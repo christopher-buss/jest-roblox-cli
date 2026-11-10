@@ -63,11 +63,13 @@ local function testRecordsCoverage()
 	local addEventHandler, dispatch = makeDispatcher()
 	local state = { currentTestName = "Foo > adds", testPath = makeFakeFile() }
 	local cov = {}
-	local records = PerTestCoverage.install(addEventHandler, function()
+	local installation = { failure = nil, records = {} }
+	PerTestCoverage.install(addEventHandler, function()
 		return state
 	end, function()
 		return cov
-	end)
+	end, installation)
+	local records = installation.records
 
 	dispatch({ name = "test_start" })
 	cov["out/m.luau"] = { s = { 1 } }
@@ -87,11 +89,13 @@ local function testDropsEmptyTest()
 	local addEventHandler, dispatch = makeDispatcher()
 	local state = { currentTestName = "Foo > noop", testPath = makeFakeFile() }
 	local cov = { ["out/m.luau"] = { s = { 1 } } }
-	local records = PerTestCoverage.install(addEventHandler, function()
+	local installation = { failure = nil, records = {} }
+	PerTestCoverage.install(addEventHandler, function()
 		return state
 	end, function()
 		return cov
-	end)
+	end, installation)
+	local records = installation.records
 
 	dispatch({ name = "test_start" })
 	-- nothing changes before test_done
@@ -105,11 +109,13 @@ local function testSequentialTests()
 	local addEventHandler, dispatch = makeDispatcher()
 	local state = { currentTestName = "first", testPath = makeFakeFile() }
 	local cov = { ["out/m.luau"] = { s = { 0 } } }
-	local records = PerTestCoverage.install(addEventHandler, function()
+	local installation = { failure = nil, records = {} }
+	PerTestCoverage.install(addEventHandler, function()
 		return state
 	end, function()
 		return cov
-	end)
+	end, installation)
+	local records = installation.records
 
 	dispatch({ name = "test_start" })
 	cov["out/m.luau"].s[1] = 1
@@ -125,16 +131,19 @@ local function testSequentialTests()
 	check(records[2].testCaseId == "second", "T3: second test recorded")
 end
 
--- T4: an error while reading the test identity must be swallowed — circus does
--- not guard event handlers, so a throw would break the whole coverage run.
-local function testHandlerSwallowsErrors()
+-- T4: an error while reading the test identity must not propagate — circus does
+-- not guard event handlers — but is recorded on the installation, so the run
+-- fails loudly instead of reading as "no test covers this line".
+local function testHandlerRecordsErrors()
 	local addEventHandler, dispatch = makeDispatcher()
 	local cov = {}
-	local records = PerTestCoverage.install(addEventHandler, function()
+	local installation = { failure = nil, records = {} }
+	PerTestCoverage.install(addEventHandler, function()
 		error("matcher state unavailable")
 	end, function()
 		return cov
-	end)
+	end, installation)
+	local records = installation.records
 
 	dispatch({ name = "test_start" })
 	cov["out/m.luau"] = { s = { 1 } }
@@ -142,6 +151,16 @@ local function testHandlerSwallowsErrors()
 
 	check(ok, "T4: a throwing identity lookup must not propagate out of the handler")
 	check(#records == 0, "T4: nothing recorded when the identity is unavailable")
+	check(
+		string.find(installation.failure or "", "matcher state unavailable", 1, true) ~= nil,
+		"T4: the handler failure is recorded on the installation"
+	)
+
+	installation.failure = "first"
+	dispatch({ name = "test_start" })
+	cov["out/m.luau"] = { s = { 2 } }
+	dispatch({ name = "test_done" })
+	check(installation.failure == "first", "T4: the first failure is kept")
 end
 
 -- === A jest that rebuilds its module registry per test file ===
@@ -338,7 +357,7 @@ end
 testRecordsCoverage()
 testDropsEmptyTest()
 testSequentialTests()
-testHandlerSwallowsErrors()
+testHandlerRecordsErrors()
 testInstallsInEveryTestFile()
 testDisarmStopsAttributing()
 testMissingAddEventHandlerIsReported()

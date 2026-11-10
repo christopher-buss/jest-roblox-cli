@@ -1,4 +1,5 @@
 export default {
+	luauRoots: ["out-test"],
 	rojoProject: "test.project.json",
 	test: {
 		passWithNoTests: true,

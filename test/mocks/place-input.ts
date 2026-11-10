@@ -1,8 +1,13 @@
-import type { Backend } from "#src/backends/interface.ts";
+import { fromAny } from "@total-typescript/shoehorn";
 
-/** The `placeInput` each real backend declares, for fakes built from a kind. */
-export const PLACE_INPUT_BY_KIND: Record<Backend["kind"], Backend["placeInput"]> = {
-	"open-cloud": "built",
-	"studio": "none",
-	"studio-cli": "own",
-};
+import type { Backend } from "#src/backends/dispatch-request.ts";
+import type { BackendResult, DispatchBase } from "#src/backends/interface.ts";
+
+export function fakeBackendOfKind(
+	kind: Backend["kind"],
+	fields: Pick<Backend, "closeAsync"> & {
+		runTestsAsync: (request: DispatchBase) => Promise<BackendResult>;
+	},
+): Backend {
+	return fromAny<Backend, unknown>({ ...fields, kind });
+}

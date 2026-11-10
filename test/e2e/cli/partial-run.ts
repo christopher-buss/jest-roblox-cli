@@ -1,11 +1,11 @@
 import { type } from "arktype";
 
-import { startFakeOpenCloudServerAsync } from "#test/e2e/cli/fake-open-cloud.ts";
+import { startFakeOpenCloudServerAsync } from "#test/harness/fake-open-cloud.ts";
 import {
 	buildPassingJestOutput,
 	createOpenCloudEnvironment,
 	runCliAsync,
-} from "#test/e2e/cli/helpers.ts";
+} from "#test/harness/helpers.ts";
 
 /** A CLI run on the fake Open Cloud backend, and the scripts it dispatched. */
 export interface PartialRunResult {

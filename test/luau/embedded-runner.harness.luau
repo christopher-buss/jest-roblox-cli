@@ -573,11 +573,20 @@ stubs["../infinite-yield"] = __INFINITE_YIELD_MODULE__
 -- measures. It is pure over strings, so it needs nothing from this file.
 stubs["./result-budget"] = __RESULT_BUDGET_MODULE__
 
+-- The shared run core sits at the luau root and asks for its siblings as `./`.
+for key, stub in table.clone(stubs) do
+	local name = string.match(key, "^%.%./(.+)$")
+	if name ~= nil and stubs["./" .. name] == nil then
+		stubs["./" .. name] = stub
+	end
+end
+stubs["../run-once"] = __RUN_ONCE_MODULE__
+
 local EmbeddedRunner = __MODULE__
 
 local function entryFor(pkg: string)
 	-- `pkg` rides on the config so the Jest stub knows whose run it is.
-	return { pkg = pkg, project = "unit", config = { pkg = pkg } }
+	return { pkg = pkg, project = "unit", config = { pkg = pkg, projects = { "unit" } } }
 end
 
 local function messagesOf(result)
@@ -677,6 +686,19 @@ local function runStealing(pkgs, payload)
 	end
 
 	return EmbeddedRunner.runWorkStealing({}, stealingPayload(pkgs, payload))
+end
+
+-- Each result echoes the job index its config carried, so the CLI pairs it
+-- with its job whatever order the results come back in.
+local function testResultsNameTheirJob()
+	local payload = payloadFor({ "a", "b" })
+	payload.entries[1].config.runnerJobIndex = 7
+	payload.entries[2].config.runnerJobIndex = 3
+	local results = EmbeddedRunner.runEmbedded({}, payload)
+
+	check(results[1].jobIndex == 7, "job index: a names its job")
+	check(results[2].jobIndex == 3, "job index: b names its job")
+	check(payload.entries[1].config.runnerJobIndex == 7, "job index: the payload keeps its index")
 end
 
 -- T1: the capture opens before the package is materialized and spans its run,
@@ -810,7 +832,12 @@ local function coveredEntryFor(pkg: string)
 	return {
 		pkg = pkg,
 		project = "unit",
-		config = { pkg = pkg, runnerCoverage = true, runnerPerTestCoverage = true },
+		config = {
+			pkg = pkg,
+			projects = { "unit" },
+			runnerCoverage = true,
+			runnerPerTestCoverage = true,
+		},
 	}
 end
 
@@ -1252,7 +1279,7 @@ local function testTheTapIsPutBack()
 end
 
 local function projectEntry(pkg: string, project: string)
-	return { pkg = pkg, project = project, config = { pkg = pkg } }
+	return { pkg = pkg, project = project, config = { pkg = pkg, projects = { project } } }
 end
 
 -- Stands in for the plugin's VM hosts: each entry runs as a host would run it,
@@ -1376,6 +1403,7 @@ local function testAbandonedStagedEntryLeavesTheStage()
 	check(#stagingCalls == 0, "T36: the host does not tear the stage down")
 end
 
+testResultsNameTheirJob()
 testWindowAndNoBleedAcrossPackages()
 testRecordShape()
 testFailuresKeepOutput()

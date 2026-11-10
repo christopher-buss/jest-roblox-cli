@@ -1,36 +1,16 @@
-/**
- * Host-only Type Test config. Valid at root `test:` and per-project `test:`.
- */
+/** Host-only Type Test config, at root and per-project `test:`. */
 export interface TypecheckConfig {
-	/**
-	 * Enable Type Tests (`*.spec-d.{ts,luau}`/`*.test-d.{ts,luau}`). This is
-	 * the only gate — setting other typecheck fields does not auto-enable.
-	 * Default `false`.
-	 */
+	/** Enable Type Tests; other fields do not enable them. Default `false`. */
 	enabled?: boolean | undefined;
 	/** Globs excluded from Type Test discovery. */
 	exclude?: Array<string> | undefined;
-	/**
-	 * When `false` (default), type errors in non-test source files surface as
-	 * source-level failures (vitest parity). When `true`, errors outside the
-	 * discovered Type Test files are suppressed.
-	 */
+	/** Suppress type errors outside Type Test files. Default `false`. */
 	ignoreSourceErrors?: boolean | undefined;
-	/**
-	 * Globs selecting Type Test files. When unset, derived from the project's
-	 * runtime `include` (`.spec.` → `.spec-d.`).
-	 */
+	/** Type Test globs; derived from the runtime `include` when unset. */
 	include?: Array<string> | undefined;
-	/**
-	 * Run only Type Tests and skip Runtime Tests. Implies `enabled`. Default
-	 * `false`.
-	 */
+	/** Run only Type Tests; implies `enabled`. Default `false`. */
 	only?: boolean | undefined;
-	/**
-	 * Milliseconds to wait for the tsgo process to start before the pass
-	 * throws. Bounds only startup, not the type-check itself — a slow check is
-	 * governed by the run-level `timeout`. Default `10000`.
-	 */
+	/** Milliseconds to wait for tsgo to start. Default `10000`. */
 	spawnTimeout?: number | undefined;
 	/** Custom tsconfig used for type checking (root-only in projects mode). */
 	tsconfig?: string | undefined;
@@ -75,11 +55,20 @@ export interface ResolvedTypecheckConfig {
 }
 
 /**
- * Merges the root `test.typecheck`, per-project `test.typecheck`, and CLI
- * typecheck flags into one resolved typecheck config. Precedence per field is
- * CLI > project > root > default. `only` implies `enabled` (mirroring the
- * CLI's `--typecheckOnly`). `include` is never derived here — the caller falls
- * back to `deriveTypecheckInclude(runtimeInclude)` when it is unset.
+ * The typecheck CLI flags, in config shape.
+ * @param cli - Parsed CLI options.
+ * @returns The flags as `test.typecheck` fields.
+ */
+export function toTypecheckCliOptions(cli: {
+	typecheck?: boolean | undefined;
+	typecheckOnly?: boolean | undefined;
+	typecheckTsconfig?: string | undefined;
+}): TypecheckCliOptions {
+	return { enabled: cli.typecheck, only: cli.typecheckOnly, tsconfig: cli.typecheckTsconfig };
+}
+
+/**
+ * Merge typecheck layers per field: CLI > project > root > default.
  *
  * @param layers - CLI, project and root typecheck settings.
  * @returns The resolved typecheck config.

@@ -1,7 +1,8 @@
+import type { RojoTreeNode } from "@isentinel/rojo-utils";
+
 import { describe, expect, it } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
-import type { RojoTreeNode } from "../types/rojo.ts";
 import { createFsClassifier, resolveMounts } from "./project-mounts.ts";
 
 const simpleRojoTree: RojoTreeNode = {

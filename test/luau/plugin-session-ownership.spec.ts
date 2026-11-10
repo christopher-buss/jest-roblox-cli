@@ -1,21 +1,15 @@
-import { spawnLute } from "@isentinel/luau-ast";
-
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
-import { describe, expect, it, onTestFinished } from "vitest";
+import { describe, expect, it } from "vitest";
 
-import { LUTE_HARNESS_TIMEOUT } from "#test/luau/lute-timeout.ts";
+import { readHarness, spawnHarness } from "#test/luau/lute-harness.ts";
 
 const REPOSITORY_DIRECTORY = path.resolve(import.meta.dirname, "../..");
 const PLUGIN_SOURCE = fs.readFileSync(
 	path.join(REPOSITORY_DIRECTORY, "plugin/src/test-in-run-mode.server.luau"),
 	"utf8",
 );
-const HARNESS_SOURCE = fs.readFileSync(
-	path.join(import.meta.dirname, "plugin-session-ownership.harness.luau"),
-	"utf8",
-);
+const HARNESS_SOURCE = readHarness("plugin-session-ownership");
 
 function moduleFactories(): string {
 	const visited = new Set<string>();
@@ -47,6 +41,8 @@ ${source}
 end`);
 	}
 
+	visit("envelope");
+	visit("protocol");
 	visit("vm-parallel");
 	visit("staging/embedded-runner");
 	return factories.join("\n");
@@ -55,7 +51,7 @@ end`);
 const MODULE_FACTORIES = moduleFactories();
 
 const MARKED_WORKSPACE_REQUEST =
-	"{ test = true, protocolVersion = 10, workspace = { entries = {} } }";
+	"{ test = true, protocolVersion = 12, workspace = { entries = {} } }";
 
 interface RunState {
 	edit?: boolean;
@@ -80,13 +76,8 @@ function runSession({
 	runState = {},
 	sideChannelPayload = "nil",
 }: SessionOptions): string {
-	const directory = fs.mkdtempSync(path.join(os.tmpdir(), "plugin-session-ownership-"));
-	onTestFinished(() => {
-		fs.rmSync(directory, { force: true, recursive: true });
-	});
-	const scriptPath = path.join(directory, "harness.luau");
-	fs.writeFileSync(
-		scriptPath,
+	return spawnHarness(
+		"plugin-session-ownership-",
 		HARNESS_SOURCE.replace("__REQUEST__", () => request)
 			.replace("__SIDE_CHANNEL_PAYLOAD__", () => sideChannelPayload)
 			.replace("__RUN_STATE__", () => luauRunState(runState))
@@ -94,10 +85,9 @@ function runSession({
 			.replace("__PLUGIN__", () => PLUGIN_SOURCE)
 			.replace("__ASSERTION__", () => assertion),
 	);
-	return spawnLute({ args: [], scriptPath });
 }
 
-describe("studio plugin session ownership", { timeout: LUTE_HARNESS_TIMEOUT }, () => {
+describe("studio plugin session ownership", () => {
 	it("should leave an unmarked nativeAudit session to its caller", () => {
 		expect.assertions(1);
 
@@ -116,7 +106,7 @@ describe("studio plugin session ownership", { timeout: LUTE_HARNESS_TIMEOUT }, (
 			runSession({
 				assertion:
 					'assert(#results == 0, "Unmarked matching-protocol session called EndTest")',
-				request: "{ protocolVersion = 10 }",
+				request: "{ protocolVersion = 12 }",
 			}),
 		).toContain("ALL OK");
 	});
@@ -138,7 +128,7 @@ describe("studio plugin session ownership", { timeout: LUTE_HARNESS_TIMEOUT }, (
 		expect(
 			runSession({
 				assertion: 'assert(#results == 0, "False-marker session called EndTest")',
-				request: "{ test = false, protocolVersion = 10 }",
+				request: "{ test = false, protocolVersion = 12 }",
 			}),
 		).toContain("ALL OK");
 	});
@@ -149,7 +139,7 @@ describe("studio plugin session ownership", { timeout: LUTE_HARNESS_TIMEOUT }, (
 		expect(
 			runSession({
 				assertion: 'assert(#results == 0, "String-marker session called EndTest")',
-				request: '{ test = "true", protocolVersion = 10 }',
+				request: '{ test = "true", protocolVersion = 12 }',
 			}),
 		).toContain("ALL OK");
 	});
@@ -189,7 +179,7 @@ assert(output.success == false and string.find(output.err, "CLI v9", 1, true), o
 local output = HttpService:JSONDecode(results[1].jestOutput)
 assert(output.success == false and string.find(output.err, "plugin key mismatch", 1, true), output.err)`,
 				request:
-					'{ test = true, protocolVersion = 10, pluginKey = "another-installed-plugin" }',
+					'{ test = true, protocolVersion = 12, pluginKey = "another-installed-plugin" }',
 			}),
 		).toContain("ALL OK");
 	});
@@ -201,7 +191,7 @@ assert(output.success == false and string.find(output.err, "plugin key mismatch"
 			runSession({
 				assertion: `assert(#results == 1, "Marked workspace session must end")
 local output = HttpService:JSONDecode(results[1].jestOutput)
-assert(output.entries ~= nil and #output.entries == 0 and output.bailed == false and output.deferred == false,
+assert(output.entries ~= nil and #output.entries == 0 and output.bailed == nil and output.deferred == nil,
     output.err or "Expected an empty workspace result")`,
 				request: MARKED_WORKSPACE_REQUEST,
 			}),
@@ -216,7 +206,7 @@ assert(output.entries ~= nil and #output.entries == 0 and output.bailed == false
 				assertion:
 					'assert(#results == 0 and #relayedResults == 0, "Unmarked nil-relay payload ended the session")',
 				request: "nil",
-				sideChannelPayload: '{ nativeAudit = "request-123", protocolVersion = 10 }',
+				sideChannelPayload: '{ nativeAudit = "request-123", protocolVersion = 12 }',
 			}),
 		).toContain("ALL OK");
 	});
@@ -230,7 +220,7 @@ assert(output.entries ~= nil and #output.entries == 0 and output.bailed == false
 					'assert(socketsOpened == 0, "A copy with another key opened the studio-cli socket")',
 				request: "nil",
 				sideChannelPayload:
-					'{ test = true, protocolVersion = 10, pluginKey = "another-installed-plugin" }',
+					'{ test = true, protocolVersion = 12, pluginKey = "another-installed-plugin" }',
 			}),
 		).toContain("ALL OK");
 	});

@@ -1,42 +1,34 @@
-import { fromAny } from "@total-typescript/shoehorn";
-
 import * as path from "node:path";
 import { assert, describe, expect, it, vi } from "vitest";
 
 import { createLuteChildProcess } from "#test/mocks/lute-child-process.ts";
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
-import { posixPath } from "#test/mocks/posix-path.ts";
 import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
-import type { ResolvedProjectConfig } from "../config/projects.ts";
-import type { ResolvedConfig } from "../config/schema.ts";
-import type { RojoResolverFactory } from "../utils/rojo-project-reader.ts";
+import type { ResolvedConfig } from "../config/resolved-config.ts";
+import type { SetupResolverFactory } from "../config/setup-resolver.ts";
+import type { TsconfigReader } from "../tsconfig/tsconfig-mappings.ts";
 import type { LoadedPackage } from "./package-loader.ts";
-import {
-	applyProjectFilter,
-	type PackageContext,
-	resolvePackageContextsAsync,
-} from "./project-contexts.ts";
+import { resolvePackageContextsAsync } from "./project-contexts.ts";
 
 const PACKAGE_DIRECTORY = path.resolve("/repo/packages/pkg");
 const ROJO_PROJECT_PATH = path.join(PACKAGE_DIRECTORY, "test.project.json");
 const CACHE_DIRECTORY = path.resolve("/repo/.jest-roblox/workspace");
-
-function makeProject(displayName: string): ResolvedProjectConfig {
-	return fromAny({ displayName });
-}
-
-function makeContext(name: string, projects: Array<string>): PackageContext {
-	return fromAny({
-		info: { name },
-		projects: projects.map(makeProject),
-	});
-}
 
 function rojoProject(mountPath: string): string {
 	return JSON.stringify({
 		name: "pkg",
 		tree: { $className: "DataModel", ReplicatedStorage: { Pkg: { $path: mountPath } } },
 	});
+}
+
+function unusedResolver(): SetupResolverFactory {
+	return vi.fn<SetupResolverFactory>(() => {
+		throw new Error("unexpected createSetupResolver call");
+	});
+}
+
+function noTsconfig(): TsconfigReader {
+	return vi.fn<TsconfigReader>(() => null);
 }
 
 function loadedPackage(overrides: Partial<ResolvedConfig>): LoadedPackage {
@@ -47,59 +39,18 @@ function loadedPackage(overrides: Partial<ResolvedConfig>): LoadedPackage {
 			rojoProjectPath: ROJO_PROJECT_PATH,
 		},
 		info: { name: "@halcyon/pkg", packageDirectory: PACKAGE_DIRECTORY },
-		pkgConfig: { ...createResolvedConfig(), rootDir: PACKAGE_DIRECTORY, ...overrides },
+		pkgConfig: {
+			...createResolvedConfig(),
+			rojoProject: ROJO_PROJECT_PATH,
+			rootDir: PACKAGE_DIRECTORY,
+			...overrides,
+		},
 	};
 }
 
-describe(applyProjectFilter, () => {
-	const noFilterCases: Array<Array<string> | undefined> = [undefined, []];
-
-	it.for(noFilterCases)("should return the original contexts for filter %j", (filter) => {
-		expect.assertions(1);
-
-		const contexts = [makeContext("@halcyon/a", ["unit"]), makeContext("@halcyon/b", ["e2e"])];
-
-		expect(applyProjectFilter(contexts, filter)).toBe(contexts);
-	});
-
-	it("should keep only requested projects and drop empty package contexts", () => {
-		expect.assertions(2);
-
-		const unit = makeProject("unit");
-		const integration = makeProject("integration");
-		const e2e = makeProject("e2e");
-		const first: PackageContext = fromAny({
-			info: { name: "@halcyon/a" },
-			projects: [unit, integration],
-		});
-		const second: PackageContext = fromAny({
-			info: { name: "@halcyon/b" },
-			projects: [e2e],
-		});
-
-		const filtered = applyProjectFilter([first, second], ["integration"]);
-
-		expect(filtered).toStrictEqual([{ ...first, projects: [integration] }]);
-		expect(filtered[0]!.projects[0]).toBe(integration);
-	});
-
-	it("should report every unknown name and every available project", () => {
-		expect.assertions(1);
-
-		const contexts = [
-			makeContext("@halcyon/a", ["unit", "integration"]),
-			makeContext("@halcyon/b", ["e2e"]),
-		];
-
-		expect(() => applyProjectFilter(contexts, ["missing", "other"])).toThrow(
-			"Unknown project name(s): missing, other. Available: unit, integration, e2e",
-		);
-	});
-});
-
 describe(resolvePackageContextsAsync, () => {
 	it("should synthesize one project from only the directory mounts in the Rojo tree", async () => {
-		expect.assertions(3);
+		expect.assertions(5);
 
 		const { fileSystem } = createMemoryFileSystem({
 			[path.join(PACKAGE_DIRECTORY, "src/shared/pkg.spec.luau")]: "",
@@ -115,32 +66,52 @@ describe(resolvePackageContextsAsync, () => {
 				},
 			}),
 		});
-		const statSync = vi.spyOn(fileSystem, "statSync");
 
 		const contexts = await resolvePackageContextsAsync({
 			cacheDirectory: CACHE_DIRECTORY,
 			childProcess: createLuteChildProcess({ version: "1.0.1" }),
+			createSetupResolver: unusedResolver(),
 			fileSystem,
-			loaded: [loadedPackage({ projects: [] })],
+			loaded: [
+				loadedPackage({
+					projects: [],
+					rojoProject: undefined,
+					testMatch: ["**/*.spec.ts", "**/*.spec-d.ts", "**/*.spec-d.luau"],
+				}),
+			],
+			tsconfigReader: noTsconfig(),
 		});
 		const context = contexts[0];
 		assert(context !== undefined);
 		const { projects } = context;
 		const firstProject = projects[0];
 		assert(firstProject !== undefined);
-		const packageDirectory = posixPath(PACKAGE_DIRECTORY);
-		const probedPaths = statSync.mock.calls.map(([file]) => file);
 
 		expect(projects).toHaveLength(1);
-		expect(firstProject.include).toStrictEqual(
-			createResolvedConfig().testMatch.map((pattern) => {
-				return path.posix.join("src/shared", pattern);
-			}),
-		);
-		expect(probedPaths).toStrictEqual([
-			path.posix.join(packageDirectory, "src/shared"),
-			path.posix.join(packageDirectory, "src/source.luau"),
+		expect(firstProject.include).toStrictEqual(["**/*.spec.ts"]);
+		expect(firstProject.displayName).toBe("pkg");
+		expect(firstProject.projects).toStrictEqual(["ReplicatedStorage/Shared"]);
+		expect(firstProject.typecheck!.include).toStrictEqual([
+			"**/*.spec-d.ts",
+			"**/*.spec-d.luau",
 		]);
+	});
+
+	it("should reject an implicit project whose roots have no Rojo mount", async () => {
+		expect.assertions(1);
+
+		const { fileSystem } = createMemoryFileSystem({ [ROJO_PROJECT_PATH]: rojoProject("src") });
+
+		await expect(
+			resolvePackageContextsAsync({
+				cacheDirectory: CACHE_DIRECTORY,
+				childProcess: createLuteChildProcess({ version: "1.0.1" }),
+				createSetupResolver: unusedResolver(),
+				fileSystem,
+				loaded: [loadedPackage({ luauRoots: ["unmounted"] })],
+				tsconfigReader: noTsconfig(),
+			}),
+		).rejects.toThrow("No test projects could be derived");
 	});
 
 	it("should read a project's jest.config.luau through the injected filesystem", async () => {
@@ -155,8 +126,10 @@ describe(resolvePackageContextsAsync, () => {
 		const contexts = await resolvePackageContextsAsync({
 			cacheDirectory: CACHE_DIRECTORY,
 			childProcess: createLuteChildProcess({ version: "1.0.1" }),
+			createSetupResolver: unusedResolver(),
 			fileSystem,
 			loaded: [loadedPackage({ projects: ["src/shared"] })],
+			tsconfigReader: noTsconfig(),
 		});
 
 		const project = contexts[0]!.projects[0]!;
@@ -178,8 +151,10 @@ describe(resolvePackageContextsAsync, () => {
 			resolvePackageContextsAsync({
 				cacheDirectory: CACHE_DIRECTORY,
 				childProcess: createLuteChildProcess({ version: "9.9.9" }),
+				createSetupResolver: unusedResolver(),
 				fileSystem,
 				loaded: [loadedPackage({ projects: ["src/shared"] })],
+				tsconfigReader: noTsconfig(),
 			}),
 		).rejects.toThrow('--version" printed "9.9.9"');
 	});
@@ -193,18 +168,14 @@ describe(resolvePackageContextsAsync, () => {
 			[ROJO_PROJECT_PATH]: rojoProject("src"),
 		});
 
-		const createResolver = vi.fn<RojoResolverFactory>().mockReturnValue(
-			fromAny({
-				getRbxPathFromFilePath() {
-					return ["ReplicatedStorage", "Pkg", "setup"];
-				},
-			}),
-		);
+		const createSetupResolver = vi
+			.fn<SetupResolverFactory>()
+			.mockReturnValue(() => "ReplicatedStorage/Pkg/setup");
 
 		const contexts = await resolvePackageContextsAsync({
 			cacheDirectory: CACHE_DIRECTORY,
 			childProcess: createLuteChildProcess({ version: "1.0.1" }),
-			createResolver,
+			createSetupResolver,
 			fileSystem,
 			loaded: [
 				loadedPackage({
@@ -225,9 +196,15 @@ describe(resolvePackageContextsAsync, () => {
 					],
 				}),
 			],
+			tsconfigReader: noTsconfig(),
 		});
 
-		expect(createResolver).toHaveBeenCalledWith(ROJO_PROJECT_PATH);
+		expect(createSetupResolver).toHaveBeenCalledExactlyOnceWith(
+			expect.objectContaining({
+				configDirectory: PACKAGE_DIRECTORY,
+				rojoConfigPath: ROJO_PROJECT_PATH,
+			}),
+		);
 		expect(contexts[0]!.projects[0]!.config.setupFiles).toStrictEqual([
 			"ReplicatedStorage/Pkg/setup",
 		]);

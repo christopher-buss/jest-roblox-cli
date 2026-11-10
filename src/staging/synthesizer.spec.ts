@@ -1,3 +1,5 @@
+import type { RojoTreeNode } from "@isentinel/rojo-utils";
+
 import { type } from "arktype";
 import * as path from "node:path";
 import type { Except } from "type-fest";
@@ -6,7 +8,7 @@ import { describe, expect, it } from "vitest";
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { posixPath, posixRoot } from "#test/mocks/posix-path.ts";
 import { configErrorLike } from "#test/mocks/run-config-error.ts";
-import type { RojoTreeNode } from "../types/rojo.ts";
+import type { PathRedirect } from "./path-redirect.ts";
 import type { PackageDescriptor } from "./synthesizer-types.ts";
 import { synthesize } from "./synthesizer.ts";
 
@@ -38,9 +40,11 @@ const synthesizedResultSchema = type({
 
 type MemoryFileSystem = ReturnType<typeof createMemoryFileSystem>["fileSystem"];
 
-type FooOverrides = Partial<
-	Except<PackageDescriptor, "name" | "packageDirectory" | "rojoProjectPath">
->;
+type FooOverrides = Partial<Except<PackageDescriptor, "name" | "rojoProjectPath">>;
+function redirect(luauRoot: string, to: string): PathRedirect {
+	return { from: posixRoot(path.join(FOO_DIR, luauRoot)), to: posixPath(to) };
+}
+
 function parseFixture(json: string): SynthesizedResult {
 	return synthesizedResultSchema.assert(JSON.parse(json));
 }
@@ -68,7 +72,6 @@ function synthesizeFoo(fileSystem: MemoryFileSystem, overrides: FooOverrides = {
 			{
 				name: "@halcyon/foo",
 				...overrides,
-				packageDirectory: FOO_DIR,
 				rojoProjectPath: FOO_PROJECT,
 			},
 		],
@@ -81,12 +84,10 @@ function synthesizeFooBar(fileSystem: MemoryFileSystem, barProject: string): str
 		packages: [
 			{
 				name: "@halcyon/foo",
-				packageDirectory: FOO_DIR,
 				rojoProjectPath: FOO_PROJECT,
 			},
 			{
 				name: "@halcyon/bar",
-				packageDirectory: path.dirname(barProject),
 				rojoProjectPath: barProject,
 			},
 		],
@@ -96,7 +97,7 @@ function synthesizeFooBar(fileSystem: MemoryFileSystem, barProject: string): str
 function synthesizeFooUnwrapped(fileSystem: MemoryFileSystem): string {
 	return synthesize({
 		fileSystem,
-		packages: [{ packageDirectory: FOO_DIR, rojoProjectPath: FOO_PROJECT }],
+		packages: [{ rojoProjectPath: FOO_PROJECT }],
 		wrap: false,
 	});
 }
@@ -114,7 +115,7 @@ function synthesizeShadowedPackage(packagePath: string): {
 		[path.join(FOO_DIR, "out/init.luau")]: "",
 	});
 	const result = synthesizeFoo(fileSystem, {
-		coverageRoots: [{ luauRoot: posixRoot("out"), shadowDir: shadowOut }],
+		redirects: [redirect("out", shadowOut)],
 	});
 	return { parsed: parseFixture(result), shadowOut };
 }
@@ -613,12 +614,10 @@ describe(synthesize, () => {
 				packages: [
 					{
 						name: "@halcyon/foo",
-						packageDirectory: FOO_DIR,
 						rojoProjectPath: FOO_PROJECT,
 					},
 					{
 						name: "@halcyon/bar",
-						packageDirectory: path.dirname(barProject),
 						rojoProjectPath: barProject,
 					},
 				],
@@ -766,7 +765,6 @@ describe(synthesize, () => {
 				packages: [
 					{
 						name: "@halcyon/foo",
-						packageDirectory: FOO_DIR,
 						rojoProjectPath: FOO_PROJECT,
 					},
 				],
@@ -853,12 +851,10 @@ describe(synthesize, () => {
 			packages: [
 				{
 					name: "@halcyon/bar",
-					packageDirectory: path.join(ROOT, "packages/bar"),
 					rojoProjectPath: barProject,
 				},
 				{
 					name: "@halcyon/foo",
-					packageDirectory: FOO_DIR,
 					rojoProjectPath: FOO_PROJECT,
 				},
 			],
@@ -918,7 +914,6 @@ describe(synthesize, () => {
 			packages: [
 				{
 					name: "@halcyon/bar",
-					packageDirectory: barDirectory,
 					rojoProjectPath: barProject,
 					stubMounts: [
 						{
@@ -929,7 +924,6 @@ describe(synthesize, () => {
 				},
 				{
 					name: "@halcyon/foo",
-					packageDirectory: FOO_DIR,
 					rojoProjectPath: FOO_PROJECT,
 					stubMounts: [
 						{
@@ -980,8 +974,7 @@ describe(synthesize, () => {
 			packages: [
 				{
 					name: "@halcyon/foo",
-					coverageRoots: [{ luauRoot: posixRoot("out-test"), shadowDir: shadowOut }],
-					packageDirectory: FOO_DIR,
+					redirects: [redirect("out-test", shadowOut)],
 					rojoProjectPath: FOO_PROJECT,
 					stubMounts: [
 						{
@@ -1032,7 +1025,6 @@ describe(synthesize, () => {
 					packages: [
 						{
 							name: "@halcyon/foo",
-							packageDirectory: FOO_DIR,
 							rojoProjectPath: FOO_PROJECT,
 							stubMounts: [
 								{
@@ -1073,7 +1065,6 @@ describe(synthesize, () => {
 			packages: [
 				{
 					name: "@halcyon/foo",
-					packageDirectory: FOO_DIR,
 					rojoProjectPath: FOO_PROJECT,
 					stubMounts: [],
 				},
@@ -1083,7 +1074,7 @@ describe(synthesize, () => {
 		expect(withEmpty).toBe(baseline);
 	});
 
-	it("should swap $path to the per-package coverage shadow dir when coverageRoots is set", () => {
+	it("should swap $path to the per-package coverage shadow dir when a redirect is set", () => {
 		expect.assertions(1);
 
 		const { parsed, shadowOut } = synthesizeShadowedPackage("out");
@@ -1091,7 +1082,7 @@ describe(synthesize, () => {
 		expect(stagedFoo(parsed, "ReplicatedStorage", "Pkg")!.$path).toBe(shadowOut);
 	});
 
-	it("should leave $path untouched for packages that opt out of coverageRoots", () => {
+	it("should leave $path untouched for packages that carry no redirect", () => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -1121,13 +1112,11 @@ describe(synthesize, () => {
 			packages: [
 				{
 					name: "@halcyon/bar",
-					packageDirectory: path.join(ROOT, "packages/bar"),
 					rojoProjectPath: barProject,
 				},
 				{
 					name: "@halcyon/foo",
-					coverageRoots: [{ luauRoot: posixRoot("out"), shadowDir: fooShadow }],
-					packageDirectory: FOO_DIR,
+					redirects: [redirect("out", fooShadow)],
 					rojoProjectPath: FOO_PROJECT,
 				},
 			],
@@ -1165,7 +1154,7 @@ describe(synthesize, () => {
 		});
 
 		const result = synthesizeFoo(fileSystem, {
-			coverageRoots: [{ luauRoot: posixRoot("out"), shadowDir: shadowOut }],
+			redirects: [redirect("out", shadowOut)],
 		});
 
 		const parsed = parseFixture(result);
@@ -1173,7 +1162,7 @@ describe(synthesize, () => {
 		expect(stagedFoo(parsed, "ReplicatedStorage", "Client")!.$path).toBe(`${shadowOut}/client`);
 	});
 
-	it("should normalize trailing slashes on $path before matching coverageRoots", () => {
+	it("should normalize trailing slashes on $path before matching redirects", () => {
 		expect.assertions(1);
 
 		const { parsed, shadowOut } = synthesizeShadowedPackage("out/");
@@ -1199,7 +1188,7 @@ describe(synthesize, () => {
 		});
 
 		const result = synthesizeFoo(fileSystem, {
-			coverageRoots: [{ luauRoot: posixRoot("out"), shadowDir: shadowOut }],
+			redirects: [redirect("out", shadowOut)],
 		});
 
 		const parsed = parseFixture(result);
@@ -1226,12 +1215,10 @@ describe(synthesize, () => {
 			packages: [
 				{
 					name: "@halcyon/bar",
-					packageDirectory: ROOT,
 					rojoProjectPath: barProject,
 				},
 				{
 					name: "@halcyon/foo",
-					packageDirectory: ROOT,
 					rojoProjectPath: FOO_PROJECT,
 				},
 			],
@@ -1241,12 +1228,10 @@ describe(synthesize, () => {
 			packages: [
 				{
 					name: "@halcyon/foo",
-					packageDirectory: ROOT,
 					rojoProjectPath: FOO_PROJECT,
 				},
 				{
 					name: "@halcyon/bar",
-					packageDirectory: ROOT,
 					rojoProjectPath: barProject,
 				},
 			],
@@ -1268,7 +1253,6 @@ describe(synthesize, () => {
 			packages: [
 				{
 					name: "@halcyon/foo",
-					packageDirectory: FOO_DIR,
 					rojoProjectPath: FOO_PROJECT,
 				},
 			],
@@ -1313,7 +1297,6 @@ describe(synthesize, () => {
 				loadStringEnabled: true,
 				packages: [
 					{
-						packageDirectory: FOO_DIR,
 						rojoProjectPath: FOO_PROJECT,
 					},
 				],
@@ -1346,7 +1329,6 @@ describe(synthesize, () => {
 				loadStringEnabled: true,
 				packages: [
 					{
-						packageDirectory: FOO_DIR,
 						rojoProjectPath: FOO_PROJECT,
 					},
 				],
@@ -1376,7 +1358,6 @@ describe(synthesize, () => {
 				fileSystem,
 				packages: [
 					{
-						packageDirectory: FOO_DIR,
 						rojoProjectPath: FOO_PROJECT,
 					},
 				],
@@ -1405,7 +1386,6 @@ describe(synthesize, () => {
 				fileSystem,
 				packages: [
 					{
-						packageDirectory: FOO_DIR,
 						rojoProjectPath: FOO_PROJECT,
 					},
 				],
@@ -1431,7 +1411,6 @@ describe(synthesize, () => {
 				loadStringEnabled: true,
 				packages: [
 					{
-						packageDirectory: FOO_DIR,
 						rojoProjectPath: FOO_PROJECT,
 					},
 				],
@@ -1464,7 +1443,6 @@ describe(synthesize, () => {
 				loadStringEnabled: true,
 				packages: [
 					{
-						packageDirectory: FOO_DIR,
 						rojoProjectPath: FOO_PROJECT,
 					},
 				],
@@ -1577,7 +1555,7 @@ describe(synthesize, () => {
 			).toStrictEqual({ optional: "src" });
 		});
 
-		it("should redirect the inner path of an optional $path under coverageRoots[].luauRoot", () => {
+		it("should redirect the inner path of an optional $path under a redirect", () => {
 			expect.assertions(1);
 
 			const shadowDirectory = path.join(FOO_DIR, ".jest-roblox/coverage/src");
@@ -1595,8 +1573,7 @@ describe(synthesize, () => {
 				fileSystem,
 				packages: [
 					{
-						coverageRoots: [{ luauRoot: posixRoot("src"), shadowDir: shadowDirectory }],
-						packageDirectory: FOO_DIR,
+						redirects: [redirect("src", shadowDirectory)],
 						rojoProjectPath: FOO_PROJECT,
 					},
 				],
@@ -1608,7 +1585,7 @@ describe(synthesize, () => {
 			});
 		});
 
-		it("should redirect $path entries under coverageRoots[].luauRoot to the shadow directory", () => {
+		it("should redirect $path entries under a redirect to the shadow directory", () => {
 			expect.assertions(1);
 
 			const { fileSystem, volume } = createMemoryFileSystem();
@@ -1626,8 +1603,7 @@ describe(synthesize, () => {
 				fileSystem,
 				packages: [
 					{
-						coverageRoots: [{ luauRoot: posixRoot("src"), shadowDir: shadowDirectory }],
-						packageDirectory: FOO_DIR,
+						redirects: [redirect("src", shadowDirectory)],
 						rojoProjectPath: FOO_PROJECT,
 					},
 				],
@@ -1639,7 +1615,7 @@ describe(synthesize, () => {
 			expect(child(parsed.tree, "ReplicatedStorage")!.$path).toBe(posixPath(shadowDirectory));
 		});
 
-		it("should redirect coverageRoots[].luauRoot resolved against packageDirectory when rojoProject sits in a subdirectory", () => {
+		it("should redirect a mount when rojoProject sits in a subdirectory of the package", () => {
 			expect.assertions(1);
 
 			const { fileSystem, shadowDirectory, subProject } = subdirectoryProjectFixture();
@@ -1648,8 +1624,7 @@ describe(synthesize, () => {
 				fileSystem,
 				packages: [
 					{
-						coverageRoots: [{ luauRoot: posixRoot("out"), shadowDir: shadowDirectory }],
-						packageDirectory: FOO_DIR,
+						redirects: [redirect("out", shadowDirectory)],
 						rojoProjectPath: subProject,
 					},
 				],
@@ -1663,7 +1638,7 @@ describe(synthesize, () => {
 	});
 
 	describe("wrap mode (workspace) dual-base resolution", () => {
-		it("should redirect coverageRoots[].luauRoot resolved against packageDirectory when rojoProject sits in a subdirectory", () => {
+		it("should redirect a mount when rojoProject sits in a subdirectory of the package", () => {
 			expect.assertions(1);
 
 			const { fileSystem, shadowDirectory, subProject } = subdirectoryProjectFixture();
@@ -1673,8 +1648,7 @@ describe(synthesize, () => {
 				packages: [
 					{
 						name: "@halcyon/foo",
-						coverageRoots: [{ luauRoot: posixRoot("out"), shadowDir: shadowDirectory }],
-						packageDirectory: FOO_DIR,
+						redirects: [redirect("out", shadowDirectory)],
 						rojoProjectPath: subProject,
 					},
 				],
@@ -1690,7 +1664,13 @@ describe(synthesize, () => {
 		it("should throw ConfigError when wrap=false with zero packages", () => {
 			expect.assertions(1);
 
-			expect(() => synthesize({ packages: [], wrap: false })).toThrow(
+			expect(() => {
+				return synthesize({
+					fileSystem: createMemoryFileSystem().fileSystem,
+					packages: [],
+					wrap: false,
+				});
+			}).toThrow(
 				configErrorLike("synthesize wrap:false requires exactly one package, got 0"),
 			);
 		});
@@ -1745,11 +1725,9 @@ describe(synthesize, () => {
 					fileSystem,
 					packages: [
 						{
-							packageDirectory: FOO_DIR,
 							rojoProjectPath: FOO_PROJECT,
 						},
 						{
-							packageDirectory: path.join(ROOT, "packages/bar"),
 							rojoProjectPath: barProject,
 						},
 					],
@@ -1787,7 +1765,6 @@ describe(synthesize, () => {
 					fileSystem,
 					packages: [
 						{
-							packageDirectory: FOO_DIR,
 							rojoProjectPath: FOO_PROJECT,
 							stubMounts: [
 								{
@@ -1842,7 +1819,6 @@ describe(synthesize, () => {
 				fileSystem,
 				packages: [
 					{
-						packageDirectory: FOO_DIR,
 						rojoProjectPath: FOO_PROJECT,
 						stubMounts: [
 							{
@@ -1907,7 +1883,6 @@ describe(synthesize, () => {
 					packages: [
 						{
 							name: "@halcyon/foo",
-							packageDirectory: FOO_DIR,
 							rojoProjectPath: FOO_PROJECT,
 							stubMounts: [mount, { ...mount }, { ...mount }],
 						},
@@ -1947,7 +1922,6 @@ describe(synthesize, () => {
 				fileSystem,
 				packages: [
 					{
-						packageDirectory: FOO_DIR,
 						rojoProjectPath: FOO_PROJECT,
 						stubMounts: [
 							{

@@ -7,19 +7,18 @@ import { describe, expect, it, vi } from "vitest";
 import { fakeTimingCollector } from "#test/mocks/fake-timing-collector.ts";
 import type { MemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
-import { posixRoot } from "#test/mocks/posix-path.ts";
+import { NOOP_PROGRESS } from "#test/mocks/noop-progress.ts";
 import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
+import { writingRojoExec } from "#test/mocks/rojo-exec.ts";
 import type { ResolvedProjectConfig } from "../config/projects.ts";
-import type { WorkspacePackageCoverage } from "../coverage-pipeline/workspace-prepare.ts";
+import type { WorkspacePackageCoverage } from "../shadow/workspace-prepare.ts";
 import type { ChildProcessRunner } from "../utils/child-process.ts";
 import type { PrepareCoverage } from "./coverage-attach.ts";
 import type { LoadedPackage } from "./package-loader.ts";
-import type { PendingEntry } from "./pending-entry.ts";
 import { stageWorkspacePlaceAsync } from "./place-staging.ts";
 import type { PackageContext } from "./project-contexts.ts";
-import type { WorkspaceTestSelection } from "./test-selection.ts";
+import type { PendingEntry, WorkspaceTestSelection } from "./test-selection.ts";
 
-const WORKSPACE_ROOT = path.resolve("/workspace");
 const CACHE_DIRECTORY = path.resolve("/cache");
 const PACKAGE_NAME = "@scope/package";
 const PACKAGE_DIR = path.resolve("/workspace/packages/package");
@@ -28,8 +27,6 @@ const PLACE_BYTES = "RBXL-BYTES";
 // memfs keys its volume by the POSIX spelling with the drive letter stripped.
 const CACHE_KEY = "/cache";
 const SHADOW_KEY = "/workspace/.jest-roblox/workspace/@scope-package/coverage";
-/** Beside the place the run builds, named after it. */
-const CODE_BUNDLE_KEY = `${CACHE_KEY}/synthesized.code-bundle.json`;
 
 type ExecCallback = (cause: Error | null, stdout: string, stderr: string) => void;
 type RojoExec = (
@@ -68,7 +65,6 @@ function makeContext(project: ResolvedProjectConfig): PackageContext {
 			name: PACKAGE_NAME,
 			packageDirectory: PACKAGE_DIR,
 			rojoProjectPath: PACKAGE_PROJECT,
-			rootDir: PACKAGE_DIR,
 		},
 		info: { name: PACKAGE_NAME, packageDirectory: PACKAGE_DIR },
 		pkgConfig: { ...createResolvedConfig(), collectCoverage: true, rootDir: PACKAGE_DIR },
@@ -94,9 +90,8 @@ function makeSelection(
 		filteredContexts: [context],
 		pending: [
 			fromAny<PendingEntry, unknown>({
-				pkg: PACKAGE_NAME,
+				job: { config: context.pkgConfig, pkg: PACKAGE_NAME },
 				project,
-				projectConfig: context.pkgConfig,
 			}),
 		],
 	});
@@ -128,10 +123,9 @@ function seed(): Harness {
 		[path.join(PACKAGE_DIR, "package.json")]: `{ "name": "${PACKAGE_NAME}" }`,
 		[path.join(PACKAGE_DIR, "src/index.luau")]: "return 1\n",
 	});
-	const execFile = vi.fn<RojoExec>((...[, args, , callback]) => {
-		memory.volume.writeFileSync(String(args[3]), PLACE_BYTES);
-		callback(null, "", "");
-	});
+	const execFile = vi.fn<RojoExec>(
+		writingRojoExec({ bytes: PLACE_BYTES, fileSystem: memory.volume }),
+	);
 	return {
 		...memory,
 		childProcess: fromAny({ execFile }),
@@ -158,15 +152,13 @@ describe(stageWorkspacePlaceAsync, () => {
 			fileSystem,
 			loaded: makeLoaded(context),
 			prepareCoverage,
+			progress: NOOP_PROGRESS,
 			selection: makeSelection(context, project),
 			timing,
-			workspaceRoot: WORKSPACE_ROOT,
 		});
 
 		expect(result).toStrictEqual({
-			// No Code Roots were asked for, so the place holds the code and
-			// there is no bundle beside it.
-			codeBundle: undefined,
+			collectsCoverage: true,
 			coverageByPackage: new Map([[PACKAGE_NAME, coverage]]),
 			coverageMs: 35,
 			placeFile: path.join(CACHE_DIRECTORY, "synthesized.rbxl"),
@@ -184,40 +176,69 @@ describe(stageWorkspacePlaceAsync, () => {
 			path.join(CACHE_DIRECTORY, "synthesized.project.json"),
 		);
 		expect(prepareCoverage).toHaveBeenCalledExactlyOnceWith({
+			cacheDirectory: CACHE_DIRECTORY,
 			fileSystem,
-			packages: [context.descriptor],
+			packages: [
+				expect.objectContaining({
+					...context.descriptor,
+					coverageCache: true,
+					rootDir: PACKAGE_DIR,
+				}),
+			],
 			timing,
-			workspaceRoot: WORKSPACE_ROOT,
 		});
 	});
 
-	it("should write a bundle beside the place when given Code Roots", async () => {
-		expect.assertions(2);
+	it("should report no coverage when no package opts in", async () => {
+		expect.assertions(1);
 
-		const { childProcess, fileSystem, volume } = seed();
+		const { childProcess, fileSystem } = seed();
 		const project = makeProject();
 		const context = makeContext(project);
+		context.pkgConfig.collectCoverage = false;
 
 		const result = await stageWorkspacePlaceAsync({
 			cacheDirectory: CACHE_DIRECTORY,
 			childProcess,
-			// Everything a coverage run mounts sits under the workspace root —
-			// the shadow the mounts were redirected onto included — so one root
-			// covers the lot and nothing stays behind.
-			codeRoots: [posixRoot(WORKSPACE_ROOT)],
 			fileSystem,
 			loaded: makeLoaded(context),
 			prepareCoverage: fakePrepareCoverage(makeCoverage()),
+			progress: NOOP_PROGRESS,
 			selection: makeSelection(context, project),
 			timing: fakeTimingCollector(0),
-			workspaceRoot: WORKSPACE_ROOT,
 		});
 
-		expect(volume.toJSON()).toContainKey(CODE_BUNDLE_KEY);
-		// Carried back out, because only the run knows to hand it to a backend.
-		expect(result.codeBundle).toMatchObject({
-			path: path.join(CACHE_DIRECTORY, "synthesized.code-bundle.json"),
-			stayedMounts: [],
-		});
+		expect(result.collectsCoverage).toBeFalse();
+	});
+
+	it("should rebuild the place when an instrumented source changes", async () => {
+		expect.assertions(2);
+
+		const { childProcess, execFile, fileSystem } = seed();
+		const project = makeProject();
+		const context = makeContext(project);
+		async function stageAsync(sourceHash: string): Promise<void> {
+			const coverage = makeCoverage();
+			coverage.manifest.files = fromAny({ "src/index.luau": { sourceHash } });
+			await stageWorkspacePlaceAsync({
+				cacheDirectory: CACHE_DIRECTORY,
+				childProcess,
+				fileSystem,
+				loaded: makeLoaded(context),
+				prepareCoverage: fakePrepareCoverage(coverage),
+				progress: NOOP_PROGRESS,
+				selection: makeSelection(context, project),
+				timing: fakeTimingCollector(0),
+			});
+		}
+
+		await stageAsync("hash-1");
+		await stageAsync("hash-1");
+
+		expect(execFile).toHaveBeenCalledOnce();
+
+		await stageAsync("hash-2");
+
+		expect(execFile).toHaveBeenCalledTimes(2);
 	});
 });

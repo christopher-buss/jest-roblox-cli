@@ -7,6 +7,7 @@ import { createSingleFileResult, failingFileResult } from "#test/mocks/spec-form
 import type { SourceMapper, SourceSnippet } from "../source-mapper/index.ts";
 import type { JestResult, TestCaseResult } from "../types/jest-result-types.ts";
 import {
+	collectAgentFailures,
 	type FailureFormatOptions,
 	formatFailures,
 	type SourceSnippetReader,
@@ -33,8 +34,15 @@ function snippetByExtension(
 	return filePath.endsWith(".ts") ? snippets.ts : undefined;
 }
 
-function renderFailures(result: JestResult, options: FailureFormatOptions): string {
-	return formatFailures({ options, result, totalFailures: result.numFailedTests }).join("\n");
+function renderFailures(
+	result: JestResult,
+	{ maxFailures, ...options }: FailureFormatOptions & { maxFailures: number },
+): string {
+	return formatFailures({
+		failures: collectAgentFailures(result, options),
+		maxFailures,
+		totalFailures: result.numFailedTests,
+	}).join("\n");
 }
 
 const TEST_SPEC_MAPPED = {

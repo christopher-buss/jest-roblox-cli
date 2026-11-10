@@ -52,12 +52,7 @@ export interface TestFileResult {
 	testFilePath: string;
 	/** The result of each test in the file. */
 	testResults: Array<TestCaseResult>;
-	/**
-	 * The runner abandoned this project at its `projectTimeout` rather than
-	 * waiting for it. Only ever set on the synthetic file an exec error is
-	 * reported through — a real test file result comes from Jest, which
-	 * returned nothing for a run that never finished.
-	 */
+	/** Set when the runner abandoned the project at its `projectTimeout`. */
 	timedOut?: boolean | undefined;
 }
 

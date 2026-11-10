@@ -1,7 +1,6 @@
 import { vi } from "vitest";
 
 import type { TimedPhase, TimingCollector } from "#src/timing/orchestration-collector.ts";
-import { NOOP_PROGRESS } from "#test/mocks/noop-progress.ts";
 
 interface Clock {
 	now: () => number;
@@ -35,7 +34,6 @@ export function clockTimingCollector(clock: Clock = FROZEN_CLOCK): TimingCollect
 		},
 		profileTimed,
 		profileTimedAsync,
-		progress: NOOP_PROGRESS,
 		record: vi.fn<TimingCollector["record"]>(),
 	};
 }

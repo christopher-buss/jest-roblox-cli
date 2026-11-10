@@ -2,7 +2,8 @@ import { fromAny } from "@total-typescript/shoehorn";
 
 import { describe, expect, it } from "vitest";
 
-import type { Config } from "./schema.ts";
+import type { Config } from "./config-types.ts";
+import type { FormatterEntry } from "./formatter-selection.ts";
 import {
 	assertConsensus,
 	computeConsensus,
@@ -63,8 +64,8 @@ describe(computeConsensus, () => {
 
 		const spec = { name: "formatters", readConfig: (config: Config) => config.formatters };
 		const entries = [
-			{ name: "alpha", config: { formatters: ["json"] } },
-			{ name: "beta", config: { formatters: ["json"] } },
+			{ name: "alpha", config: { formatters: ["json"] as Array<FormatterEntry> } },
+			{ name: "beta", config: { formatters: ["json"] as Array<FormatterEntry> } },
 		];
 
 		expect(computeConsensus(entries, spec)).toStrictEqual(["json"]);

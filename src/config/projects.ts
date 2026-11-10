@@ -3,17 +3,13 @@ import type { Mount, PathClassifier, RojoTreeNode } from "@isentinel/rojo-utils"
 import * as path from "node:path";
 
 import { stripTsExtension } from "../utils/extensions.ts";
-import { nodeFileSystem } from "../utils/file-system.ts";
+import type { FileSystem } from "../utils/file-system.ts";
+import type { ProjectConfigFile, ProjectEntry, ProjectTestConfig } from "./config-types.ts";
 import type { ProjectConfigInput } from "./project-config-file.ts";
 import { loadProjectConfigFile } from "./project-config-file.ts";
 import { createFsClassifier, resolveMounts } from "./project-mounts.ts";
 import type { TypecheckConfig } from "./resolve-typecheck-config.ts";
-import type {
-	ProjectConfigFile,
-	ProjectEntry,
-	ProjectTestConfig,
-	ResolvedConfig,
-} from "./schema.ts";
+import type { ResolvedConfig } from "./resolved-config.ts";
 
 const GLOB_CHARACTER = /[*?[{]/;
 
@@ -25,32 +21,19 @@ export interface ResolvedProjectConfig {
 	displayColor?: string | undefined;
 	/** Project name. */
 	displayName: string;
-	/**
-	 * Root-prefixed `exclude` globs subtracted from Runtime Test discovery.
-	 * Optional on the public type (back-compat for external constructors);
-	 * `resolveProjectConfig` always populates it (defaulting to `[]`).
-	 */
+	/** Root-prefixed `exclude` globs subtracted from discovery. */
 	exclude?: Array<string> | undefined;
-	/**
-	 * Original include patterns (with TS extensions) for filesystem discovery.
-	 */
+	/** Include patterns, with TS extensions, for filesystem discovery. */
 	include: Array<string>;
-	/**
-	 * Single resolved output directory (workspace-relative). Set only when
-	 * resolution produced exactly one mount; undefined when the project spans
-	 * multiple rojo mounts. Kept for back-compat; new code should consume
-	 * `rojoMounts` instead.
-	 */
+	/** The output directory when the project has exactly one mount. */
 	outDir?: string | undefined;
 	/** DataModel paths Jest walks up from to discover test configs. */
 	projects: Array<string>;
-	/** Internal: FS↔DataModel pairs for stub generation and shadow sync. */
+	/** FS↔DataModel pairs for stub generation and shadow sync. */
 	rojoMounts: Array<Mount>;
 	/** Luau-side testMatch patterns (extensions stripped). */
 	testMatch: Array<string>;
-	/**
-	 * Raw per-project `test.typecheck`, merged via `resolveTypecheckConfig`.
-	 */
+	/** Raw per-project `test.typecheck`. */
 	typecheck?: TypecheckConfig | undefined;
 }
 
@@ -73,13 +56,11 @@ export function extractStaticRoot(pattern: string): StaticRootPattern {
 	const firstGlobIndex = GLOB_CHARACTER.exec(pattern)?.index ?? -1;
 
 	if (firstGlobIndex === -1) {
-		// No glob characters — treat entire pattern as root with empty glob
 		const directory = path.posix.dirname(pattern);
 		const base = path.posix.basename(pattern);
 		return { glob: base, root: directory };
 	}
 
-	// Find last separator before first glob character
 	const prefix = pattern.slice(0, firstGlobIndex);
 	const lastSlash = prefix.lastIndexOf("/");
 
@@ -93,17 +74,8 @@ export function extractStaticRoot(pattern: string): StaticRootPattern {
 	};
 }
 
-/**
- * Group include patterns by static root as Luau-side `testMatch` patterns.
- *
- * @param include - Include patterns.
- * @returns One entry per root, with extension-stripped patterns.
- * @throws If a glob has no static directory prefix.
- */
 function extractProjectRoots(include: Array<string>): Array<{
-	/** Static directory prefix of the include patterns. */
 	root: string;
-	/** Luau-side patterns under `root`. */
 	testMatch: Array<string>;
 }> {
 	const rootMap = new Map<string, Array<string>>();
@@ -125,14 +97,6 @@ function extractProjectRoots(include: Array<string>): Array<{
 	return Array.from(rootMap, ([root, testMatch]) => ({ root, testMatch }));
 }
 
-/**
- * Check the cross-project invariants a schema cannot: names present and
- * unique, and an `include` that survived derivation.
- *
- * @param projects - The project configs as loaded, before include is known.
- * @returns The same projects, now carrying an `include`.
- * @throws When a name is missing or duplicated, or a project selects no files.
- */
 function validateProjects(projects: Array<ProjectConfigFile>): Array<ProjectTestConfig> {
 	const names = new Set<string>();
 	const validated: Array<ProjectTestConfig> = [];
@@ -185,12 +149,9 @@ export interface ProjectResolutionRequest extends ProjectResolutionFrame {
 	readonly rootConfig: ResolvedConfig;
 }
 
-/**
- * The frame a project resolves in: its rojo tree, its cwd, and what reads
- * them.
- */
 interface ProjectResolutionFrame extends ProjectConfigInput {
 	cwd: string;
+	fileSystem: FileSystem;
 	rojoTree: RojoTreeNode;
 }
 
@@ -223,7 +184,7 @@ export function assertKnownProjectNames(
 export async function resolveAllProjects({
 	cwd,
 	entries,
-	fileSystem = nodeFileSystem,
+	fileSystem,
 	rojoTree,
 	rootConfig,
 	...seams
@@ -255,10 +216,7 @@ function mergeProjectConfig(
 	rootConfig: ResolvedConfig,
 	project: ProjectTestConfig,
 ): ResolvedConfig {
-	// Start with all root config values, then override with project-level
-	// values (excluding structural keys like include/displayName/root/outDir).
-	// `typecheck` is resolved separately via `resolveTypecheckConfig` (a layered
-	// merge), so it must not be wholesale-replaced here.
+	// `typecheck` is merged by `resolveTypecheckConfig`, not replaced here.
 	const merged: ResolvedConfig = { ...rootConfig };
 
 	for (const [key, value] of Object.entries(project)) {
@@ -270,26 +228,15 @@ function mergeProjectConfig(
 	return merged;
 }
 
-/**
- * Resolve one validated project against the root config and Rojo tree.
- *
- * @param options - Classifier, project, Rojo tree and root config.
- * @returns The resolved project.
- * @throws If an include has no static prefix or a root maps to no mount.
- */
 function resolveProjectConfig({
 	classify,
 	project,
 	rojoTree,
 	rootConfig,
 }: {
-	/** Classifies file-system paths during mount auto-expand. */
 	readonly classify: PathClassifier;
-	/** Validated project config. */
 	readonly project: ProjectTestConfig;
-	/** Rojo project tree. */
 	readonly rojoTree: RojoTreeNode;
-	/** Config the project inherits from. */
 	readonly rootConfig: ResolvedConfig;
 }): ResolvedProjectConfig {
 	const rootPrefixedInclude = applyProjectRoot(project.include, project.root);

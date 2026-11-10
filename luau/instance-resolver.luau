@@ -1,6 +1,9 @@
 --!strict
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+local Protocol = require("./protocol")
+local RunnerError = require("./runner-error")
+
 local module = {}
 
 function module.findInstance(path: string): Instance
@@ -9,7 +12,12 @@ function module.findInstance(path: string): Instance
 	local success, current = pcall(function()
 		return game:FindService(parts[1])
 	end)
-	assert(success, `Failed to find service {parts[1]}: {current}`)
+	if not success or current == nil then
+		RunnerError.raise(
+			Protocol.errorCodes.ServiceNotFound,
+			`Failed to find service {parts[1]}: {current}`
+		)
+	end
 
 	for i = 2, #parts do
 		assert(current, `Failed to find '{parts[i - 1]}' in path {path}`)
@@ -24,19 +32,39 @@ end
 function module.getJest(config: { jestPath: string? }): ModuleScript
 	local jestPath = config.jestPath
 	if jestPath then
-		local instance = module.findInstance(jestPath)
-		assert(instance, `Failed to find Jest instance at path {jestPath}`)
-		assert(instance:IsA("ModuleScript"), `Instance at path {jestPath} is not a ModuleScript`)
+		local found, instance = pcall(module.findInstance, jestPath)
+		if not found and RunnerError.codeOf(instance) ~= nil then
+			error(instance, 0)
+		end
+		if not found then
+			RunnerError.raise(
+				Protocol.errorCodes.JestPathUnresolved,
+				`Failed to find Jest instance at path {jestPath}: {instance}`
+			)
+		end
+		if not instance:IsA("ModuleScript") then
+			RunnerError.raise(
+				Protocol.errorCodes.JestPathUnresolved,
+				`Instance at path {jestPath} is not a ModuleScript`
+			)
+		end
 		return instance :: ModuleScript
 	end
 
 	local jestInstance = ReplicatedStorage:FindFirstChild("Jest", true)
-	assert(jestInstance, "Failed to find Jest instance in ReplicatedStorage")
-	assert(
-		jestInstance:IsA("ModuleScript"),
-		"Jest instance in ReplicatedStorage is not a ModuleScript"
-	)
-	return jestInstance
+	if jestInstance == nil then
+		RunnerError.raise(
+			Protocol.errorCodes.JestNotFound,
+			"Failed to find Jest instance in ReplicatedStorage"
+		)
+	end
+	if not (jestInstance :: Instance):IsA("ModuleScript") then
+		RunnerError.raise(
+			Protocol.errorCodes.JestNotFound,
+			"Jest instance in ReplicatedStorage is not a ModuleScript"
+		)
+	end
+	return jestInstance :: ModuleScript
 end
 
 function module.findRobloxShared(jestModule: ModuleScript): Instance?

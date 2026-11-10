@@ -1,12 +1,11 @@
 import { fromPartial } from "@total-typescript/shoehorn";
 
-import process from "node:process";
 import { describe, expect, it, vi } from "vitest";
 
 import type { RawBackendEntry } from "../backends/interface.ts";
 import type { TimingCollector } from "../timing/orchestration-collector.ts";
 import type { TestFileResult } from "../types/jest-result-types.ts";
-import { calculateTestsMs, printLuauTiming, recordLuauTimingSpans } from "./timing-spans.ts";
+import { calculateTestsMs, recordLuauTimingSpans } from "./timing-spans.ts";
 
 function runnerOutput(timing: Record<string, number>): string {
 	return `Roblox runner log\n${JSON.stringify({ runner: { timing } })}\n`;
@@ -69,21 +68,5 @@ describe(recordLuauTimingSpans, () => {
 		]);
 
 		expect(readJestOutput).not.toHaveBeenCalled();
-	});
-});
-
-describe(printLuauTiming, () => {
-	it("should print rounded phases and their exact total", () => {
-		expect.assertions(1);
-
-		const write = vi.spyOn(process.stderr, "write").mockReturnValue(true);
-
-		printLuauTiming({ findJest: 0.0014, jestRunCLI: 0.0026 });
-
-		expect(write.mock.calls.map(([message]) => message)).toStrictEqual([
-			"[TIMING] findJest: 1ms\n",
-			"[TIMING] jestRunCLI: 3ms\n",
-			"[TIMING] total: 4ms\n",
-		]);
 	});
 });

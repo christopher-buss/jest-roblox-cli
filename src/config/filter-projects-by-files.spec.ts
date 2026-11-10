@@ -2,8 +2,26 @@ import { fromAny } from "@total-typescript/shoehorn";
 
 import { describe, expect, it } from "vitest";
 
-import { filterProjectsByFiles } from "./filter-projects-by-files.ts";
+import { matchFilesToProjects } from "./filter-projects-by-files.ts";
 import type { ResolvedProjectConfig } from "./projects.ts";
+
+function filterProjectsByFiles({
+	files,
+	projects,
+	rootDirectory,
+}: {
+	files: Array<string>;
+	projects: Array<ResolvedProjectConfig>;
+	rootDirectory: string;
+}) {
+	return matchFilesToProjects({
+		fileBase: rootDirectory,
+		files,
+		scopes: projects.map((project) => ({ project, rootDirectory })),
+	}).map(({ files: matched, scope }) => {
+		return { matchingFiles: matched.map((file) => file.original), project: scope.project };
+	});
+}
 
 function makeProject(overrides: Partial<ResolvedProjectConfig> = {}): ResolvedProjectConfig {
 	return {
@@ -324,28 +342,46 @@ describe(filterProjectsByFiles, () => {
 		);
 	});
 
-	it("should skip projects whose includes have no static root and still throw on overall no-match", () => {
+	it("should report no roots when no projects are supplied", () => {
 		expect.assertions(1);
-
-		const wildcard = makeProject({
-			displayName: "wildcard",
-			include: ["**/*.spec.ts"],
-		});
 
 		expect(() => {
 			return filterProjectsByFiles({
 				files: ["src/foo.spec.ts"],
-				projects: [wildcard],
+				projects: [],
 				rootDirectory: "/repo",
 			});
 		}).toThrow(
-			[
-				"No project contains the requested file(s):",
-				"  - src/foo.spec.ts",
-				"",
-				"Project roots searched:",
-				"  (none — projects use include patterns with no static directory prefix; pass --project explicitly)",
-			].join("\n"),
+			"  (none — projects use include patterns with no static directory prefix; pass --project explicitly)",
 		);
+	});
+
+	it("should not assign files to a project with no include patterns", () => {
+		expect.assertions(1);
+
+		const empty = makeProject({ include: [] });
+		const client = makeProject();
+
+		expect(
+			filterProjectsByFiles({
+				files: ["src/client/a.spec.ts"],
+				projects: [empty, client],
+				rootDirectory: "/repo",
+			}),
+		).toStrictEqual([{ matchingFiles: ["src/client/a.spec.ts"], project: client }]);
+	});
+
+	it("should resolve includes without a static prefix against the project directory", () => {
+		expect.assertions(1);
+
+		const wildcard = makeProject({ displayName: "wildcard", include: ["**/*.spec.ts"] });
+
+		expect(
+			filterProjectsByFiles({
+				files: ["src/foo.spec.ts"],
+				projects: [wildcard],
+				rootDirectory: "/repo",
+			}),
+		).toStrictEqual([{ matchingFiles: ["src/foo.spec.ts"], project: wildcard }]);
 	});
 });

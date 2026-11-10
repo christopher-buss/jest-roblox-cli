@@ -2,142 +2,63 @@ import type { ScriptResult } from "@isentinel/roblox-runner";
 
 import { describe, expect, it } from "vitest";
 
-import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
-import type { EnvelopeEntry, ProjectJob } from "./interface.ts";
+import type { WireEnvelopeEntry } from "../protocol/envelope.ts";
 import {
-	aggregateEntriesByKey,
-	collectStealingResults,
+	aggregateEntriesByJob,
 	parseStealingEnvelope,
+	toDispatchOutcome,
 } from "./open-cloud-entries.ts";
 
-function job(displayName: string, packageName?: string): ProjectJob {
-	return {
-		config: createResolvedConfig(),
-		displayName,
-		pkg: packageName,
-		testFiles: [`${displayName}/test.spec.ts`],
-	};
-}
-
 function entry(
-	packageName: string | undefined,
-	{ elapsedMs = 0, project }: { elapsedMs?: number; project?: string } = {},
-): EnvelopeEntry {
-	return {
-		elapsedMs,
-		jestOutput: "{}",
-		pkg: packageName,
-		...(project === undefined ? {} : { project }),
-	};
+	jobIndex: number,
+	{ jestOutput = "{}" }: { jestOutput?: string } = {},
+): WireEnvelopeEntry {
+	return { jestOutput, jobIndex };
 }
 
-function task(entries: Array<EnvelopeEntry>, gameOutput = "[]") {
+function task(entries: Array<WireEnvelopeEntry>, gameOutput = "[]") {
 	return { entries, gameOutput };
 }
 
-function collect({
-	bailed = false,
-	jobs,
-	tasks,
-}: {
-	bailed?: boolean;
-	jobs: Array<ProjectJob>;
-	tasks: Array<ReturnType<typeof task>>;
-}) {
-	return collectStealingResults({ bailed, entryByKey: aggregateEntriesByKey(tasks), jobs });
-}
-
-describe(aggregateEntriesByKey, () => {
-	it("should drop duplicate-pkg entries from fault-recovery and keep the first occurrence", () => {
+describe(aggregateEntriesByJob, () => {
+	it("should keep the first entry of a job that fault recovery ran twice", () => {
 		expect.assertions(1);
 
-		const { rawResults } = collect({
-			jobs: [job("alpha"), job("beta")],
-			tasks: [
-				task([entry("alpha", { elapsedMs: 1 }), entry("beta", { elapsedMs: 2 })]),
-				task([entry("alpha", { elapsedMs: 99 })]),
-			],
-		});
-
-		expect(rawResults.map((raw) => raw.entry.elapsedMs)).toStrictEqual([1, 2]);
-	});
-
-	it("should silently skip envelope entries with no pkg field", () => {
-		expect.assertions(1);
-
-		const entryByKey = aggregateEntriesByKey([
-			task([entry(undefined), entry("alpha", { elapsedMs: 42 })]),
+		const collected = aggregateEntriesByJob([
+			task([entry(0, { jestOutput: "1" }), entry(1, { jestOutput: "2" })]),
+			task([entry(0, { jestOutput: "99" })]),
 		]);
 
-		expect([...entryByKey.keys()]).toStrictEqual(["alpha"]);
+		expect(
+			Array.from(collected.values(), ({ entry: { jestOutput } }) => jestOutput),
+		).toStrictEqual(["1", "2"]);
 	});
 
-	it("should match entries to jobs by pkg::project so multi-project packages don't collide", () => {
+	it("should key every entry by the job index it names", () => {
 		expect.assertions(1);
 
-		const { rawResults } = collect({
-			jobs: [job("client", "@halcyon/foo"), job("server", "@halcyon/foo")],
-			tasks: [
-				task([
-					entry("@halcyon/foo", { elapsedMs: 5, project: "client" }),
-					entry("@halcyon/foo", { elapsedMs: 9, project: "server" }),
-				]),
-			],
-		});
+		const collected = aggregateEntriesByJob([task([entry(3), entry(1)])]);
 
-		expect(rawResults.map((raw) => raw.entry.elapsedMs)).toStrictEqual([5, 9]);
+		expect([...collected.keys()]).toStrictEqual([3, 1]);
 	});
 });
 
-describe(collectStealingResults, () => {
-	it("should pair each entry with the game output its task returned", () => {
+describe(toDispatchOutcome, () => {
+	it("should pair each entry with its job index and the game output its task returned", () => {
 		expect.assertions(1);
 
-		const { rawResults } = collect({
-			jobs: [job("alpha")],
-			tasks: [task([entry("alpha")], "game")],
-		});
-
-		expect(rawResults).toStrictEqual([{ entry: entry("alpha"), fallbackGameOutput: "game" }]);
-	});
-
-	it("should error when a job has no matching entry in any envelope", () => {
-		expect.assertions(1);
-
-		expect(() => {
-			return collect({
-				jobs: [job("alpha"), job("beta"), job("gamma")],
-				tasks: [task([entry("alpha")])],
-			});
-		}).toThrow(/no entries for 2 package\(s\): beta, gamma/);
-	});
-
-	it("should report the jobs a bailed task never reached", () => {
-		expect.assertions(1);
-
-		const outcome = collect({
-			bailed: true,
-			jobs: [job("alpha"), job("beta"), job("gamma")],
-			tasks: [task([entry("alpha")])],
-		});
+		const outcome = toDispatchOutcome(true, aggregateEntriesByJob([task([entry(2)], "game")]));
 
 		expect(outcome).toStrictEqual({
-			bailedJobIndices: [1, 2],
-			rawResults: [{ entry: entry("alpha"), fallbackGameOutput: "[]" }],
-		});
-	});
-
-	it("should report no bailed jobs when a bailed task still covered them all", () => {
-		expect.assertions(2);
-
-		const { bailedJobIndices, rawResults } = collect({
 			bailed: true,
-			jobs: [job("alpha"), job("beta")],
-			tasks: [task([entry("alpha"), entry("beta")])],
+			rawResults: [
+				{
+					entry: { jestOutput: "{}" },
+					fallbackGameOutput: "game",
+					jobIndex: 2,
+				},
+			],
 		});
-
-		expect(rawResults).toHaveLength(2);
-		expect(bailedJobIndices).toStrictEqual([]);
 	});
 });
 
@@ -147,12 +68,12 @@ describe(parseStealingEnvelope, () => {
 
 		const result: ScriptResult = {
 			durationMs: 0,
-			outputs: [JSON.stringify({ bailed: true, entries: [entry("alpha")] }), "game"],
+			outputs: [JSON.stringify({ bailed: true, entries: [entry(0)] }), "game"],
 		};
 
 		expect(parseStealingEnvelope(result)).toMatchObject({
 			bailed: true,
-			entries: [entry("alpha")],
+			entries: [entry(0)],
 			gameOutput: "game",
 		});
 	});

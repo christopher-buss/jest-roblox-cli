@@ -113,7 +113,7 @@ export default isentinel(
 	},
 	{
 		name: "project/ambient-declarations",
-		files: ["src/luau.d.ts", "src/coverage-pipeline/istanbul-modules.d.ts"],
+		files: ["src/luau.d.ts", "src/coverage-report/istanbul-modules.d.ts"],
 		rules: {
 			"sonar/file-name-differ-from-class": "off",
 		},

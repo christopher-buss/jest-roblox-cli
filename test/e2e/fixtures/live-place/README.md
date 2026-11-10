@@ -10,7 +10,7 @@ The committed `game.rbxl` is consumed **only** by the contract test
 to verify Open Cloud's response shape. No CLI subprocess, no Rojo at test time.
 
 The pipeline tests (`test/e2e/live/pipeline.spec.ts`) run the full CLI pipeline
-against the fixture. The CLI's `runMultiProject` path writes per-project stubs
+against the fixture. The CLI's project layout writes per-project stubs
 into the rojo source tree and rebuilds the rbxl — that rebuild needs `out/`
 (compiled Luau) and `include/` (rbxts runtime) to exist. Both are gitignored
 regenerated artifacts, so the live vitest project's `globalSetup`

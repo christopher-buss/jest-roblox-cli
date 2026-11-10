@@ -1,34 +1,12 @@
 --!strict
--- Watchdog for a Jest run neither Jest nor the engine will end, shared by both
--- dispatch modes: `runner.luau` for a multi run and
--- `staging/embedded-runner.luau` for a workspace one. Two things end such a run
--- here — an infinite-yield warning, and the project's own wall-clock budget.
---
--- `WaitForChild` without a timeout warns "Infinite yield possible" after five
--- seconds and then yields forever — the engine never abandons it. A test file
--- that imports a module missing from the DataModel parks Jest there, and
--- nothing else in the run can end it: the per-test timeout has no thread to
--- interrupt, and the module never reached a test to begin with. Left alone the
--- task burns its whole deadline and Roblox reports DEADLINE_EXCEEDED, which
--- names neither the test nor the instance.
-
 local LogService = game:GetService("LogService")
+
+local Protocol = require("./protocol")
 
 local WARNING_NEEDLE = "Infinite yield possible"
 local ABORT_PREFIX = "Infinite yield detected, aborting tests: "
--- The whole of what the report says about an abandoned run, so it names the
--- budget rather than the machinery: the reader raises a number, not a watchdog.
---
--- Naming the knob is the point of the second sentence. This budget is
--- `test.projectTimeout`, which has no CLI flag and does not follow the root
--- `timeout`, so a reader given only the seconds reaches for `--timeout` and
--- moves nothing here.
-local TIMEOUT_FORMAT = "Timed out after %gs, aborting tests. Raise test.projectTimeout"
--- Hoisted: the handler runs on every line the run logs.
 local MESSAGE_WARNING = Enum.MessageType.MessageWarning
 
--- The note is a description of the run, never a verdict on it, so one that
--- throws or has nothing to say leaves the abort exactly as it was.
 local function withNote(message: string, note: (() -> string)?): string
 	if note == nil then
 		return message
@@ -45,67 +23,21 @@ end
 local module = {}
 
 export type Options = {
-	--[=[
-		One line about where the run had got to, appended to the abort message
-		on either abandon path. Asked once, and only when the run is abandoned:
-		a run that ended on its own has its own answer already.
-	]=]
 	abandonNote: (() -> string)?,
 	onAbandon: (() -> ())?,
-	-- Wall-clock budget for `fn`, in the milliseconds the host config and the
-	-- argv both speak. Absent (or zero) means the warning is the only thing
-	-- that can end the run.
 	timeoutMs: number?,
 }
 
---[=[
-	Runs `fn` on its own thread and returns `pcall`'s `(ok, value)` for it, or
-	`(false, <abort message>, <timed out>)` when the run is abandoned while it
-	is still parked — because the warning arrived, or because its budget
-	elapsed. The third value tells those two apart; the caller reports a
-	project that ran out of time apart from one that failed.
-
-	`options.abandonNote` is how the caller says where the run had got to. It
-	is appended to the abort message on both paths, because a report that names
-	only the budget or the yield leaves the reader with no test to open.
-
-	`options.onAbandon` is how the caller ends the work `fn` was waiting on.
-	`fn`'s own thread parks in `Promise:expect()`, one remove from the thread the
-	engine left inside `WaitForChild` — that one belongs to the promise, and
-	only its owner can reach it. A caller that runs Jest cancels the `runCLI`
-	promise here.
-
-	The budget is the whole guarded span, not Jest's alone: a package that
-	spends its minute resolving instances has spent the minute either way, and
-	the caller measures the span it wants bounded by choosing what to wrap.
-
-	The warning is a reason to stop waiting rather than a verdict of its own: a
-	`fn` that reached its end despite one keeps the result it produced — and so
-	does one that finished on the same frame its budget elapsed.
-
-	The caller is woken by a resume, not by a poll, so a run that ends normally
-	pays nothing for the watch — a workspace batch guards every package it
-	takes.
-
-	`MessageOut` carries no source identity and reaches every listener in the
-	DataModel, so concurrent guards cannot tell whose yield they saw: under the
-	plugin's parallel VM hosts one project's park ends them all. Single-caller
-	modes — the whole of open cloud — are unaffected.
-]=]
-function module.guard(fn: () -> any, options: Options?): (boolean, any, boolean)
+function module.guard(fn: () -> any, options: Options?): (boolean, any, string?)
 	local settings: Options = options or {}
 	local finished = false
 	local ok = false
 	local value: any = nil
 	local warning: string? = nil
 	local waiting: thread? = nil
-	-- The budget that ran out, so the abort can name the number the reader
-	-- raises. Nil while the run is still within it.
 	local expiredSeconds: number? = nil
 
-	-- Cleared as it wakes, which is what makes a second wake a no-op: an
-	-- abandoned `fn` whose child does turn up after all still runs to its end
-	-- and calls this, long after the caller it would have resumed returned.
+	-- Cleared as it wakes, so a late second wake is a no-op.
 	local function wake()
 		local parked = waiting
 		waiting = nil
@@ -114,8 +46,7 @@ function module.guard(fn: () -> any, options: Options?): (boolean, any, boolean)
 		end
 	end
 
-	-- Connected before `fn` starts so the watch spans the whole run, and
-	-- disconnected before returning so a warning between runs is nobody's.
+	-- Connect before `fn` starts; disconnect before returning.
 	local connection = LogService.MessageOut:Connect(
 		function(message: string, messageType: Enum.MessageType)
 			if
@@ -129,12 +60,7 @@ function module.guard(fn: () -> any, options: Options?): (boolean, any, boolean)
 		end
 	)
 
-	-- Armed before the worker starts, because `task.spawn` runs `fn` up to its
-	-- first yield before it returns: a deadline armed after that call would
-	-- start the budget at the first yield, and a package that spends 50s
-	-- resolving instances before parking would get a further 60s. Zero is how a
-	-- config asks for no budget. Seconds are converted here, once, rather than
-	-- in each mode's runner.
+	-- Arm before the worker: `task.spawn` runs `fn` to its first yield.
 	local budgetMs = settings.timeoutMs
 	local budgetSeconds = if budgetMs ~= nil then budgetMs / 1000 else nil
 	local deadline: thread? = nil
@@ -151,11 +77,7 @@ function module.guard(fn: () -> any, options: Options?): (boolean, any, boolean)
 		wake()
 	end)
 
-	-- `fn` yields the moment it waits on anything, which hands control back
-	-- here; a `fn` that never yields at all has already finished by now. A
-	-- budget that ran out during that first turn resumed nobody — the caller
-	-- was not parked yet — so it is read here rather than waited for, or the
-	-- run would park past the deadline it just missed.
+	-- A budget spent before the first yield resumed nobody; read it here.
 	if not finished and warning == nil and expiredSeconds == nil then
 		waiting = coroutine.running()
 		coroutine.yield()
@@ -163,22 +85,14 @@ function module.guard(fn: () -> any, options: Options?): (boolean, any, boolean)
 
 	connection:Disconnect()
 
-	-- Disarmed only when it did not fire: `wake` resumes this thread from
-	-- inside the delay, so a fired deadline IS the thread running this line and
-	-- cancelling it would end the run here, before the verdict is returned.
+	-- Disarm only if unfired: a fired deadline is the thread running here.
 	if deadline ~= nil and expiredSeconds == nil then
 		task.cancel(deadline)
 	end
 
 	if not finished then
-		-- Both threads have to end, and `onAbandon` is the one that matters:
-		-- closing `worker` alone leaves the promise executor it waits on still
-		-- parked inside `WaitForChild`. A batch stages the next package at the
-		-- same DataModel paths, so that child can still turn up — and the
-		-- executor would then finish its own package's tests over the live
-		-- one's shared state: jest's `_G` run state, the coverage sink, the
-		-- snapshot mock.
-		--
+		-- `onAbandon` must run: closing `worker` alone leaves the executor
+		-- parked in `WaitForChild`, where it can finish over the next package.
 		-- Cleanup cannot change the verdict, so it runs under pcall.
 		local onAbandon = settings.onAbandon
 		if onAbandon ~= nil then
@@ -189,13 +103,17 @@ function module.guard(fn: () -> any, options: Options?): (boolean, any, boolean)
 
 		local note = settings.abandonNote
 		if expiredSeconds ~= nil then
-			return false, withNote(string.format(TIMEOUT_FORMAT, expiredSeconds), note), true
+			return false,
+				withNote(string.format(Protocol.timeoutFormat, expiredSeconds), note),
+				Protocol.errorCodes.Timeout
 		end
 
-		return false, withNote(ABORT_PREFIX .. tostring(warning), note), false
+		return false,
+			withNote(ABORT_PREFIX .. tostring(warning), note),
+			Protocol.errorCodes.InfiniteYield
 	end
 
-	return ok, value, false
+	return ok, value, nil
 end
 
 return module

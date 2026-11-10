@@ -1,9 +1,10 @@
 import process from "node:process";
 
-import type { FormatterEntry } from "../config/schema.ts";
-import { formatRunHeader } from "../formatters/formatter.ts";
-import { isDefaultHumanFormatter } from "../formatters/utils.ts";
-import type { RunProgress } from "../progress/reporter.ts";
+import { isDefaultHumanFormatter } from "../config/formatter-selection.ts";
+import type { FormatterEntry } from "../config/formatter-selection.ts";
+import { formatRunHeader } from "../formatters/summary.ts";
+import type { RunProgress } from "../progress/run-progress.ts";
+import { createStyles } from "../terminal/palette.ts";
 
 /** Inputs of {@link emitRunHeader}. */
 export interface RunHeaderInput {
@@ -11,13 +12,9 @@ export interface RunHeaderInput {
 	collectCoverage?: boolean | undefined;
 	/** Whether output is colorized. */
 	color: boolean;
-	/**
-	 * Formatters of the run; the header prints only for the default human one.
-	 */
+	/** Formatters of the run; the header prints only for the human one. */
 	formatters: Array<FormatterEntry> | undefined;
-	/**
-	 * Revealed here: the header is the first line the stage block may follow.
-	 */
+	/** Revealed here: the stage block may only follow the header. */
 	progress: RunProgress;
 	/** Root directory the header names. */
 	rootDir: string;
@@ -30,18 +27,7 @@ export interface RunHeaderInput {
 }
 
 /**
- * Print the ` RUN  vX.Y  <rootDir>` header to stdout at the moment a run
- * begins (right before the backend uploads). The end-of-run formatters no
- * longer emit it.
- *
- * This is also where the stage block starts showing: the gate below is the
- * one that decides whether a human is reading, and a stage printed above the
- * header would read as output from the command before it.
- *
- * Self-gates to the default human formatter: nothing is written under
- * `--silent`, `--formatters json`, or `--formatters agent` (without
- * `--verbose`), which produce machine-readable output that must stay clean.
- *
+ * Print the run header to stdout, only for the default human formatter.
  * @param input - Header fields, formatter gate and the progress to reveal.
  */
 export function emitRunHeader(input: RunHeaderInput): void {
@@ -50,12 +36,14 @@ export function emitRunHeader(input: RunHeaderInput): void {
 	}
 
 	process.stdout.write(
-		formatRunHeader({
-			collectCoverage: input.collectCoverage,
-			color: input.color,
-			rootDir: input.rootDir,
-			version: input.version,
-		}),
+		formatRunHeader(
+			{
+				collectCoverage: input.collectCoverage,
+				rootDir: input.rootDir,
+				version: input.version,
+			},
+			createStyles(input.color),
+		),
 	);
 	input.progress.reveal({ color: input.color });
 }

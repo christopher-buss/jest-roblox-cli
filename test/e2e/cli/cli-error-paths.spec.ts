@@ -1,15 +1,15 @@
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { startFakeOpenCloudServerAsync } from "#test/e2e/cli/fake-open-cloud.ts";
-import type { JestEnvelopePayload } from "#test/e2e/cli/helpers.ts";
+import { startFakeOpenCloudServerAsync } from "#test/harness/fake-open-cloud.ts";
+import type { JestEnvelopePayload } from "#test/harness/helpers.ts";
 import {
 	buildMixedOutput,
 	createFixtureSandbox,
 	createOpenCloudEnvironment,
 	createRbxtsFixtureSandbox,
 	runCliAsync,
-} from "#test/e2e/cli/helpers.ts";
+} from "#test/harness/helpers.ts";
 
 const LUAU_FIXTURE = path.resolve(__dirname, "../fixtures/luau-project");
 const RBXTS_FIXTURE = path.resolve(__dirname, "../fixtures/rbxts-project");

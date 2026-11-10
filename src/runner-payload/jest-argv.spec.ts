@@ -1,0 +1,386 @@
+import { fromAny } from "@total-typescript/shoehorn";
+
+import { describe, expect, it, vi } from "vitest";
+
+import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
+import type { ResolvedConfig } from "../config/resolved-config.ts";
+import { buildJestArgv, indexArgv, type JestArgvInput } from "./jest-argv.ts";
+
+function createConfig(overrides: Partial<ResolvedConfig> = {}): ResolvedConfig {
+	return { ...createResolvedConfig(), ...overrides };
+}
+
+function createOptions(overrides?: { config?: Partial<ResolvedConfig> }): JestArgvInput {
+	return { config: createConfig(overrides?.config) };
+}
+
+describe(buildJestArgv, () => {
+	it("should strip .tsx?, .lua, and .luau from testMatch patterns", () => {
+		expect.assertions(1);
+
+		const argv = buildJestArgv(
+			createOptions({
+				config: {
+					testMatch: ["**/*.spec.ts", "**/*.test.tsx", "**/*.spec.lua", "**/*.test.luau"],
+				},
+			}),
+		);
+
+		expect(argv.testMatch).toStrictEqual(["**/*.spec", "**/*.test", "**/*.spec", "**/*.test"]);
+	});
+
+	it("should strip only a source extension at the end of a testMatch pattern", () => {
+		expect.assertions(1);
+
+		const argv = buildJestArgv(
+			createOptions({ config: { testMatch: ["**/*.spec.ts.backup", "**/*.spec.ts"] } }),
+		);
+
+		expect(argv.testMatch).toStrictEqual(["**/*.spec.ts.backup", "**/*.spec"]);
+	});
+
+	it("should drop Type Test patterns from the Roblox testMatch", () => {
+		expect.assertions(1);
+
+		const argv = buildJestArgv(
+			createOptions({
+				config: {
+					testMatch: [
+						"**/*.spec.ts",
+						"**/*.spec-d.ts",
+						"**/*.test-d.luau",
+						"**/*.test.luau",
+					],
+				},
+			}),
+		);
+
+		expect(argv.testMatch).toStrictEqual(["**/*.spec", "**/*.test"]);
+	});
+
+	it("should ignore Type Test modules on top of the configured ignore patterns", () => {
+		expect.assertions(1);
+
+		const argv = buildJestArgv(
+			createOptions({ config: { testPathIgnorePatterns: ["/node_modules/"] } }),
+		);
+
+		expect(argv.testPathIgnorePatterns).toStrictEqual(["/node_modules/", "\\.(spec|test)-d$"]);
+	});
+
+	it("should pass through bail when set", () => {
+		expect.assertions(1);
+
+		const argv = buildJestArgv(createOptions({ config: { bail: 3 } }));
+
+		expect(argv.bail).toBe(3);
+	});
+
+	it("should omit undefined passthrough values", () => {
+		expect.assertions(1);
+
+		const argv = buildJestArgv(createOptions({ config: { bail: undefined } }));
+
+		expect(Object.hasOwn(argv, "bail")).toBeFalse();
+	});
+
+	it("should pass through clearMocks/resetMocks/restoreMocks", () => {
+		expect.assertions(3);
+
+		const argv = buildJestArgv(
+			createOptions({
+				config: {
+					clearMocks: true,
+					resetMocks: true,
+					restoreMocks: true,
+				},
+			}),
+		);
+
+		expect(argv.clearMocks).toBeTrue();
+		expect(argv.resetMocks).toBeTrue();
+		expect(argv.restoreMocks).toBeTrue();
+	});
+
+	it("should pass through testTimeout", () => {
+		expect.assertions(1);
+
+		const argv = buildJestArgv(createOptions({ config: { testTimeout: 5000 } }));
+
+		expect(argv.testTimeout).toBe(5000);
+	});
+
+	it("should pass through testNamePattern from config", () => {
+		expect.assertions(1);
+
+		const argv = buildJestArgv(createOptions({ config: { testNamePattern: "my test" } }));
+
+		expect(argv.testNamePattern).toBe("my test");
+	});
+
+	it("should pass through testPathPattern from config", () => {
+		expect.assertions(1);
+
+		const argv = buildJestArgv(
+			createOptions({ config: { testPathPattern: "cleanup-destroyed" } }),
+		);
+
+		// `Argv` declares `testPathPattern` as an array; the config value is a
+		// string and passes through as one, so the path form asserts what lands.
+		expect(argv).toHaveProperty(["testPathPattern"], "cleanup-destroyed");
+	});
+
+	it("should default reporters to empty array", () => {
+		expect.assertions(1);
+
+		const argv = buildJestArgv(createOptions());
+
+		expect(argv.reporters).toBeEmpty();
+	});
+
+	it("should allocate the default reporters array independently", () => {
+		expect.assertions(2);
+
+		const first = buildJestArgv(createOptions({ config: { reporters: undefined } }));
+		const second = buildJestArgv(createOptions({ config: { reporters: undefined } }));
+		first.reporters!.push("default");
+
+		expect(first.reporters).toStrictEqual(["default"]);
+		expect(second.reporters).toStrictEqual([]);
+	});
+
+	it("should preserve user-supplied reporters", () => {
+		expect.assertions(1);
+
+		const argv = buildJestArgv(createOptions({ config: { reporters: ["custom-reporter"] } }));
+
+		expect(argv.reporters).toStrictEqual(["custom-reporter"]);
+	});
+
+	it("should inject runnerTiming when the run asks for it", () => {
+		expect.assertions(1);
+
+		const argv = buildJestArgv({ ...createOptions(), runnerTiming: true });
+
+		expect(argv).toHaveProperty("runnerTiming", true);
+	});
+
+	it("should not read runnerTiming from the TIMING env var", () => {
+		expect.assertions(1);
+
+		vi.stubEnv("TIMING", "1");
+		const argv = buildJestArgv(createOptions());
+
+		expect(argv).not.toHaveProperty("runnerTiming");
+	});
+
+	it("should inject runnerTimeoutMs from projectTimeout", () => {
+		expect.assertions(2);
+
+		const argv = buildJestArgv(createOptions({ config: { projectTimeout: 30_000 } }));
+
+		expect(argv).toHaveProperty("runnerTimeoutMs", 30_000);
+		expect(argv).not.toHaveProperty("projectTimeout");
+	});
+
+	it("should not inject runnerTimeoutMs when the budget is zero", () => {
+		expect.assertions(1);
+
+		const argv = buildJestArgv(createOptions({ config: { projectTimeout: 0 } }));
+
+		expect(argv).not.toHaveProperty("runnerTimeoutMs");
+	});
+
+	it("should pass through snapshotFormat", () => {
+		expect.assertions(1);
+
+		const argv = buildJestArgv(
+			createOptions({
+				config: { snapshotFormat: { printBasicPrototype: false } },
+			}),
+		);
+
+		expect(argv.snapshotFormat).toStrictEqual({ printBasicPrototype: false });
+	});
+
+	it("should not pass collectCoverage to Jest argv", () => {
+		expect.assertions(1);
+
+		const argv = buildJestArgv(createOptions({ config: { collectCoverage: true } }));
+
+		expect(argv).not.toHaveProperty("collectCoverage");
+	});
+
+	it("should inject runnerCoverage when collectCoverage is true", () => {
+		expect.assertions(1);
+
+		const argv = buildJestArgv(createOptions({ config: { collectCoverage: true } }));
+
+		expect(argv).toHaveProperty("runnerCoverage", true);
+	});
+
+	it("should not inject runnerCoverage when collectCoverage is false", () => {
+		expect.assertions(1);
+
+		const argv = buildJestArgv(createOptions({ config: { collectCoverage: false } }));
+
+		expect(argv).not.toHaveProperty("runnerCoverage");
+	});
+
+	it("should inject runnerPerTestCoverage when collectPerTestCoverage is true", () => {
+		expect.assertions(1);
+
+		const argv = buildJestArgv(createOptions({ config: { collectPerTestCoverage: true } }));
+
+		expect(argv).toHaveProperty("runnerPerTestCoverage", true);
+	});
+
+	it("should not inject runnerPerTestCoverage when collectPerTestCoverage is false", () => {
+		expect.assertions(1);
+
+		const argv = buildJestArgv(createOptions({ config: { collectPerTestCoverage: false } }));
+
+		expect(argv).not.toHaveProperty("runnerPerTestCoverage");
+	});
+
+	it("should ask Jest for test locations when collectPerTestCoverage is true", () => {
+		expect.assertions(2);
+
+		expect(
+			buildJestArgv(createOptions({ config: { collectPerTestCoverage: true } })),
+		).toHaveProperty("testLocationInResults", true);
+		expect(
+			buildJestArgv(createOptions({ config: { collectPerTestCoverage: false } })),
+		).not.toHaveProperty("testLocationInResults");
+	});
+
+	it("should not pass collectPerTestCoverage to Jest argv", () => {
+		expect.assertions(1);
+
+		const argv = buildJestArgv(createOptions({ config: { collectPerTestCoverage: true } }));
+
+		expect(argv).not.toHaveProperty("collectPerTestCoverage");
+	});
+
+	it("should not pass experimentalVmParallel to Jest argv", () => {
+		expect.assertions(1);
+
+		const argv = buildJestArgv(createOptions({ config: { experimentalVmParallel: 2 } }));
+
+		expect(argv).not.toHaveProperty("experimentalVmParallel");
+	});
+
+	it("should not pass coverageDirectory to Jest argv", () => {
+		expect.assertions(1);
+
+		const argv = buildJestArgv(createOptions({ config: { coverageDirectory: "my-cov" } }));
+
+		expect(argv).not.toHaveProperty("coverageDirectory");
+	});
+
+	it("should not pass coverageCopyIgnorePatterns to Jest argv", () => {
+		expect.assertions(1);
+
+		const argv = buildJestArgv(
+			createOptions({ config: { coverageCopyIgnorePatterns: ["**/*.d.ts"] } }),
+		);
+
+		expect(argv).not.toHaveProperty("coverageCopyIgnorePatterns");
+	});
+
+	it("should not pass coveragePathIgnorePatterns to Jest argv", () => {
+		expect.assertions(1);
+
+		const argv = buildJestArgv(
+			createOptions({ config: { coveragePathIgnorePatterns: ["**/*.test.luau"] } }),
+		);
+
+		expect(argv).not.toHaveProperty("coveragePathIgnorePatterns");
+	});
+
+	it("should not pass coverageReporters to Jest argv", () => {
+		expect.assertions(1);
+
+		const argv = buildJestArgv(createOptions({ config: { coverageReporters: ["text"] } }));
+
+		expect(argv).not.toHaveProperty("coverageReporters");
+	});
+
+	it("should not pass coverageThreshold to Jest argv", () => {
+		expect.assertions(1);
+
+		const argv = buildJestArgv(
+			createOptions({ config: { coverageThreshold: { statements: 80 } } }),
+		);
+
+		expect(argv).not.toHaveProperty("coverageThreshold");
+	});
+
+	it("should not pass collectCoverageFrom to Jest argv", () => {
+		expect.assertions(1);
+
+		const argv = buildJestArgv(
+			createOptions({ config: { collectCoverageFrom: ["src/**/*.luau"] } }),
+		);
+
+		expect(argv).not.toHaveProperty("collectCoverageFrom");
+	});
+
+	it("should not pass the typecheck object to Jest argv", () => {
+		expect.assertions(1);
+
+		const argv = buildJestArgv(
+			createOptions({
+				config: { typecheck: { enabled: true, tsconfig: "tsconfig.test.json" } },
+			}),
+		);
+
+		expect(argv).not.toHaveProperty("typecheck");
+	});
+
+	it("should not pass formatters to Jest argv", () => {
+		expect.assertions(1);
+
+		const argv = buildJestArgv(createOptions({ config: { formatters: ["default"] } }));
+
+		expect(argv).not.toHaveProperty("formatters");
+	});
+
+	it("should not pass luauRoots to Jest argv", () => {
+		expect.assertions(1);
+
+		const argv = buildJestArgv(createOptions({ config: { luauRoots: ["out"] } }));
+
+		expect(argv).not.toHaveProperty("luauRoots");
+	});
+
+	it("should forward only Jest options", () => {
+		expect.assertions(2);
+
+		const argv = buildJestArgv(
+			createOptions({ config: fromAny({ backend: "studio", notAnOption: true }) }),
+		);
+
+		expect(argv).not.toHaveProperty("backend");
+		expect(argv).not.toHaveProperty("notAnOption");
+	});
+
+	it("should pass jestPath despite being a root-only key", () => {
+		expect.assertions(1);
+
+		const argv = buildJestArgv(createOptions({ config: { jestPath: "custom/jest" } }));
+
+		expect(argv).toHaveProperty("jestPath", "custom/jest");
+	});
+});
+
+describe(indexArgv, () => {
+	it("should name the job index and leave the argv it was given alone", () => {
+		expect.assertions(2);
+
+		const argv = { testMatch: ["**/*.spec"] };
+
+		expect(indexArgv(argv, 2)).toStrictEqual({ runnerJobIndex: 2, testMatch: ["**/*.spec"] });
+		expect(argv).toStrictEqual({ testMatch: ["**/*.spec"] });
+	});
+});

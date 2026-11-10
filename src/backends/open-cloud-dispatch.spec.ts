@@ -1,11 +1,18 @@
 import type { ScriptResult } from "@isentinel/roblox-runner";
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
+import { projectJob } from "#test/mocks/project-job.ts";
 import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
-import { envelope, scriptNaming, scriptResult } from "#test/mocks/spec-open-cloud.ts";
-import type { BackendOptions, ProjectJob } from "./interface.ts";
-import { dispatchJobsAsync } from "./open-cloud-dispatch.ts";
+import { envelope, packageJobIndex, scriptResult } from "#test/mocks/spec-open-cloud.ts";
+import type { ConfiguredJob } from "../executor/executor-types.ts";
+import type { ParallelOption } from "./interface.ts";
+import {
+	dispatchJobsAsync,
+	type OpenCloudSharding,
+	type StealingRequest,
+} from "./open-cloud-dispatch.ts";
+import type { PreparedStealing } from "./open-cloud-work-stealing.ts";
 
 type ExecuteTask = Parameters<typeof dispatchJobsAsync>[0]["executeAsync"];
 
@@ -20,6 +27,14 @@ interface ExecuteStub {
 	executeCalls: Array<ExecuteRequest>;
 }
 
+interface DispatchShape {
+	jobs: [ConfiguredJob, ...Array<ConfiguredJob>];
+	parallel?: ParallelOption;
+	script?: string;
+	stealing?: PreparedStealing | undefined;
+	workspace?: true;
+}
+
 function createExecuteStub(handler: ExecuteHandler): ExecuteStub {
 	const executeCalls: Array<ExecuteRequest> = [];
 	return {
@@ -31,21 +46,43 @@ function createExecuteStub(handler: ExecuteHandler): ExecuteStub {
 	};
 }
 
-async function dispatchAsync(stub: ExecuteStub, options: BackendOptions) {
+function shardingOf({ parallel, script, workspace }: DispatchShape): OpenCloudSharding {
+	if (script !== undefined) {
+		return { bail: false, kind: "work-stealing", parallel };
+	}
+
+	if (workspace !== undefined) {
+		return { bail: false, kind: "deferrable", parallel };
+	}
+
+	return { kind: "static", parallel };
+}
+
+async function dispatchAsync(stub: ExecuteStub, shape: DispatchShape) {
 	return dispatchJobsAsync({
-		...options,
 		executeAsync: stub.executeAsync,
-		primaryConfig: options.jobs[0]!.config,
+		jobs: shape.jobs,
+		prepareStealingAsync: async () => {
+			return "stealing" in shape
+				? shape.stealing
+				: { script: shape.script ?? "", streaming: undefined };
+		},
+		runSettings: shape.jobs[0].config,
+		sharding: shardingOf(shape),
 		version: { bootProven: true, versionNumber: 7 },
 	});
 }
 
-function job(displayName: string): ProjectJob {
-	return {
+function job(displayName: string): ConfiguredJob {
+	return projectJob({
 		config: createResolvedConfig(),
 		displayName,
 		testFiles: [`${displayName}/test.spec.ts`],
-	};
+	});
+}
+
+function workspaceJob(packageName: string): ConfiguredJob {
+	return { ...job(packageName), pkg: packageName };
 }
 
 function successJest(): string {
@@ -53,17 +90,21 @@ function successJest(): string {
 }
 
 function packageEntry(packageName: string) {
-	return { jestOutput: successJest(), pkg: packageName };
+	return { jestOutput: successJest(), jobIndex: packageJobIndex(packageName), pkg: packageName };
+}
+
+function success(jobIndex: number) {
+	return { jestOutput: successJest(), jobIndex };
 }
 
 /**
- * The packages a {@link scriptNaming} script carries.
+ * The packages a materializer script carries.
  *
  * @param request - Request holding the script.
  * @returns The package names in the script.
  */
 function requestedNames(request: ExecuteRequest): Array<string> {
-	return request.script.split("entries:", 2)[1]!.split(",");
+	return Array.from(request.script.matchAll(/"pkg":"([^"]+)"/g), (match) => match[1]!);
 }
 
 /**
@@ -125,31 +166,27 @@ function stepExecute(steps: Array<ExecuteStep>): ExecuteHandler {
 }
 
 describe(dispatchJobsAsync, () => {
-	it("should pin every task to the run's version and the primary job's timeout", async () => {
+	it("should pin every task to the run's version and the run config's timeout", async () => {
 		expect.assertions(1);
 
-		const stub = createExecuteStub(() => {
-			return scriptResult(envelope([{ jestOutput: successJest() }]));
-		});
-		await dispatchAsync(stub, { jobs: [job("alpha")], scriptOverride: "custom" });
+		const stub = createExecuteStub(() => scriptResult(envelope([success(0)])));
+		await dispatchAsync(stub, { jobs: [job("alpha")] });
 
-		expect(stub.executeCalls).toStrictEqual([
+		expect(stub.executeCalls.map(({ script: _script, ...call }) => call)).toStrictEqual([
 			{
-				script: "custom",
 				timeout: createResolvedConfig().timeout,
 				version: { bootProven: true, versionNumber: 7 },
 			},
 		]);
 	});
 
-	it("should flatten static buckets back into job order with each task's game output", async () => {
-		expect.assertions(1);
+	it("should give each static bucket's entries their job index and task game output", async () => {
+		expect.assertions(2);
 
-		const success = { jestOutput: successJest() };
 		const stub = createExecuteStub(
 			stepExecute([
-				() => scriptResult(envelope([success, success]), "first"),
-				() => scriptResult(envelope([success]), "second"),
+				() => scriptResult(envelope([success(0), success(2)]), "first"),
+				() => scriptResult(envelope([success(1)]), "second"),
 			]),
 		);
 
@@ -158,11 +195,16 @@ describe(dispatchJobsAsync, () => {
 			parallel: 2,
 		});
 
-		expect(rawResults.map((raw) => raw.fallbackGameOutput)).toStrictEqual([
-			"first",
-			"second",
-			"first",
+		expect(
+			rawResults.map(({ fallbackGameOutput, jobIndex }) => [jobIndex, fallbackGameOutput]),
+		).toStrictEqual([
+			[0, "first"],
+			[2, "first"],
+			[1, "second"],
 		]);
+		expect(
+			stub.executeCalls.map(({ script }) => script.match(/"runnerJobIndex":\d+/g)),
+		).toStrictEqual([['"runnerJobIndex":0', '"runnerJobIndex":2'], ['"runnerJobIndex":1']]);
 	});
 
 	it("should throw when a static bucket returns no outputs", async () => {
@@ -181,13 +223,59 @@ describe(dispatchJobsAsync, () => {
 		const stub = createExecuteStub(() => scriptResult(envelope([packageEntry("alpha")])));
 
 		const { rawResults } = await dispatchAsync(stub, {
-			jobs: [job("alpha")],
-			scriptOverride: "stealing-script",
-			workStealing: true,
+			jobs: [workspaceJob("alpha")],
+			script: "stealing-script",
 		});
 
 		expect(stub.executeCalls.map((call) => call.script)).toStrictEqual(["stealing-script"]);
 		expect(rawResults).toHaveLength(1);
+	});
+
+	it("should fall back to a deferrable run when the queue cannot be set up", async () => {
+		expect.assertions(1);
+
+		const stub = createExecuteStub(() => scriptResult(envelope([packageEntry("alpha")])));
+
+		await dispatchAsync(stub, {
+			jobs: [workspaceJob("alpha")],
+			script: "stealing-script",
+			stealing: undefined,
+		});
+
+		expect(requestedNames(stub.executeCalls[0]!)).toStrictEqual(["alpha"]);
+	});
+
+	it("should ask for the queue with every job and the task deadline", async () => {
+		expect.assertions(1);
+
+		const prepareStealingAsync = vi.fn<(request: StealingRequest) => Promise<PreparedStealing>>(
+			async () => ({ script: "stealing-script", streaming: undefined }),
+		);
+		const jobs: [ConfiguredJob, ...Array<ConfiguredJob>] = [
+			workspaceJob("alpha"),
+			workspaceJob("beta"),
+		];
+
+		await dispatchJobsAsync({
+			executeAsync: createExecuteStub(() => {
+				return scriptResult(envelope([packageEntry("alpha"), packageEntry("beta")]));
+			}).executeAsync,
+			jobs,
+			prepareStealingAsync,
+			runSettings: { ...jobs[0].config, timeout: 1234 },
+			sharding: { bail: true, kind: "work-stealing", parallel: 2 },
+			version: { bootProven: true, versionNumber: 7 },
+		});
+
+		expect(prepareStealingAsync).toHaveBeenCalledExactlyOnceWith({
+			bail: true,
+			inputs: [
+				expect.objectContaining<Record<string, unknown>>({ pkg: "alpha" }),
+				expect.objectContaining<Record<string, unknown>>({ pkg: "beta" }),
+			],
+			onPackageResult: undefined,
+			taskTimeout: 1234,
+		});
 	});
 
 	it("should re-send a deferring bucket's leftovers to that bucket alone", async () => {
@@ -199,9 +287,14 @@ describe(dispatchJobsAsync, () => {
 		const stub = createExecuteStub(deferOnceExecute("alpha"));
 
 		const results = await dispatchAsync(stub, {
-			jobs: [job("alpha"), job("beta"), job("gamma"), job("delta")],
+			jobs: [
+				workspaceJob("alpha"),
+				workspaceJob("beta"),
+				workspaceJob("gamma"),
+				workspaceJob("delta"),
+			],
 			parallel: 2,
-			scriptFactory: scriptNaming,
+			workspace: true,
 		});
 
 		expect(results.rawResults).toHaveLength(4);
@@ -222,15 +315,22 @@ describe(dispatchJobsAsync, () => {
 		const stub = createExecuteStub(bailingBucketExecute("alpha"));
 
 		const results = await dispatchAsync(stub, {
-			jobs: [job("alpha"), job("beta"), job("gamma"), job("delta")],
+			jobs: [
+				workspaceJob("alpha"),
+				workspaceJob("beta"),
+				workspaceJob("gamma"),
+				workspaceJob("delta"),
+			],
 			parallel: 2,
-			scriptFactory: scriptNaming,
+			workspace: true,
 		});
 
 		// gamma alone: it shared alpha's bucket and never ran, while beta
 		// and delta came back from the sibling that carried on.
-		expect(results.bailedJobIndices).toStrictEqual([2]);
-		expect(results.rawResults).toHaveLength(3);
+		expect(results.bailed).toBeTrue();
+		expect(
+			results.rawResults.map(({ jobIndex }) => jobIndex).sort((left, right) => left - right),
+		).toStrictEqual([0, 1, 3]);
 	});
 
 	it("should re-send the entries a deferring task left behind", async () => {
@@ -248,8 +348,10 @@ describe(dispatchJobsAsync, () => {
 			]),
 		);
 
-		const jobs = [job("alpha"), job("beta"), job("gamma")];
-		const results = await dispatchAsync(stub, { jobs, scriptFactory: scriptNaming });
+		const results = await dispatchAsync(stub, {
+			jobs: [workspaceJob("alpha"), workspaceJob("beta"), workspaceJob("gamma")],
+			workspace: true,
+		});
 
 		expect(results.rawResults).toHaveLength(3);
 		expect(stub.executeCalls).toHaveLength(2);
@@ -265,8 +367,8 @@ describe(dispatchJobsAsync, () => {
 		});
 
 		const result = await dispatchAsync(stub, {
-			jobs: [job("alpha"), job("beta")],
-			scriptFactory: () => "workspace-script",
+			jobs: [workspaceJob("alpha"), workspaceJob("beta")],
+			workspace: true,
 		});
 
 		expect(stub.executeCalls).toHaveLength(1);
@@ -283,8 +385,8 @@ describe(dispatchJobsAsync, () => {
 		});
 
 		const result = await dispatchAsync(stub, {
-			jobs: [job("alpha"), job("beta")],
-			scriptFactory: () => "workspace-script",
+			jobs: [workspaceJob("alpha"), workspaceJob("beta")],
+			workspace: true,
 		});
 
 		expect(stub.executeCalls).toHaveLength(1);
@@ -306,12 +408,15 @@ describe(dispatchJobsAsync, () => {
 		);
 
 		const result = await dispatchAsync(stub, {
-			jobs: [job("alpha"), job("beta"), job("gamma")],
-			scriptFactory: () => "workspace-script",
+			jobs: [workspaceJob("alpha"), workspaceJob("beta"), workspaceJob("gamma")],
+			workspace: true,
 		});
 
 		expect(stub.executeCalls).toHaveLength(2);
-		expect(result.bailedJobIndices).toStrictEqual([2]);
+		expect(result).toMatchObject({
+			bailed: true,
+			rawResults: [{ jobIndex: 0 }, { jobIndex: 1 }],
+		});
 	});
 
 	it("should stop re-sending when a task covers nothing new", async () => {
@@ -319,8 +424,9 @@ describe(dispatchJobsAsync, () => {
 
 		/**
 		 * A task that defers without running anything cannot be answered by
-		 * sending it the same work again. Failing on the missing packages
-		 * beats spending one task per job to reach the same place.
+		 * sending it the same work again. The missing packages go back
+		 * missing, which beats spending one task per job to reach the same
+		 * place.
 		 */
 		const stub = createExecuteStub(
 			stepExecute([
@@ -328,13 +434,12 @@ describe(dispatchJobsAsync, () => {
 			]),
 		);
 
-		await expect(
-			dispatchAsync(stub, {
-				jobs: [job("alpha"), job("beta"), job("gamma")],
-				scriptFactory: () => "retry-script",
-			}),
-		).rejects.toThrow("beta, gamma");
+		const result = await dispatchAsync(stub, {
+			jobs: [workspaceJob("alpha"), workspaceJob("beta"), workspaceJob("gamma")],
+			workspace: true,
+		});
 
+		expect(result.rawResults.map(({ jobIndex }) => jobIndex)).toStrictEqual([0]);
 		expect(stub.executeCalls).toHaveLength(2);
 	});
 
@@ -345,23 +450,9 @@ describe(dispatchJobsAsync, () => {
 
 		await expect(
 			dispatchAsync(stub, {
-				jobs: [job("alpha")],
-				scriptFactory: () => "factory-built",
+				jobs: [workspaceJob("alpha")],
+				workspace: true,
 			}),
 		).rejects.toThrow("No test results in output");
-	});
-
-	it("should throw when the bucket envelope length does not match the job count", async () => {
-		expect.assertions(1);
-
-		const stub = createExecuteStub(() => {
-			return scriptResult(
-				envelope([{ jestOutput: successJest() }, { jestOutput: successJest() }]),
-			);
-		});
-
-		await expect(dispatchAsync(stub, { jobs: [job("alpha")] })).rejects.toThrow(
-			/Open Cloud backend returned 2 entries but bucket had 1 jobs/,
-		);
 	});
 });

@@ -1,14 +1,13 @@
 import type { BackendTiming } from "../backends/interface.ts";
-import type { ResolvedConfig } from "../config/schema.ts";
-import type { LuauScriptError } from "../reporter/luau-script-error.ts";
+import { parseGameOutput } from "../game-output/game-output.ts";
+import type { LuauScriptError } from "../jest-output/luau-script-error.ts";
+import type { GameOutputEntry } from "../protocol/game-output.ts";
+import type { RunnerPhase } from "../protocol/runner-error.ts";
 import { EXEC_ERROR_FILE_PATH } from "../types/exec-error-file.ts";
-import type { GameOutputEntry } from "../types/game-output-types.ts";
 import type { JestResult } from "../types/jest-result-types.ts";
 import type { TimingResult } from "../types/timing-types.ts";
 import { composeEntryDisplayName } from "../utils/display-name.ts";
-import { parseGameOutput } from "../utils/game-output.ts";
 import type { ExecuteResult } from "./executor-types.ts";
-import { formatExecuteOutput } from "./format-output.ts";
 
 const EXIT_CODE_MESSAGE = /^Exited with code: \d+$/;
 
@@ -16,98 +15,48 @@ const EXIT_CODE_MESSAGE = /^Exited with code: \d+$/;
 export interface ExecutionErrorOptions {
 	/** Upload and execution timing the backend reported. */
 	backendTiming: BackendTiming;
-	/** Resolved config of the failed entry. */
-	config: ResolvedConfig;
-	/** When true, the result carries no formatted output. */
-	deferFormatting: boolean | undefined;
 	/** The entry that failed. */
 	entry: ExecErrorEntry;
 	/** The decoded Luau script failure. */
 	error: LuauScriptError;
 	/** Run start time, in epoch milliseconds. */
 	startTime: number;
-	/** CLI version shown in the formatted output. */
-	version: string;
 }
 
-/**
- * What the host knows about the entry a failure came back on, before anything
- * the runtime captured is read.
- *
- * This is the half of a failure that survives a run which produced no output
- * at all, so it is what the report falls back to rather than leaving the
- * reader with a bare exit code.
- */
 interface ExecErrorEntry {
-	/** Workspace mode only: the package that owns the project. */
 	pkg?: string | undefined;
-	/** Display name of the project. */
 	project: string;
-	/** How many test files the host selected for this entry. */
 	testFileCount: number;
 }
 
 /**
- * Build an `ExecuteResult` representing an entry whose envelope decoded to a
- * Luau-level script failure. Synthesizes a JestResult with a single
- * "exec-error" file so the failure shows up in formatted output and
- * per-package output files, without halting sibling processing.
- *
+ * Build a failed result with one exec-error file for a Luau script failure.
  * @param options - The failure, its entry, config and timing.
  * @returns A failed result with one exec-error file.
  */
 export function buildExecutionErrorResult({
 	backendTiming,
-	config,
-	deferFormatting,
 	entry,
 	error,
 	startTime,
-	version,
 }: ExecutionErrorOptions): ExecuteResult {
 	const result = buildExecErrorJestResult({ entry, error, startTime });
 	const timing = buildErrorTiming(backendTiming, startTime);
 
-	const output =
-		deferFormatting !== true ? formatExecuteOutput({ config, result, timing, version }) : "";
-
-	return {
-		exitCode: 1,
-		gameOutput: error.gameOutput,
-		output,
-		result,
-		timing,
-	};
+	return { exitCode: 1, gameOutput: error.gameOutput, result, timing };
 }
 
-// How the phases the Luau runners name read to someone who has never opened
-// them. An id with no entry here renders as itself: a runner that grows a
-// phase then says something truer than "unknown" would, even before this map
-// catches up with it.
-const PHASE_LABELS: Record<string, string> = {
+const PHASE_LABELS: Record<RunnerPhase, string> = {
 	resolveJest: "resolving the Jest module",
 	resolveProjects: "resolving project and setup-file instances",
 	run: "running Jest",
 	staging: "staging the package into the DataModel",
 };
 
-// Enough trailing Game Output to carry the line Jest printed on its way out —
-// an intercepted `process.stdout` still delegates to `print`, so LogService
-// sees it too — without pasting a whole run's log into a failure message.
 const GAME_OUTPUT_TAIL = 5;
 
 const LABEL_WIDTH = 13;
 
-/**
- * The captured cause, or undefined when there is none to lead with.
- *
- * Banner Output (Jest's process.stdout) is where the exit cause lives —
- * "No tests found, exiting with code 1" is written via Jest's reporter, not
- * via the native print/warn that only LogService would capture.
- *
- * @param error - The Luau script failure.
- * @returns The trimmed banner text, or undefined when it is empty.
- */
 function bannerCause(error: LuauScriptError): string | undefined {
 	const entries = parseGameOutput(error.bannerOutput);
 	const lines = entries
@@ -117,12 +66,16 @@ function bannerCause(error: LuauScriptError): string | undefined {
 	return lines === "" ? undefined : lines;
 }
 
+function isRunnerPhase(phase: string): phase is RunnerPhase {
+	return Object.hasOwn(PHASE_LABELS, phase);
+}
+
 function phaseLabel(phase: string | undefined): string {
 	if (phase === undefined) {
 		return "not reported by the runner";
 	}
 
-	return PHASE_LABELS[phase] ?? phase;
+	return isRunnerPhase(phase) ? PHASE_LABELS[phase] : phase;
 }
 
 function captureNote({ captureInstalled }: LuauScriptError): string {
@@ -139,16 +92,6 @@ function gameOutputNote(entryCount: number): string {
 	return `${String(entryCount)} lines captured; the last of them follow`;
 }
 
-/**
- * The trailing Game Output lines, blank ones dropped.
- *
- * Offered as what they are — the end of the log, not the cause — because the
- * capture window closes on the package's teardown, so the very last line is as
- * likely to be a stage reset as the message Jest exited on.
- *
- * @param entries - Parsed Game Output entries.
- * @returns The trimmed, non-blank messages of the last entries.
- */
 function gameOutputTail(entries: Array<GameOutputEntry>): Array<string> {
 	const lines: Array<string> = [];
 	const tail = entries.slice(-GAME_OUTPUT_TAIL);
@@ -162,18 +105,6 @@ function gameOutputTail(entries: Array<GameOutputEntry>): Array<string> {
 	return lines;
 }
 
-/**
- * What the host can say about a failure that captured no cause of its own.
- *
- * Every row is a fact the host holds however little the run produced, so this
- * reports rather than concludes: an exit code alone does not say the run found
- * no tests, and naming one cause out of the several that exit this way would
- * send the reader after the wrong one.
- *
- * @param error - The Luau script failure.
- * @param entry - The entry that failed.
- * @returns The multi-line diagnostic report.
- */
 function buildDiagnosticReport(error: LuauScriptError, entry: ExecErrorEntry): string {
 	const gameEntries = parseGameOutput(error.gameOutput);
 	const tail = gameOutputTail(gameEntries);
@@ -200,21 +131,7 @@ function buildDiagnosticReport(error: LuauScriptError, entry: ExecErrorEntry): s
 }
 
 /**
- * Compose the human-readable failure message for an exec-error file
- * synthesized from a Luau script failure.
- *
- * When the wire-level error is just `Exited with code: N`, the actual
- * Jest cause (`No tests found`, `passWithNoTests` guidance, etc.) lives
- * in the captured banner output, not the rejection message itself. The
- * existing single-mode CLI banner (`cli.ts#formatLuauErrorBanner`)
- * surfaces that game output as the primary content for exit-code-only
- * errors; mirror the same semantics here so workspace-mode and
- * multi-project recovery don't drop the user-actionable cause.
- *
- * Format: the captured cause first, then a blank line, then the raw exit-code
- * message as a footer. When nothing was captured there is no cause to lead
- * with, and the report the host can always build takes that place instead —
- * see {@link buildDiagnosticReport}.
+ * Mirrors exit-code-only handling in `formatLuauErrorBanner` (cli-errors.ts).
  *
  * @param error - The Luau script failure.
  * @param entry - The entry that failed.
@@ -242,11 +159,7 @@ function buildExecErrorJestResult({
 	error: LuauScriptError;
 	startTime: number;
 }): JestResult {
-	// Exec-error file shape (see `hasExecError`): `failureMessage` set with
-	// empty `testResults` — the file errored before any tests ran, so
-	// `numFailingTests`/`numFailedTests`/`numTotalTests` all stay 0.
-	// Formatters key off `hasExecError` to count this as a failed FILE
-	// (not a failed test).
+	// Shape must match what `hasExecError` detects.
 	return {
 		numFailedTests: 0,
 		numPassedTests: 0,
@@ -262,10 +175,6 @@ function buildExecErrorJestResult({
 				numPendingTests: 0,
 				testFilePath: EXEC_ERROR_FILE_PATH,
 				testResults: [],
-				// A field rather than a second synthetic path: the source
-				// mapper rewrites every `testFilePath` it can resolve, and a
-				// JSON consumer reads this without knowing which strings the
-				// CLI reserves.
 				timedOut: error.timedOut,
 			},
 		],

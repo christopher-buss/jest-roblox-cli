@@ -7,7 +7,7 @@ export function createSingleFileResult(overrides: Partial<JestResult> = {}): Jes
 		numPassedTests: 1,
 		numPendingTests: 0,
 		numTotalTests: 1,
-		startTime: Date.now(),
+		startTime: 0,
 		success: true,
 		testResults: [
 			{

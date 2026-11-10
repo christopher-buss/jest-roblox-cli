@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { assert, describe, expect, it } from "vitest";
 
-import { configSchema } from "#src/source.ts";
+import { configSchema } from "#src/config/config-validation.ts";
 
 const LUAU_CONFIG_TYPE_FILE = path.resolve(__dirname, "..", "..", "luau", "types", "config.luau");
 
@@ -34,8 +34,6 @@ function readLuauTypeKeys(): Map<string, Array<string>> {
 	);
 }
 
-const SCHEMA_ONLY_KEYS: ReadonlySet<string> = new Set(["config"]);
-
 const testSchema = configSchema.get("test").exclude("undefined");
 const inlineProjectSchema = testSchema
 	.get("projects")
@@ -44,7 +42,7 @@ const inlineProjectSchema = testSchema
 	.extract("object");
 
 function keysOf(schema: { props: ReadonlyArray<{ key: string }> }): Array<string> {
-	return schema.props.map(({ key }) => key).filter((key) => !SCHEMA_ONLY_KEYS.has(key));
+	return schema.props.map(({ key }) => key);
 }
 
 const SCHEMA_KEYS = new Map<string, Array<string>>([

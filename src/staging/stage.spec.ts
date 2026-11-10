@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { findStage, STAGE_KEY } from "./stage.ts";
+import { STAGE_KEY } from "../protocol/staged-place.ts";
+import { findStage } from "./stage.ts";
 
 describe(findStage, () => {
 	it("should find the stage under ServerStorage", () => {

@@ -6,15 +6,15 @@ import path from "node:path";
 import process from "node:process";
 import { onTestFinished, vi } from "vitest";
 
-import { type CliDependencies, runAsync } from "#src/cli.ts";
 import {
 	buildCoveragePlaceAsync,
 	type CoverageManifest,
-	type MultiRunResult,
 	type RawCoverageData,
 	readCoverageManifest,
-	type runJestRobloxAsync,
-} from "#src/index.ts";
+	type RunResult,
+} from "#src/api.ts";
+import { type CliDependencies, runAsync } from "#src/cli.ts";
+import { mapCoverageToTypeScript } from "#src/coverage-report/mapper.ts";
 import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
 
 const PASSING_RUN = {
@@ -54,32 +54,25 @@ const coverageReportSchema = type({
 
 export type CoverageReport = typeof coverageReportSchema.infer;
 
-export async function reportCoverageAsync({
-	coverageData,
-	rootDirectory,
-}: {
+interface CoverageInput {
 	coverageData: RawCoverageData;
+	manifest: CoverageManifest;
 	rootDirectory: string;
-}): Promise<CoverageReport> {
-	const coverageDirectory = path.join(rootDirectory, "coverage");
-	const result = fromPartial<MultiRunResult>({
-		merged: { coverageData },
-		mode: "multi",
-		projectResults: [
-			{
-				displayName: "fixture",
-				result: { coverageData, exitCode: 0, output: "", result: PASSING_RUN },
-			},
-		],
-	});
+}
 
+export async function reportCoverageAsync(input: CoverageInput): Promise<CoverageReport> {
+	const coverageDirectory = path.join(input.rootDirectory, "coverage");
 	const exitCode = await runAsync(["--coverage", "--coverageReporters", "json", "--silent"], {
-		loadConfig: vi
-			.fn<NonNullable<CliDependencies["loadConfig"]>>()
-			.mockResolvedValue(
-				createResolvedConfig({ coverageDirectory, rootDir: rootDirectory, silent: true }),
-			),
-		runJestRoblox: vi.fn<typeof runJestRobloxAsync>().mockResolvedValue(result),
+		loadConfig: vi.fn<NonNullable<CliDependencies["loadConfig"]>>().mockResolvedValue(
+			createResolvedConfig({
+				coverageDirectory,
+				rootDir: input.rootDirectory,
+				silent: true,
+			}),
+		),
+		runJestRoblox: vi
+			.fn<NonNullable<CliDependencies["runJestRoblox"]>>()
+			.mockResolvedValue(mappedRunResult(input)),
 	});
 	if (exitCode !== 0) {
 		throw new Error(`The coverage report run exited with ${exitCode}`);
@@ -101,6 +94,32 @@ export async function instrumentFixtureAsync(rootDirectory: string): Promise<Cov
 	}
 
 	return read.manifest;
+}
+
+function mappedRunResult({ coverageData, manifest, rootDirectory }: CoverageInput): RunResult {
+	return fromPartial<RunResult>({
+		coverage: {
+			units: [
+				{
+					coverageDirectory: path.join(rootDirectory, "coverage"),
+					reporters: ["json"],
+					universe: mapCoverageToTypeScript({ coverageData, manifest }),
+				},
+			],
+		},
+		output: { collectCoverage: true, rootDir: rootDirectory, silent: true },
+		projectResults: [
+			{
+				displayName: "fixture",
+				result: {
+					coverageData,
+					exitCode: 0,
+					result: PASSING_RUN,
+					timing: { executionMs: 1, startTime: 0, testsMs: 1, totalMs: 1, uploadMs: 0 },
+				},
+			},
+		],
+	});
 }
 
 function enterDirectory(rootDirectory: string): void {

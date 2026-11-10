@@ -2,20 +2,20 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { startFakeOpenCloudServerAsync } from "#test/e2e/cli/fake-open-cloud.ts";
+import { nodeAt, readPlaceTree } from "#test/e2e/cli/place-tree.ts";
+import { startFakeOpenCloudServerAsync } from "#test/harness/fake-open-cloud.ts";
 import {
 	buildPassingJestOutput,
 	createFixtureSandbox,
 	createOpenCloudEnvironment,
 	rojoOnPath,
+	RUN_TIMEOUT_MS,
 	runCliAsync,
 	runSeaExecutableAsync,
-} from "#test/e2e/cli/helpers.ts";
-import { nodeAt, readPlaceTree } from "#test/e2e/cli/place-tree.ts";
+} from "#test/harness/helpers.ts";
 
 const LUAU_FIXTURE_PATH = path.resolve(__dirname, "../fixtures/luau-project");
 const WORKSPACE_FIXTURE_PATH = path.resolve(__dirname, "../fixtures/workspace");
-const RUN_TIMEOUT_MS = 60_000;
 
 const NO_OPEN_CLOUD_CREDENTIALS = {
 	JEST_ROBLOX_OPEN_CLOUD_API_KEY: undefined,
@@ -189,7 +189,6 @@ describe("luau configs", () => {
 				'\trojoProject = "test.project.json",',
 				"\ttest = {",
 				"\t\tpassWithNoTests = true,",
-				'\t\ttestPathIgnorePatterns = { "foo\\\\.spec\\\\.luau$" },',
 				"\t},",
 				"}",
 				"",

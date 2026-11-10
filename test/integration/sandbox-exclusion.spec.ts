@@ -3,7 +3,7 @@ import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it, onTestFinished } from "vitest";
 
-import { createSandboxDirectory } from "#test/e2e/sandbox-root.ts";
+import { createSandboxDirectory } from "#test/harness/sandbox-root.ts";
 
 const PACKAGE_ROOT = path.resolve(__dirname, "../..");
 const VITEST_BIN = path.resolve(PACKAGE_ROOT, "node_modules/vitest/vitest.mjs");
@@ -18,11 +18,6 @@ const VITEST_BIN = path.resolve(PACKAGE_ROOT, "node_modules/vitest/vitest.mjs");
  */
 const COLLECTING_PROJECTS = [{ name: "e2e", sentinel: "test/e2e/bundle.spec.ts" }] as const;
 
-/**
- * Two spec spellings the `e2e` glob collects, planted in one sandbox, because
- * that is how an interrupted run leaks them: the fixture tree it copied is left
- * there whole.
- */
 const DECOY_SPEC_NAMES = {
 	e2e: "example.spec.ts",
 	integration: "example.integration.spec.ts",
@@ -77,6 +72,7 @@ function listProjectFiles(project: string): string {
 		{
 			cwd: PACKAGE_ROOT,
 			encoding: "utf-8",
+			timeout: 10_000,
 			windowsHide: true,
 		},
 	);

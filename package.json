@@ -27,12 +27,12 @@
 	},
 	"exports": {
 		".": {
-			"source": "./src/source.ts",
-			"default": "./dist/index.mjs"
-		},
-		"./artifacts": {
 			"source": "./src/index.ts",
 			"default": "./dist/index.mjs"
+		},
+		"./api": {
+			"source": "./src/api.ts",
+			"default": "./dist/api.mjs"
 		},
 		"./cli": {
 			"source": "./src/cli.ts",
@@ -171,7 +171,7 @@
 	"publishConfig": {
 		"exports": {
 			".": "./dist/index.mjs",
-			"./artifacts": "./dist/index.mjs",
+			"./api": "./dist/api.mjs",
 			"./cli": "./dist/cli.mjs",
 			"./loader": "./loaders/luau-raw.mjs",
 			"./package.json": "./package.json"

@@ -26,8 +26,8 @@ pnpm test-luau     # Luau harness tests in lute
 
 `test-unit` and `integration` build the bundled Luau test runner
 (`src/test-runner.bundled.luau`) first, because every spec that imports
-`src/test-script.ts` needs it. To run one folder or file, build it once with
-`pnpm build:bundle`, then call vitest with a project:
+`src/runner-payload/test-script.ts` needs it. To run one folder or file, build
+it once with `pnpm build:bundle`, then call vitest with a project:
 
 ```bash
 pnpm vitest run --project unit src/formatters
@@ -68,12 +68,14 @@ jest-roblox-cli/
 ├── src/
 │   ├── backends/     Open Cloud and Studio backends
 │   ├── config/       Config loading and validation
-│   ├── coverage-pipeline/ Coverage instrumentation pipeline
+│   ├── attribution/  Per-test coverage attribution
+│   ├── coverage-data/ Coverage and build manifests, raw coverage, universe
+│   ├── coverage-report/ Coverage mapping and istanbul reports
 │   ├── formatters/   Output formatters (default, agent, JSON, GitHub Actions)
-│   ├── highlighter/  Luau syntax highlighting
-│   ├── reporter/     Result parsing and validation
+│   ├── instrument/   Luau probe instrumentation
+│   ├── jest-output/  Jest output parsing and validation
+│   ├── shadow/       Coverage roots, shadow tree and coverage place
 │   ├── source-mapper/ Luau-to-TypeScript error mapping
-│   ├── snapshot/     Snapshot file handling
 │   ├── typecheck/    Type test runner
 │   ├── types/        Shared type definitions
 │   └── utils/        Helpers (glob, hash, cache, paths)

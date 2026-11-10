@@ -1,15 +1,14 @@
 import { fromAny } from "@total-typescript/shoehorn";
 
-import process from "node:process";
 import { stripVTControlCharacters } from "node:util";
-import color from "tinyrainbow";
-import { describe, expect, it, onTestFinished } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import {
 	EXEC_ERROR_RESULT,
 	MIXED_WITH_EXEC_ERROR_RESULT,
 	TIMED_OUT_RESULT,
 } from "#test/mocks/format-error-results.ts";
+import { createPlainStyles } from "#test/mocks/format-plain-styles.ts";
 import { EMPTY_FILE_RESULT, MIXED_RESULT, PASSING_RESULT } from "#test/mocks/format-results.ts";
 import { createTaggedStyles } from "#test/mocks/format-tagged-styles.ts";
 import {
@@ -22,10 +21,8 @@ import type { JestResult, SnapshotSummary, TestFileResult } from "../types/jest-
 import type { TimingResult } from "../types/timing-types.ts";
 import type { FormatOptions } from "./shared.ts";
 import {
-	countFileBuckets,
 	formatAffectedLine,
 	formatBailLine,
-	formatFailedTestsHeader,
 	formatLogHints,
 	formatRunHeader,
 	formatTestSummary,
@@ -72,7 +69,7 @@ function summarizeSnapshot(snapshot: SnapshotSummary): string {
 		testResults: [makeFile({ numPassingTests: 1, testFilePath: "test.spec.ts" })],
 	};
 
-	return formatTestSummary({ result, timing: createTiming(1000) });
+	return formatTestSummary({ result, styles: createPlainStyles(), timing: createTiming(1000) });
 }
 
 describe(formatLogHints, () => {
@@ -169,61 +166,11 @@ describe(formatTestSummary, () => {
 	});
 });
 
-describe(countFileBuckets, () => {
-	it("should count a file with both passing and pending tests as passed", () => {
-		expect.assertions(1);
-
-		expect(
-			countFileBuckets(
-				fromAny({
-					testResults: [makeFile({ numPassingTests: 1, numPendingTests: 1 })],
-				}),
-			),
-		).toStrictEqual({ failed: 0, passed: 1, skipped: 0 });
-	});
-
-	it("should count collected files with no tests as passed", () => {
-		expect.assertions(1);
-
-		expect(
-			countFileBuckets(
-				fromAny({
-					testResults: [makeFile({}), makeFile({ numPassingTests: 1 })],
-				}),
-			),
-		).toStrictEqual({ failed: 0, passed: 2, skipped: 0 });
-	});
-});
-
-describe("formatTestSummary default styles", () => {
-	it("should color the rows when no styles are passed", () => {
-		expect.assertions(1);
-
-		const output = formatTestSummary({
-			result: fromAny({
-				numFailedTests: 1,
-				numPassedTests: 0,
-				numPendingTests: 0,
-				numTotalTests: 1,
-				testResults: [makeFile({ numFailingTests: 1 })],
-			}),
-			timing: { executionMs: 0, startTime: 0, testsMs: 0, totalMs: 0 },
-		});
-
-		expect(stripVTControlCharacters(output)).not.toBe(output);
-	});
-});
-
 describe(formatRunHeader, () => {
 	it("should show the version and root directory", () => {
 		expect.assertions(1);
 
-		expect(
-			formatRunHeader(
-				{ color: false, rootDir: "/repo", version: "1.0.0" },
-				createTaggedStyles(),
-			),
-		).toBe(
+		expect(formatRunHeader({ rootDir: "/repo", version: "1.0.0" }, createTaggedStyles())).toBe(
 			"\n<runBadge> RUN </runBadge> <location>v1.0.0</location> <lineNumber>/repo</lineNumber>\n",
 		);
 	});
@@ -232,21 +179,11 @@ describe(formatRunHeader, () => {
 		expect.assertions(1);
 
 		expect(
-			formatRunHeader({
-				collectCoverage: true,
-				color: false,
-				rootDir: "/repo",
-				version: "1.0.0",
-			}),
+			formatRunHeader(
+				{ collectCoverage: true, rootDir: "/repo", version: "1.0.0" },
+				createPlainStyles(),
+			),
 		).toBe("\n RUN  v1.0.0 /repo\n      Coverage enabled with istanbul\n");
-	});
-});
-
-describe(formatFailedTestsHeader, () => {
-	it("should title the banner with the failure count", () => {
-		expect.assertions(1);
-
-		expect(formatFailedTestsHeader(2)).toContain("Failed Tests 2");
 	});
 });
 
@@ -376,7 +313,7 @@ describe("formatTestSummary optional rows", () => {
 
 describe(formatTestSummary, () => {
 	it("should format all passing tests", () => {
-		expect.assertions(5);
+		expect.assertions(4);
 
 		const result: JestResult = {
 			numFailedTests: 0,
@@ -396,11 +333,14 @@ describe(formatTestSummary, () => {
 			],
 		};
 
-		const summary = formatTestSummary({ result, timing: createTiming(2500) });
+		const summary = formatTestSummary({
+			result,
+			styles: createPlainStyles(),
+			timing: createTiming(2500),
+		});
 
 		expect(summary).toContain("Test Files");
 		expect(summary).toContain("5 passed");
-		expect(summary).toContain(color.bold(color.green("5 passed")));
 		expect(summary).toContain("(5)");
 		expect(summary).toContain("2500ms");
 	});
@@ -433,7 +373,11 @@ describe(formatTestSummary, () => {
 			],
 		};
 
-		const summary = formatTestSummary({ result, timing: createTiming(1000) });
+		const summary = formatTestSummary({
+			result,
+			styles: createPlainStyles(),
+			timing: createTiming(1000),
+		});
 
 		expect(summary).toContain("Test Files");
 		expect(summary).toContain("7 passed");
@@ -446,7 +390,11 @@ describe(formatTestSummary, () => {
 		expect.assertions(2);
 
 		const summary = stripVTControlCharacters(
-			formatTestSummary({ result: MIXED_RESULT, timing: createTiming(1000) }),
+			formatTestSummary({
+				result: MIXED_RESULT,
+				styles: createPlainStyles(),
+				timing: createTiming(1000),
+			}),
 		);
 
 		expect(summary).toContain(" Test Files  1 failed | 1 passed (2)");
@@ -457,7 +405,11 @@ describe(formatTestSummary, () => {
 		expect.assertions(2);
 
 		const summary = stripVTControlCharacters(
-			formatTestSummary({ result: EMPTY_FILE_RESULT, timing: createTiming(1000) }),
+			formatTestSummary({
+				result: EMPTY_FILE_RESULT,
+				styles: createPlainStyles(),
+				timing: createTiming(1000),
+			}),
 		);
 
 		expect(summary).toContain(" Test Files  2 passed (2)");
@@ -485,7 +437,11 @@ describe(formatTestSummary, () => {
 			],
 		};
 
-		const summary = formatTestSummary({ result, timing: createTiming(1000) });
+		const summary = formatTestSummary({
+			result,
+			styles: createPlainStyles(),
+			timing: createTiming(1000),
+		});
 
 		expect(summary).not.toContain("Snapshots");
 	});
@@ -542,7 +498,11 @@ describe(formatTestSummary, () => {
 			],
 		};
 
-		const summary = formatTestSummary({ result, timing: createTiming(1000) });
+		const summary = formatTestSummary({
+			result,
+			styles: createPlainStyles(),
+			timing: createTiming(1000),
+		});
 
 		expect(summary).toContain("Snapshots");
 		expect(summary).toMatch(/Snapshots.*1 failed/);
@@ -654,6 +614,7 @@ describe(formatTestSummary, () => {
 		const summary = formatTestSummary({
 			result,
 			snapshotWriteFailures: 1,
+			styles: createPlainStyles(),
 			timing: createTiming(1000),
 		});
 		const writeLine = summary.split("\n").find((line) => line.includes("Snapshot Write"));
@@ -691,7 +652,11 @@ describe(formatTestSummary, () => {
 			],
 		};
 
-		const summary = formatTestSummary({ result, timing: createTiming(1000) });
+		const summary = formatTestSummary({
+			result,
+			styles: createPlainStyles(),
+			timing: createTiming(1000),
+		});
 		const snapshotLine = summary.split("\n").find((line) => line.includes("Snapshots"));
 
 		expect(snapshotLine).toMatch(/1 failed.*1 obsolete.*2 updated.*1 written.*2 passed.*\(6\)/);
@@ -725,7 +690,11 @@ describe(formatTestSummary, () => {
 			],
 		};
 
-		const summary = formatTestSummary({ result, timing: createTiming(1000) });
+		const summary = formatTestSummary({
+			result,
+			styles: createPlainStyles(),
+			timing: createTiming(1000),
+		});
 
 		expect(summary).toContain("Test Files");
 		expect(summary).toMatch(/1 failed.*\|.*1 passed/);
@@ -737,7 +706,10 @@ describe(formatRunHeader, () => {
 	it("should include coverage subtitle when collectCoverage is true", () => {
 		expect.assertions(2);
 
-		const header = formatRunHeader({ ...defaultOptions, collectCoverage: true, color: false });
+		const header = formatRunHeader(
+			{ ...defaultOptions, collectCoverage: true },
+			createPlainStyles(),
+		);
 
 		expect(header).toContain("Coverage enabled with");
 		expect(header).toContain("istanbul");
@@ -746,7 +718,10 @@ describe(formatRunHeader, () => {
 	it("should not include coverage subtitle when collectCoverage is false", () => {
 		expect.assertions(1);
 
-		const header = formatRunHeader({ ...defaultOptions, collectCoverage: false, color: false });
+		const header = formatRunHeader(
+			{ ...defaultOptions, collectCoverage: false },
+			createPlainStyles(),
+		);
 
 		expect(header).not.toContain("Coverage enabled");
 	});
@@ -754,65 +729,9 @@ describe(formatRunHeader, () => {
 	it("should not include coverage subtitle when collectCoverage is omitted", () => {
 		expect.assertions(1);
 
-		const header = formatRunHeader({ ...defaultOptions, color: false });
+		const header = formatRunHeader({ ...defaultOptions }, createPlainStyles());
 
 		expect(header).not.toContain("Coverage enabled");
-	});
-});
-
-describe(formatFailedTestsHeader, () => {
-	it("should format header with failure count", () => {
-		expect.assertions(2);
-
-		const header = formatFailedTestsHeader(3);
-
-		expect(header).toContain("Failed Tests 3");
-		expect(header).toContain("⎯");
-	});
-
-	it("should scale separator to terminal width", () => {
-		expect.assertions(1);
-
-		const original = process.stdout.columns;
-		process.stdout.columns = 40;
-		onTestFinished(() => {
-			process.stdout.columns = original;
-		});
-
-		const header = formatFailedTestsHeader(1, undefined);
-		const stripped = stripVTControlCharacters(header);
-
-		expect(stripped).toHaveLength(40);
-	});
-
-	it("should fill terminal width with odd-length badge", () => {
-		expect.assertions(1);
-
-		const original = process.stdout.columns;
-		process.stdout.columns = 41;
-		onTestFinished(() => {
-			process.stdout.columns = original;
-		});
-
-		const header = formatFailedTestsHeader(10, undefined);
-		const stripped = stripVTControlCharacters(header);
-
-		expect(stripped).toHaveLength(41);
-	});
-
-	it("should fall back to 80 columns when stdout has no columns", () => {
-		expect.assertions(1);
-
-		const original = process.stdout.columns;
-		Reflect.deleteProperty(process.stdout, "columns");
-		onTestFinished(() => {
-			process.stdout.columns = original;
-		});
-
-		const header = formatFailedTestsHeader(1, undefined);
-		const stripped = stripVTControlCharacters(header);
-
-		expect(stripped).toHaveLength(80);
 	});
 });
 
@@ -822,6 +741,7 @@ describe("formatTestSummary exec errors", () => {
 
 		const summary = formatTestSummary({
 			result: EXEC_ERROR_RESULT,
+			styles: createPlainStyles(),
 			timing: createTiming(1000),
 		});
 
@@ -835,6 +755,7 @@ describe("formatTestSummary exec errors", () => {
 
 		const summary = formatTestSummary({
 			result: MIXED_WITH_EXEC_ERROR_RESULT,
+			styles: createPlainStyles(),
 			timing: createTiming(1000),
 		});
 
@@ -850,6 +771,7 @@ describe("formatTestSummary type errors line", () => {
 
 		const output = formatTestSummary({
 			result: PASSING_RESULT,
+			styles: createPlainStyles(),
 			timing: TIMING_NO_UPLOAD,
 			typeErrors: 0,
 		});
@@ -863,6 +785,7 @@ describe("formatTestSummary type errors line", () => {
 
 		const output = formatTestSummary({
 			result: PASSING_RESULT,
+			styles: createPlainStyles(),
 			timing: TIMING_NO_UPLOAD,
 			typeErrors: 3,
 		});
@@ -874,7 +797,11 @@ describe("formatTestSummary type errors line", () => {
 	it("should omit type errors line when typeErrors is undefined", () => {
 		expect.assertions(1);
 
-		const output = formatTestSummary({ result: PASSING_RESULT, timing: TIMING_NO_UPLOAD });
+		const output = formatTestSummary({
+			result: PASSING_RESULT,
+			styles: createPlainStyles(),
+			timing: TIMING_NO_UPLOAD,
+		});
 		const plain = stripVTControlCharacters(output);
 
 		expect(plain).not.toContain("Type Errors");
@@ -885,7 +812,11 @@ describe("formatTestSummary coverage timing", () => {
 	it("should show coverage bucket when coverageMs is provided", () => {
 		expect.assertions(2);
 
-		const summary = formatTestSummary({ result: PASSING_RESULT, timing: TIMING_COVERAGE });
+		const summary = formatTestSummary({
+			result: PASSING_RESULT,
+			styles: createPlainStyles(),
+			timing: TIMING_COVERAGE,
+		});
 		const plain = stripVTControlCharacters(summary);
 
 		expect(plain).toContain("coverage 3000ms");
@@ -895,7 +826,11 @@ describe("formatTestSummary coverage timing", () => {
 	it("should subtract coverageMs from cli bucket", () => {
 		expect.assertions(1);
 
-		const summary = formatTestSummary({ result: PASSING_RESULT, timing: TIMING_COVERAGE });
+		const summary = formatTestSummary({
+			result: PASSING_RESULT,
+			styles: createPlainStyles(),
+			timing: TIMING_COVERAGE,
+		});
 		const plain = stripVTControlCharacters(summary);
 
 		// totalMs=3250, uploadMs=50, executionMs=150, coverageMs=3000 → cli=50
@@ -905,7 +840,11 @@ describe("formatTestSummary coverage timing", () => {
 	it("should omit coverage bucket when coverageMs is undefined", () => {
 		expect.assertions(1);
 
-		const summary = formatTestSummary({ result: PASSING_RESULT, timing: TIMING });
+		const summary = formatTestSummary({
+			result: PASSING_RESULT,
+			styles: createPlainStyles(),
+			timing: TIMING,
+		});
 		const plain = stripVTControlCharacters(summary);
 
 		expect(plain).not.toContain("coverage");
@@ -916,6 +855,7 @@ describe("formatTestSummary coverage timing", () => {
 
 		const summary = formatTestSummary({
 			result: PASSING_RESULT,
+			styles: createPlainStyles(),
 			timing: { ...TIMING, coverageMs: 0 },
 		});
 		const plain = stripVTControlCharacters(summary);
@@ -928,7 +868,11 @@ describe("formatTestSummary staging timing", () => {
 	it("should show staging bucket when stagingMs is provided", () => {
 		expect.assertions(2);
 
-		const summary = formatTestSummary({ result: PASSING_RESULT, timing: TIMING_STAGING });
+		const summary = formatTestSummary({
+			result: PASSING_RESULT,
+			styles: createPlainStyles(),
+			timing: TIMING_STAGING,
+		});
 		const plain = stripVTControlCharacters(summary);
 
 		expect(plain).toContain("staging 400ms");
@@ -939,7 +883,11 @@ describe("formatTestSummary staging timing", () => {
 		expect.assertions(1);
 
 		// totalMs=650, uploadMs=50, executionMs=150, stagingMs=400 -> cli=50
-		const summary = formatTestSummary({ result: PASSING_RESULT, timing: TIMING_STAGING });
+		const summary = formatTestSummary({
+			result: PASSING_RESULT,
+			styles: createPlainStyles(),
+			timing: TIMING_STAGING,
+		});
 		const plain = stripVTControlCharacters(summary);
 
 		expect(plain).toContain("cli 50ms");
@@ -950,6 +898,7 @@ describe("formatTestSummary staging timing", () => {
 
 		const summary = formatTestSummary({
 			result: PASSING_RESULT,
+			styles: createPlainStyles(),
 			timing: { ...TIMING, stagingMs: 0 },
 		});
 		const plain = stripVTControlCharacters(summary);
@@ -964,6 +913,7 @@ describe("formatTestSummary setup timing", () => {
 
 		const summary = formatTestSummary({
 			result: PASSING_RESULT,
+			styles: createPlainStyles(),
 			timing: {
 				...TIMING,
 				executionMs: 500,
@@ -982,6 +932,7 @@ describe("formatTestSummary setup timing", () => {
 		// executionMs=500, testsMs=100, setupMs=200 → environment=200
 		const summary = formatTestSummary({
 			result: PASSING_RESULT,
+			styles: createPlainStyles(),
 			timing: {
 				...TIMING,
 				executionMs: 500,
@@ -1000,6 +951,7 @@ describe("formatTestSummary setup timing", () => {
 		// executionMs=150, testsMs=100, setupMs=200 → would be -150, clamp to 0
 		const summary = formatTestSummary({
 			result: PASSING_RESULT,
+			styles: createPlainStyles(),
 			timing: {
 				...TIMING,
 				setupMs: 200,
@@ -1013,7 +965,11 @@ describe("formatTestSummary setup timing", () => {
 	it("should omit setup bucket when setupMs is undefined", () => {
 		expect.assertions(1);
 
-		const summary = formatTestSummary({ result: PASSING_RESULT, timing: TIMING });
+		const summary = formatTestSummary({
+			result: PASSING_RESULT,
+			styles: createPlainStyles(),
+			timing: TIMING,
+		});
 		const plain = stripVTControlCharacters(summary);
 
 		expect(plain).not.toContain("setup");
@@ -1024,6 +980,7 @@ describe("formatTestSummary setup timing", () => {
 
 		const summary = formatTestSummary({
 			result: PASSING_RESULT,
+			styles: createPlainStyles(),
 			timing: { ...TIMING, setupMs: 0 },
 		});
 		const plain = stripVTControlCharacters(summary);
@@ -1036,7 +993,11 @@ describe("formatResult timeouts", () => {
 	it("should still count the run as failed", () => {
 		expect.assertions(2);
 
-		const summary = formatTestSummary({ result: TIMED_OUT_RESULT, timing: createTiming(1000) });
+		const summary = formatTestSummary({
+			result: TIMED_OUT_RESULT,
+			styles: createPlainStyles(),
+			timing: createTiming(1000),
+		});
 
 		expect(summary).toContain("1 failed");
 		expect(summary).not.toContain("skipped");

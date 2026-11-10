@@ -4,26 +4,17 @@ const COMMENT_OPEN = "--";
 const DIRECTIVE_OPEN = "--!";
 const WHITESPACE = /\s/;
 
-/** What one line of the opening comment run left behind for the next. */
 interface HeaderLineScan {
-	/** The `]==]` an unfinished block comment on this line is waiting for. */
 	closer: string | undefined;
-	/** True when a token appeared, which closes the run for the whole file. */
 	hasEnded: boolean;
-	/**
-	 * True when a `--!` comment Luau still reads as a directive stands here.
-	 */
 	isDirective: boolean;
 }
 
-/** One step along a line: what it left behind, and how far it reached. */
 interface HeaderAdvance {
 	state: HeaderLineScan;
-	/** Columns the step covers, or undefined when the line is done with. */
 	width: number | undefined;
 }
 
-/** What the text at one column is, read from outside any comment. */
 type CodeStep =
 	| {
 			closer: string | undefined;
@@ -34,24 +25,8 @@ type CodeStep =
 	| { hasEnded: true };
 
 /**
- * How many lines a caller must leave above code it injects into a Luau file,
- * so that every directive the file opens with keeps its meaning.
- *
- * Luau reads `--!strict`, `--!native` and the rest for as long as no token has
- * opened the file, and it lexes blank lines, ordinary comments and indentation
- * away rather than counting them as a token. So the run reaches to the last
- * `--!` line ahead of the first token, however the lines in between look, and
- * injected code goes behind that line — put it above and Luau stops reading
- * every directive it displaces.
- *
- * Nothing but comments and whitespace can stand there, which is what makes
- * reading them without the parser sound: no literal can precede a file's first
- * token, so there is no string to mistake a `--` inside for a comment.
- *
- * Counted in the lines the caller holds, which are split on `\n`. A bare `\r`
- * ends a comment for Luau without opening a line, so one of those lines can
- * carry a directive and then code; the count stops short of such a line rather
- * than name a place to inject that would land above the code.
+ * Count the leading lines injected code must stay below, so every `--!`
+ * directive the file opens with keeps its meaning.
  * @param lines - The file's lines, split on `\n`.
  * @returns The number of leading lines injected code must stay below.
  */
@@ -75,14 +50,6 @@ export function countLinesThroughLastDirective(lines: ReadonlyArray<string>): nu
 	return throughLine;
 }
 
-/**
- * What the text at one column is, read from outside any comment: whitespace
- * passes, a token closes the run, a block comment hands back its closer, and a
- * `--` comment ends on a bare `\r` as readily as on the line — the lexer reads
- * on from there without counting a line.
- * @param rest - The line text from the current column on.
- * @returns The step: the run's end, or the width to advance and any closer.
- */
 function stepFromCode(rest: string): CodeStep {
 	if (WHITESPACE.test(rest.charAt(0))) {
 		return { closer: undefined, hasEnded: false, isDirective: false, width: 1 };
@@ -92,7 +59,6 @@ function stepFromCode(rest: string): CodeStep {
 		return { hasEnded: true };
 	}
 
-	// `[==[` closes on `]==]` alone, so the level rides along in the closer.
 	const opener = BLOCK_COMMENT_OPEN.exec(rest)?.[0];
 	if (opener !== undefined) {
 		const closer = opener.slice(COMMENT_OPEN.length).replaceAll("[", "]");
@@ -109,19 +75,6 @@ function stepFromCode(rest: string): CodeStep {
 	};
 }
 
-/**
- * Take one step along a line, either hunting the closer an open block comment
- * is waiting for or reading fresh text.
- *
- * A token ends the run and takes any directive that shares its line down with
- * it: the count is in whole lines, so a caller cannot lift such a directive
- * away without carrying the code up too.
- * @param options - The line, the column to step from and the scan so far.
- * @param options.column - The column to step from.
- * @param options.line - The line being scanned.
- * @param options.state - The scan state before this step.
- * @returns The next scan state and the width advanced, or `undefined` to stop.
- */
 function advanceOnce({
 	column,
 	line,
@@ -160,13 +113,6 @@ function advanceOnce({
 	};
 }
 
-/**
- * Read one line as far as the opening comment run goes, carrying in whatever
- * closer an earlier line's block comment is still waiting for.
- * @param line - The line to scan.
- * @param openCloser - The closer an earlier block comment still waits for.
- * @returns The scan state at the end of the line's comment run.
- */
 function scanHeaderLine(line: string, openCloser: string | undefined): HeaderLineScan {
 	let state: HeaderLineScan = { closer: openCloser, hasEnded: false, isDirective: false };
 	let column = 0;

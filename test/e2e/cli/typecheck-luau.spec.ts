@@ -5,7 +5,7 @@ import {
 	createFixtureSandbox,
 	readMergedTestFilePaths,
 	runCliAsync,
-} from "#test/e2e/cli/helpers.ts";
+} from "#test/harness/helpers.ts";
 
 const SINGLE_FIXTURE = path.resolve(__dirname, "../fixtures/typecheck-luau-single");
 const SINGLE_BROKEN_FIXTURE = path.resolve(__dirname, "../fixtures/typecheck-luau-single-broken");

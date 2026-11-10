@@ -8,7 +8,6 @@ import {
 } from "../luau/eval-literals.ts";
 import { luauParser } from "../luau/parser.ts";
 import type { FileSystem } from "../utils/file-system.ts";
-import { nodeFileSystem } from "../utils/file-system.ts";
 import { configSchema } from "./config-validation.ts";
 import type { LuteEvaluationContext } from "./luau-config-lute.ts";
 import { evaluateLuauConfigWithLute, nodeLuteEvaluationContext } from "./luau-config-lute.ts";
@@ -57,8 +56,7 @@ export async function loadLuauConfig(
 }
 
 /**
- * Check if `<cwd>/<directoryOrFile>/jest.config.luau` exists. Returns the
- * resolved path if found, undefined otherwise.
+ * Find `jest.config.luau` under a project directory.
  *
  * @param options - Base directory, project directory (or file) the config
  *   sits under, and the file system to check.
@@ -67,11 +65,11 @@ export async function loadLuauConfig(
 export function findLuauConfigFile({
 	cwd,
 	directoryOrFile,
-	fileSystem = nodeFileSystem,
+	fileSystem,
 }: {
 	readonly cwd: string;
 	readonly directoryOrFile: string;
-	readonly fileSystem?: FileSystem;
+	readonly fileSystem: FileSystem;
 }): string | undefined {
 	const resolved = path.resolve(cwd, directoryOrFile, "jest.config.luau");
 	if (fileSystem.existsSync(resolved)) {

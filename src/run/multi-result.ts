@@ -1,63 +1,76 @@
+import * as path from "node:path";
+
+import { pickCoverageSettings } from "../config/coverage-settings.ts";
 import { collectProjectRoots } from "../config/filter-projects-by-files.ts";
 import type { ResolvedProjectConfig } from "../config/projects.ts";
+import type { CliOptions, ResolvedConfig } from "../config/resolved-config.ts";
+import type { RawCoverageData } from "../coverage-data/coverage-types.ts";
+import type { CoverageManifest } from "../coverage-data/manifest.ts";
+import { mergeRawCoverage } from "../coverage-data/merge-raw-coverage.ts";
 import {
 	type CoverageDisplayPredicate,
 	projectRootFilter,
 	sourceTwinFilter,
-} from "../coverage-pipeline/agent-table-filter.ts";
-import type { AttributionResult } from "../coverage-pipeline/attribution.ts";
-import { mergeAttribution } from "../coverage-pipeline/attribution.ts";
-import type { RawCoverageData } from "../coverage-pipeline/coverage-types.ts";
-import { resolveCoverageInclude } from "../coverage-pipeline/derive-coverage-from.ts";
-import { mergeRawCoverage } from "../coverage-pipeline/merge-raw-coverage.ts";
-import { combineSourceMappers, type SourceMapper } from "../source-mapper/index.ts";
+} from "../coverage-report/agent-table-filter.ts";
+import { toCoverageUnit } from "../results/coverage-unit.ts";
+import { toOutputSettings } from "../results/output-settings.ts";
+import type {
+	OutputSettings,
+	ProjectResult,
+	RunCoverage,
+	RunResult,
+} from "../results/run-result-types.ts";
+import type { TypecheckPassOutcome } from "../typecheck/typecheck-groups.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
-import type { ExecutionOutcome } from "./execution.ts";
-import type { MultiProjectMerged, MultiRunResult, ProjectResult, RunOptions } from "./run-types.ts";
+import type { RunDiscovery, TestPlan } from "./run-plan.ts";
+import type { RunSeams } from "./seams.ts";
 import type { StagedRun } from "./staging.ts";
-import type { RunDiscovery, TestPlan } from "./test-plan.ts";
 
 /** Inputs of {@link buildMultiRunResult}. */
 export interface MultiRunResultInput {
 	/** Parsed command-line options. */
-	cli: RunOptions["cli"];
+	cli: CliOptions;
 	/** Discovered projects and root config. */
 	discovery: RunDiscovery;
 	/** Outcome of the executed run. */
 	outcome: ExecutionOutcome;
 	/** Planned test files of the run. */
 	plan: TestPlan;
+	/** Reads and maps the coverage. */
+	seams: CoverageSeams;
 	/** Staging products and timings. */
 	staged: StagedRun;
 }
 
+interface ExecutionOutcome {
+	placeBuildMs: number;
+	projectResults: Array<ProjectResult>;
+	typecheck: TypecheckPassOutcome;
+}
+
+type CoverageSeams = Pick<RunSeams, "mapCoverage">;
+
 /**
- * Project a finished run onto the `MultiRunResult` the report layer consumes:
- * the coverage source universe, the display-only agent-table narrowing, and
- * the per-project results merged into one coverage/attribution/source-mapper
- * triple.
- *
- * @param options - The finished run's inputs.
- * @param options.cli - Parsed command-line options.
- * @param options.discovery - Discovered projects and root config.
- * @param options.outcome - Outcome of the executed run.
- * @param options.plan - Planned test files of the run.
- * @param options.staged - Staging products and timings.
- * @returns Coverage universe, display filter and merged project results.
+ * Project a finished run onto the `RunResult` the output layer consumes.
+ * @param options - CLI options, discovery, outcome, plan, seams and staging.
+ * @returns The result the output layer reports.
  */
 export function buildMultiRunResult({
 	cli,
 	discovery,
 	outcome,
 	plan,
+	seams,
 	staged,
-}: MultiRunResultInput): MultiRunResult {
+}: MultiRunResultInput): RunResult {
 	const { projects, rootConfig } = discovery;
-	const collectCoverageFrom = resolveCoverageInclude(rootConfig, projects);
+	const coverage = resolveProjectCoverage(
+		coverageInputs({ discovery, outcome, rootConfig, seams, staged }),
+	);
 
 	return {
 		affected: plan.affected,
-		collectCoverageFrom,
+		coverage,
 		coverageArtifacts: staged.coverageArtifacts,
 		coverageChangedFiles: discovery.partialRun?.files,
 		coverageDisplayFilter: buildMultiDisplayFilter({
@@ -69,8 +82,7 @@ export function buildMultiRunResult({
 			testPathPattern: rootConfig.testPathPattern,
 		}),
 		coverageMs: staged.coverageMs,
-		merged: mergeForMultiResult(outcome.projectResults),
-		mode: "multi",
+		output: resolveProjectOutput(rootConfig, coverage),
 		projectResults: outcome.projectResults,
 		stagingMs: staged.stagingMs + outcome.placeBuildMs,
 		typecheckResult: outcome.typecheck.result,
@@ -78,22 +90,63 @@ export function buildMultiRunResult({
 }
 
 /**
- * Builds the agent text-table narrowing for a filtered multi run. Files named
- * directly (positionals) win as source twins; a `--testPathPattern` twins the
- * matched runtime files; a bare `--project` scopes the table to the selected
- * projects' source roots (so the project's untested files still report 0%). A
- * full run (none of these) returns undefined — the table keeps the full
- * universe. Display-only: never reaches thresholds, totals, or lcov/html/json.
- *
- * @param options - The filter inputs.
- * @param options.cliFiles - Positional files from the CLI.
- * @param options.matchedRuntimeFiles - Runtime files the pattern matched.
- * @param options.projectNames - Names passed to `--project`.
- * @param options.projects - Resolved project configs.
- * @param options.rootDir - Root directory of the run.
- * @param options.testPathPattern - The `--testPathPattern` regex.
- * @returns The display filter, or `undefined` on a full run.
+ * The output settings of a single or multi run: the root config's.
+ * @param rootConfig - Config with the CLI options merged in.
+ * @param coverage - The run's coverage report, if any.
+ * @returns The output settings.
  */
+function resolveProjectOutput(
+	rootConfig: ResolvedConfig,
+	coverage: RunCoverage | undefined,
+): OutputSettings {
+	return toOutputSettings(rootConfig, {
+		coverage,
+		perUnitGameOutput: false,
+		perUnitOutputFile: false,
+		rootDir: rootConfig.rootDir,
+	});
+}
+
+/**
+ * Map a run's raw hit counts through the staged coverage manifest.
+ * @param options - Coverage globs, raw hits, manifest, root config and seams.
+ * @returns The mapped coverage, or nothing when coverage is off.
+ */
+function resolveProjectCoverage({
+	changedFiles,
+	collectCoverageFrom,
+	coverageData,
+	manifest,
+	rootConfig,
+	seams,
+}: {
+	changedFiles: ReadonlyArray<string> | undefined;
+	collectCoverageFrom: Array<string> | undefined;
+	coverageData: RawCoverageData | undefined;
+	manifest: CoverageManifest | undefined;
+	rootConfig: ResolvedConfig;
+	seams: CoverageSeams;
+}): RunCoverage | undefined {
+	if (!rootConfig.collectCoverage) {
+		return undefined;
+	}
+
+	return toCoverageUnit({
+		changedFiles,
+		coverageData,
+		manifest,
+		mapCoverage: seams.mapCoverage,
+		settings: {
+			collectCoverageFrom,
+			coverageDirectory: path.resolve(rootConfig.rootDir, rootConfig.coverageDirectory),
+			coveragePathIgnorePatterns: rootConfig.coveragePathIgnorePatterns,
+			coverageReporters: rootConfig.coverageReporters,
+			coverageThreshold: rootConfig.coverageThreshold,
+			rootDir: rootConfig.rootDir,
+		},
+	});
+}
+
 function buildMultiDisplayFilter({
 	cliFiles,
 	matchedRuntimeFiles,
@@ -109,8 +162,6 @@ function buildMultiDisplayFilter({
 	rootDir: string;
 	testPathPattern: string | undefined;
 }): CoverageDisplayPredicate | undefined {
-	// Positionals name the files directly; twin the raw CLI args (not the
-	// post-discovery set) so the table reflects exactly what the user typed.
 	if (cliFiles !== undefined && cliFiles.length > 0) {
 		return sourceTwinFilter(cliFiles, rootDir);
 	}
@@ -125,45 +176,27 @@ function buildMultiDisplayFilter({
 
 	const posixRootDirectory = normalizeWindowsPath(rootDir);
 	const roots = projects.flatMap((project) => collectProjectRoots(project, posixRootDirectory));
-	// Projects whose `include` is a bare glob (no static directory prefix)
-	// yield no roots, so there is no containment boundary to scope by. Fall
-	// back to the full universe rather than an empty table — the user passed
-	// `--project`, so showing every file beats showing nothing.
 	return roots.length > 0 ? projectRootFilter(roots) : undefined;
 }
 
-function mergeForMultiResult(projectResults: Array<ProjectResult>): MultiProjectMerged {
-	let mergedCoverage: RawCoverageData | undefined;
-	let mergedAttribution: AttributionResult | undefined;
-	const mappers: Array<SourceMapper> = [];
-
-	for (const { result } of projectResults) {
-		mergedCoverage = mergeRawCoverage(mergedCoverage, result.coverageData);
-
-		if (result.attribution !== undefined) {
-			mergedAttribution =
-				mergedAttribution === undefined
-					? result.attribution
-					: mergeAttribution(mergedAttribution, result.attribution);
-		}
-
-		if (result.sourceMapper !== undefined) {
-			mappers.push(result.sourceMapper);
-		}
-	}
-
-	const merged: MultiProjectMerged = {};
-	if (mergedCoverage !== undefined) {
-		merged.coverageData = mergedCoverage;
-	}
-
-	if (mergedAttribution !== undefined) {
-		merged.attribution = mergedAttribution;
-	}
-
-	if (mappers.length > 0) {
-		merged.sourceMapper = combineSourceMappers(mappers);
-	}
-
-	return merged;
+function coverageInputs({
+	discovery,
+	outcome,
+	rootConfig,
+	seams,
+	staged,
+}: Pick<MultiRunResultInput, "discovery" | "outcome" | "seams" | "staged"> & {
+	rootConfig: ResolvedConfig;
+}): Parameters<typeof resolveProjectCoverage>[0] {
+	return {
+		changedFiles: discovery.partialRun?.files,
+		collectCoverageFrom: pickCoverageSettings(rootConfig).collectCoverageFrom,
+		coverageData: outcome.projectResults.reduce<RawCoverageData | undefined>(
+			(merged, entry) => mergeRawCoverage(merged, entry.result.coverageData),
+			undefined,
+		),
+		manifest: staged.coverageManifest,
+		rootConfig,
+		seams,
+	};
 }

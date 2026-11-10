@@ -10,7 +10,8 @@ import { StorageClient } from "@bedrock-rbx/ocale/storage";
 
 import { describe, expect, it, vi } from "vitest";
 
-import { StreamingResultClient, type StreamingResultEntry } from "./sorted-map-client.ts";
+import type { StreamingResultEntry } from "../protocol/streaming-summary.ts";
+import { StreamingResultClient } from "./sorted-map-client.ts";
 
 interface SortedMapStub {
 	createdRequests: Array<CreateSortedMapItemParameters>;
@@ -114,83 +115,6 @@ function makeItem(overrides: Partial<SortedMapItem> & { id: string }): SortedMap
 }
 
 describe(StreamingResultClient, () => {
-	describe("write", () => {
-		it("should call sortedMaps.create with the map id, item id, and encoded summary", async () => {
-			expect.assertions(2);
-
-			const stub = createSortedMapStub();
-			const client = new StreamingResultClient({
-				credentials: CREDENTIALS,
-				mapId: "results-uuid",
-				storageFactory: () => stub.storage,
-			});
-
-			await client.writeAsync(
-				makeEntry({
-					elapsedMs: 1234,
-					numFailedTests: 2,
-					numPassedTests: 5,
-					numPendingTests: 1,
-					pkg: "@halcyon/foo",
-					project: "alpha",
-					success: false,
-				}),
-			);
-
-			expect(stub.createdRequests).toHaveLength(1);
-			expect(stub.createdRequests[0]).toStrictEqual({
-				itemId: "@halcyon/foo::alpha",
-				mapId: "results-uuid",
-				ttl: 600,
-				universeId: "123",
-				value: {
-					elapsedMs: 1234,
-					numFailedTests: 2,
-					numPassedTests: 5,
-					numPendingTests: 1,
-					pkg: "@halcyon/foo",
-					project: "alpha",
-					success: false,
-				},
-			});
-		});
-
-		it("should accept a custom ttlSeconds override", async () => {
-			expect.assertions(1);
-
-			const stub = createSortedMapStub();
-			const client = new StreamingResultClient({
-				credentials: CREDENTIALS,
-				mapId: "m",
-				storageFactory: () => stub.storage,
-				ttlSeconds: 120,
-			});
-
-			await client.writeAsync(makeEntry());
-
-			expect(stub.createdRequests[0]!.ttl).toBe(120);
-		});
-
-		it("should throw when sortedMaps.create returns a failure Result", async () => {
-			expect.assertions(1);
-
-			const cause = new OpenCloudError("rate limited");
-			const stub = createSortedMapStub({ createError: cause });
-			const client = new StreamingResultClient({
-				credentials: CREDENTIALS,
-				mapId: "m",
-				storageFactory: () => stub.storage,
-			});
-
-			await expect(client.writeAsync(makeEntry())).rejects.toThrow(
-				expect.objectContaining({
-					cause,
-					message: "Failed to write streaming result: rate limited",
-				}),
-			);
-		});
-	});
-
 	describe("readAll", () => {
 		it("should return an empty array when the map has no items", async () => {
 			expect.assertions(1);
@@ -284,7 +208,15 @@ describe(StreamingResultClient, () => {
 			const results = await client.readAllAsync();
 
 			expect(results.map((entry) => entry.id)).toStrictEqual(["a::p", "b::q"]);
-			expect(stub.listCalls[1]!.pageToken).toBe("page-2");
+			expect(stub.listCalls).toStrictEqual([
+				{ mapId: "m", maxPageSize: 100, universeId: CREDENTIALS.universeId },
+				{
+					mapId: "m",
+					maxPageSize: 100,
+					pageToken: "page-2",
+					universeId: CREDENTIALS.universeId,
+				},
+			]);
 		});
 
 		it("should throw when sortedMaps.list returns a failure Result", async () => {

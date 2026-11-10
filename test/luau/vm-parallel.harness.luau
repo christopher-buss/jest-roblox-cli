@@ -27,14 +27,9 @@ end
 
 -- Stands in for `HttpService:JSONEncode`, which the module takes as a
 -- dependency so its planning half runs outside Roblox. Renders only the fields
--- the CLI reads back off an ExecutionError entry.
+-- the CLI reads back off a failure entry.
 local function encode(value: any): string
-	return "kind="
-		.. tostring(value.value.kind)
-		.. ";error="
-		.. tostring(value.value.error)
-		.. ";success="
-		.. tostring(value.success)
+	return "err=" .. tostring(value.err) .. ";success=" .. tostring(value.success)
 end
 
 local function entry(jestOutput: string): any
@@ -84,10 +79,10 @@ local function testRequestOrder()
 	check(ordered[3].jestOutput == "third", "T4: third config third")
 end
 
--- T5: a host that died leaves its configs unanswered. Each gap becomes an
--- ExecutionError entry, so the envelope stays parallel to the configs and the
+-- T5: a host that died leaves its configs unanswered. Each gap becomes a
+-- failure entry, so the envelope stays parallel to the configs and the
 -- hosts that did answer still report.
-local function testMissingEntriesBecomeExecutionErrors()
+local function testMissingEntriesBecomeFailures()
 	local ordered = VmParallel.finalizeEntries({
 		configCount = 2,
 		encode = encode,
@@ -96,7 +91,7 @@ local function testMissingEntriesBecomeExecutionErrors()
 	})
 
 	check(
-		ordered[1].jestOutput == "kind=ExecutionError;error=host 1 stopped answering;success=true",
+		ordered[1].jestOutput == "err=host 1 stopped answering;success=false",
 		"T5: the gap carries the reason"
 	)
 	check(ordered[1].bannerOutput == "[]", "T5: the gap has no banner output")
@@ -115,7 +110,7 @@ local function testMissingEntryDefaultReason()
 end
 
 -- T12: the coordinator's wait has to end before the CLI stops listening, or
--- the partial ExecutionError entries it exists to deliver never reach anyone.
+-- the partial failure entries it exists to deliver never reach anyone.
 -- It takes a share of the run budget the CLI sent, leaving the rest for Studio
 -- to boot and for the result to travel back.
 local function testHostDeadlineFitsTheRunBudget()
@@ -201,30 +196,30 @@ local function testGroupingLeavesNoHostIdle()
 	checkList(slices[2], { 2 }, "T11: the independent config runs alongside")
 end
 
--- T7: the shape the CLI parses for a project that could not run at all,
--- matching what `Runner.runProjects` already emits for a config that threw.
-local function testExecutionErrorEntry()
-	local built = VmParallel.executionErrorEntry({ encode = encode, message = "host threw" })
+-- T7: the shape the CLI parses for a project that could not run at all.
+local function testFailureEntry()
+	local built = VmParallel.failureEntry({ encode = encode, message = "host threw" })
 
 	check(
-		built.jestOutput == "kind=ExecutionError;error=host threw;success=true",
-		"T7: the message travels inside an ExecutionError result"
+		built.jestOutput == "err=host threw;success=false",
+		"T7: the message travels as a failure"
 	)
 	check(built.gameOutput == nil, "T7: no per-project game output under parallel")
 end
 
--- T15: a workspace entry that could not run still names its package and
--- project, which is what the CLI pairs a workspace result by.
+-- T15: a workspace entry that could not run still names its package,
+-- project and job index, which is what the CLI pairs a result by.
 local function testWorkspaceErrorEntry()
 	local built = VmParallel.workspaceErrorEntry(
-		{ pkg = "a", project = "client" },
+		{ config = { runnerJobIndex = 4 }, pkg = "a", project = "client" },
 		{ encode = encode, message = "host threw" }
 	)
 
 	check(built.pkg == "a" and built.project == "client", "T15: the entry keeps its identity")
+	check(built.jobIndex == 4, "T15: the entry keeps its job index")
 	check(
-		built.jestOutput == "kind=ExecutionError;error=host threw;success=true",
-		"T15: the message travels inside an ExecutionError result"
+		built.jestOutput == "err=host threw;success=false",
+		"T15: the message travels as a failure"
 	)
 end
 
@@ -236,9 +231,9 @@ testRoundRobinSplit()
 testMoreHostsThanConfigs()
 testSingleHost()
 testRequestOrder()
-testMissingEntriesBecomeExecutionErrors()
+testMissingEntriesBecomeFailures()
 testMissingEntryDefaultReason()
-testExecutionErrorEntry()
+testFailureEntry()
 testWorkspaceErrorEntry()
 testHostDeadlineFitsTheRunBudget()
 testHostDeadlineFloorsAtAUsableWait()

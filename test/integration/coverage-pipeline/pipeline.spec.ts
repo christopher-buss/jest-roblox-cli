@@ -1,7 +1,7 @@
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { createRbxtsFixtureSandbox } from "#test/e2e/cli/helpers.ts";
+import { createRbxtsFixtureSandbox } from "#test/harness/helpers.ts";
 import {
 	instrumentFixtureAsync,
 	reportCoverageAsync,
@@ -32,7 +32,11 @@ describe("coverage pipeline (mapper -> istanbul json reporter)", { timeout: 30_0
 		const manifest = await instrumentFixtureAsync(fixtureRoot);
 		const coverageData = buildSyntheticCoverage(manifest.files);
 
-		const report = await reportCoverageAsync({ coverageData, rootDirectory: fixtureRoot });
+		const report = await reportCoverageAsync({
+			coverageData,
+			manifest,
+			rootDirectory: fixtureRoot,
+		});
 
 		const exampleEntry = Object.values(report).find((entry) => {
 			return normalizePath(entry.path).endsWith("/src/example.ts");

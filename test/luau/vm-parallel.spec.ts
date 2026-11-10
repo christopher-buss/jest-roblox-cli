@@ -3,17 +3,18 @@ import { describe, expect, it } from "vitest";
 import {
 	fillPlaceholders,
 	readHarness,
-	readLuauModule,
+	readLuauTree,
 	spawnHarness,
+	stubbedModules,
 } from "#test/luau/lute-harness.ts";
-import { LUTE_HARNESS_TIMEOUT } from "#test/luau/lute-timeout.ts";
 
-// Drives the coordinator's slice planner and gather under lute. Pure module, no
-// dependencies to inline. Requires `lute` on PATH (mise, in dev and CI).
-const MODULE_SOURCE = readLuauModule("vm-parallel.luau");
+// Drives the coordinator's slice planner and gather under lute.  Requires `lute`
+// on PATH (mise, in dev and CI).
 const HARNESS = readHarness("vm-parallel");
+const STUBBED = stubbedModules(HARNESS);
+const MODULE_SOURCE = readLuauTree("vm-parallel.luau", STUBBED);
 
-describe("vm-parallel dispatch planning under lute", { timeout: LUTE_HARNESS_TIMEOUT }, () => {
+describe("vm-parallel dispatch planning under lute", () => {
 	it("should pass the vm-parallel harness assertions", () => {
 		expect.assertions(1);
 

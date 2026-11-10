@@ -1,16 +1,10 @@
 import type { ExecErrorTestFileResult, TestFileResult } from "./jest-result-types.ts";
 
-/**
- * The synthetic path a suite that never ran is filed under. Jest names a file
- * result by the file it ran; a failure that happened before any file did has no
- * such name, so this stands in for one.
- */
+/** Synthetic path a suite that never ran is filed under. */
 export const EXEC_ERROR_FILE_PATH = "<exec-error>";
 
 /**
- * How a suite that never ran is described, in the one wording every formatter
- * says it in. Both readings are failures; only a timeout names a budget the
- * reader can raise, so the reports keep them apart.
+ * Describe a suite that never ran, in the wording every formatter uses.
  * @param file - The file result of a suite that never ran.
  * @returns `"timed out"` for a timeout, else `"failed to run"`.
  */

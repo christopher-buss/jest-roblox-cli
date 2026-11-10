@@ -1,15 +1,17 @@
+import type { RojoResolver } from "@isentinel/rojo-utils";
 import { fromAny } from "@total-typescript/shoehorn";
 
 import * as path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
-import type { RojoResolverFactory } from "../utils/rojo-project-reader.ts";
-import { createRojoResolverCache, createSetupResolver } from "./setup-resolver.ts";
+import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
+import type { ResolvedConfig } from "./resolved-config.ts";
+import { createSetupResolver, resolveAllSetupFilePaths } from "./setup-resolver.ts";
 
 const CONFIG_DIRECTORY = "/project";
 const ROJO_CONFIG_PATH = "/project/default.project.json";
 
-const createResolver = vi.fn<RojoResolverFactory>();
+const createResolver = vi.fn<typeof RojoResolver.fromPath>();
 
 function stubRojoResolver(mapping: Record<string, Array<string>>) {
 	createResolver.mockReturnValue(
@@ -228,7 +230,7 @@ describe("resolver caching", () => {
 		stubRojoResolver({
 			[path.resolve(CONFIG_DIRECTORY, "./setup.luau")]: ["ReplicatedStorage", "setup"],
 		});
-		const cache = createRojoResolverCache();
+		const cache = new Map<string, RojoResolver>();
 
 		const first = makeResolver({ cache });
 		const second = makeResolver({ cache });
@@ -253,7 +255,7 @@ describe("resolver caching", () => {
 		expect.assertions(1);
 
 		stubRojoResolver({});
-		const cache = createRojoResolverCache();
+		const cache = new Map<string, RojoResolver>();
 
 		makeResolver({ cache });
 		makeResolver({ cache, rojoConfigPath: "/project/other.project.json" });
@@ -294,5 +296,83 @@ describe("native package resolver", () => {
 		});
 
 		expect(resolve("@rbxts/jest-globals")).toBe("ReplicatedStorage/@rbxts/jest-globals");
+	});
+});
+
+describe(resolveAllSetupFilePaths, () => {
+	function setupConfig(overrides: Partial<ResolvedConfig> = {}): ResolvedConfig {
+		return { ...createResolvedConfig(), rootDir: CONFIG_DIRECTORY, ...overrides };
+	}
+
+	function resolveAll(
+		configs: Array<ResolvedConfig>,
+		rojoConfigPathOf: (config: ResolvedConfig) => string = () => ROJO_CONFIG_PATH,
+	) {
+		const factory = vi.fn<typeof createSetupResolver>(() => {
+			return (input) => `Resolved/${path.basename(input)}`;
+		});
+		resolveAllSetupFilePaths({
+			configs,
+			createSetupResolver: factory,
+			sourceOf: (config) => {
+				return {
+					configDirectory: config.rootDir,
+					rojoConfigPath: rojoConfigPathOf(config),
+				};
+			},
+		});
+		return factory.mock.calls.map(([options]) => {
+			return {
+				configDirectory: options.configDirectory,
+				rojoConfigPath: options.rojoConfigPath,
+			};
+		});
+	}
+
+	it("should build no resolver when no config declares setup files", () => {
+		expect.assertions(1);
+
+		expect(resolveAll([setupConfig(), setupConfig()])).toStrictEqual([]);
+	});
+
+	it("should rewrite both setup lists of every config that declares them", () => {
+		expect.assertions(2);
+
+		const empty = setupConfig();
+		const before = setupConfig({ setupFiles: ["./a.ts"] });
+		const after = setupConfig({ setupFilesAfterEnv: ["./b.ts"] });
+
+		const sources = resolveAll([empty, before, after]);
+
+		expect([empty.setupFiles, before.setupFiles, after.setupFilesAfterEnv]).toStrictEqual([
+			undefined,
+			["Resolved/a.ts"],
+			["Resolved/b.ts"],
+		]);
+		expect(sources).toStrictEqual([
+			{ configDirectory: CONFIG_DIRECTORY, rojoConfigPath: ROJO_CONFIG_PATH },
+		]);
+	});
+
+	it("should build one resolver per distinct source", () => {
+		expect.assertions(1);
+
+		const one = setupConfig({ rojoProject: "one.project.json", setupFiles: ["./a.ts"] });
+		const two = setupConfig({
+			rojoProject: "two.project.json",
+			rootDir: "/other",
+			setupFiles: ["./b.ts"],
+		});
+		const three = setupConfig({
+			rojoProject: "one.project.json",
+			rootDir: "/other",
+			setupFiles: ["./c.ts"],
+		});
+
+		expect(resolveAll([one, two, three], (config) => config.rojoProject!)).toStrictEqual([
+			{ configDirectory: CONFIG_DIRECTORY, rojoConfigPath: "one.project.json" },
+			{ configDirectory: "/other", rojoConfigPath: "two.project.json" },
+			{ configDirectory: "/other", rojoConfigPath: "one.project.json" },
+		]);
 	});
 });

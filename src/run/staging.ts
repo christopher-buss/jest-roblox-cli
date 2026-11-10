@@ -1,170 +1,51 @@
-import * as path from "node:path";
-import process from "node:process";
-
-import type { BackendKind } from "../backends/interface.ts";
 import type { ResolvedProjectConfig } from "../config/projects.ts";
-import type { ResolvedConfig } from "../config/schema.ts";
-import { createStubBake } from "../config/stub-shadow-sync.ts";
-import { cleanLeftoverStubs, generateProjectStubs } from "../config/stubs.ts";
-import type { CoverageArtifacts } from "../coverage-pipeline/build-manifest.ts";
-import { resolveCoverageInclude } from "../coverage-pipeline/derive-coverage-from.ts";
-import type { PrepareCoverageResult } from "../coverage-pipeline/prepare-types.ts";
-import { toCoverageArtifacts } from "../coverage-pipeline/prepare.ts";
-import type { CodeBundleArtifact } from "../staging/code-bundle.ts";
+import type { ResolvedConfig } from "../config/resolved-config.ts";
+import type { BuildManifestProject, CoverageArtifacts } from "../coverage-data/build-manifest.ts";
+import { emitBuildManifest } from "../coverage-data/build-manifest.ts";
+import { resolveCoverageLayout } from "../coverage-data/coverage-layout.ts";
+import type { CoverageManifest } from "../coverage-data/manifest.ts";
+import { toCoverageArtifacts } from "../shadow/prepare.ts";
+import { stageProjectStubs, stubCacheRoot } from "../staging/stage-stubs.ts";
 import type { TimingCollector } from "../timing/orchestration-collector.ts";
+import { PREPARE_COVERAGE_SPAN } from "../timing/span-names.ts";
 import type { FileSystem } from "../utils/file-system.ts";
-import type { PosixRoot } from "../utils/normalize-windows-path.ts";
-import { toBuildManifestProjects } from "./manifest-projects.ts";
+import { buildProjectCoveragePlan } from "./coverage-plan.ts";
 import type { RunSeams } from "./seams.ts";
 
-/**
- * Everything the run path needs on disk before a backend exists: where the
- * generated `jest.config` stubs live, and the config the run actually executes
- * against (which differs from the root config only in `placeFile`, when
- * coverage rebuilt the place).
- */
+/** Run inputs staged on disk before a backend exists. */
 export interface StagedRun extends StagedCoverage {
 	/** Directory the generated `jest.config` stubs are written to. */
 	cacheRoot: string;
-	/**
-	 * Host time spent putting this run's inputs on disk: the stub sweep and
-	 * generation, plus — on a coverage run — the stub bake and the instrumented
-	 * place build. The instrumentation is timed apart as `coverageMs`, and the
-	 * place build a non-coverage run does later adds onto this.
-	 */
+	/** Host time spent putting this run's inputs on disk. */
 	stagingMs: number;
-}
-
-/** A coverage place build and its manifest record. */
-export interface BakedCoverage {
-	/** Producer record for the Build Manifest. */
-	artifacts: CoverageArtifacts;
-	/** The prepared coverage place and its timings. */
-	coverage: PrepareCoverageResult;
 }
 
 /** Inputs of {@link stageRunAsync}. */
 export interface StageRunOptions {
-	/** Backend the run dispatches to; decides whether stubs are baked. */
-	backendKind: BackendKind;
-	/**
-	 * Build a Harness Place, splitting the mounts inside these Code Roots into
-	 * a Code Bundle beside it. `resolveCodeRoots` decides, and only an Open
-	 * Cloud run on an Exclusive Place ever gets any.
-	 */
-	codeRoots?: ReadonlyArray<PosixRoot> | undefined;
 	/** File system to stage on. */
 	fileSystem: FileSystem;
 	/** Resolved projects of the run. */
 	projects: Array<ResolvedProjectConfig>;
 	/** Root config of the run. */
 	rootConfig: ResolvedConfig;
-	/** Seams the run reaches outside itself through. */
-	seams: RunSeams;
+	/** Seams coverage preparation reaches outside the run through. */
+	seams: CoverageSeams;
 	/** Profiler of the run. */
 	timing: TimingCollector;
 }
 
-/**
- * The `--coverage` half of a staged run; absent fields when coverage is off.
- */
 interface StagedCoverage {
-	/**
-	 * The Code Bundle the coverage build split out, when this run asked for a
-	 * harness. A non-coverage run builds its place after the backend is in
-	 * hand, so its bundle comes back from there instead.
-	 */
-	codeBundle?: CodeBundleArtifact | undefined;
 	coverageArtifacts?: CoverageArtifacts | undefined;
+	coverageManifest?: CoverageManifest | undefined;
 	coverageMs: number;
 	effectiveConfig: ResolvedConfig;
 }
 
-/**
- * {@link StagedCoverage} plus the part of the bake the run reports as staging
- * rather than as coverage — the stub sync and the place build. `stageRun` folds
- * it into `stagingMs`, so the field travels no further.
- */
-interface StagedCoverageRun extends StagedCoverage {
-	coverageStagingMs: number;
-}
+type CoverageSeams = Pick<RunSeams, "childProcess" | "prepareCoverage" | "tsconfigReader">;
 
 /**
- * Instrument + rojo-build the coverage place and project it to a
- * `CoverageArtifacts`, optionally baking each project's `jest.config` stub
- * into the place. The single seam the run path (`stageRun`) and the offline
- * build path (`buildCoveragePlace`) both drive, so the prepare-and-bake
- * mechanism can't drift between them. The caller owns the `bakeStubs` decision
- * (the run path skips baking for studio-cli, which injects `jest.config` at
- * runtime; the build path always bakes so a place opened by a foreign runner
- * is self-contained). Stubs must already be generated into `cacheRoot`. Baking
- * mirrors those cache stubs into the shadow tree — the source tree is clean
- * (stubs land in `cacheRoot`, not `rootDir`), so without it the coverage place
- * would build with no `jest.config` ModuleScripts.
- *
- * @param options - Bake inputs.
- * @param options.bakeStubs - Whether to bake the `jest.config` stubs into the place.
- * @param options.cacheRoot - Directory that holds the generated stubs.
- * @param options.codeRoots - Code Roots to split into a Code Bundle.
- * @param options.config - Config to instrument and build.
- * @param options.fileSystem - File system to build on.
- * @param options.projects - Projects whose stubs are baked.
- * @param options.seams - Seams that prepare coverage.
- * @param options.timing - Profiler of the run, if any.
- * @returns The prepared coverage and its manifest record.
- */
-export async function prepareBakedCoverageAsync({
-	bakeStubs,
-	cacheRoot,
-	codeRoots,
-	config,
-	fileSystem,
-	projects,
-	seams,
-	timing,
-}: {
-	bakeStubs: boolean;
-	cacheRoot: string;
-	/**
-	 * Build a Harness Place instead of a whole one. Omitted by the offline
-	 * build path, whose place is opened by a foreign runner and so has to hold
-	 * the code itself.
-	 */
-	codeRoots?: ReadonlyArray<PosixRoot> | undefined;
-	config: ResolvedConfig;
-	fileSystem: FileSystem;
-	projects: Array<ResolvedProjectConfig>;
-	seams: RunSeams;
-	/**
-	 * The run's collector; omitted by the offline build path, which has none.
-	 */
-	timing?: TimingCollector | undefined;
-}): Promise<BakedCoverage> {
-	const coverage = await seams.prepareCoverage(config, {
-		bake: bakeStubs ? createStubBake({ cacheRoot, fileSystem, projects }) : undefined,
-		childProcess: seams.childProcess,
-		codeRoots,
-		// The same globs `buildMultiRunResult` reports against, so a file is
-		// probed exactly when this run would render a line for it.
-		coverageInclude: resolveCoverageInclude(config, projects),
-		fileSystem,
-		timing,
-	});
-	return {
-		artifacts: toCoverageArtifacts(coverage, toBuildManifestProjects(projects)),
-		coverage,
-	};
-}
-
-/**
- * Put the run's inputs on disk: clear leftover stubs, generate this run's
- * stubs into the cache root, then instrument and build the coverage place when
- * `--coverage` is on. Runs before any backend exists, so nothing here can leak
- * one.
- *
+ * Put the run's inputs on disk before any backend exists.
  * @param options - Backend, projects, config, seams and profiler.
- * @param options.backendKind - Backend the run dispatches to.
- * @param options.codeRoots - Code Roots to split into a Code Bundle.
  * @param options.fileSystem - File system to stage on.
  * @param options.projects - Resolved projects of the run.
  * @param options.rootConfig - Config whose `rootDir` holds the cache.
@@ -173,48 +54,28 @@ export async function prepareBakedCoverageAsync({
  * @returns The staged run with its staging and coverage timings.
  */
 export async function stageRunAsync({
-	backendKind,
-	codeRoots,
 	fileSystem,
 	projects,
 	rootConfig,
 	seams,
 	timing,
 }: StageRunOptions): Promise<StagedRun> {
-	// Stubs land in `.jest-roblox/cache/` instead of the user's source tree.
-	// Open-cloud builds the place from a synthesizer-produced project that
-	// mounts those cache stubs via `$path` named-children; studio skips the
-	// place build entirely and the plugin's Run Mode runner materializes
-	// `jest.config` ModuleScripts in DataModel from the JSON configs.
-	const cacheRoot = path.resolve(rootConfig.rootDir, ".jest-roblox", "cache");
-	const stubRoot = { fileSystem, rootDirectory: rootConfig.rootDir };
-
-	// Every backend does this work before the dispatch window opens, so each
-	// phase below is timed: unmeasured, it would land outside every reported
-	// phase. Pre-flight cleanup mirrors workspace behaviour: upgraders coming
-	// from a pre-refactor version may have marker-bearing leftover stubs in
-	// their source tree. The plugin's runtime `FindFirstChild` check would
-	// block the run otherwise.
-	const { elapsedMs: cleanMs, value: cleaned } = timing.profileTimed("cleanLeftoverStubs", () => {
-		return cleanLeftoverStubs({ projects, ...stubRoot });
-	});
-	reportCleanedStubs(cleaned);
-
-	const { elapsedMs: generateMs } = timing.profileTimed("generateProjectStubs", () => {
-		generateProjectStubs({ projects, ...stubRoot, outputRoot: cacheRoot });
+	const cacheRoot = stubCacheRoot(rootConfig.rootDir);
+	const stubStagingMs = stageProjectStubs({
+		fileSystem,
+		packages: [{ cacheRoot, projects, rootDirectory: rootConfig.rootDir }],
+		timing,
 	});
 
-	// Summed, so the stderr notice between the two phases is not charged here:
-	// writing it is not staging.
-	const stubStagingMs = cleanMs + generateMs;
+	if (!rootConfig.collectCoverage) {
+		return { cacheRoot, coverageMs: 0, effectiveConfig: rootConfig, stagingMs: stubStagingMs };
+	}
 
 	const { coverageStagingMs, ...coverage } = await timing.profileAsync(
-		"prepareCoverage",
+		PREPARE_COVERAGE_SPAN,
 		async () => {
-			return prepareMultiCoverageAsync({
-				backendKind,
+			return prepareCoverageAsync({
 				cacheRoot,
-				codeRoots,
 				fileSystem,
 				projects,
 				rootConfig,
@@ -226,50 +87,68 @@ export async function stageRunAsync({
 	return { cacheRoot, ...coverage, stagingMs: stubStagingMs + coverageStagingMs };
 }
 
-function reportCleanedStubs(cleaned: Array<string>): void {
-	if (cleaned.length === 0) {
-		return;
-	}
+/**
+ * Map resolved projects to Build Manifest records, one per DataModel path.
+ * Setup files must already be resolved to DataModel paths.
+ * @param projects - Resolved project configs.
+ * @returns One manifest record per project DataModel path.
+ */
+function toBuildManifestProjects(
+	projects: Array<ResolvedProjectConfig>,
+): Array<BuildManifestProject> {
+	return projects.flatMap((project) => {
+		return project.projects.map((projectDataModelPath) => {
+			let manifestProject: BuildManifestProject = {
+				displayName: project.displayName,
+				projectDataModelPath,
+				setupFiles: project.config.setupFiles ?? [],
+				setupFilesAfterEnv: project.config.setupFilesAfterEnv ?? [],
+				testMatch: project.testMatch,
+			};
+			if (project.config.jestPath !== undefined) {
+				manifestProject = {
+					...manifestProject,
+					jestDataModelPath: project.config.jestPath,
+				};
+			}
 
-	process.stderr.write(
-		`jest-roblox: cleaned ${String(cleaned.length)} leftover stub(s):\n${cleaned
-			.map((stubPath) => `  ${stubPath}\n`)
-			.join("")}`,
-	);
+			return manifestProject;
+		});
+	});
 }
 
-async function prepareMultiCoverageAsync({
-	backendKind,
+/**
+ * Instrument and build the coverage place with the stubs baked in, and record
+ * it in the Build Manifest. Stubs must already be generated into `cacheRoot`.
+ * @param options - Bake inputs and the run's cache root.
+ * @returns The staged coverage and the host time spent staging it.
+ */
+async function prepareCoverageAsync({
 	cacheRoot,
-	codeRoots,
 	fileSystem,
 	projects,
 	rootConfig,
 	seams,
 	timing,
-}: StageRunOptions & { cacheRoot: string }): Promise<StagedCoverageRun> {
-	if (!rootConfig.collectCoverage) {
-		return { coverageMs: 0, coverageStagingMs: 0, effectiveConfig: rootConfig };
+}: StageRunOptions & { cacheRoot: string }): Promise<
+	StagedCoverage & { coverageStagingMs: number }
+> {
+	const coverage = await seams.prepareCoverage(rootConfig, {
+		...buildProjectCoveragePlan({ cacheRoot, fileSystem, projects, rootConfig }),
+		childProcess: seams.childProcess,
+		fileSystem,
+		timing,
+		tsconfigReader: seams.tsconfigReader,
+	});
+	const artifacts = toCoverageArtifacts(coverage, toBuildManifestProjects(projects));
+	if (artifacts.rebuilt) {
+		const filePath = resolveCoverageLayout(rootConfig.rootDir).buildManifestPath;
+		emitBuildManifest({ artifacts, filePath, fileSystem });
 	}
 
-	// studio-cli drives the plugin's Run-mode runner, which materializes
-	// `jest.config` ModuleScripts from the payload configs — baking here too
-	// would collide ("Structural collision …"). Every other backend needs the
-	// stubs baked in.
-	const isBakeStubs = backendKind !== "studio-cli";
-	const { artifacts, coverage } = await prepareBakedCoverageAsync({
-		bakeStubs: isBakeStubs,
-		cacheRoot,
-		codeRoots,
-		config: rootConfig,
-		fileSystem,
-		projects,
-		seams,
-		timing,
-	});
 	return {
-		codeBundle: coverage.codeBundle,
 		coverageArtifacts: artifacts,
+		coverageManifest: coverage.manifest,
 		coverageMs: coverage.instrumentMs,
 		coverageStagingMs: coverage.stagingMs,
 		effectiveConfig: { ...rootConfig, placeFile: coverage.placeFile },

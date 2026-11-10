@@ -474,30 +474,28 @@ describe("formatAgent failure details", () => {
 });
 
 describe("formatAgent log hints", () => {
-	it("should show output file hint with size on failure", () => {
+	it("should show output file hint on failure", () => {
 		expect.assertions(1);
 
 		const output = formatAgent(FAILING_RESULT, {
 			maxFailures: 10,
 			outputFile: "/tmp/results.json",
-			outputFileSize: 7168,
 			rootDir: "/project",
 		});
 
-		expect(output).toContain("View /tmp/results.json for full Jest output (7kb)");
+		expect(output).toContain("View /tmp/results.json for full Jest output");
 	});
 
-	it("should show game output hint with size on failure", () => {
+	it("should show game output hint on failure", () => {
 		expect.assertions(1);
 
 		const output = formatAgent(FAILING_RESULT, {
 			gameOutput: "/tmp/game.json",
-			gameOutputSize: 12288,
 			maxFailures: 10,
 			rootDir: "/project",
 		});
 
-		expect(output).toContain("View /tmp/game.json for Roblox game logs (12kb)");
+		expect(output).toContain("View /tmp/game.json for Roblox game logs");
 	});
 
 	it("should show both hints when both configured", () => {
@@ -505,15 +503,13 @@ describe("formatAgent log hints", () => {
 
 		const output = formatAgent(FAILING_RESULT, {
 			gameOutput: "/tmp/game.json",
-			gameOutputSize: 512,
 			maxFailures: 10,
 			outputFile: "/tmp/results.json",
-			outputFileSize: 7168,
 			rootDir: "/project",
 		});
 
-		expect(output).toContain("View /tmp/results.json for full Jest output (7kb)");
-		expect(output).toContain("View /tmp/game.json for Roblox game logs (512b)");
+		expect(output).toContain("View /tmp/results.json for full Jest output");
+		expect(output).toContain("View /tmp/game.json for Roblox game logs");
 	});
 
 	it("should not show hints on passing results", () => {
@@ -834,10 +830,8 @@ describe("formatAgent complete report contracts", () => {
 
 		const options: AgentOptions = {
 			gameOutput: "game.log",
-			gameOutputSize: 1025,
 			maxFailures: 10,
 			outputFile: "results.json",
-			outputFileSize: 1024,
 			rootDir: "/project",
 			typeErrorCount: 2,
 		};
@@ -1020,10 +1014,8 @@ describe(formatAgentMultiProject, () => {
 			{
 				bail: { notRun: 2, ran: 4 },
 				gameOutput: "game.log",
-				gameOutputSize: 1025,
 				maxFailures: 10,
 				outputFile: "results.json",
-				outputFileSize: 1024,
 				rootDir: "/project",
 				typeErrorCount: 1,
 			},
@@ -1075,5 +1067,53 @@ describe("agent package-relative failure detail", () => {
 		expect(output).toContain(" ❯ packages/a/src/broken.spec.luau (suite");
 		expect(output).toContain(" FAIL src/fail.spec.luau > fails");
 		expect(output).toContain(" FAIL src/broken.spec.luau\n");
+	});
+});
+
+describe("formatAgent single and multi-project agreement", () => {
+	function locatedFailures(count: number): JestResult {
+		return failingFileResult(
+			"/project/src/test.spec.ts",
+			Array.from({ length: count }, (_, index) => {
+				return createTestCase({
+					failureMessages: [`Error ${index} at src/test.spec.ts:3`],
+					status: "failed",
+					title: `test ${index}`,
+				});
+			}),
+		);
+	}
+
+	it("should count suites that threw toward the snippet level in a single project", () => {
+		expect.assertions(2);
+
+		const failing = locatedFailures(5);
+		const result: JestResult = {
+			...failing,
+			testResults: [...failing.testResults, ...EXEC_ERROR_RESULT.testResults],
+		};
+		const options: AgentOptions = {
+			getSourceSnippet: () => ({ failureLine: 3, lines: [{ content: "boom()", num: 3 }] }),
+			maxFailures: 10,
+			rootDir: "/project",
+		};
+
+		expect(formatAgent(result, options)).toContain("Failed Tests 6");
+		expect(formatAgent(result, options)).not.toContain("> 3| boom()");
+	});
+
+	it("should cap maxFailures across the run, not per project", () => {
+		expect.assertions(2);
+
+		const output = formatAgentMultiProject(
+			[
+				{ displayName: "core", result: locatedFailures(2) },
+				{ displayName: "auth", result: locatedFailures(2) },
+			],
+			{ maxFailures: 3, rootDir: "/project" },
+		);
+
+		expect(output.match(/^ FAIL /gm)!).toHaveLength(3);
+		expect(output).toContain("... 1 more failures omitted");
 	});
 });

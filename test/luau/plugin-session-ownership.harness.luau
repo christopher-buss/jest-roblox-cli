@@ -10,6 +10,7 @@ local attributes = {}
 local receiveRelay = nil
 local socketsOpened = 0
 local testArgsReads = 0
+local Studio
 
 local HttpService = {}
 function HttpService:JSONEncode(value)
@@ -30,19 +31,11 @@ function HttpService:CreateWebStreamClient()
 		MessageReceived = { Connect = function(_self, callback) receiveRelay = callback end },
 		Send = function(_self, token)
 			local frame = HttpService:JSONDecode(token)
-			if frame.type == "results" then
+			if frame.type == Studio.frame.results then
 				table.insert(relayedResults, frame)
 			end
 		end,
 	}
-end
-
-if sideChannelPayload ~= nil then
-	attributes.JestRobloxRunSideChannel = HttpService:JSONEncode({
-		url = "ws://127.0.0.1:12345",
-		requestId = "request-123",
-		payload = sideChannelPayload,
-	})
 end
 
 local ReplicatedStorage = {}
@@ -89,7 +82,7 @@ local task = {
 	wait = function(seconds)
 		elapsed += seconds
 		if receiveRelay ~= nil then
-			receiveRelay(HttpService:JSONEncode({ type = "nilRelay", requestId = "request-123" }))
+			receiveRelay(HttpService:JSONEncode({ type = Studio.frame.nilRelay, requestId = "request-123" }))
 			receiveRelay = nil
 		end
 		return seconds
@@ -106,7 +99,7 @@ local Enum = {
 local script = {
 	Parent = {
 		FindFirstChild = function() return nil end,
-		shared = { ["vm-parallel"] = "vm-parallel", staging = { ["embedded-runner"] = "staging/embedded-runner" } },
+		shared = { envelope = "envelope", protocol = "protocol", ["vm-parallel"] = "vm-parallel", staging = { ["embedded-runner"] = "staging/embedded-runner" } },
 	},
 }
 local factories = {}
@@ -124,6 +117,15 @@ local warnings = {}
 local warn = function(message) table.insert(warnings, message) end
 
 __MODULES__
+
+Studio = loadModule("protocol").studio
+if sideChannelPayload ~= nil then
+	attributes[Studio.sideChannelAttribute] = HttpService:JSONEncode({
+		url = "ws://127.0.0.1:12345",
+		requestId = "request-123",
+		payload = sideChannelPayload,
+	})
+end
 
 local function runPlugin()
 __PLUGIN__

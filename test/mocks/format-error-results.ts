@@ -21,11 +21,6 @@ export const EXEC_ERROR_RESULT: JestResult = {
 	testResults: [EXEC_ERROR_FILE],
 };
 
-// The same shape an exec error takes, differing only in the `timedOut` flag —
-// the whole of what the formatters are asked to tell apart, which is why the
-// exec error's own `testFilePath` stays. The message is a real abandoned run's:
-// its last-seen clause is the only thing naming a test in a report with no test
-// results, so a formatter that trims to the first clause has dropped the answer.
 export const TIMED_OUT_RESULT: JestResult = {
 	...EXEC_ERROR_RESULT,
 	testResults: [

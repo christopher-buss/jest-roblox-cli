@@ -1,19 +1,24 @@
-import color from "tinyrainbow";
 import { describe, expect, it } from "vitest";
 
+import { createPlainStyles } from "#test/mocks/format-plain-styles.ts";
+import { createTaggedStyles } from "#test/mocks/format-tagged-styles.ts";
 import type { SourceSnippet } from "../source-mapper/index.ts";
+import type { Styles } from "../terminal/palette.ts";
 import { formatSourceSnippet } from "./snippet-render.ts";
 
 describe(formatSourceSnippet, () => {
-	it("should enable color by default", () => {
+	it("should highlight code through the palette highlighter", () => {
 		expect.assertions(1);
 
 		const output = formatSourceSnippet({
 			filePath: "src/example.luau",
 			snippet: { failureLine: 1, lines: [{ content: "return nil", num: 1 }] },
+			styles: highlightingStyles(),
 		});
 
-		expect(output).toContain(color.cyan(" ❯ src/example.luau:1"));
+		expect(output).toBe(
+			"<location> ❯ src/example.luau:1</location>\n\t<lineNumber>1|</lineNumber> <hl src/example.luau>return nil</hl>",
+		);
 	});
 
 	it("should render padding, tabs, syntax, language, and the caret exactly", () => {
@@ -34,7 +39,7 @@ describe(formatSourceSnippet, () => {
 				filePath: "src/example.luau",
 				language: "Luau",
 				snippet,
-				useColor: false,
+				styles: createPlainStyles(),
 			}),
 		).toMatchSnapshot("plain");
 		expect(
@@ -42,7 +47,7 @@ describe(formatSourceSnippet, () => {
 				filePath: "src/example.luau",
 				language: "Luau",
 				snippet,
-				useColor: true,
+				styles: highlightingStyles(),
 			}),
 		).toMatchSnapshot("colored");
 	});
@@ -54,7 +59,7 @@ describe(formatSourceSnippet, () => {
 			formatSourceSnippet({
 				filePath: "src/example.luau",
 				snippet: { failureLine: 1, lines: [{ content: "return nil", num: 1 }] },
-				useColor: false,
+				styles: createPlainStyles(),
 			}),
 		).toBe(" ❯ src/example.luau:1\n\t1| return nil");
 	});
@@ -66,7 +71,7 @@ describe(formatSourceSnippet, () => {
 			formatSourceSnippet({
 				filePath: "src/example.luau",
 				snippet: { failureLine: 1, lines: [{ content: "a\tb", num: 1 }] },
-				useColor: false,
+				styles: createPlainStyles(),
 			}),
 		).toBe(" ❯ src/example.luau:1\n\t1| a   b");
 	});
@@ -86,7 +91,11 @@ describe(formatSourceSnippet, () => {
 			],
 		};
 
-		const formatted = formatSourceSnippet({ filePath: "test.ts", snippet });
+		const formatted = formatSourceSnippet({
+			filePath: "test.ts",
+			snippet,
+			styles: createPlainStyles(),
+		});
 
 		expect(formatted).toContain("❯ test.ts:2:10");
 		expect(formatted).toContain("1|");
@@ -102,7 +111,11 @@ describe(formatSourceSnippet, () => {
 			lines: [{ content: "print('hello')", num: 1 }],
 		};
 
-		const formatted = formatSourceSnippet({ filePath: "test.ts", snippet });
+		const formatted = formatSourceSnippet({
+			filePath: "test.ts",
+			snippet,
+			styles: createPlainStyles(),
+		});
 
 		expect(formatted).toContain("❯ test.ts:1");
 		expect(formatted).not.toContain(":1:");
@@ -121,7 +134,11 @@ describe("expandTabs via formatSourceSnippet", () => {
 			],
 		};
 
-		const formatted = formatSourceSnippet({ filePath: "file.ts", snippet, useColor: false });
+		const formatted = formatSourceSnippet({
+			filePath: "file.ts",
+			snippet,
+			styles: createPlainStyles(),
+		});
 
 		// Content tabs are expanded to spaces (gutter indent is a literal \t)
 		expect(formatted).toContain("    const a = 1;");
@@ -149,7 +166,7 @@ describe("complete formatter contracts", () => {
 				filePath: "src/inventory.spec.ts",
 				language: "TypeScript",
 				snippet,
-				useColor: false,
+				styles: createPlainStyles(),
 			}),
 		).toMatchSnapshot();
 	});
@@ -164,8 +181,15 @@ describe("formatSourceSnippet root", () => {
 				filePath: "/ws/packages/a/src/example.luau",
 				rootDir: "/ws/packages/a",
 				snippet: { failureLine: 1, lines: [{ content: "return nil", num: 1 }] },
-				useColor: false,
+				styles: createPlainStyles(),
 			}),
 		).toBe(" ❯ src/example.luau:1\n\t1| return nil");
 	});
 });
+
+function highlightingStyles(): Styles {
+	return {
+		...createTaggedStyles(),
+		highlight: (filePath, code) => `<hl ${filePath}>${code}</hl>`,
+	};
+}

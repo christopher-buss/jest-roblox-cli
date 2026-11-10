@@ -11,14 +11,6 @@ export const YAML_PATH = path.join(ROOT, "pnpm-workspace.yaml");
 const INSTALLED_AT = Date.UTC(2026, 0, 2);
 const BEFORE_INSTALL = new Date(Date.UTC(2026, 0, 1));
 
-/**
- * A volume holding a workspace whose snapshot postdates its
- * `pnpm-workspace.yaml`.
- *
- * @param files - The checkout, as paths to contents.
- * @param projects - What pnpm recorded at its last install.
- * @returns A file system over the seeded volume.
- */
 export function writeInstalledWorkspace(
 	files: Record<string, string>,
 	projects: Record<string, { name: string }>,

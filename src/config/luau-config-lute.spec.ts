@@ -148,6 +148,20 @@ describe(evaluateLuauConfigWithLute, () => {
 		});
 	});
 
+	it("should write the bootstrap with the sentinels the parser reads", async () => {
+		expect.assertions(3);
+
+		const { evaluate, invocations } = setup({ run: { stdout: `${VALUE}{}` } });
+
+		await evaluate();
+
+		const source = invocations[1]!.files[0]!;
+
+		expect(source).toContain(`local VALUE_SENTINEL = "${VALUE}"`);
+		expect(source).toContain(`local ERROR_SENTINEL = "${ERROR}"`);
+		expect(source).not.toMatch(/__[A-Z_]+__/);
+	});
+
 	it("should run lute hidden on a bootstrap in a named temporary folder", async () => {
 		expect.assertions(2);
 

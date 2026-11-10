@@ -11,6 +11,7 @@ import {
 	MIXED_WITH_EXEC_ERROR_RESULT,
 	TIMED_OUT_RESULT,
 } from "#test/mocks/format-error-results.ts";
+import { createPlainStyles } from "#test/mocks/format-plain-styles.ts";
 import {
 	EMPTY_FILE_RESULT,
 	FAILING_RESULT,
@@ -19,6 +20,7 @@ import {
 	SKIPPED_RESULT,
 	SNAPSHOT_FAILING_RESULT,
 } from "#test/mocks/format-results.ts";
+import { createTaggedStyles } from "#test/mocks/format-tagged-styles.ts";
 import { TIMING, TIMING_NO_UPLOAD } from "#test/mocks/format-timing.ts";
 import {
 	TYPECHECK_FAILING_RESULT,
@@ -27,13 +29,8 @@ import {
 } from "#test/mocks/format-typecheck-results.ts";
 import type { JestResult, TestCaseResult, TestFileResult } from "../types/jest-result-types.ts";
 import type { TimingResult } from "../types/timing-types.ts";
-import {
-	formatMultiProjectResult,
-	type FormatOptions,
-	formatResult,
-	type FormatterProjectEntry,
-	formatTypecheckReport,
-} from "./formatter.ts";
+import { formatMultiProjectResult, formatResult, formatTypecheckReport } from "./formatter.ts";
+import type { FormatOptions, FormatterProjectEntry } from "./shared.ts";
 
 function createTiming(totalMs: number): TimingResult {
 	return {
@@ -508,7 +505,7 @@ describe("formatResult snapshots", () => {
 			     × should have health 5ms
 			     × should be alive 3ms
 
-			[31m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[39m[41m[37m[1m Failed Tests 2 [22m[39m[49m[31m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[39m
+			⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
 			  
 			   FAIL  src/player.spec.ts > Player > should have health
 			  expect(received).toBe(expected)
@@ -554,7 +551,7 @@ describe("formatResult snapshots", () => {
 			     × should end 8ms
 			     ↓ should restart
 
-			[31m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[39m[41m[37m[1m Failed Tests 1 [22m[39m[49m[31m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[39m
+			⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
 			  
 			   FAIL  src/game.spec.ts > Game > should end
 			  expect(received).toBe(expected)
@@ -859,7 +856,7 @@ describe("formatResult exec error snapshots", () => {
 			"
 			 ✗ shared/react/features/windows/__tests__/unit-menu-app.test
 
-			[31m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[39m[41m[37m[1m Failed Tests 1 [22m[39m[49m[31m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[39m
+			⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
 			   FAIL  shared/react/features/windows/__tests__/unit-menu-app.test
 			  Test suite failed to run
 
@@ -888,7 +885,7 @@ describe("formatResult exec error snapshots", () => {
 			 ✓ src/utils.spec.ts (3 tests - 30ms)
 			 ✗ src/broken.spec.ts
 
-			[31m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[39m[41m[37m[1m Failed Tests 1 [22m[39m[49m[31m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[39m
+			⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
 			   FAIL  src/broken.spec.ts
 			  Test suite failed to run
 
@@ -948,7 +945,7 @@ describe("formatResult with typecheck data", () => {
 			     × should reject string as number
 			     ✓ should accept number
 
-			[31m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[39m[41m[37m[1m Failed Tests 1 [22m[39m[49m[31m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[39m
+			⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
 			  
 			   FAIL  src/types.test-d.ts > type checks > should reject string as number
 			  TS2322: Type 'string' is not assignable to type 'number'.
@@ -979,7 +976,7 @@ describe("formatResult with typecheck data", () => {
 			     × should reject string as number
 			     ✓ should pass this one
 
-			[31m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[39m[41m[37m[1m Failed Tests 1 [22m[39m[49m[31m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[39m
+			⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
 			  
 			   FAIL  src/failing.test-d.ts > failing types > should reject string as number
 			  TS2322: Type 'string' is not assignable to type 'number'.
@@ -995,18 +992,22 @@ describe("formatResult with typecheck data", () => {
 });
 
 describe("formatTypecheckReport snapshots", () => {
-	it("should use color by default", () => {
+	it("should render with the palette it is given", () => {
 		expect.assertions(1);
 
-		const output = formatTypecheckReport(TYPECHECK_PASSING_RESULT);
+		const output = formatTypecheckReport(TYPECHECK_PASSING_RESULT, {
+			styles: createTaggedStyles(),
+		});
 
-		expect(output).toContain(color.bold(color.green("2 passed")));
+		expect(output).toContain("<summaryPassed>2 passed</summaryPassed>");
 	});
 
 	it("should format passing typecheck summary", () => {
 		expect.assertions(1);
 
-		const output = formatTypecheckReport(TYPECHECK_PASSING_RESULT, { useColor: false });
+		const output = formatTypecheckReport(TYPECHECK_PASSING_RESULT, {
+			styles: createPlainStyles(),
+		});
 
 		expect(output).toMatchInlineSnapshot(`
 			"
@@ -1019,7 +1020,9 @@ describe("formatTypecheckReport snapshots", () => {
 	it("should format failing typecheck summary with failures", () => {
 		expect.assertions(1);
 
-		const output = formatTypecheckReport(TYPECHECK_FAILING_RESULT, { useColor: false });
+		const output = formatTypecheckReport(TYPECHECK_FAILING_RESULT, {
+			styles: createPlainStyles(),
+		});
 
 		expect(output).toMatchInlineSnapshot(`
 			"   FAIL  type checks > should reject string as number
@@ -1034,7 +1037,9 @@ describe("formatTypecheckReport snapshots", () => {
 	it("should format mixed typecheck summary with failure from one file", () => {
 		expect.assertions(1);
 
-		const output = formatTypecheckReport(TYPECHECK_MIXED_RESULT, { useColor: false });
+		const output = formatTypecheckReport(TYPECHECK_MIXED_RESULT, {
+			styles: createPlainStyles(),
+		});
 
 		expect(output).toMatchInlineSnapshot(`
 			"   FAIL  failing types > should reject string as number
@@ -1053,7 +1058,7 @@ describe("formatTypecheckReport without summary rows", () => {
 
 		const output = formatTypecheckReport(TYPECHECK_FAILING_RESULT, {
 			includeSummaryRows: false,
-			useColor: false,
+			styles: createPlainStyles(),
 		});
 
 		expect(output).toMatchInlineSnapshot(`
@@ -1068,7 +1073,7 @@ describe("formatTypecheckReport without summary rows", () => {
 
 		const output = formatTypecheckReport(TYPECHECK_PASSING_RESULT, {
 			includeSummaryRows: false,
-			useColor: false,
+			styles: createPlainStyles(),
 		});
 
 		expect(output).toBe("");

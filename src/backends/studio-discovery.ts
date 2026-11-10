@@ -4,31 +4,20 @@ import * as os from "node:os";
 import * as path from "node:path";
 import process from "node:process";
 
-import { absolutePathSchema } from "../config/config-validation.ts";
+import { absolutePathSchema } from "../config/option-schemas.ts";
 import type { Dirent, FileSystem } from "../utils/file-system.ts";
 import { nodeFileSystem } from "../utils/file-system.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 
 /** Inputs for finding the Studio executable. */
 export interface StudioDiscoveryOptions {
-	/**
-	 * Environment to read discovery hints from (Windows `LOCALAPPDATA`,
-	 * `JEST_ROBLOX_STUDIO_DISCOVERY`).
-	 * Defaults to `process.env`; injectable so tests stub it.
-	 */
+	/** Environment to read discovery hints from. */
 	environment?: NodeJS.ProcessEnv | undefined;
-	/** Where the executable is probed. Defaults to the real filesystem. */
+	/** Where the executable is probed. */
 	fileSystem?: FileSystem;
-	/**
-	 * Explicit Studio executable path (from `studioPath` config key, the
-	 * `--studioPath` CLI flag, or `JEST_ROBLOX_STUDIO_PATH`). Takes precedence
-	 * over per-OS discovery.
-	 */
+	/** Explicit Studio executable path; wins over per-OS discovery. */
 	override?: string | undefined;
-	/**
-	 * OS to discover for. Defaults to `process.platform`; injectable for
-	 * tests.
-	 */
+	/** OS to discover for. */
 	platform?: NodeJS.Platform | undefined;
 }
 
@@ -48,11 +37,11 @@ const NOT_FOUND_HINT =
 
 /** Inputs for finding the per-user Studio folders. */
 export interface UserDirectoryOptions {
-	/** Defaults to `process.env`. */
+	/** Environment to read the plugins folder from. */
 	environment?: NodeJS.ProcessEnv | undefined;
-	/** Defaults to `os.homedir()`. */
+	/** The user's home folder. */
 	homeDirectory?: string | undefined;
-	/** Defaults to `process.platform`. */
+	/** OS to discover for. */
 	platform?: NodeJS.Platform | undefined;
 	/** Configured plugins folder; overrides the environment and the default. */
 	pluginsDirectory?: string | undefined;
@@ -67,8 +56,7 @@ export interface UserDirectories {
 }
 
 /**
- * The Studio path the user named: the `studioPath` setting, else
- * `JEST_ROBLOX_STUDIO_PATH`. An empty variable names nothing.
+ * The Studio path the user named: the setting, else the environment variable.
  *
  * @param studioPath - The `studioPath` setting.
  * @param environment - Environment to read the variable from.
@@ -102,11 +90,7 @@ export function isStudioDiscoveryOn(environment: NodeJS.ProcessEnv = process.env
 }
 
 /**
- * Resolve the Roblox Studio executable studio-cli should launch. An explicit
- * `override` wins; otherwise probe the known per-OS install locations and pick
- * the newest `RobloxStudioBeta.exe` on Windows. Throws a clear, actionable
- * error when no executable can be found so the CLI surfaces "install Studio or
- * set studioPath" rather than a downstream spawn failure.
+ * Resolve the Roblox Studio executable studio-cli should launch.
  *
  * @param options - Override, environment, file system, and platform.
  * @returns The normalized Studio executable path.
@@ -128,8 +112,6 @@ export function discoverStudioPath({
 			throw new Error(`studioPath override is not a file: ${override}`);
 		}
 
-		// Normalize so the override resolves to the same path form as a
-		// discovered executable (forward slashes, upper-cased drive letter).
 		return normalizeWindowsPath(override);
 	}
 
@@ -155,8 +137,7 @@ export function discoverStudioPath({
 }
 
 /**
- * The per-user folders the Managed Plugin lives in and is tracked from, or
- * undefined where this OS has no known plugins folder.
+ * The per-user folders the Managed Plugin lives in and is tracked from.
  *
  * @param options - Environment, home folder, platform, and plugins folder.
  * @returns The plugins and state folders, or undefined.
@@ -188,14 +169,6 @@ function notFound(): Error {
 	return new Error(`Roblox Studio not found. ${NOT_FOUND_HINT}`);
 }
 
-/**
- * The most recently modified `RobloxStudioBeta.exe` across the version
- * directories, normalized. Undefined when no version directory holds one —
- * `Versions` exists but every entry is a stale/partial install.
- *
- * @param options - Version folder entries, their parent, and the file system.
- * @returns The newest executable path, or undefined.
- */
 function findNewestStudioExecutable({
 	entries,
 	fileSystem,

@@ -1,12 +1,11 @@
 import { assert, describe, expect, it } from "vitest";
 
-import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
-import type { RawCoverageData } from "../coverage-pipeline/coverage-types.ts";
-import { LuauScriptError } from "../reporter/luau-script-error.ts";
-import type { SnapshotWrites } from "../reporter/parser.ts";
+import type { RawCoverageData } from "../coverage-data/coverage-types.ts";
+import { LuauScriptError } from "../jest-output/luau-script-error.ts";
+import type { EnvelopeEntry } from "../protocol/envelope.ts";
+import type { SnapshotWrites } from "../protocol/runner-fields.ts";
 import type { JestResult } from "../types/jest-result-types.ts";
 import { buildProjectResult, decodeEnvelope, isEnvelopeDeferred } from "./envelope.ts";
-import type { EnvelopeEntry, ProjectJob } from "./interface.ts";
 
 interface RunnerFieldOverrides {
 	coverage?: RawCoverageData;
@@ -28,16 +27,6 @@ function successJest(overrides: JestPayloadOverrides = {}): string {
 		testResults: [],
 		...overrides,
 	});
-}
-
-function job(displayName: string, overrides: Partial<ProjectJob> = {}): ProjectJob {
-	return {
-		config: createResolvedConfig(),
-		displayColor: `${displayName}-color`,
-		displayName,
-		testFiles: [`${displayName}/test.spec.ts`],
-		...overrides,
-	};
 }
 
 function entry(overrides: Partial<EnvelopeEntry> = {}): EnvelopeEntry {
@@ -62,11 +51,13 @@ describe("envelope entries", () => {
 	it("should return the entries array for a valid single-entry envelope", () => {
 		expect.assertions(1);
 
-		const envelope = JSON.stringify({ entries: [{ jestOutput: '{"some":"payload"}' }] });
+		const envelope = JSON.stringify({
+			entries: [{ jestOutput: '{"some":"payload"}', jobIndex: 0 }],
+		});
 
 		const result = decodeEnvelope(envelope).entries;
 
-		expect(result).toStrictEqual([{ jestOutput: '{"some":"payload"}' }]);
+		expect(result).toStrictEqual([{ jestOutput: '{"some":"payload"}', jobIndex: 0 }]);
 	});
 
 	it("should return all entries for a valid multi-entry envelope", () => {
@@ -74,73 +65,51 @@ describe("envelope entries", () => {
 
 		const envelope = JSON.stringify({
 			entries: [
-				{ elapsedMs: 12, jestOutput: '{"a":1}' },
-				{ elapsedMs: 34, gameOutput: "hello", jestOutput: '{"b":2}' },
+				{ jestOutput: '{"a":1}', jobIndex: 1 },
+				{ gameOutput: "hello", jestOutput: '{"b":2}', jobIndex: 0 },
 			],
 		});
 
 		const result = decodeEnvelope(envelope).entries;
 
 		expect(result).toStrictEqual([
-			{ elapsedMs: 12, jestOutput: '{"a":1}' },
-			{ elapsedMs: 34, gameOutput: "hello", jestOutput: '{"b":2}' },
+			{ jestOutput: '{"a":1}', jobIndex: 1 },
+			{ gameOutput: "hello", jestOutput: '{"b":2}', jobIndex: 0 },
 		]);
 	});
 
-	it("should preserve optional pkg and project fields on entries", () => {
-		expect.assertions(1);
-
-		const envelope = JSON.stringify({
-			entries: [
-				{ jestOutput: '{"a":1}', pkg: "@halcyon/foo", project: "client" },
-				{ jestOutput: '{"b":2}', pkg: "@halcyon/bar" },
-			],
-		});
-
-		const result = decodeEnvelope(envelope).entries;
-
-		expect(result).toStrictEqual([
-			{ jestOutput: '{"a":1}', pkg: "@halcyon/foo", project: "client" },
-			{ jestOutput: '{"b":2}', pkg: "@halcyon/bar" },
-		]);
-	});
-
-	it("should preserve the optional snapshotWrites field on entries", () => {
+	it("should accept entries carrying keys the schema does not declare", () => {
 		expect.assertions(1);
 
 		const envelope = JSON.stringify({
 			entries: [
 				{
+					elapsedMs: 5,
 					jestOutput: '{"a":1}',
+					jobIndex: 0,
 					pkg: "@halcyon/foo",
-					snapshotWrites: {
-						"ReplicatedStorage/Pkg/__snapshots__/foo.spec.snap": "foo content",
-					},
+					project: "client",
 				},
 			],
 		});
 
-		const result = decodeEnvelope(envelope).entries;
-
-		expect(result).toStrictEqual([
-			{
-				jestOutput: '{"a":1}',
-				pkg: "@halcyon/foo",
-				snapshotWrites: {
-					"ReplicatedStorage/Pkg/__snapshots__/foo.spec.snap": "foo content",
-				},
-			},
-		]);
+		expect(decodeEnvelope(envelope).entries.map(({ jobIndex }) => jobIndex)).toStrictEqual([0]);
 	});
 
-	it("should rewrap a bare non-error jest result as a length-1 entries array containing the raw jestOutput", () => {
+	it("should reject a bare non-error jest result: it names no job", () => {
 		expect.assertions(1);
 
-		const barePayload = successJest();
+		expect(() => decodeEnvelope(successJest())).toThrow(
+			/^The runner returned no task envelope: /,
+		);
+	});
 
-		const result = decodeEnvelope(barePayload).entries;
+	it("should reject an entry that names no job", () => {
+		expect.assertions(1);
 
-		expect(result).toStrictEqual([{ jestOutput: barePayload }]);
+		const envelope = JSON.stringify({ entries: [{ jestOutput: "{}", jobIndex: 1.5 }] });
+
+		expect(() => decodeEnvelope(envelope)).toThrow(Error);
 	});
 
 	it("should surface a top-level whole-run error as a clean LuauScriptError", () => {
@@ -189,19 +158,15 @@ describe("envelope entries", () => {
 });
 
 describe(buildProjectResult, () => {
-	it("should map a successful entry to ProjectBackendResult fields populated from parseJestOutput", () => {
+	it("should map a successful entry to the parsed Jest result", () => {
 		expect.assertions(1);
 
 		const result = buildProjectResult({
-			...entry({ elapsedMs: 42, jestOutput: successJest({ numPassedTests: 3 }) }),
+			...entry({ jestOutput: successJest({ numPassedTests: 3 }) }),
 			fallbackGameOutput: undefined,
-			job: job("alpha"),
 		});
 
 		expect(result).toMatchObject({
-			displayColor: "alpha-color",
-			displayName: "alpha",
-			elapsedMs: 42,
 			result: {
 				numFailedTests: 0,
 				numPassedTests: 3,
@@ -217,7 +182,6 @@ describe(buildProjectResult, () => {
 		const result = buildProjectResult({
 			...entry({ gameOutput: "per-entry-output" }),
 			fallbackGameOutput: "fallback-output",
-			job: job("alpha"),
 		});
 
 		expect(result.gameOutput).toBe("per-entry-output");
@@ -229,35 +193,9 @@ describe(buildProjectResult, () => {
 		const result = buildProjectResult({
 			...entry(),
 			fallbackGameOutput: "fallback-output",
-			job: job("alpha"),
 		});
 
 		expect(result.gameOutput).toBe("fallback-output");
-	});
-
-	it("should default elapsedMs to 0 when the entry has no elapsedMs", () => {
-		expect.assertions(1);
-
-		const result = buildProjectResult({
-			...entry(),
-			fallbackGameOutput: undefined,
-			job: job("alpha"),
-		});
-
-		expect(result.elapsedMs).toBe(0);
-	});
-
-	it("should pass through job.displayColor and job.displayName", () => {
-		expect.assertions(2);
-
-		const result = buildProjectResult({
-			...entry(),
-			fallbackGameOutput: undefined,
-			job: job("alpha", { displayColor: "custom-color" }),
-		});
-
-		expect(result.displayName).toBe("alpha");
-		expect(result.displayColor).toBe("custom-color");
 	});
 
 	it("should convert setupSeconds to setupMs by multiplying by 1000 and rounding", () => {
@@ -266,7 +204,6 @@ describe(buildProjectResult, () => {
 		const result = buildProjectResult({
 			...entry({ jestOutput: successJest({ runner: { setup: 1.2345 } }) }),
 			fallbackGameOutput: undefined,
-			job: job("alpha"),
 		});
 
 		expect(result.setupMs).toBe(1235);
@@ -278,14 +215,13 @@ describe(buildProjectResult, () => {
 		const result = buildProjectResult({
 			...entry(),
 			fallbackGameOutput: undefined,
-			job: job("alpha"),
 		});
 
 		expect(result.setupMs).toBeUndefined();
 	});
 
-	it("should pass through coverageData, luauTiming, and snapshotWrites from parseJestOutput", () => {
-		expect.assertions(3);
+	it("should pass through coverageData and snapshotWrites from parseJestOutput", () => {
+		expect.assertions(2);
 
 		const result = buildProjectResult({
 			...entry({
@@ -293,59 +229,18 @@ describe(buildProjectResult, () => {
 					runner: {
 						coverage: { "src/foo.luau": { s: { 1: 5 } } },
 						snapshotWrites: { "snapshots/foo.snap": "snapshot-content" },
-						timing: { setup: 0.5, total: 1.25 },
 					},
 				}),
 			}),
 			fallbackGameOutput: undefined,
-			job: job("alpha"),
 		});
 
 		expect(result.coverageData).toStrictEqual({
 			"src/foo.luau": { s: { "1": 5 } },
 		});
-		expect(result.luauTiming).toStrictEqual({ setup: 0.5, total: 1.25 });
 		expect(result.snapshotWrites).toStrictEqual({
 			"snapshots/foo.snap": "snapshot-content",
 		});
-	});
-
-	it("should prefer entry-level snapshotWrites over the parsed-from-jestOutput value", () => {
-		expect.assertions(1);
-
-		const result = buildProjectResult({
-			...entry({
-				jestOutput: successJest({
-					runner: {
-						snapshotWrites: { "stale/inner.snap": "ignored" },
-					},
-				}),
-				snapshotWrites: { "fresh/outer.snap": "wins" },
-			}),
-			fallbackGameOutput: undefined,
-			job: job("alpha"),
-		});
-
-		expect(result.snapshotWrites).toStrictEqual({ "fresh/outer.snap": "wins" });
-	});
-
-	it("should fall back to parsed snapshotWrites when entry-level is an empty object", () => {
-		expect.assertions(1);
-
-		const result = buildProjectResult({
-			...entry({
-				jestOutput: successJest({
-					runner: {
-						snapshotWrites: { "legacy.snap": "kept" },
-					},
-				}),
-				snapshotWrites: {},
-			}),
-			fallbackGameOutput: undefined,
-			job: job("alpha"),
-		});
-
-		expect(result.snapshotWrites).toStrictEqual({ "legacy.snap": "kept" });
 	});
 
 	it("should attach the resolved gameOutput to LuauScriptError when parseJestOutput throws it", () => {
@@ -357,7 +252,6 @@ describe(buildProjectResult, () => {
 			buildProjectResult({
 				...entry({ jestOutput: errorPayload }),
 				fallbackGameOutput: "fallback-output",
-				job: job("alpha"),
 			});
 		});
 
@@ -388,7 +282,6 @@ describe(buildProjectResult, () => {
 			buildProjectResult({
 				...entry({ gameOutput: capturedStdout, jestOutput: errorPayload }),
 				fallbackGameOutput: "fallback-not-used",
-				job: job("alpha"),
 			});
 		});
 
@@ -419,7 +312,6 @@ describe(buildProjectResult, () => {
 			buildProjectResult({
 				...entry({ jestOutput: errorPayload }),
 				fallbackGameOutput: "No tests found",
-				job: job("alpha"),
 			});
 		});
 
@@ -436,7 +328,6 @@ describe(buildProjectResult, () => {
 			buildProjectResult({
 				...entry({ jestOutput: "{}" }),
 				fallbackGameOutput: "fallback-output",
-				job: job("alpha"),
 			});
 		});
 
@@ -451,7 +342,7 @@ describe(decodeEnvelope, () => {
 
 		const jestOutput = JSON.stringify({
 			bailed: true,
-			entries: [{ jestOutput: successJest(), pkg: "alpha" }],
+			entries: [{ jestOutput: successJest(), jobIndex: 0 }],
 		});
 
 		expect(decodeEnvelope(jestOutput).bailed).toBeTrue();
@@ -462,7 +353,7 @@ describe(decodeEnvelope, () => {
 
 		const jestOutput = JSON.stringify({
 			bailed: false,
-			entries: [{ jestOutput: successJest(), pkg: "alpha" }],
+			entries: [{ jestOutput: successJest(), jobIndex: 0 }],
 		});
 
 		expect(decodeEnvelope(jestOutput).bailed).toBeFalse();
@@ -472,21 +363,10 @@ describe(decodeEnvelope, () => {
 		expect.assertions(1);
 
 		const jestOutput = JSON.stringify({
-			entries: [{ jestOutput: successJest(), pkg: "alpha" }],
+			entries: [{ jestOutput: successJest(), jobIndex: 0 }],
 		});
 
 		expect(decodeEnvelope(jestOutput).bailed).toBeFalse();
-	});
-
-	// A legacy bare Jest result decodes as one entry with neither stop flag —
-	// the shape predates both, so it can only mean "ran everything".
-	it("should report no stop flags for a non-envelope payload", () => {
-		expect.assertions(2);
-
-		const decoded = decodeEnvelope(successJest());
-
-		expect(decoded.bailed).toBeFalse();
-		expect(decoded.deferred).toBeFalse();
 	});
 });
 
@@ -504,7 +384,6 @@ describe("timed-out entries", () => {
 					}),
 				}),
 				fallbackGameOutput: undefined,
-				job: job("alpha"),
 			});
 		});
 
@@ -523,7 +402,6 @@ describe("timed-out entries", () => {
 			buildProjectResult({
 				...entry({ jestOutput: JSON.stringify({ err: "boom", success: false }) }),
 				fallbackGameOutput: undefined,
-				job: job("alpha"),
 			});
 		});
 
@@ -539,7 +417,7 @@ describe(isEnvelopeDeferred, () => {
 
 		const jestOutput = JSON.stringify({
 			deferred: true,
-			entries: [{ jestOutput: successJest(), pkg: "alpha" }],
+			entries: [{ jestOutput: successJest(), jobIndex: 0 }],
 		});
 
 		expect(isEnvelopeDeferred(jestOutput)).toBeTrue();
@@ -550,7 +428,7 @@ describe(isEnvelopeDeferred, () => {
 
 		const jestOutput = JSON.stringify({
 			deferred: false,
-			entries: [{ jestOutput: successJest(), pkg: "alpha" }],
+			entries: [{ jestOutput: successJest(), jobIndex: 0 }],
 		});
 
 		expect(isEnvelopeDeferred(jestOutput)).toBeFalse();
@@ -560,7 +438,7 @@ describe(isEnvelopeDeferred, () => {
 		expect.assertions(1);
 
 		const jestOutput = JSON.stringify({
-			entries: [{ jestOutput: successJest(), pkg: "alpha" }],
+			entries: [{ jestOutput: successJest(), jobIndex: 0 }],
 		});
 
 		expect(isEnvelopeDeferred(jestOutput)).toBeFalse();

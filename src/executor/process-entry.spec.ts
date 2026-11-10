@@ -2,14 +2,17 @@ import { fromAny, fromPartial } from "@total-typescript/shoehorn";
 
 import path from "node:path";
 import process from "node:process";
+import type { Except } from "type-fest";
 import { describe, expect, it } from "vitest";
 
 import { clockTimingCollector } from "#test/mocks/clock-timing-collector.ts";
 import { createPassingResult } from "#test/mocks/executor-spec-results.ts";
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
+import { projectJob } from "#test/mocks/project-job.ts";
 import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
-import type { GapRecord, ProjectJob, RawBackendEntry } from "../backends/interface.ts";
-import type { ExecuteResult } from "./executor-types.ts";
+import type { RawBackendEntry } from "../backends/interface.ts";
+import type { GapRecord } from "../gaps/gap-types.ts";
+import type { ConfiguredJob, ExecuteResult } from "./executor-types.ts";
 import { type EntryContext, processOrRecoverEntry } from "./process-entry.ts";
 
 const FAILURE_ENVELOPE = JSON.stringify({ err: "Exited with code: 1", success: false });
@@ -19,31 +22,29 @@ function createContext(overrides: Partial<EntryContext> = {}): EntryContext {
 	volume.mkdirSync(process.cwd(), { recursive: true });
 	return {
 		backendTiming: { executionMs: 100, uploadMs: 50 },
-		deferFormatting: true,
 		fileSystem,
 		startTime: Date.now(),
 		timing: clockTimingCollector(),
 		tsconfigCache: new Map(),
 		tsconfigReader: fromAny(() => null),
-		version: "0.0.0-test",
 		...overrides,
 	};
 }
 
-function createJob(overrides: Partial<ProjectJob> = {}): ProjectJob {
-	return {
+function createJob(overrides: Partial<ConfiguredJob> = {}): ConfiguredJob {
+	return projectJob({
 		config: createResolvedConfig(),
 		displayName: "boom",
 		testFiles: ["src/b.spec.ts"],
 		...overrides,
-	};
+	});
 }
 
 function processEntry(
-	raw: RawBackendEntry,
+	raw: Except<RawBackendEntry, "jobIndex">,
 	{ context = createContext(), job = createJob() } = {},
 ): ExecuteResult {
-	return processOrRecoverEntry({ context, job, raw });
+	return processOrRecoverEntry({ context, job, raw: { ...raw, jobIndex: 0 } });
 }
 
 function failureMessageOf(result: ExecuteResult): string {
@@ -158,18 +159,6 @@ describe(processOrRecoverEntry, () => {
 		expect(result.result.testResults[0]!.testResults).toHaveLength(0);
 	});
 
-	it("should format the failure's human output when deferFormatting is not set", () => {
-		expect.assertions(2);
-
-		const result = processEntry(
-			{ entry: { jestOutput: FAILURE_ENVELOPE } },
-			{ context: createContext({ deferFormatting: undefined }) },
-		);
-
-		expect(result.output.length).toBeGreaterThan(0);
-		expect(result.output).toContain("Exited with code: 1");
-	});
-
 	it("should keep the raw error message when it is not an exit-code transport error", () => {
 		expect.assertions(1);
 
@@ -262,11 +251,11 @@ describe(processOrRecoverEntry, () => {
 		expect.assertions(1);
 
 		const result = processEntry(
-			{ entry: { jestOutput: FAILURE_ENVELOPE }, fallbackGameOutput: "captured-game-output" },
-			{ context: createContext({ deferFormatting: undefined }) },
+			{ entry: { jestOutput: FAILURE_ENVELOPE }, fallbackGameOutput: "[{}]" },
+			{ context: createContext() },
 		);
 
-		expect(result.gameOutput).toBe("captured-game-output");
+		expect(result.gameOutput).toBe("[{}]");
 	});
 
 	it("should rethrow non-LuauScriptError failures so unexpected internal errors still surface", () => {

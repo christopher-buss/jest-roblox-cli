@@ -1,11 +1,5 @@
 /**
- * Map `items` through `func`, with at most `limit` calls outstanding.
- *
- * Bounded rather than a bare `Promise.all`: the callers here are file passes
- * over whole source trees, and handing tens of thousands of reads to the
- * thread pool at once buys no throughput while it does exhaust file handles.
- * Results come back in the order of `items`, not the order they settled, so a
- * digest taken over them is stable.
+ * Options for `mapWithLimitAsync`.
  * @template T
  * @template R
  */

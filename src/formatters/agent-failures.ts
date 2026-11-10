@@ -1,8 +1,14 @@
 import type { getSourceSnippet, MappedLocation, SourceMapper } from "../source-mapper/index.ts";
 import type { JestResult, TestCaseResult } from "../types/jest-result-types.ts";
-import { parseErrorMessage } from "./failure-message.ts";
-import { type DisplayPathOptions, makeRelative, resolveDisplayPath } from "./shared.ts";
-import { parseSourceLocation } from "./snippets.ts";
+import {
+	type FailureDetail,
+	failureDetail,
+	type FailureLocation,
+	locateFailure,
+	type SnippetSource,
+	snippetSources,
+} from "./failure-model.ts";
+import { makeRelative, resolveDisplayPath } from "./shared.ts";
 
 /**
  * Reads the source lines around a location.
@@ -10,17 +16,13 @@ import { parseSourceLocation } from "./snippets.ts";
 export type SourceSnippetReader = typeof getSourceSnippet;
 
 /**
- * Options of the agent failure list.
+ * Options of one agent failure.
  */
 export interface FailureFormatOptions {
 	/**
 	 * Reads the source lines a snippet shows.
 	 */
 	getSourceSnippet: SourceSnippetReader;
-	/**
-	 * Most failures to render; the rest collapse into one omitted line.
-	 */
-	maxFailures: number;
 	/**
 	 * Directory that failure paths are shown relative to.
 	 */
@@ -31,6 +33,18 @@ export interface FailureFormatOptions {
 	sourceMapper?: SourceMapper | undefined;
 }
 
+/**
+ * One failed test with the display path and options it renders with.
+ */
+export interface AgentFailure {
+	/** Display path of the test file. */
+	filePath: string;
+	/** Options the failure renders with. */
+	options: FailureFormatOptions;
+	/** The failed test. */
+	test: TestCaseResult;
+}
+
 type SnippetLevel = "both" | "none" | "ts-only";
 
 interface SnippetContext {
@@ -39,76 +53,58 @@ interface SnippetContext {
 	snippetLevel: SnippetLevel;
 }
 
-interface FormatFailureMessageOptions {
-	agentOptions: FailureFormatOptions;
-	filePath: string;
-	originalMessage: string;
-	snippetLevel: SnippetLevel;
-	test: TestCaseResult;
-}
-
-interface FormatAgentFailureOptions {
-	filePath: string;
-	options: FailureFormatOptions;
-	snippetLevel: SnippetLevel;
-	test: TestCaseResult;
+/**
+ * Every failed test of one result, with its display path.
+ * @param result - Result whose failed tests to collect.
+ * @param options - Options the failures render with.
+ * @returns The failures in file order.
+ */
+export function collectAgentFailures(
+	result: JestResult,
+	options: FailureFormatOptions,
+): Array<AgentFailure> {
+	return result.testResults.flatMap((file) => {
+		const filePath = resolveDisplayPath(file.testFilePath, options);
+		return file.testResults
+			.filter((test) => test.status === "failed")
+			.map((test) => {
+				return { filePath, options, test };
+			});
+	});
 }
 
 /**
- * Render each failed test for the agent formatter, up to `maxFailures`.
- * @param options - Formatter options, the run result and its failure total.
+ * Render failed tests for the agent formatter, up to `maxFailures` across the
+ * whole run.
+ * @param options - The failures, the cap and the failure total.
+ * @param options.failures - Every failed test in the run, in order.
+ * @param options.maxFailures - Most failures to render.
+ * @param options.totalFailures - Failure total that picks how many snippets
+ *   each failure shows.
  * @returns Output lines, ending with an omitted-count line when capped.
  */
 export function formatFailures({
-	options,
-	result,
+	failures,
+	maxFailures,
 	totalFailures,
 }: {
-	/**
-	 * Formatter options.
-	 */
-	options: FailureFormatOptions;
-	/**
-	 * Run result whose failed tests to render.
-	 */
-	result: JestResult;
-	/**
-	 * Failure total that picks how many snippets each failure shows.
-	 */
+	failures: Array<AgentFailure>;
+	maxFailures: number;
 	totalFailures: number;
 }): Array<string> {
 	const lines: Array<string> = [];
-	const failures = collectFailedTests(result, options);
 	const snippetLevel = getSnippetLevel(totalFailures);
 
 	for (const [index, failure] of failures.entries()) {
-		if (index >= options.maxFailures) {
-			lines.push(`... ${result.numFailedTests - index} more failures omitted`, "");
+		if (index >= maxFailures) {
+			lines.push(`... ${failures.length - index} more failures omitted`, "");
 			break;
 		}
 
-		lines.push(formatAgentFailure({ ...failure, options, snippetLevel }));
+		lines.push(formatAgentFailure({ ...failure, snippetLevel }));
 	}
 
 	return lines;
-}
-
-function collectFailedTests(
-	result: JestResult,
-	options: DisplayPathOptions,
-): Array<{ filePath: string; test: TestCaseResult }> {
-	const failures: Array<{ filePath: string; test: TestCaseResult }> = [];
-
-	for (const file of result.testResults) {
-		const displayPath = resolveDisplayPath(file.testFilePath, options);
-		for (const test of file.testResults) {
-			if (test.status === "failed") {
-				failures.push({ filePath: displayPath, test });
-			}
-		}
-	}
-
-	return failures;
 }
 
 function getSnippetLevel(totalFailures: number): SnippetLevel {
@@ -123,22 +119,6 @@ function getSnippetLevel(totalFailures: number): SnippetLevel {
 	return "none";
 }
 
-function findFailureLocation(
-	mappedLocations: Array<MappedLocation>,
-	message: string,
-): undefined | { line: number; path: string } {
-	const [loc] = mappedLocations;
-	if (loc !== undefined) {
-		if (loc.tsPath !== undefined && loc.tsLine !== undefined) {
-			return { line: loc.tsLine, path: loc.tsPath };
-		}
-
-		return { line: loc.luauLine, path: loc.luauPath };
-	}
-
-	return parseSourceLocation(message);
-}
-
 function formatSnippetBlock(snippetResult: ReturnType<SourceSnippetReader>): string | undefined {
 	if (snippetResult === undefined) {
 		return undefined;
@@ -151,6 +131,17 @@ function formatSnippetBlock(snippetResult: ReturnType<SourceSnippetReader>): str
 	}
 
 	return lines.join("\n");
+}
+
+function getLocationSnippet(
+	location: FailureLocation,
+	getSnippet: SourceSnippetReader,
+): Array<string> {
+	const snippet = formatSnippetBlock(
+		getSnippet({ context: 1, filePath: location.path, line: location.line }),
+	);
+
+	return snippet !== undefined ? [snippet] : [];
 }
 
 function getTsSnippets(
@@ -189,143 +180,68 @@ function getTsSnippets(
 	return result;
 }
 
-function getLuauOnlySnippet(loc: MappedLocation, getSnippet: SourceSnippetReader): Array<string> {
-	const snippet = formatSnippetBlock(
-		getSnippet({ context: 1, filePath: loc.luauPath, line: loc.luauLine }),
-	);
-
-	return snippet !== undefined ? [snippet] : [];
-}
-
 function getMappedSnippets(loc: MappedLocation, context: SnippetContext): Array<string> {
 	if (loc.tsPath !== undefined && loc.tsLine !== undefined) {
 		return getTsSnippets({ ...loc, tsLine: loc.tsLine, tsPath: loc.tsPath }, context);
 	}
 
-	return getLuauOnlySnippet(loc, context.getSnippet);
+	return getLocationSnippet({ line: loc.luauLine, path: loc.luauPath }, context.getSnippet);
 }
 
-function getFallbackSnippet(
-	location: { line: number; path: string },
-	getSnippet: SourceSnippetReader,
+function getFailureSnippets(
+	source: SnippetSource | undefined,
+	context: SnippetContext,
 ): Array<string> {
-	const snippet = formatSnippetBlock(
-		getSnippet({ context: 1, filePath: location.path, line: location.line }),
-	);
-
-	return snippet !== undefined ? [snippet] : [];
-}
-
-function getFailureSnippets({
-	context,
-	location,
-	mappedLocations,
-}: {
-	context: SnippetContext;
-	location: undefined | { line: number; path: string };
-	mappedLocations: Array<MappedLocation>;
-}): Array<string> {
-	if (context.snippetLevel === "none") {
+	if (source === undefined || context.snippetLevel === "none") {
 		return [];
 	}
 
-	const [loc] = mappedLocations;
-	if (loc !== undefined) {
-		return getMappedSnippets(loc, context);
-	}
-
-	if (location !== undefined) {
-		return getFallbackSnippet(location, context.getSnippet);
-	}
-
-	return [];
+	return source.kind === "mapped"
+		? getMappedSnippets(source.location, context)
+		: getLocationSnippet(source.location, context.getSnippet);
 }
 
-/**
- * The expectation detail under a failure header: a snapshot diff, an
- * expected/received pair, or the raw message when neither was parsed out.
- * @param parsed - Parsed failure message.
- * @returns Detail lines.
- */
-function buildFailureDetail(parsed: ReturnType<typeof parseErrorMessage>): Array<string> {
-	if (parsed.snapshotDiff !== undefined) {
-		return [parsed.snapshotDiff];
+function detailLines(detail: FailureDetail, message: string): Array<string> {
+	switch (detail.kind) {
+		case "message": {
+			return [message];
+		}
+		case "snapshot": {
+			return [detail.diff];
+		}
+		case "values": {
+			return [`Expected: ${detail.expected}`, `Received: ${detail.received}`];
+		}
 	}
-
-	if (parsed.expected !== undefined && parsed.received !== undefined) {
-		return [`Expected: ${parsed.expected}`, `Received: ${parsed.received}`];
-	}
-
-	return [parsed.message];
 }
 
-/**
- * One failure message: the ` FAIL <file>:<line> > <test>` header, the
- * expectation detail (snapshot diff, expected/received pair, or the raw
- * message), the source snippets, and a trailing blank line.
- * @param options - Failed test, its message, file path and snippet level.
- * @returns Lines of the failure message.
- */
 function formatFailureMessage({
-	agentOptions,
 	filePath,
+	options,
 	originalMessage,
 	snippetLevel,
 	test,
-}: FormatFailureMessageOptions): Array<string> {
-	const lines: Array<string> = [];
-
-	let mappedLocations: Array<MappedLocation> = [];
-	let message = originalMessage;
-
-	if (agentOptions.sourceMapper !== undefined) {
-		({ locations: mappedLocations, message } =
-			agentOptions.sourceMapper.mapFailureWithLocations(originalMessage));
-	}
-
-	const parsed = parseErrorMessage(originalMessage);
-	const location = findFailureLocation(mappedLocations, message);
-	const relativePath = makeRelative(location?.path ?? filePath, agentOptions.rootDir);
-	const lineInfo = location?.line !== undefined ? `:${location.line}` : "";
+}: AgentFailure & { originalMessage: string; snippetLevel: SnippetLevel }): Array<string> {
+	const located = locateFailure(originalMessage, options.sourceMapper);
+	const relativePath = makeRelative(located.primary?.path ?? filePath, options.rootDir);
+	const lineInfo = located.primary !== undefined ? `:${located.primary.line}` : "";
 	const ancestors = test.ancestorTitles.length > 0 ? ` > ${test.ancestorTitles.join(" > ")}` : "";
+	const [source] = snippetSources(located);
 
-	lines.push(
+	return [
 		` FAIL ${relativePath}${lineInfo}${ancestors} > ${test.title}`,
-		...buildFailureDetail(parsed),
-		...getFailureSnippets({
-			context: {
-				getSnippet: agentOptions.getSourceSnippet,
-				rootDir: agentOptions.rootDir,
-				snippetLevel,
-			},
-			location,
-			mappedLocations,
+		...detailLines(failureDetail(located.parsed), located.parsed.message),
+		...getFailureSnippets(source, {
+			getSnippet: options.getSourceSnippet,
+			rootDir: options.rootDir,
+			snippetLevel,
 		}),
 		"",
-	);
-
-	return lines;
+	];
 }
 
-function formatAgentFailure({
-	filePath,
-	options,
-	snippetLevel,
-	test,
-}: FormatAgentFailureOptions): string {
-	const lines: Array<string> = [];
-
-	for (const originalMessage of test.failureMessages) {
-		lines.push(
-			...formatFailureMessage({
-				agentOptions: options,
-				filePath,
-				originalMessage,
-				snippetLevel,
-				test,
-			}),
-		);
-	}
-
-	return lines.join("\n");
+function formatAgentFailure(failure: AgentFailure & { snippetLevel: SnippetLevel }): string {
+	return failure.test.failureMessages
+		.flatMap((originalMessage) => formatFailureMessage({ ...failure, originalMessage }))
+		.join("\n");
 }

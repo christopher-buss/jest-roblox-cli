@@ -1,23 +1,20 @@
 import type { Except } from "type-fest";
 import type { WebSocket } from "ws";
 
+import { encodeNilRelayFrame, NIL_RETURN_PLUGIN_WAIT_MS } from "../protocol/studio.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 
 /** Overrides how long Studio may take to start the run, in milliseconds. */
 export const BOOT_TIMEOUT_ENV = "JEST_ROBLOX_STUDIO_BOOT_TIMEOUT";
 
-/** Splits Studio's log on either line ending — it writes CRLF on Windows. */
+/** Default milliseconds Studio may take to start the run. */
+export const DEFAULT_BOOT_WATCH_MS = 45_000;
+
 const LOG_LINE_SPLIT_PATTERN = /\r?\n/u;
 
-/** Lines of Studio's engine log quoted when a run times out. */
 const STUDIO_LOG_TAIL = 15;
 
-/** Per-line cap on the quoted Studio log tail, in characters. */
 const STUDIO_LOG_LINE_LIMIT = 300;
-
-// Must stay below `NIL_RELAY_WAIT_SECONDS` and above `RUNNING_WAIT_SECONDS` in
-// `plugin/src/test-in-run-mode.server.luau`.
-const NIL_RETURN_PLUGIN_WAIT_MS = 30_000;
 
 const NIL_RETURN_HEADLINE =
 	"studio-cli: ExecuteRunModeAsync ended the test session early (it returned nil), " +
@@ -51,9 +48,7 @@ interface NilReturnRelayOptions extends Pick<ResultDeadline, "outputFile"> {
 }
 
 /**
- * The boot deadline runs from launch until the run starts; the run deadline
- * from then until the result. Either one expiring hands `onExpired` the
- * error.
+ * Start the boot deadline, then the run deadline once the run starts.
  *
  * @param options - Both timeouts, the log path, and the expiry callback.
  * @returns Controls that stop the deadlines or mark the run as started.
@@ -119,7 +114,7 @@ export function startNilReturnRelay({
 	let timer: NodeJS.Timeout | undefined;
 
 	function relayTo(socket: WebSocket): void {
-		socket.send(JSON.stringify({ requestId, type: "nilRelay" }));
+		socket.send(encodeNilRelayFrame(requestId));
 		clearTimeout(timer);
 	}
 
@@ -148,20 +143,6 @@ export function startNilReturnRelay({
 	};
 }
 
-/**
- * The tail of Studio's own engine log, or nothing when it holds nothing worth
- * printing.
- *
- * Studio's stdio is discarded (see `spawnStudio`), so `--outputFile` is
- * the only channel that survives a run the result socket never answered. It is
- * not a guarantee: a place Studio cannot open stops behind a modal dialog with
- * only the echoed bootstrap flushed, which is exactly why the timeout names the
- * file as well as quoting it.
- *
- * @param fileSystem - File system the log is read through.
- * @param outputFile - Path Studio was told to log to.
- * @returns Trailing log lines, oldest first, or an empty array.
- */
 function readStudioLogTail(fileSystem: FileSystem, outputFile: string): Array<string> {
 	let contents;
 	try {
@@ -182,20 +163,6 @@ function readStudioLogTail(fileSystem: FileSystem, outputFile: string): Array<st
 		});
 }
 
-/**
- * Names a run Studio never answered, and hands over whatever Studio did log.
- *
- * A bare "timed out" is the least useful thing the backend can say: the run
- * could have wedged in a test, failed to open the place, or died behind a
- * dialog, and Studio's engine log is the only place those read differently.
- *
- * @param options - Log reader, headline, and log path.
- * @param options.fileSystem - File system the log is read through.
- * @param options.headline - What ran out, and any probable cause, as the
- *   opening lines of the error.
- * @param options.outputFile - Path Studio was told to log to.
- * @returns The error to reject the run with.
- */
 function unansweredError({
 	fileSystem,
 	headline,

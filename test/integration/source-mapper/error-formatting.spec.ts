@@ -2,8 +2,8 @@ import { writeFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { formatFailure } from "#src/index.ts";
-import { createFixtureSandbox } from "#test/e2e/cli/helpers.ts";
+import { createStyles, formatFailure } from "#src/api.ts";
+import { createFixtureSandbox } from "#test/harness/helpers.ts";
 import {
 	buildProjectSourceMapperAsync,
 	type SourceMapper,
@@ -127,6 +127,7 @@ describe("formatter output", () => {
 
 		const output = formatFailure({
 			sourceMapper,
+			styles: createStyles(false),
 			test: {
 				ancestorTitles: ["Player"],
 				duration: 5,
@@ -135,7 +136,6 @@ describe("formatter output", () => {
 				status: "failed",
 				title: "should have correct name",
 			},
-			useColor: false,
 		});
 
 		expect(normalizePaths(output)).toMatchInlineSnapshot(`
@@ -167,6 +167,7 @@ describe("formatter output", () => {
 		const output = formatFailure({
 			showLuau: true,
 			sourceMapper,
+			styles: createStyles(false),
 			test: {
 				ancestorTitles: ["Player"],
 				duration: 5,
@@ -175,7 +176,6 @@ describe("formatter output", () => {
 				status: "failed",
 				title: "should have correct name",
 			},
-			useColor: false,
 		});
 
 		expect(normalizePaths(output)).toMatchInlineSnapshot(`
@@ -214,6 +214,7 @@ describe("formatter output", () => {
 
 		const output = formatFailure({
 			sourceMapper,
+			styles: createStyles(false),
 			test: {
 				ancestorTitles: ["Player"],
 				duration: 5,
@@ -222,7 +223,6 @@ describe("formatter output", () => {
 				status: "failed",
 				title: "should never be zero",
 			},
-			useColor: false,
 		});
 
 		expect(normalizePaths(output)).toMatchInlineSnapshot(`
@@ -253,6 +253,7 @@ describe("formatter output", () => {
 
 		const output = formatFailure({
 			sourceMapper,
+			styles: createStyles(false),
 			test: {
 				ancestorTitles: ["Player"],
 				duration: 5,
@@ -261,7 +262,6 @@ describe("formatter output", () => {
 				status: "failed",
 				title: "should track scores",
 			},
-			useColor: false,
 		});
 
 		expect(normalizePaths(output)).toMatchInlineSnapshot(`
@@ -292,6 +292,7 @@ describe("formatter output", () => {
 
 		const output = formatFailure({
 			sourceMapper,
+			styles: createStyles(false),
 			test: {
 				ancestorTitles: ["Player"],
 				duration: 5,
@@ -300,7 +301,6 @@ describe("formatter output", () => {
 				status: "failed",
 				title: "should match snapshot",
 			},
-			useColor: false,
 		});
 
 		expect(normalizePaths(output)).toMatchInlineSnapshot(`
@@ -331,6 +331,7 @@ describe("formatter output", () => {
 
 		const output = formatFailure({
 			sourceMapper,
+			styles: createStyles(false),
 			test: {
 				ancestorTitles: ["Player"],
 				duration: 5,
@@ -339,7 +340,6 @@ describe("formatter output", () => {
 				status: "failed",
 				title: "should match snapshot",
 			},
-			useColor: false,
 		});
 
 		expect(normalizePaths(output)).toMatchInlineSnapshot(`
@@ -373,6 +373,7 @@ describe("formatter output", () => {
 
 		const output = formatFailure({
 			sourceMapper,
+			styles: createStyles(false),
 			test: {
 				ancestorTitles: ["Player"],
 				duration: 5,
@@ -381,7 +382,6 @@ describe("formatter output", () => {
 				status: "failed",
 				title: "should read optional stats",
 			},
-			useColor: false,
 		});
 
 		expect(normalizePaths(output)).toMatchInlineSnapshot(`

@@ -3,17 +3,27 @@ import { describe, expect, it } from "vitest";
 
 import { captureError } from "#test/helpers/unit/errors";
 import { makeFileSystem } from "#test/helpers/unit/file-system";
-import { loadRojoProject } from "./loader.ts";
+import {
+	DEFAULT_ROJO_PROJECT,
+	findRojoProjectFile,
+	loadRojoProject,
+	parseRojoProject,
+	tryLoadRojoProject,
+} from "./loader.ts";
 
 describe(loadRojoProject, () => {
 	it("should reject invalid fields after loading a valid project", () => {
-		expect.assertions(4);
+		expect.assertions(5);
 
 		const { directory, fileSystem, fs } = makeFileSystem();
 		const file = path.join(directory, "default.project.json");
 		fs.writeFileSync(file, JSON.stringify({ name: "Game", tree: {} }));
 
 		expect(loadRojoProject(file, fileSystem).name).toBe("Game");
+
+		fs.writeFileSync(file, JSON.stringify({ name: "Game", servePort: 1.5, tree: {} }));
+
+		expect(() => loadRojoProject(file, fileSystem)).toThrow(/servePort/);
 
 		fs.writeFileSync(file, JSON.stringify({ tree: {} }));
 
@@ -295,5 +305,152 @@ describe(loadRojoProject, () => {
 		expect(() => loadRojoProject(projectPath, fileSystem)).toThrow(
 			/Invalid Rojo project .*: tree must be an object/,
 		);
+	});
+});
+
+describe(tryLoadRojoProject, () => {
+	it("should answer undefined when the project file is absent", () => {
+		expect.assertions(1);
+
+		const { directory, fileSystem } = makeFileSystem();
+
+		expect(
+			tryLoadRojoProject(path.join(directory, "missing.project.json"), fileSystem),
+		).toBeUndefined();
+	});
+
+	it("should throw a read failure that is not absence", () => {
+		expect.assertions(1);
+
+		const failure = Object.assign(new Error("denied"), { code: "EACCES" });
+		const { fileSystem } = makeFileSystem();
+		fileSystem.readFileSync = () => {
+			throw failure;
+		};
+
+		expect(() => tryLoadRojoProject("project.json", fileSystem)).toThrow(
+			expect.objectContaining({
+				cause: failure,
+				message: "Could not read Rojo project: project.json",
+			}),
+		);
+	});
+
+	it("should throw a read failure that carries no error code", () => {
+		expect.assertions(1);
+
+		const failure = { code: "ENOENT" };
+		const { fileSystem } = makeFileSystem();
+		fileSystem.readFileSync = () => {
+			// oxlint-disable-next-line typescript/only-throw-error -- a host may throw a non-Error
+			throw failure;
+		};
+
+		expect(() => tryLoadRojoProject("project.json", fileSystem)).toThrow(
+			expect.objectContaining({ cause: failure }),
+		);
+	});
+
+	it("should load a present project", () => {
+		expect.assertions(1);
+
+		const { directory, fileSystem } = makeFileSystem({
+			"default.project.json": JSON.stringify({ name: "Game", tree: { $path: "src" } }),
+		});
+
+		expect(
+			tryLoadRojoProject(path.join(directory, "default.project.json"), fileSystem),
+		).toStrictEqual({
+			name: "Game",
+			raw: { name: "Game", tree: { $path: "src" } },
+			servePort: undefined,
+			tree: { $path: "src" },
+		});
+	});
+
+	it("should throw on a malformed present project", () => {
+		expect.assertions(1);
+
+		const { directory, fileSystem } = makeFileSystem({ "a.project.json": "{" });
+
+		expect(() => {
+			return tryLoadRojoProject(path.join(directory, "a.project.json"), fileSystem);
+		}).toThrow(/Failed to parse Rojo project/);
+	});
+});
+
+describe(parseRojoProject, () => {
+	it("should return the validated fields without resolving nested projects", () => {
+		expect.assertions(1);
+
+		const text = JSON.stringify({ name: "Game", tree: { Inner: { $path: "a.project.json" } } });
+
+		expect(parseRojoProject(text, "x.project.json").tree).toStrictEqual({
+			Inner: { $path: "a.project.json" },
+		});
+	});
+
+	it("should name the file when the text fails the schema", () => {
+		expect.assertions(1);
+
+		expect(() => parseRojoProject("[]", "x.project.json")).toThrow(
+			/^Invalid Rojo project x\.project\.json: /,
+		);
+	});
+});
+
+describe(findRojoProjectFile, () => {
+	it("should prefer the default project file", () => {
+		expect.assertions(1);
+
+		const { directory, fileSystem } = makeFileSystem({
+			"a.project.json": "{}",
+			[DEFAULT_ROJO_PROJECT]: "{}",
+		});
+
+		expect(findRojoProjectFile(directory, fileSystem)).toBe(
+			path.join(directory, "default.project.json"),
+		);
+	});
+
+	it("should fall back to the first project file", () => {
+		expect.assertions(1);
+
+		const { directory, fileSystem } = makeFileSystem({
+			"a.json": "{}",
+			"b.project.json": "{}",
+		});
+
+		expect(findRojoProjectFile(directory, fileSystem)).toBe(
+			path.join(directory, "b.project.json"),
+		);
+	});
+
+	it("should answer undefined when there is no project file", () => {
+		expect.assertions(1);
+
+		const { directory, fileSystem } = makeFileSystem({ "a.json": "{}" });
+
+		expect(findRojoProjectFile(directory, fileSystem)).toBeUndefined();
+	});
+
+	it("should answer undefined when the directory does not exist", () => {
+		expect.assertions(1);
+
+		const { directory, fileSystem } = makeFileSystem();
+
+		expect(findRojoProjectFile(`${directory}/absent`, fileSystem)).toBeUndefined();
+	});
+
+	it("should throw a directory read failure that is not absence", () => {
+		expect.assertions(1);
+
+		const failure = Object.assign(new Error("denied"), { code: "EACCES" });
+		const { directory, fileSystem } = makeFileSystem();
+		fileSystem.readdirSync = () => {
+			throw failure;
+		};
+
+		expect(() => findRojoProjectFile(directory, fileSystem)).toThrow(failure);
 	});
 });

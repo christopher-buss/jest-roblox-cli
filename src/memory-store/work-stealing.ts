@@ -2,50 +2,33 @@ import { createJsonWorkQueueWriter, type WorkQueueWriter } from "@isentinel/robl
 
 import { randomUUID } from "node:crypto";
 
-const DEFAULT_TTL_SECONDS = 600;
+import type { WorkQueueItem as QueueItem } from "../protocol/embedded-payload-types.ts";
+import { QUEUE_TTL_SECONDS } from "../protocol/limits.ts";
+
 const INVISIBILITY_BUFFER_SECONDS = 30;
 
 /** Queue ID and timing that the materializer reads the queue with. */
 export interface PreparedWorkStealing {
-	/**
-	 * Materializer-side invisibility window = perPackageTimeoutSeconds + 30.
-	 */
+	/** Materializer-side invisibility window, in seconds. */
 	invisibilityWindowSeconds: number;
 	/** Per-run UUID-keyed queue name. */
 	queueId: string;
-	/**
-	 * TTL the items were pushed with. Travels on to the runner, which names it
-	 * again when it puts back an item it dropped over its return budget.
-	 */
+	/** TTL the items were pushed with; the runner reuses it on put-back. */
 	ttlSeconds: number;
 }
 
-interface QueueItem {
-	pkg: string;
-	project: string;
-}
-
 interface PrepareWorkStealingOptions {
-	/** Override the Open Cloud base URL (default: live Roblox endpoint). */
 	baseUrl?: string | undefined;
 	credentials: { apiKey: string; universeId: string };
 	packages: ReadonlyArray<QueueItem>;
 	perPackageTimeoutSeconds: number;
-	/** Override the queue writer factory (default: real writer from runner). */
 	queueFactory?: (queueId: string) => WorkQueueWriter<QueueItem>;
-	/** TTL for queue items in seconds. Default 600 (10 min). */
 	ttlSeconds?: number;
-	/** Override the UUID generator (default: `crypto.randomUUID`). */
 	uuid?: () => string;
 }
 
 /**
- * Generate a per-run queue ID, push every package onto it with the given TTL,
- * and report the queueId + the invisibility window the materializer should
- * use when popping. Each parallel OCALE task pops from this queue until it
- * is empty (work-stealing); the invisibility window covers per-package
- * execution plus a small buffer so a crashing task lets its in-flight
- * package become visible again to siblings.
+ * Push every package onto a fresh per-run work-stealing queue.
  * @param options - Credentials, packages, per-package timeout and test seams.
  * @returns Queue ID, invisibility window and item TTL.
  * @rejects When the queue writer fails to enqueue.
@@ -54,7 +37,7 @@ export async function prepareWorkStealingQueueAsync(
 	options: PrepareWorkStealingOptions,
 ): Promise<PreparedWorkStealing> {
 	const queueId = (options.uuid ?? randomUUID)();
-	const ttlSeconds = options.ttlSeconds ?? DEFAULT_TTL_SECONDS;
+	const ttlSeconds = options.ttlSeconds ?? QUEUE_TTL_SECONDS;
 	const queue =
 		options.queueFactory?.(queueId) ??
 		createJsonWorkQueueWriter<QueueItem>({

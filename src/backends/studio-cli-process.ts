@@ -2,8 +2,10 @@ import type { ChildProcess } from "node:child_process";
 import process from "node:process";
 import type { WebSocketServer } from "ws";
 
+import { isHiddenDesktopPlatform } from "../config/workspace-run-options.ts";
 import { launchOnHiddenDesktop } from "./hidden-desktop.ts";
 import { findAppBundle, launchHiddenOnMacos } from "./macos-hidden.ts";
+import { closePluginServer } from "./plugin-connections.ts";
 import type { StudioCliLaunchRequest, StudioCliProcess } from "./studio-cli-types.ts";
 import { clearStaleLock, watchLockRelease } from "./studio-lock.ts";
 
@@ -31,7 +33,7 @@ export function resolveHiddenDesktop({
 		return false;
 	}
 
-	if (platform === "win32" || platform === "darwin") {
+	if (isHiddenDesktopPlatform(platform)) {
 		return true;
 	}
 
@@ -43,27 +45,19 @@ export function resolveHiddenDesktop({
 }
 
 /**
- * Wind a run down the hard way: every error path before the graceful teardown
- * began (timeout, spawn failure, server error — a hung run gets no graceful
- * wait). Kills Studio so node's event loop can drain and the CLI exits, then
- * releases the result server. Not called once the graceful watch has started:
- * from then on the watch owns both the kill and the close.
+ * Kill Studio and close the result server. Never call it after
+ * `startGracefulTeardown`: the watch then owns the kill and the close.
  *
  * @param child - The Studio process, absent when the launch never happened.
  * @param server - The loopback result server for this run.
  */
 export function hardTeardown(child: StudioCliProcess | undefined, server: WebSocketServer): void {
 	child?.kill();
-	closeServer(server);
+	closePluginServer(server);
 }
 
 /**
- * Wind a run down now that the result is in hand, decoupling teardown from it:
- * close the result server (so the bootstrap returns and `--quitAfterExecution`
- * begins a graceful `ClosePlace` that runs edit-mode `BindToClose` handlers and
- * frees the lock), then kill the instant the lock releases — skipping Studio's
- * ~30s telemetry drain. The watch is non-awaited, so results return now and the
- * process exits after teardown.
+ * Close the result server, then kill Studio once it releases the place lock.
  *
  * @param options - Teardown inputs.
  * @param options.child - The Studio process that answered.
@@ -79,7 +73,7 @@ export function startGracefulTeardown({
 	readonly graceCapMs: number;
 	readonly server: WebSocketServer;
 }): void {
-	closeServer(server);
+	closePluginServer(server);
 	child.killOnLockRelease(graceCapMs);
 }
 
@@ -108,26 +102,9 @@ export function launchStudioProcess(request: StudioCliLaunchRequest): StudioCliP
 }
 
 /**
- * Terminate any live bootstrap socket and close the result server so a
- * lingering connection can't keep node's event loop running past the CLI's
- * exitCode-based shutdown (the same hazard the WebSocket `studio` backend
- * guards against).
+ * Studio in `--task RunScript` mode ignores SIGTERM on macOS.
  *
- * @param server - The loopback result server for this run.
- */
-function closeServer(server: WebSocketServer): void {
-	for (const client of server.clients) {
-		client.terminate();
-	}
-
-	server.close();
-}
-
-/**
- * Studio in `--task RunScript` mode ignores SIGTERM on macOS, and a live child
- * holds node's event loop open, so the CLI would never exit.
- *
- * @param child - The Studio process.
+ * @param child - The Studio process to kill.
  */
 function terminateStudio(child: ChildProcess): void {
 	const escalation = setTimeout(() => {
@@ -141,20 +118,6 @@ function terminateStudio(child: ChildProcess): void {
 	child.kill("SIGTERM");
 }
 
-/**
- * Real launcher: clear a stale `<place>.lock` (a previously killed Studio
- * can't remove its own, and a back-to-back run would otherwise open the place
- * onto it and crash), then spawn Studio and return the handle the host kills.
- * The result arrives over the WebSocket, not the process — the host kills this
- * Studio once it lands (instantly, or after a graceful close; see {@link
- * StudioCliProcess}).
- *
- * `stdio: "ignore"` because nothing is read from the pipes — an unconsumed
- * `stdout` pipe could backpressure-stall a chatty Studio.
- *
- * @param request - Studio path, arguments, place file, and process runner.
- * @returns A handle that kills Studio and reports launch failures.
- */
 function spawnStudio(request: StudioCliLaunchRequest): StudioCliProcess {
 	const { childProcess, fileSystem } = request;
 	const lockFile = clearStaleLock(fileSystem, request.placeFile);

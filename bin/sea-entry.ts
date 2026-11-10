@@ -1,7 +1,6 @@
-import process from "node:process";
-
 import { main } from "../src/cli.ts";
+import { markSeaBuild } from "../src/utils/sea.ts";
 
-process.env["JEST_ROBLOX_SEA"] = "true";
+markSeaBuild();
 
 void main();

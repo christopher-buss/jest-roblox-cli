@@ -5,173 +5,92 @@ import { describe, expect, it, vi } from "vitest";
 
 import { createLuteChildProcess } from "#test/mocks/lute-child-process.ts";
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
-import type { PackageConfigLoader } from "../config/loader.ts";
-import type { ResolvedConfig } from "../config/schema.ts";
-import type { TimingCollector } from "../timing/orchestration-collector.ts";
-import { loadWorkspacePackagesAsync } from "./package-loader.ts";
+import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
+import { recordingTimingCollector } from "#test/mocks/workspace-timing-recorder.ts";
+import type { PackageConfig, PackageConfigLoader } from "../config/loader.ts";
+import type { ResolvedConfig } from "../config/resolved-config.ts";
+import { loadPackageConfigsAsync, loadWorkspacePackages } from "./package-loader.ts";
 
-const NO_SUCH_PACKAGE = path.join(import.meta.dirname, "no-such-package");
-
-async function loadDefaultConfigAsync(): Promise<ResolvedConfig> {
-	const [loaded] = await loadWorkspacePackagesAsync({
-		childProcess: createLuteChildProcess({ version: "1.0.1" }),
-		cli: {},
-		packageInfos: [{ name: "defaults", packageDirectory: NO_SUCH_PACKAGE }],
-		timing: createTiming(),
-	});
-	return loaded!.pkgConfig;
-}
-
-const LOADED_DEFAULTS = await loadDefaultConfigAsync();
-
-function makeConfig(overrides: Partial<ResolvedConfig> = {}): ResolvedConfig {
+function packageConfig(overrides: Partial<ResolvedConfig> = {}): PackageConfig {
 	return {
-		...LOADED_DEFAULTS,
-		// `std-env` settles when it loads, so the env-probed formatter default
-		// differs between a developer machine and an agent one.
-		formatters: ["default"],
-		rootDir: "/repo/packages/example",
-		testMatch: ["**/*.spec.ts"],
-		testPathIgnorePatterns: [],
-		...overrides,
+		declared: {},
+		resolved: createResolvedConfig({ rootDir: "/repo/packages/example", ...overrides }),
 	};
 }
 
-function loaderFor(config: ResolvedConfig): PackageConfigLoader {
-	return vi.fn<PackageConfigLoader>(async () => config);
-}
+describe(loadPackageConfigsAsync, () => {
+	it("should load each package config once under its own span", async () => {
+		expect.assertions(3);
 
-function createTiming(): TimingCollector {
-	return fromAny({
-		profileAsync: vi.fn<(name: string, action: () => Promise<unknown>) => Promise<unknown>>(
-			async (_name, action) => action(),
-		),
-	});
-}
-
-describe(loadWorkspacePackagesAsync, () => {
-	it("should load each package config and build a default descriptor", async () => {
-		expect.assertions(4);
-
-		const fileConfig = makeConfig();
-		const loadPackageConfig = loaderFor(fileConfig);
-		const timing = createTiming();
+		const config = packageConfig();
+		const loadPackageConfig = vi.fn<PackageConfigLoader>(async () => config);
 		const info = { name: "@halcyon/example", packageDirectory: "/repo/packages/example" };
-
 		const { fileSystem } = createMemoryFileSystem();
 		const childProcess = createLuteChildProcess({ version: "1.0.1" });
+		const { collector, paths } = recordingTimingCollector();
 
-		const result = await loadWorkspacePackagesAsync({
+		const packages = await loadPackageConfigsAsync({
 			childProcess,
-			cli: { verbose: true },
 			fileSystem,
 			loadPackageConfig,
 			packageInfos: [info],
-			timing,
+			timing: collector,
 		});
 
-		expect(result[0]).toStrictEqual({
-			descriptor: {
-				name: "@halcyon/example",
-				luauRoots: fileConfig.luauRoots,
-				packageDirectory: "/repo/packages/example",
-				rojoProjectPath: path.resolve("/repo/packages/example", "test.project.json"),
-				rootDir: "/repo/packages/example",
-			},
-			info,
-			pkgConfig: expect.objectContaining({ rootDir: "/repo/packages/example" }),
-		});
-		expect(result[0]!.pkgConfig.verbose).toBeTrue();
+		expect(packages).toStrictEqual([{ config, info }]);
 		expect(loadPackageConfig).toHaveBeenCalledExactlyOnceWith({
 			childProcess,
 			cwd: "/repo/packages/example",
 			fileSystem,
 		});
-		expect(timing.profileAsync).toHaveBeenCalledExactlyOnceWith(
-			"load-config:@halcyon/example",
-			expect.any(Function),
-		);
+		expect(paths).toStrictEqual([
+			"loadPackages",
+			"loadPackages > load-config:@halcyon/example",
+		]);
+	});
+});
+
+describe(loadWorkspacePackages, () => {
+	it("should merge the CLI options and build a default descriptor", () => {
+		expect.assertions(2);
+
+		const config = packageConfig();
+		const info = { name: "@halcyon/example", packageDirectory: "/repo/packages/example" };
+
+		const [loaded] = loadWorkspacePackages({
+			cli: { verbose: true },
+			fileSystem: createMemoryFileSystem().fileSystem,
+			packages: [{ config, info }],
+		});
+
+		expect(loaded!.descriptor).toStrictEqual({
+			name: "@halcyon/example",
+			luauRoots: undefined,
+			packageDirectory: "/repo/packages/example",
+			rojoProjectPath: path.resolve("/repo/packages/example", "test.project.json"),
+		});
+		expect(loaded!.pkgConfig.verbose).toBeTrue();
 	});
 
-	it("should preserve every explicit per-package coverage and Rojo override", async () => {
+	it("should carry the package Luau roots and Rojo project", () => {
 		expect.assertions(1);
 
-		const packageConfig = makeConfig({
-			collectCoverageFrom: ["src/**/*.ts"],
-			coverageCache: !LOADED_DEFAULTS.coverageCache,
-			coverageCopyIgnorePatterns: ["**/*.tsbuildinfo"],
-			coveragePathIgnorePatterns: ["generated/**"],
+		const config = packageConfig({
 			luauRoots: ["src", "test"],
 			rojoProject: "custom.project.json",
 		});
 
-		const [loaded] = await loadWorkspacePackagesAsync({
-			childProcess: createLuteChildProcess({ version: "1.0.1" }),
-			cli: { collectCoverage: true },
-			loadPackageConfig: loaderFor(packageConfig),
-			packageInfos: [{ name: "pkg", packageDirectory: "/repo/pkg" }],
-			timing: createTiming(),
+		const [loaded] = loadWorkspacePackages({
+			cli: fromAny({}),
+			fileSystem: createMemoryFileSystem().fileSystem,
+			packages: [{ config, info: { name: "pkg", packageDirectory: "/repo/pkg" } }],
 		});
 
 		expect(loaded!.descriptor).toStrictEqual({
 			name: "pkg",
-			collectCoverageFrom: ["src/**/*.ts"],
-			coverageCache: !LOADED_DEFAULTS.coverageCache,
-			coverageCopyIgnorePatterns: ["**/*.tsbuildinfo"],
-			coveragePathIgnorePatterns: ["generated/**"],
 			luauRoots: ["src", "test"],
 			packageDirectory: "/repo/pkg",
 			rojoProjectPath: path.resolve("/repo/pkg", "custom.project.json"),
-			rootDir: "/repo/packages/example",
 		});
-	});
-
-	it("should retain an explicitly empty collectCoverageFrom list", async () => {
-		expect.assertions(1);
-
-		const [loaded] = await loadWorkspacePackagesAsync({
-			childProcess: createLuteChildProcess({ version: "1.0.1" }),
-			cli: {},
-			loadPackageConfig: loaderFor(makeConfig({ collectCoverageFrom: [] })),
-			packageInfos: [{ name: "pkg", packageDirectory: "/repo/pkg" }],
-			timing: createTiming(),
-		});
-
-		expect(loaded!.descriptor.collectCoverageFrom).toStrictEqual([]);
-	});
-
-	it("should read the package's own config when no loader is supplied", async () => {
-		expect.assertions(1);
-
-		const packageDirectory = NO_SUCH_PACKAGE;
-
-		const [loaded] = await loadWorkspacePackagesAsync({
-			childProcess: createLuteChildProcess({ version: "1.0.1" }),
-			cli: {},
-			packageInfos: [{ name: "pkg", packageDirectory }],
-			timing: createTiming(),
-		});
-
-		expect(loaded!.descriptor).toStrictEqual({
-			name: "pkg",
-			luauRoots: undefined,
-			packageDirectory,
-			rojoProjectPath: path.resolve(packageDirectory, "test.project.json"),
-			rootDir: path.resolve(packageDirectory),
-		});
-	});
-
-	it("should leave descriptor.coveragePathIgnorePatterns undefined when the package config defaults", async () => {
-		expect.assertions(1);
-
-		const [loaded] = await loadWorkspacePackagesAsync({
-			childProcess: createLuteChildProcess({ version: "1.0.1" }),
-			cli: { collectCoverage: true },
-			loadPackageConfig: loaderFor(makeConfig({ collectCoverage: true })),
-			packageInfos: [{ name: "pkg", packageDirectory: "/repo/pkg" }],
-			timing: createTiming(),
-		});
-
-		expect(loaded!.descriptor.coveragePathIgnorePatterns).toBeUndefined();
 	});
 });

@@ -1,9 +1,9 @@
 import { isRojoTreeNode } from "@isentinel/rojo-utils";
+import type { RojoTreeNode } from "@isentinel/rojo-utils";
 import { fromAny } from "@total-typescript/shoehorn";
 
 import { assert, describe, expect, it } from "vitest";
 
-import type { RojoTreeNode } from "../types/rojo.ts";
 import type { HoistedService } from "./service-hoist.ts";
 import { transformToFolder } from "./stage-transform.ts";
 

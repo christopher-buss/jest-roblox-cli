@@ -8,8 +8,8 @@ import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { NOOP_PROGRESS } from "#test/mocks/noop-progress.ts";
 import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
 import { captureStderrForTest as captureStderr } from "#test/mocks/spec-open-cloud.ts";
-import type { ResolvedConfig } from "../config/schema.ts";
-import type { RunProgress } from "../progress/reporter.ts";
+import type { ResolvedConfig } from "../config/resolved-config.ts";
+import type { RunProgress } from "../progress/run-progress.ts";
 import type { StageId } from "../progress/stages.ts";
 import { PlaceVersionGate, toCacheTarget, type UploadOutcome } from "./open-cloud-place-version.ts";
 
@@ -174,7 +174,7 @@ describe(PlaceVersionGate, () => {
 		])(
 			"should stop when the probe reports $outputs and cache nothing",
 			async ({ message, outputs }) => {
-				expect.assertions(4);
+				expect.assertions(3);
 
 				const { executeScriptAsync, runAsync, setProbe, uploadPlaceAsync } = setup();
 				setProbe(() => ({ durationMs: 0, outputs }));
@@ -185,7 +185,6 @@ describe(PlaceVersionGate, () => {
 
 				assert(caught instanceof Error);
 
-				expect(caught.constructor.name).toBe("BootUnverifiedError");
 				expect(caught).toHaveProperty("message", expect.stringContaining(message));
 				// A completed probe has answered; asking again cannot change it.
 				expect(executeScriptAsync).toHaveBeenCalledTimes(2);
@@ -226,24 +225,41 @@ describe(PlaceVersionGate, () => {
 			expect(uploadPlaceAsync).toHaveBeenCalledTimes(2);
 		});
 
+		it("should name the probe budget in whole seconds", async () => {
+			expect.assertions(1);
+
+			const { runAsync, setProbe } = setup();
+			setProbe(() => {
+				throw pollTimeout();
+			});
+
+			await expect(runAsync({ overrides: { bootProbeTimeout: 29_600 } })).rejects.toThrow(
+				"no boot probe completed within 30s.",
+			);
+		});
+
 		it("should close the boot stage once the probe passes", async () => {
 			expect.assertions(1);
 
-			const completed: Array<{ detail: string | undefined; id: StageId }> = [];
+			const completed: Array<{
+				begun: string | undefined;
+				detail: string | undefined;
+				id: StageId;
+			}> = [];
 			const { runAsync } = setup();
 
 			await runAsync({
 				progress: {
 					...NOOP_PROGRESS,
-					begin: (id) => (result) => {
-						completed.push({ id, detail: result });
+					begin: (id, begun) => (result) => {
+						completed.push({ id, begun, detail: result });
 					},
 				},
 			});
 
 			expect(completed).toStrictEqual([
-				{ id: "upload", detail: "version 42" },
-				{ id: "boot", detail: undefined },
+				{ id: "upload", begun: "11 B", detail: "version 42" },
+				{ id: "boot", begun: "version 42", detail: undefined },
 			]);
 		});
 
@@ -279,11 +295,6 @@ describe(PlaceVersionGate, () => {
 			await expect(runAsync()).rejects.toThrow("HTTP 429: Too Many Requests");
 		});
 
-		/**
-		 * The budget is wall clock, not a task deadline, and a budget under the
-		 * probe's own deadline is still the whole answer: the task may not be
-		 * given longer to run than the caller will wait for it.
-		 */
 		it.for([
 			{ budget: 30_000, timeout: 10_000 },
 			{ budget: 1000, timeout: 1000 },

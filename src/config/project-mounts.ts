@@ -10,11 +10,10 @@ import {
 import * as path from "node:path";
 
 import type { FileSystem } from "../utils/file-system.ts";
-import { nodeFileSystem } from "../utils/file-system.ts";
 import type { PosixRoot } from "../utils/normalize-windows-path.ts";
 import { toPosixRoot } from "../utils/normalize-windows-path.ts";
+import type { ProjectTestConfig } from "./config-types.ts";
 import { ConfigError } from "./errors.ts";
-import type { ProjectTestConfig } from "./schema.ts";
 
 /**
  * Build a classifier that stats mount paths under a root directory.
@@ -23,10 +22,7 @@ import type { ProjectTestConfig } from "./schema.ts";
  * @param fileSystem - File system to stat.
  * @returns A classifier reporting `directory`, `file` or `missing`.
  */
-export function createFsClassifier(
-	rootDirectory: string,
-	fileSystem: FileSystem = nodeFileSystem,
-): PathClassifier {
+export function createFsClassifier(rootDirectory: string, fileSystem: FileSystem): PathClassifier {
 	return function classify(fsPath): PathKind {
 		const stat = fileSystem.statSync(resolveMountPath(rootDirectory, fsPath), {
 			throwIfNoEntry: false,
@@ -92,16 +88,11 @@ export function resolveMounts({
 	}>;
 }): Array<Mount> {
 	if (project.outDir !== undefined) {
-		// Exact-lookup only; disables auto-expand. With outDir set, multi-root
-		// includes feed test discovery only; the project stays pinned to one
-		// DataModel mount.
 		const resolvedOutDirectory = joinProjectRoot(project.outDir, project.root);
 		const dataModelPath = mapFsRootToDataModel(resolvedOutDirectory, rojoTree);
 		return [{ dataModelPath, fsPath: resolvedOutDirectory }];
 	}
 
-	// Walk the tree at most once; auto-expand filters this list per root
-	// instead of re-walking for every unmatched include root.
 	let collectedMounts: Array<Mount> | undefined;
 	const allMounts: Array<Mount> = [];
 	for (const { root } of roots) {

@@ -3,19 +3,20 @@ import { describe, expect, it } from "vitest";
 import {
 	fillPlaceholders,
 	readHarness,
-	readLuauModule,
+	readLuauTree,
 	spawnHarness,
+	stubbedModules,
 } from "#test/luau/lute-harness.ts";
-import { LUTE_HARNESS_TIMEOUT } from "#test/luau/lute-timeout.ts";
 
 // Drives the shared runner-result builder under lute. Its instance-resolver and
 // per-test-coverage dependencies are stubbed by the harness, which the module
 // picks up by being inlined into it. Requires `lute` on PATH (mise, in dev and
 // CI).
-const MODULE_SOURCE = readLuauModule("runner-result.luau");
 const HARNESS = readHarness("runner-result");
+const STUBBED = stubbedModules(HARNESS);
+const MODULE_SOURCE = readLuauTree("runner-result.luau", STUBBED);
 
-describe("shared runner-result builder under lute", { timeout: LUTE_HARNESS_TIMEOUT }, () => {
+describe("shared runner-result builder under lute", () => {
 	it("should pass the runner-result harness assertions", () => {
 		expect.assertions(1);
 

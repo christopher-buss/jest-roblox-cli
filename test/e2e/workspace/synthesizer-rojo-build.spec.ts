@@ -1,12 +1,14 @@
-import * as cp from "node:child_process";
+import type { RojoTreeNode } from "@isentinel/rojo-utils";
+
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { describe, expect, it, onTestFinished } from "vitest";
+import { describe, expect, inject, it, onTestFinished } from "vitest";
 
 import { buildPlaceAsync } from "#src/staging/place-builder.ts";
 import type { PackageDescriptor } from "#src/staging/synthesizer-types.ts";
-import type { RojoTreeNode } from "#src/types/rojo.ts";
+import { nodeChildProcessRunner } from "#src/utils/child-process.ts";
+import { nodeFileSystem } from "#src/utils/file-system.ts";
 import {
 	childNames,
 	descend,
@@ -14,15 +16,6 @@ import {
 	nodesBuiltFrom,
 	readSourcemap,
 } from "#test/e2e/workspace/sourcemap.ts";
-
-function rojoOnPath(): boolean {
-	try {
-		cp.execFileSync("rojo", ["--version"], { stdio: "pipe", windowsHide: true });
-		return true;
-	} catch {
-		return false;
-	}
-}
 
 function createTemporaryDirectory(): string {
 	const directory = fs.mkdtempSync(path.join(os.tmpdir(), "synth-rojo-"));
@@ -89,7 +82,6 @@ function writePackage({
 
 	return {
 		name: `@halcyon/${name}`,
-		packageDirectory,
 		rojoProjectPath: path.join(packageDirectory, "test.project.json"),
 	};
 }
@@ -134,7 +126,7 @@ function writeSharedDependencies(workspace: string): void {
 }
 
 describe("synthesizer + rojo build integration", () => {
-	it.skipIf(!rojoOnPath())(
+	it.skipIf(!inject("rojoOnPath"))(
 		"should build a directory two packages mount into the place once",
 		async () => {
 			expect.assertions(4);
@@ -147,6 +139,8 @@ describe("synthesizer + rojo build integration", () => {
 			const synthDirectory = path.join(workspace, ".jest-roblox/workspace");
 			const synthProjectPath = path.join(synthDirectory, "synthesized.project.json");
 			await buildPlaceAsync({
+				childProcess: nodeChildProcessRunner,
+				fileSystem: nodeFileSystem,
 				packages: [
 					writePackage({ name: "foo", shared: VENDOR_SHARED, workspace }),
 					writePackage({ name: "bar", shared: VENDOR_SHARED, workspace }),
@@ -170,7 +164,7 @@ describe("synthesizer + rojo build integration", () => {
 		},
 	);
 
-	it.skipIf(!rojoOnPath())(
+	it.skipIf(!inject("rojoOnPath"))(
 		"should build one copy of a shared include tree that keeps its own children",
 		async () => {
 			expect.assertions(5);
@@ -181,6 +175,8 @@ describe("synthesizer + rojo build integration", () => {
 			const synthDirectory = path.join(workspace, ".jest-roblox/workspace");
 			const synthProjectPath = path.join(synthDirectory, "synthesized.project.json");
 			await buildPlaceAsync({
+				childProcess: nodeChildProcessRunner,
+				fileSystem: nodeFileSystem,
 				packages: [
 					writePackage({ name: "foo", shared: RBXTS_INCLUDE, workspace }),
 					writePackage({ name: "bar", shared: RBXTS_INCLUDE, workspace }),

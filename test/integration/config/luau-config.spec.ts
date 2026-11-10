@@ -1,4 +1,4 @@
-import { loadConfig, runJestRobloxAsync } from "@isentinel/jest-roblox/artifacts";
+import { loadConfig, runJestRobloxAsync } from "@isentinel/jest-roblox/api";
 
 import * as fs from "node:fs";
 import * as os from "node:os";
@@ -289,7 +289,6 @@ describe("luau configs through loadConfig", () => {
 		});
 
 		expect(result).toMatchObject({
-			mode: "multi",
 			validationExitCode: 2,
 			validationMessage: "No test files found in any project\n",
 		});
@@ -320,7 +319,6 @@ describe("luau configs through loadConfig", () => {
 		});
 
 		expect(result).toMatchObject({
-			mode: "multi",
 			validationExitCode: 2,
 			validationMessage: "No test files found in any project\n",
 		});

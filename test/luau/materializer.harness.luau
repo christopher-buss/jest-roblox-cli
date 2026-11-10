@@ -234,7 +234,14 @@ end
 
 local game = newInstance("DataModel", "game")
 for _, serviceName in
-	{ "Lighting", "ReplicatedStorage", "ServerScriptService", "ServerStorage", "StarterPlayer" }
+	{
+		"Lighting",
+		"ReplicatedStorage",
+		"ServerScriptService",
+		"ServerStorage",
+		"StarterPlayer",
+		"Workspace",
+	}
 do
 	local service = newInstance(serviceName, serviceName)
 	-- Anything parented under one of these is running. `liveArrivals` records
@@ -245,13 +252,17 @@ end
 
 local StarterPlayer = methods.FindFirstChild(game, "StarterPlayer")
 setParent(newInstance("StarterPlayerScripts", "StarterPlayerScripts"), StarterPlayer)
+local Workspace = methods.FindFirstChild(game, "Workspace")
+local Terrain = newInstance("Terrain", "Terrain")
+setParent(Terrain, Workspace)
 
 local Materializer = __MODULE__
+local StagedPlace = (__PROTOCOL_MODULE__).stagedPlace
 
 local ServerStorage = methods.FindFirstChild(game, "ServerStorage")
 local ReplicatedStorage = methods.FindFirstChild(game, "ReplicatedStorage")
 local Lighting = methods.FindFirstChild(game, "Lighting")
-local stage = newInstance("Folder", "__pkg_stage")
+local stage = newInstance("Folder", StagedPlace.stageKey)
 setParent(stage, ServerStorage)
 
 -- One deep chain. `restoreRunContext` recursing into every descendant of every
@@ -266,7 +277,7 @@ local function stagePackage(pkgName: string, options: StageOptions?)
 	local settings: StageOptions = options or {}
 	local staged = newInstance("Folder", pkgName)
 	if settings.runContextScripts then
-		methods.SetAttribute(staged, "JestRunContextScripts", true)
+		methods.SetAttribute(staged, StagedPlace.runContextAttribute, true)
 	end
 
 	setParent(staged, stage)
@@ -549,6 +560,30 @@ local function testContainersMerge(containerClass: string, childClass: string)
 	setParent(liveShared, nil)
 end
 
+-- T29: staging demotes the pinned `Workspace.Terrain` to a Folder, so its
+-- children land in the live Terrain rather than colliding with it.
+local function testStagedTerrainLandsInLiveTerrain()
+	local stagedService = stagePackage("terrain", { service = "Workspace" })
+	local stagedTerrain = newInstance("Folder", "Terrain")
+	setParent(stagedTerrain, stagedService)
+	setParent(newInstance("Folder", "TerrainChild"), stagedTerrain)
+
+	Materializer.materialize("terrain")
+
+	check(
+		methods.FindFirstChild(Workspace, "Terrain") == Terrain,
+		"T29: the live Terrain stays in place"
+	)
+	check(
+		methods.FindFirstChild(Terrain, "TerrainChild") ~= nil,
+		"T29: the staged Terrain's child landed in the live Terrain"
+	)
+
+	Materializer.reset()
+
+	check(methods.FindFirstChild(Terrain, "TerrainChild") == nil, "T29: reset takes the child back")
+end
+
 -- T9: a name under one destination belongs to one instance, so two staged
 -- children of that name collide with each other. Deciding every landing site
 -- up front is what makes this reachable: both see a free name in the live
@@ -645,7 +680,7 @@ end
 
 -- The shared pool: one entry every package's marker stands for, staged beside
 -- the packages rather than inside any one of them.
-local SHARED_POOL_ATTRIBUTE = "JestSharedPoolKey"
+local SHARED_POOL_ATTRIBUTE = StagedPlace.sharedPoolAttribute
 local POOL_KEY = "0123456789abcdef"
 -- A second entry, for the shape every `@rbxts/*` package has: a directory
 -- holding an `init.luau`, which rojo mounts as a ModuleScript.
@@ -660,7 +695,7 @@ local pooledEntry
 local pooledModuleEntry
 
 local function stagePool()
-	local pool = newInstance("Folder", "__shared")
+	local pool = newInstance("Folder", StagedPlace.sharedPoolName)
 	setParent(pool, stage)
 
 	pooledEntry = newInstance("Folder", POOL_KEY)
@@ -1163,6 +1198,7 @@ end
 -- T25: live Lighting is cleared even when no package stages it. The place
 -- declares none of it, whatever its class.
 local function testUndeclaredLightingCleared()
+	testStagedTerrainLandsInLiveTerrain()
 	addStudioLightingDefaults()
 	setParent(newInstance("Sky", "Sky"), Lighting)
 	stagePackage("unlit")

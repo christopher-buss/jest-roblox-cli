@@ -299,12 +299,16 @@ local Jest = {
 					fail("the abandoned project was resumed")
 				end
 
-				return { success = true, project = project }
+				return { results = { success = true, project = project } }
 			end,
 			cancel = function() end,
 		}
 	end,
 }
+
+-- Patches a run put on shared Jest modules and has not taken off yet.
+local livePatches = { setupTiming = 0, snapshot = 0 }
+local requireFails = false
 
 local stubs = {
 	["./cooperative-scheduler"] = {
@@ -358,18 +362,28 @@ local stubs = {
 	},
 	["./setup-timing"] = {
 		patch = function()
-			return nil
+			livePatches.setupTiming += 1
+			return {}
 		end,
-		unpatch = function() end,
+		unpatch = function(state)
+			if state ~= nil then
+				livePatches.setupTiming -= 1
+			end
+		end,
 		getSeconds = function()
 			return 0
 		end,
 	},
 	["./snapshot-patch"] = {
 		patch = function()
-			return nil
+			livePatches.snapshot += 1
+			return {}
 		end,
-		unpatch = function() end,
+		unpatch = function(state)
+			if state ~= nil then
+				livePatches.snapshot -= 1
+			end
+		end,
 	},
 	["./circus-state-release"] = {
 		patch = function() end,
@@ -386,6 +400,10 @@ local stubs = {
 
 local function require(target)
 	if target == JestModule then
+		if requireFails then
+			error("Jest failed to load", 0)
+		end
+
 		return Jest
 	end
 
@@ -434,11 +452,15 @@ stubs["./infinite-yield"] = __INFINITE_YIELD_MODULE__
 -- only assert that a string was concatenated.
 stubs["./last-seen"] = __LAST_SEEN_MODULE__
 stubs["./runner-result"] = __RUNNER_RESULT_MODULE__
+stubs["./run-once"] = __RUN_ONCE_MODULE__
 
 local Runner = __MODULE__
 
 local function reset()
 	check(activeScheduling == 0, "finished, failed, or abandoned run retained scheduling")
+	check(livePatches.setupTiming == 0, "a run left setup timing patched")
+	check(livePatches.snapshot == 0, "a run left the snapshot mock patched")
+	requireFails = false
 	jestFails = {}
 	jestParks = {}
 	jestHangs = {}
@@ -766,9 +788,10 @@ local function testFailedInjectionStillCleansUp()
 
 	check(#cleaned == 1, "T8: cleanup runs for a config whose injection failed")
 	local reported = outputOf(entries[1])
-	check(reported.success == true, "T8: the injection error rides as an execution error")
+	check(reported.success == false, "T8: the injection error is a failure")
+	check(reported.runner.phase == "staging", "T8: and it failed while staging")
 	check(
-		string.find(tostring(reported.value.error), "could not parent the stub", 1, true) ~= nil,
+		string.find(tostring(reported.err), "could not parent the stub", 1, true) ~= nil,
 		"T8: and it names what went wrong"
 	)
 end
@@ -789,6 +812,39 @@ local function testFailedCleanupDoesNotEndTheBatch()
 	check(outputOf(entries[2]).success == true, "T9: and so is the second")
 end
 
+-- T10: a run that fails takes its patches off the shared Jest modules, or the
+-- next config times its setup and saves its snapshot mock against this one's.
+local function testFailedRunsUnpatch()
+	reset()
+	jestFails.alpha = true
+	Runner.runProjects({}, { configFor("alpha") })
+	check(livePatches.setupTiming == 0, "T10: a Jest rejection unpatches setup timing")
+
+	reset()
+	requireFails = true
+	local entries = Runner.runProjects({}, { configFor("alpha") })
+	local failed = outputOf(entries[1])
+	check(livePatches.snapshot == 0, "T10: a failed require(Jest) unpatches the snapshot mock")
+	check(failed.success == false, "T10: and reports a failure envelope")
+	check(failed.runner.phase == "resolveJest", "T10: in the phase it died in")
+end
+
+-- T11: a config with no projects is refused with the message the CLI matches.
+local function testNoProjectsIsRefused()
+	reset()
+	local config = configFor("alpha")
+	config.projects = {}
+	jestMissing.alpha = nil
+	local entries = Runner.runProjects({}, { config })
+
+	local failed = outputOf(entries[1])
+	check(failed.success == false, "T11: an empty project list fails")
+	check(
+		string.find(tostring(failed.err), "No projects configured", 1, true) ~= nil,
+		"T11: and says why, got " .. tostring(failed.err)
+	)
+end
+
 testEveryConfigGetsItsOwnEntry()
 testJestRejectionIsAFailureEnvelope()
 testMissingJestFailsBeforeTheRun()
@@ -802,6 +858,9 @@ testRunnerFlagsAreStripped()
 testHooksFireAroundEveryConfig()
 testFailedInjectionStillCleansUp()
 testFailedCleanupDoesNotEndTheBatch()
+testFailedRunsUnpatch()
+testNoProjectsIsRefused()
 
+reset()
 check(activeScheduling == 0, "final run retained scheduling")
 writeStdout("ALL OK")

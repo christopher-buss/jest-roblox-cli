@@ -8,26 +8,16 @@ if not RunService:IsEdit() then
 	return
 end
 
-local WEBSOCKET_URL = "ws://localhost:3001"
+local Shared = script:WaitForChild("shared")
+local Envelope = require(Shared:WaitForChild("envelope") :: any)
+local Protocol = require(Shared:WaitForChild("protocol") :: any)
+local PROTOCOL_VERSION = Protocol.studio.protocolVersion
+local FRAME = Protocol.studio.frame
+
 local RECONNECT_DELAY = 0.1
 local MAX_RECONNECT_DELAY = 5
 
--- Plugin/CLI protocol version. Must match `STUDIO_PROTOCOL_VERSION` in
--- `src/backends/studio.ts` and `PROTOCOL_VERSION` in the run-mode runner
--- beside this file. Bumped when the runtime contract changes — v9 adds the
--- workspace payload's `vmParallel` count; v8 adds the run-mode runner's
--- `pluginKey` check; v7 adds the
--- `runnerTimeoutMs` argv the runner bounds a project's run with and strips
--- before calling Jest, so a v6 plugin handed one runs unbounded and passes the
--- key on to Jest; v6 adds the `hello` announcement below; v5 added the optional
--- `vmParallel` count, which
--- a plugin predating it would ignore and run sequentially without saying so;
--- v4 nested the fields the runner adds to Jest's result under `runner` and
--- renamed the frame key `request_id` to `requestId`. The plugin rejects
--- mismatched CLI versions with a `version_mismatch` response so users see a
--- clear upgrade message rather than running with stale behaviour or an opaque
--- timeout.
-local PROTOCOL_VERSION = 10
+local socketUrl = require(script:WaitForChild("socket-url") :: any)
 
 -- Written by `scripts/stamp-plugin-version.ts` at build time, and absent from a
 -- tree served straight out of source control. Diagnostic only: the CLI selects
@@ -37,7 +27,8 @@ local PROTOCOL_VERSION = 10
 -- `script` is the plugin root here (rojo maps `src/init.server.luau` onto the
 -- tree root), so `version` is a child of it rather than a sibling — unlike in
 -- the run-mode runner beside this file.
-local versionOk, PluginVersion = pcall(require, script:FindFirstChild("version") :: any)
+local versionOk, PluginVersion =
+	pcall(require, script:FindFirstChild(Protocol.studio.pluginVersionModule) :: any)
 if not versionOk or typeof(PluginVersion) ~= "string" then
 	PluginVersion = "unknown"
 end
@@ -97,13 +88,13 @@ end
 local function connect(attempt: any): ()
 	disconnect()
 
-	print("[jest-roblox] Connecting to " .. WEBSOCKET_URL .. "...")
+	local url = socketUrl(Protocol.studio, function(name: string): any
+		return ReplicatedStorage:GetAttribute(name)
+	end)
+	print("[jest-roblox] Connecting to " .. url .. "...")
 
 	local success, socket = pcall(function(): WebStreamClient
-		return HttpService:CreateWebStreamClient(
-			Enum.WebStreamClientType.WebSocket,
-			{ Url = WEBSOCKET_URL }
-		)
+		return HttpService:CreateWebStreamClient(Enum.WebStreamClientType.WebSocket, { Url = url })
 	end)
 
 	if not success then
@@ -128,7 +119,7 @@ local function connect(attempt: any): ()
 				return
 			end
 
-			if message.action == "run_tests" then
+			if message.action == Protocol.studio.runTestsAction then
 				-- Version handshake: reject a missing or mismatched
 				-- `protocolVersion` synchronously so the user sees an
 				-- upgrade message rather than stale-semantics behaviour.
@@ -143,7 +134,7 @@ local function connect(attempt: any): ()
 							.. tostring(PROTOCOL_VERSION)
 					)
 					ws:Send(HttpService:JSONEncode({
-						type = "version_mismatch",
+						type = FRAME.versionMismatch,
 						actualVersion = PROTOCOL_VERSION,
 						expectedVersion = clientVersion or 0,
 						requestId = message.requestId,
@@ -153,58 +144,39 @@ local function connect(attempt: any): ()
 
 				print("[jest-roblox] Running tests via StudioTestService...")
 
+				local payload = table.clone(message)
+				payload.action = nil
+				payload.requestId = nil
+				payload.test = true
+				payload.protocolVersion = PROTOCOL_VERSION
+
 				local runOk, result = pcall(function(): any
-					return StudioTestService:ExecuteRunModeAsync({
-						test = true,
-						-- Echo the negotiated version into the Run-mode payload so
-						-- the run-mode runner's own handshake passes (it validates
-						-- `protocolVersion`, shared with the studio-cli path).
-						protocolVersion = PROTOCOL_VERSION,
-						config = message.config,
-						-- Filtered injection targets (parallel to configs)
-						-- so the Run Mode runner skips mounts that already
-						-- have a user-authored jest.config on disk.
-						runtimeStubMounts = message.runtimeStubMounts,
-						-- Experimental in-session parallelism: how many Luau
-						-- VMs the run-mode runner should split the configs
-						-- across. Absent on an ordinary run.
-						vmParallel = message.vmParallel,
-						-- How long the CLI will wait for this run, so the
-						-- run-mode coordinator's own wait ends inside it.
-						runBudgetMs = message.runBudgetMs,
-						-- Present only for workspace runs: the staged entries the
-						-- run-mode runner dispatches to the embedded materializer.
-						workspace = message.workspace,
-					})
+					return StudioTestService:ExecuteRunModeAsync(payload)
 				end)
 
 				if not runOk then
 					warn("[jest-roblox] ExecuteRunModeAsync failed: " .. tostring(result))
 					ws:Send(HttpService:JSONEncode({
-						type = "results",
+						type = FRAME.results,
 						protocolVersion = PROTOCOL_VERSION,
 						requestId = message.requestId,
-						jestOutput = HttpService:JSONEncode({
-							success = false,
-							err = tostring(result),
-						}),
+						jestOutput = HttpService:JSONEncode(Envelope.failure(tostring(result))),
 						gameOutput = "[]",
 					}))
 					return
 				end
 
 				ws:Send(HttpService:JSONEncode({
-					type = "results",
+					type = FRAME.results,
 					-- Echo the protocol version. A stale plugin that ignored
 					-- the request-side version would also omit the echo, so
 					-- the CLI's schema validation rejects it as malformed
 					-- rather than treating it as a valid v1 success.
 					protocolVersion = PROTOCOL_VERSION,
 					requestId = message.requestId,
-					jestOutput = result.jestOutput or HttpService:JSONEncode({
-						success = false,
-						err = "No jestOutput in run-mode result",
-					}),
+					jestOutput = result.jestOutput or HttpService:JSONEncode(
+						Envelope.failure("No jestOutput in run-mode result")
+					),
 					gameOutput = result.gameOutput or "[]",
 				}))
 
@@ -224,7 +196,7 @@ local function connect(attempt: any): ()
 		-- answered first, which is always the copy that refuses outright.
 		assert(ws, "Luau")
 		ws:Send(HttpService:JSONEncode({
-			type = "hello",
+			type = FRAME.hello,
 			protocolVersion = PROTOCOL_VERSION,
 			pluginVersion = PluginVersion,
 			pluginName = plugin.Name,

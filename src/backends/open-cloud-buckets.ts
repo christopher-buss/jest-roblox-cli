@@ -1,28 +1,28 @@
-import type { JestArgvInput } from "../test-script.ts";
-import { generateTestScript } from "../test-script.ts";
-import type { BackendOptions, ProjectJob } from "./interface.ts";
+import { indexArgv } from "../runner-payload/jest-argv.ts";
+import { generateTestScript } from "../runner-payload/test-script.ts";
+import type { ParallelOption, ProjectJob } from "./interface.ts";
 
 const PARALLEL_AUTO_CAP = 3;
 
-/** Jobs one task runs, with their positions in the request. */
-export interface JobBucket {
-	/** Request index of each job, in bucket order. */
-	indices: Array<number>;
-	/** Jobs the bucket runs. */
-	jobs: Array<ProjectJob>;
+/** Jobs one task runs, in request order. */
+export type JobBucket = Array<BucketJob>;
+
+/** One job of a bucket, with its index in the request. */
+interface BucketJob {
+	/** The job. */
+	job: ProjectJob;
+	/** Index of the job in the request. */
+	jobIndex: number;
 }
 
 /**
  * The script one bucket of jobs runs.
  *
- * @param jobs - Jobs the script runs, in order.
+ * @param bucket - Jobs the script runs, in order.
  * @returns Luau source that runs the jobs.
  */
-export function bucketScript(jobs: Array<ProjectJob>): string {
-	const inputs: Array<JestArgvInput> = jobs.map((job) => {
-		return { config: job.config, testFiles: job.testFiles };
-	});
-	return generateTestScript(inputs);
+export function bucketScript(bucket: JobBucket): string {
+	return generateTestScript(bucket.map(({ job, jobIndex }) => indexArgv(job.argv, jobIndex)));
 }
 
 /**
@@ -33,7 +33,7 @@ export function bucketScript(jobs: Array<ProjectJob>): string {
  * @returns The bucket count, never more than the job count.
  * @throws {@link Error} When `parallel` is a number below 1.
  */
-export function resolveBucketCount(parallel: BackendOptions["parallel"], jobCount: number): number {
+export function resolveBucketCount(parallel: ParallelOption, jobCount: number): number {
 	if (parallel === undefined) {
 		return 1;
 	}
@@ -57,27 +57,13 @@ export function resolveBucketCount(parallel: BackendOptions["parallel"], jobCoun
  * @returns One bucket per shard.
  * @throws {@link Error} When `parallel` is a number below 1.
  */
-export function bucketJobs(
-	jobs: Array<ProjectJob>,
-	parallel: BackendOptions["parallel"],
-): Array<JobBucket> {
+export function bucketJobs(jobs: Array<ProjectJob>, parallel: ParallelOption): Array<JobBucket> {
 	const bucketCount = resolveBucketCount(parallel, jobs.length);
-	const buckets = Array.from({ length: bucketCount }, (): JobBucket => {
-		return {
-			indices: [],
-			jobs: [],
-		};
-	});
+	const buckets = Array.from({ length: bucketCount }, (): JobBucket => []);
 
-	// Round-robin assignment: job[i] goes to bucket i % bucketCount. Preserves
-	// input order within each bucket so per-bucket results flatten back in the
-	// original request order via the recorded indices. Smart LPT bucketing is
-	// future work (F1 in the plan).
-	for (const [originalIndex, job] of jobs.entries()) {
+	for (const [jobIndex, job] of jobs.entries()) {
 		// oxlint-disable-next-line typescript/no-non-null-assertion -- index always valid
-		const bucket = buckets[originalIndex % bucketCount]!;
-		bucket.indices.push(originalIndex);
-		bucket.jobs.push(job);
+		buckets[jobIndex % bucketCount]!.push({ job, jobIndex });
 	}
 
 	return buckets;

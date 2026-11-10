@@ -3,18 +3,19 @@ import { describe, expect, it } from "vitest";
 import {
 	fillPlaceholders,
 	readHarness,
-	readLuauModule,
+	readLuauTree,
 	spawnHarness,
+	stubbedModules,
 } from "#test/luau/lute-harness.ts";
-import { LUTE_HARNESS_TIMEOUT } from "#test/luau/lute-timeout.ts";
 
 // Drives the workspace bail signal under lute. Pure module over an injected
 // SortedMap, so nothing Roblox-side has to be stubbed. Requires `lute` on PATH
 // (mise, in dev and CI).
-const MODULE_SOURCE = readLuauModule("staging/bail.luau");
 const HARNESS = readHarness("bail");
+const STUBBED = stubbedModules(HARNESS);
+const MODULE_SOURCE = readLuauTree("staging/bail.luau", STUBBED);
 
-describe("workspace bail signal under lute", { timeout: LUTE_HARNESS_TIMEOUT }, () => {
+describe("workspace bail signal under lute", () => {
 	it("should pass the bail harness assertions", () => {
 		expect.assertions(1);
 

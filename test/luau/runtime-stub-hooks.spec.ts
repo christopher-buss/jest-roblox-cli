@@ -6,12 +6,11 @@ import {
 	readLuauModule,
 	spawnHarness,
 } from "#test/luau/lute-harness.ts";
-import { LUTE_HARNESS_TIMEOUT } from "#test/luau/lute-timeout.ts";
 
 const MODULE_SOURCE = readLuauModule("runtime-stub-hooks.luau");
 const HARNESS = readHarness("runtime-stub-hooks");
 
-describe("runtime jest.config stubs under lute", { timeout: LUTE_HARNESS_TIMEOUT }, () => {
+describe("runtime jest.config stubs under lute", () => {
 	it("should pass the runtime-stub-hooks harness assertions", () => {
 		expect.assertions(1);
 

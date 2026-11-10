@@ -1,6 +1,5 @@
 const BASE64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/".split("");
 
-/** One generated position and the original position it came from. */
 export interface SourceMapSegment {
 	/** Zero-based column in the generated file. */
 	readonly generatedColumn: number;
@@ -13,27 +12,12 @@ export interface SourceMapSegment {
 }
 
 export interface SourceMapOptions {
-	/** The generated file the map belongs to. */
 	readonly file: string;
-	/** The positions the map resolves, in any order. */
 	readonly segments: ReadonlyArray<SourceMapSegment>;
-	/** The original source path, as the map records it. */
 	readonly source: string;
-	/** The original text, when the map should embed it. */
 	readonly sourceContent?: string;
 }
 
-/**
- * A v3 source map over one source, built from explicit positions.
- *
- * Written out rather than fixed as a literal so a spec states the mapping it
- * needs in line and column numbers, which is what its assertions are about —
- * a hand-encoded `mappings` string states the same thing in a form no reader
- * can check against the test's expectations.
- *
- * @param options - The generated file, its source, and the positions to map.
- * @returns Serialized source map.
- */
 export function buildSourceMap({
 	file,
 	segments,
@@ -49,11 +33,6 @@ export function buildSourceMap({
 	});
 }
 
-/**
- * Base64 VLQ, as the source map spec defines it: sign in the low bit.
- * @param value - Integer to encode.
- * @returns Base64 VLQ digits.
- */
 function encodeVlq(value: number): string {
 	let remaining = value < 0 ? (-value << 1) | 1 : value << 1;
 	let encoded = "";
@@ -70,14 +49,6 @@ function encodeVlq(value: number): string {
 	return encoded;
 }
 
-/**
- * The `mappings` field: `;` per generated line, `,` per segment, every field
- * but the generated column relative to the previous segment anywhere in the
- * map.
- *
- * @param segments - The positions to encode.
- * @returns The `mappings` string.
- */
 function encodeMappings(segments: ReadonlyArray<SourceMapSegment>): string {
 	const lastLine = segments.reduce((highest, { generatedLine }) => {
 		return Math.max(highest, generatedLine);

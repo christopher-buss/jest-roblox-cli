@@ -5,7 +5,6 @@ const VERSION_PATTERN = /^v?(\d+)\.\d+\.\d+(?:-[\w.]+)?$/;
 
 /**
  * Check whether `lute --version` printed the supported major.
- *
  * @param printed - Output of `lute --version`.
  * @returns Whether the version has the supported major.
  */

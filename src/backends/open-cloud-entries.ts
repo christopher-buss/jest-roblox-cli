@@ -2,100 +2,47 @@ import type { ScriptResult } from "@isentinel/roblox-runner";
 
 import type { Except } from "type-fest";
 
+import type { WireEnvelopeEntry } from "../protocol/envelope.ts";
 import type { DecodedEnvelope } from "./envelope.ts";
 import { decodeEnvelope } from "./envelope.ts";
-import type { BackendResult, EnvelopeEntry, ProjectJob, RawBackendEntry } from "./interface.ts";
+import type { BackendResult } from "./interface.ts";
 
-/** One package's entry plus the task-level game output it arrived with. */
-export interface CollectedEntry {
-	/** Envelope entry of the package. */
-	entry: EnvelopeEntry;
-	/** Game output of the task that returned the entry. */
-	gameOutput: string | undefined;
-}
+/** Collected entries keyed by the job index each names. */
+export type CollectedEntries = Map<number, CollectedEntry>;
 
 /** What one dispatch produced, minus the timing the caller measures itself. */
 export type DispatchOutcome = Except<BackendResult, "timing">;
 
-/** A decoded work-stealing envelope with its task game output. */
+/** One job's entry plus the task-level game output it arrived with. */
+interface CollectedEntry {
+	/** Envelope entry of the job. */
+	entry: WireEnvelopeEntry;
+	/** Game output of the task that returned the entry. */
+	gameOutput: string | undefined;
+}
+
 interface StealingEnvelope extends DecodedEnvelope {
-	/** Game output of the task. */
 	gameOutput: string | undefined;
 }
 
 /**
- * Key that matches an envelope entry to its job.
- * @param packageName - Package that owns the entry.
- * @param project - Project name inside the package.
- * @returns The package name, or `package::project` when the two differ.
+ * The raw results of every collected entry.
+ * @param bailed - True when any task reported a bail.
+ * @param collected - Collected entries keyed by job index.
+ * @returns Raw results, one per job that ran.
  */
-export function entryLookupKey(packageName: string, project: string | undefined): string {
-	return project === undefined || project === packageName
-		? packageName
-		: `${packageName}::${project}`;
+export function toDispatchOutcome(bailed: boolean, collected: CollectedEntries): DispatchOutcome {
+	const rawResults = Array.from(
+		collected.values(),
+		({ entry: { jobIndex, ...entry }, gameOutput }) => {
+			return { entry, fallbackGameOutput: gameOutput, jobIndex };
+		},
+	);
+	return { bailed, rawResults };
 }
 
 /**
- * Pair every job with its aggregated entry, in request order.
- *
- * A gap normally means a task broke and lost its results, so they are collected
- * and one failure message names them all rather than failing on the first.
- * Under `--bail` the gaps are the point: the run stopped on a failing package
- * and the ones after it were never meant to run, so they come back reported as
- * bailed instead.
- *
- * That trade is real — once any task reports a bail, a sibling that lost
- * results some other way is reported as deliberately skipped too. Nothing here
- * can tell the two apart: every caller runs its tasks concurrently, so "after
- * the failing package" names no set. A task that dies outright still fails the
- * run through the pool's captured error; what this gives up is the narrower
- * case of a task that returns successfully having lost entries.
- * @param options - Bail flag, collected entries and the requested jobs.
- * @returns Raw results in job order, plus bailed indices under `--bail`.
- */
-export function collectStealingResults({
-	bailed,
-	entryByKey,
-	jobs,
-}: {
-	/** True when any task reported a bail. */
-	bailed: boolean;
-	/** Collected entries keyed by `entryLookupKey`. */
-	entryByKey: Map<string, CollectedEntry>;
-	/** Jobs of the run, in request order. */
-	jobs: Array<ProjectJob>;
-}): DispatchOutcome {
-	const bailedJobIndices: Array<number> = [];
-	const missingJobNames: Array<string> = [];
-	const rawResults: Array<RawBackendEntry> = [];
-	for (const [index, job] of jobs.entries()) {
-		const found = entryByKey.get(entryLookupKey(job.pkg ?? job.displayName, job.displayName));
-		if (found === undefined) {
-			bailedJobIndices.push(index);
-			missingJobNames.push(job.displayName);
-			continue;
-		}
-
-		rawResults.push({ entry: found.entry, fallbackGameOutput: found.gameOutput });
-	}
-
-	if (bailed) {
-		return { bailedJobIndices, rawResults };
-	}
-
-	if (bailedJobIndices.length > 0) {
-		throw new Error(
-			`Open Cloud returned no entries for ${bailedJobIndices.length.toString()} package(s): ${missingJobNames.join(", ")}`,
-		);
-	}
-
-	return { rawResults };
-}
-
-/**
- * Decode one task's return envelope. Throws when the task produced no Jest
- * output so a broken task surfaces as a run failure rather than a
- * silently-missing package.
+ * Decode one task's return envelope.
  * @param result - Result of one finished task.
  * @returns Decoded envelope plus the task game output.
  */
@@ -104,62 +51,49 @@ export function parseStealingEnvelope(result: ScriptResult): StealingEnvelope {
 }
 
 /**
- * Add each package entry to the map unless its key is already present.
+ * Add each entry to the map unless its job already has one.
  * @param options - Entries, target map and the task game output.
  */
 export function addEntriesToMap({
+	collected,
 	entries,
-	entryByKey,
 	gameOutput,
 }: {
-	/** Entries to add; entries without `pkg` are skipped. */
-	readonly entries: Array<EnvelopeEntry>;
-	/** Map to fill, keyed by `entryLookupKey`. */
-	readonly entryByKey: Map<string, CollectedEntry>;
+	/** Map to fill, keyed by job index. */
+	readonly collected: CollectedEntries;
+	/** Entries to add. */
+	readonly entries: Array<WireEnvelopeEntry>;
 	/** Game output of the task that returned the entries. */
 	readonly gameOutput: string | undefined;
 }): void {
 	for (const entry of entries) {
-		if (entry.pkg === undefined) {
-			continue;
-		}
-
-		const key = entryLookupKey(entry.pkg, entry.project);
-		if (!entryByKey.has(key)) {
-			entryByKey.set(key, { entry, gameOutput });
+		if (!collected.has(entry.jobIndex)) {
+			collected.set(entry.jobIndex, { entry, gameOutput });
 		}
 	}
 }
 
 /**
- * Aggregate entries from all task envelopes. Map by pkg::project so
- * multi-project packages don't collide on a shared `pkg`. The first
- * observed entry per key wins; subsequent duplicates (from fault-
- * recovery re-runs after invisibility timeout) are dropped.
+ * Aggregate entries from all task envelopes; the first entry per job wins.
  * @param taskEnvelopes - Decoded envelopes of every task.
- * @returns Collected entries keyed by `entryLookupKey`.
+ * @returns Collected entries keyed by job index.
  */
-export function aggregateEntriesByKey(
+export function aggregateEntriesByJob(
 	taskEnvelopes: ReadonlyArray<{
 		/** Entries the task returned. */
-		entries: Array<EnvelopeEntry>;
+		entries: Array<WireEnvelopeEntry>;
 		/** Game output of the task. */
 		gameOutput: string | undefined;
 	}>,
-): Map<string, CollectedEntry> {
-	const entryByKey = new Map<string, CollectedEntry>();
+): CollectedEntries {
+	const collected: CollectedEntries = new Map();
 	for (const { entries, gameOutput } of taskEnvelopes) {
-		addEntriesToMap({ entries, entryByKey, gameOutput });
+		addEntriesToMap({ collected, entries, gameOutput });
 	}
 
-	return entryByKey;
+	return collected;
 }
 
-/**
- * The Jest envelope a task returned, or a failure naming what came back.
- * @param result - Result of one finished task.
- * @returns First output of the task.
- */
 function requireJestOutput(result: ScriptResult): string {
 	const jestOutput = result.outputs[0];
 	if (jestOutput === undefined) {

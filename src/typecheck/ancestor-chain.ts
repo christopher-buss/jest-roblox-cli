@@ -8,9 +8,7 @@ import type { RawTestDefinition, TestDefinition } from "./typecheck-types.ts";
 export function buildAncestorChain(sorted: Array<RawTestDefinition>): Array<TestDefinition> {
 	const result: Array<TestDefinition> = [];
 	const suiteStack: Array<{
-		/** Source offset where the suite ends. */
 		end: number;
-		/** The suite's title. */
 		name: string;
 	}> = [];
 

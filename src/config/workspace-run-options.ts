@@ -3,14 +3,16 @@ import process from "node:process";
 import { isDefined, pickBy } from "remeda";
 
 import { defaultFormatters } from "./default-formatters.ts";
-import type { CliOptions, FormatterEntry, WorkspaceRunOptions } from "./schema.ts";
-import { DEFAULT_CONFIG } from "./schema.ts";
+import type { FormatterEntry } from "./formatter-selection.ts";
+import type { OptionRow } from "./option-row.ts";
+import { CONFIG_ROWS } from "./options.ts";
+import type { CliOptions, WorkspaceRunOptions } from "./resolved-config.ts";
+import { DEFAULT_CONFIG } from "./resolved-config.ts";
 import type {
 	ConsensusSpec,
 	FieldSources,
 	OptionalFieldSpec,
 	PackageConfigEntry,
-	RequiredFieldSpec,
 } from "./workspace-consensus.ts";
 import {
 	assertConsensus,
@@ -27,93 +29,42 @@ interface BuildWorkspaceRunOptionsInput {
 	workspaceRoot?: string;
 }
 
-interface ResolvedOptionalFields {
-	formatters: Array<FormatterEntry>;
-	gameOutput: string | undefined;
-	hiddenDesktop: boolean | undefined;
-	outputFile: string | undefined;
-	parallel: "auto" | number | undefined;
-	placeId: string | undefined;
-	pluginsDirectory: string | undefined;
-	studioPath: string | undefined;
-	universeId: string | undefined;
+type TableResolution = "consensus" | "defaulted" | "optional";
+
+function rowsResolvedBy(resolution: TableResolution): ReadonlyArray<OptionRow> {
+	return CONFIG_ROWS.filter((row) => row.workspace === resolution);
 }
 
-/**
- * Fields resolved as CLI override > per-package consensus > `DEFAULT_CONFIG`.
- */
-const DEFAULTED_FIELD_SPECS = {
-	backend: {
-		name: "backend",
-		default: DEFAULT_CONFIG.backend,
-		readCli: (entry) => entry.backend,
-		readConfig: (entry) => entry.backend,
-	},
-	color: {
-		name: "color",
-		default: DEFAULT_CONFIG.color,
-		readCli: (entry) => entry.color,
-		readConfig: (entry) => entry.color,
-	},
-	port: {
-		name: "port",
-		default: DEFAULT_CONFIG.port,
-		readCli: (entry) => entry.port,
-		readConfig: (entry) => entry.port,
-	},
-	silent: {
-		name: "silent",
-		default: DEFAULT_CONFIG.silent,
-		readCli: (entry) => entry.silent,
-		readConfig: (entry) => entry.test?.silent,
-	},
-} satisfies Record<string, RequiredFieldSpec<unknown>>;
+function specOf(row: OptionRow): OptionalFieldSpec<unknown> {
+	return {
+		name: row.key,
+		readCli: (entry) => Reflect.get(entry, row.key),
+		readConfig: (entry) => {
+			return Reflect.get(row.location === "root" ? entry : (entry.test ?? {}), row.key);
+		},
+	};
+}
 
-/** Fields resolved as CLI override > per-package consensus > absent. */
-const OPTIONAL_FIELD_SPECS = {
-	gameOutput: {
-		name: "gameOutput",
-		readCli: (entry) => entry.gameOutput,
-		readConfig: (entry) => entry.gameOutput,
-	},
-	outputFile: {
-		name: "outputFile",
-		readCli: (entry) => entry.outputFile,
-		readConfig: (entry) => entry.outputFile,
-	},
-	parallel: {
-		name: "parallel",
-		readCli: (entry) => entry.parallel,
-		readConfig: (entry) => entry.parallel,
-	},
-	placeId: {
-		name: "placeId",
-		readCli: (entry) => entry.placeId,
-		readConfig: (entry) => entry.placeId,
-	},
-	// studio-cli's Studio-executable override. Resolved like placeId/universeId
-	// so a config or CLI `studioPath` reaches the workspace studio-cli backend.
-	studioPath: {
-		name: "studioPath",
-		readCli: (entry) => entry.studioPath,
-		readConfig: (entry) => entry.studioPath,
-	},
-	universeId: {
-		name: "universeId",
-		readCli: (entry) => entry.universeId,
-		readConfig: (entry) => entry.universeId,
-	},
-} satisfies Record<string, OptionalFieldSpec<unknown>>;
+function resolveTableFields(sources: FieldSources): Record<string, unknown> {
+	const defaulted = rowsResolvedBy("defaulted").map((row): [string, unknown] => [
+		row.key,
+		resolveField({
+			...sources,
+			spec: { ...specOf(row), default: Reflect.get(DEFAULT_CONFIG, row.key) },
+		}),
+	]);
+	const optional = rowsResolvedBy("optional").map((row): [string, unknown] => [
+		row.key,
+		resolveOptionalField({ ...sources, spec: specOf(row) }),
+	]);
+	const consensus = rowsResolvedBy("consensus").map((row): [string, unknown] => [
+		row.key,
+		computeConsensus(sources.perPackageConfigs, specOf(row)),
+	]);
+	return Object.fromEntries([...defaulted, ...optional, ...consensus]);
+}
 
-/**
- * Fields resolved by per-package consensus alone — there is no CLI flag to
- * override them, so a disagreement can only be settled in the configs.
- */
 const CONSENSUS_ONLY_SPECS = {
-	pluginsDirectory: {
-		name: "pluginsDirectory",
-		readConfig: (entry) => entry.pluginsDirectory,
-	},
 	workspaceGameOutput: {
 		name: "workspace.gameOutput",
 		readConfig: (entry) => entry.workspace?.gameOutput,
@@ -124,12 +75,6 @@ const CONSENSUS_ONLY_SPECS = {
 	},
 } satisfies Record<string, ConsensusSpec<unknown>>;
 
-// Convergence guard. `workspace.packages`/`root` live in a shared config
-// reached via `extends:`, so every selected package resolves the same value. A
-// package that overrides it — or forgets to extend the shared config — surfaces
-// here as a conflict rather than silently running against a different package
-// set. The values themselves were already consumed for enumeration, so only the
-// disagreement is read out.
 const CONVERGENCE_GUARD_SPECS = [
 	{
 		name: "workspace.packages",
@@ -140,6 +85,16 @@ const CONVERGENCE_GUARD_SPECS = [
 		readConfig: (entry) => entry.workspace?.root,
 	},
 ] satisfies Array<ConsensusSpec<unknown>>;
+
+/**
+ * Whether Studio can launch hidden on this platform, and so does by default.
+ *
+ * @param platform - Host platform.
+ * @returns True on Windows and macOS.
+ */
+export function isHiddenDesktopPlatform(platform: NodeJS.Platform): boolean {
+	return platform === "win32" || platform === "darwin";
+}
 
 /**
  * Resolve the run-wide options a workspace run shares across its packages.
@@ -154,33 +109,39 @@ export function buildWorkspaceRunOptions({
 	platform = process.platform,
 	workspaceRoot = process.cwd(),
 }: BuildWorkspaceRunOptionsInput): WorkspaceRunOptions {
-	return {
-		...resolveDefaultedFields({ cli, perPackageConfigs }),
+	const sources = { cli, perPackageConfigs };
+	const table = resolveTableFields(sources);
+	const resolved = {
+		...table,
 		...resolveConsensusOnlyFields(perPackageConfigs),
-		...pickBy(
-			resolveOptionalFields({ cli, perPackageConfigs, platform, workspaceRoot }),
-			isDefined,
-		),
+		bail: cli.bail === true,
+		experimentalVmParallel: cli.experimentalVmParallel,
+		formatters: resolveFormatters(cli, perPackageConfigs),
+		gameOutput: resolveAggregateArtifactPath({
+			defaultName: "game-output.log",
+			value: table["gameOutput"],
+			workspaceRoot,
+		}),
+		hiddenDesktop: resolveOptionalField({
+			...sources,
+			spec: hiddenDesktopSpec({ perPackageConfigs, platform }),
+		}),
+		outputFile: resolveAggregateArtifactPath({
+			defaultName: "jest-output.log",
+			value: table["outputFile"],
+			workspaceRoot,
+		}),
+		timeout: resolveTimeout(sources),
 	};
+	// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the table fields come from rows whose schemas are checked against Config
+	return pickBy(resolved, isDefined) as WorkspaceRunOptions;
 }
 
-function resolveDefaultedFields(
-	sources: FieldSources,
-): Pick<
-	WorkspaceRunOptions,
-	"backend" | "bail" | "color" | "experimentalVmParallel" | "port" | "silent"
-> {
-	return {
-		backend: resolveField({ ...sources, spec: DEFAULTED_FIELD_SPECS.backend }),
-		// Straight off the CLI rather than through the consensus table: there
-		// is no config key to reach consensus on. `test.bail` is already Jest's
-		// suite-level bail, so reading it here would give one word two jobs.
-		bail: sources.cli.bail === true,
-		color: resolveField({ ...sources, spec: DEFAULTED_FIELD_SPECS.color }),
-		experimentalVmParallel: sources.cli.experimentalVmParallel,
-		port: resolveField({ ...sources, spec: DEFAULTED_FIELD_SPECS.port }),
-		silent: resolveField({ ...sources, spec: DEFAULTED_FIELD_SPECS.silent }),
-	};
+function resolveTimeout({ cli, perPackageConfigs }: FieldSources): number {
+	return (
+		cli.timeout ??
+		Math.max(...perPackageConfigs.map(({ config }) => config.timeout ?? DEFAULT_CONFIG.timeout))
+	);
 }
 
 function resolveConsensusOnlyFields(
@@ -209,7 +170,7 @@ function hiddenDesktopSpec({
 	readonly platform: NodeJS.Platform;
 }): OptionalFieldSpec<boolean> {
 	const isAnySet = perPackageConfigs.some(({ config }) => config.hiddenDesktop !== undefined);
-	const isHiddenByDefault = platform === "win32" || platform === "darwin";
+	const isHiddenByDefault = isHiddenDesktopPlatform(platform);
 	return {
 		name: "hiddenDesktop",
 		readCli: (entry) => entry.hiddenDesktop,
@@ -238,73 +199,19 @@ function resolveFormatters(
 	return defaultFormatters();
 }
 
-/**
- * `true` expands to `defaultName`; relative paths (including that default)
- * anchor at the workspace root so the aggregate lands there regardless of the
- * directory the CLI was invoked from.
- *
- * @param options - Default file name, declared value and workspace root.
- * @returns The artifact path, or `undefined` when no value is declared.
- */
 function resolveAggregateArtifactPath({
 	defaultName,
 	value,
 	workspaceRoot,
 }: {
 	readonly defaultName: string;
-	readonly value: string | true | undefined;
+	readonly value: unknown;
 	readonly workspaceRoot: string;
 }): string | undefined {
-	if (value === undefined) {
+	if (typeof value !== "string" && value !== true) {
 		return undefined;
 	}
 
 	const target = value === true ? defaultName : value;
 	return path.isAbsolute(target) ? target : path.join(workspaceRoot, target);
-}
-
-/**
- * `formatters` rides along here rather than with the defaulted fields: it has
- * no `DEFAULT_CONFIG` entry either, but falls back to an env-probed list
- * rather than to nothing. The two aggregate sinks resolve to a path on the way
- * out; the rest pass through untouched.
- *
- * @param options - Field sources, platform and workspace root.
- * @returns The optional fields, `undefined` where unset.
- * @throws If packages disagree on a field.
- */
-function resolveOptionalFields({
-	platform,
-	workspaceRoot,
-	...sources
-}: FieldSources & {
-	readonly platform: NodeJS.Platform;
-	readonly workspaceRoot: string;
-}): ResolvedOptionalFields {
-	const { cli, perPackageConfigs } = sources;
-	return {
-		formatters: resolveFormatters(cli, perPackageConfigs),
-		gameOutput: resolveAggregateArtifactPath({
-			defaultName: "game-output.log",
-			value: resolveOptionalField({ ...sources, spec: OPTIONAL_FIELD_SPECS.gameOutput }),
-			workspaceRoot,
-		}),
-		hiddenDesktop: resolveOptionalField({
-			...sources,
-			spec: hiddenDesktopSpec({ perPackageConfigs, platform }),
-		}),
-		outputFile: resolveAggregateArtifactPath({
-			defaultName: "jest-output.log",
-			value: resolveOptionalField({ ...sources, spec: OPTIONAL_FIELD_SPECS.outputFile }),
-			workspaceRoot,
-		}),
-		parallel: resolveOptionalField({ ...sources, spec: OPTIONAL_FIELD_SPECS.parallel }),
-		placeId: resolveOptionalField({ ...sources, spec: OPTIONAL_FIELD_SPECS.placeId }),
-		pluginsDirectory: computeConsensus(
-			perPackageConfigs,
-			CONSENSUS_ONLY_SPECS.pluginsDirectory,
-		),
-		studioPath: resolveOptionalField({ ...sources, spec: OPTIONAL_FIELD_SPECS.studioPath }),
-		universeId: resolveOptionalField({ ...sources, spec: OPTIONAL_FIELD_SPECS.universeId }),
-	};
 }

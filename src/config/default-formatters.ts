@@ -1,12 +1,10 @@
 import process from "node:process";
 import { isAgent } from "std-env";
 
-import type { FormatterEntry } from "./schema.ts";
+import type { FormatterEntry } from "./formatter-selection.ts";
 
 /**
- * The formatters a run falls back to when neither the CLI nor a config names
- * one. `std-env` resolves `isAgent` once at module load, so no later env change
- * moves it.
+ * The formatters a run uses when neither the CLI nor a config names one.
  *
  * @param isAgentRuntime - Whether the run is inside an agent runtime.
  * @returns The default formatter entries.

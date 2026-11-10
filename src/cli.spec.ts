@@ -1,4 +1,5 @@
 import { TaskStallError } from "@isentinel/roblox-runner";
+import { fromAny } from "@total-typescript/shoehorn";
 
 import * as path from "node:path";
 import process from "node:process";
@@ -14,8 +15,8 @@ import packageJson from "../package.json" with { type: "json" };
 import type { CliDependencies } from "./cli.ts";
 import { main, runAsync } from "./cli.ts";
 import { ConfigError } from "./config/errors.ts";
-import type { ResolvedConfig } from "./config/schema.ts";
-import type { MultiRunResult, ProjectResult, WorkspaceRunResult } from "./run/run-types.ts";
+import type { ResolvedConfig } from "./config/resolved-config.ts";
+import type { ProjectResult, RunResult } from "./results/run-result-types.ts";
 
 function makeConfig(overrides: Partial<ResolvedConfig> = {}): ResolvedConfig {
 	return {
@@ -34,22 +35,20 @@ function makeProjectResult(displayName = "client"): ProjectResult {
 	};
 }
 
-function makeMultiResult(overrides: Partial<MultiRunResult> = {}): MultiRunResult {
+function makeMultiResult(overrides: Partial<RunResult> = {}): RunResult {
 	return {
 		coverageMs: 0,
-		merged: {},
-		mode: "multi",
+		output: fromAny({ formatters: ["default"], rootDir: "/test", verbose: false }),
 		projectResults: [makeProjectResult()],
 		stagingMs: 0,
 		...overrides,
 	};
 }
 
-function makeWorkspaceResult(overrides: Partial<WorkspaceRunResult> = {}): WorkspaceRunResult {
+function makeWorkspaceResult(overrides: Partial<RunResult> = {}): RunResult {
 	return {
 		coverageMs: 0,
-		merged: {},
-		mode: "workspace",
+		output: fromAny({ formatters: ["default"], rootDir: "/test", verbose: false }),
 		projectResults: [makeProjectResult("@halcyon/foo")],
 		stagingMs: 0,
 		...overrides,
@@ -61,20 +60,18 @@ function setupDefaults(configOverrides: Partial<ResolvedConfig> = {}) {
 	const loadConfig = vi
 		.fn<NonNullable<CliDependencies["loadConfig"]>>()
 		.mockResolvedValue(makeConfig(configOverrides));
-	const outputMultiResult = vi
-		.fn<NonNullable<CliDependencies["outputMultiResult"]>>()
-		.mockResolvedValue(0);
+	const outputRun = vi.fn<NonNullable<CliDependencies["outputRun"]>>().mockResolvedValue(0);
 	const runJestRoblox = vi
 		.fn<NonNullable<CliDependencies["runJestRoblox"]>>()
 		.mockResolvedValue(makeMultiResult());
 	const dependencies: CliDependencies = {
 		fileSystem,
 		loadConfig,
-		outputMultiResult,
+		outputRun,
 		runJestRoblox,
 	};
 
-	return { dependencies, fileSystem, loadConfig, outputMultiResult, runJestRoblox };
+	return { dependencies, fileSystem, loadConfig, outputRun, runJestRoblox };
 }
 
 async function captureHelpAsync(): Promise<string> {
@@ -216,7 +213,35 @@ describe("runInner orchestration", () => {
 		).toBeTrue();
 	});
 
-	it("should print HELP_TEXT and return 0 when --help is passed", async () => {
+	it("should move the run log under the root the run resolved", async () => {
+		expect.assertions(1);
+
+		setupOutputSpies();
+		const cli = setupDefaults();
+		cli.runJestRoblox.mockResolvedValue(
+			makeWorkspaceResult({
+				output: {
+					collectCoverage: false,
+					color: false,
+					formatters: ["default"],
+					perUnitGameOutput: false,
+					perUnitOutputFile: false,
+					rootDir: "/workspace",
+					showLuau: false,
+					silent: false,
+					verbose: false,
+				},
+			}),
+		);
+
+		await runAsync([], cli.dependencies);
+
+		expect(
+			cli.fileSystem.existsSync(path.join("/workspace", ".jest-roblox", "last-run.log")),
+		).toBeTrue();
+	});
+
+	it("should print the help and return 0 when --help is passed", async () => {
 		expect.assertions(3);
 
 		const spies = setupOutputSpies();
@@ -244,6 +269,21 @@ describe("runInner orchestration", () => {
 		const entry = helpEntry(await captureHelpAsync(), flag);
 
 		expect(entry).toContain("(repeatable)");
+	});
+
+	it.for([
+		"--timeout",
+		"--color",
+		"--showLuau",
+		"--hiddenDesktop",
+		"--coverage-cache",
+		"--upload-cache",
+	])("should document %s", async (flag) => {
+		expect.assertions(1);
+
+		const help = await captureHelpAsync();
+
+		expect(help).toMatch(new RegExp(`^ {2}${flag}(?![\\w-])`, "m"));
 	});
 
 	it("should document no binary-input option", async () => {
@@ -368,19 +408,19 @@ describe("runInner orchestration", () => {
 		);
 	});
 
-	it("should propagate a non-zero exit code from outputMultiResult", async () => {
+	it("should propagate a non-zero exit code from outputRun", async () => {
 		expect.assertions(1);
 
 		setupOutputSpies();
 		const cli = setupDefaults();
-		cli.outputMultiResult.mockResolvedValue(1);
+		cli.outputRun.mockResolvedValue(1);
 
 		const code = await runAsync([], cli.dependencies);
 
 		expect(code).toBe(1);
 	});
 
-	it("should dispatch MultiRunResult to outputMultiResult", async () => {
+	it("should dispatch a multi result to outputRun", async () => {
 		expect.assertions(2);
 
 		setupOutputSpies();
@@ -391,7 +431,7 @@ describe("runInner orchestration", () => {
 		const code = await runAsync([], cli.dependencies);
 
 		expect(code).toBe(0);
-		expect(cli.outputMultiResult).toHaveBeenCalledWith(
+		expect(cli.outputRun).toHaveBeenCalledWith(
 			expect.objectContaining({
 				dependencies: { fileSystem: cli.fileSystem },
 				result: multi,
@@ -399,7 +439,7 @@ describe("runInner orchestration", () => {
 		);
 	});
 
-	it("should dispatch WorkspaceRunResult to outputMultiResult", async () => {
+	it("should dispatch a workspace result to outputRun", async () => {
 		expect.assertions(2);
 
 		setupOutputSpies();
@@ -410,11 +450,31 @@ describe("runInner orchestration", () => {
 		const code = await runAsync([], cli.dependencies);
 
 		expect(code).toBe(0);
-		expect(cli.outputMultiResult).toHaveBeenCalledWith(
+		expect(cli.outputRun).toHaveBeenCalledWith(
 			expect.objectContaining({
 				dependencies: { fileSystem: cli.fileSystem },
 				result: workspace,
 			}),
+		);
+	});
+
+	it("should print the notice of a passing empty partial run", async () => {
+		expect.assertions(2);
+
+		const spies = setupOutputSpies();
+		const cli = setupDefaults();
+		cli.runJestRoblox.mockResolvedValue(
+			makeMultiResult({
+				output: undefined,
+				projectResults: [],
+				validationMessage: "No test files reach the related files, exiting with code 0\n",
+			}),
+		);
+		const code = await runAsync(["related", "src/unused.luau"], cli.dependencies);
+
+		expect(code).toBe(0);
+		expect(renderedStderr(spies)).toContain(
+			"No test files reach the related files, exiting with code 0",
 		);
 	});
 
@@ -435,7 +495,7 @@ describe("runInner orchestration", () => {
 
 		expect(code).toBe(2);
 		expect(spies.stderr).toHaveBeenCalledWith("Error: --packages names no packages.\n");
-		expect(cli.outputMultiResult).not.toHaveBeenCalled();
+		expect(cli.outputRun).not.toHaveBeenCalled();
 	});
 
 	it("should not write to stderr when validationMessage is undefined", async () => {
@@ -458,12 +518,14 @@ describe("runInner orchestration", () => {
 
 		setupOutputSpies();
 		const cli = setupDefaults();
-		cli.runJestRoblox.mockResolvedValue(makeWorkspaceResult({ projectResults: [] }));
+		cli.runJestRoblox.mockResolvedValue(
+			makeWorkspaceResult({ output: undefined, projectResults: [] }),
+		);
 
 		const code = await runAsync(["--workspace", "--affected-since", "main"], cli.dependencies);
 
 		expect(code).toBe(0);
-		expect(cli.outputMultiResult).not.toHaveBeenCalled();
+		expect(cli.outputRun).not.toHaveBeenCalled();
 	});
 
 	it("should return 0 for multi mode with empty projects and no typecheck", async () => {
@@ -471,12 +533,14 @@ describe("runInner orchestration", () => {
 
 		setupOutputSpies();
 		const cli = setupDefaults();
-		cli.runJestRoblox.mockResolvedValue(makeMultiResult({ projectResults: [] }));
+		cli.runJestRoblox.mockResolvedValue(
+			makeMultiResult({ output: undefined, projectResults: [] }),
+		);
 
 		const code = await runAsync([], cli.dependencies);
 
 		expect(code).toBe(0);
-		expect(cli.outputMultiResult).not.toHaveBeenCalled();
+		expect(cli.outputRun).not.toHaveBeenCalled();
 	});
 
 	it("should dispatch multi mode with empty projects but typecheck present", async () => {
@@ -490,7 +554,7 @@ describe("runInner orchestration", () => {
 		const code = await runAsync([], cli.dependencies);
 
 		expect(code).toBe(0);
-		expect(cli.outputMultiResult).toHaveBeenCalledExactlyOnceWith(
+		expect(cli.outputRun).toHaveBeenCalledExactlyOnceWith(
 			expect.objectContaining({
 				dependencies: { fileSystem: cli.fileSystem },
 				result,
@@ -509,34 +573,6 @@ describe("runInner orchestration", () => {
 		const [{ config }] = cli.runJestRoblox.mock.calls[0]!;
 
 		expect(config.collectCoverage).toBeFalse();
-	});
-
-	it("should give a Luau-only package a project built from its layout", async () => {
-		expect.assertions(1);
-
-		setupOutputSpies();
-		const cli = setupDefaults();
-		cli.fileSystem.rmSync("/test/default.project.json");
-
-		await runAsync([], cli.dependencies);
-
-		const [{ config }] = cli.runJestRoblox.mock.calls[0]!;
-
-		expect(config.rojoProject).toBe(path.join("/test", ".jest-roblox-layout.project.json"));
-	});
-
-	it("should leave a workspace run to each package's own project", async () => {
-		expect.assertions(1);
-
-		setupOutputSpies();
-		const cli = setupDefaults();
-		cli.fileSystem.rmSync("/test/default.project.json");
-
-		await runAsync(["--workspace"], cli.dependencies);
-
-		const [{ config }] = cli.runJestRoblox.mock.calls[0]!;
-
-		expect(config.rojoProject).toBeUndefined();
 	});
 
 	it("should pass explicit --formatters through merge into config", async () => {
@@ -655,7 +691,7 @@ describe("alias version warning", () => {
 
 		const spies = setupOutputSpies();
 		const cli = setupDefaults();
-		cli.outputMultiResult.mockResolvedValue(1);
+		cli.outputRun.mockResolvedValue(1);
 		const { fileSystem } = createMemoryFileSystem({
 			"/test/default.project.json": "{}",
 			[path.join(process.cwd(), ".luaurc")]:

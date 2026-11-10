@@ -1,25 +1,21 @@
 import assert from "node:assert";
-import color from "tinyrainbow";
 
-import type { MappedLocation, SourceMapper } from "../source-mapper/index.ts";
-import { execErrorTitle } from "../types/exec-error-file.ts";
+import type { SourceMapper } from "../source-mapper/index.ts";
+import type { Styles } from "../terminal/palette.ts";
+import { getTerminalWidth } from "../terminal/width.ts";
 import type { TestCaseResult, TestFileResult } from "../types/jest-result-types.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import { nodeFileSystem } from "../utils/file-system.ts";
+import type { ParsedError } from "./failure-message.ts";
 import {
-	cleanExecErrorMessage,
-	getExecErrorHint,
-	type ParsedError,
-	parseErrorMessage,
-} from "./failure-message.ts";
-import {
-	type FailureContext,
-	type FormatOptions,
-	getTerminalWidth,
-	resolveDisplayPath,
-} from "./shared.ts";
+	describeExecError,
+	type FailureDetail,
+	failureDetail,
+	locateFailure,
+	snippetSources,
+} from "./failure-model.ts";
+import { type FailureContext, type FormatOptions, resolveDisplayPath } from "./shared.ts";
 import { resolveSourceSnippets } from "./snippets.ts";
-import { createStyles, type Styles } from "./styles.ts";
 
 /**
  * Inputs of `formatFileFailures`.
@@ -70,7 +66,7 @@ export interface FormatExecErrorDetailOptions {
 }
 
 /**
- * Render one failed test: the FAIL header, each message with its diff and snippets, and an optional numbered separator.
+ * Render one failed test as an indented FAIL block.
  * @param options - Failed test, its display path, palette and numbering.
  * @returns The indented failure block.
  */
@@ -82,10 +78,9 @@ export function formatFailure({
 	showLuau = false,
 	sourceMapper,
 	sourcePath,
-	styles,
+	styles: st,
 	test,
 	totalFailures,
-	useColor = true,
 }: {
 	/**
 	 * Number shown in the separator; needs `totalFailures`.
@@ -116,9 +111,9 @@ export function formatFailure({
 	 */
 	sourcePath?: string | undefined;
 	/**
-	 * Palette to render with; built from `useColor` when absent.
+	 * Palette to render with.
 	 */
-	styles?: Styles | undefined;
+	styles: Styles;
 	/**
 	 * Failed test to render.
 	 */
@@ -127,21 +122,13 @@ export function formatFailure({
 	 * Failure total shown in the separator; needs `failureIndex`.
 	 */
 	totalFailures?: number | undefined;
-	/**
-	 * Emit ANSI color; defaults to true.
-	 */
-	useColor?: boolean | undefined;
 }): string {
-	const st = styles ?? createStyles(useColor);
 	const lines: Array<string> = [];
 
-	// Build test path: file > ancestors > title
 	const pathParts = filePath !== undefined ? [filePath] : [];
 	pathParts.push(...test.ancestorTitles, test.title);
 	const testPath = pathParts.join(" > ");
 
-	// FAIL badge + test path (blank line before for spacing after
-	// header/previous failure)
 	lines.push("", `${st.failBadge(" FAIL ")} ${st.status.fail(testPath)}`);
 
 	for (const originalMessage of test.failureMessages) {
@@ -153,17 +140,14 @@ export function formatFailure({
 				showLuau,
 				sourceMapper,
 				styles: st,
-				useColor,
 			}),
 		);
 	}
 
-	// Add footer separator with index
 	if (failureIndex !== undefined && totalFailures !== undefined) {
 		lines.push("", st.dim(st.status.fail(formatFailureSeparator(failureIndex, totalFailures))));
 	}
 
-	// Indent all lines
 	return lines.map((line) => `  ${line}`).join("\n");
 }
 
@@ -200,7 +184,6 @@ export function formatFileFailures({
 				styles,
 				test: testCase,
 				totalFailures: failureCtx.totalFailures,
-				useColor: options.color,
 			}),
 		);
 	}
@@ -209,8 +192,7 @@ export function formatFileFailures({
 }
 
 /**
- * Renders a file that never got as far as running tests — the suite itself
- * threw — as one failure block in the shared numbering.
+ * Render a file whose suite threw as one numbered failure block.
  * @param options - File, source mapper, palette and shared numbering.
  * @returns The failure block.
  */
@@ -224,29 +206,26 @@ export function formatExecErrorDetail({
 	const index = failureCtx.currentIndex;
 	failureCtx.currentIndex++;
 
-	assert(file.failureMessage !== undefined);
+	const { failureMessage } = file;
+	assert(failureMessage !== undefined);
 	const displayPath = resolveDisplayPath(file.testFilePath, { rootDir, sourceMapper });
-	const errorMessage = cleanExecErrorMessage(file.failureMessage);
+	const block = describeExecError({ ...file, failureMessage });
 	const separator = styles.dim(
 		styles.status.fail(formatFailureSeparator(index, failureCtx.totalFailures)),
 	);
 
 	const badge =
-		file.timedOut === true ? styles.timeoutBadge(" TIMEOUT ") : styles.failBadge(" FAIL ");
+		block.badge === "TIMEOUT" ? styles.timeoutBadge(" TIMEOUT ") : styles.failBadge(" FAIL ");
 
-	// Indented line by line rather than as one block: the message can be a
-	// multi-line report, and indenting only its first line would leave the rest
-	// hanging off the left margin the whole failure block is drawn against.
 	const lines: Array<string> = [
 		`  ${badge} ${styles.status.fail(displayPath)}`,
-		`  ${styles.status.fail(execErrorTitle(file))}`,
+		`  ${styles.status.fail(block.title)}`,
 		"",
-		...indentMessage(errorMessage, styles),
+		...indentMessage(block.message, styles),
 	];
 
-	const hint = getExecErrorHint(errorMessage);
-	if (hint !== undefined) {
-		lines.push("", `  ${styles.dim("Hint:")} ${hint}`);
+	if (block.hint !== undefined) {
+		lines.push("", `  ${styles.dim("Hint:")} ${block.hint}`);
 	}
 
 	lines.push("", `  ${separator}`);
@@ -254,38 +233,24 @@ export function formatExecErrorDetail({
 	return lines.join("\n");
 }
 
-/**
- * The `⎯` rule fills the terminal up to the `[n/total]` counter it ends with.
- * @param failureIndex - Number of this failure.
- * @param totalFailures - Failures in the run.
- * @returns The separator line.
- */
 function formatFailureSeparator(failureIndex: number, totalFailures: number): string {
 	const counter = `[${failureIndex}/${totalFailures}]`;
 	const fillWidth = Math.max(1, getTerminalWidth() - counter.length - 3);
 	return `${"⎯".repeat(fillWidth)}${counter}⎯`;
 }
 
-function formatErrorLine({
-	parsed,
-	styles,
-	useColor,
-}: {
-	parsed: ParsedError;
-	styles: Styles;
-	useColor: boolean;
-}): string {
-	if (useColor && parsed.message.startsWith("Error:")) {
-		return styles.status.fail(color.bold("Error:") + parsed.message.slice(6));
+function formatErrorLine(parsed: ParsedError, styles: Styles): string {
+	if (parsed.message.startsWith("Error:")) {
+		return styles.status.fail(styles.bold("Error:") + parsed.message.slice(6));
 	}
 
 	return styles.status.fail(parsed.message);
 }
 
-function formatDiffBlock(parsed: ParsedError, styles: Styles): Array<string> {
-	if (parsed.snapshotDiff !== undefined) {
+function formatDiffBlock(detail: FailureDetail, styles: Styles): Array<string> {
+	if (detail.kind === "snapshot") {
 		const lines: Array<string> = [""];
-		for (const diffLine of parsed.snapshotDiff.split("\n")) {
+		for (const diffLine of detail.diff.split("\n")) {
 			if (diffLine.startsWith("- ")) {
 				lines.push(styles.diff.expected(diffLine));
 			} else if (diffLine.startsWith("+ ")) {
@@ -298,14 +263,14 @@ function formatDiffBlock(parsed: ParsedError, styles: Styles): Array<string> {
 		return lines;
 	}
 
-	if (parsed.expected !== undefined && parsed.received !== undefined) {
+	if (detail.kind === "values") {
 		return [
 			"",
 			styles.diff.expected("- Expected"),
 			styles.diff.received("+ Received"),
 			"",
-			styles.diff.expected(`- ${parsed.expected}`),
-			styles.diff.received(`+ ${parsed.received}`),
+			styles.diff.expected(`- ${detail.expected}`),
+			styles.diff.received(`+ ${detail.received}`),
 		];
 	}
 
@@ -321,7 +286,6 @@ function formatFailureMessage(
 		showLuau,
 		sourceMapper,
 		styles,
-		useColor,
 	}: {
 		filePath?: string | undefined;
 		fileSystem: FileSystem;
@@ -329,44 +293,26 @@ function formatFailureMessage(
 		showLuau: boolean;
 		sourceMapper?: SourceMapper | undefined;
 		styles: Styles;
-		useColor: boolean;
 	},
 ): Array<string> {
-	let mappedLocations: Array<MappedLocation> = [];
-	let message = originalMessage;
-
-	if (sourceMapper !== undefined) {
-		({ locations: mappedLocations, message } =
-			sourceMapper.mapFailureWithLocations(originalMessage));
-	}
-
-	const parsed = parseErrorMessage(originalMessage);
+	const located = locateFailure(originalMessage, sourceMapper);
 
 	return [
-		formatErrorLine({ parsed, styles, useColor }),
-		...formatDiffBlock(parsed, styles),
+		formatErrorLine(located.parsed, styles),
+		...formatDiffBlock(failureDetail(located.parsed), styles),
 		...resolveSourceSnippets({
 			filePath,
 			fileSystem,
-			hasSnapshotDiff: parsed.snapshotDiff !== undefined,
-			mappedLocations,
-			message,
+			hasSnapshotDiff: located.parsed.snapshotDiff !== undefined,
 			rootDir,
 			showLuau,
 			sourceMapper,
+			sources: snippetSources(located),
 			styles,
-			useColor,
 		}),
 	];
 }
 
-/**
- * Two spaces on every content line; a blank one is left alone so the block
- * carries neither trailing whitespace nor colour codes wrapping nothing.
- * @param message - Message to indent.
- * @param styles - Palette to paint lines with.
- * @returns The indented lines.
- */
 function indentMessage(message: string, styles: Styles): Array<string> {
 	return message.split("\n").map((line) => (line === "" ? "" : `  ${styles.status.fail(line)}`));
 }

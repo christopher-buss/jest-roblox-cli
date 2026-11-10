@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
-import type { ResolvedConfig } from "../config/schema.ts";
+import type { ResolvedConfig } from "../config/resolved-config.ts";
 import { toFormatOptions } from "./format-options.ts";
 
 function makeConfig(overrides: Partial<ResolvedConfig> = {}): ResolvedConfig {

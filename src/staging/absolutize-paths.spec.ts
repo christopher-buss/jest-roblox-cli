@@ -1,14 +1,13 @@
 import { isRojoTreeNode } from "@isentinel/rojo-utils";
+import type { RojoTreeNode } from "@isentinel/rojo-utils";
 
 import * as path from "node:path";
-import process from "node:process";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { posixPath, posixRoot } from "#test/mocks/posix-path.ts";
-import type { CoverageRoot } from "../coverage-pipeline/redirect-path.ts";
-import type { RojoTreeNode } from "../types/rojo.ts";
 import { absolutizePackagePaths } from "./absolutize-paths.ts";
+import type { PathRedirect } from "./path-redirect.ts";
 
 const ROOT = path.resolve("/repo");
 const FOO_DIR = path.join(ROOT, "packages/foo");
@@ -23,19 +22,19 @@ function child(node: RojoTreeNode | undefined, ...keys: Array<string>): RojoTree
 	}, node);
 }
 
-function root(luauRoot: string, shadowDirectory: string): CoverageRoot {
-	return { luauRoot: posixRoot(luauRoot), shadowDir: shadowDirectory };
+function root(luauRoot: string, shadowDirectory: string): PathRedirect {
+	return { from: posixRoot(path.join(FOO_DIR, luauRoot)), to: posixPath(shadowDirectory) };
 }
 
 function absolutize({
-	coverageRoots,
-	coverageSpine,
 	files,
+	redirects,
+	spine,
 	tree,
 }: {
-	coverageRoots?: Array<CoverageRoot>;
-	coverageSpine?: Array<CoverageRoot>;
 	files: Record<string, string>;
+	redirects?: Array<PathRedirect>;
+	spine?: Array<PathRedirect>;
 	tree: RojoTreeNode;
 }): RojoTreeNode {
 	const { fileSystem } = createMemoryFileSystem(
@@ -45,10 +44,9 @@ function absolutize({
 	);
 	return absolutizePackagePaths({
 		descriptor: {
-			coverageRoots,
-			coverageSpine,
-			packageDirectory: FOO_DIR,
+			redirects,
 			rojoProjectPath: FOO_PROJECT,
+			spine,
 		},
 		fileSystem,
 		node: tree,
@@ -94,9 +92,9 @@ describe(absolutizePackagePaths, () => {
 			expect.assertions(2);
 
 			const tree = absolutize({
-				coverageRoots: [root("src/server", SERVER_SHADOW)],
-				coverageSpine: [root("src", SRC_SPINE)],
 				files: { "src/server/init.luau": "" },
+				redirects: [root("src/server", SERVER_SHADOW)],
+				spine: [root("src", SRC_SPINE)],
 				tree: {
 					ReplicatedStorage: {
 						$className: "ReplicatedStorage",
@@ -115,14 +113,14 @@ describe(absolutizePackagePaths, () => {
 			expect.assertions(5);
 
 			const tree = absolutize({
-				coverageRoots: [root("src/server", SERVER_SHADOW)],
-				coverageSpine: [root("src", SRC_SPINE)],
 				files: {
 					"src/$reserved/init.luau": "",
 					"src/client/init.luau": "",
 					"src/loose.luau": "",
 					"src/server/init.luau": "",
 				},
+				redirects: [root("src/server", SERVER_SHADOW)],
+				spine: [root("src", SRC_SPINE)],
 				tree: SRC_MOUNT,
 			});
 
@@ -135,21 +133,6 @@ describe(absolutizePackagePaths, () => {
 			expect([mount["loose.luau"], mount["$reserved"]]).toStrictEqual([undefined, undefined]);
 		});
 
-		it("should stay silent about a root the spine reaches", () => {
-			expect.assertions(1);
-
-			const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
-
-			absolutize({
-				coverageRoots: [root("src/server", SERVER_SHADOW)],
-				coverageSpine: [root("src", SRC_SPINE)],
-				files: { "src/server/init.luau": "" },
-				tree: SRC_MOUNT,
-			});
-
-			expect(stderr).not.toHaveBeenCalled();
-		});
-
 		it("should carry the demote down every level of the spine", () => {
 			expect.assertions(3);
 
@@ -157,12 +140,12 @@ describe(absolutizePackagePaths, () => {
 			const modulesSpine = path.join(FOO_DIR, ".jest-roblox/coverage/.spine/src/modules");
 
 			const tree = absolutize({
-				coverageRoots: [root("src/modules/ecs", shadowDirectory)],
-				coverageSpine: [root("src", SRC_SPINE), root("src/modules", modulesSpine)],
 				files: {
 					"src/modules/ecs/world.luau": "",
 					"src/modules/net/init.luau": "",
 				},
+				redirects: [root("src/modules/ecs", shadowDirectory)],
+				spine: [root("src", SRC_SPINE), root("src/modules", modulesSpine)],
 				tree: SRC_MOUNT,
 			});
 
@@ -179,9 +162,9 @@ describe(absolutizePackagePaths, () => {
 			expect.assertions(1);
 
 			const tree = absolutize({
-				coverageRoots: [root("src/server", SERVER_SHADOW)],
-				coverageSpine: [root("src", SRC_SPINE)],
 				files: { "src/client/init.luau": "", "src/server/init.luau": "" },
+				redirects: [root("src/server", SERVER_SHADOW)],
+				spine: [root("src", SRC_SPINE)],
 				tree: {
 					ReplicatedStorage: {
 						$className: "ReplicatedStorage",
@@ -194,63 +177,6 @@ describe(absolutizePackagePaths, () => {
 			expect(child(tree, "ReplicatedStorage", "client")).toStrictEqual({
 				$className: "Folder",
 			});
-		});
-	});
-
-	describe("unreachable coverage roots", () => {
-		it("should not warn about a coverage root the mount above it can be demoted onto", () => {
-			expect.assertions(2);
-
-			const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
-
-			const tree = absolutize({
-				coverageRoots: [root("src/server", SERVER_SHADOW)],
-				files: { "src/client/init.luau": "", "src/server/init.luau": "" },
-				tree: SRC_MOUNT,
-			});
-
-			expect(child(tree, "ReplicatedStorage")!.$path).toBe(
-				posixPath(path.join(FOO_DIR, "src")),
-			);
-			expect(stderr).not.toHaveBeenCalled();
-		});
-
-		it("should stay silent when every coverage root backs a $path mount", () => {
-			expect.assertions(1);
-
-			const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
-
-			absolutize({
-				coverageRoots: [root("src", path.join(FOO_DIR, ".jest-roblox/coverage/src"))],
-				files: { "src/init.luau": "" },
-				tree: SRC_MOUNT,
-			});
-
-			expect(stderr).not.toHaveBeenCalled();
-		});
-
-		it("should warn once per unreachable root", () => {
-			expect.assertions(1);
-
-			const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
-
-			absolutize({
-				coverageRoots: [
-					root("elsewhere/client", path.join(FOO_DIR, ".jest-roblox/elsewhere/client")),
-					root("elsewhere/server", path.join(FOO_DIR, ".jest-roblox/elsewhere/server")),
-				],
-				files: { "src/init.luau": "" },
-				tree: SRC_MOUNT,
-			});
-
-			expect(stderr.mock.calls).toStrictEqual([
-				[
-					'Warning: luauRoot "elsewhere/client" does not correspond to any rojo $path mount, so it reports no coverage.\n',
-				],
-				[
-					'Warning: luauRoot "elsewhere/server" does not correspond to any rojo $path mount, so it reports no coverage.\n',
-				],
-			]);
 		});
 	});
 });

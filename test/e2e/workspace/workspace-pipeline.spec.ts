@@ -2,14 +2,14 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { startFakeOpenCloudServerAsync } from "#test/e2e/cli/fake-open-cloud.ts";
+import { startFakeOpenCloudServerAsync } from "#test/harness/fake-open-cloud.ts";
 import {
 	buildPassingJestOutput,
 	createFixtureSandbox,
 	createOpenCloudEnvironment,
 	rojoOnPath,
 	runCliAsync,
-} from "#test/e2e/cli/helpers.ts";
+} from "#test/harness/helpers.ts";
 
 const WORKSPACE_FIXTURE_PATH = path.resolve(__dirname, "../fixtures/workspace");
 
@@ -19,7 +19,11 @@ async function runOpenCloudWorkspaceAsync(
 	packagesArgument: string,
 ) {
 	const server = await startFakeOpenCloudServerAsync([
-		{ jestOutput: buildPassingJestOutput(), pkg: packageName, project: packageName },
+		{
+			jestOutput: buildPassingJestOutput(),
+			pkg: packageName,
+			project: path.basename(packageName),
+		},
 	]);
 
 	const result = await runCliAsync(
@@ -36,9 +40,8 @@ async function runOpenCloudWorkspaceAsync(
 
 // Workspace + --parallel exercises the work-stealing path: per-run MemoryStore
 // queue populated with every (pkg, project), N OCALE tasks all running the
-// same materializer script, and entries from all envelopes aggregated by
-// pkg::project. Driven through the fake Open Cloud server so the test stays
-// fast and runs without secrets.
+// same materializer script. Driven through the fake Open Cloud server so the
+// test stays fast and runs without secrets.
 //
 // `--updateSnapshot` rides along on the same invocation, because it is the same
 // two-package parallel run and the flags do not interact. Its own regression:
@@ -63,20 +66,18 @@ describe("workspace --parallel work-stealing", () => {
 
 			const server = await startFakeOpenCloudServerAsync([
 				{
-					jestOutput: buildPassingJestOutput(),
-					pkg: "@e2e/foo",
-					project: "@e2e/foo",
-					snapshotWrites: {
+					jestOutput: buildPassingJestOutput({
 						"ReplicatedStorage/Foo/__snapshots__/hal-165.spec.snap.luau": fooSnapshot,
-					},
+					}),
+					pkg: "@e2e/foo",
+					project: "foo",
 				},
 				{
-					jestOutput: buildPassingJestOutput(),
-					pkg: "@e2e/bar",
-					project: "@e2e/bar",
-					snapshotWrites: {
+					jestOutput: buildPassingJestOutput({
 						"ReplicatedStorage/Bar/__snapshots__/hal-165.spec.snap.luau": barSnapshot,
-					},
+					}),
+					pkg: "@e2e/bar",
+					project: "bar",
 				},
 			]);
 
@@ -100,8 +101,8 @@ describe("workspace --parallel work-stealing", () => {
 			expect(result.stderr).not.toContain("Cannot write snapshots - no rojo project found");
 			// Both packages get pushed onto the per-run queue.
 			expect(server.queueAdds.map((entry) => entry.value)).toIncludeAllMembers([
-				{ pkg: "@e2e/foo", project: "@e2e/foo" },
-				{ pkg: "@e2e/bar", project: "@e2e/bar" },
+				{ pkg: "@e2e/foo", project: "foo" },
+				{ pkg: "@e2e/bar", project: "bar" },
 			]);
 			// Two parallel tasks fired against the same shared queueId.
 			expect(server.requests).toHaveLength(2);
@@ -222,7 +223,7 @@ describe("workspace pre-flight cleanup of leftover own-stubs", () => {
 			);
 
 			const server = await startFakeOpenCloudServerAsync([
-				{ jestOutput: buildPassingJestOutput(), pkg: "@e2e/foo", project: "@e2e/foo" },
+				{ jestOutput: buildPassingJestOutput(), pkg: "@e2e/foo", project: "foo" },
 			]);
 
 			const result = await runCliAsync(
@@ -236,7 +237,6 @@ describe("workspace pre-flight cleanup of leftover own-stubs", () => {
 
 			expect(result.exitCode, `stderr: ${result.stderr}\nstdout: ${result.stdout}`).toBe(0);
 			expect(fs.existsSync(leftoverPath)).toBeFalse();
-			// Notice format is fixed by `workspace-runner.ts:209-212`.
 			expect(result.stderr).toContain("cleaned 1 leftover stub(s) from @e2e/foo");
 			// Server-side: the run actually reached backend dispatch (guards
 			// against a CLI short-circuit that would let the cleanup-only
@@ -327,7 +327,7 @@ describe("workspace positional file scoping", () => {
 			const sandbox = createFixtureSandbox(WORKSPACE_FIXTURE_PATH);
 
 			const server = await startFakeOpenCloudServerAsync([
-				{ jestOutput: buildPassingJestOutput(), pkg: "@e2e/foo", project: "@e2e/foo" },
+				{ jestOutput: buildPassingJestOutput(), pkg: "@e2e/foo", project: "foo" },
 			]);
 
 			const result = await runCliAsync(

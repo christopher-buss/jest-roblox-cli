@@ -2,10 +2,7 @@ const TS_OR_LUAU_EXTENSION = /\.(tsx?|luau?)$/;
 const TS_SOURCE_EXTENSION = /\.tsx?$/;
 
 /**
- * Whether a path names a TypeScript source rather than a hand-authored Luau
- * one. The two compile differently — only a TS source goes through roblox-ts —
- * so this decides whether a roblox-ts rule (the `index` → `init` rename) may be
- * applied to a given path.
+ * Whether a path names a TypeScript source rather than a Luau one.
  * @param filePath - The path to check.
  * @returns True for a `.ts` or `.tsx` path.
  */

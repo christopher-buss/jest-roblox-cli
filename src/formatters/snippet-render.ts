@@ -1,7 +1,6 @@
 import type { SourceSnippet } from "../source-mapper/index.ts";
-import { highlightCode } from "../utils/colors.ts";
+import type { Styles } from "../terminal/palette.ts";
 import { makeRelative } from "./shared.ts";
-import { createStyles, type Styles } from "./styles.ts";
 
 const SNIPPET_INDENT = "\t";
 
@@ -26,13 +25,9 @@ export interface SourceSnippetOptions {
 	 */
 	snippet: SourceSnippet;
 	/**
-	 * Palette to render with; built from `useColor` when absent.
+	 * Palette to render with; its highlighter, when set, colors the code.
 	 */
-	styles?: Styles | undefined;
-	/**
-	 * Emit ANSI color and syntax highlighting; defaults to true.
-	 */
-	useColor?: boolean | undefined;
+	styles: Styles;
 }
 
 interface FormatLocationHeaderOptions {
@@ -50,7 +45,7 @@ interface FormatCaretLineOptions {
 }
 
 /**
- * Render a source snippet: a location header, numbered lines, and a caret under the failure column.
+ * Render a source snippet with a header, line numbers and a caret.
  * @param options - Snippet, its path, language label and palette.
  * @returns The rendered snippet.
  */
@@ -59,25 +54,18 @@ export function formatSourceSnippet({
 	language,
 	rootDir,
 	snippet,
-	styles: snippetStyles,
-	useColor: isColorEnabled = true,
+	styles,
 }: SourceSnippetOptions): string {
-	const styles = snippetStyles ?? createStyles(isColorEnabled);
 	const shownPath = rootDir === undefined ? filePath : makeRelative(filePath, rootDir);
 	const lines = [formatLocationHeader({ filePath: shownPath, language, snippet, styles })];
 
-	// Determine padding for line numbers
 	const maxLineNumber = Math.max(...snippet.lines.map((line) => line.num));
 	const padding = String(maxLineNumber).length;
 
 	for (const line of snippet.lines) {
 		const prefix = `${String(line.num).padStart(padding)}|`;
 		const expandedContent = expandTabs(line.content);
-		const highlighted = highlightSyntax({
-			code: expandedContent,
-			filePath,
-			useColor: isColorEnabled,
-		});
+		const highlighted = styles.highlight?.(filePath, expandedContent) ?? expandedContent;
 		lines.push(`${SNIPPET_INDENT}${styles.lineNumber(prefix)} ${highlighted}`);
 
 		if (line.num === snippet.failureLine && snippet.column !== undefined) {
@@ -90,11 +78,6 @@ export function formatSourceSnippet({
 	return lines.join("\n");
 }
 
-/**
- * Location header: ❯ path:line:col  (Language).
- * @param options - Snippet, its path, language label and palette.
- * @returns The header line.
- */
 function formatLocationHeader({
 	filePath,
 	language,
@@ -123,28 +106,6 @@ function expandTabs(text: string, tabWidth = 4): string {
 	return result;
 }
 
-function highlightSyntax({
-	code,
-	filePath,
-	useColor,
-}: {
-	code: string;
-	filePath: string;
-	useColor: boolean;
-}): string {
-	if (!useColor) {
-		return code;
-	}
-
-	return highlightCode(filePath, code);
-}
-
-/**
- * Tabs before the column widen the caret's offset, so the prefix is expanded
- * the same way the rendered line was.
- * @param options - Failure line content, column, gutter width and palette.
- * @returns Gutter-aligned `^` under the failure column.
- */
 function formatCaretLine({ column, content, padding, styles }: FormatCaretLineOptions): string {
 	const beforeColumn = expandTabs(content.slice(0, column - 1));
 	const gutterPrefix = styles.lineNumber(`${" ".repeat(padding)}|`);

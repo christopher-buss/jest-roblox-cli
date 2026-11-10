@@ -1,6 +1,6 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
-exports[`OpenCloudBackend > work-stealing > should aggregate entries from all task envelopes in input order 1`] = `
+exports[`OpenCloudBackend > work-stealing > should aggregate entries from all task envelopes by the job each names 1`] = `
 [
   {
     "entry": {
@@ -8,13 +8,7 @@ exports[`OpenCloudBackend > work-stealing > should aggregate entries from all ta
       "pkg": "alpha",
     },
     "fallbackGameOutput": "[]",
-  },
-  {
-    "entry": {
-      "jestOutput": "{"numFailedTests":0,"numPassedTests":1,"numPendingTests":0,"numTotalTests":1,"startTime":0,"success":true,"testResults":[]}",
-      "pkg": "beta",
-    },
-    "fallbackGameOutput": "[]",
+    "jobIndex": 0,
   },
   {
     "entry": {
@@ -22,6 +16,15 @@ exports[`OpenCloudBackend > work-stealing > should aggregate entries from all ta
       "pkg": "gamma",
     },
     "fallbackGameOutput": "[]",
+    "jobIndex": 2,
+  },
+  {
+    "entry": {
+      "jestOutput": "{"numFailedTests":0,"numPassedTests":1,"numPendingTests":0,"numTotalTests":1,"startTime":0,"success":true,"testResults":[]}",
+      "pkg": "beta",
+    },
+    "fallbackGameOutput": "[]",
+    "jobIndex": 1,
   },
   {
     "entry": {
@@ -29,6 +32,7 @@ exports[`OpenCloudBackend > work-stealing > should aggregate entries from all ta
       "pkg": "delta",
     },
     "fallbackGameOutput": "[]",
+    "jobIndex": 3,
   },
 ]
 `;

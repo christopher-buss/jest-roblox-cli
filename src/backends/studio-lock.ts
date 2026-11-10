@@ -3,8 +3,7 @@ import type { FileSystem } from "../utils/file-system.ts";
 const LOCK_POLL_INTERVAL_MS = 50;
 
 /**
- * Remove the `<place>.lock` a killed Studio could not remove itself, so a
- * back-to-back run does not open the place onto it and crash.
+ * Remove the `<place>.lock` a killed Studio could not remove itself.
  *
  * @param fileSystem - File system that holds the place.
  * @param placeFile - Path of the place file.

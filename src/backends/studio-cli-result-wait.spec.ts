@@ -7,6 +7,7 @@ import type { WebSocketServer } from "ws";
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { MockWebSocketServer } from "#test/mocks/mock-web-socket-server.ts";
 import { MockWebSocket } from "#test/mocks/mock-web-socket.ts";
+import { projectJob } from "#test/mocks/project-job.ts";
 import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
 import type { ProjectJob } from "./interface.ts";
 import {
@@ -16,14 +17,14 @@ import {
 } from "./studio-cli-result-wait.ts";
 import type { StudioCliProcess } from "./studio-cli-types.ts";
 
-const JOB: ProjectJob = {
+const JOB: ProjectJob = projectJob({
 	config: { ...createResolvedConfig(), backend: "studio-cli", rootDir: "/repo" },
 	displayName: "alpha",
 	testFiles: ["alpha/test.spec.ts"],
-};
+});
 
 const JEST_OUTPUT = JSON.stringify({
-	entries: [{ jestOutput: JSON.stringify({ success: true }) }],
+	entries: [{ jestOutput: JSON.stringify({ success: true }), jobIndex: 0 }],
 });
 
 function result(fields: {
@@ -61,7 +62,7 @@ describe(buildBackendResult, () => {
 	it("should pair the decoded entries with the jobs and keep the timing", () => {
 		expect.assertions(2);
 
-		const backendResult = readResult(result({ protocolVersion: 10 }));
+		const backendResult = readResult(result({ protocolVersion: 12 }));
 
 		expect(backendResult.rawResults).toHaveLength(1);
 		expect(backendResult.timing).toStrictEqual({ executionMs: 5 });
@@ -73,7 +74,7 @@ describe(buildBackendResult, () => {
 		expect(() => readResult(result({}))).toThrowWithMessage(
 			Error,
 			"studio-cli: jest-roblox Studio plugin protocol version mismatch " +
-				"(plugin reported no version, CLI expects v10). " +
+				"(plugin reported no version, CLI expects v12). " +
 				"Update the jest-roblox Studio plugin to match this CLI version.",
 		);
 	});
@@ -84,7 +85,7 @@ describe(buildBackendResult, () => {
 		expect(() => readResult(result({ protocolVersion: 2 }))).toThrowWithMessage(
 			Error,
 			"studio-cli: jest-roblox Studio plugin protocol version mismatch " +
-				"(plugin reported v2, CLI expects v10). " +
+				"(plugin reported v2, CLI expects v12). " +
 				"Update the jest-roblox Studio plugin to match this CLI version.",
 		);
 	});
@@ -97,7 +98,7 @@ describe(buildBackendResult, () => {
 		}).toThrowWithMessage(
 			Error,
 			"studio-cli: jest-roblox Studio plugin protocol version mismatch " +
-				"(plugin from jest-roblox 0.3.18 reported v5, CLI expects v10). " +
+				"(plugin from jest-roblox 0.3.18 reported v5, CLI expects v12). " +
 				"Update the jest-roblox Studio plugin to match this CLI version.",
 		);
 	});
@@ -113,7 +114,7 @@ describe(buildBackendResult, () => {
 		}).toThrowWithMessage(
 			Error,
 			"studio-cli: jest-roblox Studio plugin protocol version mismatch " +
-				"(plugin from jest-roblox 0.3.18 reported v5, CLI expects v10). " +
+				"(plugin from jest-roblox 0.3.18 reported v5, CLI expects v12). " +
 				"Remove or update these copies in the Studio plugins folder: " +
 				"JestRobloxRunner.rbxm, jest-old.rbxm.",
 		);
@@ -160,11 +161,11 @@ describe(waitForResultAsync, () => {
 		for (const frame of [
 			"not json",
 			JSON.stringify({ ...result({}), requestId: "request-2" }),
-			JSON.stringify(result({ protocolVersion: 10 })),
+			JSON.stringify(result({ protocolVersion: 12 })),
 		]) {
 			socket.emit("message", Buffer.from(frame));
 		}
 
-		await expect(waiting).resolves.toStrictEqual(result({ protocolVersion: 10 }));
+		await expect(waiting).resolves.toStrictEqual(result({ protocolVersion: 12 }));
 	});
 });

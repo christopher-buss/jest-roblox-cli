@@ -1,16 +1,14 @@
 import { PermissionError, PollTimeoutError } from "@bedrock-rbx/ocale";
 
+import { plural } from "../terminal/plural.ts";
+
 /** One link of an error's cause chain, flattened for display. */
 export interface ChainEntry {
 	/** The error's constructor name. */
 	readonly name: string;
 	/** The Node error code, such as `ENOENT`. */
 	readonly code?: string | undefined;
-	/**
-	 * Response body an Open Cloud error captured, as one string. The ocale
-	 * client caps it at 500 bytes, so this is a head rather than the whole
-	 * body.
-	 */
+	/** Response body head an Open Cloud error captured. */
 	readonly details?: string | undefined;
 	/** The Node `errno`, as a string. */
 	readonly errno?: string | undefined;
@@ -20,9 +18,7 @@ export interface ChainEntry {
 	readonly method?: string | undefined;
 	/** The API key scopes a `PermissionError` says are missing. */
 	readonly requiredScopes?: ReadonlyArray<string> | undefined;
-	/**
-	 * HTTP status from an Open Cloud `ApiError`, when the entry carries one.
-	 */
+	/** HTTP status from an Open Cloud `ApiError`. */
 	readonly statusCode?: number | undefined;
 	/** The system call a Node IO error names. */
 	readonly syscall?: string | undefined;
@@ -30,14 +26,6 @@ export interface ChainEntry {
 	readonly url?: string | undefined;
 }
 
-/**
- * Diagnostic fields error sources hang off an `Error` instance: Node sets
- * `code`, `errno`, and `syscall` on IO failures, and ocale's `ApiError` sets
- * `statusCode`. `Error` declares none of them and their runtime types vary by
- * source — Node reports `errno` as a number, not a string — so each stays
- * `unknown` until a reader narrows it. Every `Error` satisfies the type, which
- * is what lets the chain walker read the fields without a cast.
- */
 interface ErrorDetails extends Error {
 	readonly code?: unknown;
 	readonly details?: unknown;
@@ -52,12 +40,6 @@ const MAX_DEPTH = 5;
 
 /**
  * True when a poll that never settled is somewhere under this failure.
- *
- * The one thing that distinguishes a task Roblox never answered for from a
- * request it refused: a 401 or a 429 says something about the call, and only a
- * timeout says the task itself never came back. Walks the chain because both
- * the runner and the backend wrap it.
- *
  * @param err - The failure to inspect.
  * @returns Whether anything in its cause chain is a `PollTimeoutError`.
  */
@@ -102,17 +84,9 @@ export function formatMissingScopes(scopes: ReadonlyArray<string>): string {
 	}
 
 	const joined = scopes.join(", ");
-	return `API key missing scope${scopes.length === 1 ? "" : "s"} ${joined}. Add via Creator Dashboard.`;
+	return `API key missing ${plural(scopes.length, "scope")} ${joined}. Add via Creator Dashboard.`;
 }
 
-/**
- * The error and everything it was caused by, nearest first. Kept apart from
- * {@link walkErrorChain}, which renders each link for a human: a caller asking
- * "is there a `FooError` under this?" wants the instances, and `instanceof`
- * answers that where a class-name string only stands in for it.
- * @param err - The thrown value.
- * @returns The `Error` and its `Error` causes, at most five.
- */
 function errorChain(err: unknown): Array<Error> {
 	const chain: Array<Error> = [];
 	let current = err;
@@ -124,13 +98,6 @@ function errorChain(err: unknown): Array<Error> {
 	return chain;
 }
 
-/**
- * The `details` an ocale error carries. It is the parsed body when the server
- * sent JSON and the raw text when it did not, so both are rendered as a string
- * and the caller never has to know which one it got.
- * @param value - The error's `details` field.
- * @returns The details as a string.
- */
 function readDetails(value: unknown): string | undefined {
 	return typeof value === "string" ? value : JSON.stringify(value);
 }
@@ -144,8 +111,6 @@ function readStringDetail(value: unknown): string | undefined {
 		return value;
 	}
 
-	// Node errors carry `errno` as a number; anything else (object, boolean) has
-	// no useful string form, so it reads as absent.
 	if (typeof value === "number") {
 		return String(value);
 	}

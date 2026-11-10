@@ -1,6 +1,6 @@
 import { fromAny } from "@total-typescript/shoehorn";
 
-import type { CollectorResult } from "#src/coverage-pipeline/coverage-collector.ts";
+import type { CollectorResult } from "#src/instrument/coverage-accumulator.ts";
 import collected from "#test/fixtures/coverage-collected.json" with { type: "json" };
 import andOrRhsEvalSource from "#test/fixtures/coverage-pipeline/and-or-rhs-eval.luau";
 import andOrShortCircuitSource from "#test/fixtures/coverage-pipeline/and-or-short-circuit.luau";

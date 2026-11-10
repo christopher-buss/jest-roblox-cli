@@ -429,6 +429,21 @@ describe(parseArgs, () => {
 		expect(parseArgs([]).timeout).toBeUndefined();
 	});
 
+	it.for([
+		["--port", "abc"],
+		["--port", "30x"],
+		["--port", "0"],
+		["--timeout", "slow"],
+		["--timeout", "1.5"],
+		["--timeout", "-5"],
+	])("should reject %s %j", ([flag, value]) => {
+		expect.assertions(1);
+
+		expect(() => parseArgs([`${flag}=${value}`])).toThrow(
+			`Invalid ${flag} value "${value}". Must be a positive integer.`,
+		);
+	});
+
 	it("should parse single --project flag", () => {
 		expect.assertions(1);
 

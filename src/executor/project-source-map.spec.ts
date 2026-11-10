@@ -1,6 +1,6 @@
 import * as path from "node:path";
 import process from "node:process";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { createPassingResult } from "#test/mocks/executor-spec-results.ts";
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
@@ -20,7 +20,7 @@ function resolveMappedPath(mount: string): string {
 	const sourceMap = buildProjectSourceMap({
 		config: {
 			...createResolvedConfig(),
-			rojoProject: ".generated/test.project.json",
+			rojoProject: path.join(ROOT, ".generated/test.project.json"),
 			rootDir: ROOT,
 		},
 		fileSystem,
@@ -64,7 +64,7 @@ describe(buildProjectSourceMap, () => {
 		const sourceMap = buildProjectSourceMap({
 			config: {
 				...createResolvedConfig(),
-				rojoProject: ".generated/test.project.json",
+				rojoProject: path.join(ROOT, ".generated/test.project.json"),
 				rootDir: ROOT,
 			},
 			fileSystem,
@@ -76,5 +76,24 @@ describe(buildProjectSourceMap, () => {
 		);
 
 		expect(locations[0]!.luauPath).toBe(`${POSIX_ROOT}/src/__tests__/fail.spec.lua`);
+	});
+
+	it("should warn and map nothing when the Rojo project is invalid", () => {
+		expect.assertions(2);
+
+		const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+		const projectPath = path.join(ROOT, "default.project.json");
+		const { fileSystem } = createMemoryFileSystem({ [projectPath]: "{" });
+
+		expect(
+			buildProjectSourceMap({
+				config: { ...createResolvedConfig(), rojoProject: projectPath, rootDir: ROOT },
+				fileSystem,
+				tsconfigMappings: [],
+			}),
+		).toBeUndefined();
+		expect(String(stderr.mock.calls[0]![0])).toStartWith(
+			`Warning: Cannot map sources - ${projectPath}: `,
+		);
 	});
 });

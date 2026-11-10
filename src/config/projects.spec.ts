@@ -1,5 +1,5 @@
 // cspell:words includ
-import type { PathKind } from "@isentinel/rojo-utils";
+import type { PathKind, RojoTreeNode } from "@isentinel/rojo-utils";
 import { fromAny } from "@total-typescript/shoehorn";
 
 import * as path from "node:path";
@@ -8,10 +8,10 @@ import { describe, expect, it } from "vitest";
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
 import { createProjectSeams } from "#test/mocks/spec-project-seams.ts";
-import type { RojoTreeNode } from "../types/rojo.ts";
+import type { ProjectTestConfig } from "./config-types.ts";
 import type { ResolvedProjectConfig } from "./projects.ts";
 import { extractStaticRoot, resolveAllProjects } from "./projects.ts";
-import type { ProjectTestConfig, ResolvedConfig } from "./schema.ts";
+import type { ResolvedConfig } from "./resolved-config.ts";
 
 const CWD = "/project";
 
@@ -1251,6 +1251,7 @@ describe(resolveAllProjects, () => {
 		const result = await resolveAllProjects({
 			cwd: "/project",
 			entries,
+			fileSystem: createMemoryFileSystem().fileSystem,
 			rojoTree: simpleRojoTree,
 			rootConfig: createResolvedConfig(),
 		});
@@ -1350,6 +1351,7 @@ describe(resolveAllProjects, () => {
 		const result = await resolveAllProjects({
 			cwd: "/project",
 			entries,
+			fileSystem: createMemoryFileSystem().fileSystem,
 			rojoTree: tree,
 			rootConfig: createResolvedConfig(),
 		});
@@ -1381,6 +1383,7 @@ describe(resolveAllProjects, () => {
 			resolveAllProjects({
 				cwd: "/project",
 				entries,
+				fileSystem: createMemoryFileSystem().fileSystem,
 				rojoTree: simpleRojoTree,
 				rootConfig: createResolvedConfig(),
 			}),

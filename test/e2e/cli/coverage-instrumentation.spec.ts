@@ -3,18 +3,18 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { assert, describe, expect, it } from "vitest";
 
-import { startFakeOpenCloudServerAsync } from "#test/e2e/cli/fake-open-cloud.ts";
+import { startFakeOpenCloudServerAsync } from "#test/harness/fake-open-cloud.ts";
 import {
 	buildPassingJestOutput,
 	createFixtureSandbox,
 	createOpenCloudEnvironment,
 	rojoOnPath,
+	RUN_TIMEOUT_MS,
 	runCliAsync,
-} from "#test/e2e/cli/helpers.ts";
+} from "#test/harness/helpers.ts";
 
 const LUAU_FIXTURE_PATH = path.resolve(__dirname, "../fixtures/luau-project");
 const COVERAGE_FIXTURES_PATH = path.resolve(__dirname, "../../fixtures/coverage-pipeline");
-const RUN_TIMEOUT_MS = 60_000;
 
 const BRANCH_COUNTS = '__b[1][1] .. "," .. __b[1][2] .. "," .. __b[2][1] .. "," .. __b[2][2]';
 const KEPT_ARMS =

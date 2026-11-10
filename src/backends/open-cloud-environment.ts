@@ -38,22 +38,12 @@ export function resolveRunnerOptions(): OcaleRunnerOptions {
 	};
 }
 
-/**
- * Reads {@link MAX_RETRIES_ENV} for an Open Cloud per-request retry override,
- * which bounds unguided 429s, 5xx and transport retries; a 429 with
- * `retry-after` > 0 spends none. Returns undefined for unset, empty, or
- * non-integer values so the client keeps its own default.
- *
- * @returns The retry count, or undefined.
- */
 function resolveOcaleMaxRetries(): number | undefined {
 	const raw = process.env[MAX_RETRIES_ENV]?.trim();
 	if (raw === "") {
 		return undefined;
 	}
 
-	// Number() (not parseInt) so partial/decimal strings like "8abc" or "8.5"
-	// reject instead of silently truncating to 8.
 	const parsed = Number(raw);
 	return Number.isInteger(parsed) && parsed >= 0 ? parsed : undefined;
 }

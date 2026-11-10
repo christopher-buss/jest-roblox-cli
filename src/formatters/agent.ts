@@ -1,13 +1,25 @@
 import { getSourceSnippet, type SourceMapper } from "../source-mapper/index.ts";
+import { createStyles } from "../terminal/palette.ts";
+import { plural } from "../terminal/plural.ts";
+import type { BailSummary } from "../types/bail-summary-types.ts";
 import { execErrorReason, hasExecError } from "../types/exec-error-file.ts";
 import type { ExecErrorTestFileResult, JestResult } from "../types/jest-result-types.ts";
-import { formatFailures, type SourceSnippetReader } from "./agent-failures.ts";
-import { cleanExecErrorMessage, getExecErrorHint } from "./failure-message.ts";
-import { resolveDisplayPath, withPackageRoot } from "./shared.ts";
-import type { AffectedSummary, BailSummary } from "./shared.ts";
-import { createStyles } from "./styles.ts";
+import {
+	type AgentFailure,
+	collectAgentFailures,
+	formatFailures,
+	type SourceSnippetReader,
+} from "./agent-failures.ts";
 import {
 	countFileBuckets,
+	describeExecError,
+	formatFailedTestsHeader,
+	formatLogHintLines,
+	type SummaryCounts,
+} from "./failure-model.ts";
+import type { AffectedSummary } from "./shared.ts";
+import { resolveDisplayPath, withPackageRoot } from "./shared.ts";
+import {
 	countTestBuckets,
 	formatAffectedLine,
 	formatBailLine,
@@ -15,7 +27,6 @@ import {
 	formatTestFilesLine,
 	formatTestsLine,
 	formatTypeErrorsLine,
-	type SummaryCounts,
 	type TestRowCounts,
 } from "./summary.ts";
 
@@ -32,26 +43,19 @@ export interface AgentOptions {
 	 */
 	gameOutput?: string | undefined;
 	/**
-	 * Size in bytes of the game log, shown beside its path.
-	 */
-	gameOutputSize?: number | undefined;
-	/**
 	 * Reads the source lines a snippet shows; defaults to the file system
 	 * reader.
 	 */
 	getSourceSnippet?: SourceSnippetReader;
 	/**
-	 * Most failures to render; the rest collapse into one omitted line.
+	 * Most failures to render across the run; the rest collapse into one
+	 * omitted line.
 	 */
 	maxFailures: number;
 	/**
 	 * Path of the written full Jest output, named in the log hints.
 	 */
 	outputFile?: string | undefined;
-	/**
-	 * Size in bytes of the Jest output, shown beside its path.
-	 */
-	outputFileSize?: number | undefined;
 	/**
 	 * Directory that failure paths are shown relative to.
 	 */
@@ -74,14 +78,11 @@ interface AgentProjectEntry {
 	rootDir?: string | undefined;
 }
 
-interface AgentProjectStats {
-	allExecErrors: Array<ExecErrorTestFileResult>;
+interface AgentRunStats {
 	files: SummaryCounts;
 	tests: TestRowCounts;
 }
 
-// This formatter emits plain text only, so the shared summary rows render
-// through the no-op palette rather than growing a plain-text twin.
 const PLAIN_STYLES = createStyles(false);
 
 /**
@@ -92,33 +93,13 @@ const PLAIN_STYLES = createStyles(false);
  */
 export function formatAgent(result: JestResult, agentOptions: AgentOptions): string {
 	const options = resolveAgentOptions(agentOptions);
-	const lines: Array<string> = [];
-	const execErrors = result.testResults.filter(hasExecError);
-	const hasFailures = result.numFailedTests > 0 || execErrors.length > 0;
+	const projects = [{ result }];
 
-	if (hasFailures) {
-		const totalFailures = result.numFailedTests + execErrors.length;
-		lines.push(
-			...formatFileHeaders(result, options),
-			"",
-			`${"⎯".repeat(3)} Failed Tests ${totalFailures} ${"⎯".repeat(3)}`,
-			"",
-			...formatFailures({ options, result, totalFailures: result.numFailedTests }),
-		);
-
-		for (const file of execErrors) {
-			lines.push(...formatExecError(file, options));
-		}
-
-		const hints = formatAgentLogHints(options);
-		if (hints !== "") {
-			lines.push(hints);
-		}
-	}
-
-	lines.push(...formatSummarySection(result, options));
-
-	return lines.join("\n");
+	return [
+		...formatFileHeaders(result, options),
+		...formatFailureSection(projects, options),
+		...formatSummaryRows(collectStats(projects), options),
+	].join("\n");
 }
 
 /**
@@ -132,60 +113,27 @@ export function formatAgentMultiProject(
 	agentOptions: AgentOptions,
 ): string {
 	const options = resolveAgentOptions(agentOptions);
-	const lines: Array<string> = [];
 
-	for (const project of projects) {
-		lines.push(...formatAgentProjectHeader({ ...project, options }));
-	}
-
-	const stats = collectMultiProjectStats(projects);
-	const totalFailures = stats.tests.counts.failed + stats.allExecErrors.length;
-
-	if (totalFailures > 0) {
-		lines.push(...formatMultiProjectFailures({ options, projects, stats }));
-	}
-
-	lines.push(...formatMultiProjectSummary(stats, options));
-
-	return lines.join("\n");
+	return [
+		...projects.flatMap((project) => formatAgentProjectHeader(project, options)),
+		...formatFailureSection(projects, options),
+		...formatSummaryRows(collectStats(projects), options),
+	].join("\n");
 }
 
 function resolveAgentOptions(options: AgentOptions): ResolvedAgentOptions {
 	return { getSourceSnippet, ...options };
 }
 
-function formatSummarySection(result: JestResult, options: AgentOptions): Array<string> {
-	const lines: Array<string> = [
-		formatTestFilesLine(countFileBuckets(result), PLAIN_STYLES),
-		formatTestsLine(countTestBuckets(result), PLAIN_STYLES),
-	];
-
-	if (options.typeErrorCount !== undefined) {
-		lines.push(formatTypeErrorsLine(options.typeErrorCount, PLAIN_STYLES));
-	}
-
-	return lines;
-}
-
-function formatFileHeaderExecError(
-	file: JestResult["testResults"][number],
-	options: AgentOptions,
-): Array<string> {
-	const relativePath = resolveDisplayPath(file.testFilePath, options);
-
-	return [` ❯ ${relativePath} (suite ${execErrorReason(file)})`];
-}
-
 function formatFileHeaderFailures(
 	file: JestResult["testResults"][number],
 	options: AgentOptions,
 ): Array<string> {
-	const lines: Array<string> = [];
 	const relativePath = resolveDisplayPath(file.testFilePath, options);
 	const totalTests = file.numFailingTests + file.numPassingTests + file.numPendingTests;
-	const testWord = totalTests === 1 ? "test" : "tests";
-
-	lines.push(` ❯ ${relativePath} (${totalTests} ${testWord} | ${file.numFailingTests} failed)`);
+	const lines = [
+		` ❯ ${relativePath} (${totalTests} ${plural(totalTests, "test")} | ${file.numFailingTests} failed)`,
+	];
 
 	for (const test of file.testResults) {
 		if (test.status !== "failed") {
@@ -200,78 +148,15 @@ function formatFileHeaderFailures(
 }
 
 function formatFileHeaders(result: JestResult, options: AgentOptions): Array<string> {
-	const lines: Array<string> = [];
-
-	for (const file of result.testResults) {
+	return result.testResults.flatMap((file) => {
 		if (hasExecError(file)) {
-			lines.push(...formatFileHeaderExecError(file, options));
-			continue;
+			return [
+				` ❯ ${resolveDisplayPath(file.testFilePath, options)} (suite ${execErrorReason(file)})`,
+			];
 		}
 
-		if (file.numFailingTests === 0) {
-			continue;
-		}
-
-		lines.push(...formatFileHeaderFailures(file, options));
-	}
-
-	return lines;
-}
-
-function formatExecError(file: ExecErrorTestFileResult, options: AgentOptions): Array<string> {
-	const lines: Array<string> = [];
-	const relativePath = resolveDisplayPath(file.testFilePath, options);
-
-	const errorMessage = cleanExecErrorMessage(file.failureMessage);
-
-	lines.push(` ${file.timedOut === true ? "TIMEOUT" : "FAIL"} ${relativePath}`, errorMessage);
-
-	const hint = getExecErrorHint(errorMessage);
-	if (hint !== undefined) {
-		lines.push(`Hint: ${hint}`);
-	}
-
-	lines.push("");
-	return lines;
-}
-
-function formatSize(bytes: number): string {
-	if (bytes < 1024) {
-		return `${bytes}b`;
-	}
-
-	const kb = Math.round(bytes / 1024);
-	return `${kb}kb`;
-}
-
-function formatAgentLogHints(options: AgentOptions): string {
-	const lines: Array<string> = [];
-
-	if (options.outputFile !== undefined) {
-		const size =
-			options.outputFileSize !== undefined ? ` (${formatSize(options.outputFileSize)})` : "";
-		lines.push(`View ${options.outputFile} for full Jest output${size}`);
-	}
-
-	if (options.gameOutput !== undefined) {
-		const size =
-			options.gameOutputSize !== undefined ? ` (${formatSize(options.gameOutputSize)})` : "";
-		lines.push(`View ${options.gameOutput} for Roblox game logs${size}`);
-	}
-
-	return lines.join("\n");
-}
-
-function formatAgentProjectHeader({
-	displayName,
-	options,
-	result,
-}: AgentProjectEntry & { options: AgentOptions }): Array<string> {
-	const fileParts = formatSummaryParts(countFileBuckets(result), PLAIN_STYLES);
-	return [
-		`▶ ${displayName}  ${fileParts.join(" | ")} (${result.numTotalTests} tests)`,
-		...formatFileHeaders(result, options),
-	];
+		return file.numFailingTests !== 0 ? formatFileHeaderFailures(file, options) : [];
+	});
 }
 
 function addCounts(running: SummaryCounts, next: SummaryCounts): void {
@@ -280,9 +165,8 @@ function addCounts(running: SummaryCounts, next: SummaryCounts): void {
 	running.skipped += next.skipped;
 }
 
-function collectMultiProjectStats(projects: Array<AgentProjectEntry>): AgentProjectStats {
-	const stats: AgentProjectStats = {
-		allExecErrors: [],
+function collectStats(projects: Array<{ result: JestResult }>): AgentRunStats {
+	const stats: AgentRunStats = {
 		files: { failed: 0, passed: 0, skipped: 0 },
 		tests: { counts: { failed: 0, passed: 0, skipped: 0 }, total: 0 },
 	};
@@ -292,55 +176,69 @@ function collectMultiProjectStats(projects: Array<AgentProjectEntry>): AgentProj
 		addCounts(stats.files, countFileBuckets(result));
 		addCounts(stats.tests.counts, tests.counts);
 		stats.tests.total += tests.total;
-		stats.allExecErrors.push(...result.testResults.filter(hasExecError));
 	}
 
 	return stats;
 }
 
-function formatMultiProjectFailures({
-	options,
-	projects,
-	stats,
-}: {
-	options: ResolvedAgentOptions;
-	projects: Array<AgentProjectEntry>;
-	stats: AgentProjectStats;
-}): Array<string> {
-	const totalFailures = stats.tests.counts.failed + stats.allExecErrors.length;
-	const lines: Array<string> = [
-		"",
-		`${"⎯".repeat(3)} Failed Tests ${totalFailures} ${"⎯".repeat(3)}`,
-		"",
+function formatExecError(file: ExecErrorTestFileResult, options: AgentOptions): Array<string> {
+	const block = describeExecError(file);
+	const lines = [
+		` ${block.badge} ${resolveDisplayPath(file.testFilePath, options)}`,
+		block.message,
 	];
 
-	for (const { result, rootDir } of projects) {
-		lines.push(
-			...formatFailures({
-				options: withPackageRoot(options, rootDir),
-				result,
-				totalFailures,
-			}),
-		);
+	if (block.hint !== undefined) {
+		lines.push(`Hint: ${block.hint}`);
 	}
 
-	for (const { result, rootDir } of projects) {
-		for (const file of result.testResults) {
-			if (hasExecError(file)) {
-				lines.push(...formatExecError(file, withPackageRoot(options, rootDir)));
-			}
-		}
-	}
-
-	const hints = formatAgentLogHints(options);
-	if (hints !== "") {
-		lines.push(hints);
-	}
-
+	lines.push("");
 	return lines;
 }
 
-function formatMultiProjectSummary(stats: AgentProjectStats, options: AgentOptions): Array<string> {
+function collectFailures(
+	projects: Array<{ result: JestResult; rootDir?: string | undefined }>,
+	options: ResolvedAgentOptions,
+): { execErrors: Array<string>; failures: Array<AgentFailure>; totalFailures: number } {
+	const failures: Array<AgentFailure> = [];
+	const execErrors: Array<string> = [];
+	let totalFailures = 0;
+
+	for (const { result, rootDir } of projects) {
+		const projectOptions = withPackageRoot(options, rootDir);
+		totalFailures += result.numFailedTests;
+
+		const thrown = result.testResults.filter(hasExecError);
+		totalFailures += thrown.length;
+		execErrors.push(...thrown.flatMap((file) => formatExecError(file, projectOptions)));
+
+		failures.push(...collectAgentFailures(result, projectOptions));
+	}
+
+	return { execErrors, failures, totalFailures };
+}
+
+function formatFailureSection(
+	projects: Array<{ result: JestResult; rootDir?: string | undefined }>,
+	options: ResolvedAgentOptions,
+): Array<string> {
+	const { execErrors, failures, totalFailures } = collectFailures(projects, options);
+
+	if (totalFailures === 0) {
+		return [];
+	}
+
+	return [
+		"",
+		formatFailedTestsHeader(totalFailures, { rule: 3, styles: PLAIN_STYLES }),
+		"",
+		...formatFailures({ failures, maxFailures: options.maxFailures, totalFailures }),
+		...execErrors,
+		...formatLogHintLines(options),
+	];
+}
+
+function formatSummaryRows(stats: AgentRunStats, options: AgentOptions): Array<string> {
 	const lines: Array<string> = [
 		formatTestFilesLine(stats.files, PLAIN_STYLES),
 		...(options.affected === undefined
@@ -358,4 +256,15 @@ function formatMultiProjectSummary(stats: AgentProjectStats, options: AgentOptio
 	}
 
 	return lines;
+}
+
+function formatAgentProjectHeader(
+	{ displayName, result }: AgentProjectEntry,
+	options: AgentOptions,
+): Array<string> {
+	const fileParts = formatSummaryParts(countFileBuckets(result), PLAIN_STYLES);
+	return [
+		`▶ ${displayName}  ${fileParts.join(" | ")} (${result.numTotalTests} tests)`,
+		...formatFileHeaders(result, options),
+	];
 }

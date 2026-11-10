@@ -1,7 +1,6 @@
 import * as path from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { rojoOnPath } from "#test/e2e/cli/helpers.ts";
 import type { WorkspacePackage } from "#test/e2e/cli/workspace-place.ts";
 import { synthesizeWorkspaceAsync } from "#test/e2e/cli/workspace-place.ts";
 import {
@@ -10,6 +9,7 @@ import {
 	nodesBuiltFrom,
 	readSourcemap,
 } from "#test/e2e/workspace/sourcemap.ts";
+import { rojoOnPath } from "#test/harness/helpers.ts";
 
 /** One file, mounted from every package in a workspace run. */
 const SHARED_STUB = { Config: { $path: "../../shared-config.luau" } };

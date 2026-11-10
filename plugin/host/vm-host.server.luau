@@ -23,7 +23,7 @@ local RunService = game:GetService("RunService")
 -- whole slice. Anything that throws before it — a missing results channel, an
 -- unloadable planner — leaves the host un-ready, and the coordinator runs
 -- without it rather than waiting on a host that will never answer.
-local READY_ATTRIBUTE = "JestRobloxVmHostReady"
+local READY_ATTRIBUTE = require(script.Parent.shared.protocol).studio.vmHostReadyAttribute
 
 local actor = script:GetActor()
 if actor == nil or not RunService:IsRunning() then
@@ -50,13 +50,13 @@ local function report(configIndex: number, entry: any): ()
 end
 
 --[[
-	Report every config in this slice as an ExecutionError. Failure is isolated
+	Report every config in this slice as a failure. Failure is isolated
 	to the slice: the other hosts' entries still come back normally, and the
 	coordinator drops these into their requested positions.
 ]]
 local function reportSliceFailure(indices: { number }, message: string): ()
 	for _, configIndex in indices do
-		report(configIndex, VmParallel.executionErrorEntry({ encode = encode, message = message }))
+		report(configIndex, VmParallel.failureEntry({ encode = encode, message = message }))
 	end
 end
 
@@ -105,7 +105,7 @@ local function runSlice(payload: any): ()
 		if entry == nil then
 			report(
 				configIndex,
-				VmParallel.executionErrorEntry({
+				VmParallel.failureEntry({
 					encode = encode,
 					message = "VM host produced no entry for this project",
 				})

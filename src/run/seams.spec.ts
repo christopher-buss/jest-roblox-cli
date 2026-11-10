@@ -12,8 +12,8 @@ describe(nodeRunSeams, () => {
 		expect(seams.childProcess).toStrictEqual(
 			expect.objectContaining({ execFile, execFileSync, spawn }),
 		);
-		expect(seams.resolveBackend).toHaveProperty("name", "resolveBackendAsync");
-		expect(seams.runProjects).toHaveProperty("name", "runProjectsAsync");
+		expect(seams.openBackend).toHaveProperty("name", "openBackend");
+		expect(seams.runProjects).toHaveProperty("name", "executeJobsAsync");
 		expect(Object.values(seams).every((member) => member !== undefined)).toBeTrue();
 	});
 });

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
 	dropDriveLetter,
 	isAbsolutePath,
+	isWithinRoot,
 	normalizeWindowsPath,
 	relativeToRoot,
 	toPosixRoot,
@@ -216,5 +217,18 @@ describe(relativeToRoot, () => {
 		// a file inside it.
 		expect(relativeToRoot(toPosixRoot("out"), "out-tsc/player.luau")).toBeUndefined();
 		expect(relativeToRoot(toPosixRoot("out"), "out")).toBeUndefined();
+	});
+});
+
+describe(isWithinRoot, () => {
+	it.for<[string, boolean]>([
+		["out", true],
+		["out/shared/a.luau", true],
+		["out-tsc", false],
+		["other/out", false],
+	])("should place %s inside out: %s", ([target, expected]) => {
+		expect.assertions(1);
+
+		expect(isWithinRoot(target, "out")).toBe(expected);
 	});
 });

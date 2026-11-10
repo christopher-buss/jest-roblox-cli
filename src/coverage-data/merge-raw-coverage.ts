@@ -1,0 +1,74 @@
+import type { RawCoverageData, RawFileCoverage } from "./coverage-types.ts";
+
+/**
+ * Sums two raw coverage datasets.
+ * @param target - Base dataset; not mutated.
+ * @param source - Dataset added on top.
+ * @returns The merged dataset, or `target` when `source` is absent.
+ */
+export function mergeRawCoverage(
+	target: RawCoverageData | undefined,
+	source: RawCoverageData | undefined,
+): RawCoverageData | undefined {
+	if (source === undefined) {
+		return target;
+	}
+
+	const result = { ...target } satisfies RawCoverageData;
+	for (const [filePath, fileCoverage] of Object.entries(source)) {
+		const existing = result[filePath];
+		result[filePath] =
+			existing === undefined
+				? { ...fileCoverage }
+				: mergeFileCoverage(existing, fileCoverage);
+	}
+
+	return result;
+}
+
+function sumScalars(a: RawFileCoverage["s"], b: RawFileCoverage["s"]): RawFileCoverage["s"] {
+	const result = { ...a };
+	for (const [key, value] of Object.entries(b)) {
+		result[key] = (result[key] ?? 0) + value;
+	}
+
+	return result;
+}
+
+function sumBranches(
+	a: NonNullable<RawFileCoverage["b"]>,
+	b: NonNullable<RawFileCoverage["b"]>,
+): NonNullable<RawFileCoverage["b"]> {
+	const result = { ...a };
+	for (const [key, bArms] of Object.entries(b)) {
+		const aArms = result[key];
+		if (aArms === undefined) {
+			result[key] = [...bArms];
+			continue;
+		}
+
+		const length = Math.max(aArms.length, bArms.length);
+		result[key] = Array.from(
+			{ length },
+			(_, index) => (aArms[index] ?? 0) + (bArms[index] ?? 0),
+		);
+	}
+
+	return result;
+}
+
+function mergeFileCoverage(a: RawFileCoverage, b: RawFileCoverage): RawFileCoverage {
+	const merged: RawFileCoverage = {
+		s: sumScalars(a.s, b.s),
+	};
+
+	if (a.f !== undefined || b.f !== undefined) {
+		merged.f = sumScalars(a.f ?? {}, b.f ?? {});
+	}
+
+	if (a.b !== undefined || b.b !== undefined) {
+		merged.b = sumBranches(a.b ?? {}, b.b ?? {});
+	}
+
+	return merged;
+}

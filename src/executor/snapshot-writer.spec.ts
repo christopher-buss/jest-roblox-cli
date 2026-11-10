@@ -7,15 +7,16 @@ import { describe, expect, it, vi } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
-import type { ResolvedConfig } from "../config/schema.ts";
+import type { ResolvedConfig } from "../config/resolved-config.ts";
 import type { FileSystem } from "../utils/file-system.ts";
-import { resolveRojoProjectFile, writeSnapshots } from "./snapshot-writer.ts";
+import { writeSnapshots } from "./snapshot-writer.ts";
 
 const ROOT = path.resolve("/repo");
 
 function config(overrides: Partial<ResolvedConfig> = {}): ResolvedConfig {
 	return fromAny<ResolvedConfig, unknown>({
 		...createResolvedConfig(),
+		rojoProject: path.join(ROOT, "default.project.json"),
 		rootDir: ROOT,
 		silent: true,
 		...overrides,
@@ -33,47 +34,6 @@ function seedProject(fileSystem: FileSystem, fileName = "default.project.json"):
 	);
 }
 
-describe(resolveRojoProjectFile, () => {
-	it("should prefer default.project.json over other project files", () => {
-		expect.assertions(1);
-
-		const { fileSystem } = createMemoryFileSystem();
-
-		seedProject(fileSystem, "custom.project.json");
-
-		seedProject(fileSystem);
-
-		expect(resolveRojoProjectFile(config(), fileSystem)).toBe(
-			path.join(ROOT, "default.project.json"),
-		);
-	});
-
-	it("should find an alternate project file but reject similar suffixes", () => {
-		expect.assertions(1);
-
-		const { fileSystem } = createMemoryFileSystem();
-
-		fileSystem.mkdirSync(ROOT, { recursive: true });
-
-		fileSystem.writeFileSync(path.join(ROOT, "ignored.project.json.bak"), "{}");
-		seedProject(fileSystem, "custom.project.json");
-
-		expect(resolveRojoProjectFile(config(), fileSystem)).toBe(
-			path.join(ROOT, "custom.project.json"),
-		);
-	});
-
-	it("should return undefined when no project file exists", () => {
-		expect.assertions(1);
-
-		const { fileSystem } = createMemoryFileSystem();
-
-		fileSystem.mkdirSync(ROOT, { recursive: true });
-
-		expect(resolveRojoProjectFile(config(), fileSystem)).toBeUndefined();
-	});
-});
-
 describe(writeSnapshots, () => {
 	it("should write a mapped snapshot to both source and output directories", () => {
 		expect.assertions(3);
@@ -89,7 +49,7 @@ describe(writeSnapshots, () => {
 			tsconfigMappings: [{ outDir: "out", rootDir: "src" }],
 		});
 
-		expect(counts).toStrictEqual({ attempted: 1, failed: 0, written: 1 });
+		expect(counts).toBe(0);
 
 		expect(
 			fileSystem.readFileSync(path.join(ROOT, "src/shared/Button.spec.snap.luau"), "utf-8"),
@@ -118,7 +78,7 @@ describe(writeSnapshots, () => {
 			tsconfigMappings: [],
 		});
 
-		expect(counts).toStrictEqual({ attempted: 2, failed: 1, written: 1 });
+		expect(counts).toBe(1);
 		expect(stderr).toHaveBeenCalledWith("Wrote 1 of 2 snapshot files\n");
 	});
 
@@ -164,12 +124,12 @@ describe(writeSnapshots, () => {
 
 		expect(
 			writeSnapshots({
-				config: config({ rojoProject: "missing.project.json" }),
+				config: config({ rojoProject: path.join(ROOT, "missing.project.json") }),
 				fileSystem,
 				snapshotWrites: { "ReplicatedStorage/one.snap.luau": "one" },
 				tsconfigMappings: [],
 			}),
-		).toStrictEqual({ attempted: 1, failed: 1, written: 0 });
+		).toBe(1);
 		expect(stderr).toHaveBeenCalledWith(
 			"Warning: Cannot write snapshots - no rojo project found\n",
 		);
@@ -191,7 +151,7 @@ describe(writeSnapshots, () => {
 				snapshotWrites: { "Workspace/missing.snap.luau": "missing" },
 				tsconfigMappings: [],
 			}),
-		).toStrictEqual({ attempted: 1, failed: 1, written: 0 });
+		).toBe(1);
 		expect(stderr).not.toHaveBeenCalledWith(expect.stringMatching(/^Wrote /));
 	});
 
@@ -213,7 +173,7 @@ describe(writeSnapshots, () => {
 				snapshotWrites: { "ReplicatedStorage/one.snap.luau": "one" },
 				tsconfigMappings: [],
 			}),
-		).toStrictEqual({ attempted: 1, failed: 1, written: 0 });
+		).toBe(1);
 
 		const warning = String(stderr.mock.calls[0]![0]);
 
@@ -239,7 +199,7 @@ describe(writeSnapshots, () => {
 				snapshotWrites: { "ReplicatedStorage/one.snap.luau": "one" },
 				tsconfigMappings: [],
 			}),
-		).toStrictEqual({ attempted: 1, failed: 1, written: 0 });
+		).toBe(1);
 		expect(stderr).toHaveBeenCalledWith(
 			"Warning: Failed to write snapshot ReplicatedStorage/one.snap.luau: Error: disk full\n",
 		);

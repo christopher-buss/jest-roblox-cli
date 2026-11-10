@@ -3,17 +3,18 @@ import { describe, expect, it } from "vitest";
 import {
 	fillPlaceholders,
 	readHarness,
-	readLuauModule,
+	readLuauTree,
 	spawnHarness,
+	stubbedModules,
 } from "#test/luau/lute-harness.ts";
-import { LUTE_HARNESS_TIMEOUT } from "#test/luau/lute-timeout.ts";
 
 // Drives the workspace return-envelope budget under lute. Pure module, no
 // dependencies to inline. Requires `lute` on PATH (mise, in dev and CI).
-const MODULE_SOURCE = readLuauModule("staging/result-budget.luau");
 const HARNESS = readHarness("result-budget");
+const STUBBED = stubbedModules(HARNESS);
+const MODULE_SOURCE = readLuauTree("staging/result-budget.luau", STUBBED);
 
-describe("workspace result budget under lute", { timeout: LUTE_HARNESS_TIMEOUT }, () => {
+describe("workspace result budget under lute", () => {
 	it("should pass the result-budget harness assertions", () => {
 		expect.assertions(1);
 

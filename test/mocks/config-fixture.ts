@@ -3,8 +3,8 @@ import { fromAny } from "@total-typescript/shoehorn";
 import type { LoadConfigOptions } from "c12";
 import * as path from "node:path";
 
+import type { Config } from "#src/config/config-types.ts";
 import type { ConfigLoader } from "#src/config/loader.ts";
-import type { Config } from "#src/config/schema.ts";
 import type { MemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 

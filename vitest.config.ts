@@ -2,24 +2,13 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import type { TestProjectInlineConfiguration } from "vitest/config";
-import { defaultExclude, defineConfig } from "vitest/config";
+import { configDefaults, defaultExclude, defineConfig } from "vitest/config";
 
 import { QuotaSkipReporter } from "#test/setup/quota-skip-reporter.ts";
 import { virtualModulesPlugin } from "./loaders/virtual-modules.mjs";
 import { nodeFileSystem } from "./src/utils/file-system.ts";
+import { normalizeWindowsPath } from "./src/utils/normalize-windows-path.ts";
 import { unitProject as sharedUnitProject } from "./vitest.shared.ts";
-
-const DRIVE_LETTER_START_REGEX = /^[A-Za-z]:\//;
-
-function normalizeWindowsPath(input = ""): string {
-	if (!input) {
-		return input;
-	}
-
-	return input
-		.replace(/\\/g, "/")
-		.replace(DRIVE_LETTER_START_REGEX, (driveLetterMatch) => driveLetterMatch.toUpperCase());
-}
 
 const luauPlugin = {
 	name: "luau-raw",
@@ -39,6 +28,13 @@ const luauPlugin = {
 
 const setupFiles = ["./test/setup/enable-colors.ts", "./test/setup/jest-extended.ts"];
 
+const projectTestDefaults = {
+	clearMocks: true,
+	restoreMocks: true,
+	setupFiles,
+	unstubEnvs: true,
+};
+
 /**
  * The one boundary that decides which project an e2e spec joins. Specs under
  * here reach real Open Cloud and run in `live`; every other spec under
@@ -48,8 +44,8 @@ const setupFiles = ["./test/setup/enable-colors.ts", "./test/setup/jest-extended
 const LIVE_DIRECTORY = "test/e2e/live";
 
 /**
- * The fixture sandbox root (see `test/e2e/sandbox-root.ts`) holds copies of
- * Roblox fixtures, spec files included, and an interrupted run leaves one
+ * The fixture sandbox root (see `test/harness/sandbox-root.ts`) holds copies
+ * of Roblox fixtures, spec files included, and an interrupted run leaves one
  * behind. Every project that can glob into it subtracts it.
  *
  * Two patterns, because they do different jobs: the deep form is what stops a
@@ -153,8 +149,8 @@ function sourceAliases(packageName: string) {
 
 const workspaceSourceAliases = [
 	{
-		find: "@isentinel/jest-roblox/artifacts",
-		replacement: resolve(import.meta.dirname, "src/index.ts"),
+		find: "@isentinel/jest-roblox/api",
+		replacement: resolve(import.meta.dirname, "src/api.ts"),
 	},
 	...sourceAliases("@isentinel/luau-ast"),
 	...sourceAliases("@isentinel/rojo-utils"),
@@ -206,6 +202,7 @@ export const sharedViteOptions = {
 /** The coverage-measured suite, which `vitest.stryker.config.ts` also runs. */
 export const unitProject = {
 	test: {
+		...projectTestDefaults,
 		name: "unit",
 		// `test/bench/*.bench.ts` benchmarks belong to this project. Scope
 		// them to this project so the e2e/live projects — the latter
@@ -216,7 +213,6 @@ export const unitProject = {
 		benchmark: {
 			include: ["test/bench/**/*.bench.ts"],
 		},
-		clearMocks: true,
 		deps: sharedUnitProject.test.deps,
 		env: {
 			GITHUB_ACTIONS: "",
@@ -229,8 +225,6 @@ export const unitProject = {
 			// (no coverage) — see the JITI_ALIAS note above.
 			"test/integration/**",
 			"test/luau/**",
-			"./src/cli.ts",
-			"**/*.luau",
 		],
 		include: [
 			"src/**/*.spec.ts",
@@ -241,9 +235,9 @@ export const unitProject = {
 		// Vitest clears the mock registry and the module cache between files
 		// only when `isolate` is true.
 		isolate: false,
-		restoreMocks: true,
-		setupFiles,
-		unstubEnvs: true,
+		provide: {
+			installedFixtureRoot: resolve(import.meta.dirname, "test/e2e/fixtures/live-place"),
+		},
 	},
 } satisfies TestProjectInlineConfiguration;
 
@@ -274,6 +268,15 @@ export default defineConfig({
 				statements: 100,
 			},
 		},
+		forceRerunTriggers: [
+			...configDefaults.forceRerunTriggers,
+			"**/fixtures/**",
+			"**/__fixtures__/**",
+			"**/pnpm-lock.yaml",
+			"**/test/setup/**",
+			"**/tsconfig*.json",
+			"**/vitest.shared.ts",
+		],
 		projects: [
 			{
 				...unitProject,
@@ -281,13 +284,12 @@ export default defineConfig({
 			},
 			{
 				test: {
+					...projectTestDefaults,
 					name: "type",
 					benchmark: {
 						include: [],
 					},
-					clearMocks: true,
 					include: [],
-					restoreMocks: true,
 					// Resolves `tsconfig.spec.json`'s reference to
 					// `tsconfig.lib.json` by building it; `--noEmit -p` reads
 					// the reference's emitted declarations and fails TS6305.
@@ -299,17 +301,16 @@ export default defineConfig({
 						only: true,
 						tsconfig: "./tsconfig.spec.json",
 					},
-					unstubEnvs: true,
 				},
 			},
 			{
 				test: {
+					...projectTestDefaults,
 					name: "integration",
 					// Benchmarks belong to the unit project only.
 					benchmark: {
 						include: [],
 					},
-					clearMocks: true,
 					// Resolve the package's own fixture imports to source
 					// so this project runs build-free (no `dist`). See the
 					// JITI_ALIAS note above for why these tests are
@@ -319,36 +320,33 @@ export default defineConfig({
 						JITI_ALIAS: JITI_SOURCE_ALIAS,
 					},
 					include: ["test/integration/**/*.spec.ts"],
-					restoreMocks: true,
-					setupFiles,
 					// Fixture-sandbox pipelines and specs that spawn a real
 					// tsgo cross the 5s default under parallel hook load.
 					testTimeout: 15_000,
-					unstubEnvs: true,
 				},
 			},
 			{
 				test: {
+					...projectTestDefaults,
 					name: "luau",
 					benchmark: {
 						include: [],
 					},
-					clearMocks: true,
 					include: ["test/luau/**/*.spec.ts"],
-					restoreMocks: true,
-					setupFiles,
-					unstubEnvs: true,
+					// Each spec blocks on a synchronous Luau runtime spawn,
+					// whose wall time tracks machine load, not harness work.
+					testTimeout: 30_000,
 				},
 			},
 			{
 				test: {
+					...projectTestDefaults,
 					name: "e2e",
 					// Benchmarks belong to the unit project only, so leave
 					// `e2e (bench)` with nothing to collect.
 					benchmark: {
 						include: [],
 					},
-					clearMocks: true,
 					// A live-gated spec misfiled outside `LIVE_DIRECTORY` would
 					// otherwise reach the real wire from here, because CI
 					// exports the flag and the credentials for the whole `nx
@@ -381,8 +379,6 @@ export default defineConfig({
 					// which reads as a failure in a test that already passed.
 					hookTimeout: 30_000,
 					include: ["test/e2e/**/*.spec.ts"],
-					restoreMocks: true,
-					setupFiles,
 					// The `--typecheckOnly` specs spawn a real tsgo build, which
 					// is the slowest thing in this project by a wide margin and
 					// scales with how many other files are running. Measured at
@@ -393,11 +389,11 @@ export default defineConfig({
 					// failures. Same reason the integration project sits above
 					// the default.
 					testTimeout: 60_000,
-					unstubEnvs: true,
 				},
 			},
 			{
 				test: {
+					...projectTestDefaults,
 					name: "live",
 					// Benchmarks belong to the unit project only. This leaves
 					// `live (bench)` empty but still derived, so the `bench`
@@ -405,7 +401,6 @@ export default defineConfig({
 					benchmark: {
 						include: [],
 					},
-					clearMocks: true,
 					// Concurrent live runs must not collide, whether they are
 					// files here or other checkouts on the same place: version
 					// identity guards execution, streaming keys are per-run
@@ -416,14 +411,11 @@ export default defineConfig({
 					// nowhere else; the `e2e` project globs the complement.
 					include: [`${LIVE_DIRECTORY}/**/*.spec.ts`],
 					pool: "forks",
-					restoreMocks: true,
 					// Exercise recovery without retrying failed assertions.
 					retry: 0,
-					setupFiles,
 					// Generous budget: a heavily-throttled upload can wait
 					// through several ~7s retry-after delays before landing.
 					testTimeout: 120_000,
-					unstubEnvs: true,
 				},
 			},
 		],

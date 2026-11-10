@@ -2,9 +2,10 @@
 local json = require("@std/json")
 local process = require("@std/process")
 
--- Must match the sentinels in src/config/luau-config-lute.ts.
-local VALUE_SENTINEL = "<<jest-roblox:luau-config-value>>"
-local ERROR_SENTINEL = "<<jest-roblox:luau-config-error>>"
+-- src/config/luau-config-lute.ts fills the placeholders below when it
+-- writes this file.
+local VALUE_SENTINEL = "__VALUE_SENTINEL__"
+local ERROR_SENTINEL = "__ERROR_SENTINEL__"
 
 type Unserializable = { path: string, type: string }
 
@@ -87,7 +88,7 @@ local function report(payload: string)
 end
 
 local ok, config = pcall(function()
-	local loaded = require("@luau-config-directory/" .. process.args[#process.args])
+	local loaded = require("@__CONFIG_DIRECTORY_ALIAS__/" .. process.args[#process.args])
 	if type(loaded) == "function" then
 		return loaded()
 	end

@@ -3,13 +3,7 @@ import * as path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
-import {
-	describeCodeBundle,
-	describePlaceFile,
-	describeProjectCount,
-	LAST_STAGE,
-	STAGE_IDS,
-} from "./stages.ts";
+import { describePlaceFile, describeProjectCount, LAST_STAGE, STAGE_IDS } from "./stages.ts";
 
 describe("the stage the block settles on", () => {
 	it("should be the last stage a run passes through", () => {
@@ -18,6 +12,26 @@ describe("the stage the block settles on", () => {
 		// The block settles here, so a stage listed after it would open onto a
 		// terminal the reporter has already handed back and render nothing.
 		expect(STAGE_IDS.at(-1)).toBe(LAST_STAGE);
+	});
+});
+
+describe(describeProjectCount, () => {
+	it("should say a lone project in the singular", () => {
+		expect.assertions(1);
+
+		expect(describeProjectCount(1)).toBe("1 project");
+	});
+
+	it("should count several projects in the plural", () => {
+		expect.assertions(1);
+
+		expect(describeProjectCount(42)).toBe("42 projects");
+	});
+
+	it("should count no projects in the plural", () => {
+		expect.assertions(1);
+
+		expect(describeProjectCount(0)).toBe("0 projects");
 	});
 });
 
@@ -68,41 +82,5 @@ describe(describePlaceFile, () => {
 		const { fileSystem } = createMemoryFileSystem();
 
 		expect(describePlaceFile(path.resolve("no-such-place.rbxl"), fileSystem)).toBeUndefined();
-	});
-});
-
-describe(describeCodeBundle, () => {
-	it("should report the bundle's size and file count", () => {
-		expect.assertions(1);
-
-		expect(describeCodeBundle({ byteLength: 13_002_342, fileCount: 2548 })).toBe(
-			"12.4 MB, 2548 files",
-		);
-	});
-
-	it("should count a lone file in the singular", () => {
-		expect.assertions(1);
-
-		expect(describeCodeBundle({ byteLength: 512, fileCount: 1 })).toBe("512 B, 1 file");
-	});
-});
-
-describe(describeProjectCount, () => {
-	it("should say a lone project in the singular", () => {
-		expect.assertions(1);
-
-		expect(describeProjectCount(1)).toBe("1 project");
-	});
-
-	it("should count several projects in the plural", () => {
-		expect.assertions(1);
-
-		expect(describeProjectCount(42)).toBe("42 projects");
-	});
-
-	it("should count no projects in the plural", () => {
-		expect.assertions(1);
-
-		expect(describeProjectCount(0)).toBe("0 projects");
 	});
 });

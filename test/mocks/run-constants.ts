@@ -1,6 +1,6 @@
 import * as path from "node:path";
 
-export const MANIFEST_VERSION = 5 as const;
+export const MANIFEST_VERSION = 6 as const;
 
 export const STUB_FILENAME = "jest.config.luau";
 

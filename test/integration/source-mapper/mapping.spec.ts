@@ -1,7 +1,7 @@
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { createFixtureSandbox, createRbxtsFixtureSandbox } from "#test/e2e/cli/helpers.ts";
+import { createFixtureSandbox, createRbxtsFixtureSandbox } from "#test/harness/helpers.ts";
 import { buildProjectSourceMapperAsync } from "#test/integration/source-mapper/project-source-mapper.ts";
 
 const RBXTS_FIXTURE = path.resolve(__dirname, "../../e2e/fixtures/rbxts-project");

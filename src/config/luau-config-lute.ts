@@ -19,8 +19,6 @@ import { ensureLuauConfigTypes } from "./luau-config-type.ts";
 // .standalone/sync.sh.
 const [DEFAULT_BINARY, RUN_SUBCOMMAND] = ["lute", "run"] as const;
 const BINARY_VARIABLE = "JEST_ROBLOX_LUTE_PATH";
-// luau/luau-config-bootstrap.luau requires through this alias and prints these
-// sentinels at the start of a line.
 const CONFIG_DIRECTORY_ALIAS = "luau-config-directory";
 const VALUE_SENTINEL = "<<jest-roblox:luau-config-value>>";
 const ERROR_SENTINEL = "<<jest-roblox:luau-config-error>>";
@@ -119,6 +117,13 @@ export async function evaluateLuauConfigWithLute(
 	}
 }
 
+function renderBootstrap(): string {
+	return bootstrapSource
+		.replaceAll("__CONFIG_DIRECTORY_ALIAS__", () => CONFIG_DIRECTORY_ALIAS)
+		.replaceAll("__ERROR_SENTINEL__", () => ERROR_SENTINEL)
+		.replaceAll("__VALUE_SENTINEL__", () => VALUE_SENTINEL);
+}
+
 function writeBootstrap({
 	configFile,
 	directory,
@@ -129,7 +134,7 @@ function writeBootstrap({
 	readonly fileSystem: FileSystem;
 }): string {
 	const bootstrapFile = path.join(directory, "bootstrap.luau");
-	fileSystem.writeFileSync(bootstrapFile, bootstrapSource);
+	fileSystem.writeFileSync(bootstrapFile, renderBootstrap());
 	const configDirectory = path.dirname(configFile).replaceAll(path.win32.sep, "/");
 	fileSystem.writeFileSync(
 		path.join(directory, ".luaurc"),

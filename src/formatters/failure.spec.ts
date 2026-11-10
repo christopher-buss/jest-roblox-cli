@@ -1,16 +1,14 @@
 import { fromPartial } from "@total-typescript/shoehorn";
 
 import * as path from "node:path";
-import { stripVTControlCharacters } from "node:util";
-import color from "tinyrainbow";
 import { describe, expect, it, vi } from "vitest";
 
 import { createPlainStyles } from "#test/mocks/format-plain-styles.ts";
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import type { SourceMapper } from "../source-mapper/index.ts";
+import type { ColorFunc, Styles } from "../terminal/palette.ts";
 import type { TestCaseResult, TestFileResult } from "../types/jest-result-types.ts";
 import { formatExecErrorDetail, formatFailure, formatFileFailures } from "./failure.ts";
-import type { ColorFunc, Styles } from "./styles.ts";
 
 function tagged(label: string): ColorFunc {
 	return (text) => `<${label}>${text}</${label}>`;
@@ -19,6 +17,7 @@ function tagged(label: string): ColorFunc {
 function createTaggedStyles(): Styles {
 	return {
 		...createPlainStyles(),
+		bold: tagged("bold"),
 		diff: { expected: tagged("expected"), received: tagged("received") },
 		dim: tagged("dim"),
 		failBadge: tagged("badge"),
@@ -37,19 +36,18 @@ function makeSourceFile(content: string) {
 }
 
 describe(formatFailure, () => {
-	it("should enable color and omit the file segment by default", () => {
-		expect.assertions(3);
+	it("should paint the Error: prefix bold and omit the file segment by default", () => {
+		expect.assertions(2);
 
 		const test = fromPartial<TestCaseResult>({
 			ancestorTitles: ["suite"],
 			failureMessages: ["Error: mismatch"],
 			title: "case",
 		});
-		const output = formatFailure({ test });
-		const plainOutput = formatFailure({ test, useColor: false });
+		const output = formatFailure({ styles: createTaggedStyles(), test });
+		const plainOutput = formatFailure({ styles: createPlainStyles(), test });
 
-		expect(output).toContain(color.bold("Error:"));
-		expect(output).toContain("suite > case");
+		expect(output).toContain("<fail><bold>Error:</bold> mismatch</fail>");
 		expect(plainOutput.split("\n", 2)[1]).toBe("   FAIL  suite > case");
 	});
 
@@ -78,7 +76,12 @@ describe(formatFailure, () => {
 			failureMessages: ["Error: mismatch"],
 			title: "case",
 		});
-		const output = formatFailure({ fileSystem, sourceMapper, test, useColor: false });
+		const output = formatFailure({
+			fileSystem,
+			sourceMapper,
+			styles: createPlainStyles(),
+			test,
+		});
 
 		expect(output).toContain("src/example.spec.ts:1");
 		expect(output).not.toContain("(Luau)");
@@ -94,7 +97,7 @@ describe(formatFailure, () => {
 				failureMessages: [failureMessage],
 				title: "case",
 			});
-			const output = formatFailure({ styles: createTaggedStyles(), test, useColor: false });
+			const output = formatFailure({ styles: createTaggedStyles(), test });
 
 			expect(output).not.toContain("- Expected");
 			expect(output).not.toContain("undefined");
@@ -110,7 +113,7 @@ describe(formatFailure, () => {
 			title: "case",
 		});
 
-		expect(formatFailure({ styles: createTaggedStyles(), test, useColor: false })).toContain(
+		expect(formatFailure({ styles: createTaggedStyles(), test })).toContain(
 			"<dim>  Object {</dim>",
 		);
 	});
@@ -125,13 +128,13 @@ describe(formatFailure, () => {
 			title: "case",
 		});
 
-		expect(formatFailure({ filePath, fileSystem, test, useColor: false })).not.toContain(
-			`❯ ${filePath}:1`,
-		);
+		expect(
+			formatFailure({ fileSystem, sourcePath: filePath, styles: createPlainStyles(), test }),
+		).not.toContain("❯");
 	});
 
 	it("should render expected/received and snapshot failures completely", () => {
-		expect.assertions(2);
+		expect.assertions(1);
 
 		const test = fromPartial<TestCaseResult>({
 			ancestorTitles: ["suite"],
@@ -149,19 +152,8 @@ describe(formatFailure, () => {
 				styles: createTaggedStyles(),
 				test,
 				totalFailures: 3,
-				useColor: false,
 			}),
 		).toMatchSnapshot("plain");
-		expect(
-			formatFailure({
-				failureIndex: 2,
-				filePath: "src/example.spec.ts",
-				styles: createTaggedStyles(),
-				test,
-				totalFailures: 3,
-				useColor: true,
-			}),
-		).toMatchSnapshot("colored");
 	});
 });
 
@@ -280,7 +272,11 @@ describe(formatFailure, () => {
 			title: "should have health",
 		};
 
-		const formatted = formatFailure({ filePath: "src/player.spec.ts", test });
+		const formatted = formatFailure({
+			filePath: "src/player.spec.ts",
+			styles: createPlainStyles(),
+			test,
+		});
 
 		expect(formatted).toContain("FAIL");
 		expect(formatted).toContain("src/player.spec.ts > Player > should have health");
@@ -301,7 +297,11 @@ describe(formatFailure, () => {
 			title: "should add",
 		};
 
-		const formatted = formatFailure({ filePath: "test.spec.ts", test });
+		const formatted = formatFailure({
+			filePath: "test.spec.ts",
+			styles: createPlainStyles(),
+			test,
+		});
 
 		expect(formatted).toContain("test.spec.ts > Math > Addition > should add");
 	});
@@ -332,8 +332,8 @@ describe(formatFailure, () => {
 
 		const formatted = formatFailure({
 			filePath: "src/traits.spec.ts",
+			styles: createPlainStyles(),
 			test,
-			useColor: false,
 		});
 
 		expect(formatted).toContain("- Snapshot  - 1");
@@ -396,7 +396,7 @@ describe(formatFailure, () => {
 			title: "Apex matches snapshot",
 		};
 
-		const formatted = formatFailure({ sourceMapper, test, useColor: false });
+		const formatted = formatFailure({ sourceMapper, styles: createPlainStyles(), test });
 
 		expect(formatted).toContain("❯ src/traits.spec.ts:29:16");
 		expect(formatted).toContain("- Snapshot  - 1");
@@ -431,8 +431,8 @@ describe(formatFailure, () => {
 		const formatted = formatFailure({
 			fileSystem,
 			sourceMapper,
+			styles: createPlainStyles(),
 			test,
-			useColor: false,
 		});
 
 		expect(formatted).toContain(`❯ ${luauFile}:5`);
@@ -452,7 +452,7 @@ describe(formatFailure, () => {
 			title: "test",
 		};
 
-		const formatted = formatFailure({ test });
+		const formatted = formatFailure({ styles: createPlainStyles(), test });
 
 		expect(formatted).toContain("Error 1");
 		expect(formatted).toContain("Error 2");
@@ -460,8 +460,8 @@ describe(formatFailure, () => {
 });
 
 describe("formatErrorLine bold Error: branch", () => {
-	it("should bold 'Error:' prefix when useColor is true and message starts with Error:", () => {
-		expect.assertions(2);
+	it("should bold the Error: prefix through the palette", () => {
+		expect.assertions(1);
 
 		const test: TestCaseResult = {
 			ancestorTitles: [],
@@ -472,13 +472,9 @@ describe("formatErrorLine bold Error: branch", () => {
 			title: "test",
 		};
 
-		const formatted = formatFailure({ test, useColor: true });
-		const plain = stripVTControlCharacters(formatted);
+		const formatted = formatFailure({ styles: createTaggedStyles(), test });
 
-		expect(plain).toContain("Error: something went wrong");
-		// With color on, the raw output should differ from stripped (ANSI
-		// present)
-		expect(formatted).not.toBe(plain);
+		expect(formatted).toContain("<fail><bold>Error:</bold> something went wrong</fail>");
 	});
 
 	it("should not bold when message does not start with Error:", () => {
@@ -493,7 +489,7 @@ describe("formatErrorLine bold Error: branch", () => {
 			title: "test",
 		};
 
-		const formatted = formatFailure({ test, useColor: false });
+		const formatted = formatFailure({ styles: createPlainStyles(), test });
 
 		expect(formatted).toContain("expect(received).toBe(expected)");
 	});
@@ -529,8 +525,8 @@ describe("resolveSourceSnippets snapshot-diff fallback", () => {
 		// (formatSnapshotCallSnippet returns [] because file doesn't exist)
 		const formatted = formatFailure({
 			filePath: "nonexistent/path.spec.ts",
+			styles: createPlainStyles(),
 			test,
-			useColor: false,
 		});
 
 		expect(formatted).toContain("- Snapshot  - 1");
@@ -573,8 +569,8 @@ describe("resolveSourceSnippets snapshot-diff fallback", () => {
 		formatFailure({
 			sourceMapper,
 			sourcePath: "src/test.spec.ts",
+			styles: createPlainStyles(),
 			test,
-			useColor: false,
 		});
 
 		expect(resolveTestFilePath).toHaveBeenCalledWith("src/test.spec.ts");
@@ -629,8 +625,8 @@ describe("formatSnapshotCallSnippet via formatFailure", () => {
 		const formatted = formatFailure({
 			fileSystem,
 			sourcePath: filePath,
+			styles: createPlainStyles(),
 			test,
-			useColor: false,
 		});
 
 		expect(formatted).toContain(`❯ ${filePath}:5`);
@@ -656,8 +652,8 @@ describe("formatSnapshotCallSnippet via formatFailure", () => {
 		const formatted = formatFailure({
 			filePath,
 			fileSystem,
+			styles: createPlainStyles(),
 			test,
-			useColor: false,
 		});
 
 		// Multiple toMatchSnapshot calls — no snippet shown
@@ -708,8 +704,8 @@ describe("showLuau mapped location snippets", () => {
 			fileSystem,
 			showLuau: true,
 			sourceMapper,
+			styles: createPlainStyles(),
 			test,
-			useColor: false,
 		});
 
 		expect(formatted).toContain("(TypeScript)");
@@ -743,7 +739,7 @@ describe("formatFallbackSnippet via formatFailure", () => {
 			title: "test",
 		};
 
-		const formatted = formatFailure({ fileSystem, test, useColor: false });
+		const formatted = formatFailure({ fileSystem, styles: createPlainStyles(), test });
 
 		expect(formatted).toContain(`❯ ${temporaryFile}:5:10`);
 		expect(formatted).toContain("expect(1 + 1).toBe(3)");
@@ -763,7 +759,7 @@ describe("formatFallbackSnippet nonexistent file", () => {
 			title: "test",
 		};
 
-		const formatted = formatFailure({ test, useColor: false });
+		const formatted = formatFailure({ styles: createPlainStyles(), test });
 
 		// parseSourceLocation parses the location but getSourceSnippet returns
 		// undefined because the file doesn't exist — no snippet rendered
@@ -802,8 +798,8 @@ describe("formatMappedLocationSnippets undefined branches", () => {
 
 		const formatted = formatFailure({
 			sourceMapper,
+			styles: createPlainStyles(),
 			test,
-			useColor: false,
 		});
 
 		// No snippet rendered for either TS or Luau (both nonexistent)
@@ -832,7 +828,7 @@ describe("formatMappedLocationSnippets undefined branches", () => {
 			title: "test",
 		};
 
-		const formatted = formatFailure({ sourceMapper, test, useColor: false });
+		const formatted = formatFailure({ sourceMapper, styles: createPlainStyles(), test });
 
 		// No snippet rendered — source file nonexistent and no sourceContent
 		expect(formatted).not.toContain("❯");
@@ -873,8 +869,8 @@ describe("formatMappedLocationSnippets undefined branches", () => {
 		const formatted = formatFailure({
 			showLuau: true,
 			sourceMapper,
+			styles: createPlainStyles(),
 			test,
-			useColor: false,
 		});
 
 		// TS snippet shown (from sourceContent), but Luau snippet skipped
@@ -902,9 +898,9 @@ describe("complete formatter contracts", () => {
 			formatFailure({
 				failureIndex: 2,
 				filePath: "src/inventory.spec.ts",
+				styles: createPlainStyles(),
 				test,
 				totalFailures: 3,
-				useColor: false,
 			}),
 		).toMatchSnapshot();
 	});
@@ -934,7 +930,7 @@ describe("complete formatter contracts", () => {
 		};
 
 		expect(
-			formatFailure({ filePath: "src/inventory.spec.ts", test, useColor: false }),
+			formatFailure({ filePath: "src/inventory.spec.ts", styles: createPlainStyles(), test }),
 		).toMatchSnapshot();
 	});
 });

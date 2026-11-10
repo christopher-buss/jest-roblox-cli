@@ -1,5 +1,5 @@
-import { ApiError, NetworkError, PermissionError } from "@bedrock-rbx/ocale";
-import { TaskStallError } from "@isentinel/roblox-runner";
+import { ApiError, NetworkError, PermissionError, RateLimitError } from "@bedrock-rbx/ocale";
+import { TaskQuotaError, TaskStallError } from "@isentinel/roblox-runner";
 
 import process from "node:process";
 import { stripVTControlCharacters } from "node:util";
@@ -8,7 +8,9 @@ import { describe, expect, it, vi } from "vitest";
 
 import { printError } from "./cli-errors.ts";
 import { ConfigError } from "./config/errors.ts";
-import { LuauScriptError } from "./reporter/luau-script-error.ts";
+import { LuauScriptError } from "./jest-output/luau-script-error.ts";
+import type { RunnerErrorCode } from "./protocol/runner-error.ts";
+import { MissingGapRecordError } from "./utils/infrastructure-failure.ts";
 
 type MockedWrite = MockInstance<typeof process.stderr.write>;
 
@@ -57,7 +59,9 @@ describe(printError, () => {
 		expect.assertions(2);
 
 		const spies = setupOutputSpies();
-		printError(new LuauScriptError("Failed to find Jest instance in ReplicatedStorage"));
+		printError(
+			codedError("Failed to find Jest instance in ReplicatedStorage", "jest-not-found"),
+		);
 
 		expect(spies.stderr).toHaveBeenCalledWith(expect.stringContaining("Luau Error"));
 		expect(spies.stderr).toHaveBeenCalledWith(expect.stringContaining("Hint:"));
@@ -230,6 +234,85 @@ describe(printError, () => {
 				"    createTime: 2026-09-23T10:00:00.000Z",
 				"    updateTime: 2026-09-23T10:05:00.000Z",
 				"    observedStates: QUEUED, PROCESSING",
+			].join("\n"),
+		);
+	});
+
+	it("should render a missing gap record without evidence", () => {
+		expect.assertions(3);
+
+		const spies = setupOutputSpies();
+		printError(new MissingGapRecordError("The run has no gap record"));
+
+		expect(renderedStderr(spies)).toContain("Missing Gap Record");
+		expect(renderedStderr(spies)).toContain("The run has no gap record");
+		expect(renderedStderr(spies)).not.toContain("Evidence:");
+	});
+
+	it("should omit evidence fields Roblox did not report", () => {
+		expect.assertions(1);
+
+		const spies = setupOutputSpies();
+		printError(
+			new TaskStallError({
+				error: new Error("Execution timed out"),
+				evidence: {
+					createTime: undefined,
+					kind: "task-stall",
+					observedStates: ["PROCESSING"],
+					placeVersion: undefined,
+					task: "universes/1/places/2/luau-execution-sessions/s/tasks/t",
+					timeoutSeconds: 300,
+					updateTime: undefined,
+				},
+				readResultAsync: async () => ({ durationMs: 0, outputs: [] }),
+			}),
+		);
+
+		expect(renderedStderr(spies)).toContain(
+			[
+				"    task: universes/1/places/2/luau-execution-sessions/s/tasks/t",
+				"    timeoutSeconds: 300",
+				"    observedStates: PROCESSING",
+			].join("\n"),
+		);
+	});
+
+	it("should report a quota-refused create with its evidence and headers", () => {
+		expect.assertions(2);
+
+		const spies = setupOutputSpies();
+		printError(
+			new TaskQuotaError({
+				cause: new RateLimitError("Rate limited", {
+					retryAfterSeconds: 1856,
+					statusCode: 429,
+				}),
+				evidence: {
+					code: "RESOURCE_EXHAUSTED",
+					headers: { "retry-after": "1856" },
+					kind: "create-quota",
+					placeVersion: 42,
+					retryAfterSeconds: 1856,
+					timeoutSeconds: 300,
+					unlockTime: "2026-09-23T10:30:56.000Z",
+				},
+				message: "RESOURCE_EXHAUSTED: dmaas (Too Many Requests)",
+			}),
+		);
+
+		expect(renderedStderr(spies)).toContain("Roblox Infrastructure Error");
+		expect(renderedStderr(spies)).toContain(
+			[
+				"  Evidence:",
+				"    kind: create-quota",
+				"    unlockTime: 2026-09-23T10:30:56.000Z",
+				"    retryAfterSeconds: 1856",
+				"    code: RESOURCE_EXHAUSTED",
+				"    placeVersion: 42",
+				"    timeoutSeconds: 300",
+				"    headers:",
+				"      retry-after: 1856",
 			].join("\n"),
 		);
 	});
@@ -458,52 +541,83 @@ describe(printError, () => {
 	});
 });
 
-describe("lUAU_ERROR_HINTS", () => {
-	it.for<[message: string, hint: string]>([
+function codedError(message: string, code: RunnerErrorCode): LuauScriptError {
+	const error = new LuauScriptError(message);
+	error.code = code;
+	return error;
+}
+
+describe("runner error hints", () => {
+	it.for<[code: RunnerErrorCode, hint: string]>([
 		[
-			"Failed to find Jest instance in ReplicatedStorage",
+			"jest-not-found",
 			'Set "jestPath" in your config to specify the Jest module location, e.g. "ReplicatedStorage/rbxts_include/node_modules/@rbxts/jest/src"',
 		],
 		[
-			"Failed to find Jest instance at path",
+			"jest-path-unresolved",
 			"The configured jestPath does not resolve to a valid instance. Verify the path matches your Rojo project tree.",
 		],
 		[
-			"Failed to find service ReplicatedStorage.foo",
+			"service-not-found",
 			"The first segment of jestPath must be a valid Roblox service name (e.g. ReplicatedStorage, ServerScriptService).",
 		],
 		[
-			"No projects configured",
+			"no-projects",
 			'Set "projects" in jest.config.ts (e.g. ["ReplicatedStorage/client", "ServerScriptService/server"]).',
 		],
 		[
-			"Infinite yield detected",
+			"infinite-yield",
 			"A :WaitForChild() call is waiting for an instance that doesn't exist. Check your DataModel paths and Rojo project configuration.",
 		],
-		[
-			"loadstring() is not available",
-			'loadstring() must be enabled for Jest to run. Add "LoadStringEnabled": true to ServerScriptService.$properties in your project.json.',
-		],
-		// Verbatim from a v3 plugin, which is the point: the copy that answers
-		// is a stale one whose wording is already fixed on disk.
-		[
-			"Studio plugin protocol version mismatch — plugin v3, CLI v6. Update the jest-roblox Studio plugin to match the CLI.",
-			"If you have more than one JestRobloxRunner installed, this may be a stale copy rather than the one you just updated: Studio runs them all, and on --backend studio-cli the first to answer decides the run. Check your Studio plugins folder and remove the copies you do not want.",
-		],
-	])("should hint for: %s", ([message, hint]) => {
+	])("should hint for code %s", ([code, hint]) => {
 		expect.assertions(1);
 
 		const spies = setupOutputSpies();
-		printError(new LuauScriptError(message));
+		printError(codedError("Some runner failure", code));
 
 		expect(renderedStderr(spies)).toContain(`Hint: ${hint}`);
+	});
+
+	it("should give no hint for a timeout", () => {
+		expect.assertions(1);
+
+		const spies = setupOutputSpies();
+		printError(codedError("Timed out after 5s, aborting tests", "timeout"));
+
+		expect(renderedStderr(spies)).not.toContain("Hint:");
+	});
+
+	it("should not hint on the message alone once the runner sent a code", () => {
+		expect.assertions(1);
+
+		const spies = setupOutputSpies();
+		printError(codedError("Studio plugin protocol version mismatch", "timeout"));
+
+		expect(renderedStderr(spies)).not.toContain("Hint:");
+	});
+
+	// Verbatim from a v3 plugin, which is the point: the copy that answers
+	// is a stale one whose wording is already fixed on disk.
+	it("should hint for a plugin version mismatch that carries no code", () => {
+		expect.assertions(1);
+
+		const spies = setupOutputSpies();
+		printError(
+			new LuauScriptError(
+				"Studio plugin protocol version mismatch — plugin v3, CLI v6. Update the jest-roblox Studio plugin to match the CLI.",
+			),
+		);
+
+		expect(renderedStderr(spies)).toContain(
+			"Hint: If you have more than one JestRobloxRunner installed, this may be a stale copy rather than the one you just updated: Studio runs them all, and on --backend studio-cli the first to answer decides the run. Check your Studio plugins folder and remove the copies you do not want.",
+		);
 	});
 
 	it("should not reference removed --projects flag in projects hint", () => {
 		expect.assertions(2);
 
 		const spies = setupOutputSpies();
-		printError(new LuauScriptError("No projects configured"));
+		printError(codedError("No projects configured", "no-projects"));
 
 		expect(spies.stderr).toHaveBeenCalledWith(expect.stringContaining("projects"));
 		expect(spies.stderr).not.toHaveBeenCalledWith(expect.stringContaining("--projects"));

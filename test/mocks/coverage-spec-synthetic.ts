@@ -1,4 +1,4 @@
-import type { CoverageManifest, RawCoverageData } from "#src/index.ts";
+import type { CoverageManifest, RawCoverageData } from "#src/api.ts";
 
 export function buildSyntheticCoverage(files: CoverageManifest["files"]): RawCoverageData {
 	const data: RawCoverageData = {};

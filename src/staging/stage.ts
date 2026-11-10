@@ -1,18 +1,10 @@
 import { isRojoTreeNode } from "@isentinel/rojo-utils";
+import type { RojoTreeNode } from "@isentinel/rojo-utils";
 
-import type { RojoTreeNode } from "../types/rojo.ts";
-
-/** Where synthesis parks each package's tree, under `ServerStorage`. */
-export const STAGE_KEY = "__pkg_stage";
+import { STAGE_KEY } from "../protocol/staged-place.ts";
 
 /**
- * The node every staged package hangs off, or `undefined` for a project that
- * has none.
- *
- * A `wrap: false` project keeps every service where the engine wants it, so
- * every staging pass is a no-op for one, and this is where each of them says
- * so. Malformed shapes report the same way: a pass that cannot find the stage
- * hands its input back rather than failing the build.
+ * The node every staged package hangs off.
  * @param project - Project whose `tree` is searched.
  * @returns The stage node, or `undefined` when the project has none.
  */

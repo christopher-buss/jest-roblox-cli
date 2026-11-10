@@ -1,13 +1,19 @@
 import type { ScriptResult } from "@isentinel/roblox-runner";
+import { fromAny } from "@total-typescript/shoehorn";
 
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 
-import { captureStderr, envelope, scriptResult } from "#test/mocks/spec-open-cloud.ts";
+import {
+	captureStderr,
+	envelope,
+	packageJobIndex,
+	scriptResult,
+} from "#test/mocks/spec-open-cloud.ts";
 import type {
 	StreamingResultReader,
 	StreamingResultRecord,
 } from "../memory-store/sorted-map-client.ts";
-import { drainStealingPoolAsync } from "./open-cloud-pool.ts";
+import { drainDeferralsAsync, drainStealingPoolAsync } from "./open-cloud-pool.ts";
 
 interface StubStreamReader extends StreamingResultReader {
 	deleted: Array<string>;
@@ -37,7 +43,7 @@ function successJest(): string {
 }
 
 function packageEntry(packageName: string) {
-	return { jestOutput: successJest(), pkg: packageName };
+	return { jestOutput: successJest(), jobIndex: packageJobIndex(packageName), pkg: packageName };
 }
 
 async function drainWithFailingReaderAsync(fail: () => never): Promise<Array<string>> {
@@ -61,7 +67,6 @@ async function drainWithFailingReaderAsync(fail: () => never): Promise<Array<str
 			onPackageResult: () => {
 				/* unused */
 			},
-			pollMs: 1,
 			reader,
 		},
 		taskCount: 1,
@@ -216,7 +221,6 @@ describe(drainStealingPoolAsync, () => {
 				onPackageResult: (entry) => {
 					seen.push(entry.pkg);
 				},
-				pollMs: 1,
 				reader,
 			},
 			taskCount: 1,
@@ -227,7 +231,7 @@ describe(drainStealingPoolAsync, () => {
 		expect(reader.readCalls).toBeGreaterThanOrEqual(1);
 	});
 
-	it("should default pollMs when streaming hooks omit it", async () => {
+	it("should poll on its own cadence under fake timers", async () => {
 		expect.assertions(2);
 
 		vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
@@ -346,7 +350,6 @@ describe(drainStealingPoolAsync, () => {
 				onPackageResult: () => {
 					/* unused */
 				},
-				pollMs: 1,
 				reader,
 			},
 			taskCount: 1,
@@ -382,7 +385,6 @@ describe(drainStealingPoolAsync, () => {
 				onPackageResult: () => {
 					/* unused */
 				},
-				pollMs: 1,
 				reader,
 			},
 			taskCount: 1,
@@ -430,7 +432,6 @@ describe(drainStealingPoolAsync, () => {
 				onPackageResult: (entry) => {
 					seen.push(entry.pkg);
 				},
-				pollMs: 1,
 				reader,
 			},
 			taskCount: 1,
@@ -444,5 +445,40 @@ describe(drainStealingPoolAsync, () => {
 			"Warning: live per-package streaming disabled — delete failed\n",
 			"  Tests still run; results print as usual once each task finishes.\n",
 		]);
+	});
+});
+
+describe(drainDeferralsAsync, () => {
+	it("should keep bail on the script it re-sends for deferred entries", async () => {
+		expect.assertions(2);
+
+		const scripts: Array<string> = [];
+		const steps = [deferred("alpha"), settled("beta")];
+
+		await drainDeferralsAsync({
+			bail: true,
+			entries: ["alpha", "beta"].map((name, runnerJobIndex) => {
+				return fromAny({ config: { runnerJobIndex }, pkg: name, project: name });
+			}),
+			runScript: async (script) => {
+				scripts.push(script);
+				return steps[scripts.length - 1]!();
+			},
+		});
+
+		expect(scripts).toHaveLength(2);
+		expect(scripts[1]).toContain('"bail":true');
+	});
+
+	it("should not mark the drain bailed when no task bails", async () => {
+		expect.assertions(1);
+
+		const result = await drainDeferralsAsync({
+			bail: false,
+			entries: [fromAny({ config: { runnerJobIndex: 0 }, pkg: "alpha", project: "alpha" })],
+			runScript: async () => settled("alpha")(),
+		});
+
+		expect(result.bailed).toBeFalse();
 	});
 });

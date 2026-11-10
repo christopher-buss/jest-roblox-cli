@@ -116,7 +116,7 @@ local TIMED_OUT_60S = "Timed out after 60s, aborting tests. Raise test.projectTi
 local function guardInThread(fn, options)
 	local outcome = { done = false }
 	local thread = coroutine.create(function()
-		outcome.ok, outcome.value, outcome.timedOut = InfiniteYield.guard(fn, options)
+		outcome.ok, outcome.value, outcome.abandon = InfiniteYield.guard(fn, options)
 		outcome.done = true
 	end)
 
@@ -330,7 +330,7 @@ local function testElapsedBudgetAbortsTheRun()
 	check(outcome.done, "T13: the elapsed budget wakes the parked caller")
 	check(outcome.ok == false, "T13: an elapsed budget is a failure")
 	check(outcome.value == TIMED_OUT_60S, "T13: the abort names the budget and the knob")
-	check(outcome.timedOut == true, "T13: the abort says it was the budget, not a yield")
+	check(outcome.abandon == "timeout", "T13: the abort says it was the budget, not a yield")
 	check(cancelled, "T13: an elapsed budget runs the cleanup")
 	check(coroutine.status(parkedThread) == "dead", "T13: the abandoned thunk is closed")
 	check(not isWatching(), "T13: the watch is disconnected after a timeout")
@@ -345,7 +345,7 @@ local function testWarningDisarmsTheBudget()
 
 	emit(YIELD_WARNING, WARNING)
 
-	check(outcome.timedOut == false, "T14: the warning is what ended it, not the budget")
+	check(outcome.abandon == "infinite-yield", "T14: the warning is what ended it, not the budget")
 	check(#armed == 0, "T14: ending the run disarms the budget")
 end
 
@@ -355,12 +355,18 @@ local function testNoBudgetArmsNoDeadline()
 	local zero = guardInThread(parkForever, { timeoutMs = 0 })
 	check(#armed == 0, "T15: a zero budget arms no deadline")
 	emit(YIELD_WARNING, WARNING)
-	check(zero.ok == false and zero.timedOut == false, "T15: the run still ends on the warning")
+	check(
+		zero.ok == false and zero.abandon == "infinite-yield",
+		"T15: the run still ends on the warning"
+	)
 
 	local absent = guardInThread(parkForever, {})
 	check(#armed == 0, "T15: an absent budget arms no deadline")
 	emit(YIELD_WARNING, WARNING)
-	check(absent.ok == false and absent.timedOut == false, "T15: that run ends on the warning too")
+	check(
+		absent.ok == false and absent.abandon == "infinite-yield",
+		"T15: that run ends on the warning too"
+	)
 end
 
 -- T16: a budget is a deadline, not a verdict. A run that finished inside it
@@ -372,7 +378,7 @@ local function testRunWithinBudgetKeepsItsResult()
 
 	check(outcome.ok == true, "T16: a run within budget reports its own outcome")
 	check(outcome.value == "value", "T16: the thunk's value is passed through")
-	check(outcome.timedOut == false, "T16: a run that finished did not run out of time")
+	check(outcome.abandon == nil, "T16: a run that finished did not run out of time")
 end
 
 -- T17: the budget covers the thunk's first turn. `task.spawn` runs `fn` up to
@@ -395,7 +401,7 @@ local function testBudgetCoversWorkBeforeTheFirstYield()
 
 	check(outcome.done, "T17: a budget spent before the first yield never parks the caller")
 	check(outcome.ok == false, "T17: it is still a failure")
-	check(outcome.timedOut == true, "T17: it is reported as the budget, not a yield")
+	check(outcome.abandon == "timeout", "T17: it is reported as the budget, not a yield")
 	check(outcome.value == TIMED_OUT_60S, "T17: the abort names the budget and the knob")
 	check(cancelled, "T17: it runs the cleanup like any other abandon")
 	check(not isWatching(), "T17: the watch is disconnected")

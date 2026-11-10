@@ -7,6 +7,7 @@ import type { Mock } from "vitest";
 import { describe, expect, it, vi } from "vitest";
 
 import type { MemoryFileSystem } from "#test/mocks/memory-file-system.ts";
+import { writingRojoExec } from "#test/mocks/rojo-exec.ts";
 import {
 	mountOf,
 	seed as seedVolume,
@@ -71,12 +72,12 @@ function serviceModelXml(rootClass: string): string {
 
 function seed(files: Record<string, string> = {}): Harness {
 	const memory = seedVolume(files);
-	// eslint-disable-next-line better-max-params/better-max-params -- fakes the Node execFile signature.
-	const execFile = vi.fn<RojoExec>((_file, args, _options, callback) => {
-		const outputPath = args[3];
-		memory.volume.writeFileSync(String(outputPath), serviceModelXml("StarterPlayerScripts"));
-		callback(null, "", "");
-	});
+	const execFile = vi.fn<RojoExec>(
+		writingRojoExec({
+			bytes: serviceModelXml("StarterPlayerScripts"),
+			fileSystem: memory.volume,
+		}),
+	);
 	return { ...memory, childProcess: fromAny({ execFile }), execFile };
 }
 

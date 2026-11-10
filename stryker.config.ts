@@ -22,6 +22,7 @@ export default {
 		".eslintcache",
 		".standalone",
 		"test/e2e/cli/.tmp/**",
+		"test/e2e/fixtures/live-place/node_modules/**",
 	],
 	mutate: [
 		...(sharedConfig.mutate ?? []).filter(

@@ -1,28 +1,26 @@
 import { randomUUID } from "node:crypto";
+import * as path from "node:path";
 import process from "node:process";
 import type { Except } from "type-fest";
 import type { WebSocketServer } from "ws";
 
-import type { BuildManifestArtifact } from "../coverage-pipeline/build-manifest.ts";
-import type { RunProgress } from "../progress/reporter.ts";
-import { NOOP_RUN_PROGRESS } from "../progress/reporter.ts";
+import { resolvePlaceFilePath } from "../config/resolved-config.ts";
+import type { RunProgress } from "../progress/run-progress.ts";
+import { NOOP_RUN_PROGRESS } from "../progress/run-progress.ts";
 import { describeProjectCount } from "../progress/stages.ts";
-import {
-	type BuildPlaceOptions,
-	buildPlaceAsync as defaultBuildPlace,
-} from "../staging/place-builder.ts";
 import type { ChildProcessRunner } from "../utils/child-process.ts";
-import { nodeChildProcessRunner } from "../utils/child-process.ts";
 import type { FileSystem } from "../utils/file-system.ts";
-import { nodeFileSystem } from "../utils/file-system.ts";
-import { DEFAULT_BOOT_WATCH_MS } from "./execution-recovery.ts";
-import type { Backend, BackendOptions, BackendResult, ProjectJob } from "./interface.ts";
-import type { RunPayloadRequest } from "./plugin-payload.ts";
+import { WORK_DIRECTORY } from "../utils/work-directory.ts";
+import type { BackendOf, BackendResult, RunSettings } from "./interface.ts";
+import type { RunPayloadRequest, StudioDispatch } from "./plugin-payload.ts";
 import type { ManagedPluginInstall, RunnerPluginInstallOptions } from "./runner-plugin.ts";
 import { installRunnerPluginAsync } from "./runner-plugin.ts";
 import { buildStudioArgs, type RunPlace, studioOutputFile } from "./studio-cli-bootstrap.ts";
-import { BOOT_TIMEOUT_ENV, type ResultDeadline } from "./studio-cli-deadlines.ts";
-import { prepareRunPlaceAsync } from "./studio-cli-place.ts";
+import {
+	BOOT_TIMEOUT_ENV,
+	DEFAULT_BOOT_WATCH_MS,
+	type ResultDeadline,
+} from "./studio-cli-deadlines.ts";
 import {
 	hardTeardown,
 	launchStudioProcess,
@@ -39,119 +37,60 @@ import { configuredStudioPath, discoverStudioPath } from "./studio-discovery.ts"
 import { nodeWebSocketServerFactory } from "./web-socket-server-factory.ts";
 import type { WebSocketServerFactory } from "./web-socket-server-factory.ts";
 
-const DEFAULT_STUDIO_CLI_TIMEOUT = 300_000;
-
-/**
- * Lowest-precedence Studio-executable override (below config key / CLI flag).
- */
-
-/**
- * Default backstop for the graceful kill-on-lock-release: how long to wait for
- * Studio to release `<place>.lock` before hard-killing anyway. The lock is
- * normally freed within ~1–9s of closing the result server, so this only fires
- * for a pathologically long-yielding edit-mode `BindToClose` — in which case
- * we fall back to today's instant kill.
- */
 const GRACEFUL_SHUTDOWN_CAP_MS = 15_000;
+const WORK_DIR = path.join(WORK_DIRECTORY, "studio-cli");
 
-/**
- * Options for {@link StudioCliBackend}; every seam defaults to the real
- * implementation.
- */
+/** Options for {@link StudioCliBackend}. */
 export interface StudioCliOptions {
-	/**
-	 * How long Studio may take from launch to starting the run, in
-	 * milliseconds. Defaults to {@link BOOT_TIMEOUT_ENV}, else
-	 * {@link DEFAULT_BOOT_WATCH_MS}.
-	 */
+	/** Milliseconds Studio may take from launch to starting the run. */
 	bootTimeout?: number | undefined;
-	/** Place Builder seam; defaults to the real {@link defaultBuildPlace}. */
-	buildPlaceAsync?: ((options: BuildPlaceOptions) => Promise<BuildManifestArtifact>) | undefined;
-	/** What launches Studio. Defaults to the real launcher. */
-	childProcess?: ChildProcessRunner;
-	/**
-	 * Studio-executable resolver seam; defaults to {@link discoverStudioPath}.
-	 */
+	/** What launches Studio. */
+	childProcess: ChildProcessRunner;
+	/** Resolves the Studio executable. */
 	discover?: ((override: string | undefined) => string) | undefined;
-	/** Where the run stages its files. Defaults to the real filesystem. */
-	fileSystem?: FileSystem;
-	/**
-	 * Backstop for the graceful teardown: hard-kill if `<place>.lock` isn't
-	 * released within this many ms. Defaults to
-	 * {@link GRACEFUL_SHUTDOWN_CAP_MS}.
-	 */
+	/** Where the run stages its files. */
+	fileSystem: FileSystem;
+	/** Milliseconds to wait for `<place>.lock` release before a hard kill. */
 	gracefulShutdownTimeout?: number | undefined;
-	/**
-	 * Show the Studio window during the run (`--headed`). CLI-only — never
-	 * read from config. Defaults to false (hidden window).
-	 */
+	/** Show the Studio window during the run. */
 	headed?: boolean | undefined;
-	/**
-	 * Launch Studio on a hidden desktop; resolved against `platform` and
-	 * `headed`.
-	 */
+	/** Launch Studio hidden. */
 	hiddenDesktop?: boolean | undefined;
-	/**
-	 * Puts the Managed Plugin in the Studio plugins folder before launch, given
-	 * the run's scratch directory. Resolves undefined where none was installed.
-	 */
+	/** Installs the Managed Plugin, given the run's scratch directory. */
 	installPluginAsync?:
 		| ((workDirectory: string) => Promise<ManagedPluginInstall | undefined>)
 		| undefined;
-	/**
-	 * Process launcher seam; defaults to the real {@link launchStudioProcess}.
-	 */
+	/** Launches the Studio process. */
 	launch?: StudioCliLauncher | undefined;
-	/** Host platform. Defaults to `process.platform`. */
+	/** Host platform. */
 	platform?: NodeJS.Platform | undefined;
 	/** Studio plugins folder the Managed Plugin installs into. */
 	pluginsDirectory?: string | undefined;
-	/** Explicit Studio executable path (override from config / CLI / env). */
+	/** Explicit Studio executable path. */
 	studioPath?: string | undefined;
-	/** Run timeout in milliseconds. Defaults to 300000. */
-	timeout?: number | undefined;
-	/** Result server seam; defaults to the real WebSocket server. */
+	/** Opens the result server. */
 	webSocketServerFactory?: undefined | WebSocketServerFactory;
 }
 
-/**
- * What one dispatch launches and waits on: the place it opens, the jobs it
- * runs, and the socket the result comes back over.
- */
 interface StudioCliDispatch {
 	deadline: ResultDeadline;
-	jobs: Array<ProjectJob>;
+	jobs: StudioDispatch["jobs"];
 	place: RunPlace;
 	plugin: ManagedPluginInstall | undefined;
 	progress: RunProgress;
-	runRequest: Except<RunPayloadRequest, "jobs">;
+	runRequest: Except<RunPayloadRequest, "jobs" | "runtimeStubs">;
 	server: WebSocketServer;
-	/** The Studio executable the run launches. */
 	studioPath: string;
 }
 
-/**
- * The child a run launched and who owns tearing it down. Mutable because the
- * caller's `finally` reads what the dispatch had reached when it threw.
- */
 interface StudioCliSession {
 	child?: StudioCliProcess | undefined;
-	/**
-	 * Set once the background watch owns teardown (result in hand), so the
-	 * `finally` knows not to also hard-kill or re-close.
-	 */
 	wasGracefulTeardownStarted: boolean;
 }
 
-/**
- * Backend that builds a place, launches a local Studio on it, and waits for
- * the result.
- */
-export class StudioCliBackend implements Backend {
+/** Builds a place, launches a local Studio on it, and waits for the result. */
+export class StudioCliBackend implements BackendOf<"studio-cli", StudioDispatch> {
 	private readonly bootTimeout: number;
-	private readonly buildPlaceAsync: (
-		options: BuildPlaceOptions,
-	) => Promise<BuildManifestArtifact>;
 	private readonly childProcess: ChildProcessRunner;
 	private readonly discover: (override: string | undefined) => string;
 	private readonly fileSystem: FileSystem;
@@ -164,21 +103,18 @@ export class StudioCliBackend implements Backend {
 	private readonly launch: StudioCliLauncher;
 	private readonly platform: NodeJS.Platform;
 	private readonly studioPath: string | undefined;
-	private readonly timeout: number;
 	private readonly webSocketServerFactory: WebSocketServerFactory;
 
 	public readonly kind = "studio-cli" as const;
-	public readonly placeInput = "own" as const;
 
 	/**
 	 * Resolves every option against its default.
 	 * @param options - Seams, timeouts and Studio location; omitted ones use defaults.
 	 * @throws {Error} When {@link BOOT_TIMEOUT_ENV} is not a positive integer.
 	 */
-	constructor(options: StudioCliOptions = {}) {
+	constructor(options: StudioCliOptions) {
 		this.bootTimeout = options.bootTimeout ?? resolveBootTimeout();
-		this.buildPlaceAsync = options.buildPlaceAsync ?? defaultBuildPlace;
-		const fileSystem = options.fileSystem ?? nodeFileSystem;
+		const { fileSystem } = options;
 		this.discover =
 			options.discover ??
 			((override) => {
@@ -187,7 +123,7 @@ export class StudioCliBackend implements Backend {
 					override: configuredStudioPath(override),
 				});
 			});
-		this.childProcess = options.childProcess ?? nodeChildProcessRunner;
+		this.childProcess = options.childProcess;
 		this.fileSystem = fileSystem;
 		this.gracefulShutdownTimeout = options.gracefulShutdownTimeout ?? GRACEFUL_SHUTDOWN_CAP_MS;
 		this.headed = options.headed ?? false;
@@ -202,48 +138,36 @@ export class StudioCliBackend implements Backend {
 			});
 		this.launch = options.launch ?? launchStudioProcess;
 		this.studioPath = options.studioPath;
-		this.timeout = options.timeout ?? DEFAULT_STUDIO_CLI_TIMEOUT;
 		this.webSocketServerFactory = options.webSocketServerFactory ?? nodeWebSocketServerFactory;
 	}
 
 	/**
-	 * Builds the place, installs the plugin, launches Studio, and waits for its result.
-	 * @param root0 - Jobs and run options.
-	 * @param root0.bail - Stop after this many failures.
-	 * @param root0.jobs - Jobs to run, in one Studio session.
-	 * @param root0.progress - Receives stage progress.
-	 * @param root0.vmParallel - VM parallelism to request.
-	 * @param root0.workStealing - Must not be `true`; this backend runs jobs serially.
+	 * Installs the plugin, launches Studio, and waits for its result.
+	 * @param request - Jobs and run options, run in one Studio session.
 	 * @returns The per-job results and execution timing.
-	 * @rejects {Error} When there are no jobs, work-stealing is set, Studio is not found, or the run fails.
+	 * @rejects {Error} When Studio is not found or the run fails.
 	 */
 	public async runTestsAsync({
 		bail,
 		jobs,
 		progress = NOOP_RUN_PROGRESS,
+		runSettings,
 		vmParallel,
-		workStealing,
-	}: BackendOptions): Promise<BackendResult> {
-		assertSerialJobs({ jobs, workStealing });
-		const place = await prepareRunPlaceAsync({
-			buildPlaceAsync: this.buildPlaceAsync,
-			fileSystem: this.fileSystem,
-			jobs,
-		});
-		// Found before the plugin is installed: without Studio there is no run
-		// to install it for.
+		workspace,
+	}: StudioDispatch): Promise<BackendResult> {
+		const place = this.prepareRunPlace(runSettings);
 		const studioPath = this.discover(this.studioPath);
 		const plugin = await this.installPluginAsync(place.workDirectory);
 		const server = this.webSocketServerFactory({ host: "127.0.0.1", port: 0 });
 		const session: StudioCliSession = { wasGracefulTeardownStarted: false };
 		try {
 			return await this.dispatchRunAsync(session, {
-				deadline: this.deadlineFor(place.workDirectory),
+				deadline: this.deadlineFor(place.workDirectory, runSettings.timeout),
 				jobs,
 				place,
 				plugin,
 				progress,
-				runRequest: { bail, runBudgetMs: this.timeout, vmParallel },
+				runRequest: { bail, runBudgetMs: runSettings.timeout, vmParallel, workspace },
 				server,
 				studioPath,
 			});
@@ -254,28 +178,14 @@ export class StudioCliBackend implements Backend {
 		}
 	}
 
-	/**
-	 * Where a run's result lands, and how long Studio has to put it there.
-	 * @param workDirectory - Scratch directory of the run.
-	 * @returns The result deadline.
-	 */
-	private deadlineFor(workDirectory: string): ResultDeadline {
+	private deadlineFor(workDirectory: string, timeout: number): ResultDeadline {
 		return {
 			bootTimeout: this.bootTimeout,
 			outputFile: studioOutputFile(workDirectory),
-			timeout: this.timeout,
+			timeout,
 		};
 	}
 
-	/**
-	 * Launch Studio against the prepared place and wait for its result frame.
-	 *
-	 * Records the child and the teardown decision on `session` as it goes, so
-	 * the caller's `finally` can clean up after a throw from any point here.
-	 * @param session - Mutable record of the launched child and teardown state.
-	 * @param root0 - What the dispatch launches and waits on.
-	 * @returns The per-job results and execution timing.
-	 */
 	private async dispatchRunAsync(
 		session: StudioCliSession,
 		{
@@ -299,8 +209,6 @@ export class StudioCliBackend implements Backend {
 			port: await serverPortAsync(server),
 			requestId,
 		});
-		// Announced here rather than in the executor, which wraps every backend
-		// alike: only a backend knows when its own dispatch window starts.
 		const done = progress.begin("tests", describeProjectCount(jobs.length));
 		const executionStart = Date.now();
 		const child = this.launchStudio({ args, placeFile: place.placeFile, studioPath });
@@ -319,24 +227,13 @@ export class StudioCliBackend implements Backend {
 		});
 	}
 
-	/**
-	 * The Studio the run was pointed at, launched against the place it built.
-	 * @param root0 - Launch input.
-	 * @param root0.args - Studio command-line arguments.
-	 * @param root0.placeFile - Place file to open.
-	 * @param root0.studioPath - Studio executable.
-	 * @returns The launched Studio process.
-	 */
 	private launchStudio({
 		args,
 		placeFile,
 		studioPath,
 	}: {
-		/** Studio command-line arguments. */
 		readonly args: Array<string>;
-		/** Place file to open. */
 		readonly placeFile: string;
-		/** Studio executable. */
 		readonly studioPath: string;
 	}): StudioCliProcess {
 		return this.launch({
@@ -350,23 +247,14 @@ export class StudioCliBackend implements Backend {
 			studioPath,
 		});
 	}
+
+	private prepareRunPlace(runSettings: RunSettings): RunPlace {
+		const workDirectory = path.join(path.resolve(runSettings.rootDir), WORK_DIR);
+		this.fileSystem.mkdirSync(workDirectory, { recursive: true });
+		return { placeFile: resolvePlaceFilePath(runSettings), workDirectory };
+	}
 }
 
-/**
- * Creates a Studio CLI backend.
- * @param options - Seams, timeouts and Studio location; omitted ones use defaults.
- * @returns The new backend.
- */
-export function createStudioCliBackend(options: StudioCliOptions = {}): StudioCliBackend {
-	return new StudioCliBackend(options);
-}
-
-/**
- * The boot window {@link BOOT_TIMEOUT_ENV} asks for, else the default. Throws
- * on a value that is not a positive integer.
- * @returns The boot window in milliseconds.
- * @throws {Error} When the variable is set but is not a positive integer.
- */
 function resolveBootTimeout(): number {
 	const raw = process.env[BOOT_TIMEOUT_ENV];
 	if (raw === undefined || raw === "") {
@@ -383,34 +271,8 @@ function resolveBootTimeout(): number {
 	return parsed;
 }
 
-/**
- * Binds the install options so only the scratch directory is left.
- * @param install - Plugin install options without the work directory.
- * @returns An installer that takes the run's scratch directory.
- */
 function installPluginInto(
 	install: Except<RunnerPluginInstallOptions, "workDirectory">,
 ): (workDirectory: string) => Promise<ManagedPluginInstall | undefined> {
 	return async (workDirectory) => installRunnerPluginAsync({ ...install, workDirectory });
-}
-
-/**
- * The studio-cli backend drives one Studio instance serially, so reject a request it
- * structurally cannot serve before anything is built or launched. A
- * `parallel` count is not such a request: the run is one session whatever
- * it asks for.
- * @param root0 - Jobs and work-stealing flag.
- * @throws {Error} When there are no jobs or work-stealing is requested.
- */
-function assertSerialJobs({
-	jobs,
-	workStealing,
-}: Pick<BackendOptions, "jobs" | "workStealing">): void {
-	if (jobs.length === 0) {
-		throw new Error("StudioCliBackend requires at least one job");
-	}
-
-	if (workStealing === true) {
-		throw new Error("studio-cli backend is serial and does not support work-stealing");
-	}
 }

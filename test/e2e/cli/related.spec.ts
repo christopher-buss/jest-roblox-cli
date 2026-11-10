@@ -2,12 +2,12 @@ import * as path from "node:path";
 import { stripVTControlCharacters } from "node:util";
 import { describe, expect, it } from "vitest";
 
-import { createFixtureSandbox, rojoOnPath } from "#test/e2e/cli/helpers.ts";
 import type { PartialRunResult } from "#test/e2e/cli/partial-run.ts";
 import {
 	PARTIAL_RUN_TIMEOUT_MS as RUN_TIMEOUT_MS,
 	runPartialAsync,
 } from "#test/e2e/cli/partial-run.ts";
+import { createFixtureSandbox, rojoOnPath } from "#test/harness/helpers.ts";
 
 const RELATED_FIXTURE_PATH = path.resolve(__dirname, "../fixtures/related-project");
 

@@ -37,10 +37,10 @@ Put these under `test: { ... }`.
 
 | Field                    | Purpose                                           | Default                              |
 | ------------------------ | ------------------------------------------------- | ------------------------------------ |
-| `projects`               | DataModel paths to search for tests               | **(required)**                       |
+| `projects`               | DataModel paths to search for tests               | one project per `luauRoots` mount    |
 | `testMatch`              | Glob patterns for test files                      | `**/*.spec.ts`, `**/*.test.ts`, etc. |
 | `testPathPattern`        | Regex to filter test files by path                | —                                    |
-| `testPathIgnorePatterns` | Regex patterns to exclude from discovery          | `/node_modules/`, `/dist/`           |
+| `testPathIgnorePatterns` | Regex patterns to exclude from discovery          | `/node_modules/`, `/dist/`, `/out/`  |
 | `exclude`                | Globs subtracted from Runtime Test discovery      | —                                    |
 | `setupFiles`             | DataModel paths to setup scripts (run before env) | —                                    |
 | `setupFilesAfterEnv`     | DataModel paths to post-env setup scripts         | —                                    |

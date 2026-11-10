@@ -1,4 +1,5 @@
-import { listBlocked } from "../results/gaps.ts";
+import { listBlocked } from "../gaps/gaps.ts";
+import { plural } from "../terminal/plural.ts";
 import type { JestResult, TestCaseResult, TestFileResult } from "../types/jest-result-types.ts";
 import { type DisplayPathOptions, resolveDisplayPath } from "./shared.ts";
 
@@ -25,7 +26,9 @@ export function formatGapSummary(
 		const path = resolveDisplayPath(file.testFilePath, options);
 		const members = Object.entries(gaps)
 			.sort(([a], [b]) => COLLATOR.compare(a, b))
-			.map(([member, raises]) => `    ${member}  ${plural(raises, "raise")}`);
+			.map(([member, raises]) => {
+				return `    ${member}  ${raises.toString()} ${plural(raises, "raise")}`;
+			});
 		return [
 			test === undefined ? `  ${path}` : `  ${path} > ${testName(file, test)}`,
 			...members,
@@ -41,8 +44,4 @@ function testName(file: TestFileResult, test: TestCaseResult): string {
 	}
 
 	return `${test.fullName} #${String(file.testResults.indexOf(test) + 1)}`;
-}
-
-function plural(count: number, noun: string): string {
-	return `${count.toString()} ${noun}${count === 1 ? "" : "s"}`;
 }

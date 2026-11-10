@@ -4,12 +4,13 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local StudioTestService = game:GetService("StudioTestService")
 
--- Must stay below `NIL_RETURN_PLUGIN_WAIT_MS` in `src/backends/studio-cli.ts`.
-local RUNNING_WAIT_SECONDS = 10
+local Envelope = require(script.Parent.shared.envelope)
+local Protocol = require(script.Parent.shared.protocol)
+local FRAME = Protocol.studio.frame
+local PROTOCOL_VERSION = Protocol.studio.protocolVersion
+local RUNNING_WAIT_SECONDS = Protocol.studio.runningWaitSeconds
+local SIDE_CHANNEL_ATTRIBUTE = Protocol.studio.sideChannelAttribute
 local RUNNING_POLL_SECONDS = 0.05
-
--- Mirrors `src/backends/studio-cli.ts`.
-local SIDE_CHANNEL_ATTRIBUTE = "JestRobloxRunSideChannel"
 
 local function waitUntilRunning(): boolean
 	local deadline = os.clock() + RUNNING_WAIT_SECONDS
@@ -41,36 +42,19 @@ if not RunService:IsRunning() then
 	end
 end
 
--- Plugin/CLI protocol version. Must match `STUDIO_PROTOCOL_VERSION` in
--- `src/backends/studio.ts` and `STUDIO_CLI_PROTOCOL_VERSION` in
--- `src/backends/studio-cli.ts`. v9 adds the workspace payload's `vmParallel`
--- count, which a v8 plugin would run sequentially; v8 adds the `pluginKey`
--- the run asks for, so a copy built for another key stands down; v7 adds the
--- `runnerTimeoutMs` argv the runner bounds a project's run with and strips
--- before calling Jest, so a v6 plugin handed one runs unbounded and passes the
--- key on to Jest; v6 adds the plugin's
--- own release version to the result and the claim below; v5 added the optional
--- `vmParallel` count: a
--- plugin predating it would run a parallel request sequentially and say
--- nothing, so the handshake is what turns that into an "update the plugin"
--- error. v4 nested the fields the runner adds to Jest's result under `runner`
--- and renamed the frame key `request_id` to `requestId`. The runner validates
--- the version the CLI sent and echoes its own in `EndTest`, so the CLI
--- surfaces a clean error against a mismatched plugin rather than running with
--- stale runtime semantics.
-local PROTOCOL_VERSION = 10
-
 -- Written by `scripts/stamp-plugin-version.ts` at build time, and absent from a
 -- tree served straight out of source control. Diagnostic only — see the same
 -- lookup in `init.server.luau`.
-local versionOk, PluginVersion = pcall(require, script.Parent:FindFirstChild("version") :: any)
+local versionOk, PluginVersion =
+	pcall(require, script.Parent:FindFirstChild(Protocol.studio.pluginVersionModule) :: any)
 if not versionOk or typeof(PluginVersion) ~= "string" then
 	PluginVersion = "unknown"
 end
 
 -- The Plugin Key `studio-cli` stamps into its Managed Plugin. A Manual Plugin
 -- carries none, so it never matches a run that asks for one.
-local keyOk, PluginKey = pcall(require, script.Parent:FindFirstChild("pluginKey") :: any)
+local keyOk, PluginKey =
+	pcall(require, script.Parent:FindFirstChild(Protocol.studio.pluginKeyModule) :: any)
 if not keyOk or typeof(PluginKey) ~= "string" then
 	PluginKey = nil
 end
@@ -94,12 +78,10 @@ local MISMATCH_DEFER_SECONDS = 3
 -- and the run goes ahead without it.
 local HOST_READY_TIMEOUT_SECONDS = 10
 
--- Set by each host once its `BindToMessage` is live. Mirrors
--- `plugin/host/vm-host.server.luau`.
-local HOST_READY_ATTRIBUTE = "JestRobloxVmHostReady"
+-- Set by each host once its `BindToMessage` is live.
+local HOST_READY_ATTRIBUTE = Protocol.studio.vmHostReadyAttribute
 
--- Must exceed `NIL_RETURN_PLUGIN_WAIT_MS` in `src/backends/studio-cli.ts`.
-local NIL_RELAY_WAIT_SECONDS = 60
+local NIL_RELAY_WAIT_SECONDS = Protocol.studio.nilRelayWaitSeconds
 local ARGS_WAIT_SECONDS = 5
 
 local sideChannel: any = nil
@@ -134,16 +116,17 @@ if sideChannel ~= nil then
 	if connectOk then
 		hostSocket = socket
 		socket.Opened:Once(function()
-			socket:Send(
-				HttpService:JSONEncode({ type = "pluginReady", requestId = sideChannel.requestId })
-			)
+			socket:Send(HttpService:JSONEncode({
+				type = FRAME.pluginReady,
+				requestId = sideChannel.requestId,
+			}))
 		end)
 		socket.MessageReceived:Connect(function(data: string)
 			local frameOk, frame = pcall(HttpService.JSONDecode, HttpService, data)
 			if
 				frameOk
 				and typeof(frame) == "table"
-				and frame.type == "nilRelay"
+				and frame.type == FRAME.nilRelay
 				and frame.requestId == sideChannel.requestId
 			then
 				hasNilRelay = true
@@ -169,7 +152,7 @@ local function endTest(jestOutput: string, gameOutput: string?): ()
 	}
 	local ok, endErr = pcall(function()
 		if usesSideChannel then
-			result.type = "results"
+			result.type = FRAME.results
 			result.requestId = sideChannel.requestId
 			hostSocket:Send(HttpService:JSONEncode(result))
 		else
@@ -182,7 +165,7 @@ local function endTest(jestOutput: string, gameOutput: string?): ()
 end
 
 local function endWithError(err: string): ()
-	endTest(HttpService:JSONEncode({ success = false, err = err }), "[]")
+	endTest(HttpService:JSONEncode(Envelope.failure(err)), "[]")
 end
 
 local testArgs = StudioTestService:GetTestArgs()
@@ -463,8 +446,11 @@ if testArgs.workspace ~= nil then
 	-- package is staged. No host ready leaves the run sequential.
 	local fanOut = nil
 	local vmParallel = testArgs.workspace.vmParallel
-	if typeof(vmParallel) == "number" and vmParallel > 1 then
-		local hosts = collectReadyHosts(vmParallel)
+	local hostLimit = if typeof(vmParallel) == "number"
+		then math.min(vmParallel, EmbeddedRunner.largestPackageSize(testArgs.workspace.entries))
+		else 0
+	if hostLimit > 1 then
+		local hosts = collectReadyHosts(hostLimit)
 		if #hosts > 0 then
 			fanOut = fanOutToHosts(hosts, testArgs.workspace.runBudgetMs)
 		else
@@ -480,26 +466,24 @@ if testArgs.workspace ~= nil then
 	end
 
 	-- `bailed` tells the CLI the missing entries were skipped under --bail.
-	endTest(
-		HttpService:JSONEncode({
-			bailed = outcome.bailed,
-			deferred = outcome.deferred,
-			entries = entriesOrErr,
-		}),
-		"[]"
-	)
+	endTest(HttpService:JSONEncode(Envelope.task(entriesOrErr, outcome)), "[]")
 	return
 end
 
-if testArgs.config == nil or testArgs.config.configs == nil then
+if testArgs.configs == nil then
 	local keysOk, keys = pcall(HttpService.JSONEncode, HttpService, testArgs)
-	endWithError(
-		"testArgs.config.configs is nil. Keys: " .. (if keysOk then keys else "<unencodable>")
-	)
+	endWithError("testArgs.configs is nil. Keys: " .. (if keysOk then keys else "<unencodable>"))
 	return
 end
 
-local configs = testArgs.config.configs
+local configs = {}
+-- An empty list skips injection for that config: the CLI leaves out mounts
+-- whose source tree already has a user-authored `jest.config.luau`.
+local runtimeStubMounts: { { string } } = {}
+for index, entry in testArgs.configs do
+	configs[index] = entry.config
+	runtimeStubMounts[index] = entry.runtimeStubMounts or {}
+end
 
 local requireOk, Runner = pcall(require, script.Parent.shared.runner)
 if not requireOk then
@@ -514,12 +498,6 @@ if not stubHooksOk then
 end
 
 local GameOutputCapture = require(script.Parent.shared["game-output-capture"])
-
--- Per-config injection target lists, parallel to `configs`. The CLI sends a
--- pre-filtered list excluding mount paths whose source tree already has a
--- user-authored `jest.config.luau` synced by Rojo. Empty entry (or missing
--- field) means: skip injection for this config.
-local runtimeStubMounts: { { string } } = testArgs.runtimeStubMounts or table.create(#configs, {})
 
 --[[
 	Run the configs across `requested` Luau VMs and return the entries in
@@ -579,13 +557,17 @@ local function runInVmHosts(requested: number): ({ any }?, string?)
 		waitSeconds = waitSeconds,
 	})
 
-	return VmParallel.finalizeEntries({
+	local entries = VmParallel.finalizeEntries({
 		configCount = #configs,
 		encode = encode,
 		missingError = missingError(waitSeconds),
 		received = received,
-	}),
-		stopCapture()
+	})
+	for index, entry in entries do
+		entry.jobIndex = configs[index].runnerJobIndex
+	end
+
+	return entries, stopCapture()
 end
 
 -- Experimental in-session parallelism, off unless the CLI asked for it. A
@@ -600,7 +582,7 @@ if vmParallel > 1 and #configs > 1 then
 		-- project owns its capture again, and the CLI groups the output by
 		-- this field rather than by the flag it sent.
 		endTest(
-			HttpService:JSONEncode({ entries = entries, gameOutputScope = "batch" }),
+			HttpService:JSONEncode(Envelope.task(entries, { batch = true })),
 			gameOutput or "[]"
 		)
 		return
@@ -623,4 +605,4 @@ if not runOk then
 	return
 end
 
-endTest(HttpService:JSONEncode({ entries = entriesOrErr }), "[]")
+endTest(HttpService:JSONEncode(Envelope.task(entriesOrErr)), "[]")

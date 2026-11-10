@@ -1,44 +1,11 @@
-import type { CreateSortedMapItemParameters, StorageClient } from "@bedrock-rbx/ocale/storage";
+import type { OpenCloudClientOptions } from "@bedrock-rbx/ocale";
+import { StorageClient } from "@bedrock-rbx/ocale/storage";
 
-import { type } from "arktype";
+import { isDefined, pickBy } from "remeda";
 
-import { listSortedMapItemsAsync, resolveStorageClient } from "./sorted-map-page.ts";
+import { type StreamingResultEntry, streamingResultSchema } from "../protocol/streaming-summary.ts";
 
-const DEFAULT_TTL_SECONDS = 600;
-
-const streamingResultSchema = type({
-	elapsedMs: "number",
-	numFailedTests: "number",
-	numPassedTests: "number",
-	numPendingTests: "number",
-	pkg: "string",
-	project: "string",
-	success: "boolean",
-});
-
-/**
- * Slim per-package summary published mid-task via the MemoryStore SortedMap.
- * Intentionally compact — Roblox caps SortedMap items at 32 KB, so we leave
- * the full `jestOutput` JSON out of streaming and reconstruct it from the
- * task's final envelope. Streaming only needs enough fields to render a
- * one-line progress message.
- */
-export interface StreamingResultEntry {
-	/** Wall time the package run took, in milliseconds. */
-	elapsedMs: number;
-	/** Failed test count. */
-	numFailedTests: number;
-	/** Passed test count. */
-	numPassedTests: number;
-	/** Pending (skipped or todo) test count. */
-	numPendingTests: number;
-	/** Package name. */
-	pkg: string;
-	/** Jest project display name within the package. */
-	project: string;
-	/** Whether the package run passed. */
-	success: boolean;
-}
+const LIST_PAGE_SIZE = 100;
 
 /** One SortedMap item as read back from the map. */
 export interface StreamingResultRecord {
@@ -48,10 +15,7 @@ export interface StreamingResultRecord {
 	value: StreamingResultEntry;
 }
 
-/**
- * Minimal surface used by streaming polling — lets backends and tests
- * stand in a stub without depending on the SDK class hierarchy.
- */
+/** Surface streaming polling reads through. */
 export interface StreamingResultReader {
 	/**
 	 * Delete one item from the map.
@@ -77,38 +41,25 @@ export interface StreamingResultClientOptions {
 		/** Universe that owns the map. */
 		universeId: string;
 	};
-	/**
-	 * Per-run UUID-keyed sorted-map identifier shared between materializer and
-	 * CLI.
-	 */
+	/** Per-run sorted-map ID shared with the materializer. */
 	mapId: string;
 	/** Override the StorageClient factory (default: real client). Test seam. */
 	storageFactory?: () => StorageClient;
-	/** TTL for written items in seconds. Default 600 (10 min). */
-	ttlSeconds?: number;
 }
 
-/**
- * Thin facade over `StorageClient.sortedMaps` for the streaming-result
- * envelope. The materializer writes one item per package result keyed by
- * `<pkg>::<project>`; the CLI lists all current items, drives the
- * aggregator with each, then deletes consumed items so they aren't
- * re-emitted on the next poll.
- */
+/** Reads and deletes streamed results in one SortedMap. */
 export class StreamingResultClient {
 	private readonly mapId: string;
 	private readonly storage: StorageClient;
-	private readonly ttlSeconds: number;
 	private readonly universeId: string;
 
 	/**
 	 * Bind the client to one map and its storage client.
-	 * @param options - Map ID, credentials, TTL and storage seam.
+	 * @param options - Map ID, credentials and storage seam.
 	 */
 	constructor(options: StreamingResultClientOptions) {
 		this.mapId = options.mapId;
 		this.universeId = options.credentials.universeId;
-		this.ttlSeconds = options.ttlSeconds ?? DEFAULT_TTL_SECONDS;
 		this.storage = resolveStorageClient(options);
 	}
 
@@ -137,57 +88,49 @@ export class StreamingResultClient {
 	 * @rejects When a page read fails or an item fails to decode.
 	 */
 	public async readAllAsync(): Promise<Array<StreamingResultRecord>> {
-		return listSortedMapItemsAsync({
-			decode: (item) => ({ id: item.id, value: decodeStreamingResult(item.value) }),
-			failureLabel: "streaming results",
-			mapId: this.mapId,
-			storage: this.storage,
-			universeId: this.universeId,
-		});
-	}
+		const records: Array<StreamingResultRecord> = [];
+		let pageToken: string | undefined;
 
-	/**
-	 * Write one package result as a map item with the configured TTL.
-	 * @param entry - Package result to publish.
-	 * @returns Resolves once the item is written.
-	 * @rejects When the storage API refuses the write.
-	 */
-	public async writeAsync(entry: StreamingResultEntry): Promise<void> {
-		const parameters: CreateSortedMapItemParameters = {
-			itemId: itemIdFor(entry),
-			mapId: this.mapId,
-			ttl: this.ttlSeconds,
-			universeId: this.universeId,
-			value: { ...entry },
-		};
-		const result = await this.storage.sortedMaps.create(parameters);
-		if (!result.success) {
-			throw new Error(`Failed to write streaming result: ${result.err.message}`, {
-				cause: result.err,
-			});
-		}
+		do {
+			const result = await this.storage.sortedMaps.list(
+				pickBy(
+					{
+						mapId: this.mapId,
+						maxPageSize: LIST_PAGE_SIZE,
+						pageToken,
+						universeId: this.universeId,
+					},
+					isDefined,
+				),
+			);
+			if (!result.success) {
+				throw new Error(`Failed to read streaming results: ${result.err.message}`, {
+					cause: result.err,
+				});
+			}
+
+			for (const item of result.data.items) {
+				records.push({ id: item.id, value: streamingResultSchema.assert(item.value) });
+			}
+
+			pageToken = result.data.nextPageToken;
+		} while (pageToken !== undefined);
+
+		return records;
 	}
 }
 
-/**
- * Validates the wire payload against the StreamingResultEntry shape; throws on
- * mismatch.
- * @param value - Wire payload of one SortedMap item.
- * @returns The validated entry.
- */
-function decodeStreamingResult(value: JSONValue): StreamingResultEntry {
-	return streamingResultSchema.assert(value);
-}
+function resolveStorageClient(options: StreamingResultClientOptions): StorageClient {
+	if (options.storageFactory !== undefined) {
+		return options.storageFactory();
+	}
 
-/**
- * Builds the SortedMap item identifier. Relies on the invariant that
- * neither `pkg` nor `project` contains `::` — npm package names disallow
- * it, and project displayNames are validated upstream. If that ever
- * changes the join token needs to become a character that's banned by
- * both naming rules, such as a control character or null byte.
- * @param entry - Entry whose `pkg` and `project` form the ID.
- * @returns The `<pkg>::<project>` item ID.
- */
-function itemIdFor(entry: StreamingResultEntry): string {
-	return `${entry.pkg}::${entry.project}`;
+	const clientOptions: OpenCloudClientOptions = pickBy(
+		{
+			apiKey: options.credentials.apiKey,
+			baseUrl: options.baseUrl,
+		},
+		isDefined,
+	);
+	return new StorageClient(clientOptions);
 }

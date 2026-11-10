@@ -1,11 +1,7 @@
-import type { Styles } from "../formatters/styles.ts";
+import type { Styles } from "../terminal/palette.ts";
 import { STAGE_IDS, STAGE_LABELS, type StageId } from "./stages.ts";
 
-/**
- * Where a stage stands. `unfinished` is the state a stage is left in when the
- * run ends while it is still open — a throw mid-upload, a killed process — so
- * the block says which step it died on rather than freezing on a spinner.
- */
+/** Where a stage stands; `unfinished` marks one open when the run ended. */
 export type StageState = "active" | "done" | "unfinished";
 
 /** Snapshot of one stage for rendering. */
@@ -22,12 +18,7 @@ export interface StageView {
 
 /** Spinner frame and styles for one render. */
 export interface StageRenderOptions {
-	/**
-	 * The spinner glyph for this repaint, and the whole difference between the
-	 * two shapes: with one, an open stage animates and shows how long it has
-	 * been running, because the next repaint replaces the row. Without one the
-	 * line is already in the scrollback, so it carries neither.
-	 */
+	/** Spinner glyph for a repaint, or `undefined` for a scrollback line. */
 	frame: string | undefined;
 	/** Colors for the marker and the trailing parts. */
 	styles: Styles;
@@ -53,13 +44,6 @@ export function formatStage(view: StageView, { frame, styles }: StageRenderOptio
 	return ` ${markerFor(view.state, { frame, styles })} ${label}  ${trailing}`.trimEnd();
 }
 
-/**
- * Durations as a stage reports them: milliseconds below a second, seconds to
- * one decimal above it. A stage is a whole step of a run rather than one test,
- * so `31640ms` is a number to decode where `31.6s` is one to read.
- * @param elapsedMs - Duration in milliseconds.
- * @returns The duration with its `ms` or `s` unit.
- */
 function formatElapsed(elapsedMs: number): string {
 	if (elapsedMs < MILLISECONDS_PER_SECOND) {
 		return `${elapsedMs.toFixed(0)}ms`;
@@ -68,12 +52,6 @@ function formatElapsed(elapsedMs: number): string {
 	return `${(elapsedMs / MILLISECONDS_PER_SECOND).toFixed(1)}s`;
 }
 
-/**
- * What a stage in this state has to say about its duration, if anything.
- * @param view - Stage to describe.
- * @param frame - Spinner glyph, or `undefined` for a scrollback line.
- * @returns The formatted duration, or `undefined` when the row shows none.
- */
 function elapsedFor(view: StageView, frame: string | undefined): string | undefined {
 	if (view.state === "done" || (frame !== undefined && view.state === "active")) {
 		return formatElapsed(view.elapsedMs);

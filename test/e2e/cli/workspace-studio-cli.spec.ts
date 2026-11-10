@@ -1,13 +1,13 @@
 import * as path from "node:path";
 import { describe, expect, it } from "vitest";
 
+import { writeRbxtsJsProject } from "#test/e2e/cli/rbxts-js-project.ts";
 import {
 	createFixtureSandbox,
 	hostStudioEnvironment,
 	isStudioOnHost,
 	runCliAsync,
-} from "#test/e2e/cli/helpers.ts";
-import { writeRbxtsJsProject } from "#test/e2e/cli/rbxts-js-project.ts";
+} from "#test/harness/helpers.ts";
 
 const WORKSPACE_FIXTURE_PATH = path.resolve(__dirname, "../fixtures/workspace-studio");
 const RUN_TIMEOUT_MS = 180_000;

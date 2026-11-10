@@ -1,0 +1,59 @@
+import type { CoverageMap } from "../coverage-data/coverage-map.ts";
+import type { CollectorResult } from "./coverage-accumulator.ts";
+
+/**
+ * Convert collected probe locations into a coverage map.
+ * @param result - Statements, functions and branches found by the collector.
+ * @returns Spans keyed by probe index.
+ */
+export function buildCoverageMap(result: CollectorResult): CoverageMap {
+	return {
+		branchMap: buildBranchMap(result),
+		functionMap: buildFunctionMap(result),
+		statementMap: buildStatementMap(result),
+	};
+}
+
+function buildStatementMap(result: CollectorResult): CoverageMap["statementMap"] {
+	const statementMap: CoverageMap["statementMap"] = {};
+	for (const statement of result.statements) {
+		statementMap[String(statement.index)] = {
+			end: { column: statement.location.endColumn, line: statement.location.endLine },
+			start: { column: statement.location.beginColumn, line: statement.location.beginLine },
+		};
+	}
+
+	return statementMap;
+}
+
+function buildFunctionMap(result: CollectorResult): NonNullable<CoverageMap["functionMap"]> {
+	const functionMap: NonNullable<CoverageMap["functionMap"]> = {};
+	for (const func of result.functions) {
+		functionMap[String(func.index)] = {
+			name: func.name,
+			location: {
+				end: { column: func.location.endColumn, line: func.location.endLine },
+				start: { column: func.location.beginColumn, line: func.location.beginLine },
+			},
+		};
+	}
+
+	return functionMap;
+}
+
+function buildBranchMap(result: CollectorResult): NonNullable<CoverageMap["branchMap"]> {
+	const branchMap: NonNullable<CoverageMap["branchMap"]> = {};
+	for (const branch of result.branches) {
+		branchMap[String(branch.index)] = {
+			locations: branch.arms.map((arm) => {
+				return {
+					end: { column: arm.location.endColumn, line: arm.location.endLine },
+					start: { column: arm.location.beginColumn, line: arm.location.beginLine },
+				};
+			}),
+			type: branch.branchType,
+		};
+	}
+
+	return branchMap;
+}

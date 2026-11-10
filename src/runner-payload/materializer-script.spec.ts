@@ -1,0 +1,463 @@
+import { describe, expect, it } from "vitest";
+
+import type { IndexedJestArgv } from "./jest-argv.ts";
+import {
+	generateMaterializerScript,
+	generateWorkStealingScript,
+	toMaterializerEntry,
+} from "./materializer-script.ts";
+
+function createArgv(overrides: Partial<IndexedJestArgv> = {}): IndexedJestArgv {
+	return { runnerJobIndex: 0, testMatch: ["**/*.spec"], ...overrides };
+}
+
+describe(generateMaterializerScript, () => {
+	it("should return an empty JSON array as the task's game output", () => {
+		expect.assertions(1);
+
+		const script = generateMaterializerScript([
+			{ config: createArgv(), pkg: "@halcyon/foo", project: "core" },
+		]);
+
+		expect(script).toMatch(/\),\s*"\[\]"\s*--#endregion\s*$/);
+	});
+
+	it("should embed entry pkg and project in the substituted template", () => {
+		expect.assertions(3);
+
+		const script = generateMaterializerScript([
+			{
+				config: createArgv(),
+				pkg: "@halcyon/foo",
+				project: "core",
+			},
+		]);
+
+		expect(script).toContain('"pkg":"@halcyon/foo"');
+		expect(script).toContain('"project":"core"');
+		expect(script).toContain("Jest.runCLI");
+	});
+
+	it("should preserve order across same-pkg multi-project entries", () => {
+		expect.assertions(2);
+
+		const script = generateMaterializerScript([
+			{ config: createArgv(), pkg: "@halcyon/foo", project: "core" },
+			{
+				config: createArgv(),
+				pkg: "@halcyon/foo",
+				project: "integration",
+			},
+			{ config: createArgv(), pkg: "@halcyon/foo", project: "e2e" },
+		]);
+
+		const corePosition = script.indexOf('"project":"core"');
+		const integrationPosition = script.indexOf('"project":"integration"');
+		const e2ePosition = script.indexOf('"project":"e2e"');
+
+		expect(corePosition).toBeLessThan(integrationPosition);
+		expect(integrationPosition).toBeLessThan(e2ePosition);
+	});
+
+	it("should preserve order across multi-pkg multi-project entries", () => {
+		expect.assertions(3);
+
+		const script = generateMaterializerScript([
+			{
+				config: createArgv(),
+				pkg: "@halcyon/foo",
+				project: "alpha",
+			},
+			{ config: createArgv(), pkg: "@halcyon/bar", project: "beta" },
+			{
+				config: createArgv(),
+				pkg: "@halcyon/bar",
+				project: "gamma",
+			},
+		]);
+
+		const fooPosition = script.indexOf('"pkg":"@halcyon/foo"');
+		const firstBarPosition = script.indexOf('"pkg":"@halcyon/bar"');
+		const lastBarPosition = script.lastIndexOf('"pkg":"@halcyon/bar"');
+
+		expect(fooPosition).toBeGreaterThanOrEqual(0);
+		expect(fooPosition).toBeLessThan(firstBarPosition);
+		expect(lastBarPosition).toBeGreaterThan(firstBarPosition);
+	});
+
+	it("should wrap entries in an entries envelope", () => {
+		expect.assertions(1);
+
+		const script = generateMaterializerScript([
+			{ config: createArgv(), pkg: "@halcyon/foo", project: "core" },
+		]);
+
+		expect(script).toContain('"entries":[');
+	});
+
+	it("should embed the entry's argv", () => {
+		expect.assertions(1);
+
+		const script = generateMaterializerScript([
+			{
+				config: createArgv({ testMatch: ["**/*.spec"] }),
+				pkg: "@halcyon/foo",
+				project: "core",
+			},
+		]);
+
+		expect(script).toContain('"testMatch":["**/*.spec"]');
+	});
+
+	it("should include jestPath in the substituted Jest argv when set", () => {
+		expect.assertions(1);
+
+		const script = generateMaterializerScript([
+			{
+				config: createArgv({
+					jestPath: "ReplicatedStorage/Packages/_Index/Jest",
+				}),
+				pkg: "@halcyon/foo",
+				project: "core",
+			},
+		]);
+
+		expect(script).toContain('"jestPath":"ReplicatedStorage/Packages/_Index/Jest"');
+	});
+
+	it("should bundle the setup-paths resolver so Luau converts strings to Instances", () => {
+		expect.assertions(2);
+
+		const script = generateMaterializerScript([
+			{
+				config: createArgv({
+					setupFilesAfterEnv: ["ReplicatedStorage/Pkg/Shared/setup"],
+				}),
+				pkg: "@halcyon/foo",
+				project: "core",
+			},
+		]);
+
+		// The generated Luau must invoke InstanceResolver on the setupFiles
+		// arrays. Without this the materializer payload's DataModel-path
+		// strings reach Jest unresolved and runCLI fails.
+		expect(script).toContain("setupFilesAfterEnv");
+		expect(script).toMatch(/config\.setupFiles = \w*resolvePaths\(config\.setupFiles\)/);
+	});
+
+	it("should bundle the per-package coverage reset/capture logic into the materializer template", () => {
+		expect.assertions(2);
+
+		const script = generateMaterializerScript([
+			{ config: createArgv(), pkg: "@halcyon/foo", project: "core" },
+		]);
+
+		// The bundled materializer must reset _G.__jest_roblox_cov between
+		// packages and embed the captured map into the result envelope. The
+		// rest of the runtime workflow lives in luau/staging/entry.luau but
+		// must survive bundling; assert both halves are present.
+		expect(script).toContain("__jest_roblox_cov");
+		expect(script).toMatch(/runnerCoverage/);
+	});
+
+	it("should embed a payload holding the long-string terminator above its level", () => {
+		expect.assertions(1);
+
+		const script = generateMaterializerScript([
+			{
+				config: createArgv({ jestPath: "boom]=]bad" }),
+				pkg: "@halcyon/foo",
+				project: "core",
+			},
+		]);
+
+		expect(script).toMatch(/JSONDecode\(\[==\[\{.*boom\]=\]bad.*\}\]==\]\)/);
+	});
+});
+
+describe(generateWorkStealingScript, () => {
+	it("should embed queueId and invisibilityWindowSeconds alongside the entries", () => {
+		expect.assertions(3);
+
+		const script = generateWorkStealingScript({
+			inputs: [
+				{
+					config: createArgv(),
+					pkg: "@halcyon/foo",
+					project: "core",
+				},
+			],
+			invisibilityWindowSeconds: 90,
+			queueId: "queue-uuid-1",
+		});
+
+		expect(script).toContain('"queueId":"queue-uuid-1"');
+		expect(script).toContain('"invisibilityWindowSeconds":90');
+		expect(script).toContain('"pkg":"@halcyon/foo"');
+	});
+
+	// A worker that drops an entry over budget puts its queue item back, and
+	// the put-back has to name a TTL. Only the CLI knows which one the queue
+	// was seeded with, so it has to travel in the payload.
+	it("should embed the queue TTL only when one is given", () => {
+		expect.assertions(2);
+
+		const inputs = [{ config: createArgv(), pkg: "@halcyon/foo", project: "core" }];
+
+		const script = generateWorkStealingScript({
+			inputs,
+			invisibilityWindowSeconds: 90,
+			queueId: "queue-uuid-1",
+			queueTtlSeconds: 120,
+		});
+
+		expect(
+			generateWorkStealingScript({
+				inputs,
+				invisibilityWindowSeconds: 90,
+				queueId: "queue-uuid-1",
+			}),
+		).not.toContain('"queueTtlSeconds":');
+		expect(script).toContain('"queueTtlSeconds":120');
+	});
+
+	// The materializer carries its own default, so a run that says nothing
+	// about the budget must not pin one into the payload.
+	it("should embed a result budget only when one is given", () => {
+		expect.assertions(2);
+
+		const inputs = [{ config: createArgv(), pkg: "@halcyon/foo", project: "core" }];
+
+		// Matched in its encoded form: the bundled materializer source names
+		// the field too, so a bare substring would always be present.
+		expect(
+			generateWorkStealingScript({
+				inputs,
+				invisibilityWindowSeconds: 90,
+				queueId: "queue-uuid-3",
+			}),
+		).not.toContain('"resultBudgetBytes":');
+		expect(
+			generateWorkStealingScript({
+				inputs,
+				invisibilityWindowSeconds: 90,
+				queueId: "queue-uuid-3",
+				resultBudgetBytes: 2048,
+			}),
+		).toContain('"resultBudgetBytes":2048');
+	});
+
+	it("should preserve entries in input order", () => {
+		expect.assertions(1);
+
+		const script = generateWorkStealingScript({
+			inputs: [
+				{
+					config: createArgv(),
+					pkg: "@halcyon/foo",
+					project: "alpha",
+				},
+				{
+					config: createArgv(),
+					pkg: "@halcyon/bar",
+					project: "beta",
+				},
+			],
+			invisibilityWindowSeconds: 60,
+			queueId: "queue-uuid-2",
+		});
+
+		expect(script.indexOf('"pkg":"@halcyon/foo"')).toBeLessThan(
+			script.indexOf('"pkg":"@halcyon/bar"'),
+		);
+	});
+
+	it("should embed a queueId holding the long-string terminator above its level", () => {
+		expect.assertions(1);
+
+		const script = generateWorkStealingScript({
+			inputs: [
+				{
+					config: createArgv(),
+					pkg: "@halcyon/foo",
+					project: "core",
+				},
+			],
+			invisibilityWindowSeconds: 60,
+			queueId: "queue]=]bad",
+		});
+
+		expect(script).toMatch(/JSONDecode\(\[==\[\{.*queue\]=\]bad.*\}\]==\]\)/);
+	});
+
+	it("should embed sortedMapId and streamingTtlSeconds when streaming is configured", () => {
+		expect.assertions(2);
+
+		const script = generateWorkStealingScript({
+			inputs: [
+				{
+					config: createArgv(),
+					pkg: "@halcyon/foo",
+					project: "core",
+				},
+			],
+			invisibilityWindowSeconds: 90,
+			queueId: "queue-uuid-1",
+			streaming: { sortedMapId: "stream-uuid", ttlSeconds: 300 },
+		});
+
+		expect(script).toContain('"sortedMapId":"stream-uuid"');
+		expect(script).toContain('"streamingTtlSeconds":300');
+	});
+
+	it("should omit streaming payload fields when streaming is not configured", () => {
+		expect.assertions(2);
+
+		const script = generateWorkStealingScript({
+			inputs: [
+				{
+					config: createArgv(),
+					pkg: "@halcyon/foo",
+					project: "core",
+				},
+			],
+			invisibilityWindowSeconds: 90,
+			queueId: "queue-uuid-1",
+		});
+
+		// The Luau template always references `sortedMapId` in its type
+		// declaration; assert the JSON payload does not embed a value for it.
+		expect(script).not.toContain('"sortedMapId":');
+		expect(script).not.toContain('"streamingTtlSeconds":');
+	});
+});
+
+describe("generateMaterializerScript with streaming", () => {
+	it("should embed sortedMapId when streaming is configured", () => {
+		expect.assertions(1);
+
+		const script = generateMaterializerScript(
+			[
+				{
+					config: createArgv(),
+					pkg: "@halcyon/foo",
+					project: "core",
+				},
+			],
+			{ streaming: { sortedMapId: "stream-uuid" } },
+		);
+
+		expect(script).toContain('"sortedMapId":"stream-uuid"');
+	});
+});
+
+describe("bail payload", () => {
+	it("should embed bail in the single-task payload when requested", () => {
+		expect.assertions(1);
+
+		const script = generateMaterializerScript(
+			[
+				{
+					config: createArgv(),
+					pkg: "@halcyon/foo",
+					project: "core",
+				},
+			],
+			{ bail: true },
+		);
+
+		expect(script).toContain('"bail":true');
+	});
+
+	it("should embed bail in the work-stealing payload when requested", () => {
+		expect.assertions(1);
+
+		const script = generateWorkStealingScript({
+			bail: true,
+			inputs: [
+				{
+					config: createArgv(),
+					pkg: "@halcyon/foo",
+					project: "core",
+				},
+			],
+			invisibilityWindowSeconds: 90,
+			queueId: "queue-uuid-1",
+		});
+
+		expect(script).toContain('"bail":true');
+	});
+
+	it("should embed the bail signal map when one is given", () => {
+		expect.assertions(1);
+
+		const script = generateWorkStealingScript({
+			bail: true,
+			bailMapId: "bail-uuid",
+			inputs: [
+				{
+					config: createArgv(),
+					pkg: "@halcyon/foo",
+					project: "core",
+				},
+			],
+			invisibilityWindowSeconds: 90,
+			queueId: "queue-uuid-1",
+		});
+
+		expect(script).toContain('"bailMapId":"bail-uuid"');
+	});
+
+	// The single-task path has no siblings to broadcast to, so it bails
+	// locally and the payload carries no map.
+	it("should omit the bail signal map when none is given", () => {
+		expect.assertions(1);
+
+		const script = generateMaterializerScript(
+			[
+				{
+					config: createArgv(),
+					pkg: "@halcyon/foo",
+					project: "core",
+				},
+			],
+			{ bail: true },
+		);
+
+		expect(script).not.toContain('"bailMapId":');
+	});
+
+	it("should omit bail from the payload when not requested", () => {
+		expect.assertions(1);
+
+		const script = generateMaterializerScript([
+			{ config: createArgv(), pkg: "@halcyon/foo", project: "core" },
+		]);
+
+		expect(script).not.toContain('"bail":');
+	});
+});
+
+describe(toMaterializerEntry, () => {
+	it("should name the job's package, project and request index", () => {
+		expect.assertions(1);
+
+		const argv = createArgv();
+
+		expect(
+			toMaterializerEntry({ argv, displayName: "core", pkg: "@halcyon/foo" }, 3),
+		).toStrictEqual({
+			config: { ...argv, runnerJobIndex: 3 },
+			pkg: "@halcyon/foo",
+			project: "core",
+		});
+	});
+
+	it("should refuse a job with no package", () => {
+		expect.assertions(1);
+
+		expect(() => toMaterializerEntry({ argv: createArgv(), displayName: "core" }, 0)).toThrow(
+			'Workspace entry for project "core" is missing its package name (pkg)',
+		);
+	});
+});

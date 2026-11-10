@@ -58,7 +58,8 @@ export function collectLuauTestDefinitions(source: string, filePath: string): Co
 }
 
 /**
- * Index every `line:column` position of a source, columns counted in bytes.
+ * Columns count bytes, as luau-ast spans do.
+ *
  * @param source - The source text.
  * @returns The byte offset of each 1-indexed `line:column` key.
  */

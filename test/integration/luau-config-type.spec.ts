@@ -1,7 +1,7 @@
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { runTypecheckAsync } from "#src/index.ts";
+import { runTypecheckAsync } from "#src/api.ts";
 
 const FIXTURE_DIR = path.resolve(__dirname, "..", "fixtures", "luau-config-type");
 

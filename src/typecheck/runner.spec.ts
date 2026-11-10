@@ -93,8 +93,8 @@ describe(runTypecheckAsync, () => {
 	}
 
 	/**
-	 * A volume answering every tsconfig read with one text and every other read
-	 * with another, which is the only distinction these cases need.
+	 * A volume answering every tsconfig read with one text and every other
+	 * read with another, which is the only distinction these cases need.
 	 *
 	 * @param tsconfigContent - What a tsconfig read returns.
 	 * @param testFileContent - What every other read returns.

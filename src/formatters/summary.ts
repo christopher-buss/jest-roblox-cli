@@ -1,37 +1,14 @@
-import { hasExecError } from "../types/exec-error-file.ts";
+import { buildDurationBreakdown } from "../host-time/duration-breakdown.ts";
+import type { ColorFunc, Styles } from "../terminal/palette.ts";
+import { plural } from "../terminal/plural.ts";
+import type { BailSummary } from "../types/bail-summary-types.ts";
 import type { JestResult, SnapshotSummary } from "../types/jest-result-types.ts";
 import type { TimingResult } from "../types/timing-types.ts";
-import { formatBannerBar } from "../utils/banner.ts";
-import { buildDurationBreakdown } from "./duration-breakdown.ts";
-import {
-	type AffectedSummary,
-	type BailSummary,
-	type FormatOptions,
-	getTerminalWidth,
-	type PartialRunCause,
-} from "./shared.ts";
-import { type ColorFunc, createStyles, type Styles } from "./styles.ts";
-
-/** The three buckets a summary row counts, whatever it is counting. */
-export interface SummaryCounts {
-	/**
-	 * Files or tests that failed.
-	 */
-	failed: number;
-	/**
-	 * Files or tests that passed.
-	 */
-	passed: number;
-	/**
-	 * Files or tests that were skipped.
-	 */
-	skipped: number;
-}
+import { countFileBuckets, formatLogHintLines, type SummaryCounts } from "./failure-model.ts";
+import type { AffectedSummary, FormatOptions, PartialRunCause } from "./shared.ts";
 
 /**
- * The `Tests` row's numbers. `total` is Jest's `numTotalTests`, which also
- * counts todo tests — no bucket carries those, so it is not the sum of the
- * three, and the row cannot derive it the way the file row can.
+ * The `Tests` row's numbers; `total` also counts todo tests.
  */
 export interface TestRowCounts {
 	/**
@@ -65,9 +42,9 @@ export interface TestSummaryOptions {
 	 */
 	snapshotWriteFailures?: number | undefined;
 	/**
-	 * Palette to render with; colored when absent.
+	 * Palette to render with.
 	 */
-	styles?: Styles | undefined;
+	styles: Styles;
 	/**
 	 * Run timing for the Start at and Duration rows.
 	 */
@@ -97,16 +74,15 @@ export interface FormatLogHintsOptions {
 }
 
 /**
- * Render the RUN header with the version and root, plus a coverage line when coverage is on.
- * @param options - Version, root, color and coverage switch.
- * @param styles - Palette to render with; built from `options.color` when absent.
+ * Render the RUN header with the version, root and coverage line.
+ * @param options - Version, root and coverage switch.
+ * @param st - Palette to render with.
  * @returns The newline-wrapped header.
  */
 export function formatRunHeader(
-	options: Pick<FormatOptions, "collectCoverage" | "color" | "rootDir" | "version">,
-	styles?: Styles,
+	options: Pick<FormatOptions, "collectCoverage" | "rootDir" | "version">,
+	st: Styles,
 ): string {
-	const st = styles ?? createStyles(options.color);
 	const runBadge = st.runBadge(" RUN ");
 	const version = st.location(`v${options.version}`);
 	const rootDirectory = st.lineNumber(options.rootDir);
@@ -121,23 +97,7 @@ export function formatRunHeader(
 }
 
 /**
- * Render the terminal-wide `Failed Tests N` banner.
- * @param failCount - Failures shown in the title.
- * @param _styles - Unused.
- * @returns The banner.
- */
-export function formatFailedTestsHeader(failCount: number, _styles?: Styles): string {
-	return formatBannerBar({
-		level: "error",
-		termWidth: getTerminalWidth(),
-		title: `Failed Tests ${failCount}`,
-	});
-}
-
-/**
- * The `Type Errors  …` row, byte-for-byte vitest's typecheck summary line:
- * an 11-column right-aligned label, two spaces, then a bold-red `N failed` or a
- * dim `no errors`. Shared with the agent formatter so both reporters agree.
+ * The `Type Errors  …` row; matches vitest's typecheck summary byte for byte.
  * @param typeErrors - Type errors found.
  * @param styles - Palette to render with.
  * @returns The row.
@@ -159,11 +119,10 @@ export function formatTestSummary({
 	bail,
 	result,
 	snapshotWriteFailures = 0,
-	styles,
+	styles: st,
 	timing,
 	typeErrors,
 }: TestSummaryOptions): string {
-	const st = styles ?? createStyles(true);
 	const lines: Array<string> = [
 		...collectSnapshotLines({
 			snapshot: result.snapshot,
@@ -175,7 +134,6 @@ export function formatTestSummary({
 		formatTestsLine(countTestBuckets(result), st),
 	];
 
-	// Type Errors line (only shown when typecheck was enabled)
 	if (typeErrors !== undefined) {
 		lines.push(formatTypeErrorsLine(typeErrors, st));
 	}
@@ -190,7 +148,7 @@ export function formatTestSummary({
 }
 
 /**
- * Render the hints after a failed run: the snapshot update hint and where the written outputs are.
+ * Render the snapshot update and output-file hints of a failed run.
  * @param options - Format options, snapshot totals and palette.
  * @returns The hint lines, or empty when none apply.
  */
@@ -203,12 +161,12 @@ export function formatLogHints({ options, snapshot, styles }: FormatLogHintsOpti
 		);
 	}
 
-	if (options.outputFile !== undefined) {
-		lines.push(styles.dim(`  View ${options.outputFile} for full Jest output`));
-	}
-
-	if (options.gameOutput !== undefined) {
-		lines.push(styles.dim(`  View ${options.gameOutput} for Roblox game logs`));
+	const hints = formatLogHintLines({
+		gameOutput: options.gameOutput,
+		outputFile: options.outputFile,
+	});
+	for (const hint of hints) {
+		lines.push(styles.dim(`  ${hint}`));
 	}
 
 	return lines.join("\n");
@@ -230,9 +188,6 @@ function collectSnapshotLines({
 	writeFailures,
 }: {
 	snapshot: SnapshotSummary | undefined;
-	/**
-	 * Palette to render with.
-	 */
 	styles: Styles;
 	writeFailures: number;
 }): Array<string> {
@@ -262,13 +217,6 @@ const SNAPSHOT_COUNTS: Array<{
 		tone: (styles) => styles.summary.failed,
 	},
 	{
-		/**
-		 * `unchecked` is Jest's "obsolete" count — orphaned snapshot keys inside
-		 * still-present `.snap.luau` files. `filesRemoved` is a separate count
-		 * (whole files removed); mixing the two units would over-report.
-		 * @param snapshot - Snapshot totals.
-		 * @returns The obsolete count, 0 when Jest omits it.
-		 */
 		count: (snapshot) => snapshot.unchecked ?? 0,
 		label: "obsolete",
 		tone: (styles) => styles.summary.pending,
@@ -291,10 +239,7 @@ const SNAPSHOT_COUNTS: Array<{
 ];
 
 /**
- * The bucket list a summary row joins with ` | `, in vitest's order: its
- * `getStateString` puts failed first, then passed, then skipped. Each bucket is
- * omitted when zero, so a clean run reads `2 passed (2)` rather than carrying
- * two empty counts.
+ * The non-zero buckets of a summary row, in vitest's `getStateString` order.
  * @param counts - Bucket counts.
  * @param styles - Palette to render with.
  * @returns The non-zero buckets, styled.
@@ -317,8 +262,7 @@ export function formatSummaryParts(counts: SummaryCounts, styles: Styles): Array
 }
 
 /**
- * The `      Tests  …` row: the counts vitest reports for every run, type
- * pass included.
+ * The `      Tests  …` row.
  * @param counts - Test buckets and Jest's total.
  * @param styles - Palette to render with.
  * @returns The row.
@@ -328,7 +272,7 @@ export function formatTestsLine({ counts, total }: TestRowCounts, styles: Styles
 }
 
 /**
- * The test-level numbers of one run, paired so no caller can mismatch them.
+ * The test-level numbers of one run.
  * @param result - Run result.
  * @returns The test buckets and Jest's total.
  */
@@ -344,8 +288,7 @@ export function countTestBuckets(result: JestResult): TestRowCounts {
 }
 
 /**
- * The ` Test Files  …` row. Every file lands in exactly one bucket, so the
- * total is the sum and the caller has nothing else to pass.
+ * The ` Test Files  …` row.
  * @param counts - File buckets.
  * @param styles - Palette to render with.
  * @returns The row.
@@ -356,42 +299,13 @@ export function formatTestFilesLine(counts: SummaryCounts, styles: Styles): stri
 }
 
 /**
- * The file-level counts of one run, and the one rule for which bucket a file
- * falls in — the `▶ <project>  …` header counts through here too, so a single
- * report cannot call the same file two different things.
- *
- * A file with an exec error is failed even though it reported no failing tests.
- * Past that it follows vitest, which buckets a file on its own mode rather than
- * on a tally of what ran inside it: `skipped` is vitest's `mode: "skip"`, which
- * it sets only when a file has tasks and every one of them is skipped. A file
- * that collected nothing keeps `mode: "run"` and passes, so it does here too.
- * @param result - Jest result whose files to bucket.
- * @returns How many files failed, passed and skipped.
- */
-export function countFileBuckets(result: JestResult): SummaryCounts {
-	let failed = 0;
-	let skipped = 0;
-
-	for (const file of result.testResults) {
-		if (file.numFailingTests > 0 || hasExecError(file)) {
-			failed++;
-		} else if (file.numPassingTests === 0 && file.numPendingTests > 0) {
-			skipped++;
-		}
-	}
-
-	return { failed, passed: result.testResults.length - failed - skipped, skipped };
-}
-
-/**
- * The `     Bailed  …` row, shown when `--bail` cut the run short. Without it
- * the totals read as the whole selection when they are a prefix of it.
+ * The `     Bailed  …` row, shown when `--bail` cut the run short.
  * @param bail - Packages reached and not run.
  * @param styles - Palette to render with.
  * @returns The row.
  */
 export function formatBailLine(bail: BailSummary, styles: Styles): string {
-	const reached = `after ${bail.ran} ${bail.ran === 1 ? "package" : "packages"}`;
+	const reached = `after ${bail.ran} ${plural(bail.ran, "package")}`;
 	const notRun = `, ${bail.notRun} not run`;
 	return `${styles.dim("     Bailed")}  ${styles.summary.failed(reached)}${styles.dim(notRun)}`;
 }
@@ -447,7 +361,6 @@ function formatSnapshotLine(
 		}
 	}
 
-	// No counted activity at all means there is nothing worth a Snapshots line.
 	if (parts.length === 0) {
 		return undefined;
 	}

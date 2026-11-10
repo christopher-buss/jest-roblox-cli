@@ -2,8 +2,8 @@
 /* eslint-disable flawless/prefer-ending-with-an-expect -- the host test measures rather than asserts. */
 import { describe, it } from "vitest";
 
-import type { RawCoverageData } from "#src/coverage-pipeline/coverage-types.ts";
-import { mergeRawCoverage } from "#src/coverage-pipeline/merge-raw-coverage.ts";
+import type { RawCoverageData } from "#src/coverage-data/coverage-types.ts";
+import { mergeRawCoverage } from "#src/coverage-data/merge-raw-coverage.ts";
 
 /**
  * Workspace coverage folds each project's raw hit counts into a per-package

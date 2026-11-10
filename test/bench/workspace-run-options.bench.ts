@@ -2,7 +2,7 @@
 /* eslint-disable flawless/prefer-ending-with-an-expect -- the host test measures rather than asserts. */
 import { describe, it } from "vitest";
 
-import type { Config } from "#src/config/schema.ts";
+import type { Config } from "#src/config/config-types.ts";
 import { buildWorkspaceRunOptions } from "#src/config/workspace-run-options.ts";
 
 /**

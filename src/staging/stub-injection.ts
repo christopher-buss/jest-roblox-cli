@@ -1,14 +1,15 @@
+import type { RojoTreeNode } from "@isentinel/rojo-utils";
+
 import * as path from "node:path";
 
 import { ConfigError } from "../config/errors.ts";
-import type { RojoTreeNode } from "../types/rojo.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
+import { STUB_FILENAMES } from "./stub-files.ts";
 import type { StubMount } from "./synthesizer-types.ts";
 import { isTreeNode } from "./tree-node-guards.ts";
 
 const STUB_INJECTION_KEY = "jest.config";
-const SOURCE_CONFIG_FILES = ["jest.config.lua", "jest.config.luau"];
 
 /**
  * Mount each stub as a `jest.config` child at its DataModel path.
@@ -17,7 +18,8 @@ const SOURCE_CONFIG_FILES = ["jest.config.lua", "jest.config.luau"];
  * @param options.root - Synthesized tree; mutated.
  * @param options.stubMounts - Stubs to mount, if any.
  * @returns The user config files the stubs replace, as POSIX paths.
- * @throws {ConfigError} When a path does not resolve or a `jest.config` already exists there.
+ * @throws {ConfigError} When a path does not resolve or a `jest.config`
+ *   already exists there.
  */
 export function injectStubMounts({
 	fileSystem,
@@ -75,11 +77,7 @@ function demoteAutoMountToExplicit({
 			continue;
 		}
 
-		// Non-directory entries (loose files) are skipped because rojo only
-		// `$path`-mounts a fixed set of known source extensions. Feeding rojo
-		// an unsupported extension (e.g. `tsconfig.tsbuildinfo`) via `$path`
-		// hard-errors at build time. Directories cover every real use we've
-		// seen of nested project mounts.
+		// Rojo hard-errors on a `$path` file with an unknown extension.
 		if (!entry.isDirectory()) {
 			continue;
 		}
@@ -112,15 +110,8 @@ function virtualizePathChild({
 		return undefined;
 	}
 
-	// Rojo does not merge a `$path` auto-mount with explicit children sharing
-	// the same name — adding `segment` alongside the parent's `$path` produces
-	// a duplicate sibling at build time, and `FindFirstChild` lookups in the
-	// runtime hit the auto-mounted twin (without our stub injection) first.
-	// Demote the parent by enumerating disk directories at `parentPath`,
-	// promoting each to an explicit `$path` child, and dropping the parent's
-	// `$path`. The result is the same set of Instances rojo would have built
-	// from the auto-mount, but each child is now reachable by the synthesizer
-	// for stub injection.
+	// Rojo does not merge a `$path` auto-mount with a same-named explicit
+	// child; it builds a duplicate sibling instead.
 	demoteAutoMountToExplicit({ fileSystem, parent, parentPath });
 
 	const child = parent[segment];
@@ -161,7 +152,7 @@ function findSourceConfigs(fileSystem: FileSystem, leaf: RojoTreeNode): Array<st
 		return [];
 	}
 
-	return SOURCE_CONFIG_FILES.map((candidate) => path.join(leafPath, candidate))
+	return Array.from(STUB_FILENAMES, (candidate) => path.join(leafPath, candidate))
 		.filter((sourceFile) => fileSystem.existsSync(sourceFile))
 		.map(normalizeWindowsPath);
 }

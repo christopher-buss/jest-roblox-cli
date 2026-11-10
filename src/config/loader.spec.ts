@@ -11,9 +11,9 @@ import { createLuteChildProcess } from "#test/mocks/lute-child-process.ts";
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
 import type { FileSystem } from "../utils/file-system.ts";
+import type { Config } from "./config-types.ts";
 import type { ConfigLoader, ConfigLoadOptions } from "./loader.ts";
-import { loadConfig, loadRawConfig, resolveConfig } from "./loader.ts";
-import type { Config } from "./schema.ts";
+import { loadConfig, loadPackageConfigAsync, resolveConfig } from "./loader.ts";
 
 describe(resolveConfig, () => {
 	it("should use defaults when no config provided", () => {
@@ -59,6 +59,31 @@ describe(resolveConfig, () => {
 		const result = resolveConfig(config);
 
 		expect(result.rootDir).toBe("/custom/path");
+	});
+
+	it("should reject a root config key", () => {
+		expect.assertions(1);
+
+		expect(() => resolveConfig(fromAny({ config: "jest.config.ts" }))).toThrow(
+			"Invalid config",
+		);
+	});
+
+	it("should read test.coverage as collectCoverage", () => {
+		expect.assertions(2);
+
+		const result = resolveConfig({ test: { coverage: true } });
+
+		expect(result.collectCoverage).toBeTrue();
+		expect(result).not.toHaveProperty("coverage");
+	});
+
+	it("should let test.collectCoverage win over test.coverage", () => {
+		expect.assertions(1);
+
+		const result = resolveConfig({ test: { collectCoverage: false, coverage: true } });
+
+		expect(result.collectCoverage).toBeFalse();
 	});
 
 	it("should expand gameOutput: true to game-output.log under rootDir", () => {
@@ -198,6 +223,31 @@ describe("config loader seams", () => {
 		expect(result.rootDir).toBe(packageDirectory);
 	});
 
+	it("should keep the declared rootDir beside the anchored one", async () => {
+		expect.assertions(2);
+
+		const packageDirectory = path.resolve("/repo/packages/example");
+		const configFile = path.join(packageDirectory, "jest.config.mjs");
+		const { fileSystem } = createMemoryFileSystem({ [configFile]: "" });
+		const configLoader = vi.fn<(options: LoadConfigOptions) => Promise<C12ResolvedConfig>>();
+		configLoader.mockResolvedValue({
+			config: { rootDir: "." },
+			configFile,
+			cwd: packageDirectory,
+			layers: [],
+		});
+
+		const result = await loadPackageConfigAsync({
+			configLoader: fromAny(configLoader),
+			configPath: undefined,
+			cwd: path.resolve("/repo"),
+			fileSystem,
+		});
+
+		expect(result.declared.rootDir).toBe(".");
+		expect(result.resolved.rootDir).toBe(packageDirectory);
+	});
+
 	it("should absolutize a relative cwd when no rootDir is declared", async () => {
 		expect.assertions(1);
 
@@ -229,7 +279,7 @@ describe("config loader seams", () => {
 		}
 
 		await expect(
-			loadRawConfig({ configLoader, configPath: undefined, cwd: "/repo" }),
+			loadPackageConfigAsync({ configLoader, configPath: undefined, cwd: "/repo" }),
 		).rejects.toBe(error);
 	});
 
@@ -463,6 +513,38 @@ describe("config layer resolution", () => {
 		expect(absolute.workspace!.root).toBe(path.resolve("workspace"));
 	});
 
+	it("should extend roots detected with the loaded config's directory and readers", async () => {
+		expect.assertions(1);
+
+		const cwd = path.resolve("merger-fixture");
+		const configFile = path.join(cwd, "config/jest.config.mjs");
+		const { fileSystem } = createMemoryFileSystem({ [configFile]: "" });
+		const configLoader: ConfigLoader = fromAny(async () => {
+			return {
+				config: {
+					luauRoots: (defaults: Array<string>) => {
+						return [...defaults, "extra"];
+					},
+					rootDir: "../package",
+				},
+				configFile,
+			};
+		});
+		const result = await loadConfig({
+			configLoader,
+			cwd,
+			fileSystem,
+			tsconfigReader: () => {
+				return {
+					config: { compilerOptions: { outDir: "compiled" } },
+					path: path.join(cwd, "package/tsconfig.json"),
+				};
+			},
+		});
+
+		expect(result.luauRoots).toStrictEqual(["compiled", "extra"]);
+	});
+
 	it("should return defaults when a search finds no file", async () => {
 		expect.assertions(2);
 
@@ -536,12 +618,12 @@ describe("c12 loader boundary", () => {
 		const { fileSystem } = createMemoryFileSystem();
 
 		await expect(
-			loadRawConfig({
+			loadPackageConfigAsync({
 				configPath: undefined,
 				cwd: "/repo",
 				...seamsFor(configLoader, fileSystem),
 			}),
-		).resolves.toStrictEqual({});
+		).resolves.toHaveProperty("declared", {});
 
 		const [options] = configLoader.mock.calls[0]!;
 		const { merger, ...plainOptions } = options;
@@ -566,7 +648,7 @@ describe("c12 loader boundary", () => {
 		const configLoader = emptyConfigLoader();
 		const { fileSystem } = createMemoryFileSystem();
 
-		await loadRawConfig({
+		await loadPackageConfigAsync({
 			configPath: "configs/jest.config.ts",
 			cwd: "/repo",
 			...seamsFor(configLoader, fileSystem),
@@ -600,7 +682,7 @@ describe("c12 loader boundary", () => {
 		});
 		vi.stubEnv("JEST_ROBLOX_SEA", "true");
 
-		await loadRawConfig({
+		await loadPackageConfigAsync({
 			configPath: "jest.config.json",
 			cwd: "/repo",
 			...seamsFor(configLoader, fileSystem),

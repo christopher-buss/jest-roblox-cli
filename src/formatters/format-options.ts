@@ -1,4 +1,4 @@
-import type { ResolvedConfig } from "../config/schema.ts";
+import type { ResolvedConfig } from "../config/resolved-config.ts";
 import type { FormatOptions } from "./shared.ts";
 
 /**
@@ -16,15 +16,18 @@ export type ConfigFormatOptions = Pick<
 >;
 
 /**
- * The config-derived half of `FormatOptions`, shared by the three render sites
- * (executor single-project output, and the combined and multi-project prints).
- * Each spreads this and adds only what it alone knows — the source mapper, the
- * snapshot-write tally, the type-error count, the resolved sink paths.
+ * The config-derived half of `FormatOptions`.
  * @param config - Resolved CLI config.
  * @param version - CLI version for the header.
  * @returns The config-derived format options.
  */
-export function toFormatOptions(config: ResolvedConfig, version: string): ConfigFormatOptions {
+export function toFormatOptions(
+	config: Pick<
+		ResolvedConfig,
+		"collectCoverage" | "color" | "rootDir" | "showLuau" | "slowTestThreshold" | "verbose"
+	>,
+	version: string,
+): ConfigFormatOptions {
 	return {
 		collectCoverage: config.collectCoverage,
 		color: config.color,

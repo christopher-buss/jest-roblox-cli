@@ -1,23 +1,26 @@
-import type { Backend, CoverageReporter } from "./schema.ts";
+import type { BackendName, CoverageReporter } from "./config-types.ts";
 
-export const VALID_BACKENDS: ReadonlySet<string> = new Set<Backend>([
-	"auto",
-	"open-cloud",
-	"studio",
-	"studio-cli",
-]);
+const BACKEND_NAMES: Record<BackendName, true> = {
+	"auto": true,
+	"open-cloud": true,
+	"studio": true,
+	"studio-cli": true,
+};
+
+export const BACKENDS: ReadonlyArray<BackendName> =
+	Object.keys(BACKEND_NAMES).filter(isValidBackend);
 
 /**
- * Narrow a string to a `Backend`.
+ * Narrow a string to a `BackendName`.
  *
  * @param value - Candidate backend name.
  * @returns True when the value is a known backend.
  */
-export function isValidBackend(value: string): value is Backend {
-	return VALID_BACKENDS.has(value);
+export function isValidBackend(value: string): value is BackendName {
+	return Object.hasOwn(BACKEND_NAMES, value);
 }
 
-export const VALID_COVERAGE_REPORTERS: ReadonlySet<string> = new Set<CoverageReporter>([
+export const COVERAGE_REPORTERS: ReadonlyArray<CoverageReporter> = [
 	"clover",
 	"cobertura",
 	"html",
@@ -31,7 +34,9 @@ export const VALID_COVERAGE_REPORTERS: ReadonlySet<string> = new Set<CoverageRep
 	"text",
 	"text-lcov",
 	"text-summary",
-]);
+];
+
+const VALID_COVERAGE_REPORTERS: ReadonlySet<string> = new Set<CoverageReporter>(COVERAGE_REPORTERS);
 
 /**
  * Narrow a string to a `CoverageReporter`.

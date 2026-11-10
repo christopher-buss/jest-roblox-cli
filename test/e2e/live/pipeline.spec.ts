@@ -2,7 +2,7 @@ import {
 	loadConfig,
 	prepareArtifactsAsync,
 	readCoverageManifest,
-} from "@isentinel/jest-roblox/artifacts";
+} from "@isentinel/jest-roblox/api";
 
 import { type } from "arktype";
 import * as fs from "node:fs";
@@ -10,9 +10,9 @@ import * as path from "node:path";
 import process from "node:process";
 import { assert, describe, expect, it, onTestFinished } from "vitest";
 
-import { createFixtureSandbox, runCliAsync } from "#test/e2e/cli/helpers.ts";
 import { LIVE_STARTUP_BUDGET_MS, MAXIMUM_SUBMIT_MS } from "#test/e2e/live/live-budgets.ts";
 import { IS_LIVE, liveEnvironment } from "#test/e2e/live/live-gate.ts";
+import { createFixtureSandbox, runCliAsync } from "#test/harness/helpers.ts";
 import { quotaSkipNote, skipOnQuotaAsync } from "#test/setup/quota-skip.ts";
 
 /**
@@ -87,18 +87,9 @@ const placeProjectSchema = type({
  * @returns The shared mount node, or `undefined`.
  */
 function readSharedMount(sandbox: string): object | undefined {
-	const projectFile = path.join(sandbox, PLACE_DIR, "default.project.json");
+	const projectFile = path.join(sandbox, PLACE_DIR, "synthesized.project.json");
 	return placeProjectSchema.assert(JSON.parse(fs.readFileSync(projectFile, "utf-8"))).tree
 		.ReplicatedStorage.PkgShared;
-}
-
-/**
- * Whether a Code Bundle was written beside the place.
- * @param sandbox - Sandbox directory.
- * @returns Whether the Code Bundle file exists.
- */
-function hasCodeBundle(sandbox: string): boolean {
-	return fs.existsSync(path.join(sandbox, PLACE_DIR, "game.code-bundle.json"));
 }
 
 describe("live pipeline", () => {
@@ -121,7 +112,7 @@ describe("live pipeline", () => {
 	it.runIf(IS_LIVE)(
 		"should run both mounts, capture game output, and report coverage in one run",
 		async (context) => {
-			expect.assertions(12);
+			expect.assertions(11);
 
 			const sandbox = createFixtureSandbox(LIVE_FIXTURE_PATH);
 			const gameOutputPath = path.join(sandbox, "game-output.json");
@@ -196,12 +187,10 @@ describe("live pipeline", () => {
 			);
 
 			// A Shared Place run builds its code into the place: the shared
-			// mount is served from the instrumented shadow, and nothing travels
-			// beside it as a Binary Input.
+			// mount is served from the instrumented shadow.
 			expect(readSharedMount(sandbox), "the place mounts the code").toStrictEqual({
 				$path: "../coverage/out/shared",
 			});
-			expect(hasCodeBundle(sandbox), "no Code Bundle beside the place").toBeFalse();
 		},
 		CLI_RUN_TIMEOUT_MS + VITEST_CLEANUP_ALLOWANCE_MS,
 	);
@@ -286,7 +275,7 @@ describe("live pipeline", () => {
 	// produces a string real Roblox-side Jest matches — a wrong assumption runs
 	// 3 here, or 0. Which pattern `narrowConfigByFiles` and `narrowForLuauRun`
 	// build from which input is settled off-wire in
-	// `src/config/narrow-by-files.spec.ts`.
+	// `src/discovery/narrow-by-files.spec.ts`.
 	it.runIf(IS_LIVE)(
 		"should run only the named file when a namesake shares its basename",
 		async (context) => {

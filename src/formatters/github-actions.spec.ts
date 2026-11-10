@@ -7,11 +7,13 @@ import { FAILING_RESULT, MIXED_RESULT, PASSING_RESULT } from "#test/mocks/format
 import { posixRoot } from "#test/mocks/posix-path.ts";
 import type { SourceMapper } from "../source-mapper/index.ts";
 import type { JestResult } from "../types/jest-result-types.ts";
-import {
-	formatAnnotations,
-	formatJobSummary,
-	resolveGitHubActionsOptions,
-} from "./github-actions.ts";
+import { formatAnnotations, formatJobSummary, resolveGitHubActions } from "./github-actions.ts";
+
+function resolveContext(
+	...args: Parameters<typeof resolveGitHubActions>
+): ReturnType<typeof resolveGitHubActions>["context"] {
+	return resolveGitHubActions(...args).context;
+}
 
 const ANNOTATION_LINE = /^::error (?<properties>[^:]*)::(?<message>.*)$/;
 
@@ -418,10 +420,37 @@ describe("formatAnnotations annotations", () => {
 				},
 			],
 		};
-		const options = resolveGitHubActionsOptions({
+		const options = resolveContext({
 			environment: {
 				GITHUB_WORKSPACE: "/home/runner/work/project/",
 			},
+			sourceMapper: undefined,
+			userOptions: {},
+		});
+
+		expect(collectAnnotations(result, options)[0]!.file).toBe("src/test.spec.ts");
+	});
+
+	it.for([
+		{
+			name: "a lower-case drive letter",
+			testFilePath: "D:\\a\\repo\\src\\test.spec.ts",
+			workspace: "d:\\a\\repo",
+		},
+		{
+			name: "a drive-less file path",
+			testFilePath: "/a/repo/src/test.spec.ts",
+			workspace: "D:\\a\\repo",
+		},
+	])("should make a Windows path relative across $name", ({ testFilePath, workspace }) => {
+		expect.assertions(1);
+
+		const result: JestResult = {
+			...FAILING_RESULT,
+			testResults: [{ ...FAILING_RESULT.testResults[0]!, testFilePath }],
+		};
+		const options = resolveContext({
+			environment: { GITHUB_WORKSPACE: workspace },
 			sourceMapper: undefined,
 			userOptions: {},
 		});
@@ -483,6 +512,49 @@ describe(formatJobSummary, () => {
 				"- **Test Results**: ❌ **1 failure** · ✅ **4 passes** · 5 total\n" +
 				"- **Other**: 2 skips · 2 total",
 		);
+	});
+
+	it("should count an all-skipped file as skipped, not passed", () => {
+		expect.assertions(1);
+
+		const summary = formatJobSummary(
+			fromPartial({
+				numFailedTests: 0,
+				numPassedTests: 1,
+				numPendingTests: 1,
+				numTotalTests: 2,
+				testResults: [
+					{ numFailingTests: 0, numPassingTests: 1, numPendingTests: 0, testResults: [] },
+					{ numFailingTests: 0, numPassingTests: 0, numPendingTests: 1, testResults: [] },
+				],
+			}),
+			{},
+		);
+
+		expect(summary).toContain("- **Test Files**: ✅ **1 pass** · 1 skip · 2 total\n");
+	});
+
+	it("should pluralize skipped file counts", () => {
+		expect.assertions(1);
+
+		const skippedFile = {
+			numFailingTests: 0,
+			numPassingTests: 0,
+			numPendingTests: 1,
+			testResults: [],
+		};
+		const summary = formatJobSummary(
+			fromPartial({
+				numFailedTests: 0,
+				numPassedTests: 0,
+				numPendingTests: 2,
+				numTotalTests: 2,
+				testResults: [skippedFile, skippedFile],
+			}),
+			{},
+		);
+
+		expect(summary).toContain("- **Test Files**: 2 skips · 2 total\n");
 	});
 
 	it("should render pass/fail/skip counts in stats section", () => {
@@ -707,11 +779,51 @@ describe("formatJobSummary snapshots", () => {
 	});
 });
 
-describe(resolveGitHubActionsOptions, () => {
+describe(resolveGitHubActions, () => {
+	it("should write annotations and the summary to GITHUB_STEP_SUMMARY by default", () => {
+		expect.assertions(2);
+
+		const result = resolveGitHubActions({
+			environment: { GITHUB_STEP_SUMMARY: "/tmp/summary.md" },
+			sourceMapper: undefined,
+			userOptions: {},
+		});
+
+		expect(result.annotations).toBeTrue();
+		expect(result.jobSummaryPath).toBe("/tmp/summary.md");
+	});
+
+	it("should prefer the configured summary path over the environment", () => {
+		expect.assertions(1);
+
+		const result = resolveGitHubActions({
+			environment: { GITHUB_STEP_SUMMARY: "/tmp/summary.md" },
+			sourceMapper: undefined,
+			userOptions: { jobSummary: { outputPath: "/out.md" } },
+		});
+
+		expect(result.jobSummaryPath).toBe("/out.md");
+	});
+
+	it("should write neither when both are turned off", () => {
+		expect.assertions(2);
+
+		const result = resolveGitHubActions({
+			environment: { GITHUB_STEP_SUMMARY: "/tmp/summary.md" },
+			sourceMapper: undefined,
+			userOptions: { displayAnnotations: false, jobSummary: { enabled: false } },
+		});
+
+		expect(result.annotations).toBeFalse();
+		expect(result.jobSummaryPath).toBeUndefined();
+	});
+});
+
+describe("resolveGitHubActions context", () => {
 	it("should use env var defaults when no user options provided", () => {
 		expect.assertions(4);
 
-		const result = resolveGitHubActionsOptions({
+		const result = resolveContext({
 			environment: {
 				GITHUB_REPOSITORY: "owner/repo",
 				GITHUB_SERVER_URL: "https://github.com",
@@ -732,7 +844,7 @@ describe(resolveGitHubActionsOptions, () => {
 	it("should override env vars with user options", () => {
 		expect.assertions(2);
 
-		const result = resolveGitHubActionsOptions({
+		const result = resolveContext({
 			environment: {
 				GITHUB_REPOSITORY: "owner/repo",
 				GITHUB_WORKSPACE: "/home/runner/work",
@@ -759,7 +871,7 @@ describe(resolveGitHubActionsOptions, () => {
 			mapFailureWithLocations: () => ({ locations: [], message: "" }),
 		});
 
-		const result = resolveGitHubActionsOptions({
+		const result = resolveContext({
 			environment: {},
 			sourceMapper,
 			userOptions: {},

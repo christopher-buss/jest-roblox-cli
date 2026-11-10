@@ -1,11 +1,3 @@
-/**
- * Class names a rojo mount would bring into the place, read straight off disk.
- *
- * Only the classes matter, so this reads far less than a model parser would:
- * the binary format's class table, the XML's `class` attributes, or a JSON
- * descriptor's `ClassName`. Anything rojo mounts but that cannot declare a
- * class of its own — a `.luau` source, a plain directory — reports nothing.
- */
 import { type } from "arktype";
 import { Buffer } from "node:buffer";
 import * as path from "node:path";
@@ -14,18 +6,11 @@ import type { FileSystem } from "../utils/file-system.ts";
 import { nodeFileSystem } from "../utils/file-system.ts";
 
 const BINARY_MAGIC = "<roblox!";
-/**
- * `<roblox!` plus signature, version, class count, instance count, reserved.
- */
 const BINARY_HEADER_BYTES = 32;
 const CHUNK_HEADER_BYTES = 16;
 const XML_CLASS_ATTRIBUTE = /<Item\s+class="([^"]+)"/g;
 const MODEL_JSON_SUFFIX = ".model.json";
 
-/**
- * The one field this reader wants out of a JSON descriptor, under either
- * spelling. Everything else the consumer wrote is rojo's business.
- */
 const descriptorSchema = type({
 	"[string]": "unknown",
 	"ClassName?": "string",
@@ -37,13 +22,11 @@ export const MODEL_EXTENSIONS: ReadonlyArray<string> = [MODEL_JSON_SUFFIX, ".rbx
 /** A directory declares its own class here rather than in a sibling file. */
 export const META_JSON_FILE = "init.meta.json";
 
-/** Where the LZ4 decoder is reading from and writing to. */
 interface Cursor {
 	offset: number;
 	written: number;
 }
 
-/** One token of an LZ4 block, and the buffers it moves bytes between. */
 interface Lz4Step {
 	cursor: Cursor;
 	destination: Buffer;
@@ -51,7 +34,6 @@ interface Lz4Step {
 	token: number;
 }
 
-/** A chunk's name and the byte counts its body was written with. */
 interface ChunkHeader {
 	name: string;
 	compressedBytes: number;
@@ -69,10 +51,7 @@ export function isModelFile(filePath: string): boolean {
 }
 
 /**
- * Every class the file declares, or an empty array for a file that declares
- * none. An unreadable or malformed file also reports none: rojo is about to
- * read the same bytes, and its own error says far more about what is wrong
- * than a second parser's would.
+ * Every class the file declares; none for an unreadable or malformed file.
  * @param filePath - Path of the model or descriptor file.
  * @param fileSystem - Reads the file.
  * @returns The declared class names.
@@ -93,17 +72,6 @@ function readXmlClasses(fileSystem: FileSystem, filePath: string): Array<string>
 	return Array.from(xml.matchAll(XML_CLASS_ATTRIBUTE), ([, declared]) => String(declared));
 }
 
-/**
- * `.model.json` spells it `ClassName`, `init.meta.json` spells it `className`.
- * Both are read because both land in the same auto-mounted directory.
- *
- * Schema-checked rather than hand-narrowed: these are consumer-authored config
- * files, and anything else in them is rojo's business, not this reader's.
- * @param fileSystem - Reads the file.
- * @param filePath - Path of the JSON descriptor.
- * @returns The class names under either spelling.
- * @throws {SyntaxError} When the file is not valid JSON.
- */
 function readJsonClasses(fileSystem: FileSystem, filePath: string): Array<string> {
 	const parsed = descriptorSchema(JSON.parse(fileSystem.readFileSync(filePath, "utf-8")));
 	if (parsed instanceof type.errors) {
@@ -139,22 +107,11 @@ function readChunkHeader({
 	};
 }
 
-/**
- * An `INST` chunk opens with a class id, then the length-prefixed class name.
- * @param chunk - Decompressed `INST` chunk body.
- * @returns The name the chunk declares, decoded as UTF-8.
- */
 function readClassName(chunk: Buffer): string {
 	const nameBytes = chunk.readUInt32LE(4);
 	return chunk.toString("utf-8", 8, 8 + nameBytes);
 }
 
-/**
- * LZ4's `255`-terminated length continuation, shared by literals and matches.
- * @param source - Compressed bytes.
- * @param cursor - Read position; advanced past the extension.
- * @returns The extra length the continuation bytes add.
- */
 function readLengthExtension(source: Buffer, cursor: Cursor): number {
 	let total = 0;
 	let byte = 255;
@@ -167,10 +124,6 @@ function readLengthExtension(source: Buffer, cursor: Cursor): number {
 	return total;
 }
 
-/**
- * The token's literal run, copied straight across.
- * @param step - Token, buffers and cursor; the cursor advances.
- */
 function copyLiterals({ cursor, destination, source, token }: Lz4Step): void {
 	let literals = token >> 4;
 	if (literals === 15) {
@@ -183,8 +136,8 @@ function copyLiterals({ cursor, destination, source, token }: Lz4Step): void {
 }
 
 /**
- * The token's back-reference, copied one byte at a time because LZ4 lets a
- * match overlap the bytes it is still writing.
+ * Byte at a time: an LZ4 match can overlap the bytes it is still writing.
+ *
  * @param step - Token, buffers and cursor; the cursor advances.
  */
 function copyMatch({ cursor, destination, source, token }: Lz4Step): void {
@@ -205,16 +158,6 @@ function copyMatch({ cursor, destination, source, token }: Lz4Step): void {
 	}
 }
 
-/**
- * LZ4 block decompression, the one codec the binary format's chunks use.
- * Inlined rather than taken as a dependency: the format never uses the framed
- * variant a library would bring, and this reads only the leading `INST`
- * chunks, which are a few hundred bytes even for a game-sized model.
- * @param source - Compressed block.
- * @param decompressedBytes - Size the block decompresses to.
- * @returns The decompressed bytes.
- * @throws {RangeError} When the output size does not match `decompressedBytes`.
- */
 function decompressLz4(source: Buffer, decompressedBytes: number): Buffer {
 	const destination = Buffer.alloc(decompressedBytes);
 	const cursor: Cursor = { offset: 0, written: 0 };
@@ -237,17 +180,6 @@ function decompressLz4(source: Buffer, decompressedBytes: number): Buffer {
 	return destination;
 }
 
-/**
- * The class an `INST` chunk names, or `undefined` when the file ends mid-chunk.
- * A short read is reported rather than decompressed: the partly-zeroed buffer
- * would yield an arbitrary class name instead of merely a missing one.
- * @param fileSystem - Reads the open file.
- * @param chunk - Where the chunk body sits.
- * @param chunk.handle - Open file descriptor.
- * @param chunk.header - The chunk's parsed header.
- * @param chunk.offset - File offset of the chunk body.
- * @returns The class name, or `undefined` on a short read.
- */
 function readChunkClass(
 	fileSystem: FileSystem,
 	{
@@ -283,9 +215,7 @@ function readInstanceChunks(fileSystem: FileSystem, handle: number): Array<strin
 
 		offset += CHUNK_HEADER_BYTES;
 		if (header.name !== "INST") {
-			// The metadata and shared-string chunks may precede the class table,
-			// so a chunk that is not an `INST` only ends the scan once one has
-			// been seen.
+			// Metadata chunks may precede the `INST` chunks; stop only after one.
 			if (hasClassTable) {
 				return classes;
 			}
@@ -305,15 +235,6 @@ function readInstanceChunks(fileSystem: FileSystem, handle: number): Array<strin
 	}
 }
 
-/**
- * Read the binary format's `INST` chunks, which each name one class, and stop
- * at the first chunk that is not one. The writer emits every `INST` before the
- * first `PROP`, so the classes are known well before the property data — the
- * bulk of a game-sized model — has to be read or decompressed at all.
- * @param fileSystem - Opens and reads the file.
- * @param filePath - Path of the `.rbxm` file.
- * @returns The class names, or an empty array without the binary magic.
- */
 function readBinaryClasses(fileSystem: FileSystem, filePath: string): Array<string> {
 	const handle = fileSystem.openSync(filePath, "r");
 	try {
@@ -330,13 +251,6 @@ function readBinaryClasses(fileSystem: FileSystem, filePath: string): Array<stri
 	}
 }
 
-/**
- * The reader for a path's format, or `undefined` for a path that declares no
- * class. One dispatch, so {@link isModelFile} and {@link readDeclaredClasses}
- * cannot drift on which extensions count.
- * @param filePath - Path whose extension picks the reader.
- * @returns The reader, or `undefined`.
- */
 function readerFor(
 	filePath: string,
 ): ((fileSystem: FileSystem, filePath: string) => Array<string>) | undefined {

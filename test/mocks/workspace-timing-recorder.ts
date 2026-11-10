@@ -1,7 +1,6 @@
 import { vi } from "vitest";
 
 import type { TimedPhase, TimingCollector } from "#src/timing/orchestration-collector.ts";
-import { NOOP_PROGRESS } from "#test/mocks/noop-progress.ts";
 
 export interface TimingRecorder {
 	collector: TimingCollector;
@@ -21,7 +20,6 @@ export function recordingTimingCollector(): TimingRecorder {
 			const timed = await runners.profileTimedAsync(name, func);
 			return timed.value;
 		},
-		progress: NOOP_PROGRESS,
 	};
 
 	return { collector, paths };

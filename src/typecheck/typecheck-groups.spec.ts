@@ -2,8 +2,11 @@ import { performance } from "node:perf_hooks";
 import { describe, expect, it, vi } from "vitest";
 
 import type { JestResult } from "../types/jest-result-types.ts";
-import type { RunTypecheckGroup } from "./typecheck-groups.ts";
-import { assertTypecheckAvailable, runTypecheckPassAsync } from "./typecheck-groups.ts";
+import type { RunTypecheck } from "./runner.ts";
+import type { TypecheckGroupEntry, TypecheckPassOutcome } from "./typecheck-groups.ts";
+import { assertTypecheckAvailable, runPolicyTypecheckPassAsync } from "./typecheck-groups.ts";
+
+type RunTypecheckGroup = (group: TypecheckGroupEntry) => Promise<JestResult>;
 
 interface Deferred {
 	promise: Promise<JestResult>;
@@ -15,7 +18,9 @@ function makeResult(overrides: Partial<JestResult> = {}): JestResult {
 		numFailedTests: 0,
 		numPassedTests: 0,
 		numPendingTests: 0,
+		numTodoTests: 0,
 		numTotalTests: 0,
+		snapshot: undefined,
 		startTime: 0,
 		success: true,
 		testResults: [],
@@ -55,6 +60,19 @@ function deferred(): Deferred {
 	return { promise, resolve: resolveResult };
 }
 
+async function runTypecheckPassAsync(
+	entries: ReadonlyArray<TypecheckGroupEntry>,
+	run: RunTypecheckGroup,
+): Promise<TypecheckPassOutcome> {
+	return runPolicyTypecheckPassAsync({
+		entries,
+		policyByDirectory: new Map(entries.map(({ cwd }) => [cwd, {}])),
+		runTypecheck: async ({ files, rootDir, tsconfig }) => {
+			return run({ cwd: rootDir, files, tsconfig });
+		},
+	});
+}
+
 async function passResultAsync(
 	...args: Parameters<typeof runTypecheckPassAsync>
 ): Promise<JestResult | undefined> {
@@ -62,7 +80,7 @@ async function passResultAsync(
 	return pass.result;
 }
 
-describe("runTypecheckPassAsync grouping", () => {
+describe("runPolicyTypecheckPassAsync grouping", () => {
 	it("should run one pass for a single project entry", async () => {
 		expect.assertions(2);
 
@@ -296,7 +314,7 @@ describe("runTypecheckPassAsync grouping", () => {
 	});
 });
 
-describe(runTypecheckPassAsync, () => {
+describe("runPolicyTypecheckPassAsync timing", () => {
 	it("should skip the clock and runner when no entries exist", async () => {
 		expect.assertions(3);
 
@@ -347,5 +365,57 @@ describe(assertTypecheckAvailable, () => {
 		expect(() => {
 			assertTypecheckAvailable([{ cwd: "/project", files: ["a.spec-d.luau"] }]);
 		}).not.toThrow();
+	});
+});
+
+describe(runPolicyTypecheckPassAsync, () => {
+	it("should check each group under the policy of its cwd and finish it", async () => {
+		expect.assertions(2);
+
+		const runTypecheck = vi.fn<RunTypecheck>(async () => makeResult({ numTotalTests: 1 }));
+		const policy = { ignoreSourceErrors: true, spawnTimeout: 9, timeout: 1234 };
+
+		const outcome = await runPolicyTypecheckPassAsync({
+			entries: [{ cwd: "/a", files: ["x.spec-d.ts"], tsconfig: "t.json" }],
+			finishGroup: (result, applied) => ({ ...result, numTotalTests: applied.timeout }),
+			policyByDirectory: new Map([["/a", policy]]),
+			runTypecheck,
+		});
+
+		expect(runTypecheck).toHaveBeenCalledExactlyOnceWith({
+			files: ["x.spec-d.ts"],
+			ignoreSourceErrors: true,
+			rootDir: "/a",
+			spawnTimeout: 9,
+			timeout: 1234,
+			tsconfig: "t.json",
+		});
+		expect(outcome.result!.numTotalTests).toBe(1234);
+	});
+
+	it("should pass a group's result through when no finisher is given", async () => {
+		expect.assertions(1);
+
+		const result = makeResult({ numTotalTests: 4 });
+
+		const outcome = await runPolicyTypecheckPassAsync({
+			entries: [{ cwd: "/a", files: ["x.spec-d.ts"] }],
+			policyByDirectory: new Map([["/a", { timeout: 1 }]]),
+			runTypecheck: async () => result,
+		});
+
+		expect(outcome.result!.numTotalTests).toBe(4);
+	});
+
+	it("should reject a group whose cwd has no policy", async () => {
+		expect.assertions(1);
+
+		await expect(
+			runPolicyTypecheckPassAsync({
+				entries: [{ cwd: "/b", files: ["x.spec-d.ts"] }],
+				policyByDirectory: new Map([["/a", { timeout: 1 }]]),
+				runTypecheck: async () => makeResult(),
+			}),
+		).rejects.toThrow("no Type Test policy for /b");
 	});
 });

@@ -3,8 +3,8 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 
-import { DEFAULT_CONFIG, OpenCloudBackend } from "#src/index.ts";
-import { startFakeOpenCloudServerAsync } from "#test/e2e/cli/fake-open-cloud.ts";
+import { buildJestArgv, DEFAULT_CONFIG, OpenCloudBackend } from "#src/api.ts";
+import { startFakeOpenCloudServerAsync } from "#test/harness/fake-open-cloud.ts";
 
 const credentials = { apiKey: "test-api-key", placeId: "456", universeId: "123" };
 function successJest(): string {
@@ -20,8 +20,10 @@ function successJest(): string {
 }
 
 function cacheJob(rootDirectory: string, overrides: Partial<typeof DEFAULT_CONFIG> = {}) {
+	const config = { ...DEFAULT_CONFIG, rootDir: rootDirectory, ...overrides };
 	return {
-		config: { ...DEFAULT_CONFIG, rootDir: rootDirectory, ...overrides },
+		argv: buildJestArgv({ config }),
+		config,
 		displayColor: "alpha-color",
 		displayName: "alpha",
 		pkg: undefined,
@@ -50,7 +52,7 @@ function localOnlyFetch(
 }
 
 describe(OpenCloudBackend, () => {
-	it("should run through the configured Open Cloud base URL", { timeout: 1000 }, async () => {
+	it("should run through the configured Open Cloud base URL", async () => {
 		expect.assertions(3);
 
 		const server = await startFakeOpenCloudServerAsync([{ jestOutput: successJest() }]);
@@ -69,17 +71,21 @@ describe(OpenCloudBackend, () => {
 		fs.writeFileSync(path.join(rootDirectory, "place.rbxlx"), '<roblox version="4"></roblox>');
 
 		const backend = new OpenCloudBackend(credentials);
+		const job = cacheJob(rootDirectory, { bootProbeTimeout: 0, placeFile: "place.rbxlx" });
 		const result = await backend.runTestsAsync({
-			jobs: [cacheJob(rootDirectory, { bootProbeTimeout: 0, placeFile: "place.rbxlx" })],
+			jobs: [job],
+			runSettings: job.config,
+			sharding: { kind: "static", parallel: undefined },
 		});
 
 		expect(result.rawResults).toHaveLength(1);
 		expect(server.calls).not.toBeEmpty();
-		expect(fetch).toHaveBeenCalledWith(
-			expect.stringContaining(
-				`${server.baseUrl}/cloud/v2/universes/123/places/456/versions/1/luau-execution-session-tasks`,
-			),
-			expect.anything(),
+		expect(server.calls).toContainEqual(
+			expect.objectContaining({
+				url: expect.stringContaining(
+					"/cloud/v2/universes/123/places/456/versions/1/luau-execution-session-tasks",
+				),
+			}),
 		);
 	});
 });

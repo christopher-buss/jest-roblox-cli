@@ -1,0 +1,409 @@
+import { OcaleRunner } from "@isentinel/roblox-runner";
+import { fromAny } from "@total-typescript/shoehorn";
+
+import { createHash } from "node:crypto";
+import * as path from "node:path";
+import process from "node:process";
+import type { Except } from "type-fest";
+import { describe, expect, it, onTestFinished, vi } from "vitest";
+
+import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
+import {
+	getLastCreatedServer,
+	MockWebSocketServer,
+	mockWebSocketServerFactory as webSocketServerFactory,
+} from "#test/mocks/mock-web-socket-server.ts";
+import { posixPath } from "#test/mocks/posix-path.ts";
+import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
+import type { CliOptions, ResolvedConfig } from "../config/resolved-config.ts";
+import type { Backend } from "./dispatch-request.ts";
+import type { OpenBackendRequest } from "./open-backend.ts";
+import { openBackend } from "./open-backend.ts";
+
+type SingleRequest = Except<OpenBackendRequest, "fileSystem" | "workspace"> &
+	Partial<Pick<OpenBackendRequest, "fileSystem">>;
+
+// oxlint-disable-next-line typescript/require-await -- a throw becomes a rejection, as the pipeline sees it
+async function resolveBackendAsync(request: SingleRequest): Promise<Backend> {
+	return openBackend({
+		fileSystem: createMemoryFileSystem().fileSystem,
+		workspace: false,
+		...request,
+	});
+}
+
+function makeConfig(overrides: Partial<ResolvedConfig> = {}): ResolvedConfig {
+	return { ...createResolvedConfig(), ...overrides };
+}
+
+function makeCli(overrides: Partial<CliOptions> = {}): CliOptions {
+	return overrides;
+}
+
+function stubPlatform(platform: NodeJS.Platform): void {
+	const original = Object.getOwnPropertyDescriptor(process, "platform")!;
+	Object.defineProperty(process, "platform", { value: platform });
+	onTestFinished(() => {
+		Object.defineProperty(process, "platform", original);
+	});
+}
+
+function stubNoCredentials(): void {
+	vi.stubEnv("ROBLOX_OPEN_CLOUD_API_KEY", undefined);
+	vi.stubEnv("ROBLOX_UNIVERSE_ID", undefined);
+	vi.stubEnv("ROBLOX_PLACE_ID", undefined);
+	vi.stubEnv("JEST_ROBLOX_OPEN_CLOUD_API_KEY", undefined);
+	vi.stubEnv("JEST_ROBLOX_UNIVERSE_ID", undefined);
+	vi.stubEnv("JEST_ROBLOX_PLACE_ID", undefined);
+}
+
+/** A developer's own Studio path would otherwise decide auto. */
+function stubNoStudioPath(): void {
+	vi.stubEnv("JEST_ROBLOX_STUDIO_PATH", undefined);
+}
+
+function stubCredentials(): void {
+	vi.stubEnv("ROBLOX_OPEN_CLOUD_API_KEY", "test-key");
+	vi.stubEnv("ROBLOX_UNIVERSE_ID", "123");
+	vi.stubEnv("ROBLOX_PLACE_ID", "456");
+}
+
+function oneJobRequest(config: ResolvedConfig): never {
+	return fromAny({
+		jobs: [{ config, displayName: "project", testFiles: ["test.spec.ts"] }],
+		runSettings: config,
+	});
+}
+
+describe(openBackend, () => {
+	it("should select studio-cli for auto when Studio is installed", async () => {
+		expect.assertions(1);
+
+		vi.spyOn(process.stderr, "write").mockReturnValue(true);
+
+		const backend = await resolveBackendAsync({
+			cli: makeCli(),
+			config: makeConfig({ backend: "auto" }),
+			isStudioInstalled: () => true,
+		});
+
+		expect(backend.constructor.name).toBe("StudioCliBackend");
+	});
+
+	it("should select open-cloud for auto when Studio is not installed", async () => {
+		expect.assertions(1);
+
+		stubNoStudioPath();
+		stubCredentials();
+		vi.spyOn(process.stderr, "write").mockReturnValue(true);
+
+		const backend = await resolveBackendAsync({
+			cli: makeCli(),
+			config: makeConfig({ backend: "auto" }),
+			isStudioInstalled: () => false,
+		});
+
+		expect(backend.constructor.name).toBe("OpenCloudBackend");
+	});
+
+	it("should reuse a proven Open Cloud place from the supplied filesystem", async () => {
+		expect.assertions(3);
+
+		stubNoStudioPath();
+		stubCredentials();
+		vi.spyOn(process.stderr, "write").mockReturnValue(true);
+		const rootDirectory = path.resolve("fixture");
+		const placeFile = path.join(rootDirectory, "place.rbxl");
+		const { fileSystem } = createMemoryFileSystem({ [placeFile]: "place" });
+		const config = makeConfig({ backend: "auto", placeFile, rootDir: rootDirectory });
+		fileSystem.mkdirSync(path.join(rootDirectory, ".jest-roblox"), { recursive: true });
+		fileSystem.writeFileSync(
+			path.join(rootDirectory, ".jest-roblox", "upload-cache.json"),
+			JSON.stringify({
+				entries: {
+					[`123/456/${posixPath(placeFile)}`]: {
+						hash: createHash("sha256").update("place").digest("hex"),
+						versionNumber: 42,
+					},
+				},
+				version: 2,
+			}),
+		);
+		const upload = vi
+			.spyOn(OcaleRunner.prototype, "uploadPlaceAsync")
+			.mockRejectedValue(new Error("The proven place should not be uploaded"));
+		const execute = vi.spyOn(OcaleRunner.prototype, "executeScriptAsync").mockResolvedValue({
+			durationMs: 1,
+			outputs: [JSON.stringify({ entries: [{ jestOutput: "complete", jobIndex: 0 }] })],
+		});
+		const backend = await resolveBackendAsync({
+			cli: makeCli(),
+			config,
+			fileSystem,
+			isStudioInstalled: () => false,
+		});
+		const result = await backend.runTestsAsync(
+			fromAny({
+				jobs: [{ config, displayName: "project", testFiles: [] }],
+				runSettings: config,
+				sharding: { kind: "static", parallel: undefined },
+			}),
+		);
+
+		expect(result.rawResults[0]!.entry.jestOutput).toBe("complete");
+		expect(execute).toHaveBeenCalledWith(expect.objectContaining({ placeVersion: 42 }));
+		expect(upload).not.toHaveBeenCalled();
+	});
+
+	it("should name the missing credential when auto has neither Studio nor Open Cloud", async () => {
+		expect.assertions(1);
+
+		stubNoStudioPath();
+		stubNoCredentials();
+		vi.spyOn(process.stderr, "write").mockReturnValue(true);
+
+		await expect(
+			resolveBackendAsync({
+				cli: makeCli(),
+				config: makeConfig({ backend: "auto" }),
+				isStudioInstalled: () => false,
+			}),
+		).rejects.toThrow(/Missing:/);
+	});
+
+	it("should select open-cloud when only JEST_ROBLOX_* env vars are set", async () => {
+		expect.assertions(1);
+
+		stubNoCredentials();
+		vi.stubEnv("JEST_ROBLOX_OPEN_CLOUD_API_KEY", "jest-key");
+		vi.stubEnv("JEST_ROBLOX_UNIVERSE_ID", "888");
+		vi.stubEnv("JEST_ROBLOX_PLACE_ID", "999");
+
+		const backend = await resolveBackendAsync({
+			cli: makeCli(),
+			config: makeConfig({ backend: "open-cloud" }),
+		});
+
+		expect(backend.constructor.name).toBe("OpenCloudBackend");
+	});
+
+	it("should return studio backend for explicit studio config", async () => {
+		expect.assertions(1);
+
+		const backend = await resolveBackendAsync({
+			cli: makeCli(),
+			config: makeConfig({ backend: "studio" }),
+		});
+
+		expect(backend.constructor.name).toBe("StudioBackend");
+	});
+
+	it("should open an explicit studio backend's server through the server seam", async () => {
+		expect.assertions(2);
+
+		const backend = await resolveBackendAsync({
+			cli: makeCli(),
+			config: makeConfig({ backend: "studio" }),
+			webSocketServerFactory,
+		});
+
+		await expect(
+			backend.runTestsAsync(fromAny({ jobs: [], runSettings: { timeout: 1 } })),
+		).rejects.toThrowWithMessage(Error, /Timed out waiting for Studio plugin connection/);
+
+		expect(getLastCreatedServer()).toBeInstanceOf(MockWebSocketServer);
+	});
+
+	it("should return studio-cli backend for explicit studio-cli config", async () => {
+		expect.assertions(1);
+
+		const backend = await resolveBackendAsync({
+			cli: makeCli(),
+			config: makeConfig({ backend: "studio-cli" }),
+		});
+
+		expect(backend.constructor.name).toBe("StudioCliBackend");
+	});
+
+	it("should forward the configured hiddenDesktop to the studio-cli backend", async () => {
+		expect.assertions(1);
+
+		stubPlatform("linux");
+		const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+		const config = makeConfig({ backend: "studio-cli", hiddenDesktop: true });
+
+		await resolveBackendAsync({ cli: makeCli(), config });
+
+		expect(stderr).toHaveBeenCalledWith(
+			"Warning: hiddenDesktop is Windows and macOS only; ignoring it.\n",
+		);
+	});
+
+	it("should forward the configured Studio path to the studio-cli backend", async () => {
+		expect.assertions(1);
+
+		const rootDirectory = path.resolve("fixture");
+		const { fileSystem } = createMemoryFileSystem();
+		const configuredPath = path.join(rootDirectory, "configured-studio.exe");
+		vi.stubEnv("JEST_ROBLOX_STUDIO_PATH", path.join(rootDirectory, "environment-studio.exe"));
+
+		const config = makeConfig({
+			backend: "studio-cli",
+			collectCoverage: true,
+			placeFile: path.join(rootDirectory, "place.rbxl"),
+			rootDir: rootDirectory,
+			studioPath: configuredPath,
+		});
+		const backend = await resolveBackendAsync({ cli: makeCli(), config, fileSystem });
+
+		await expect(backend.runTestsAsync(oneJobRequest(config))).rejects.toThrowWithMessage(
+			Error,
+			`Roblox Studio not found at studioPath override: ${configuredPath}`,
+		);
+	});
+
+	it("should skip the relative env plugins folder when the config key reaches studio-cli", async () => {
+		expect.assertions(2);
+
+		const rootDirectory = path.resolve("fixture");
+		const studioPath = path.join(rootDirectory, "RobloxStudioBeta.exe");
+		const { fileSystem } = createMemoryFileSystem({ [studioPath]: "" });
+		stubPlatform("darwin");
+		vi.stubEnv("JEST_ROBLOX_PLUGINS_DIR", "environment-plugins");
+		vi.stubEnv("PATH", "");
+
+		async function runAsync(pluginsDirectory: string | undefined): Promise<void> {
+			const config = makeConfig({
+				backend: "studio-cli",
+				collectCoverage: true,
+				placeFile: path.join(rootDirectory, "place.rbxl"),
+				pluginsDirectory,
+				rootDir: rootDirectory,
+				studioPath,
+			});
+			const backend = await resolveBackendAsync({ cli: makeCli(), config, fileSystem });
+			await backend.runTestsAsync(
+				fromAny({
+					jobs: [{ config, displayName: "project", testFiles: ["test.spec.ts"] }],
+					runSettings: config,
+				}),
+			);
+		}
+
+		await expect(runAsync(undefined)).rejects.toThrowWithMessage(
+			Error,
+			/^JEST_ROBLOX_PLUGINS_DIR must be an absolute path/,
+		);
+		await expect(runAsync(path.join(rootDirectory, "Plugins"))).rejects.toThrowWithMessage(
+			Error,
+			"rojo was not found on PATH",
+		);
+	});
+
+	it("should accept any --parallel for studio-cli, which runs one session", async () => {
+		expect.assertions(1);
+
+		const backend = await resolveBackendAsync({
+			cli: makeCli(),
+			config: makeConfig({ backend: "studio-cli", parallel: 3 }),
+		});
+
+		expect(backend.constructor.name).toBe("StudioCliBackend");
+	});
+
+	it("should reject --experimental-vm-parallel on the open-cloud backend", async () => {
+		expect.assertions(1);
+
+		stubCredentials();
+
+		await expect(
+			resolveBackendAsync({
+				cli: makeCli(),
+				config: makeConfig({ backend: "open-cloud", experimentalVmParallel: 2 }),
+			}),
+		).rejects.toThrowWithMessage(
+			Error,
+			"--experimental-vm-parallel is Studio-only: an Open Cloud session has no " +
+				"second Luau VM to run a project in. Use --parallel to shard the run " +
+				"across Open Cloud sessions instead.",
+		);
+	});
+
+	it("should accept --experimental-vm-parallel on the studio backend", async () => {
+		expect.assertions(1);
+
+		const backend = await resolveBackendAsync({
+			cli: makeCli(),
+			config: makeConfig({ backend: "studio", experimentalVmParallel: "auto" }),
+		});
+
+		expect(backend.kind).toBe("studio");
+	});
+
+	it("should reject an explicit VM count above the hosts the plugin ships", async () => {
+		expect.assertions(1);
+
+		await expect(
+			resolveBackendAsync({
+				cli: makeCli(),
+				config: makeConfig({ backend: "studio", experimentalVmParallel: 8 }),
+			}),
+		).rejects.toThrowWithMessage(
+			Error,
+			"--experimental-vm-parallel 8 is more than the Studio plugin " +
+				"ships 4 VM hosts. Pass at most 4, or pass the flag bare for one VM per project " +
+				"up to that cap.",
+		);
+	});
+
+	it("should accept a VM count equal to the host pool", async () => {
+		expect.assertions(1);
+
+		const backend = await resolveBackendAsync({
+			cli: makeCli(),
+			config: makeConfig({ backend: "studio", experimentalVmParallel: 4 }),
+		});
+
+		expect(backend.kind).toBe("studio");
+	});
+
+	it("should return open-cloud backend for explicit open-cloud config", async () => {
+		expect.assertions(1);
+
+		stubNoCredentials();
+
+		const backend = await resolveBackendAsync({
+			cli: makeCli({ apiKey: "test-key" }),
+			config: makeConfig({ backend: "open-cloud", placeId: "456", universeId: "123" }),
+		});
+
+		expect(backend.constructor.name).toBe("OpenCloudBackend");
+	});
+
+	it.for([
+		makeCli({ apiKey: "key" }),
+		makeCli({ universeId: "123" }),
+		makeCli({ placeId: "456" }),
+	])("should surface the precise resolver error for a partial CLI override", async (cli) => {
+		expect.assertions(1);
+
+		stubNoCredentials();
+
+		await expect(
+			resolveBackendAsync({ cli, config: makeConfig({ backend: "open-cloud" }) }),
+		).rejects.toThrow(/Missing:/);
+	});
+
+	it("should open a studio backend for a workspace run", () => {
+		expect.assertions(1);
+
+		const opened = openBackend({
+			cli: makeCli(),
+			config: makeConfig({ backend: "studio" }),
+			fileSystem: createMemoryFileSystem().fileSystem,
+			workspace: true,
+		});
+
+		expect(opened).toStrictEqual(expect.objectContaining({ kind: "studio" }));
+	});
+});

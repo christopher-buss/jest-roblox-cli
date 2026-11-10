@@ -1,4 +1,4 @@
-import { loadConfig } from "@isentinel/jest-roblox/artifacts";
+import { loadConfig } from "@isentinel/jest-roblox/api";
 
 import path from "node:path";
 import { describe, expect, it } from "vitest";

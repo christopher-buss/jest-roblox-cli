@@ -1,20 +1,17 @@
-import { resolveNestedProjects } from "@isentinel/rojo-utils";
+import process from "node:process";
 
-import { type } from "arktype";
-import * as path from "node:path";
-
-import type { ResolvedConfig } from "../config/schema.ts";
+import type { ResolvedConfig } from "../config/resolved-config.ts";
 import { createSourceMapper, type SourceMapper } from "../source-mapper/index.ts";
+import type { TsconfigMapping } from "../tsconfig/tsconfig-mappings.ts";
 import type { JestResult } from "../types/jest-result-types.ts";
-import { rojoProjectSchema } from "../types/rojo.ts";
-import type { TsconfigMapping } from "../types/tsconfig-types.ts";
+import { errorMessage } from "../utils/error-message.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import { resolveFromDirectory } from "../utils/normalize-windows-path.ts";
-import { resolveRojoProjectFile } from "./snapshot-writer.ts";
+import { readProjectRojo } from "./project-rojo.ts";
 
 /** A project's source mapper and the frame its Rojo mounts resolve in. */
 export interface ProjectSourceMap {
-	/** Directory of the Rojo project file, which relative mounts resolve in. */
+	/** Directory relative Rojo mounts resolve in. */
 	rojoDirectory: string;
 	/** Maps DataModel paths and frames back to source. */
 	sourceMapper: SourceMapper;
@@ -23,7 +20,7 @@ export interface ProjectSourceMap {
 /**
  * Build the source mapper for a project's Rojo project file.
  * @param options - The project config, file system and tsconfig mappings.
- * @returns The source map, or undefined when the Rojo project is missing or invalid.
+ * @returns The source map, or undefined when the Rojo project is unusable.
  */
 export function buildProjectSourceMap({
 	config,
@@ -34,40 +31,32 @@ export function buildProjectSourceMap({
 	fileSystem: FileSystem;
 	tsconfigMappings: ReadonlyArray<TsconfigMapping>;
 }): ProjectSourceMap | undefined {
-	const rojoProjectPath = resolveRojoProjectFile(config, fileSystem);
-	if (rojoProjectPath === undefined || !fileSystem.existsSync(rojoProjectPath)) {
+	const read = readProjectRojo(config, fileSystem);
+	if (read.kind === "missing") {
 		return undefined;
 	}
 
-	try {
-		const rojoProjectRaw = JSON.parse(fileSystem.readFileSync(rojoProjectPath, "utf-8"));
-		const rojoResult = rojoProjectSchema(rojoProjectRaw);
-		if (rojoResult instanceof type.errors) {
-			return undefined;
-		}
-
-		const rojoDirectory = path.dirname(rojoProjectPath);
-		const resolvedTree = resolveNestedProjects(
-			{ rootDirectory: rojoDirectory, tree: rojoResult.tree },
-			fileSystem,
+	if (read.kind === "failed") {
+		process.stderr.write(
+			`Warning: Cannot map sources - ${read.projectPath}: ${errorMessage(read.error)}\n`,
 		);
-
-		return {
-			rojoDirectory,
-			sourceMapper: createSourceMapper({
-				fileSystem,
-				mappings: tsconfigMappings,
-				rojoProject: { ...rojoResult, tree: resolvedTree },
-				rootDirectory: rojoDirectory,
-			}),
-		};
-	} catch {
 		return undefined;
 	}
+
+	const { project, rojoDirectory } = read;
+	return {
+		rojoDirectory,
+		sourceMapper: createSourceMapper({
+			fileSystem,
+			mappings: tsconfigMappings,
+			rojoProject: project,
+			rootDirectory: rojoDirectory,
+		}),
+	};
 }
 
 /**
- * Rewrite each DataModel `testFilePath` the mapper resolves to an absolute disk path.
+ * Rewrite each resolvable `testFilePath` to an absolute disk path.
  * @param result - The project's result, rewritten in place.
  * @param sourceMap - The project's source map; nothing is rewritten without one.
  */

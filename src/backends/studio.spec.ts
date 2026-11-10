@@ -1,4 +1,4 @@
-import { fromExact, fromPartial } from "@total-typescript/shoehorn";
+import { fromPartial } from "@total-typescript/shoehorn";
 
 import { type } from "arktype";
 import { Buffer } from "node:buffer";
@@ -10,30 +10,36 @@ import {
 	mockWebSocketServerFactory as webSocketServerFactory,
 } from "#test/mocks/mock-web-socket-server.ts";
 import { MockWebSocket } from "#test/mocks/mock-web-socket.ts";
+import { projectJob } from "#test/mocks/project-job.ts";
 import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
-import type { ResolvedConfig } from "../config/schema.ts";
-import type { RunProgress } from "../progress/reporter.ts";
-import type { JestResult } from "../types/jest-result-types.ts";
-import type { BackendOptions, ProjectJob } from "./interface.ts";
+import {
+	type ConfiguredJobs,
+	envelope,
+	studioRequest,
+	successResult,
+	timed,
+} from "#test/mocks/studio-request.ts";
+import type { ResolvedConfig } from "../config/resolved-config.ts";
+import type { ConfiguredJob } from "../executor/executor-types.ts";
+import type { RunProgress } from "../progress/run-progress.ts";
+import {
+	DEFAULT_STUDIO_PORT,
+	STUDIO_PORT_ATTRIBUTE,
+	STUDIO_PROTOCOL_VERSION,
+} from "../protocol/studio.ts";
 import { StudioBackend } from "./studio.ts";
 
-// The backend's own default run timeout, which is what a run that does not
-// override it must tell the plugin to finish inside.
-const DEFAULT_STUDIO_TIMEOUT = 300_000;
+const RUN_TIMEOUT = 300_000;
 
 // Mirrors the wire format StudioBackend emits in `attachSocket` — used by the
 // send-mock to assert the backend keeps sending the handshake fields.
 // Drift here means the protocol-version handshake regressed.
 const pluginRequest = type({
 	action: "string",
-	config: { configs: "unknown[]" },
+	configs: "unknown[]",
 	protocolVersion: "number",
 	requestId: "string",
 });
-
-// The protocol this CLI speaks, pinned here on purpose: the spec asserts the
-// wire, so a bump has to be made deliberately in both places.
-const PROTOCOL_VERSION = 10;
 
 /**
  * Connect a plugin that announces a protocol the CLI can use.
@@ -62,7 +68,7 @@ function connectPlugin({
 			JSON.stringify({
 				pluginName: "JestRobloxRunner",
 				pluginVersion: "9.9.9",
-				protocolVersion: PROTOCOL_VERSION,
+				protocolVersion: STUDIO_PROTOCOL_VERSION,
 				type: "hello",
 				...hello,
 			}),
@@ -82,8 +88,8 @@ function useSelectionTimers(): void {
 	});
 }
 
-function job(displayName: string, overrides: Partial<ResolvedConfig> = {}): ProjectJob {
-	return {
+function job(displayName: string, overrides: Partial<ResolvedConfig> = {}): ConfiguredJob {
+	return projectJob({
 		config: {
 			...createResolvedConfig(),
 			backend: "studio",
@@ -93,48 +99,26 @@ function job(displayName: string, overrides: Partial<ResolvedConfig> = {}): Proj
 		displayColor: `${displayName}-color`,
 		displayName,
 		testFiles: [`${displayName}/test.spec.ts`],
-	};
+	});
 }
 
 /**
  * Workspace jobs carry `pkg`; the backend then drives the staged materializer
- * dispatch by sending `workspace.entries` rather than `config.configs`.
+ * dispatch by sending `workspace.entries` rather than `configs`.
  * @param packageName - Workspace package of the job.
  * @param displayName - Label for the job and its test file.
  * @returns The workspace job.
  */
-function wsJob(packageName: string, displayName: string): ProjectJob {
+function wsJob(packageName: string, displayName: string): ConfiguredJob {
 	return { ...job(displayName), pkg: packageName };
 }
 
-const singleJobOptions: BackendOptions = { jobs: [job("")] };
+const singleJobOptions = studioRequest({ jobs: [job("")] });
 
 interface ReplyOptions {
 	entries?: Array<{ elapsedMs?: number; gameOutput?: string; jestOutput: string }>;
 	gameOutput?: string;
 	rawJestOutput?: string;
-}
-
-function successResult(overrides: Partial<JestResult> = {}): string {
-	return JSON.stringify(
-		fromExact<JestResult>({
-			numFailedTests: 0,
-			numPassedTests: 2,
-			numPendingTests: 0,
-			numTotalTests: 2,
-			startTime: 0,
-			success: true,
-			testResults: [],
-			...overrides,
-		}),
-	);
-}
-
-function envelope(
-	entries: Array<{ elapsedMs?: number; gameOutput?: string; jestOutput: string }>,
-	flags: { deferred?: boolean } = {},
-): string {
-	return JSON.stringify({ ...flags, entries });
 }
 
 const vmRequestSchema = type({
@@ -154,9 +138,15 @@ async function captureVmRequestAsync(
 	jobCount: number,
 	vmParallel: "auto" | number | undefined,
 ): Promise<typeof vmRequestSchema.infer> {
-	const backend = new StudioBackend({ port: 0, webSocketServerFactory });
-	const jobs = Array.from({ length: jobCount }, (_unused, index) => job(`job-${String(index)}`));
-	const promise = backend.runTestsAsync({ jobs, vmParallel });
+	const backend = new StudioBackend({
+		port: 0,
+		webSocketServerFactory,
+	});
+	const [first, ...rest] = Array.from({ length: jobCount }, (_unused, index) => {
+		return job(`job-${String(index)}`);
+	});
+	const jobs: ConfiguredJobs["jobs"] = [first!, ...rest];
+	const promise = backend.runTestsAsync(studioRequest({ jobs, vmParallel }));
 
 	const wss = getLastCreatedServer()!;
 	const socket = new MockWebSocket();
@@ -171,7 +161,7 @@ async function captureVmRequestAsync(
 					JSON.stringify({
 						gameOutput: "[]",
 						jestOutput: envelope(jobs.map(() => ({ jestOutput: successResult() }))),
-						protocolVersion: PROTOCOL_VERSION,
+						protocolVersion: STUDIO_PROTOCOL_VERSION,
 						requestId: captured!.requestId,
 						type: "results",
 					}),
@@ -190,7 +180,10 @@ async function captureVmRequestAsync(
 const runRequestSchema = type({ action: "string", requestId: "string" });
 
 async function startWithSocketAsync(onSend: (socket: MockWebSocket, data: string) => void) {
-	const backend = new StudioBackend({ port: 0, webSocketServerFactory });
+	const backend = new StudioBackend({
+		port: 0,
+		webSocketServerFactory,
+	});
 	const promise = backend.runTestsAsync(singleJobOptions);
 	const socket = new MockWebSocket();
 	socket.send.mockImplementation((data) => {
@@ -224,7 +217,7 @@ function connectAndReply(wss: MockWebSocketServer, reply: ReplyOptions): MockWeb
 						JSON.stringify({
 							gameOutput: reply.gameOutput ?? JSON.stringify([]),
 							jestOutput,
-							protocolVersion: PROTOCOL_VERSION,
+							protocolVersion: STUDIO_PROTOCOL_VERSION,
 							requestId: message.requestId,
 							type: "results",
 						}),
@@ -242,7 +235,10 @@ describe("protocol version handshake", () => {
 	it("should include protocolVersion in the run_tests payload", async () => {
 		expect.assertions(1);
 
-		const backend = new StudioBackend({ port: 0, webSocketServerFactory });
+		const backend = new StudioBackend({
+			port: 0,
+			webSocketServerFactory,
+		});
 		const promise = backend.runTestsAsync(singleJobOptions);
 
 		const wss = getLastCreatedServer()!;
@@ -258,7 +254,7 @@ describe("protocol version handshake", () => {
 						JSON.stringify({
 							gameOutput: "[]",
 							jestOutput: envelope([{ elapsedMs: 1, jestOutput: successResult() }]),
-							protocolVersion: PROTOCOL_VERSION,
+							protocolVersion: STUDIO_PROTOCOL_VERSION,
 							requestId: captured!.requestId,
 							type: "results",
 						}),
@@ -297,6 +293,24 @@ describe("protocol version handshake", () => {
 		expect(vi.getTimerCount()).toBe(0);
 	});
 
+	it("should name the Studio backend when the runner defers jobs", async () => {
+		expect.assertions(1);
+
+		const promise = startWithReplyAsync((requestId) => {
+			return {
+				gameOutput: "[]",
+				jestOutput: envelope([], { deferred: true }),
+				protocolVersion: STUDIO_PROTOCOL_VERSION,
+				requestId,
+				type: "results",
+			};
+		});
+
+		await expect(promise).rejects.toThrow(
+			"Studio backend deferred 1 of 1 jobs: the runner's result budget filled before they ran",
+		);
+	});
+
 	it("should reject an echo from a protocol older than the current one", async () => {
 		// A plugin that echoes an older protocol than it announced predates this
 		// CLI and must be rejected so the user upgrades rather than running with
@@ -322,14 +336,17 @@ describe("protocol version handshake", () => {
 		// Fake timers: the grace window the CLI holds open for announcements is
 		// the only thing this waits on, and it is a real 750ms otherwise.
 		useSelectionTimers();
-		const backend = new StudioBackend({ port: 0, webSocketServerFactory });
+		const backend = new StudioBackend({
+			port: 0,
+			webSocketServerFactory,
+		});
 		const settled = backend.runTestsAsync(singleJobOptions).catch((err: unknown) => err);
 
 		const wss = getLastCreatedServer()!;
 		connectPlugin({
 			hello: {
 				pluginVersion: "0.3.18",
-				protocolVersion: PROTOCOL_VERSION - 1,
+				protocolVersion: STUDIO_PROTOCOL_VERSION - 1,
 			},
 			socket: new MockWebSocket(),
 			wss,
@@ -338,7 +355,7 @@ describe("protocol version handshake", () => {
 			hello: {
 				pluginName: "OldRunner",
 				pluginVersion: undefined,
-				protocolVersion: PROTOCOL_VERSION - 2,
+				protocolVersion: STUDIO_PROTOCOL_VERSION - 2,
 			},
 			socket: new MockWebSocket(),
 			wss,
@@ -350,10 +367,10 @@ describe("protocol version handshake", () => {
 
 		expect(caught.message).toContain("No compatible jest-roblox Studio plugin");
 		expect(caught.message).toContain(
-			`JestRobloxRunner 0.3.18 (protocol v${PROTOCOL_VERSION - 1})`,
+			`JestRobloxRunner 0.3.18 (protocol v${STUDIO_PROTOCOL_VERSION - 1})`,
 		);
 		expect(caught.message).toContain(
-			`OldRunner (protocol v${PROTOCOL_VERSION - 2}, version not reported)`,
+			`OldRunner (protocol v${STUDIO_PROTOCOL_VERSION - 2}, version not reported)`,
 		);
 		expect(caught.message).toContain("remove the other copies");
 	});
@@ -380,30 +397,41 @@ describe("protocol version handshake", () => {
 
 describe(StudioBackend, () => {
 	it("should send one envelope carrying a configs array with one entry per job", async () => {
-		expect.assertions(4);
+		expect.assertions(3);
 
-		const backend = new StudioBackend({ port: 0, webSocketServerFactory });
-		const promise = backend.runTestsAsync({
-			jobs: [
-				job("alpha", { testNamePattern: "alpha-pattern" }),
-				job("beta", { testNamePattern: "beta-pattern" }),
-			],
+		const backend = new StudioBackend({
+			port: 0,
+			webSocketServerFactory,
 		});
+		const promise = backend.runTestsAsync(
+			studioRequest({
+				jobs: [
+					{
+						...job("alpha", { testNamePattern: "alpha-pattern" }),
+						runtimeInjectionPaths: ["ReplicatedStorage/alpha"],
+					},
+					job("beta", { testNamePattern: "beta-pattern" }),
+				],
+			}),
+		);
 
 		// Narrower than the shared `pluginRequest` (whose `configs` is
 		// `unknown[]`): this test reads back each job's `testNamePattern`.
 		const configsRequest = type({
-			config: { configs: type({ "testNamePattern?": "string" }).array() },
+			configs: type({
+				config: { "testNamePattern?": "string" },
+				runtimeStubMounts: "string[]",
+			}).array(),
 			requestId: "string",
 		});
 
 		const wss = getLastCreatedServer()!;
 		const socket = new MockWebSocket();
-		let capturedConfig: typeof configsRequest.infer.config | undefined;
+		let capturedConfig: typeof configsRequest.infer.configs | undefined;
 
 		socket.send.mockImplementation((data) => {
 			const message = configsRequest.assert(JSON.parse(data));
-			capturedConfig = message.config;
+			capturedConfig = message.configs;
 			queueMicrotask(() => {
 				socket.emit(
 					"message",
@@ -414,7 +442,7 @@ describe(StudioBackend, () => {
 								{ elapsedMs: 10, jestOutput: successResult() },
 								{ elapsedMs: 20, jestOutput: successResult() },
 							]),
-							protocolVersion: PROTOCOL_VERSION,
+							protocolVersion: STUDIO_PROTOCOL_VERSION,
 							requestId: message.requestId,
 							type: "results",
 						}),
@@ -430,9 +458,14 @@ describe(StudioBackend, () => {
 		expect(socket.send).toHaveBeenCalledExactlyOnceWith(
 			expect.stringContaining('"action":"run_tests"'),
 		);
-		expect(capturedConfig!.configs).toHaveLength(2);
-		expect(capturedConfig!.configs[0]!.testNamePattern).toBe("alpha-pattern");
-		expect(capturedConfig!.configs[1]!.testNamePattern).toBe("beta-pattern");
+		expect(capturedConfig!.map(({ config }) => config.testNamePattern)).toStrictEqual([
+			"alpha-pattern",
+			"beta-pattern",
+		]);
+		expect(capturedConfig!.map(({ runtimeStubMounts }) => runtimeStubMounts)).toStrictEqual([
+			["ReplicatedStorage/alpha"],
+			[],
+		]);
 	});
 
 	describe("experimental vm-parallel", () => {
@@ -446,7 +479,7 @@ describe(StudioBackend, () => {
 
 			const captured = await captureVmRequestAsync(2, 2);
 
-			expect(captured.runBudgetMs).toBe(DEFAULT_STUDIO_TIMEOUT);
+			expect(captured.runBudgetMs).toBe(RUN_TIMEOUT);
 		});
 
 		it("should leave the run budget off a sequential run", async () => {
@@ -479,14 +512,19 @@ describe(StudioBackend, () => {
 	it("should send a workspace entries payload when jobs carry pkg", async () => {
 		// The same run-mode dispatch lights up workspace in the attached
 		// (WebSocket) studio backend. A workspace run sends `workspace.entries`,
-		// not `config.configs` — the plugin's run-mode runner dispatches on
+		// not `configs` — the plugin's run-mode runner dispatches on
 		// shape.
 		expect.assertions(4);
 
-		const backend = new StudioBackend({ port: 0, webSocketServerFactory });
-		const promise = backend.runTestsAsync({
-			jobs: [wsJob("@scope/a", "a"), wsJob("@scope/b", "b")],
+		const backend = new StudioBackend({
+			port: 0,
+			webSocketServerFactory,
 		});
+		const promise = backend.runTestsAsync(
+			studioRequest({
+				jobs: [wsJob("@scope/a", "a"), wsJob("@scope/b", "b")],
+			}),
+		);
 
 		const workspaceRequest = type({
 			requestId: "string",
@@ -513,7 +551,7 @@ describe(StudioBackend, () => {
 								{ jestOutput: successResult() },
 								{ jestOutput: successResult() },
 							]),
-							protocolVersion: PROTOCOL_VERSION,
+							protocolVersion: STUDIO_PROTOCOL_VERSION,
 							requestId,
 							type: "results",
 						}),
@@ -534,8 +572,13 @@ describe(StudioBackend, () => {
 	it("should tell the workspace runner to stop on the first failing package under --bail", async () => {
 		expect.assertions(1);
 
-		const backend = new StudioBackend({ port: 0, webSocketServerFactory });
-		const promise = backend.runTestsAsync({ bail: true, jobs: [wsJob("@scope/a", "a")] });
+		const backend = new StudioBackend({
+			port: 0,
+			webSocketServerFactory,
+		});
+		const promise = backend.runTestsAsync(
+			studioRequest({ bail: true, jobs: [wsJob("@scope/a", "a")] }),
+		);
 
 		const socket = connectAndReply(getLastCreatedServer()!, {});
 		await promise;
@@ -550,33 +593,45 @@ describe(StudioBackend, () => {
 	it("should return rawResults in the same order as the submitted jobs", async () => {
 		expect.assertions(2);
 
-		const backend = new StudioBackend({ port: 0, webSocketServerFactory });
-		const promise = backend.runTestsAsync({ jobs: [job("alpha"), job("beta"), job("gamma")] });
+		const backend = new StudioBackend({
+			port: 0,
+			webSocketServerFactory,
+		});
+		const promise = backend.runTestsAsync(
+			studioRequest({ jobs: [job("alpha"), job("beta"), job("gamma")] }),
+		);
 
 		const wss = getLastCreatedServer()!;
 		connectAndReply(wss, {
 			entries: [
-				{ elapsedMs: 11, jestOutput: successResult() },
-				{ elapsedMs: 22, jestOutput: successResult() },
-				{ elapsedMs: 33, jestOutput: successResult() },
+				{ gameOutput: "11", jestOutput: successResult() },
+				{ gameOutput: "22", jestOutput: successResult() },
+				{ gameOutput: "33", jestOutput: successResult() },
 			],
 		});
 
 		const { rawResults } = await promise;
 
 		expect(rawResults).toHaveLength(3);
-		expect(rawResults.map((raw) => raw.entry.elapsedMs)).toStrictEqual([11, 22, 33]);
+		expect(rawResults.map((raw) => raw.entry.gameOutput)).toStrictEqual(["11", "22", "33"]);
 	});
 
 	it("should populate timing.executionMs on the BackendResult", async () => {
 		expect.assertions(1);
 
-		const now = vi.spyOn(Date, "now").mockReturnValueOnce(100).mockReturnValueOnce(145);
+		const now = vi
+			.spyOn(Date, "now")
+			.mockReturnValueOnce(100)
+			.mockReturnValueOnce(120)
+			.mockReturnValueOnce(145);
 		onTestFinished(() => {
 			now.mockRestore();
 		});
 
-		const backend = new StudioBackend({ port: 0, webSocketServerFactory });
+		const backend = new StudioBackend({
+			port: 0,
+			webSocketServerFactory,
+		});
 		const promise = backend.runTestsAsync(singleJobOptions);
 
 		const wss = getLastCreatedServer()!;
@@ -594,11 +649,16 @@ describe(StudioBackend, () => {
 
 		const done = vi.fn<() => void>();
 		const begin = vi.fn<RunProgress["begin"]>(() => done);
-		const backend = new StudioBackend({ port: 0, webSocketServerFactory });
-		const promise = backend.runTestsAsync({
-			...singleJobOptions,
-			progress: fromPartial({ begin }),
+		const backend = new StudioBackend({
+			port: 0,
+			webSocketServerFactory,
 		});
+		const promise = backend.runTestsAsync(
+			studioRequest({
+				...singleJobOptions,
+				progress: fromPartial({ begin }),
+			}),
+		);
 		connectAndReply(getLastCreatedServer()!, {});
 
 		await promise;
@@ -613,7 +673,10 @@ describe(StudioBackend, () => {
 
 		const fallback = JSON.stringify([{ message: "fallback", messageType: 0, timestamp: 0 }]);
 
-		const backend = new StudioBackend({ port: 0, webSocketServerFactory });
+		const backend = new StudioBackend({
+			port: 0,
+			webSocketServerFactory,
+		});
 		const promise = backend.runTestsAsync(singleJobOptions);
 
 		const wss = getLastCreatedServer()!;
@@ -628,15 +691,19 @@ describe(StudioBackend, () => {
 		expect.assertions(1);
 
 		useSelectionTimers();
-		const backend = new StudioBackend({ port: 0, timeout: 100, webSocketServerFactory });
+		const backend = new StudioBackend({ port: 0, webSocketServerFactory });
 
-		const settled = backend.runTestsAsync(singleJobOptions).catch((err: unknown) => err);
+		const settled = backend
+			.runTestsAsync(timed(singleJobOptions, 100))
+			.catch((err: unknown) => err);
 		await vi.runAllTimersAsync();
 		const caught: unknown = await settled;
 
 		assert(caught instanceof Error);
 
-		expect(caught.message).toContain("Timed out waiting for Studio plugin connection");
+		expect(caught.message).toBe(
+			`Timed out waiting for Studio plugin connection on port 0. The plugin dials port ${DEFAULT_STUDIO_PORT.toString()} unless ReplicatedStorage sets the ${STUDIO_PORT_ATTRIBUTE} attribute to this port.`,
+		);
 	});
 
 	it("should throw when the selected plugin never returns results", async () => {
@@ -646,8 +713,10 @@ describe(StudioBackend, () => {
 		expect.assertions(1);
 
 		useSelectionTimers();
-		const backend = new StudioBackend({ port: 0, timeout: 100, webSocketServerFactory });
-		const settled = backend.runTestsAsync(singleJobOptions).catch((err: unknown) => err);
+		const backend = new StudioBackend({ port: 0, webSocketServerFactory });
+		const settled = backend
+			.runTestsAsync(timed(singleJobOptions, 100))
+			.catch((err: unknown) => err);
 
 		connectPlugin({ wss: getLastCreatedServer()! });
 		await vi.runAllTimersAsync();
@@ -656,6 +725,62 @@ describe(StudioBackend, () => {
 		assert(caught instanceof Error);
 
 		expect(caught.message).toBe("Timed out waiting for the Studio plugin to return results");
+	});
+
+	it("should end the run at one timeout, counted from before the plugin connected", async () => {
+		expect.assertions(1);
+
+		vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+		onTestFinished(() => {
+			vi.useRealTimers();
+		});
+		const backend = new StudioBackend({ port: 0, webSocketServerFactory });
+		const settled = backend
+			.runTestsAsync(timed(singleJobOptions, 10_000))
+			.catch((err: unknown) => err);
+
+		await vi.advanceTimersByTimeAsync(6000);
+		connectPlugin({ wss: getLastCreatedServer()! });
+		await vi.advanceTimersByTimeAsync(4000);
+
+		await expect(settled).resolves.toHaveProperty(
+			"message",
+			"Timed out waiting for the Studio plugin to return results",
+		);
+	});
+
+	it("should accept results that arrive just before the one timeout ends", async () => {
+		expect.assertions(1);
+
+		vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+		onTestFinished(() => {
+			vi.useRealTimers();
+		});
+		const backend = new StudioBackend({ port: 0, webSocketServerFactory });
+		const settled = backend.runTestsAsync(timed(singleJobOptions, 10_000));
+
+		await vi.advanceTimersByTimeAsync(6000);
+		const socket = new MockWebSocket();
+		let requestId = "";
+		socket.send.mockImplementation((data) => {
+			({ requestId } = runRequestSchema.assert(JSON.parse(data)));
+		});
+		connectPlugin({ socket, wss: getLastCreatedServer()! });
+		await vi.advanceTimersByTimeAsync(3999);
+		socket.emit(
+			"message",
+			Buffer.from(
+				JSON.stringify({
+					gameOutput: "[]",
+					jestOutput: envelope([{ jestOutput: successResult() }]),
+					protocolVersion: STUDIO_PROTOCOL_VERSION,
+					requestId,
+					type: "results",
+				}),
+			),
+		);
+
+		await expect(settled).resolves.toHaveProperty("rawResults", [expect.anything()]);
 	});
 
 	it("should throw when the plugin disconnects before sending results", async () => {
@@ -684,20 +809,6 @@ describe(StudioBackend, () => {
 		await expect(promise).rejects.toThrowWithMessage(Error, /Invalid plugin message/);
 	});
 
-	it("should name the Studio backend when a results frame is short of jobs", async () => {
-		expect.assertions(1);
-
-		const backend = new StudioBackend({ port: 0, webSocketServerFactory });
-		const promise = backend.runTestsAsync(singleJobOptions);
-
-		connectAndReply(getLastCreatedServer()!, { entries: [] });
-
-		await expect(promise).rejects.toThrowWithMessage(
-			Error,
-			"Studio backend returned 0 entries but request had 1 jobs",
-		);
-	});
-
 	it("should reject when the websocket emits an error", async () => {
 		expect.assertions(2);
 
@@ -714,7 +825,10 @@ describe(StudioBackend, () => {
 	it("should reject when the server emits an error", async () => {
 		expect.assertions(1);
 
-		const backend = new StudioBackend({ port: 0, webSocketServerFactory });
+		const backend = new StudioBackend({
+			port: 0,
+			webSocketServerFactory,
+		});
 		const promise = backend.runTestsAsync(singleJobOptions);
 
 		const wss = getLastCreatedServer()!;
@@ -729,7 +843,10 @@ describe(StudioBackend, () => {
 	it("should ignore messages whose requestId does not match", async () => {
 		expect.assertions(1);
 
-		const backend = new StudioBackend({ port: 0, webSocketServerFactory });
+		const backend = new StudioBackend({
+			port: 0,
+			webSocketServerFactory,
+		});
 		const promise = backend.runTestsAsync(singleJobOptions);
 
 		const wss = getLastCreatedServer()!;
@@ -743,7 +860,7 @@ describe(StudioBackend, () => {
 					Buffer.from(
 						JSON.stringify({
 							jestOutput: "wrong",
-							protocolVersion: PROTOCOL_VERSION,
+							protocolVersion: STUDIO_PROTOCOL_VERSION,
 							requestId: "wrong-id",
 							type: "results",
 						}),
@@ -754,7 +871,7 @@ describe(StudioBackend, () => {
 					Buffer.from(
 						JSON.stringify({
 							jestOutput: envelope([{ jestOutput: successResult() }]),
-							protocolVersion: PROTOCOL_VERSION,
+							protocolVersion: STUDIO_PROTOCOL_VERSION,
 							requestId: message.requestId,
 							type: "results",
 						}),
@@ -773,7 +890,10 @@ describe(StudioBackend, () => {
 	it("should reuse the same WebSocketServer across successive runTests calls", async () => {
 		expect.assertions(2);
 
-		const backend = new StudioBackend({ port: 0, webSocketServerFactory });
+		const backend = new StudioBackend({
+			port: 0,
+			webSocketServerFactory,
+		});
 
 		const firstPromise = backend.runTestsAsync(singleJobOptions);
 		const firstWss = getLastCreatedServer()!;
@@ -796,8 +916,11 @@ describe(StudioBackend, () => {
 		// "returned 1 entries but request had N jobs". The error must win.
 		expect.assertions(2);
 
-		const backend = new StudioBackend({ port: 0, webSocketServerFactory });
-		const promise = backend.runTestsAsync({ jobs: [job("alpha"), job("beta")] });
+		const backend = new StudioBackend({
+			port: 0,
+			webSocketServerFactory,
+		});
+		const promise = backend.runTestsAsync(studioRequest({ jobs: [job("alpha"), job("beta")] }));
 
 		const wss = getLastCreatedServer()!;
 		connectAndReply(wss, {
@@ -816,7 +939,10 @@ describe(StudioBackend, () => {
 	it("should terminate the underlying WebSocketServer via close()", async () => {
 		expect.assertions(2);
 
-		const backend = new StudioBackend({ port: 0, webSocketServerFactory });
+		const backend = new StudioBackend({
+			port: 0,
+			webSocketServerFactory,
+		});
 		const promise = backend.runTestsAsync(singleJobOptions);
 		const wss = getLastCreatedServer()!;
 		connectAndReply(wss, {});
@@ -835,14 +961,14 @@ describe(StudioBackend, () => {
 	it("should listen on a real server when given no server factory", async () => {
 		expect.assertions(1);
 
-		const backend = new StudioBackend({ port: 0, timeout: 1 });
+		const backend = new StudioBackend({ port: 0 });
 		onTestFinished(() => {
 			backend.closeAsync();
 		});
 
-		await expect(backend.runTestsAsync(singleJobOptions)).rejects.toThrowWithMessage(
+		await expect(backend.runTestsAsync(timed(singleJobOptions, 1))).rejects.toThrowWithMessage(
 			Error,
-			"Timed out waiting for Studio plugin connection",
+			/Timed out waiting for Studio plugin connection/,
 		);
 	});
 
@@ -852,7 +978,10 @@ describe(StudioBackend, () => {
 		// CLI's process.exitCode-based shutdown whenever a Studio was detected.
 		expect.assertions(1);
 
-		const backend = new StudioBackend({ port: 0, webSocketServerFactory });
+		const backend = new StudioBackend({
+			port: 0,
+			webSocketServerFactory,
+		});
 		const promise = backend.runTestsAsync(singleJobOptions);
 		const wss = getLastCreatedServer()!;
 		const socket = connectAndReply(wss, {});
@@ -874,7 +1003,10 @@ describe(StudioBackend, () => {
 			vi.useRealTimers();
 		});
 
-		const backend = new StudioBackend({ port: 0, webSocketServerFactory });
+		const backend = new StudioBackend({
+			port: 0,
+			webSocketServerFactory,
+		});
 		const settled = backend.runTestsAsync(singleJobOptions).catch((err: unknown) => err);
 		backend.closeAsync();
 

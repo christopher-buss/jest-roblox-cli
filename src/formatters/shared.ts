@@ -1,13 +1,5 @@
-/**
- * Vocabulary every formatter module shares: the option and context shapes that
- * thread through the render tree, plus the path and terminal-width lookups
- * each of them needs. Kept as the dependency leaf so no formatter module
- * has to import a sibling just to name an option.
- */
-
-import process from "node:process";
-
 import type { SourceMapper } from "../source-mapper/index.ts";
+import type { BailSummary } from "../types/bail-summary-types.ts";
 import type { JestResult } from "../types/jest-result-types.ts";
 import {
 	dropDriveLetter,
@@ -42,18 +34,6 @@ export interface AffectedSummary {
 	cause: PartialRunCause;
 	/** Test files a full run would have run. */
 	total: number;
-}
-
-/** Packages a bailed run reached, and packages it never started. */
-export interface BailSummary {
-	/**
-	 * Packages the run never started.
-	 */
-	notRun: number;
-	/**
-	 * Packages the run started, the failing one included.
-	 */
-	ran: number;
 }
 
 /**
@@ -136,9 +116,7 @@ export interface FormatterProjectEntry {
 	 */
 	displayName: string;
 	/**
-	 * The project's own raw Game Output, rendered under its section when it
-	 * fails so the reader sees which package printed which warning. Raw so a
-	 * passing project never pays to parse it.
+	 * The project's raw Game Output, shown when it fails.
 	 */
 	gameOutput?: string | undefined;
 	/**
@@ -152,8 +130,7 @@ export interface FormatterProjectEntry {
 }
 
 /**
- * Running numbering for the detailed-failure blocks. Mutated as each failure is
- * rendered, so it is passed by reference across projects to keep one sequence.
+ * Running numbering for the detailed-failure blocks, shared across projects.
  */
 export interface FailureContext {
 	/**
@@ -170,7 +147,7 @@ export interface FailureContext {
  * Show a path relative to a root it lies under.
  * @param filePath - Path to shorten.
  * @param rootDirectory - Root to shorten against.
- * @returns The relative path with forward slashes, or `filePath` unchanged when outside the root.
+ * @returns The relative POSIX path, or `filePath` when outside the root.
  */
 export function makeRelative(filePath: string, rootDirectory: string): string {
 	const root = toPosixRoot(dropDriveLetter(normalizeWindowsPath(rootDirectory)));
@@ -179,8 +156,7 @@ export function makeRelative(filePath: string, rootDirectory: string): string {
 }
 
 /**
- * Resolve the path a test file is shown by: its source path, relative to the
- * run's root when it lies under it.
+ * Resolve the source path a test file is shown by.
  * @param testFilePath - Path Jest reported for the test file.
  * @param options - The run's root and the mapper to its source path.
  * @returns The path to show.
@@ -193,8 +169,7 @@ export function resolveDisplayPath(
 }
 
 /**
- * Point failure detail at a project's package root, so a workspace failure
- * reads against its package while file lines read against the run root.
+ * Point failure detail at a project's package root.
  * @template T - The options shape.
  * @param options - The run's options.
  * @param packageRoot - The project's package root; the run root when absent.
@@ -205,12 +180,4 @@ export function withPackageRoot<T extends { rootDir: string }>(
 	packageRoot: string | undefined,
 ): T {
 	return packageRoot === undefined ? options : { ...options, rootDir: packageRoot };
-}
-
-/**
- * Width to wrap output at.
- * @returns Stdout column count, or 80 when stdout reports none.
- */
-export function getTerminalWidth(): number {
-	return ("columns" in process.stdout && process.stdout.columns) || 80;
 }

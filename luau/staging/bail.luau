@@ -1,22 +1,8 @@
 --!strict
--- Fail-fast across a workspace batch (`--bail`).
---
--- A task stops taking packages the moment one of them fails. On its own that
--- only covers the packages this task would have run; the rest of the batch is
--- being drained concurrently by sibling tasks against the same queue, and Open
--- Cloud exposes no way to cancel a running task from outside. So the trip is
--- also broadcast: the first task to fail writes into a per-run SortedMap the
--- whole wave shares, and every task reads it before it pops again. Each task
--- then ends itself, which is the only cancellation available.
---
--- Both halves are best effort by design. A broadcast that fails still stops the
--- task that failed, and a read that fails reads as "nobody has failed" — the
--- run degrades to per-task bail rather than dying inside the pop loop.
+local QUEUE_TTL_SECONDS = require("../protocol").limits.queueTtlSeconds
+
 local module = {}
 
--- The signal lives in a map of its own (`bailMapId`), separate from the
--- streaming results map, so the key never has to avoid colliding with a package
--- entry and the CLI never has to skip it while draining results.
 local SIGNAL_KEY = "signal"
 
 module.SIGNAL_KEY = SIGNAL_KEY
@@ -26,17 +12,8 @@ export type SignalMap = {
 	SetAsync: (self: any, key: string, value: any, expiration: number) -> ...any,
 }
 
---[=[
-	How one task's bail is set up.
-
-	An options table rather than three optional positionals: two of the three are
-	absent wherever no wave shares a signal map, and `new(nil, nil, 600)` says
-	nothing about which.
-]=]
 export type Options = {
 	enabled: boolean?,
-	-- The wave's shared signal map. Absent wherever the run publishes none: no
-	-- sibling can be told, so the decision stays local.
 	map: SignalMap?,
 	ttlSeconds: number?,
 }
@@ -48,31 +25,19 @@ export type State = {
 	tripped: boolean,
 }
 
---[=[
-	Track one task's bail decision.
-]=]
 function module.new(options: Options): State
 	return {
 		enabled = options.enabled == true,
 		map = options.map,
-		ttlSeconds = options.ttlSeconds or 600,
+		ttlSeconds = options.ttlSeconds or QUEUE_TTL_SECONDS,
 		tripped = false,
 	}
 end
 
---[=[
-	Whether this task is running under `--bail` at all.
-
-	Callers use it to skip work only the bail decision needs — decoding a
-	package's Jest output to learn whether it passed, most of all.
-]=]
 function module.isEnabled(state: State): boolean
 	return state.enabled
 end
 
---[=[
-	Record how one package finished, tripping and broadcasting on a failure.
-]=]
 function module.observe(state: State, success: boolean)
 	if not state.enabled or success or state.tripped then
 		return
@@ -90,10 +55,6 @@ function module.observe(state: State, success: boolean)
 	end)
 end
 
---[=[
-	Whether this task should stop taking packages — because it failed one
-	itself, or because a sibling says it did.
-]=]
 function module.shouldStop(state: State): boolean
 	if not state.enabled then
 		return false

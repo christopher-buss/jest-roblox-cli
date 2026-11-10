@@ -1,8 +1,6 @@
 import { performance } from "node:perf_hooks";
 import process from "node:process";
 
-import { NOOP_RUN_PROGRESS, type RunProgress } from "../progress/reporter.ts";
-import { SPAN_STAGES, type StageId } from "../progress/stages.ts";
 import {
 	createSpanTree,
 	emitFinalReport,
@@ -12,9 +10,7 @@ import {
 } from "./span-tree.ts";
 
 /**
- * A phase's value and how long it took, in whole milliseconds. Rounded here
- * rather than at the caller: every reader is a duration line that renders the
- * number raw, and summing unrounded phases would put a fraction on it.
+ * A phase's value and its duration in whole milliseconds.
  * @template T
  */
 export interface TimedPhase<T> {
@@ -24,6 +20,14 @@ export interface TimedPhase<T> {
 	value: T;
 }
 
+/** Receives the name of each span as it opens and closes. */
+export interface SpanListener {
+	/** Called as the span named `name` closes. */
+	close: (name: string) => void;
+	/** Called as the span named `name` opens. */
+	open: (name: string) => void;
+}
+
 /** Overrides for {@link createTimingCollector}. */
 export interface CreateTimingCollectorOptions {
 	/** Time source; defaults to `performance.now`. */
@@ -31,29 +35,17 @@ export interface CreateTimingCollectorOptions {
 		/** Current time in milliseconds. */
 		now: () => number;
 	};
-	/** Force the report on or off; defaults to whether `TIMING` is set. */
+	/** Turn the report on; the run's `TIMING` setting. Defaults to off. */
 	enabled?: boolean;
-	/**
-	 * Where the phases this collector opens are announced to the person
-	 * watching. Supplying one keeps the span tree live even with the timing
-	 * report off, which is the point: the stages a run reports and the phases
-	 * it profiles are then the same events, told twice.
-	 */
-	progress?: RunProgress;
+	/** Told of every span as it opens and closes, even with the report off. */
+	listener?: SpanListener;
 	/** Receives each report line; defaults to stderr. */
 	sink?: (line: string) => void;
 }
 
-/** The run's span profiler and stage reporter. */
+/** The run's span profiler. */
 export interface TimingCollector {
-	/**
-	 * Whether this collector actually records/emits anything (`TIMING` env var
-	 * set, or an explicit `enabled: true` override). Callers whose work exists
-	 * only to feed `record()` — for example parsing a raw envelope purely to
-	 * extract a value to record — should check this first and skip that work
-	 * entirely when disabled, rather than doing it and letting `record()`
-	 * silently discard the result.
-	 */
+	/** Whether the timing report is on. */
 	readonly enabled: boolean;
 	/** Write every unreported span and the host total, then empty the tree. */
 	flushTimingReport: () => void;
@@ -61,72 +53,33 @@ export interface TimingCollector {
 	profile: <T>(name: string, func: () => T extends Promise<unknown> ? never : T) => T;
 	/** Run an async phase inside a span named `name`. */
 	profileAsync: <T>(name: string, func: () => Promise<T>) => Promise<T>;
-	/**
-	 * {@link TimingCollector.profile}, plus the phase's duration handed back to
-	 * the caller. The one way to read a duration off the collector, and the
-	 * only member that measures on a disabled run: the span tree is written for
-	 * the `TIMING` report and cleared at flush, while the Duration line prints
-	 * on every run and needs the number now. Two clock reads per call is what a
-	 * disabled run pays for that.
-	 */
+	/** `profile`, plus the phase's duration; measures even when disabled. */
 	profileTimed: <T>(
 		name: string,
 		func: () => T extends Promise<unknown> ? never : T,
 	) => TimedPhase<T>;
 	/** {@link TimingCollector.profileAsync}, timed as `profileTimed` is. */
 	profileTimedAsync: <T>(name: string, func: () => Promise<T>) => Promise<TimedPhase<T>>;
-	/**
-	 * The run's stage reporter, carried here because the collector is already
-	 * threaded through every layer that has a stage to announce — the run
-	 * header that reveals it, the backend that owns upload and dispatch, the
-	 * workspace sink that writes between repaints.
-	 */
-	readonly progress: RunProgress;
-	/**
-	 * Register a leaf span under the current stack frame whose `elapsedMs` is
-	 * supplied directly. Used to surface durations the orchestrator did not
-	 * measure itself — the backend reports `uploadMs` / `executionMs` from
-	 * inside its own `runTests` call, and the Luau runner reports per-game
-	 * phases inside the Roblox VM. Repeated calls with the same `name`
-	 * accumulate, matching `profile`'s behavior.
-	 *
-	 * Stack-empty fallback: when called outside any `profile*` frame the
-	 * span lands at root and contributes to `TOTAL (host)` like
-	 * any other root. Call inside the relevant frame to keep totals clean
-	 * — recording a value at root that is ALSO captured by a sibling root
-	 * `profile` span would double-count toward the host total.
-	 */
+	/** Add a leaf span with a given duration under the current frame. */
 	record: (name: string, elapsedMs: number) => void;
 }
 
 /**
- * A span-tree profiler for a single, sequential host run. Each top-level phase
- * announces itself as it opens and reports its whole subtree the moment it
- * closes, so a long run says where it is and where it has been without
- * narrating every span inside it; anything still unreported by the end
- * (root-level `record` calls, whose "no more can land" moment never arrives)
- * comes out at `flushTimingReport`, followed by the host total.
- * Nesting is tracked with one shared stack, so spans must open and close in
- * LIFO order: profile a phase, and any spans it opens nest under it. It is NOT
- * safe to run two of the four `profile*` calls concurrently on the same
- * collector (e.g. `Promise.all`) — interleaved opens/closes would corrupt the
- * stack. Create one collector per run; `flushTimingReport` empties it so a
- * second flush is a no-op.
- * @param options - Overrides for the clock, enablement, progress and sink.
- * @returns The collector; a no-op one when disabled with no progress.
+ * A span-tree profiler for one sequential host run. Spans share one stack:
+ * never run two `profile*` calls concurrently on one collector.
+ * @param options - Overrides for the clock, enablement, listener and sink.
+ * @returns The collector; a no-op one when disabled with no listener.
  */
 export function createTimingCollector(options: CreateTimingCollectorOptions = {}): TimingCollector {
-	const isEnabled = options.enabled ?? process.env["TIMING"] !== undefined;
-	const { progress } = options;
+	const isEnabled = options.enabled ?? false;
+	const { listener } = options;
 	const clock = options.clock ?? { now: () => performance.now() };
-	if (!isEnabled && progress === undefined) {
+	if (!isEnabled && listener === undefined) {
 		return createNoopTimingCollector(clock);
 	}
 
-	const reporter = progress ?? NOOP_RUN_PROGRESS;
-
 	const sink = options.sink ?? ((line: string) => void process.stderr.write(`${line}\n`));
-	const spans = createObservedSpanTree({ clock, isEnabled, reporter, sink });
+	const spans = createObservedSpanTree({ clock, isEnabled, listener, sink });
 	const profilers = createProfilers(spans);
 
 	function record(name: string, elapsedMs: number): void {
@@ -137,77 +90,30 @@ export function createTimingCollector(options: CreateTimingCollectorOptions = {}
 		enabled: isEnabled,
 		flushTimingReport: createFlusher({ isEnabled, sink, spans }),
 		...profilers,
-		progress: reporter,
 		record,
 	};
 }
 
-/**
- * Turns span open/close pairs into stage open/close pairs, for the spans
- * `SPAN_STAGES` names. Holds one closer per stage rather than per span, so a
- * phase that runs twice reopens the same stage instead of leaving the first
- * one hanging; a closer left behind after its stage closed is idempotent, so
- * the map keeps at most one entry per stage and never needs clearing.
- * @param progress - The run's stage reporter.
- * @returns Span open and close handlers that drive the matching stage.
- */
-function createStageAnnouncer(progress: RunProgress): {
-	close: (name: string) => void;
-	open: (name: string) => void;
-} {
-	const closers = new Map<StageId, () => void>();
-	return {
-		close: (name: string) => {
-			const stage = SPAN_STAGES[name];
-			if (stage === undefined) {
-				return;
-			}
-
-			closers.get(stage)?.();
-		},
-		open: (name: string) => {
-			const stage = SPAN_STAGES[name];
-			if (stage === undefined) {
-				return;
-			}
-
-			closers.set(stage, progress.begin(stage));
-		},
-	};
-}
-
-/**
- * The one span tree, wired to both of its readers: the `[TIMING]` waterfall,
- * which writes only while the report is on, and the stage reporter, which
- * announces the phases a person is waiting on whether or not it is.
- * @param options - The clock, report switch, stage reporter and sink.
- * @param options.clock - The time source.
- * @param options.isEnabled - Whether the `[TIMING]` report is on.
- * @param options.reporter - The stage reporter.
- * @param options.sink - Receives each report line.
- * @returns A span tree whose opens and closes reach both readers.
- */
 function createObservedSpanTree({
 	clock,
 	isEnabled,
-	reporter,
+	listener,
 	sink,
 }: {
 	clock: { now: () => number };
 	isEnabled: boolean;
-	reporter: RunProgress;
+	listener: SpanListener | undefined;
 	sink: (line: string) => void;
 }): SpanTree {
-	const stages = createStageAnnouncer(reporter);
 	return createSpanTree(clock, {
 		onSpanClose: (node, isRoot) => {
-			stages.close(node.name);
+			listener?.close(node.name);
 			if (isRoot && isEnabled) {
 				emitSpanNode(node, sink);
 			}
 		},
 		onSpanOpen: (node, isRoot) => {
-			stages.open(node.name);
+			listener?.open(node.name);
 			if (isRoot && isEnabled) {
 				sink(formatPhaseStart(node.name));
 			}
@@ -215,16 +121,6 @@ function createObservedSpanTree({
 	});
 }
 
-/**
- * The end-of-run drain: everything the closing phases did not already say,
- * then the host total. Silent while the report is off, and empties the tree
- * so the second call the run's `finally` makes is a no-op.
- * @param options - The report switch, sink and tree.
- * @param options.isEnabled - Whether the `[TIMING]` report is on.
- * @param options.sink - Receives each report line.
- * @param options.spans - The tree to drain.
- * @returns The flush function.
- */
 function createFlusher({
 	isEnabled,
 	sink,
@@ -260,11 +156,9 @@ async function passthroughProfileAsync<T>(_name: string, func: () => Promise<T>)
 }
 
 /**
- * Runs `func`, closing the frame only if it throws. The caller closes the
- * frame on the way out, so a `finally` here would close it twice; and a
- * `finally` could not hand the duration over anyway, since it runs after the
- * return expression is evaluated.
- * @template T
+ * The caller closes the frame on success; a `finally` would close it twice.
+ *
+ * @template T - Result type of the phase.
  * @param close - Closes the frame.
  * @param func - The phase to run.
  * @returns What `func` returns.
@@ -282,14 +176,6 @@ function closeOnThrow<T>(
 	}
 }
 
-/**
- * {@link closeOnThrow} for a phase that settles rather than returns.
- * @template T
- * @param close - Closes the frame.
- * @param func - The phase to run.
- * @returns What `func` resolves to.
- * @rejects Whatever `func` rejects with, after closing the frame.
- */
 async function closeOnThrowAsync<T>(close: () => number, func: () => Promise<T>): Promise<T> {
 	try {
 		return await func();
@@ -299,13 +185,6 @@ async function closeOnThrowAsync<T>(close: () => number, func: () => Promise<T>)
 	}
 }
 
-/**
- * The timed pair, over any way of opening a frame that reports how long it
- * stayed open. Both collectors have one: the live tree's `open`, and the bare
- * clock bracket a disabled run stands in for it.
- * @param open - Opens a frame and returns its closer.
- * @returns `profileTimed` and `profileTimedAsync` over `open`.
- */
 function createTimedProfilers(
 	open: (name: string) => () => number,
 ): Pick<TimingCollector, "profileTimed" | "profileTimedAsync"> {
@@ -331,9 +210,6 @@ function createTimedProfilers(
 }
 
 function createNoopTimingCollector(clock: { now: () => number }): TimingCollector {
-	// A bare clock bracket stands in for the span tree there is none of, so the
-	// timed pair is the same code on both collectors and cannot round or
-	// measure differently between them.
 	return {
 		enabled: false,
 		flushTimingReport: noOp,
@@ -343,24 +219,10 @@ function createNoopTimingCollector(clock: { now: () => number }): TimingCollecto
 			const start = clock.now();
 			return () => clock.now() - start;
 		}),
-		progress: NOOP_RUN_PROGRESS,
 		record: noOp,
 	};
 }
 
-/**
- * The four span-opening entry points for a live collector. A disabled run
- * takes the direct-call `profile` / `profileAsync` from
- * `createNoopTimingCollector` and shares the timed pair with this one.
- *
- * Every span opens, including the per-file ones instrumentation opens
- * thousands of and no reader ever asks for. Skipping the unnamed ones was
- * measured at a millisecond or two across a thousand-file coverage run, and
- * bought that with a branch whose two sides are indistinguishable from
- * outside — nothing reads a disabled tree, so nothing can tell.
- * @param spans - The live span tree.
- * @returns The four `profile*` entry points over `spans`.
- */
 function createProfilers(
 	spans: SpanTree,
 ): Pick<TimingCollector, "profile" | "profileAsync" | "profileTimed" | "profileTimedAsync"> {
@@ -385,11 +247,5 @@ function createProfilers(
 	return { profile, profileAsync, ...createTimedProfilers(spans.open) };
 }
 
-/**
- * Shared disabled collector for callers that thread a profiler through their
- * signatures but are invoked outside a profiled workspace run (single-mode
- * coverage, the `instrument` subcommand, tests). Every method is a no-op bar
- * the timed pair, which measures on every run because the Duration line it
- * feeds prints on every run.
- */
+/** Shared disabled collector for callers outside a profiled run. */
 export const NOOP_TIMING_COLLECTOR: TimingCollector = createTimingCollector({ enabled: false });

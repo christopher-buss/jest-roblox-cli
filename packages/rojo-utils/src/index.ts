@@ -1,6 +1,12 @@
 export type { FileSystem } from "./file-system.ts";
-export { loadRojoProject } from "./loader.ts";
-export { collectMounts, pruneAncestors } from "./mount-collector.ts";
+export {
+	DEFAULT_ROJO_PROJECT,
+	findRojoProjectFile,
+	loadRojoProject,
+	parseRojoProject,
+	tryLoadRojoProject,
+} from "./loader.ts";
+export { collectMounts, listMounts, pruneAncestors } from "./mount-collector.ts";
 export type { Mount, PathClassifier, PathKind } from "./mount-collector.ts";
 export {
 	collectPaths,

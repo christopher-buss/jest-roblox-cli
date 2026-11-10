@@ -4,7 +4,7 @@ import * as path from "node:path";
 
 // Vitest `globalSetup` for the `live` project. Ensures rbxtsc intermediates
 // (`out/`, `include/`) exist before live tests run. The CLI's multi-project
-// path (`runMultiProject` in src/cli.ts) writes per-project stubs into the
+// path (`createProjectLayout` in src/run/project-layout.ts) writes per-project stubs into the
 // rojo source tree and rebuilds the rbxl — that rebuild needs the compiled
 // Luau output and rbxts runtime to be present. Both directories are
 // gitignored (regenerated artifacts), so we compile on demand.

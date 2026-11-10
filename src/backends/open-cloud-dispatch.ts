@@ -1,273 +1,175 @@
 import type { ScriptResult } from "@isentinel/roblox-runner";
 
-import type { ResolvedConfig } from "../config/schema.ts";
-import { decodeEnvelope } from "./envelope.ts";
-import type { BackendOptions, ProjectJob, RawBackendEntry } from "./interface.ts";
+import {
+	type MaterializerInput,
+	toMaterializerEntry,
+} from "../runner-payload/materializer-script.ts";
+import type { DispatchBase, ParallelOption, RawBackendEntry } from "./interface.ts";
 import type { JobBucket } from "./open-cloud-buckets.ts";
 import { bucketJobs, bucketScript, resolveBucketCount } from "./open-cloud-buckets.ts";
-import type { CollectedEntry, DispatchOutcome } from "./open-cloud-entries.ts";
+import type { CollectedEntries, DispatchOutcome } from "./open-cloud-entries.ts";
 import {
-	addEntriesToMap,
-	aggregateEntriesByKey,
-	collectStealingResults,
-	entryLookupKey,
+	aggregateEntriesByJob,
 	parseStealingEnvelope,
+	toDispatchOutcome,
 } from "./open-cloud-entries.ts";
 import type { VersionContext } from "./open-cloud-place-version.ts";
-import { drainStealingPoolAsync } from "./open-cloud-pool.ts";
+import type { StreamingHooks } from "./open-cloud-pool.ts";
+import { drainDeferralsAsync, drainStealingPoolAsync } from "./open-cloud-pool.ts";
+import type { PreparedStealing } from "./open-cloud-work-stealing.ts";
 
-/** Backend options plus what one Open Cloud run needs to dispatch its jobs. */
-export type DispatchRequest = BackendOptions & {
-	/** Runs one task. */
-	readonly executeAsync: ExecuteTask;
-	/** Config of the first job. */
-	readonly primaryConfig: ResolvedConfig;
-	/** Place version every task runs against. */
-	readonly version: VersionContext;
-};
+/** How an Open Cloud run splits its jobs across tasks. */
+export type OpenCloudSharding =
+	| { bail: boolean; kind: "deferrable"; parallel: ParallelOption }
+	| {
+			bail: boolean;
+			kind: "work-stealing";
+			onPackageResult?: StreamingHooks["onPackageResult"] | undefined;
+			parallel: ParallelOption;
+	  }
+	| { kind: "static"; parallel: ParallelOption };
 
-/** Runs one Luau task in Open Cloud and resolves with its result. */
-type ExecuteTask = (request: {
+/** What a work-stealing run asks the backend to set up. */
+export interface StealingRequest {
+	/** Whether to stop on the first failing package. */
+	bail: boolean;
+	/** One materializer input per job. */
+	inputs: Array<MaterializerInput>;
+	/** Receives each streamed package result, if set. */
+	onPackageResult?: StreamingHooks["onPackageResult"] | undefined;
+	/** Deadline Roblox gives every task of the run, in milliseconds. */
+	taskTimeout: number;
+}
+
+/** What one Open Cloud run dispatches. */
+export interface OpenCloudDispatch extends DispatchBase {
+	/** How the jobs split across tasks. */
+	sharding: OpenCloudSharding;
+}
+
+/** One Open Cloud task to run. */
+export interface TaskRequest {
 	/** Luau source the task runs. */
 	script: string;
 	/** Task timeout, in milliseconds. */
 	timeout: number;
 	/** Place version the task runs against. */
 	version: VersionContext;
-}) => Promise<ScriptResult>;
+}
+
+type DispatchRequest = OpenCloudDispatch & {
+	/** Runs one task. */
+	readonly executeAsync: (request: TaskRequest) => Promise<ScriptResult>;
+	/** Sets up the queue and script; `undefined` falls back to deferrable. */
+	readonly prepareStealingAsync: (
+		request: StealingRequest,
+	) => Promise<PreparedStealing | undefined>;
+	/** Place version every task runs against. */
+	readonly version: VersionContext;
+};
 
 /**
- * Pick the execution shape for one run.
+ * Run the jobs in the shape their sharding names.
  *
- * Every shape but the first buckets the jobs; what differs is where a
- * bucket's script comes from and whether the run can answer a deferral.
- * Work-stealing skips bucketing entirely and fans one script out over a
- * shared queue. A workspace run without the queue takes each bucket's
- * script from the factory, which is also what lets it re-send whatever a
- * task defers. Everything else generates a bucket's script from its jobs
- * and has no deferral to answer.
- *
- * @param request - Jobs, run options, and the task runner.
+ * @param request - Jobs, sharding, and the task runner.
  * @returns The collected entries of the run.
  */
 export async function dispatchJobsAsync(request: DispatchRequest): Promise<DispatchOutcome> {
-	if (request.workStealing === true && request.scriptOverride !== undefined) {
-		return runWorkStealingAsync({ ...request, scriptOverride: request.scriptOverride });
+	const { sharding } = request;
+	if (sharding.kind === "work-stealing") {
+		return runWorkStealingAsync(request, sharding);
 	}
 
-	if (request.scriptFactory !== undefined) {
-		return runDeferrableAsync({ ...request, scriptFactory: request.scriptFactory });
+	if (sharding.kind === "deferrable") {
+		return runDeferrableAsync(request, sharding);
 	}
 
-	return runStaticBucketsAsync(request);
+	return runStaticBucketsAsync(request, sharding.parallel);
 }
 
-/**
- * Run one bucket's jobs, re-sending whatever its task left behind, and hand
- * back what came in plus whether the bucket bailed.
- *
- * @param options - The bucket's jobs, script factory, and task runner.
- * @returns Collected entries by key, and whether any task bailed.
- */
-async function drainDeferralsAsync({
+function runScriptWith({
 	executeAsync,
-	jobs,
-	scriptFactory,
-	timeout,
+	runSettings,
 	version,
-}: {
-	executeAsync: ExecuteTask;
-	jobs: Array<ProjectJob>;
-	scriptFactory: (jobs: ReadonlyArray<ProjectJob>) => string;
-	timeout: number;
-	version: VersionContext;
-}): Promise<{ bailed: boolean; collected: Map<string, CollectedEntry> }> {
-	const collected = new Map<string, CollectedEntry>();
-	let remaining: Array<ProjectJob> = jobs;
-	let script = scriptFactory(jobs);
-	let hasBailed = false;
-
-	// One attempt per job is the ceiling: a task always runs at least one
-	// entry, so it cannot take more rounds than there are jobs.
-	for (const _attempt of jobs) {
-		const envelope = parseStealingEnvelope(await executeAsync({ script, timeout, version }));
-		addEntriesToMap({
-			entries: envelope.entries,
-			entryByKey: collected,
-			gameOutput: envelope.gameOutput,
-		});
-		hasBailed ||= envelope.bailed;
-		if (!envelope.deferred) {
-			break;
-		}
-
-		// Against `remaining`, not `jobs`: a round that covers nothing new
-		// stops the loop rather than spending the rest of that budget on
-		// tasks that cannot make progress.
-		const outstanding = remaining.filter((job) => {
-			return !collected.has(entryLookupKey(job.pkg ?? job.displayName, job.displayName));
-		});
-		if (outstanding.length === 0 || outstanding.length === remaining.length) {
-			break;
-		}
-
-		remaining = outstanding;
-		script = scriptFactory(remaining);
-	}
-
-	return { bailed: hasBailed, collected };
+}: DispatchRequest): (script: string) => Promise<ScriptResult> {
+	return async (script) => executeAsync({ script, timeout: runSettings.timeout, version });
 }
 
-/**
- * Bucket a workspace run and drain each bucket's deferrals concurrently.
- *
- * There is no queue on this path, so a task that fills its return-envelope
- * budget cannot hand the rest to a sibling; the backend answers the
- * deferral itself. The factory is what makes the buckets possible — it
- * builds a script from any subset of the entries, so `--parallel N` buys
- * the same static shard split multi mode gets, and every bucket keeps its
- * own chain of re-sends.
- *
- * Buckets hold disjoint jobs, so the per-bucket maps merge with no winner
- * to pick: no key reaches two of them.
- *
- * @param request - Dispatch request with a script factory.
- * @returns The merged entries of every bucket.
- */
-async function runDeferrableAsync({
-	executeAsync,
-	jobs,
-	parallel,
-	primaryConfig,
-	scriptFactory,
-	version,
-}: DispatchRequest & {
-	readonly scriptFactory: (jobs: ReadonlyArray<ProjectJob>) => string;
-}): Promise<DispatchOutcome> {
+async function runDeferrableAsync(
+	request: DispatchRequest,
+	{ bail, parallel }: Extract<OpenCloudSharding, { kind: "deferrable" }>,
+): Promise<DispatchOutcome> {
+	const runScript = runScriptWith(request);
 	const drained = await Promise.all(
-		bucketJobs(jobs, parallel).map(async (bucket) => {
-			return drainDeferralsAsync({
-				executeAsync,
-				jobs: bucket.jobs,
-				scriptFactory,
-				timeout: primaryConfig.timeout,
-				version,
-			});
+		bucketJobs(request.jobs, parallel).map(async (bucket) => {
+			const entries = bucket.map(({ job, jobIndex }) => toMaterializerEntry(job, jobIndex));
+			return drainDeferralsAsync({ bail, entries, runScript });
 		}),
 	);
 
-	const entryByKey = new Map<string, CollectedEntry>();
+	const collected: CollectedEntries = new Map();
 	for (const bucket of drained) {
-		for (const [key, entry] of bucket.collected) {
-			entryByKey.set(key, entry);
+		for (const [jobIndex, entry] of bucket.collected) {
+			collected.set(jobIndex, entry);
 		}
 	}
 
-	return collectStealingResults({
-		bailed: drained.some((bucket) => bucket.bailed),
-		entryByKey,
-		jobs,
+	return toDispatchOutcome(
+		drained.some((bucket) => bucket.bailed),
+		collected,
+	);
+}
+
+async function runBucketAsync(
+	bucket: JobBucket,
+	runScript: (script: string) => Promise<ScriptResult>,
+): Promise<Array<RawBackendEntry>> {
+	const { entries, gameOutput } = parseStealingEnvelope(await runScript(bucketScript(bucket)));
+	return entries.map(({ jobIndex, ...entry }) => {
+		return { entry, fallbackGameOutput: gameOutput, jobIndex };
 	});
 }
 
-async function runBucketAsync({
-	bucket: { indices, jobs },
-	executeAsync,
-	scriptOverride,
-	version,
-}: {
-	bucket: JobBucket;
-	executeAsync: ExecuteTask;
-	scriptOverride: string | undefined;
-	version: VersionContext;
-}): Promise<{ indices: Array<number>; rawResults: Array<RawBackendEntry> }> {
-	// A bucket is only created for at least one job, so jobs[0] is defined.
-	// oxlint-disable-next-line typescript/no-non-null-assertion -- bucket non-empty
-	const primary = jobs[0]!;
-	const script = scriptOverride ?? bucketScript(jobs);
-	const scriptResult = await executeAsync({
-		script,
-		timeout: primary.config.timeout,
-		version,
-	});
-
-	const jestOutput = scriptResult.outputs[0];
-	if (jestOutput === undefined) {
-		throw new Error(`No test results in output. Got: ${JSON.stringify(scriptResult.outputs)}`);
-	}
-
-	const fallbackGameOutput = scriptResult.outputs[1];
-	const { entries } = decodeEnvelope(jestOutput);
-	if (entries.length !== jobs.length) {
-		throw new Error(
-			`Open Cloud backend returned ${entries.length.toString()} entries but bucket had ${jobs.length.toString()} jobs`,
-		);
-	}
-
-	const rawResults: Array<RawBackendEntry> = entries.map((entry) => {
-		return { entry, fallbackGameOutput };
-	});
-
-	return { indices, rawResults };
-}
-
-async function runStaticBucketsAsync({
-	executeAsync,
-	jobs,
-	parallel,
-	scriptOverride,
-	version,
-}: DispatchRequest): Promise<DispatchOutcome> {
-	const buckets = bucketJobs(jobs, parallel);
+async function runStaticBucketsAsync(
+	request: DispatchRequest,
+	parallel: ParallelOption,
+): Promise<DispatchOutcome> {
+	const runScript = runScriptWith(request);
 	const bucketResults = await Promise.all(
-		buckets.map(async (bucket) => {
-			return runBucketAsync({ bucket, executeAsync, scriptOverride, version });
-		}),
+		bucketJobs(request.jobs, parallel).map(async (bucket) => runBucketAsync(bucket, runScript)),
 	);
 
-	// Flatten bucket results in original job order via the indices recorded
-	// at bucketing time. indices and rawResults always share the same length
-	// because runBucket asserts that invariant before returning.
-	const flattened: Array<RawBackendEntry> = Array.from({ length: jobs.length });
-	for (const { indices, rawResults } of bucketResults) {
-		for (const [positionInBucket, originalIndex] of indices.entries()) {
-			// oxlint-disable-next-line typescript/no-non-null-assertion -- length invariant
-			flattened[originalIndex] = rawResults[positionInBucket]!;
-		}
-	}
-
-	return { rawResults: flattened };
+	return { rawResults: bucketResults.flat() };
 }
 
-async function runWorkStealingAsync({
-	executeAsync,
-	jobs,
-	parallel,
-	primaryConfig,
-	scriptOverride,
-	streaming,
-	version,
-}: DispatchRequest & { scriptOverride: string }): Promise<DispatchOutcome> {
+async function runWorkStealingAsync(
+	request: DispatchRequest,
+	{ bail, onPackageResult, parallel }: Extract<OpenCloudSharding, { kind: "work-stealing" }>,
+): Promise<DispatchOutcome> {
+	const { jobs } = request;
+	const prepared = await request.prepareStealingAsync({
+		bail,
+		inputs: jobs.map((job, jobIndex) => toMaterializerEntry(job, jobIndex)),
+		onPackageResult,
+		taskTimeout: request.runSettings.timeout,
+	});
+	if (prepared === undefined) {
+		return runDeferrableAsync(request, { bail, kind: "deferrable", parallel });
+	}
+
+	const { script, streaming } = prepared;
+	const runScript = runScriptWith(request);
 	const taskResults = await drainStealingPoolAsync({
 		requiredKeyCount: jobs.length,
-		runTask: async () => {
-			return executeAsync({
-				script: scriptOverride,
-				timeout: primaryConfig.timeout,
-				version,
-			});
-		},
+		runTask: async () => runScript(script),
 		streaming,
 		taskCount: resolveBucketCount(parallel, jobs.length),
 	});
 
-	// Parse after the pool settles so a task that returned no usable output
-	// throws here, in the normal flow, rather than being swallowed by the
-	// pool's per-task error handling.
+	// Parse only after the pool settles: the pool swallows per-task throws.
 	const taskEnvelopes = taskResults.map(parseStealingEnvelope);
-	return collectStealingResults({
-		bailed: taskEnvelopes.some((envelope) => envelope.bailed),
-		entryByKey: aggregateEntriesByKey(taskEnvelopes),
-		jobs,
-	});
+	return toDispatchOutcome(
+		taskEnvelopes.some((envelope) => envelope.bailed),
+		aggregateEntriesByJob(taskEnvelopes),
+	);
 }

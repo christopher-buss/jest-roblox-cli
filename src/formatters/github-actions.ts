@@ -1,35 +1,16 @@
 import process from "node:process";
 
+import type { GitHubActionsFormatterOptions } from "../config/formatter-selection.ts";
 import type { SourceMapper } from "../source-mapper/index.ts";
+import { plural } from "../terminal/plural.ts";
 import { execErrorTitle, hasExecError } from "../types/exec-error-file.ts";
 import type { ExecErrorTestFileResult, JestResult } from "../types/jest-result-types.ts";
 import type { PosixRoot } from "../utils/normalize-windows-path.ts";
-import {
-	normalizeWindowsPath,
-	relativeToRoot,
-	toPosixRoot,
-} from "../utils/normalize-windows-path.ts";
+import { toPosixRoot } from "../utils/normalize-windows-path.ts";
+import { countFileBuckets, locateFailure } from "./failure-model.ts";
+import { makeRelative } from "./shared.ts";
 
 const SEPARATOR = " · ";
-
-/**
- * Options of the `github-actions` formatter.
- */
-export interface GitHubActionsFormatterOptions {
-	/**
-	 * Whether to emit `::error` workflow commands for test failures.
-	 *
-	 * @default true
-	 */
-	displayAnnotations?: boolean | undefined;
-	/**
-	 * Configuration for the GitHub Actions Job Summary.
-	 *
-	 * When enabled, a markdown summary of test results is written to the path
-	 * specified by `outputPath`.
-	 */
-	jobSummary?: Partial<JobSummaryOptions> | undefined;
-}
 
 /**
  * Inputs of `resolveGitHubActionsOptions`.
@@ -50,57 +31,14 @@ export interface ResolveGitHubActionsOptions {
 	userOptions: GitHubActionsFormatterOptions;
 }
 
-interface JobSummaryOptions {
-	/**
-	 * Whether to generate the summary.
-	 *
-	 * @default true
-	 */
-	enabled: boolean;
-	/**
-	 * Configuration for generating permalink URLs to source files in the
-	 * GitHub repository.
-	 *
-	 * When all three values are available (either from this config or the
-	 * defaults picked from environment variables), test names in the summary
-	 * will link to the relevant source lines.
-	 */
-	fileLinks: {
-		/**
-		 * The commit SHA to use in permalink URLs.
-		 *
-		 * @default process.env.GITHUB_SHA
-		 */
-		commitHash?: string | undefined;
-		/**
-		 * The GitHub repository in `owner/repo` format.
-		 *
-		 * @default process.env.GITHUB_REPOSITORY
-		 */
-		repository?: string | undefined;
-		/**
-		 * The absolute path to the root of the repository on disk.
-		 *
-		 * Used to compute relative file paths for the permalink URLs.
-		 *
-		 * @default process.env.GITHUB_WORKSPACE
-		 */
-		workspacePath?: string | undefined;
-	};
-	/**
-	 * File path to write the summary to.
-	 *
-	 * @default process.env.GITHUB_STEP_SUMMARY
-	 */
-	outputPath: string | undefined;
-}
-
-interface GitHubAnnotation {
-	col?: number | undefined;
-	file: string;
-	line?: number | undefined;
-	message: string;
-	title: string;
+/** The GitHub Actions formatter's settings, every default applied. */
+export interface ResolvedGitHubActions {
+	/** Whether to write `::error` workflow commands. */
+	annotations: boolean;
+	/** GitHub context the annotations and the summary render with. */
+	context: GitHubActionsOptions;
+	/** Where to append the Job Summary; undefined writes none. */
+	jobSummaryPath: string | undefined;
 }
 
 interface GitHubActionsOptions {
@@ -109,6 +47,14 @@ interface GitHubActionsOptions {
 	sha?: string | undefined;
 	sourceMapper?: SourceMapper | undefined;
 	workspace?: PosixRoot | undefined;
+}
+
+interface GitHubAnnotation {
+	col?: number | undefined;
+	file: string;
+	line?: number | undefined;
+	message: string;
+	title: string;
 }
 
 /**
@@ -123,7 +69,7 @@ export function formatAnnotations(result: JestResult, options: GitHubActionsOpti
 }
 
 /**
- * Render the Job Summary markdown: the result counts, then each failure, linked to its file when the repository context is known.
+ * Render the Job Summary markdown: counts, then linked failures.
  * @param result - Run result.
  * @param options - Resolved GitHub context and source mapper.
  * @returns The markdown.
@@ -132,13 +78,12 @@ export function formatJobSummary(result: JestResult, options: GitHubActionsOptio
 	const fileLink = createFileLink(options);
 	const lines: Array<string> = ["## Test Results\n", renderStats(result)];
 
-	// Failures
 	const failures: Array<{ file: string; title: string }> = [];
 
 	for (const file of result.testResults) {
 		if (hasExecError(file)) {
 			failures.push({
-				file: makeRelative(file.testFilePath, options.workspace),
+				file: relativeToWorkspace(file.testFilePath, options.workspace),
 				title: execErrorTitle(file),
 			});
 			continue;
@@ -163,43 +108,27 @@ export function formatJobSummary(result: JestResult, options: GitHubActionsOptio
 }
 
 /**
- * Merge the formatter options over the `GITHUB_*` environment defaults.
+ * Merge the formatter options over their `GITHUB_*` environment defaults.
  * @param options - Formatter options, environment and source mapper.
- * @returns The resolved GitHub context.
+ * @returns What to write, and the GitHub context to write it with.
  */
-export function resolveGitHubActionsOptions({
-	environment = process.env,
-	sourceMapper,
-	userOptions,
-}: ResolveGitHubActionsOptions): GitHubActionsOptions {
-	const workspacePath =
-		userOptions.jobSummary?.fileLinks?.workspacePath ?? environment["GITHUB_WORKSPACE"];
+export function resolveGitHubActions(options: ResolveGitHubActionsOptions): ResolvedGitHubActions {
+	const { environment = process.env, userOptions } = options;
+	const { jobSummary } = userOptions;
 	return {
-		repository:
-			userOptions.jobSummary?.fileLinks?.repository ?? environment["GITHUB_REPOSITORY"],
-		serverUrl: environment["GITHUB_SERVER_URL"],
-		sha: userOptions.jobSummary?.fileLinks?.commitHash ?? environment["GITHUB_SHA"],
-		sourceMapper,
-		// Canonical once here rather than per annotation: the value is fixed for
-		// the whole run, and every reader of it wants the same spelling.
-		workspace: workspacePath === undefined ? undefined : toPosixRoot(workspacePath),
+		annotations: userOptions.displayAnnotations !== false,
+		context: resolveGitHubActionsOptions(options),
+		jobSummaryPath:
+			jobSummary?.enabled === false
+				? undefined
+				: (jobSummary?.outputPath ?? environment["GITHUB_STEP_SUMMARY"]),
 	};
 }
 
-/**
- * Escape a workflow-command message.
- * @param value - Message text.
- * @returns `value` with `%`, CR and LF percent-encoded.
- */
 function escapeData(value: string): string {
 	return value.replace(/%/g, "%25").replace(/\r/g, "%0D").replace(/\n/g, "%0A");
 }
 
-/**
- * Escape a workflow-command property value.
- * @param value - Property text.
- * @returns `value` with `%`, CR, LF, `:` and `,` percent-encoded.
- */
 function escapeProperty(value: string): string {
 	return value
 		.replace(/%/g, "%25")
@@ -209,11 +138,6 @@ function escapeProperty(value: string): string {
 		.replace(/,/g, "%2C");
 }
 
-/**
- * Render an `::error` workflow command.
- * @param annotation - File, position, title and message.
- * @returns The command line.
- */
 function formatAnnotation(annotation: GitHubAnnotation): string {
 	const properties: Array<string> = [`file=${escapeProperty(annotation.file)}`];
 
@@ -230,12 +154,12 @@ function formatAnnotation(annotation: GitHubAnnotation): string {
 	return `::error ${properties.join(",")}::${escapeData(annotation.message)}`;
 }
 
-function makeRelative(filePath: string, workspace: PosixRoot | undefined): string {
+function relativeToWorkspace(filePath: string, workspace: PosixRoot | undefined): string {
 	if (workspace === undefined) {
 		return filePath;
 	}
 
-	return relativeToRoot(workspace, normalizeWindowsPath(filePath)) ?? filePath;
+	return makeRelative(filePath, workspace);
 }
 
 function collectExecErrorAnnotation({
@@ -246,30 +170,10 @@ function collectExecErrorAnnotation({
 	options: GitHubActionsOptions;
 }): GitHubAnnotation {
 	return {
-		file: makeRelative(file.testFilePath, options.workspace),
+		file: relativeToWorkspace(file.testFilePath, options.workspace),
 		message: file.failureMessage,
 		title: execErrorTitle(file),
 	};
-}
-
-function locateFailure(
-	message: string,
-	sourceMapper: SourceMapper | undefined,
-): undefined | { column: number | undefined; file: string; line: number | undefined } {
-	if (message === "" || sourceMapper === undefined) {
-		return undefined;
-	}
-
-	const [location] = sourceMapper.mapFailureWithLocations(message).locations;
-	if (location?.tsPath !== undefined) {
-		return { column: location.tsColumn, file: location.tsPath, line: location.tsLine };
-	}
-
-	if (location !== undefined) {
-		return { column: undefined, file: location.luauPath, line: location.luauLine };
-	}
-
-	return undefined;
 }
 
 function collectTestFailureAnnotations({
@@ -286,12 +190,12 @@ function collectTestFailureAnnotations({
 		}
 
 		const firstFailure = test.failureMessages[0] ?? "";
-		const located = locateFailure(firstFailure, options.sourceMapper);
+		const { primary } = locateFailure(firstFailure, options.sourceMapper);
 
 		annotations.push({
-			col: located?.column,
-			file: makeRelative(located?.file ?? file.testFilePath, options.workspace),
-			line: located?.line,
+			col: primary?.column,
+			file: relativeToWorkspace(primary?.path ?? file.testFilePath, options.workspace),
+			line: primary?.line,
 			message: firstFailure,
 			title: test.fullName,
 		});
@@ -300,12 +204,6 @@ function collectTestFailureAnnotations({
 	return annotations;
 }
 
-/**
- * Build annotations for failed tests, and one per file whose suite threw.
- * @param result - Run result.
- * @param options - Resolved GitHub context and source mapper.
- * @returns The annotations in file order.
- */
 function collectAnnotations(
 	result: JestResult,
 	options: GitHubActionsOptions,
@@ -335,7 +233,7 @@ function collectFileFailures(
 		}
 
 		failures.push({
-			file: makeRelative(file.testFilePath, options.workspace),
+			file: relativeToWorkspace(file.testFilePath, options.workspace),
 			title: test.fullName,
 		});
 	}
@@ -343,47 +241,23 @@ function collectFileFailures(
 	return failures;
 }
 
-function noun({
-	count,
-	plural,
-	singular,
-}: {
-	count: number;
-	plural: string;
-	singular: string;
-}): string {
-	return count === 1 ? singular : plural;
-}
-
-/**
- * File-level pass/fail counts plus their total. A file with an exec error
- * counts as failed even when it reported no failing tests.
- * @param result - Run result.
- * @returns The count cells of the files row.
- */
 function renderFileCounts(result: JestResult): Array<string> {
-	const failedFiles = result.testResults.filter(
-		(file) => file.numFailingTests > 0 || hasExecError(file),
-	).length;
-	const passedFiles = result.testResults.filter(
-		(file) => file.numFailingTests === 0 && !hasExecError(file),
-	).length;
-
+	const { failed, passed, skipped } = countFileBuckets(result);
 	const fileInfo: Array<string> = [];
 
-	if (failedFiles > 0) {
-		fileInfo.push(
-			`❌ **${String(failedFiles)} ${noun({ count: failedFiles, plural: "failures", singular: "failure" })}**`,
-		);
+	if (failed > 0) {
+		fileInfo.push(`❌ **${String(failed)} ${plural(failed, "failure")}**`);
 	}
 
-	if (passedFiles > 0) {
-		fileInfo.push(
-			`✅ **${String(passedFiles)} ${noun({ count: passedFiles, plural: "passes", singular: "pass" })}**`,
-		);
+	if (passed > 0) {
+		fileInfo.push(`✅ **${String(passed)} ${plural(passed, ["pass", "passes"])}**`);
 	}
 
-	fileInfo.push(`${String(failedFiles + passedFiles)} total`);
+	if (skipped > 0) {
+		fileInfo.push(`${String(skipped)} ${plural(skipped, "skip")}`);
+	}
+
+	fileInfo.push(`${String(failed + passed + skipped)} total`);
 	return fileInfo;
 }
 
@@ -392,41 +266,32 @@ function renderTestCounts(result: JestResult): Array<string> {
 
 	if (result.numFailedTests > 0) {
 		testInfo.push(
-			`❌ **${String(result.numFailedTests)} ${noun({ count: result.numFailedTests, plural: "failures", singular: "failure" })}**`,
+			`❌ **${String(result.numFailedTests)} ${plural(result.numFailedTests, "failure")}**`,
 		);
 	}
 
 	if (result.numPassedTests > 0) {
 		testInfo.push(
-			`✅ **${String(result.numPassedTests)} ${noun({ count: result.numPassedTests, plural: "passes", singular: "pass" })}**`,
+			`✅ **${String(result.numPassedTests)} ${plural(result.numPassedTests, ["pass", "passes"])}**`,
 		);
 	}
 
-	// Excludes pending/todo — those appear in the "Other" row
 	const primaryTotal = result.numFailedTests + result.numPassedTests;
 	testInfo.push(`${String(primaryTotal)} total`);
 	return testInfo;
 }
 
-/**
- * Pending/todo counts plus their total, or empty when neither is present — in
- * which case the caller omits the whole row.
- * @param result - Run result.
- * @returns The count cells of the other row.
- */
 function renderOtherCounts(result: JestResult): Array<string> {
 	const otherInfo: Array<string> = [];
 
 	if (result.numPendingTests > 0) {
 		otherInfo.push(
-			`${String(result.numPendingTests)} ${noun({ count: result.numPendingTests, plural: "skips", singular: "skip" })}`,
+			`${String(result.numPendingTests)} ${plural(result.numPendingTests, "skip")}`,
 		);
 	}
 
 	if (result.numTodoTests !== undefined && result.numTodoTests > 0) {
-		otherInfo.push(
-			`${String(result.numTodoTests)} ${noun({ count: result.numTodoTests, plural: "todos", singular: "todo" })}`,
-		);
+		otherInfo.push(`${String(result.numTodoTests)} ${plural(result.numTodoTests, "todo")}`);
 	}
 
 	if (otherInfo.length > 0) {
@@ -462,4 +327,21 @@ function createFileLink({
 	}
 
 	return (filePath) => `${serverUrl}/${repository}/blob/${sha}/${filePath}`;
+}
+
+function resolveGitHubActionsOptions({
+	environment = process.env,
+	sourceMapper,
+	userOptions,
+}: ResolveGitHubActionsOptions): GitHubActionsOptions {
+	const workspacePath =
+		userOptions.jobSummary?.fileLinks?.workspacePath ?? environment["GITHUB_WORKSPACE"];
+	return {
+		repository:
+			userOptions.jobSummary?.fileLinks?.repository ?? environment["GITHUB_REPOSITORY"],
+		serverUrl: environment["GITHUB_SERVER_URL"],
+		sha: userOptions.jobSummary?.fileLinks?.commitHash ?? environment["GITHUB_SHA"],
+		sourceMapper,
+		workspace: workspacePath === undefined ? undefined : toPosixRoot(workspacePath),
+	};
 }

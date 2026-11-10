@@ -1,11 +1,5 @@
-/**
- * The Game Output block a failing project's section ends with: every line the
- * Roblox Output showed while that package was live, in order, so the reader
- * can tell which package printed which warning without opening the file.
- */
-
-import type { GameOutputEntry } from "../types/game-output-types.ts";
-import { type ColorFunc, identity, type Styles } from "./styles.ts";
+import type { GameOutputEntry } from "../protocol/game-output.ts";
+import { type ColorFunc, identity, type Styles } from "../terminal/palette.ts";
 
 // Enum.MessageType values as LogService reports them.
 const MESSAGE_TYPE_WARNING = 2;
@@ -28,8 +22,6 @@ export function formatGameOutputBlock(
 		return [];
 	}
 
-	// Warnings and errors borrow the test-status palette: a warning reads as
-	// pending, an error as a failure.
 	const paints = new Map<number, ColorFunc>([
 		[MESSAGE_TYPE_ERROR, styles.status.fail],
 		[MESSAGE_TYPE_WARNING, styles.status.pending],

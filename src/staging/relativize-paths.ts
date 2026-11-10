@@ -7,20 +7,7 @@ import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import { readDeclaredGlobIgnorePaths } from "./glob-ignore.ts";
 
 /**
- * Rewrite every `$path` in a synthesized project so it is expressed relative to
- * the directory the project file is written to.
- *
- * Rojo matches `globIgnorePaths` against each candidate path *as the project
- * expresses it*, so an absolute `$path` silently disables the ignore list for
- * that mount — even a catch-all pattern ignores nothing. Synthesis resolves
- * every `$path` to an absolute location because it has to read them off disk
- * (stub injection stats directories, coverage redirects rewrite roots);
- * emitting them relative is the last step that makes the globs mean something
- * again.
- *
- * A target on another drive has no relative form. `path.relative` returns it
- * absolute, which is exactly what gets emitted — that one mount keeps the old
- * behavior rather than failing the build.
+ * Rewrite every `$path` relative to the project file's directory.
  * @param projectJson - Serialized project with absolute `$path` values.
  * @param projectDirectory - Directory the project file is written to.
  * @returns The project re-serialized with relative `$path` values.

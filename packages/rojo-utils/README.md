@@ -37,7 +37,12 @@ tree metadata, preserves other top-level JSON fields on `raw`, and expands
 required nested project mounts. Read and parse failures throw contextual errors
 with their original cause. Child values that are not tree objects are skipped.
 Optional mounts remain optional, and absolute mounts retain their location
-across nested projects.
+across nested projects. `tryLoadRojoProject` answers `undefined` when the
+project file does not exist and throws every other failure.
+`parseRojoProject(content, projectPath)` applies the same validation to text
+without expanding nested projects. `findRojoProjectFile(directory, fileSystem?)`
+returns `DEFAULT_ROJO_PROJECT` (`default.project.json`) when present, else the
+first `*.project.json`.
 
 Other supported entry-point exports include:
 
@@ -52,10 +57,10 @@ Other supported entry-point exports include:
   `matchNodePath`: match mounts with directory boundaries. Lua suffixes and
   trailing `init` are removed by file mapping. Root mapping throws when no mount
   matches; file mapping returns `undefined`.
-- `createReverseMapper(files, getRbxPath)`: the inverse of a file mapper such as
-  `RojoResolver.getRbxPathFromFilePath`. Its `resolve(rbxPath)` returns the file
-  among `files` that maps to the DataModel path, or `undefined` when none does.
-  `add(files)` maps more files; a later file wins a shared DataModel path.
+- `listMounts(node, currentDataModelPath?)`: every `$path` mount, file or
+  directory, with a slash-separated instance path.
+- `createReverseMapper(files, getRbxPath)`: resolve DataModel paths back to
+  files. `add(files)` extends the mapping; a later file wins a shared path.
 - `collectMounts({ classify, currentDataModelPath, node })` and
   `pruneAncestors`: select directory mounts through a caller-supplied classifier
   and retain minimal directory prefixes.

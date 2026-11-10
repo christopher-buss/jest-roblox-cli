@@ -2,13 +2,14 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { startFakeOpenCloudServerAsync } from "#test/e2e/cli/fake-open-cloud.ts";
+import { startFakeOpenCloudServerAsync } from "#test/harness/fake-open-cloud.ts";
 import {
 	createFixtureSandbox,
 	createOpenCloudEnvironment,
 	rojoOnPath,
+	RUN_TIMEOUT_MS,
 	runSeaBundleAsync,
-} from "#test/e2e/cli/helpers.ts";
+} from "#test/harness/helpers.ts";
 
 // Regression: every `--coverage` run on the standalone binary died after the
 // suite, before writing a report — `No such built-in module: <exe dir>\lib\text`
@@ -21,7 +22,6 @@ import {
 // a reporter have to be a bundled module rather than a file on disk beside it.
 
 const LUAU_FIXTURE_PATH = path.resolve(__dirname, "../fixtures/luau-project");
-const RUN_TIMEOUT_MS = 60_000;
 
 /**
  * A passing run whose envelope carries hit counts for the fixture's one source

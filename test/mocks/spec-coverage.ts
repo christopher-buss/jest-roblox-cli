@@ -1,4 +1,4 @@
-import type { MappedFileCoverage } from "#src/coverage-pipeline/mapper-types.ts";
+import type { MappedFileCoverage } from "#src/coverage-report/mapper-types.ts";
 
 export function mappedFile(overrides: Partial<MappedFileCoverage>): MappedFileCoverage {
 	return {

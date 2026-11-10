@@ -1,14 +1,16 @@
 /// <reference path="./runner-plugin-sources.d.ts" />
-import { type } from "arktype";
+import { parseRojoProject } from "@isentinel/rojo-utils";
+
 import * as path from "node:path";
 import runnerPluginSources from "virtual:runner-plugin-sources";
 
-import packageJson from "../../package.json" with { type: "json" };
+import { PLUGIN_KEY_MODULE, PLUGIN_VERSION_MODULE } from "../protocol/studio.ts";
 import { atomicWrite } from "../utils/atomic-write.ts";
 import type { ChildProcessRunner } from "../utils/child-process.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import { hashString } from "../utils/hash.ts";
 import { buildWithRojoAsync } from "../utils/rojo-builder.ts";
+import { VERSION } from "../version.ts";
 import type { UserDirectoryOptions } from "./studio-discovery.ts";
 import { discoverUserDirectories } from "./studio-discovery.ts";
 
@@ -53,8 +55,8 @@ interface ManagedPluginOptions {
 	/** Scratch directory the plugin is built in. */
 	readonly stagingDirectory: string;
 	/**
-	 * Where each Managed Plugin's last use is marked. Never inside the plugins
-	 * folder: Studio reloads a plugin whose file changes, even by mtime alone.
+	 * Where each plugin's last use is marked. Never inside the plugins folder:
+	 * Studio reloads a plugin whose file changes, even by mtime alone.
 	 */
 	readonly usageDirectory: string;
 	/** The CLI's release version. */
@@ -64,28 +66,18 @@ interface ManagedPluginOptions {
 const PLUGIN_DIRECTORY = "plugin";
 const MANUAL_PROJECT_FILE = "plugin/plugin.project.json";
 const MANAGED_PROJECT_FILE = "plugin/managed.project.json";
-/** Generated beside the runner, relative to the plugin's project. */
-const KEY_MODULE = "src/pluginKey.luau";
-const VERSION_MODULE = "src/version.luau";
+const KEY_MODULE = `src/${PLUGIN_KEY_MODULE}.luau`;
+const VERSION_MODULE = `src/${PLUGIN_VERSION_MODULE}.luau`;
 const BUILD_OUTPUT = "JestRobloxRunner.rbxm";
 const KEY_HASH_LENGTH = 8;
 const MANAGED_PREFIX = "JestRobloxRunner.cli-";
 const MANAGED_SUFFIX = ".rbxm";
 const JEST_PLUGIN_PATTERN = /jest.*\.rbxmx?$/i;
-/**
- * Bump when an installed copy built by an older CLI would break this CLI's
- * runs. A key with no generation predates the marker and counts as 1.
- */
+// Bump when a copy built by an older CLI would break this CLI's runs.
 const MANAGED_GENERATION = 2;
 const GENERATION_PATTERN = /^g(\d+)-/;
 
-/**
- * How long another key's Managed Plugin sits unused before the sweep takes it.
- * Long enough that a run in another checkout still holds it loaded.
- */
 const IDLE_SWEEP_MS = 24 * 60 * 60 * 1000;
-
-const rojoProjectSchema = type({ name: "string", tree: "Record<string, unknown>" });
 
 /**
  * Install this CLI's Managed Plugin with rojo, or nothing where the OS has no
@@ -99,7 +91,7 @@ export async function installRunnerPluginAsync({
 	fileSystem,
 	now = Date.now(),
 	sources = runnerPluginSources,
-	version = packageJson.version,
+	version = VERSION,
 	workDirectory,
 	...discovery
 }: RunnerPluginInstallOptions): Promise<ManagedPluginInstall | undefined> {
@@ -137,31 +129,22 @@ function pluginKey({
 	return `g${MANAGED_GENERATION.toString()}-${version}-${digest.slice(0, KEY_HASH_LENGTH)}`;
 }
 
-/**
- * The Manual Plugin's rojo project with its root swapped for a Folder holding
- * the Run-mode runner alone: the edit-mode client would load in every Studio
- * the user opens and dial the `studio` backend.
- *
- * @param sources - Plugin source files.
- * @returns The managed rojo project, as JSON.
- * @throws {@link Error} When the sources hold no Manual Plugin project.
- */
 function managedProject(sources: ReadonlyArray<RunnerPluginSource>): string {
 	const manual = sources.find((source) => source.path === MANUAL_PROJECT_FILE);
 	if (manual === undefined) {
 		throw new Error(`runner plugin sources carry no ${MANUAL_PROJECT_FILE}`);
 	}
 
-	const { name, tree } = rojoProjectSchema.assert(JSON.parse(manual.text));
+	const { name, tree } = parseRojoProject(manual.text, MANUAL_PROJECT_FILE);
 	const { $path: _editModeClient, ...children } = tree;
 	return JSON.stringify({
 		name,
 		tree: {
 			...children,
 			"$className": "Folder",
-			"pluginKey": { $path: KEY_MODULE },
+			[PLUGIN_KEY_MODULE]: { $path: KEY_MODULE },
+			[PLUGIN_VERSION_MODULE]: { $path: VERSION_MODULE },
 			"test-in-run-mode": { $path: "src/test-in-run-mode.server.luau" },
-			"version": { $path: VERSION_MODULE },
 		},
 	});
 }
@@ -189,8 +172,7 @@ async function buildManagedPluginAsync(
 
 	const output = path.join(stagingDirectory, BUILD_OUTPUT);
 	await buildAsync(path.join(stagingDirectory, MANAGED_PROJECT_FILE), output);
-	// Another run on this key may have published while this one built, and a
-	// Studio may already have loaded it: replacing it would reload the plugin.
+	// A Studio may have loaded a copy another run published; do not reload it.
 	if (fileSystem.existsSync(target)) {
 		return;
 	}
@@ -218,13 +200,6 @@ function managedGeneration(entry: string): number {
 	return match === null ? 1 : Number(match[1]);
 }
 
-/**
- * Delete other keys' Managed Plugins that have sat idle or come from an older
- * generation, and the marks of plugins already gone. A plugin with no mark was
- * last used when it was written.
- *
- * @param options - Plugins and usage folders, file system, and clock.
- */
 function sweepStaleManagedPlugins({
 	fileSystem,
 	now,
@@ -252,25 +227,12 @@ function sweepStaleManagedPlugins({
 	}
 }
 
-/**
- * Every jest-roblox plugin in the folder the CLI does not manage.
- *
- * @param options - Plugins folder and file system.
- * @returns The plugin file names.
- */
 function listManualPlugins({ fileSystem, pluginsDirectory }: ManagedPluginOptions): Array<string> {
 	return fileSystem.readdirSync(pluginsDirectory).filter((entry) => {
 		return !isManagedPlugin(entry) && JEST_PLUGIN_PATTERN.test(entry);
 	});
 }
 
-/**
- * Put the Managed Plugin for this CLI's Plugin Key in the plugins folder,
- * building it only when it is missing.
- *
- * @param options - Where the plugin goes, and what it is built from.
- * @returns The key to ask the run for, and the Manual Plugins beside it.
- */
 async function installManagedPluginAsync(
 	options: ManagedPluginOptions,
 ): Promise<ManagedPluginInstall> {

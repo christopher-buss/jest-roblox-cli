@@ -2,8 +2,8 @@
 import { type } from "arktype";
 import { assert, describe, expect, it } from "vitest";
 
+import type { Config } from "./config-types.ts";
 import { configSchema, projectConfigFileSchema, validateConfig } from "./config-validation.ts";
-import type { Config } from "./schema.ts";
 
 function schemaAcceptsBackend(backend: string): boolean {
 	return !(configSchema({ backend }) instanceof type.errors);

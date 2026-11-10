@@ -1,0 +1,84 @@
+import { isRojoTreeNode, loadRojoProject, resolveMountPath } from "@isentinel/rojo-utils";
+import type { RojoTreeNode } from "@isentinel/rojo-utils";
+
+import * as path from "node:path";
+
+import type { FileSystem } from "../utils/file-system.ts";
+import type { PackageDescriptor } from "./validation.ts";
+
+/**
+ * Create the directories each package descriptor mounts.
+ * @param descriptors - Packages whose mount directories to create.
+ * @param fileSystem - File system to write through.
+ */
+export function ensurePackageDirectories(
+	descriptors: Array<PackageDescriptor>,
+	fileSystem: FileSystem,
+): void {
+	for (const descriptor of descriptors) {
+		ensurePackageDirectory(fileSystem, descriptor);
+	}
+}
+
+function isDirectoryPath(node: RojoTreeNode, pathValue: string): boolean {
+	if (path.extname(pathValue) === "") {
+		return true;
+	}
+
+	for (const key of Object.keys(node)) {
+		if (!key.startsWith("$")) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
+function collectDirectoryPaths({
+	fileSystem,
+	node,
+	projectDirectory,
+}: {
+	readonly fileSystem: FileSystem;
+	readonly node: RojoTreeNode;
+	readonly projectDirectory: string;
+}): void {
+	for (const [key, value] of Object.entries(node)) {
+		if (key === "$path" && typeof value === "string" && isDirectoryPath(node, value)) {
+			const absolute = resolveMountPath(projectDirectory, value);
+			if (!fileSystem.existsSync(absolute)) {
+				fileSystem.mkdirSync(absolute, { recursive: true });
+			}
+
+			continue;
+		}
+
+		if (isRojoTreeNode(value) && !key.startsWith("$")) {
+			collectDirectoryPaths({
+				fileSystem,
+				node: value,
+				projectDirectory,
+			});
+		}
+	}
+}
+
+function ensurePackageDirectory(fileSystem: FileSystem, descriptor: PackageDescriptor): void {
+	if (!fileSystem.existsSync(descriptor.rojoProjectPath)) {
+		return;
+	}
+
+	let project;
+	try {
+		project = loadRojoProject(descriptor.rojoProjectPath, fileSystem);
+	} catch {
+		return;
+	}
+
+	const projectDirectory = path.dirname(descriptor.rojoProjectPath);
+	collectDirectoryPaths({
+		fileSystem,
+		node: project.tree,
+		projectDirectory,
+	});
+}

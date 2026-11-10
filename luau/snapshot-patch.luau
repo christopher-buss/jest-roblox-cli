@@ -44,11 +44,8 @@ function module.patch(jestModule: ModuleScript, snapshotWrites: { [string]: stri
 	local originalGetDataModelService = robloxSharedExports.getDataModelService
 	robloxSharedExports.getDataModelService = mockGetDataModelService
 
-	-- Snapshot the partial state immediately so any subsequent throw can
-	-- be rolled back. Without this, workspace mode (where multiple patch
-	-- cycles share the same RobloxShared module) would leak the mock if
-	-- the JestRuntime acquisition below threw — the next package's patch
-	-- would then save the leaked mock as "original".
+	-- Snapshot before the JestRuntime lookup: workspace patch cycles share
+	-- RobloxShared, so a throw would leak the mock as the next "original".
 	local partialState: PatchState = {
 		robloxSharedExports = robloxSharedExports,
 		originalGetDataModelService = originalGetDataModelService,

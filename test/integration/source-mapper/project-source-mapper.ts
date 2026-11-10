@@ -1,11 +1,13 @@
 import process from "node:process";
 import { onTestFinished, vi } from "vitest";
 
-import type { Backend, ExecuteResult } from "#src/index.ts";
-import { runProjectsAsync } from "#src/index.ts";
+import type { Backend, ExecuteResult } from "#src/api.ts";
+import { runProjectsAsync } from "#src/api.ts";
 import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
 
 export type SourceMapper = NonNullable<ExecuteResult["sourceMapper"]>;
+
+type RawRun = Awaited<ReturnType<Backend["runTestsAsync"]>>;
 
 const EMPTY_RUN = JSON.stringify({
 	numFailedTests: 0,
@@ -26,16 +28,16 @@ export async function buildProjectSourceMapperAsync(rootDirectory: string): Prom
 
 	const backend: Backend = {
 		kind: "open-cloud",
-		placeInput: "built",
-		runTestsAsync: vi.fn<Backend["runTestsAsync"]>().mockResolvedValue({
-			rawResults: [{ entry: { elapsedMs: 0, jestOutput: EMPTY_RUN } }],
+		runTestsAsync: vi.fn<(request: object) => Promise<RawRun>>().mockResolvedValue({
+			rawResults: [{ entry: { jestOutput: EMPTY_RUN }, jobIndex: 0 }],
 			timing: { executionMs: 0, uploadMs: 0 },
 		}),
 	};
+	const config = createResolvedConfig({ rootDir: rootDirectory });
 	const { results } = await runProjectsAsync({
 		backend,
-		deferFormatting: true,
-		projects: [{ config: createResolvedConfig({ rootDir: rootDirectory }), testFiles: [] }],
+		projects: [{ config, testFiles: [] }],
+		runSettings: config,
 		startTime: 0,
 		version: "0.0.0",
 	});

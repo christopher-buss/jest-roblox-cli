@@ -1,16 +1,15 @@
 import { PLACE_CONTENT_ID_NAME, PLACE_CONTENT_ID_SERVICE } from "@isentinel/roblox-runner";
 import { loadRojoProject } from "@isentinel/rojo-utils";
+import type { RojoTreeNode } from "@isentinel/rojo-utils";
 
 import { ConfigError } from "../config/errors.ts";
-import type { RojoTreeNode } from "../types/rojo.ts";
+import { RUN_CONTEXT_ATTRIBUTE, STAGE_KEY } from "../protocol/staged-place.ts";
 import type { FileSystem } from "../utils/file-system.ts";
-import { nodeFileSystem } from "../utils/file-system.ts";
 import { absolutizePackagePaths } from "./absolutize-paths.ts";
 import { readDeclaredGlobIgnorePaths, withReplacedConfigs } from "./glob-ignore.ts";
 import type { HoistedService, PackageHoist } from "./service-hoist.ts";
 import { applyHoistedServices, isSameValue, mergeHoistedServices } from "./service-hoist.ts";
 import { transformToFolder } from "./stage-transform.ts";
-import { STAGE_KEY } from "./stage.ts";
 import { injectStubMounts } from "./stub-injection.ts";
 import type {
 	PackageDescriptor,
@@ -20,24 +19,8 @@ import type {
 import { isProperties, isTreeNode } from "./tree-node-guards.ts";
 
 interface SynthesizeOptions {
-	/**
-	 * The Place Content Id to stamp into the synthesized place, as a
-	 * `StringValue` at `ReplicatedStorage.__place_content_id`. A task that
-	 * booted the place reads it back and compares, which is how a run proves
-	 * the place holds the build it was collected against rather than trusting
-	 * the version number the publish minted. Omitted ⇒ no stamp, and the place
-	 * carries no identity beyond its version.
-	 */
 	contentId?: string | undefined;
-	/** Where the tree is probed. Defaults to the real filesystem. */
-	fileSystem?: FileSystem;
-	/**
-	 * Force `ServerScriptService.LoadStringEnabled = true` on the synthesized
-	 * place. The wrap (workspace) path always sets it; this flag is for the
-	 * no-wrap path (studio-cli's Clean Place), whose Run-mode runner gates on
-	 * LoadString. Merged into any existing `ServerScriptService`, preserving
-	 * its `$path`/children/other properties.
-	 */
+	fileSystem: FileSystem;
 	loadStringEnabled?: boolean | undefined;
 }
 
@@ -62,7 +45,6 @@ interface DeclaredGlobs {
 	patterns: Array<string>;
 }
 
-/** The tree a package is staged into, and what reads the package off disk. */
 interface StagingTarget {
 	fileSystem: FileSystem;
 	stage: RojoTreeNode;
@@ -72,14 +54,14 @@ interface StagingTarget {
  * Synthesize one rojo project for the packages, staged or emitted unwrapped.
  * @param input - Packages, layout, content id and file system.
  * @returns The project text with sorted keys.
- * @throws {ConfigError} When packages conflict, a stub cannot mount, or an unwrapped run has other than one package.
+ * @throws {ConfigError} When packages conflict or a stub cannot mount.
  */
 export function synthesize(input: SynthesizeInput): string {
 	if (input.wrap === false) {
 		return synthesizeNoWrap(input);
 	}
 
-	const { fileSystem = nodeFileSystem } = input;
+	const { fileSystem } = input;
 	const stage: RojoTreeNode = { $className: "Folder" };
 	const hoists: Array<PackageHoist> = [];
 	const globs: Array<DeclaredGlobs> = [];
@@ -99,8 +81,7 @@ export function synthesize(input: SynthesizeInput): string {
 
 	applyHoistedServices(tree, mergeHoistedServices(hoists));
 
-	// After the hoist, so a package that declares `LoadStringEnabled: false`
-	// cannot switch off the loadstring the Run-mode runner needs.
+	// Must run after the hoist, so no package can switch LoadString off.
 	enableLoadString(tree);
 	stampPlaceContentId(tree, input.contentId);
 
@@ -114,13 +95,8 @@ export function synthesize(input: SynthesizeInput): string {
 }
 
 /**
- * `emitLegacyScripts` is deliberately not carried onto the synthesized place.
- * Under `false` a `.server.luau` becomes a `Script` with `RunContext = Server`,
- * which the engine runs wherever it sits — so the staged copy would run at
- * place load, before any package is materialized, and again once it is. The
- * place is built with legacy emission instead, which parks staged scripts inert
- * under `ServerStorage`, and this attribute tells the materializer to restore
- * the requested run context on each clone before it enters a live service.
+ * The materializer reads this attribute to restore the run context on clones.
+ *
  * @param root - Package root node; mutated.
  * @param raw - Raw project object.
  */
@@ -130,7 +106,7 @@ function markRunContextScripts(root: RojoTreeNode, raw: JSONObject): void {
 	}
 
 	const attributes = isProperties(root["$attributes"]) ? root["$attributes"] : {};
-	root["$attributes"] = { ...attributes, JestRunContextScripts: true };
+	root["$attributes"] = { ...attributes, [RUN_CONTEXT_ATTRIBUTE]: true };
 }
 
 function stagePackage({
@@ -178,16 +154,6 @@ function formatGlobConflict(owner: DeclaredGlobs, rival: DeclaredGlobs): string 
 	].join("\n");
 }
 
-/**
- * One synthesized place means one ignore list, so the packages that declare
- * `globIgnorePaths` have to declare the same one. A package that declares none
- * has no opinion and does not constrain the rest; two that declare different
- * lists cannot both be honored, and picking one silently would drop the other's
- * files out of the place with no diagnostic.
- * @param globs - Each declaring package's patterns.
- * @returns The agreed patterns, or `undefined` when no package declares any.
- * @throws {ConfigError} When two packages declare different lists.
- */
 function resolveGlobIgnorePaths(globs: ReadonlyArray<DeclaredGlobs>): Array<string> | undefined {
 	const [first, ...rest] = globs;
 	if (first === undefined) {
@@ -220,33 +186,14 @@ function stableStringify(value: JsonStringifyValue): string {
 	return String(JSON.stringify(sortKeys(value), undefined, 2));
 }
 
-/**
- * The tree's node for one service, created where the project never declared it
- * and given its canonical class where the project declared it only implicitly.
- * Rojo infers a service's class from its name, but a node this code then hangs
- * a property or a child on has to say what it is. Returned already attached, so
- * a caller mutates the node the tree holds rather than writing a copy back.
- * @param tree - Place tree; mutated.
- * @param name - Service name, which is also its class.
- * @returns The attached service node.
- */
 function openService(tree: RojoTreeNode, name: string): RojoTreeNode {
 	const existing = tree[name];
-	// Rojo names a service by its class, so the tree key is the class name.
 	const service = isTreeNode(existing) ? existing : {};
 	service.$className ??= name;
 	tree[name] = service;
 	return service;
 }
 
-/**
- * Force `ServerScriptService.LoadStringEnabled = true` on a no-wrap tree,
- * creating the service node if the user's project omits it and merging into
- * any existing `$properties` so a hand-set property is preserved. The
- * studio-cli Run-mode runner gates on LoadString, so the Clean Place must
- * enable it regardless of what the user's `.project.json` declares.
- * @param tree - Place tree; mutated.
- */
 function enableLoadString(tree: RojoTreeNode): void {
 	const service = openService(tree, "ServerScriptService");
 	const properties = isProperties(service.$properties) ? service.$properties : {};
@@ -254,15 +201,8 @@ function enableLoadString(tree: RojoTreeNode): void {
 }
 
 /**
- * Park the place's content identity where a booted task can read it back, at
- * the service and name `@isentinel/roblox-runner` spells: it owns the guard
- * that reads the stamp, so it owns where the stamp lives.
+ * Must stay in the project text: the place-reuse key covers the id there.
  *
- * A `StringValue` rather than a file mount because rojo builds one from the
- * project text alone — nothing to stage, and the id therefore rides in the
- * same text the reuse key is taken over, so a place built for another id can
- * never be handed back for this one. Merged into whatever node the project
- * already declares for that service, so one that mounts a `$path` keeps it.
  * @param tree - Place tree; mutated.
  * @param contentId - Id to stamp, or `undefined` to stamp nothing.
  */
@@ -279,7 +219,7 @@ function stampPlaceContentId(tree: RojoTreeNode, contentId: string | undefined):
 
 function synthesizeNoWrap({
 	contentId,
-	fileSystem = nodeFileSystem,
+	fileSystem,
 	loadStringEnabled = false,
 	packages,
 }: UnwrappedSynthesizeInput): string {
@@ -294,8 +234,6 @@ function synthesizeNoWrap({
 	const project = loadRojoProject(descriptor.rojoProjectPath, fileSystem);
 	const tree = absolutizePackagePaths({ descriptor, fileSystem, node: project.tree });
 
-	// Inject in no-wrap mode too so single-package callers (multi-project +
-	// open-cloud) share the same `$path` named-child mounting workspace uses.
 	const replacedConfigs = injectStubMounts({
 		fileSystem,
 		root: tree,
@@ -308,9 +246,6 @@ function synthesizeNoWrap({
 
 	stampPlaceContentId(tree, contentId);
 
-	// `raw` carries top-level fields (gameId, placeId, globIgnorePaths, etc.)
-	// that the narrow `RojoProject` shape strips; `tree` then overrides the
-	// raw unresolved tree with the loader's resolved version.
 	return stableStringify({
 		...project.raw,
 		globIgnorePaths: withReplacedConfigs(

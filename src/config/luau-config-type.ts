@@ -5,9 +5,6 @@ import { atomicWrite } from "../utils/atomic-write.ts";
 import { errorMessage } from "../utils/error-message.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 
-export const LUAU_CONFIG_TYPE_SOURCE: string = source;
-
-/** Folders under the home directory that hold one folder per CLI version. */
 export const LUAU_CONFIG_TYPES_FOLDERS = [".jest-roblox", "typedefs"] as const;
 
 const TYPE_MODULE = "config.luau";
@@ -19,9 +16,9 @@ interface TypesLocation {
 }
 
 /**
- * Write the Luau Config type module to the versioned home folder.
- * @param location - File system, home folder and version.
- * @returns The folder that holds the type module.
+ * Publish the type module atomically so concurrent evaluators read a whole file.
+ * @param root0 - Versioned home and filesystem.
+ * @returns The alias target directory.
  */
 export function writeLuauConfigTypes({
 	fileSystem,
@@ -34,10 +31,9 @@ export function writeLuauConfigTypes({
 }
 
 /**
- * Write the Luau Config type module to the versioned home folder if it is not
- * there.
- * @param location - File system, home folder and version.
- * @returns The write failure, or `undefined` when the module is in place.
+ * Bootstrap a missing alias target before the evaluator opens it.
+ * @param location - Versioned home and filesystem.
+ * @returns The write failure, when bootstrap fails.
  */
 export function ensureLuauConfigTypes(location: TypesLocation): Error | undefined {
 	const { homeDirectory, version } = location;

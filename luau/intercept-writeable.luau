@@ -1,14 +1,4 @@
 --!strict
--- Patches a Writeable's `_writeFn` to push every write into `buffer` (tagged
--- with `messageType` and a monotonic timestamp) before delegating to the
--- original. Returns a restore thunk; callers must invoke it to undo the patch,
--- otherwise the buffer leaks across runs and the original write side-effect
--- stays hidden behind our tap.
---
--- Used by both runner.luau (single-pkg) and staging/entry.luau (workspace) to
--- capture per-task stdout/stderr around Jest.runCLI so failure messages like
--- "No tests found, exiting with code 1" can be surfaced in the CLI banner.
-
 local module = {}
 
 export type CapturedMessage = { message: string, messageType: number, timestamp: number }

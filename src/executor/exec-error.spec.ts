@@ -1,11 +1,7 @@
-import { fromAny } from "@total-typescript/shoehorn";
-
 import { assert, describe, expect, it, vi } from "vitest";
 
-import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
 import type { BackendTiming } from "../backends/interface.ts";
-import type { ResolvedConfig } from "../config/schema.ts";
-import { LuauScriptError } from "../reporter/luau-script-error.ts";
+import { LuauScriptError } from "../jest-output/luau-script-error.ts";
 import { buildExecutionErrorResult } from "./exec-error.ts";
 
 const BACKEND_TIMING: BackendTiming = {
@@ -20,16 +16,14 @@ const ENTRY: ExecErrorEntry = { pkg: "@scope/pkg", project: "unit", testFileCoun
 function buildResult({
 	bannerOutput,
 	captureInstalled,
-	deferFormatting,
 	entry = ENTRY,
-	gameOutput = "complete game log",
+	gameOutput = "[]",
 	message = "failure",
 	phase,
 	timedOut,
 }: {
 	bannerOutput?: string | undefined;
 	captureInstalled?: boolean | undefined;
-	deferFormatting: boolean | undefined;
 	entry?: ExecErrorEntry | undefined;
 	gameOutput?: string | undefined;
 	message?: string | undefined;
@@ -46,12 +40,9 @@ function buildResult({
 
 	return buildExecutionErrorResult({
 		backendTiming: BACKEND_TIMING,
-		config: fromAny<ResolvedConfig, unknown>(createResolvedConfig()),
-		deferFormatting,
 		entry,
 		error,
 		startTime: 1_000,
-		version: "1.2.3",
 	});
 }
 
@@ -75,10 +66,9 @@ describe(buildExecutionErrorResult, () => {
 
 		vi.spyOn(Date, "now").mockReturnValue(1_123);
 
-		expect(buildResult({ deferFormatting: true })).toStrictEqual({
+		expect(buildResult({})).toStrictEqual({
 			exitCode: 1,
-			gameOutput: "complete game log",
-			output: "",
+			gameOutput: "[]",
 			result: {
 				numFailedTests: 0,
 				numPassedTests: 0,
@@ -111,19 +101,10 @@ describe(buildExecutionErrorResult, () => {
 	it("should mark an abandoned run timed out and still fail the run", () => {
 		expect.assertions(2);
 
-		const result = buildResult({ deferFormatting: true, timedOut: true });
+		const result = buildResult({ timedOut: true });
 
 		expect(result.result.testResults[0]).toHaveProperty("timedOut", true);
 		expect(result.exitCode).toBe(1);
-	});
-
-	it("should format immediately unless formatting is explicitly deferred", () => {
-		expect.assertions(2);
-
-		vi.spyOn(Date, "now").mockReturnValue(1_123);
-
-		expect(buildResult({ deferFormatting: false }).output).not.toBe("");
-		expect(buildResult({ deferFormatting: undefined }).output).not.toBe("");
 	});
 
 	it("should prepend parsed banner output to an exact numeric exit message", () => {
@@ -133,7 +114,6 @@ describe(buildExecutionErrorResult, () => {
 			bannerOutput: JSON.stringify([
 				{ message: "actionable cause", messageType: 0, timestamp: 0 },
 			]),
-			deferFormatting: true,
 			message: "Exited with code: 10",
 		});
 
@@ -150,7 +130,6 @@ describe(buildExecutionErrorResult, () => {
 				{ message: "first cause", messageType: 0, timestamp: 0 },
 				{ message: "second cause", messageType: 0, timestamp: 1 },
 			]),
-			deferFormatting: true,
 			message: "Exited with code: 1",
 		});
 
@@ -168,7 +147,6 @@ describe(buildExecutionErrorResult, () => {
 				bannerOutput: JSON.stringify([
 					{ message: "actionable cause", messageType: 0, timestamp: 0 },
 				]),
-				deferFormatting: true,
 				message,
 			});
 
@@ -187,7 +165,6 @@ describe(buildExecutionErrorResult, () => {
 
 			const message = failureMessageOf({
 				bannerOutput,
-				deferFormatting: true,
 				message: "Exited with code: 1",
 			});
 
@@ -209,7 +186,6 @@ describe("an exit-code-only failure with nothing captured", () => {
 
 		const message = failureMessageOf({
 			captureInstalled: true,
-			deferFormatting: true,
 			gameOutput: encodeOutput("staging @scope/pkg", "No tests found in @scope/pkg"),
 			message: "Exited with code: 1",
 			phase: "run",
@@ -237,7 +213,6 @@ describe("an exit-code-only failure with nothing captured", () => {
 		expect.assertions(1);
 
 		const message = failureMessageOf({
-			deferFormatting: true,
 			entry: { project: "unit", testFileCount: 0 },
 			message: "Exited with code: 1",
 		});
@@ -249,7 +224,6 @@ describe("an exit-code-only failure with nothing captured", () => {
 		expect.assertions(2);
 
 		const message = failureMessageOf({
-			deferFormatting: true,
 			entry: { pkg: "@scope/pkg", project: "unit", testFileCount: 0 },
 			message: "Exited with code: 1",
 		});
@@ -267,7 +241,6 @@ describe("an exit-code-only failure with nothing captured", () => {
 		expect.assertions(1);
 
 		const message = failureMessageOf({
-			deferFormatting: true,
 			message: "Exited with code: 1",
 			phase,
 		});
@@ -279,7 +252,6 @@ describe("an exit-code-only failure with nothing captured", () => {
 		expect.assertions(1);
 
 		const message = failureMessageOf({
-			deferFormatting: true,
 			message: "Exited with code: 1",
 			phase: "somethingNewer",
 		});
@@ -296,7 +268,6 @@ describe("an exit-code-only failure with nothing captured", () => {
 
 		const message = failureMessageOf({
 			captureInstalled,
-			deferFormatting: true,
 			message: "Exited with code: 1",
 		});
 
@@ -307,7 +278,6 @@ describe("an exit-code-only failure with nothing captured", () => {
 		expect.assertions(3);
 
 		const message = failureMessageOf({
-			deferFormatting: true,
 			gameOutput: encodeOutput("one", "two", "three", "four", "five", "six", "seven"),
 			message: "Exited with code: 1",
 		});
@@ -321,7 +291,6 @@ describe("an exit-code-only failure with nothing captured", () => {
 		expect.assertions(2);
 
 		const message = failureMessageOf({
-			deferFormatting: true,
 			gameOutput: encodeOutput(" ".repeat(3), "the last thing said"),
 			message: "Exited with code: 1",
 		});
@@ -334,7 +303,6 @@ describe("an exit-code-only failure with nothing captured", () => {
 		expect.assertions(2);
 
 		const message = failureMessageOf({
-			deferFormatting: true,
 			gameOutput: encodeOutput("  "),
 			message: "Exited with code: 1",
 		});
@@ -346,7 +314,7 @@ describe("an exit-code-only failure with nothing captured", () => {
 	it("should still report a failed file carrying no failed tests", () => {
 		expect.assertions(3);
 
-		const result = buildResult({ deferFormatting: true, message: "Exited with code: 1" });
+		const result = buildResult({ message: "Exited with code: 1" });
 
 		expect(result.result.success).toBeFalse();
 		expect(result.result.numFailedTests).toBe(0);

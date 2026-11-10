@@ -6,7 +6,7 @@ describe("pinned parent classes", () => {
 	it("should contain every class whose parent is fixed by Roblox", () => {
 		expect.assertions(1);
 
-		expect([...PINNED_PARENT_CLASSES]).toStrictEqual([
+		expect([...PINNED_PARENT_CLASSES].toSorted()).toStrictEqual([
 			"Chat",
 			"CollectionService",
 			"DataModel",

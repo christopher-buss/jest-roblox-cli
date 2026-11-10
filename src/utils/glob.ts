@@ -2,38 +2,22 @@ import * as path from "node:path";
 import process from "node:process";
 
 import type { FileSystem } from "./file-system.ts";
-import { nodeFileSystem } from "./file-system.ts";
 import { normalizeWindowsPath } from "./normalize-windows-path.ts";
 
 const LEADING_CURRENT_DIRECTORY = /^\.\//;
 
-/**
- * Directory walks already done, keyed by the directory walked. Hand the same
- * cache to a run of `globSync` calls that share a `cwd` and it walks once
- * instead of once per pattern.
- */
+/** Directory walks already done, keyed by the directory walked. */
 export interface GlobCache {
-	/**
-	 * Trailing segments the declared patterns can match, or `undefined` when
-	 * the cache serves any pattern. A walk keeps only the files whose basename
-	 * one of these matches, so the cached array grows with the files a caller
-	 * actually wants rather than with every file under `cwd`.
-	 */
+	/** Trailing segments the declared patterns match; `undefined` for any. */
 	readonly leaves: ReadonlySet<string> | undefined;
 	/** Kept files per walked directory. */
 	readonly walks: Map<string, Array<string>>;
 }
 
 interface GlobOptions {
-	/**
-	 * Reuse walks across calls. Caller-owned on purpose: a cache is only
-	 * sound while nothing writes to `cwd`, and the caller is the one that
-	 * knows how long that holds. Omit it and every call walks fresh.
-	 */
 	cache?: GlobCache | undefined;
 	cwd?: string;
-	/** Where to walk. Defaults to the real filesystem. */
-	fileSystem?: FileSystem;
+	fileSystem: FileSystem;
 }
 
 interface WalkDirectoryOptions {
@@ -45,15 +29,6 @@ interface WalkDirectoryOptions {
 
 /**
  * A cache for the patterns given, or for any pattern when none are.
- *
- * Declaring them up front is what lets one walk stay one walk while still
- * discarding the files no pattern can match: the walk needs every caller's
- * trailing segment before it starts, and deriving the filter per call would
- * turn a shared cache back into a walk per distinct segment.
- *
- * A pattern the cache was not declared for is still answered correctly — it
- * walks fresh rather than reading a narrower cache — so an undeclared caller
- * loses the sharing, never the files.
  * @param patterns - Every pattern the cache will serve, or none for any.
  * @returns An empty cache that keeps only files those patterns can match.
  */
@@ -78,16 +53,14 @@ export function matchesGlobPattern(filePath: string, pattern: string): boolean {
  * @param options - The directory, filesystem and shared walk cache.
  * @returns The matching paths, relative to `cwd`.
  */
-export function globSync(pattern: string, options: GlobOptions = {}): Array<string> {
-	const { fileSystem = nodeFileSystem } = options;
+export function globSync(pattern: string, options: GlobOptions): Array<string> {
+	const { fileSystem } = options;
 	const cwd = options.cwd ?? process.cwd();
 	const cache = servingCache(options.cache, pattern);
 
 	let allFiles = cache?.walks.get(cwd);
 	if (allFiles === undefined) {
-		// A serving cache dictates the filter — including an undeclared cache's
-		// "keep everything", which this pattern's own leaf must not narrow
-		// while later patterns are still to read the same walk.
+		// A shared walk must keep what later patterns need, not this leaf.
 		const leaves = cache === undefined ? leafOf(pattern) : cache.leaves;
 		allFiles = walkDirectory({
 			baseDirectory: cwd,
@@ -102,24 +75,11 @@ export function globSync(pattern: string, options: GlobOptions = {}): Array<stri
 	return allFiles.filter((file) => matcher.test(file));
 }
 
-/**
- * The pattern's trailing path segment, which every match's basename must
- * satisfy — `undefined` when the segment carries a `**` and so spans
- * separators, leaving the basename unconstrained.
- * @param pattern - The glob.
- * @returns The trailing segment, or `undefined`.
- */
 function leafOf(pattern: string): string | undefined {
 	const leaf = pattern.slice(pattern.lastIndexOf("/") + 1);
 	return leaf.includes("**") ? undefined : leaf;
 }
 
-/**
- * `undefined` — no filter — as soon as one pattern leaves the basename
- * unconstrained, since the walk keeps the union of what the patterns match.
- * @param patterns - The declared patterns.
- * @returns Their trailing segments, or `undefined` for no filter.
- */
 function collectLeaves(patterns?: Iterable<string>): ReadonlySet<string> | undefined {
 	if (patterns === undefined) {
 		return undefined;
@@ -138,29 +98,12 @@ function collectLeaves(patterns?: Iterable<string>): ReadonlySet<string> | undef
 	return leaves;
 }
 
-/**
- * Translate one glob into the regex that matches it. Separate from
- * {@link matchesGlobPattern} so a caller testing many paths against one pattern
- * compiles once rather than once per path.
- * @param pattern - The glob to translate.
- * @returns A regex anchored to the whole path.
- */
 function compileGlobPattern(pattern: string): RegExp {
 	const regexPattern = pattern
-		// A walk reports `cwd`-relative paths and never prefixes them, so a
-		// leading `./` is redundant and matches nothing while it stands. Raw
-		// user config (`testMatch`, `exclude`) reaches here unjoined and is
-		// free to carry one.
 		.replace(LEADING_CURRENT_DIRECTORY, "")
-		// Escape regex metacharacters (incl. `.`) so they match literally; the
-		// glob wildcards `*`/`**` are translated below and are left untouched.
 		.replace(/[.+^${}()|[\]\\]/g, "\\$&")
-		// Both doublestar forms are parked behind placeholders before the
-		// single-star pass, which is what keeps that pass from reaching inside
-		// their expansions. `**` expanded to `.*` in place would have its own
-		// `*` rewritten to `[^/]*` a line later, leaving `.[^/]*` — a trailing
-		// `**` that matches exactly one more segment. `tools/**` then matches
-		// `tools/ab` but not `tools/a/b`.
+		// Park `**` tokens before the single-star pass, which would rewrite the
+		// `*` inside their expansions.
 		.replace(/\*\*\//g, "{{DOUBLESTAR_SLASH}}")
 		.replace(/\*\*/g, "{{DOUBLESTAR}}")
 		.replace(/\*/g, "[^/]*")
@@ -170,20 +113,11 @@ function compileGlobPattern(pattern: string): RegExp {
 	return new RegExp(`^${regexPattern}$`);
 }
 
-/**
- * The cache if it was declared for this pattern, otherwise `undefined` — its
- * walk was filtered for other patterns and would answer this one short.
- * @param cache - The caller's cache, if any.
- * @param pattern - The glob to serve.
- * @returns The cache, or `undefined` when it cannot serve the pattern.
- */
 function servingCache(cache: GlobCache | undefined, pattern: string): GlobCache | undefined {
 	if (cache?.leaves === undefined) {
 		return cache;
 	}
 
-	// An unconstrained pattern needs files the declared walk dropped, so it
-	// cannot read this cache however the declared leaves happen to look.
 	const leaf = leafOf(pattern);
 	return leaf !== undefined && cache.leaves.has(leaf) ? cache : undefined;
 }
@@ -200,22 +134,6 @@ function compileLeafMatcher(
 	return (basename) => matchers.some((matcher) => matcher.test(basename));
 }
 
-/**
- * Every file under `directoryPath`, relative to `baseDirectory`.
- *
- * `keepBasename` decides which files are worth an entry. The traversal itself
- * is irreducible — the patterns reaching here carry `**`, so no prefix or depth
- * prunes it — but what the walk *keeps* need not be every file in the tree.
- * Dropping the rest here is what keeps the returned array proportional to the
- * files a caller asked about rather than to the size of the checkout, build
- * output included.
- * @param options - The directories, filesystem and basename filter.
- * @param options.baseDirectory - The root results are relative to.
- * @param options.directoryPath - The directory to walk.
- * @param options.fileSystem - The filesystem to read.
- * @param options.keepBasename - Keeps a file when true; keeps all if absent.
- * @returns The kept file paths, `/`-separated.
- */
 function walkDirectory({
 	baseDirectory,
 	directoryPath,

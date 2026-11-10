@@ -1,55 +1,40 @@
 import * as path from "node:path";
 
+import { RUN_TIMEOUT_MS } from "../protocol/limits.ts";
 import type { JestResult } from "../types/jest-result-types.ts";
 import type { ChildProcessRunner } from "../utils/child-process.ts";
 import { nodeChildProcessRunner } from "../utils/child-process.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import { nodeFileSystem } from "../utils/file-system.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
+import { isLuauTypeTestFile } from "../utils/test-file-kind.ts";
 import { collectTestDefinitions } from "./collect.ts";
 import { createLocationsIndexMap, type FileInfo, mapErrorsToTests } from "./error-mapping.ts";
 import { spawnLuauCheckAsync } from "./luau-check.ts";
 import { collectLuauTestDefinitions } from "./luau-collect.ts";
 import { parseLuauOutput } from "./luau-parse.ts";
 import { parseTscOutput } from "./parse.ts";
-import { DEFAULT_RUN_TIMEOUT, DEFAULT_SPAWN_TIMEOUT } from "./spawn-checker.ts";
+import { DEFAULT_SPAWN_TIMEOUT } from "./spawn-checker.ts";
 import { spawnTsgoAsync } from "./tsgo.ts";
-import { isLuauTypeTestFile } from "./type-test-pattern.ts";
 import type { CollectedFile, RawErrorsMap } from "./typecheck-types.ts";
 
 /** Inputs for one type-test pass. */
 export interface TypecheckOptions {
-	/** What launches the checker. Defaults to the real launcher. */
+	/** What launches the checker. */
 	childProcess?: ChildProcessRunner;
 	/** The type-test files to check; empty runs tsgo over the project. */
 	files: Array<string>;
-	/**
-	 * Where the type-test sources are read. Defaults to the real filesystem.
-	 */
+	/** Where the type-test sources are read. */
 	fileSystem?: FileSystem;
-	/**
-	 * When `false` (default), checker errors in non-test source files surface
-	 * as source-level failures. When `true`, only errors inside the discovered
-	 * Type Test files are reported.
-	 */
+	/** Report only errors inside Type Test files. */
 	ignoreSourceErrors?: boolean | undefined;
-	/**
-	 * How a package specifier becomes a path. Defaults to CJS resolution off
-	 * this module, which is the only thing that reads `node:module` here.
-	 */
+	/** How a package specifier becomes a path. */
 	resolveModule?: (specifier: string) => string;
 	/** The project root; diagnostics are keyed relative to it. */
 	rootDir: string;
-	/**
-	 * Milliseconds to wait for the checker process to launch before the pass
-	 * throws. The timer is cleared the instant the checker reports it spawned;
-	 * it does not bound the run. Defaults to {@link DEFAULT_SPAWN_TIMEOUT}.
-	 */
+	/** Milliseconds the checker may take to launch. */
 	spawnTimeout?: number | undefined;
-	/**
-	 * Milliseconds the checker *run* may take before it is killed and the pass
-	 * throws. The run-level `timeout`. Defaults to {@link DEFAULT_RUN_TIMEOUT}.
-	 */
+	/** Milliseconds the checker run may take before it is killed. */
 	timeout?: number | undefined;
 	/** The tsconfig tsgo checks against. */
 	tsconfig?: string | undefined;
@@ -59,6 +44,8 @@ export interface TypecheckOptions {
 export type CheckerSpawnOptions = TypecheckOptions & {
 	/** What launches the checker. */
 	childProcess: ChildProcessRunner;
+	/** Where the checker's files are read. */
+	fileSystem: FileSystem;
 	/** Milliseconds the checker may run before it is killed. */
 	runTimeout: number;
 	/** Milliseconds the checker may take to start. */
@@ -79,9 +66,9 @@ interface CheckerRun {
 	checkerFiles: Array<string>;
 	output: string;
 }
+
 /**
- * Run tsgo and `lute check` over the type-test files and map their errors
- * onto the tests.
+ * Type-check the Type Test files and map errors onto the tests.
  * @param options - The files, project root and checker settings.
  * @returns A Jest result with one case per Type Test.
  * @rejects When a checker fails to start or times out.
@@ -90,7 +77,7 @@ export async function runTypecheckAsync(options: TypecheckOptions): Promise<Jest
 	const { fileSystem = nodeFileSystem } = options;
 	const startTime = Date.now();
 
-	const outputs = await runCheckersAsync(options);
+	const outputs = await runCheckersAsync({ ...options, fileSystem });
 
 	const files = new Map<string, FileInfo>();
 	const resolvedErrors: RawErrorsMap = new Map();
@@ -152,11 +139,13 @@ function selectTypeChecker(filePath: string): TypeChecker {
 	return isLuauTypeTestFile(filePath) ? LUAU_CHECKER : TS_CHECKER;
 }
 
-async function runCheckersAsync(options: TypecheckOptions): Promise<Array<CheckerRun>> {
+async function runCheckersAsync(
+	options: TypecheckOptions & { fileSystem: FileSystem },
+): Promise<Array<CheckerRun>> {
 	const spawnOptions = {
 		...options,
 		childProcess: options.childProcess ?? nodeChildProcessRunner,
-		runTimeout: options.timeout ?? DEFAULT_RUN_TIMEOUT,
+		runTimeout: options.timeout ?? RUN_TIMEOUT_MS,
 		spawnTimeout: options.spawnTimeout ?? DEFAULT_SPAWN_TIMEOUT,
 	};
 	const filesByChecker: Map<TypeChecker, Array<string>> = options.files.length > 0

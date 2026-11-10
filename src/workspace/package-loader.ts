@@ -1,14 +1,11 @@
-import * as path from "node:path";
-
-import { loadConfig, type PackageConfigLoader } from "../config/loader.ts";
+import type { PackageConfig, PackageConfigLoader } from "../config/loader.ts";
 import { mergeCliWithConfig } from "../config/merge.ts";
-import type { CliOptions, ResolvedConfig } from "../config/schema.ts";
-import { DEFAULT_CONFIG } from "../config/schema.ts";
-import type { PackageDescriptor } from "../staging/synthesizer-types.ts";
+import type { CliOptions, ResolvedConfig } from "../config/resolved-config.ts";
+import { requireRojoProject, resolveRojoProject } from "../config/rojo-project.ts";
+import type { WorkspacePackageDescriptor } from "../shadow/workspace-prepare-types.ts";
 import type { TimingCollector } from "../timing/orchestration-collector.ts";
 import type { ChildProcessRunner } from "../utils/child-process.ts";
 import type { FileSystem } from "../utils/file-system.ts";
-import { nodeFileSystem } from "../utils/file-system.ts";
 import type { PackageInfo } from "./package-resolver.ts";
 
 const ROJO_PROJECT_DEFAULT = "test.project.json";
@@ -16,23 +13,29 @@ const ROJO_PROJECT_DEFAULT = "test.project.json";
 /** A package with its merged config and synthesizer descriptor. */
 export interface LoadedPackage {
 	/** Descriptor the synthesizer mounts the package from. */
-	descriptor: PackageDescriptor;
+	descriptor: WorkspacePackageDescriptor;
 	/** Package name and directory. */
 	info: PackageInfo;
 	/** Package config merged with the CLI options. */
 	pkgConfig: ResolvedConfig;
 }
 
+/** A package and its config, loaded once for the whole run. */
+export interface WorkspacePackage {
+	/** The package config, as declared and as resolved. */
+	config: PackageConfig;
+	/** Package name and directory. */
+	info: PackageInfo;
+}
+
 /** Packages to load and the seams to load them through. */
-export interface LoadWorkspacePackagesOptions {
+export interface LoadPackageConfigsOptions {
 	/** How a Luau Config that holds code runs lute. */
 	childProcess: ChildProcessRunner;
-	/** CLI options that override each package config. */
-	cli: CliOptions;
-	/** Where each package's config is read from. Defaults to the real one. */
-	fileSystem?: FileSystem;
-	/** Config loader. Defaults to the real one. */
-	loadPackageConfig?: PackageConfigLoader;
+	/** Where each package's config is read from. */
+	fileSystem: FileSystem;
+	/** Config loader. */
+	loadPackageConfig: PackageConfigLoader;
 	/** Packages to load. */
 	packageInfos: Array<PackageInfo>;
 	/** Collector for the per-package config load spans. */
@@ -40,112 +43,72 @@ export interface LoadWorkspacePackagesOptions {
 }
 
 /**
- * Load each package's config, merged with the CLI options.
- * @param options - CLI options, packages, loader and timing.
- * @returns One loaded package per input, in order.
+ * Load each package's config once, for the consensus and for the run.
+ * @param options - Packages, loader and timing.
+ * @returns One package per input, in order.
  * @rejects When a package config fails to load.
  */
-export async function loadWorkspacePackagesAsync({
+export async function loadPackageConfigsAsync({
 	childProcess,
-	cli,
-	fileSystem = nodeFileSystem,
-	loadPackageConfig = loadConfig,
+	fileSystem,
+	loadPackageConfig,
 	packageInfos,
 	timing,
-}: LoadWorkspacePackagesOptions): Promise<Array<LoadedPackage>> {
-	const loaded: Array<LoadedPackage> = [];
+}: LoadPackageConfigsOptions): Promise<Array<WorkspacePackage>> {
+	return timing.profileAsync("loadPackages", async () => {
+		const packages: Array<WorkspacePackage> = [];
+		for (const info of packageInfos) {
+			const config = await timing.profileAsync(`load-config:${info.name}`, async () => {
+				return loadPackageConfig({ childProcess, cwd: info.packageDirectory, fileSystem });
+			});
+			packages.push({ config, info });
+		}
 
-	for (const info of packageInfos) {
-		const fileConfig = await timing.profileAsync(`load-config:${info.name}`, async () => {
-			return loadPackageConfig({ childProcess, cwd: info.packageDirectory, fileSystem });
-		});
-		// The `--testPathPattern` narrow happens per project in
-		// `selectWorkspaceTests`, where the project's resolved Rojo mounts are
-		// in hand; the package config carries the raw FS pattern until then.
-		const packageConfig = mergeCliWithConfig(cli, fileConfig);
-
-		loaded.push({
-			descriptor: buildPackageDescriptor(info, packageConfig),
-			info,
-			pkgConfig: packageConfig,
-		});
-	}
-
-	return loaded;
+		return packages;
+	});
 }
 
 /**
- * A package's rojo project is resolved per-package only; the workspace-root
- * config is intentionally not consulted (see `buildPackageDescriptor`).
- * @param info - Package to resolve for.
- * @param packageConfig - Merged package config.
- * @returns The absolute Rojo project path.
+ * Merge each package config with the CLI options and describe its mount.
+ * @param options - CLI options that override each package config, the file
+ *   system, and the loaded packages.
+ * @returns One loaded package per input, in order.
  */
-function resolveRojoProjectPath(info: PackageInfo, packageConfig: ResolvedConfig): string {
-	return path.resolve(info.packageDirectory, packageConfig.rojoProject ?? ROJO_PROJECT_DEFAULT);
+export function loadWorkspacePackages({
+	cli,
+	fileSystem,
+	packages,
+}: {
+	cli: CliOptions;
+	fileSystem: FileSystem;
+	packages: Array<WorkspacePackage>;
+}): Array<LoadedPackage> {
+	return packages.map(({ config, info }) => {
+		const merged = mergeCliWithConfig(cli, config.resolved);
+		const packageConfig = {
+			...merged,
+			rojoProject: resolveRojoProject({
+				config: { rojoProject: merged.rojoProject, rootDir: info.packageDirectory },
+				defaultFile: ROJO_PROJECT_DEFAULT,
+				fileSystem,
+			}),
+		};
+		return {
+			descriptor: buildPackageDescriptor(info, packageConfig),
+			info,
+			pkgConfig: packageConfig,
+		};
+	});
 }
 
 function buildPackageDescriptor(
 	info: PackageInfo,
 	packageConfig: ResolvedConfig,
-): PackageDescriptor {
-	// Propagate per-pkg coverage knobs to the descriptor so
-	// `prepareWorkspaceCoverage` sees the merged values, not just the
-	// workspace-root config. Per-pkg overrides workspace-root: previously
-	// the workspace-prepare matcher was reading from the root config and
-	// silently dropping per-pkg patterns set via `jest.shared.ts` extends.
-	//
-	// `coveragePathIgnorePatterns` always resolves post-merge — both pkg
-	// and root carry the `DEFAULT_CONFIG` 6-pattern array when nothing
-	// explicit is set. Passing it unconditionally would make every
-	// descriptor "override" the root, dropping a workspace-root custom
-	// value for packages that wanted to inherit it. `resolveConfig`
-	// (loader.ts:42) builds via `Object.assign({}, DEFAULT_CONFIG, ...)`
-	// — when the package's `test` block omits the key, the field keeps
-	// the `DEFAULT_CONFIG` reference verbatim. Reference identity is the
-	// "user explicitly set this" signal; treat ref-equal as "inherit
-	// root" by leaving the descriptor field undefined.
-	const hasExplicitIgnore =
-		packageConfig.coveragePathIgnorePatterns !== DEFAULT_CONFIG.coveragePathIgnorePatterns;
-	// Per-pkg `coverageCache` opt-out drives the workspace cache gate.
-	// Pass it through only when the pkg's value diverges from the
-	// default; an undefined descriptor field means "inherit
-	// DEFAULT_CONFIG" inside `prepareWorkspaceCoverage`.
-	const hasExplicitCoverageCache = packageConfig.coverageCache !== DEFAULT_CONFIG.coverageCache;
-	// `coverageCopyIgnorePatterns` is read the same way — a non-empty
-	// `DEFAULT_CONFIG` array, so reference identity is again the "user set
-	// this" signal.
-	const hasExplicitCopyIgnore =
-		packageConfig.coverageCopyIgnorePatterns !== DEFAULT_CONFIG.coverageCopyIgnorePatterns;
-
-	const descriptor: PackageDescriptor = {
+): WorkspacePackageDescriptor {
+	return {
 		name: info.name,
 		luauRoots: packageConfig.luauRoots,
 		packageDirectory: info.packageDirectory,
-		rojoProjectPath: resolveRojoProjectPath(info, packageConfig),
-		// The same field the report anchors this package's coverage globs on
-		// (`readCoverageSettings`), so a file earns probes exactly when the
-		// report asks about it.
-		rootDir: packageConfig.rootDir,
+		rojoProjectPath: requireRojoProject(packageConfig),
 	};
-	if (hasExplicitCoverageCache) {
-		descriptor.coverageCache = packageConfig.coverageCache;
-	}
-
-	if (hasExplicitCopyIgnore) {
-		descriptor.coverageCopyIgnorePatterns = packageConfig.coverageCopyIgnorePatterns;
-	}
-
-	if (hasExplicitIgnore) {
-		descriptor.coveragePathIgnorePatterns = packageConfig.coveragePathIgnorePatterns;
-	}
-
-	// No DEFAULT_CONFIG entry to compare against — `collectCoverageFrom` is
-	// absent unless the user set it, so the merged value is already the
-	// package's own answer.
-	if (packageConfig.collectCoverageFrom !== undefined) {
-		descriptor.collectCoverageFrom = packageConfig.collectCoverageFrom;
-	}
-
-	return descriptor;
 }

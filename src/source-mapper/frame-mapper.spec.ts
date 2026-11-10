@@ -134,6 +134,27 @@ describe(createFrameMapper, () => {
 			sourceContent: undefined,
 		});
 	});
+
+	it("should leave a frame with no TypeScript origin unmapped even beside a source map", () => {
+		expect.assertions(1);
+
+		const mapper = createFrameMapper(
+			contextWith({
+				pathResolver: fromAny({
+					resolve: () => ({ filePath: "out/m.luau", luauPath: "out/m.luau" }),
+				}),
+				v3Mapper: {
+					mapFromSourceMap: vi.fn<V3Mapper["mapFromSourceMap"]>(() => {
+						return { column: 0, line: 1, source: "m.ts" };
+					}),
+				},
+			}),
+		);
+
+		expect(mapper({ dataModelPath: "ReplicatedStorage.m", line: 3 })).toStrictEqual({
+			luauPath: "out/m.luau",
+		});
+	});
 });
 
 describe(createLineMapper, () => {

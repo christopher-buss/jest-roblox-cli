@@ -1,7 +1,5 @@
 import { enabledDefaultColors } from "tinyrainbow";
 
-// Vitest 4.1.2+ calls disableDefaultColors() when running inside an AI agent
-// (detected via std-env isAgent). This mutates the shared color singleton,
-// which breaks tests that assert on ANSI-colored output. Re-enable here.
+// Vitest 4.1.2+ disables the shared colors inside AI agents; re-enable.
 // Tracking: https://github.com/vitest-dev/vitest/issues/10046
 enabledDefaultColors();

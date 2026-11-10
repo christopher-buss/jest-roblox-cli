@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { expectedDefaultFormatters } from "#test/mocks/config-default-formatters.ts";
 import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
-import type { CliOptions } from "./schema.ts";
+import type { CliOptions } from "./resolved-config.ts";
 import { buildWorkspaceRunOptions } from "./workspace-run-options.ts";
 
 function emptyCli(): CliOptions {
@@ -27,6 +27,15 @@ describe(buildWorkspaceRunOptions, () => {
 		["hiddenDesktop", { hiddenDesktop: true }, { hiddenDesktop: false }],
 		["pluginsDirectory", { pluginsDirectory: "/a" }, { pluginsDirectory: "/b" }],
 		["universeId", { universeId: "1" }, { universeId: "2" }],
+		["bootProbeTimeout", { bootProbeTimeout: 1 }, { bootProbeTimeout: 2 }],
+		["uploadCache", { uploadCache: true }, { uploadCache: false }],
+		["showLuau", { showLuau: true }, { showLuau: false }],
+		["verbose", { test: { verbose: true } }, { test: { verbose: false } }],
+		[
+			"slowTestThreshold",
+			{ test: { slowTestThreshold: 1 } },
+			{ test: { slowTestThreshold: 2 } },
+		],
 		[
 			"workspace.gameOutput",
 			{ workspace: { gameOutput: true } },
@@ -119,6 +128,32 @@ describe(buildWorkspaceRunOptions, () => {
 			});
 
 			expect(result.silent).toBeTrue();
+		});
+
+		it("should read verbose and slowTestThreshold from the test block", () => {
+			expect.assertions(1);
+
+			const config = { test: { slowTestThreshold: 3, verbose: true } };
+			const result = buildWorkspaceRunOptions({
+				cli: emptyCli(),
+				perPackageConfigs: [
+					{ name: "alpha", config },
+					{ name: "beta", config },
+				],
+			});
+
+			expect(result).toMatchObject({ slowTestThreshold: 3, verbose: true });
+		});
+
+		it("should let --no-show-luau override the packages' showLuau", () => {
+			expect.assertions(1);
+
+			const result = buildWorkspaceRunOptions({
+				cli: { showLuau: false },
+				perPackageConfigs: [{ name: "alpha", config: { showLuau: true } }],
+			});
+
+			expect(result.showLuau).toBeFalse();
 		});
 	});
 

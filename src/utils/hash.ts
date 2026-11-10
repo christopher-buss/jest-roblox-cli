@@ -14,7 +14,7 @@ export function hashBuffer(data: buffer.Buffer): string {
 }
 
 /**
- * SHA-256 of a string, for digests over config rather than file bytes.
+ * SHA-256 of a string.
  * @param text - The text to digest.
  * @returns The hex digest.
  */
@@ -23,10 +23,7 @@ export function hashString(text: string): string {
 }
 
 /**
- * SHA-256 of a file's raw bytes. The canonical helper for recording and
- * re-verifying artifact hashes — reads the file as a buffer so the digest
- * matches `hashBuffer` of the same content regardless of encoding.
- *
+ * SHA-256 of a file's raw bytes.
  * @param filePath - The file to digest.
  * @param fileSystem - Where to read it from.
  * @returns The hex digest.
@@ -36,11 +33,7 @@ export function hashFile(filePath: string, fileSystem: FileSystem = nodeFileSyst
 }
 
 /**
- * {@link hashFile} without holding the event loop. The fingerprint passes read
- * tens of thousands of files in a row, which is long enough that a synchronous
- * read starves every timer in the process — the stage block's repaint among
- * them, so a phase that spends its whole life here reports no progress at all.
- *
+ * SHA-256 of a file's raw bytes, read without blocking the event loop.
  * @param filePath - The file to digest.
  * @param fileSystem - Where to read it from.
  * @returns The hex digest.

@@ -5,7 +5,8 @@ import { describe, expect, it } from "vitest";
 import { createTaggedStyles } from "#test/mocks/format-tagged-styles.ts";
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import type { MappedLocation } from "../source-mapper/index.ts";
-import { parseSourceLocation, resolveSourceSnippets } from "./snippets.ts";
+import type { FailureLocation } from "./failure-model.ts";
+import { resolveSourceSnippets } from "./snippets.ts";
 
 function resolve(
 	mappedLocations: Array<MappedLocation>,
@@ -13,11 +14,9 @@ function resolve(
 ): Array<string> {
 	return resolveSourceSnippets({
 		hasSnapshotDiff: false,
-		mappedLocations,
-		message: "failure",
 		showLuau: false,
+		sources: mappedLocations.map((location) => ({ kind: "mapped", location })),
 		styles: createTaggedStyles(),
-		useColor: false,
 		...overrides,
 	});
 }
@@ -27,26 +26,6 @@ function makeSourceFile(extension: "luau" | "ts", content = "return true\n") {
 	const { fileSystem } = createMemoryFileSystem({ [filePath]: content });
 	return { filePath, fileSystem };
 }
-
-describe(parseSourceLocation, () => {
-	it("should parse supported source extensions with optional columns", () => {
-		expect.assertions(1);
-
-		expect([
-			parseSourceLocation("at src/a.ts:25:12"),
-			parseSourceLocation("at src/b.tsx:2"),
-			parseSourceLocation("at src/c.lua:3:4"),
-			parseSourceLocation("at src/d.luau:5"),
-			parseSourceLocation("at src/e.js:6:7"),
-		]).toStrictEqual([
-			{ column: 12, line: 25, path: "src/a.ts" },
-			{ column: undefined, line: 2, path: "src/b.tsx" },
-			{ column: 4, line: 3, path: "src/c.lua" },
-			{ column: undefined, line: 5, path: "src/d.luau" },
-			undefined,
-		]);
-	});
-});
 
 describe(resolveSourceSnippets, () => {
 	it("should return no mapped snippet when the mapped source is unavailable", () => {
@@ -102,7 +81,9 @@ describe(resolveSourceSnippets, () => {
 	it("should return no fallback snippet when its source is unavailable", () => {
 		expect.assertions(1);
 
-		expect(resolve([], { message: "at missing.ts:5" })).toStrictEqual([]);
+		expect(
+			resolve([], { sources: [messageSource({ line: 5, path: "missing.ts" })] }),
+		).toStrictEqual([]);
 	});
 
 	it("should put one blank line before a fallback snippet", () => {
@@ -111,7 +92,12 @@ describe(resolveSourceSnippets, () => {
 		const { filePath, fileSystem } = makeSourceFile("ts", "throw new Error();\n");
 		const relativePath = path.relative(process.cwd(), filePath);
 
-		expect(resolve([], { fileSystem, message: `at ${relativePath}:1` })[0]).toBe("");
+		expect(
+			resolve([], {
+				fileSystem,
+				sources: [messageSource({ line: 1, path: relativePath })],
+			})[0],
+		).toBe("");
 	});
 
 	it("should skip snapshot lookup when the file is unavailable", () => {
@@ -121,6 +107,22 @@ describe(resolveSourceSnippets, () => {
 
 		expect(
 			resolve([], { filePath: "src/example.ts", fileSystem, hasSnapshotDiff: true }),
+		).toStrictEqual([]);
+	});
+
+	it("should not fall back to the snapshot call when a mapped source is unavailable", () => {
+		expect.assertions(1);
+
+		const { fileSystem } = createMemoryFileSystem({
+			"src/example.ts": "const value = 1;\nexpect(value).toMatchSnapshot();",
+		});
+
+		expect(
+			resolve([{ luauLine: 1, luauPath: "missing.luau" }], {
+				filePath: "src/example.ts",
+				fileSystem,
+				hasSnapshotDiff: true,
+			}),
 		).toStrictEqual([]);
 	});
 
@@ -153,23 +155,6 @@ describe(resolveSourceSnippets, () => {
 	});
 });
 
-describe(parseSourceLocation, () => {
-	it("should parse .luau file location", () => {
-		expect.assertions(2);
-
-		const result = parseSourceLocation("path/test.luau:25");
-
-		expect(result!.path).toBe("path/test.luau");
-		expect(result!.line).toBe(25);
-	});
-
-	it("should parse .lua file location with column", () => {
-		expect.assertions(3);
-
-		const result = parseSourceLocation("path/test.lua:10:5");
-
-		expect(result!.path).toBe("path/test.lua");
-		expect(result!.line).toBe(10);
-		expect(result!.column).toBe(5);
-	});
-});
+function messageSource(location: FailureLocation): { kind: "message"; location: FailureLocation } {
+	return { kind: "message", location };
+}

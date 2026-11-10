@@ -1,7 +1,6 @@
 import type { Except } from "type-fest";
 
-import type { CoverageRoot } from "../coverage-pipeline/redirect-path.ts";
-import type { WorkspacePackageDescriptor } from "../coverage-pipeline/workspace-prepare-types.ts";
+import type { PathRedirect } from "./path-redirect.ts";
 
 /** A generated `jest.config` stub and where it mounts. */
 export interface StubMount {
@@ -11,29 +10,16 @@ export interface StubMount {
 	dataModelPath: string;
 }
 
-/**
- * One package to synthesize into the place. The coverage settings it shares
- * with {@link WorkspacePackageDescriptor} are forwarded to
- * `prepareWorkspaceCoverage`; synthesis does not read them.
- */
-export interface PackageDescriptor extends WorkspacePackageDescriptor {
+/** One package to synthesize into the place. */
+export interface PackageDescriptor {
 	/** Staging name under `ServerStorage.__pkg_stage`. */
 	name: string;
-	/**
-	 * When set, $path entries that fall inside any listed `luauRoot` are
-	 * redirected to the corresponding `shadowDir` so the synthesized place
-	 * picks up instrumented sources for this package only. Packages without
-	 * `coverageRoots` use their original $path entries unchanged.
-	 */
-	coverageRoots?: Array<CoverageRoot> | undefined;
-	/**
-	 * The directories between each `coverageRoots` entry and the `$path` mount
-	 * above it, mapped to the shadow's copy of that directory's own loose
-	 * files. A mount named here is demoted: its `$path` moves to the spine copy
-	 * and every directory beneath it becomes an explicit child, so the coverage
-	 * root can be swapped without the mount above serving the originals.
-	 */
-	coverageSpine?: Array<CoverageRoot> | undefined;
+	/** `$path` entries inside a redirect's `from` read its `to` instead. */
+	redirects?: ReadonlyArray<PathRedirect> | undefined;
+	/** The package's rojo project file. */
+	rojoProjectPath: string;
+	/** Mounts to demote so a redirect below them can apply. */
+	spine?: ReadonlyArray<PathRedirect> | undefined;
 	/** `jest.config` stubs to mount into the package's tree. */
 	stubMounts?: Array<StubMount> | undefined;
 }
@@ -57,7 +43,3 @@ interface WrappedPackageSynthesisInput {
 	packages: Array<PackageDescriptor>;
 	wrap?: true | undefined;
 }
-
-// Re-exported rather than restated: synthesis and the redirect read the same
-// pairing, and two copies drift apart the moment one gains a field.
-export { type CoverageRoot } from "../coverage-pipeline/redirect-path.ts";

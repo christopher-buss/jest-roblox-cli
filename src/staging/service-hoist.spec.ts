@@ -1,7 +1,8 @@
+import type { RojoTreeNode } from "@isentinel/rojo-utils";
+
 import { describe, expect, it } from "vitest";
 
 import { configErrorLike } from "#test/mocks/run-config-error.ts";
-import type { RojoTreeNode } from "../types/rojo.ts";
 import type { HoistedService, PackageHoist } from "./service-hoist.ts";
 import { applyHoistedServices, isSameValue, mergeHoistedServices } from "./service-hoist.ts";
 

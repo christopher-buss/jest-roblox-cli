@@ -2,7 +2,6 @@ import * as path from "node:path";
 
 import type { JestResult } from "../types/jest-result-types.ts";
 import type { FileSystem } from "../utils/file-system.ts";
-import { nodeFileSystem } from "../utils/file-system.ts";
 import { makeRelative } from "./shared.ts";
 
 /**
@@ -14,9 +13,9 @@ export interface WriteJsonFileOptions {
 	 */
 	filePath: string;
 	/**
-	 * File system to write through; defaults to Node's.
+	 * File system to write through.
 	 */
-	fileSystem?: FileSystem;
+	fileSystem: FileSystem;
 	/**
 	 * Result to serialize.
 	 */
@@ -52,7 +51,7 @@ export function formatJson(result: JestResult, rootDirectory?: string): string {
  */
 export async function writeJsonFileAsync({
 	filePath,
-	fileSystem = nodeFileSystem,
+	fileSystem,
 	result,
 	rootDir,
 }: WriteJsonFileOptions): Promise<void> {

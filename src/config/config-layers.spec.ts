@@ -9,8 +9,8 @@ import { createLuteChildProcess } from "#test/mocks/lute-child-process.ts";
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import type { ConfigLayer } from "./config-layers.ts";
 import { invokeC12, processExtends } from "./config-layers.ts";
+import type { Config } from "./config-types.ts";
 import type { ConfigLoader } from "./loader.ts";
-import type { Config } from "./schema.ts";
 
 async function extendFixture(
 	layers: NonNullable<Parameters<typeof createConfigFixture>[0]>,

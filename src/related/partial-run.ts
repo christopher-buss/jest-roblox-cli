@@ -1,6 +1,6 @@
 import * as path from "node:path";
 
-import type { CliOptions } from "../config/schema.ts";
+import type { CliOptions } from "../config/resolved-config.ts";
 import type { TimingCollector } from "../timing/orchestration-collector.ts";
 import type { ChangedFilesOptions } from "./changed-files.ts";
 import { readChangedFiles } from "./changed-files.ts";

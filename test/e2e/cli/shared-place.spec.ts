@@ -4,11 +4,12 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { assert, describe, expect, it } from "vitest";
 
+import { descendants, readPlaceTree } from "#test/e2e/cli/place-tree.ts";
 import {
 	isTaskCreatePost,
 	startFakeOpenCloudServerAsync,
 	TASK_CREATE_SUFFIX,
-} from "#test/e2e/cli/fake-open-cloud.ts";
+} from "#test/harness/fake-open-cloud.ts";
 import {
 	buildMixedOutput,
 	buildPassingPayload,
@@ -16,9 +17,7 @@ import {
 	createRbxtsFixtureSandbox,
 	rojoOnPath,
 	runCliAsync,
-} from "#test/e2e/cli/helpers.ts";
-import { descendants, readPlaceTree } from "#test/e2e/cli/place-tree.ts";
-import codeBundleRebuildSource from "../../../luau/code-bundle-rebuild.luau";
+} from "#test/harness/helpers.ts";
 
 const RBXTS_FIXTURE = path.resolve(__dirname, "../fixtures/rbxts-project");
 const PLACE_FILE = "game.rbxlx";
@@ -50,7 +49,7 @@ const EXACT_VERSION_TASKS = `/places/456/versions/1${TASK_CREATE_SUFFIX}`;
 
 describe.skipIf(!rojoOnPath())("an ordinary Open Cloud run on a Shared Place", () => {
 	it("should upload one complete place and pin the probe and the tests to its version", async () => {
-		expect.assertions(8);
+		expect.assertions(5);
 
 		const sandbox = createRbxtsFixtureSandbox(RBXTS_FIXTURE);
 		fs.writeFileSync(path.join(sandbox, "jest.config.ts"), XML_PLACE_CONFIG);
@@ -84,14 +83,9 @@ describe.skipIf(!rojoOnPath())("an ordinary Open Cloud run on a Shared Place", (
 			expect.stringContaining(EXACT_VERSION_TASKS),
 		]);
 
-		// Nothing traveled beside the place.
-		expect(server.binaryInputs).toStrictEqual([]);
-
 		const submit = server.requests[0];
 		assert(submit !== undefined, "expected the run to submit a test task");
 
-		expect(submit.binaryInput).toBeUndefined();
-		expect(submit.script).not.toContain(codeBundleRebuildSource);
 		// A task pinned to its version has no other version to refuse.
 		expect(submit.script).not.toContain(PLACE_MISMATCH);
 	});

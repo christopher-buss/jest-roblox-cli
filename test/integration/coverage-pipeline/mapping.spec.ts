@@ -2,8 +2,8 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
-import type { RawCoverageData } from "#src/index.ts";
-import { createRbxtsFixtureSandbox } from "#test/e2e/cli/helpers.ts";
+import type { RawCoverageData } from "#src/api.ts";
+import { createRbxtsFixtureSandbox } from "#test/harness/helpers.ts";
 import {
 	instrumentFixtureAsync,
 	reportCoverageAsync,
@@ -30,7 +30,9 @@ async function buildCoverageResultAsync(coverage?: RawCoverageData) {
 	const fixtureRoot = createRbxtsFixtureSandbox(RBXTS_FIXTURE);
 	const manifest = await instrumentFixtureAsync(fixtureRoot);
 	const coverageData = coverage ?? buildSyntheticCoverage(manifest.files);
-	return { files: await reportCoverageAsync({ coverageData, rootDirectory: fixtureRoot }) };
+	return {
+		files: await reportCoverageAsync({ coverageData, manifest, rootDirectory: fixtureRoot }),
+	};
 }
 
 describe("coverage mapping pipeline (roblox-ts)", { timeout: 30_000 }, () => {

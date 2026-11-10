@@ -1,19 +1,6 @@
 --!strict
---[[
-	Runtime injection of `jest.config` ModuleScripts, as the per-config hooks
-	`Runner.runProjects` calls.
-
-	Studio + multi-project does NOT write `jest.config.luau` into the user's
-	source tree — the configs travel in the run payload and are materialized
-	into DataModel ModuleScripts just before Jest discovery runs, then
-	destroyed again.
-
-	Whoever runs the configs owns the injection. The stub's source reads the
-	config out of `_G`, and `_G` is per-Luau-VM: a stub the run-mode
-	coordinator created would read an empty `_G` when Jest requires it inside
-	an actor host's VM. So the coordinator injects for a sequential run and
-	each host injects for its own slice, both through this module.
-]]
+-- `_G` is per-VM: inject in the VM that runs the configs, or the stub
+-- reads an empty `_G`.
 local HttpService = game:GetService("HttpService")
 
 local module = {}
@@ -35,40 +22,22 @@ local function findInstance(path: string): Instance
 	return current
 end
 
---[[
-	Build the inject/cleanup hooks for one run of `Runner.runProjects`, plus the
-	belt-and-braces teardown to call once the run returns.
-
-	`runtimeStubMounts[index]` is parallel to the configs the caller passes to
-	`runProjects`: the DataModel paths that config's stubs go under, already
-	filtered by the CLI to exclude mounts where Rojo syncs a user-authored
-	`jest.config.luau`. We must iterate that filtered list rather than
-	`cfg.projects`, or we would inject over the user's canonical config.
-]]
+-- `runtimeStubMounts` is parallel to the configs; iterate it, not
+-- `cfg.projects`, or stubs land over user-authored configs.
 function module.create(runtimeStubMounts: { { string } }): (Hooks, () -> ())
-	-- The session-UUID `_G` key keeps each Run Mode invocation isolated
-	-- against re-entrancy (the assert below fails loud if state from a prior
-	-- run somehow persisted).
+	-- Unique key per run: the assert below catches a persisted session.
 	local sessionKey = "__JEST_ROBLOX_RT_" .. HttpService:GenerateGUID(false):gsub("-", "")
 	assert(_G[sessionKey] == nil, "Session key collision — re-entrant run detected")
 	_G[sessionKey] = { configs = {} }
 
-	-- Per-config record of injected ModuleScripts so cleanup after each
-	-- config's Jest invocation can destroy exactly the stubs that config
-	-- created. Per-config (rather than upfront-all) avoids the nested-project
-	-- contamination path where configs at e.g. `ReplicatedStorage` and
-	-- `ReplicatedStorage/Foo` would both have stubs in DataModel
-	-- simultaneously and Jest's parent-traversal could resolve the wrong one.
+	-- Per config: nested mounts with stubs present at once mislead Jest.
 	local injectedPerConfig: { [number]: { Instance } } = {}
 
 	local function injectStubsForConfig(cfg: any, configIndex: number, injectionPaths: { string })
 		local sessionTable = _G[sessionKey]
 		local mountConfigs = {}
 		sessionTable.configs[configIndex] = mountConfigs
-		-- Register the slot BEFORE parenting any stub. If a later mount
-		-- throws (findInstance miss, structural collision), the partially-
-		-- parented stubs are already tracked so cleanup can find and destroy
-		-- them. Without this, an early stub would linger in DataModel.
+		-- Register the slot before parenting, so cleanup finds partial stubs.
 		local injected: { Instance } = {}
 		injectedPerConfig[configIndex] = injected
 
@@ -93,8 +62,7 @@ function module.create(runtimeStubMounts: { { string } }): (Hooks, () -> ())
 				mountIndex
 			)
 			stub.Parent = leaf
-			-- Record immediately after parenting so a subsequent mount's
-			-- failure does not strand this one.
+			-- Record right after parenting, so a later failure does not strand it.
 			table.insert(injected, stub)
 		end
 	end

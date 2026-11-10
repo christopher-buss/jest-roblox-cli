@@ -1,8 +1,25 @@
+import type { RojoProject } from "@isentinel/rojo-utils";
+
+import * as path from "node:path";
 import process from "node:process";
 import { describe, expect, it } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
+import type { TsconfigMapping } from "../tsconfig/tsconfig-mappings.ts";
+import type { PathResolver } from "./path-resolver.ts";
 import { createPathResolver, luauInitToIndex } from "./path-resolver.ts";
+
+function snapshotResolver({
+	mappings,
+	rojoProject,
+}: {
+	mappings?: Array<TsconfigMapping>;
+	rojoProject: RojoProject;
+}): { resolve: PathResolver["resolveSnapshot"] } {
+	const { fileSystem } = createMemoryFileSystem();
+	const resolver = createPathResolver(rojoProject, { fileSystem, mappings });
+	return { resolve: (virtualPath) => resolver.resolveSnapshot(virtualPath) };
+}
 
 function createSharedOutResolver(): ReturnType<typeof createPathResolver> {
 	const { fileSystem } = createMemoryFileSystem();
@@ -33,7 +50,7 @@ describe(createPathResolver, () => {
 		const mapping = { outDir: "out", rootDir: "src" };
 		const resolver = createPathResolver(
 			{ name: "test", tree: { Module: { $path: "out/module/init.luau" } } },
-			{ mappings: [mapping] },
+			{ fileSystem: createMemoryFileSystem().fileSystem, mappings: [mapping] },
 		);
 
 		expect(resolver.resolve("Module")).toStrictEqual({
@@ -408,5 +425,273 @@ describe(luauInitToIndex, () => {
 		expect.assertions(1);
 
 		expect(luauInitToIndex("src/shared/definite.spec")).toBe("src/shared/definite.spec");
+	});
+});
+
+describe("resolveSnapshot", () => {
+	it("should preserve a directly mounted snapshot filename", () => {
+		expect.assertions(1);
+
+		const resolver = snapshotResolver({
+			rojoProject: {
+				name: "test",
+				tree: { Snapshot: { $path: "src/__snapshots__/suite.snap.luau" } },
+			},
+		});
+
+		expect(resolver.resolve("Snapshot")).toStrictEqual({
+			filePath: "src/__snapshots__/suite.snap.luau",
+		});
+	});
+
+	it("should resolve a mount whose instance name ends with a dollar sign", () => {
+		expect.assertions(1);
+
+		const resolver = snapshotResolver({
+			rojoProject: { name: "test", tree: { Cash$: { $path: "out/cash" } } },
+		});
+
+		expect(resolver.resolve("Cash$/__snapshots__/wallet.snap.luau")).toStrictEqual({
+			filePath: "out/cash/__snapshots__/wallet.snap.luau",
+		});
+	});
+
+	it("should resolve a snapshot under an optional mount", () => {
+		expect.assertions(1);
+
+		const resolver = snapshotResolver({
+			rojoProject: { name: "test", tree: { Shared: { $path: { optional: "out/shared" } } } },
+		});
+
+		expect(resolver.resolve("Shared/__snapshots__/a.snap.luau")).toStrictEqual({
+			filePath: "out/shared/__snapshots__/a.snap.luau",
+		});
+	});
+
+	it("should resolve virtual path to filesystem path", () => {
+		expect.assertions(1);
+
+		const resolver = snapshotResolver({
+			rojoProject: {
+				name: "test",
+				tree: {
+					ReplicatedStorage: {
+						$path: "out/shared",
+					},
+				},
+			},
+		});
+
+		expect(
+			resolver.resolve("ReplicatedStorage/components/__snapshots__/Button.spec.snap.luau")!
+				.filePath,
+		).toBe("out/shared/components/__snapshots__/Button.spec.snap.luau");
+	});
+
+	it("should replace outDir with rootDir for TypeScript projects", () => {
+		expect.assertions(1);
+
+		const resolver = snapshotResolver({
+			mappings: [{ outDir: "out", rootDir: "src" }],
+			rojoProject: {
+				name: "test",
+				tree: {
+					ReplicatedStorage: {
+						$path: "out/shared",
+					},
+				},
+			},
+		});
+
+		expect(
+			resolver.resolve("ReplicatedStorage/components/__snapshots__/Button.spec.snap.luau")!
+				.filePath,
+		).toBe("src/shared/components/__snapshots__/Button.spec.snap.luau");
+	});
+
+	it("should match longest prefix when multiple mappings exist", () => {
+		expect.assertions(2);
+
+		const resolver = snapshotResolver({
+			mappings: [{ outDir: "out", rootDir: "src" }],
+			rojoProject: {
+				name: "test",
+				tree: {
+					ReplicatedStorage: {
+						$path: "out/shared",
+						client: {
+							$path: "out/client",
+						},
+					},
+				},
+			},
+		});
+
+		expect(
+			resolver.resolve("ReplicatedStorage/client/__snapshots__/Foo.spec.snap.luau")!.filePath,
+		).toBe("src/client/__snapshots__/Foo.spec.snap.luau");
+
+		expect(
+			resolver.resolve("ReplicatedStorage/other/__snapshots__/Bar.spec.snap.luau")!.filePath,
+		).toBe("src/shared/other/__snapshots__/Bar.spec.snap.luau");
+	});
+
+	it("should not replace outDir when it appears as substring in basePath", () => {
+		expect.assertions(1);
+
+		const resolver = snapshotResolver({
+			mappings: [{ outDir: "out", rootDir: "src" }],
+			rojoProject: {
+				name: "test",
+				tree: {
+					ReplicatedStorage: {
+						// "output" contains "out" but is a different directory
+						$path: "output/client",
+					},
+				},
+			},
+		});
+
+		// cspell:ignore srcput
+		// Without boundary guard, replace("out","src") would corrupt to
+		// "srcput/client/..."
+		expect(
+			resolver.resolve("ReplicatedStorage/lib/__snapshots__/foo.spec.snap.luau")!.filePath,
+		).toBe("output/client/lib/__snapshots__/foo.spec.snap.luau");
+	});
+
+	it("should not match prefix that is substring of path segment", () => {
+		expect.assertions(1);
+
+		const resolver = snapshotResolver({
+			rojoProject: {
+				name: "test",
+				tree: {
+					Rep: {
+						$path: "out/rep",
+					},
+				},
+			},
+		});
+
+		// "Rep" is a string prefix of "ReplicatedStorage" but not a segment match
+		expect(
+			resolver.resolve("ReplicatedStorage/lib/__snapshots__/foo.spec.snap.luau"),
+		).toBeUndefined();
+	});
+
+	it("should return undefined for unknown path", () => {
+		expect.assertions(1);
+
+		const resolver = snapshotResolver({
+			rojoProject: {
+				name: "test",
+				tree: {
+					ReplicatedStorage: {
+						$path: "out/shared",
+					},
+				},
+			},
+		});
+
+		expect(resolver.resolve("Workspace/unknown/snap.luau")).toBeUndefined();
+	});
+
+	it("should return the compiled copy for TypeScript paths", () => {
+		expect.assertions(1);
+
+		const resolver = snapshotResolver({
+			mappings: [{ outDir: "out", rootDir: "src" }],
+			rojoProject: {
+				name: "test",
+				tree: {
+					ReplicatedStorage: {
+						$path: "out/shared",
+					},
+				},
+			},
+		});
+
+		expect(
+			resolver.resolve("ReplicatedStorage/components/__snapshots__/Button.spec.snap.luau")!
+				.outPath,
+		).toBe("out/shared/components/__snapshots__/Button.spec.snap.luau");
+	});
+
+	it("should preserve rootDir prefix when rootDir is '.'", () => {
+		expect.assertions(1);
+
+		// tsconfig `rootDirs: ["src", "test"]` collapses to rootDir "." in
+		// parseTsconfigMappings. The resolved filePath must keep that prefix
+		// verbatim so the dual-write step can invert the mapping symmetrically.
+		const resolver = snapshotResolver({
+			mappings: [{ outDir: "out-test", rootDir: "." }],
+			rojoProject: {
+				name: "test",
+				tree: {
+					ReplicatedStorage: {
+						"shared-tests": {
+							$path: "out-test/src/shared",
+						},
+					},
+				},
+			},
+		});
+
+		expect(
+			resolver.resolve("ReplicatedStorage/shared-tests/foo/__snapshots__/Bar.spec.snap.luau")!
+				.filePath,
+		).toBe("./src/shared/foo/__snapshots__/Bar.spec.snap.luau");
+	});
+
+	it("should return no compiled copy when basePath matches no outDir", () => {
+		expect.assertions(1);
+
+		const resolver = snapshotResolver({
+			mappings: [{ outDir: "out", rootDir: "src" }],
+			rojoProject: {
+				name: "test",
+				tree: {
+					ReplicatedStorage: {
+						$path: "other/shared",
+					},
+				},
+			},
+		});
+
+		expect(resolver.resolve("ReplicatedStorage/foo/snap.luau")!.outPath).toBeUndefined();
+	});
+
+	it("should resolve mounts against the rojo project directory", () => {
+		expect.assertions(1);
+
+		const { fileSystem } = createMemoryFileSystem();
+		const rojoDirectory = path.resolve("project", "rojo");
+		const posixDirectory = rojoDirectory.replaceAll("\\", "/");
+		const resolver = createPathResolver(
+			{ name: "test", tree: { Shared: { $path: "out/shared" } } },
+			{
+				fileSystem,
+				mappings: [{ outDir: "out", rootDir: "src" }],
+				rootDirectory: rojoDirectory,
+			},
+		);
+
+		expect(resolver.resolveSnapshot("Shared/__snapshots__/a.snap.luau")).toStrictEqual({
+			filePath: `${posixDirectory}/src/shared/__snapshots__/a.snap.luau`,
+			outPath: `${posixDirectory}/out/shared/__snapshots__/a.snap.luau`,
+		});
+	});
+
+	it("should join a backslash-separated snapshot path", () => {
+		expect.assertions(1);
+
+		const resolver = snapshotResolver({
+			rojoProject: { name: "test", tree: { Shared: { $path: "out/shared" } } },
+		});
+
+		expect(resolver.resolve("Shared\\__snapshots__\\a.snap.luau")).toStrictEqual({
+			filePath: "out/shared/__snapshots__/a.snap.luau",
+		});
 	});
 });
