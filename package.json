@@ -100,7 +100,7 @@
 		"ws": "8.21.3"
 	},
 	"devDependencies": {
-		"@isentinel/eslint-config": "6.2.0",
+		"@isentinel/eslint-config": "6.4.0",
 		"@isentinel/luau-ast": "workspace:*",
 		"@isentinel/roblox-runner": "workspace:*",
 		"@isentinel/roblox-ts": "4.0.11",
@@ -139,8 +139,8 @@
 		"jscpd": "5.4.1",
 		"knip": "6.29.0",
 		"memfs": "4.68.1",
-		"oxlint": "1.87.0",
-		"oxlint-tsgolint": "7.0.2003",
+		"oxlint": "1.93.0",
+		"oxlint-tsgolint": "7.0.2006",
 		"publint": "0.3.24",
 		"remeda": "2.52.0",
 		"tsdown": "0.23.0",

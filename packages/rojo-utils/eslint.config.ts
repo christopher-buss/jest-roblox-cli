@@ -23,8 +23,11 @@ export default isentinel(
 		},
 		roblox: false,
 		rules: {
+			"flawless/max-comment-length": "off",
+			"flawless/no-em-dash": "off",
 			"flawless/no-redundant-type-annotation": "off",
 			"flawless/no-shared-mocks": "off",
+			"flawless/no-unknown-parameters": "off",
 			"flawless/prefer-mock-throw": "off",
 			"flawless/prefer-vitest-local-context": "off",
 			"package-json/restrict-private-properties": "off",

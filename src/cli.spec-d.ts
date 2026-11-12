@@ -16,6 +16,7 @@ describe("cli entry point types", () => {
 	});
 
 	it("should make every dependency optional", () => {
+		// oxlint-disable-next-line typescript/no-generated-empty-object-type -- an empty dependency object is the case under test
 		expectTypeOf<Record<never, never>>().toExtend<CliDependencies>();
 	});
 });

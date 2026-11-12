@@ -10,20 +10,14 @@ The package is not published to npm. Packages in the same workspace depend on it
 by name and import its entry point:
 
 ```ts
-import {
-	loadRojoProject,
-	mapFsPathToDataModel,
-	RojoResolver,
-} from "@isentinel/rojo-utils";
+import { loadRojoProject, mapFsPathToDataModel, RojoResolver } from "@isentinel/rojo-utils";
 
 const projectPath = "/workspace/game/default.project.json";
 const project = loadRojoProject(projectPath);
 const instance = mapFsPathToDataModel("out/shared/util.luau", project.tree);
 
 const resolver = RojoResolver.fromPath(projectPath);
-const path = resolver.getRbxPathFromFilePath(
-	"/workspace/game/out/shared/util.luau",
-);
+const path = resolver.getRbxPathFromFilePath("/workspace/game/out/shared/util.luau");
 const restored = RojoResolver.fromState(resolver.getState());
 ```
 

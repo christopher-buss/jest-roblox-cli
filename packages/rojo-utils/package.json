@@ -50,7 +50,7 @@
 		"arktype": "2.2.3"
 	},
 	"devDependencies": {
-		"@isentinel/eslint-config": "6.2.0",
+		"@isentinel/eslint-config": "6.4.0",
 		"@isentinel/tsconfig": "2.0.0",
 		"@stryker-mutator/core": "10.1.1",
 		"@stryker-mutator/typescript-checker": "10.1.1",

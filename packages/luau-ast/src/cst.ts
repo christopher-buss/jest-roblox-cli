@@ -380,19 +380,15 @@ function findEdge<Value>(
 	values: ReadonlyArray<Value>,
 	{ edgeOf, isLast }: { edgeOf: (value: Value) => Token | undefined; isLast: boolean },
 ): Token | undefined {
-	let token: Token | undefined;
-	function isEdge(value: Value): boolean {
-		token = edgeOf(value);
-		return token !== undefined;
+	const ordered = isLast ? values.toReversed() : values;
+	for (const value of ordered) {
+		const token = edgeOf(value);
+		if (token !== undefined) {
+			return token;
+		}
 	}
 
-	if (isLast) {
-		values.findLast(isEdge);
-	} else {
-		values.find(isEdge);
-	}
-
-	return token;
+	return undefined;
 }
 
 function edgeToken(node: CstNode, { isLast }: { isLast: boolean }): Token | undefined {

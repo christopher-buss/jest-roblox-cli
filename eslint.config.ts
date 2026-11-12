@@ -125,4 +125,10 @@ export default isentinel(
 			"antfu/no-top-level-await": "off",
 		},
 	},
+	{
+		name: "project/pending-preset-rules",
+		rules: {
+			"jsdoc/require-jsdoc": "off",
+		},
+	},
 );

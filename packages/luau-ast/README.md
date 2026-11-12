@@ -66,14 +66,11 @@ zero-based UTF-16 columns.
 ```ts
 import { loadLuauCompiler } from "@isentinel/luau-ast/compiler";
 
-const result = loadLuauCompiler().compile(
-	"local value = input()\nreturn value",
-	{
-		bytecodeText: true,
-		debugLevel: 2,
-		optimizationLevel: 1,
-	},
-);
+const result = loadLuauCompiler().compile("local value = input()\nreturn value", {
+	bytecodeText: true,
+	debugLevel: 2,
+	optimizationLevel: 1,
+});
 if (result.ok) {
 	console.log(result.frames, result.bytecodeText);
 } else {
@@ -91,10 +88,7 @@ constant Instance path (`script`, `.Parent`, `.Name`, `["Name"]`,
 as `dynamic`. Other calls read as `undefined`.
 
 ```ts
-import {
-	createStringRequireResolver,
-	loadLuauParser,
-} from "@isentinel/luau-ast";
+import { createStringRequireResolver, loadLuauParser } from "@isentinel/luau-ast";
 
 import fs from "node:fs";
 
