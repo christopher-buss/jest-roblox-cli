@@ -64,7 +64,7 @@
 		"@total-typescript/shoehorn": "0.1.2",
 		"@types/node": "24.12.3",
 		"@typescript/native": "npm:typescript@7.0.2",
-		"@vitest/coverage-v8": "5.0.5",
+		"@vitest/coverage-v8": "5.1.0",
 		"@vitest/eslint-plugin": "1.6.27",
 		"dependency-cruiser": "18.4.0",
 		"eslint": "10.9.0",
@@ -76,7 +76,7 @@
 		"knip": "6.29.0",
 		"tsdown": "0.23.0",
 		"typescript": "6.0.3",
-		"vitest": "5.0.5"
+		"vitest": "5.1.0"
 	},
 	"packageManager": "pnpm@12.16.0+sha512.e9ccc91a0b8d52da297c16841f9ee05f3ddd631bd757ef26a211687d4a38de653c614453649294438c58be74c2ba62d53e633a4e153708c012296d0f3ee27b36",
 	"engines": {
