@@ -192,12 +192,8 @@ class RojoWalker {
 			return { isDirectory, isFile };
 		}
 
-		// Symlinks (both flags false), unknown-type entries on NFS/SMB/FUSE
-		// mounts and some Windows network drives, and NTFS junctions on Node
-		// versions that don't classify them: resolve and stat the target so we
-		// still discover nested *.project.json files and walkable directories. A
-		// broken symlink throws ENOENT here — warn and skip rather than crash the
-		// whole walk.
+		// Symlinks, NTFS junctions, and entries on network or FUSE mounts can
+		// report neither type. A broken symlink throws ENOENT: warn and skip it.
 		const childPath = path.join(directory, entry.name);
 		try {
 			const stat = this.fileSystem.statSync(this.cachedRealpath(childPath));
@@ -233,12 +229,8 @@ class RojoWalker {
 	private parsePath(itemPath: string): void {
 		const luauPath = convertToLuau(itemPath);
 
-		// A $path pointing straight at a *.project.json file embeds that nested
-		// project at the current rbxPath (Rojo composes projects this way), the
-		// same as a directory whose default.project.json is discovered below.
-		// Without this, the .json extension routes the file into
-		// filePathToRbxPathMap as an opaque leaf and the nested tree's mounts
-		// (its partitions, its @rbxts mounts) are never read.
+		// Must precede the extension check: `.json` is a module extension, so a
+		// nested project would map as a leaf and its mounts would go unread.
 		if (isRojoProjectFileName(path.basename(luauPath))) {
 			this.parseConfig(luauPath, true);
 			return;
@@ -363,13 +355,9 @@ function parseRojoConfig(value: JSONValue | undefined): RojoFile | undefined {
 	rojoFileSchema ??= type({
 		"name": "string",
 		"servePort?": "number",
-		// `parseTree` dereferences `$path` and `$className` straight off the
-		// value this returns, so the schema has to earn the `RojoFile` claim for
-		// them — a `$path` of `42` otherwise types as `string | {optional}` and
-		// reaches `path.resolve` as undefined. Members are left to `isRojoTree`;
-		// a tree's key space mixes `$`-metadata with child nodes, so arktype
-		// cannot recurse through it without rejecting the `$` keys Rojo adds
-		// that this fork does not model.
+		// `parseTree` reads `$path` and `$className` off this value unchecked.
+		// Members stay with `isRojoTree`: arktype would reject `$` keys this fork
+		// does not model.
 		"tree": getTreeSchema(),
 	}).as<RojoFile>();
 

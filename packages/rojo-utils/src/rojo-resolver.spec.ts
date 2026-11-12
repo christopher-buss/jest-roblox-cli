@@ -773,12 +773,6 @@ describe("walker parity snapshot", () => {
 	}
 
 	it("should capture combined partition / nested / overlap / init shapes", () => {
-		// One synth tree exercising the interactions the isolated tests miss:
-		// a sibling *.project.json next to a sibling directory both contributing
-		// partitions, a nested default.project.json reached via $path, init
-		// stripping, and a direct module-file mapping. The snapshot pins the
-		// resolver-state shape; the trailing expectations back the comment's
-		// claim by asserting init/module resolve via the partition fallback.
 		expect.assertions(3);
 
 		const { directory, fileSystem } = makeFileSystem({

@@ -82,12 +82,8 @@ function nestedProjectPath({
 	fileSystem: FileSystem;
 	value: string;
 }): string | undefined {
-	// Resolve a `$path` string to the nested project file it should inline, or
-	// undefined when the path is a plain source mount. Rojo treats a `$path`
-	// pointing at a directory containing `default.project.json` as a nested
-	// project (e.g. `$path: ".."` into a package root), so honor that alongside
-	// explicit `*.project.json` references.
-	// Native separators: this path is reported back in `projectFiles`.
+	// Rojo treats a `$path` to a directory holding `default.project.json` as a
+	// nested project. Native separators: this path is reported in `projectFiles`.
 	const mountPath = resolveNativeMountPath(currentDirectory, value);
 	if (value.endsWith(".project.json")) {
 		return mountPath;
