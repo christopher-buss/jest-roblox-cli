@@ -267,6 +267,92 @@ describe("luau configs through loadConfig", () => {
 		expect(config.verbose).toBeFalse();
 	});
 
+	it("should let a luau config extend a script config", async () => {
+		expect.assertions(2);
+
+		const directory = createProject({
+			"base.mjs": "export default { timeout: 2000, test: { verbose: true } };\n",
+			"jest.config.luau": 'return { extends = "./base.mjs", test = { verbose = false } }\n',
+		});
+
+		const config = await loadConfig({ cwd: directory });
+
+		expect(config.timeout).toBe(2000);
+		expect(config.verbose).toBeFalse();
+	});
+
+	it("should let a luau config extend a ts config", async () => {
+		expect.assertions(2);
+
+		const directory = createProject({
+			"base.ts": "export default { timeout: 2500, test: { verbose: true } };\n",
+			"jest.config.luau": 'return { extends = "./base.ts", test = { verbose = false } }\n',
+		});
+
+		const config = await loadConfig({ cwd: directory });
+
+		expect(config.timeout).toBe(2500);
+		expect(config.verbose).toBeFalse();
+	});
+
+	it("should anchor rootDir on the innermost file of a nested cross-format chain", async () => {
+		expect.assertions(3);
+
+		const directory = createProject({
+			"app/jest.config.luau": 'return { extends = "../middle/base.ts" }\n',
+			"inner/base.luau": 'return { rootDir = "root", timeout = 4000 }\n',
+			"middle/base.ts":
+				'export default { extends: "../inner/base.luau", test: { verbose: true } };\n',
+		});
+
+		const config = await loadConfig({ cwd: path.join(directory, "app") });
+
+		expect(config.rootDir).toBe(path.join(directory, "inner", "root"));
+		expect(config.timeout).toBe(4000);
+		expect(config.verbose).toBeTrue();
+	});
+
+	it("should let a script config extend a plain-data luau config", async () => {
+		expect.assertions(2);
+
+		const directory = createProject({
+			"base.luau": "return { timeout = 3000, test = { verbose = true } }\n",
+			"jest.config.ts":
+				'export default { extends: "./base.luau", test: { verbose: false } };\n',
+		});
+
+		const config = await loadConfig({ cwd: directory });
+
+		expect(config.timeout).toBe(3000);
+		expect(config.verbose).toBeFalse();
+	});
+
+	it("should anchor a relative rootDir on the extended luau config's directory", async () => {
+		expect.assertions(1);
+
+		const directory = createProject({
+			"pkg/jest.config.mjs": 'export default { extends: "../shared/base.luau" };\n',
+			"shared/base.luau": 'return { rootDir = "root" }\n',
+		});
+
+		const config = await loadConfig({ cwd: path.join(directory, "pkg") });
+
+		expect(config.rootDir).toBe(path.join(directory, "shared", "root"));
+	});
+
+	it("should detect an extends cycle across formats", async () => {
+		expect.assertions(1);
+
+		const directory = createProject({
+			"jest.config.luau": 'return { extends = "./middle.mjs" }\n',
+			"middle.mjs": 'export default { extends: "./jest.config.luau" };\n',
+		});
+
+		await expect(loadConfig({ cwd: directory })).rejects.toThrow(
+			`Circular extends detected: ${path.join(directory, "jest.config.luau")} -> ${path.join(directory, "middle.mjs")} -> ${path.join(directory, "jest.config.luau")}.`,
+		);
+	});
+
 	it("should load a luau project config a luau top-level config names", async () => {
 		expect.assertions(1);
 

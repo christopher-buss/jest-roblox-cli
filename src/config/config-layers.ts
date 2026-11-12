@@ -4,6 +4,7 @@ import { createRequire } from "node:module";
 import * as path from "node:path";
 
 import type { FileSystem } from "../utils/file-system.ts";
+import { isAbsolutePath, normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import { isSeaBuild } from "../utils/sea.ts";
 import type { Config } from "./config-types.ts";
 import { validateConfigLayer } from "./config-validation.ts";
@@ -201,7 +202,7 @@ function merger(...sources: Array<Config | null | undefined>): Config {
  */
 function anchorWorkspaceRoot(config: Config, baseDirectory: string): Config {
 	const { workspace } = config;
-	if (workspace?.root === undefined || path.isAbsolute(workspace.root)) {
+	if (workspace?.root === undefined || isAbsolutePath(normalizeWindowsPath(workspace.root))) {
 		return config;
 	}
 
@@ -209,6 +210,19 @@ function anchorWorkspaceRoot(config: Config, baseDirectory: string): Config {
 		...config,
 		workspace: { ...workspace, root: path.resolve(baseDirectory, workspace.root) },
 	};
+}
+
+function anchorLayerRootDirectory(config: Config, configFile: string | undefined): Config {
+	const { rootDir } = config;
+	if (
+		configFile === undefined ||
+		rootDir === undefined ||
+		isAbsolutePath(normalizeWindowsPath(rootDir))
+	) {
+		return config;
+	}
+
+	return { ...config, rootDir: path.resolve(path.dirname(configFile), rootDir) };
 }
 
 /**
@@ -246,8 +260,9 @@ async function loadExtendsLayers({
 			});
 		}
 
-		const extendedConfig = await processExtends({ context, result: extendedResult, visited });
-		layers.push(extendedConfig);
+		const { config, configFile } = extendedResult;
+		const result = { ...extendedResult, config: anchorLayerRootDirectory(config, configFile) };
+		layers.push(await processExtends({ context, result, visited }));
 	}
 
 	return layers;

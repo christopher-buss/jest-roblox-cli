@@ -86,6 +86,72 @@ describe(processExtends, () => {
 
 		expect(result.workspace!.root).toBe(rootDirectory);
 	});
+
+	it("should anchor an extended layer's relative rootDir to its file", async () => {
+		expect.assertions(1);
+
+		const { rootDirectory } = createConfigFixture();
+		const result = await extendFixture({
+			"jest.config.mjs": { extends: "./shared/base.mjs" },
+			"shared/base.mjs": { rootDir: "src" },
+		});
+
+		expect(result.rootDir).toBe(path.join(rootDirectory, "shared", "src"));
+	});
+
+	it("should keep the entry's relative rootDir as written", async () => {
+		expect.assertions(1);
+
+		const result = await extendFixture({
+			"base.mjs": { rootDir: path.resolve("/absolute-root") },
+			"jest.config.mjs": { extends: "./base.mjs", rootDir: "own" },
+		});
+
+		expect(result.rootDir).toBe("own");
+	});
+
+	it("should keep an extended layer's absolute rootDir as written", async () => {
+		expect.assertions(1);
+
+		const absoluteRoot = path.resolve("/absolute-root");
+		const result = await extendFixture({
+			"base.mjs": { rootDir: absoluteRoot },
+			"jest.config.mjs": { extends: "./base.mjs" },
+		});
+
+		expect(result.rootDir).toBe(absoluteRoot);
+	});
+
+	it("should keep an extended layer's drive-letter rootDir as written", async () => {
+		expect.assertions(1);
+
+		const result = await extendFixture({
+			"base.mjs": { rootDir: "C:/drive-root" },
+			"jest.config.mjs": { extends: "./base.mjs" },
+		});
+
+		expect(result.rootDir).toBe("C:/drive-root");
+	});
+
+	it("should keep the rootDir of an extended layer that names no file", async () => {
+		expect.assertions(1);
+
+		const { fileSystem, rootDirectory } = createConfigFixture({
+			"jest.config.mjs": { extends: "./base.mjs" },
+		});
+		const configLoader: ConfigLoader = fromAny(async () => ({ config: { rootDir: "src" } }));
+
+		const result = await processExtends({
+			context: { childProcess: createLuteChildProcess({}), configLoader, fileSystem },
+			result: {
+				config: { extends: "./base.mjs" },
+				configFile: path.resolve(rootDirectory, "jest.config.mjs"),
+			},
+			visited: new Set(),
+		});
+
+		expect(result.rootDir).toBe("src");
+	});
 });
 
 describe(invokeC12, () => {

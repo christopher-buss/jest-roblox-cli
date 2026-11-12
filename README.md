@@ -309,6 +309,11 @@ failure. To run tests filtered to a file named `setup`, write the filter as
 `rootDir` or `workspace.root` is relative to the Luau config's directory, as in
 other formats. Mergeable fields cannot take the function form in Luau.
 
+`extends` can mix formats: a Luau config can extend a `.ts` or `.mjs` base, and
+a `.ts` config can extend a `.luau` base. A relative `rootDir` in an extended
+config is relative to that config's directory. An `extends` entry for a Luau
+base must include the `.luau` extension.
+
 A string entry in `test.projects` can also point at a directory with a
 `jest.config.luau` project config, which holds the per-project `test` fields at
 its top level (`displayName`, `testMatch`, …). It is read the same way. Rojo
