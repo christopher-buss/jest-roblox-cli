@@ -166,6 +166,7 @@ export type Config = {
 	color: boolean?,
 	coverageCache: boolean?,
 	extends: (string | { string })?,
+	forceRerunTriggers: { string }?,
 	formatters: { FormatterEntry }?,
 	gameOutput: (string | true)?,
 	hiddenDesktop: boolean?,

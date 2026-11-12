@@ -13,7 +13,7 @@ import { withRojoProject } from "../config/rojo-project.ts";
 import { selectProjectScopes } from "../discovery/project-selector.ts";
 import { dispatchJobsAsync } from "../executor/dispatch-jobs.ts";
 import type { RunProgress } from "../progress/run-progress.ts";
-import { resolvePartialRun } from "../related/partial-run.ts";
+import { resolveRelatedRun } from "../related/related-run.ts";
 import type { ProjectResult, RunResult } from "../results/run-result-types.ts";
 import { runProjectPreflight } from "../staging/preflight.ts";
 import { stubCacheRoot } from "../staging/stage-stubs.ts";
@@ -36,7 +36,7 @@ import { buildProjectRunPolicy } from "./project-run-policy.ts";
 import type { RunDiscovery, TestPlan } from "./run-plan.ts";
 import { buildTestPlan } from "./run-plan.ts";
 import type { RunSeams } from "./seams.ts";
-import { resolveRunProjectsAsync } from "./single-projects.ts";
+import { readRunRojoTree, resolveRunProjectsAsync } from "./single-projects.ts";
 import type { StagedRun } from "./staging.ts";
 import { stageRunAsync } from "./staging.ts";
 
@@ -243,7 +243,14 @@ function beginRun({
 		cliFiles: cli.files,
 		cliTypecheck,
 		filesByProject,
-		partialRun: resolvePartialRun({ cli, rootDirectory: rootConfig.rootDir, seams, timing }),
+		partialRun: resolveRelatedRun({
+			cli,
+			fileSystem,
+			readRojoTree: () => readRunRojoTree({ cliTypecheck, fileSystem, rootConfig }),
+			rootConfig,
+			seams,
+			timing,
+		}),
 		projects,
 		rootConfig,
 	};

@@ -230,6 +230,12 @@ export interface Config {
 	coverageCache?: boolean;
 	/** Config files to inherit from, relative to this file. */
 	extends?: Array<string> | string;
+	/**
+	 * Globs relative to the workspace root. A Partial Run (`related` or
+	 * `--changed`) runs every test when a changed file matches one. Default:
+	 * the npm, pnpm, yarn, bun, Wally and pesde lockfiles.
+	 */
+	forceRerunTriggers?: Array<string>;
 	/** Output formatters. Default `["default"]`. */
 	formatters?: Array<FormatterEntry>;
 	/** Where to write Game Output; `true` = `game-output.log`. */

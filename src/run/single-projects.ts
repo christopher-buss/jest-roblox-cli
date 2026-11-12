@@ -30,6 +30,22 @@ export interface ResolveRunProjectsInput {
 }
 
 /**
+ * The Rojo tree of a run, or none on a typecheck-only run.
+ * @param context - Typecheck options, file system and root config.
+ * @returns The resolved Rojo tree, or `undefined`.
+ */
+export function readRunRojoTree({
+	cliTypecheck,
+	fileSystem,
+	rootConfig,
+}: Pick<ResolveRunProjectsInput, "cliTypecheck" | "fileSystem" | "rootConfig">):
+	| RojoTreeNode
+	| undefined {
+	const typecheck = resolveTypecheckConfig({ cli: cliTypecheck, root: rootConfig.typecheck });
+	return typecheck.only ? undefined : loadRojoTree(rootConfig, fileSystem);
+}
+
+/**
  * The configured projects, or the one implicit project a config without
  * `projects` runs, with their setup files resolved to Instance paths.
  * @param context - Layout inputs.

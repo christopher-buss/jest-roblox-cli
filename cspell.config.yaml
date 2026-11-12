@@ -74,6 +74,7 @@ words:
   - ldexp
   - lhsOperand
   - localfunction
+  - lockfiles
   - luaurc
   - materializer
   - maxn
@@ -86,6 +87,7 @@ words:
   - osascript
   - oxlint
   - pcall
+  - pesde
   - pnpmfile
   - pnpmfiles
   - randomseed

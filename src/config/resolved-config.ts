@@ -12,6 +12,7 @@ import type {
 	ProjectEntry,
 } from "./config-types.ts";
 import type { FormatterEntry, FormatterName } from "./formatter-selection.ts";
+import { LOCKFILES } from "./lockfiles.ts";
 
 /**
  * Lets optional properties take `undefined`. Never on `Config`: its validation
@@ -51,6 +52,8 @@ export interface ResolvedConfig
 	coverageReporters: Array<CoverageReporter>;
 	/** Studio-only, CLI-only: VM count from `--experimental-vm-parallel`. */
 	experimentalVmParallel?: ParallelCount | undefined;
+	/** Globs, relative to the workspace root, that make a Partial Run full. */
+	forceRerunTriggers: Array<string>;
 	/** Game Output file path. */
 	gameOutput?: string | undefined;
 	/** Jest result file path. */
@@ -165,6 +168,7 @@ export const DEFAULT_CONFIG: ResolvedConfig = {
 		"**/rbxts_include/**",
 	],
 	coverageReporters: ["text", "lcov"],
+	forceRerunTriggers: [...LOCKFILES],
 	passWithNoTests: false,
 	placeFile: "./game.rbxl",
 	port: DEFAULT_STUDIO_PORT,

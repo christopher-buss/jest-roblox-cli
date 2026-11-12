@@ -58,6 +58,7 @@ const ROOT_OPTIONS: { readonly [K in RootKey]-?: ConfigRow<K, Config[K]> } = {
 		schema: isBoolean,
 	},
 	extends: { schema: type("string").or(type("string[]")) },
+	forceRerunTriggers: { schema: type("string[]") },
 	formatters: {
 		cli: {
 			name: "formatters",

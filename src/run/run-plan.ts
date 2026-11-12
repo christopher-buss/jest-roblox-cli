@@ -6,7 +6,7 @@ import { ANY_PROJECT_EMPTY, planTests } from "../discovery/test-plan.ts";
 import type { ConfiguredJob } from "../executor/executor-types.ts";
 import { buildPlannedJob } from "../executor/planned-job.ts";
 import type { RunProgress } from "../progress/run-progress.ts";
-import type { PartialRun } from "../related/partial-run.ts";
+import type { RelatedRun } from "../related/related-run.ts";
 import { mountsWithoutUserConfig } from "../staging/stub-files.ts";
 import type { TimingCollector } from "../timing/orchestration-collector.ts";
 import type { TsconfigMappingCache } from "../tsconfig/tsconfig-mappings.ts";
@@ -48,7 +48,7 @@ interface DiscoveryFilters {
 	cliFiles: Array<string> | undefined;
 	cliTypecheck: TypecheckCliOptions;
 	filesByProject?: ReadonlyMap<string, Array<string>> | undefined;
-	partialRun: PartialRun | undefined;
+	partialRun: RelatedRun | undefined;
 	projects: Array<ResolvedProjectConfig>;
 	rootConfig: ResolvedConfig;
 }

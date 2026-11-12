@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 import { clockTimingCollector } from "#test/mocks/clock-timing-collector.ts";
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { NOOP_PROGRESS } from "#test/mocks/noop-progress.ts";
+import { posixPath } from "#test/mocks/posix-path.ts";
 import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
 import { createRunSeams } from "#test/mocks/run-seams.ts";
 import type { ResolvedProjectConfig } from "../config/projects.ts";
@@ -50,6 +51,20 @@ function makeVolume(files: ReadonlyArray<string>): FileSystem {
 	}
 
 	return fileSystem;
+}
+
+function relatedRun(files: Array<string>): NonNullable<RunDiscovery["partialRun"]> {
+	const root = path.resolve("/test");
+	return {
+		files: files.map((file) => path.resolve(root, file)),
+		kind: "related",
+		scope: {
+			forceRerunTriggers: [],
+			projectRoot: posixPath(root),
+			rojoRoots: [posixPath(root)],
+			workspaceRoot: posixPath(root),
+		},
+	};
 }
 
 function plan(input: Partial<RunDiscovery> & { fileSystem: FileSystem }): TestPlan {
@@ -102,7 +117,7 @@ describe(buildTestPlan, () => {
 
 		const result = plan({
 			fileSystem: makeVolume(["/test/src/util.luau"]),
-			partialRun: { files: [path.resolve("/test/src/util.luau")], kind: "related" },
+			partialRun: relatedRun(["src/util.luau"]),
 			rootConfig: makeConfig({ passWithNoTests: true }),
 		});
 
@@ -116,11 +131,7 @@ describe(buildTestPlan, () => {
 
 		const result = plan({
 			fileSystem: makeVolume(["/test/src/util.luau"]),
-			partialRun: {
-				files: [path.resolve("/test/src/util.luau")],
-				kind: "changed",
-				since: "main",
-			},
+			partialRun: { ...relatedRun(["src/util.luau"]), kind: "changed", since: "main" },
 			rootConfig: makeConfig({ passWithNoTests: true }),
 		});
 
@@ -135,11 +146,7 @@ describe(buildTestPlan, () => {
 
 		const result = plan({
 			fileSystem: makeVolume(["/test/src/util.luau"]),
-			partialRun: {
-				files: [path.resolve("/test/src/util.luau")],
-				kind: "changed",
-				since: "main",
-			},
+			partialRun: { ...relatedRun(["src/util.luau"]), kind: "changed", since: "main" },
 			rootConfig: makeConfig({ passWithNoTests: false }),
 		});
 
@@ -237,7 +244,7 @@ describe(buildTestPlan, () => {
 		const result = plan({
 			cliTypecheck: { enabled: true },
 			fileSystem,
-			partialRun: { files: [path.resolve("/test/src/util.luau")], kind: "related" },
+			partialRun: relatedRun(["src/util.luau"]),
 			projects: [makeProject({ include: ["src/**/*.spec.luau"] })],
 			timing,
 		});

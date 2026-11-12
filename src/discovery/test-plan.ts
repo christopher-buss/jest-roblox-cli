@@ -11,6 +11,7 @@ import type { ResolvedConfig } from "../config/resolved-config.ts";
 import type { AffectedSummary } from "../formatters/shared.ts";
 import { luauParser } from "../luau/parser.ts";
 import type { PartialRun } from "../related/partial-run.ts";
+import type { RelatedRun } from "../related/related-run.ts";
 import { createRelatedFileFilter, type RelatedFileFilter } from "../related/related-tests.ts";
 import type { TimingCollector } from "../timing/orchestration-collector.ts";
 import type {
@@ -62,7 +63,7 @@ export interface PlanTestsInput<S extends PlanScope = PlanScope> {
 	/** File system to discover on. */
 	fileSystem: FileSystem;
 	/** The same file set scopes discovery and mapped coverage. */
-	partialRun?: PartialRun | undefined;
+	partialRun?: (Partial<Pick<RelatedRun, "scope">> & PartialRun) | undefined;
 	/** Scopes to plan. */
 	scopes: Array<S>;
 	/** Base for paths printed in partial-run summaries. */
@@ -281,6 +282,7 @@ function relatedFilter(input: PlanTestsInput): RelatedFileFilter | undefined {
 				fileSystem: input.fileSystem,
 				parser: luauParser,
 				relatedFiles: input.partialRun.files,
+				scope: input.partialRun.scope,
 				timing: input.timing,
 			});
 }

@@ -641,8 +641,8 @@ describe(runProjectLayoutAsync, () => {
 		expect(result.projectResults[0]!.displayName).toBe("client");
 	});
 
-	it("should run only the tests related to the given files", async () => {
-		expect.assertions(3);
+	it("should run every test when a related run cannot read the requires of a test file", async () => {
+		expect.assertions(2);
 
 		const { config, fileSystem, volume } = setupDefaults();
 		seedProjectFiles(volume);
@@ -652,16 +652,18 @@ describe(runProjectLayoutAsync, () => {
 			makeCli({ related: ["src/client/a.spec.ts"] }),
 		);
 
-		expect(result.projectResults).toHaveLength(1);
-		expect(result.projectResults[0]!.displayName).toBe("client");
+		expect(result.projectResults.map((project) => project.displayName)).toStrictEqual([
+			"client",
+			"server",
+		]);
 		expect(result.affected).toStrictEqual({
-			affected: 1,
+			affected: 2,
 			cause: { files: ["src/client/a.spec.ts"], kind: "related" },
 			total: 2,
 		});
 	});
 
-	it("should run only the tests that reach a file changed since the ref", async () => {
+	it("should run every test when a --changed run cannot read the requires of a test file", async () => {
 		expect.assertions(2);
 
 		const { config, fileSystem, volume } = setupDefaults();
@@ -680,13 +682,62 @@ describe(runProjectLayoutAsync, () => {
 		});
 
 		expect(result.projectResults.map((project) => project.displayName)).toStrictEqual([
+			"client",
 			"server",
 		]);
 		expect(result.affected).toStrictEqual({
-			affected: 1,
+			affected: 2,
 			cause: { kind: "changed", since: "main" },
 			total: 2,
 		});
+	});
+
+	it("should run no test for a related file outside the project root and the Rojo tree", async () => {
+		expect.assertions(2);
+
+		const { config, fileSystem, volume } = setupDefaults({ passWithNoTests: true });
+		seedProjectFiles(volume);
+
+		const result = await runClientServerAsync(
+			{ config, fileSystem },
+			makeCli({ related: ["../elsewhere/a.luau"] }),
+		);
+
+		expect(result.projectResults).toStrictEqual([]);
+		expect(result.validationMessage).toBe(
+			"No test files reach the related files, exiting with code 0\n",
+		);
+	});
+
+	it("should run every test for a related file in a Rojo mount outside the project root", async () => {
+		expect.assertions(1);
+
+		const { config, fileSystem, volume } = setupDefaults();
+		seedProjectFiles(volume);
+		volume.writeFileSync(
+			"/test/default.project.json",
+			JSON.stringify({
+				name: "test",
+				tree: {
+					$className: "DataModel",
+					ReplicatedStorage: {
+						client: { $path: "out/client" },
+						shared: { $path: "../shared" },
+					},
+					ServerScriptService: { server: { $path: "out/server" } },
+				},
+			}),
+		);
+
+		const result = await runClientServerAsync(
+			{ config, fileSystem },
+			makeCli({ related: ["../shared/util.luau"] }),
+		);
+
+		expect(result.projectResults.map((project) => project.displayName)).toStrictEqual([
+			"client",
+			"server",
+		]);
 	});
 
 	describe("coverage display filter", () => {

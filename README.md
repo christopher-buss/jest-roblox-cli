@@ -138,8 +138,14 @@ jest-roblox src/player.spec.luau
 
 # Run only the tests that reach these source files through string requires
 # (require("./x"), "../", "@self", aliases); supported in workspace mode too.
-# Instance-path, TS.import, and dynamic requires are not followed, so a test
-# that reaches a file only through them does not run.
+# Every test runs when the run cannot be sure: a given file matches
+# forceRerunTriggers, or sits in the project root or Rojo tree without being a
+# Luau module, or a test reaches a require it cannot follow (instance path,
+# TS.import, dynamic, unresolved) or a test file it cannot read. A file outside
+# the project root, the Rojo tree and forceRerunTriggers is ignored. The
+# forceRerunTriggers globs are relative to the nearest folder with a
+# pnpm-workspace.yaml, turbo.json or nx.json, else to the project root.
+# Workspace mode does not widen yet: it follows string requires only.
 # Passes when no test reaches them, as --passWithNoTests does.
 # To run tests filtered to a file named related, write ./related
 jest-roblox related src/util.luau src/inventory/init.luau
@@ -374,17 +380,18 @@ Loaded per package (directly or via `extends: "../jest.shared.ts"`). The
 workspace-root config is NOT a source of truth for these — declare them in each
 package's own jest.config or in a shared config that every package extends.
 
-| Field           | What it does                                                                               | Default                                |
-| --------------- | ------------------------------------------------------------------------------------------ | -------------------------------------- |
-| `placeFile`     | Path to your `.rbxl` file                                                                  | `"./game.rbxl"`                        |
-| `timeout`       | Max time for tests to run (ms)                                                             | `300000` (5 min)                       |
-| `sourceMap`     | Map Luau errors back to TypeScript (roblox-ts only)                                        | `true`                                 |
-| `rojoProject`   | Path to your Rojo project file                                                             | auto                                   |
-| `jestPath`      | Where Jest lives in the DataModel                                                          | auto                                   |
-| `coverageCache` | Reuse incrementally-instrumented coverage shadow dir between runs                          | `true`                                 |
-| `luauRoots`     | Where Luau files live for coverage instrumentation, relative to `rootDir`                  | auto from Rojo, then tsconfig `outDir` |
-| `rootDir`       | Base directory for relative paths (relative values resolve against the config's directory) | current directory                      |
-| `extends`       | Config file(s) to inherit from, relative to this file; local keys win                      | —                                      |
+| Field                | What it does                                                                               | Default                                |
+| -------------------- | ------------------------------------------------------------------------------------------ | -------------------------------------- |
+| `placeFile`          | Path to your `.rbxl` file                                                                  | `"./game.rbxl"`                        |
+| `timeout`            | Max time for tests to run (ms)                                                             | `300000` (5 min)                       |
+| `sourceMap`          | Map Luau errors back to TypeScript (roblox-ts only)                                        | `true`                                 |
+| `rojoProject`        | Path to your Rojo project file                                                             | auto                                   |
+| `jestPath`           | Where Jest lives in the DataModel                                                          | auto                                   |
+| `coverageCache`      | Reuse incrementally-instrumented coverage shadow dir between runs                          | `true`                                 |
+| `luauRoots`          | Where Luau files live for coverage instrumentation, relative to `rootDir`                  | auto from Rojo, then tsconfig `outDir` |
+| `rootDir`            | Base directory for relative paths (relative values resolve against the config's directory) | current directory                      |
+| `extends`            | Config file(s) to inherit from, relative to this file; local keys win                      | —                                      |
+| `forceRerunTriggers` | Globs, relative to the workspace root, that make `related` or `--changed` run every test   | the lockfiles                          |
 
 A coverage run does not mirror a whole `luauRoot`. It resolves your coverage
 universe against the file system first and mirrors only the directories that

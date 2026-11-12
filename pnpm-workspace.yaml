@@ -14,7 +14,6 @@ overrides:
 minimumReleaseAgeExclude:
   - "@bedrock-rbx/ocale"
   - "@isentinel/eslint-config"
-  - eslint-plugin-flawless@1.16.0
 
 publicHoistPattern:
   - "*@rbxts*"

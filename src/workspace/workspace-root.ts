@@ -12,25 +12,39 @@ const MARKERS = [PNPM_MARKER, TURBO_MARKER, NX_MARKER] as const;
  * Walk up from `cwd` to the nearest directory with a pnpm, turbo or nx marker.
  * @param cwd - Directory to start from.
  * @param fileSystem - File system to probe.
- * @returns The workspace root directory.
- * @throws {Error} When no ancestor holds a marker.
+ * @returns The workspace root directory, or `undefined` when no ancestor holds
+ *   a marker.
  */
-export function discoverWorkspaceRoot(cwd: string, fileSystem: FileSystem): string {
+export function findWorkspaceRoot(cwd: string, fileSystem: FileSystem): string | undefined {
 	let current = path.resolve(cwd);
-	while (true) {
-		if (hasWorkspaceMarker(fileSystem, current)) {
-			return current;
-		}
-
+	while (!hasWorkspaceMarker(fileSystem, current)) {
 		const parent = path.dirname(current);
 		if (parent === current) {
-			throw new Error(
-				"No workspace root found. Expected one of pnpm-workspace.yaml / turbo.json / nx.json above cwd.",
-			);
+			return undefined;
 		}
 
 		current = parent;
 	}
+
+	return current;
+}
+
+/**
+ * Walk up from `cwd` to the nearest directory with a pnpm, turbo or nx marker.
+ * @param cwd - Directory to start from.
+ * @param fileSystem - File system to probe.
+ * @returns The workspace root directory.
+ * @throws {Error} When no ancestor holds a marker.
+ */
+export function discoverWorkspaceRoot(cwd: string, fileSystem: FileSystem): string {
+	const root = findWorkspaceRoot(cwd, fileSystem);
+	if (root === undefined) {
+		throw new Error(
+			"No workspace root found. Expected one of pnpm-workspace.yaml / turbo.json / nx.json above cwd.",
+		);
+	}
+
+	return root;
 }
 
 function hasWorkspaceMarker(fileSystem: FileSystem, directory: string): boolean {

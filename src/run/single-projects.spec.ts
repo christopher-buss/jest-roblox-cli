@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 import { fakeTimingCollector, phaseNamesOf } from "#test/mocks/fake-timing-collector.ts";
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
-import { resolveRunProjectsAsync } from "./single-projects.ts";
+import { readRunRojoTree, resolveRunProjectsAsync } from "./single-projects.ts";
 
 const tree: RojoTreeNode = fromAny({
 	$className: "DataModel",
@@ -38,5 +38,33 @@ describe(resolveRunProjectsAsync, () => {
 		});
 
 		expect(phaseNamesOf(timing.profile)).toContain("loadRojoTree");
+	});
+});
+
+describe(readRunRojoTree, () => {
+	function readWith(only: boolean): RojoTreeNode | undefined {
+		const { fileSystem } = createMemoryFileSystem({
+			[path.resolve("/pkg/default.project.json")]: JSON.stringify({ name: "pkg", tree }),
+		});
+		return readRunRojoTree({
+			cliTypecheck: { only },
+			fileSystem,
+			rootConfig: createResolvedConfig({
+				rojoProject: path.resolve("/pkg/default.project.json"),
+				rootDir: "/pkg",
+			}),
+		});
+	}
+
+	it("should read the Rojo tree of a run with runtime tests", () => {
+		expect.assertions(1);
+
+		expect(readWith(false)).toMatchObject({ $className: "DataModel" });
+	});
+
+	it("should read no Rojo tree on a typecheck-only run", () => {
+		expect.assertions(1);
+
+		expect(readWith(true)).toBeUndefined();
 	});
 });

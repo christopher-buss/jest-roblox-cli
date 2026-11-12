@@ -30,6 +30,7 @@ Root fields control the CLI/runner. Jest passthrough fields live under `test:`.
 | `uploadCache`          | Skip the place upload when the place file's bytes are unchanged                                        | `true`                           |
 | `luauRoots`            | Compiled Luau directories to instrument                                                                | auto from tsconfig `outDir`      |
 | `bootProbeTimeout`     | How long the Open Cloud boot probe may take to prove a place version starts (ms)                       | `90000`                          |
+| `forceRerunTriggers`   | Globs, relative to the workspace root, that make `related` or `--changed` run every test               | the lockfiles                    |
 
 ## Test Fields
 
