@@ -8,7 +8,7 @@ import { QuotaSkipReporter } from "#test/setup/quota-skip-reporter.ts";
 import { virtualModulesPlugin } from "./loaders/virtual-modules.mjs";
 import { nodeFileSystem } from "./src/utils/file-system.ts";
 import { normalizeWindowsPath } from "./src/utils/normalize-windows-path.ts";
-import { unitProject as sharedUnitProject } from "./vitest.shared.ts";
+import { NO_PROCESS_START_SETUP, unitProject as sharedUnitProject } from "./vitest.shared.ts";
 
 const luauPlugin = {
 	name: "luau-raw",
@@ -238,6 +238,7 @@ export const unitProject = {
 		provide: {
 			installedFixtureRoot: resolve(import.meta.dirname, "test/e2e/fixtures/live-place"),
 		},
+		setupFiles: [...setupFiles, NO_PROCESS_START_SETUP],
 	},
 } satisfies TestProjectInlineConfiguration;
 

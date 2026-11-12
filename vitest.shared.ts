@@ -1,4 +1,9 @@
+import { fileURLToPath } from "node:url";
 import { configDefaults, defineConfig, type TestProjectInlineConfiguration } from "vitest/config";
+
+export const NO_PROCESS_START_SETUP = fileURLToPath(
+	new URL("test/setup/no-process-start.ts", import.meta.url),
+);
 
 const FULL_COVERAGE = { branches: 100, functions: 100, lines: 100, statements: 100 };
 
@@ -11,6 +16,7 @@ export const unitProject = {
 		isolate: false,
 		maxWorkers: 4,
 		sequence: { groupOrder: 1 },
+		setupFiles: [NO_PROCESS_START_SETUP],
 	},
 } satisfies TestProjectInlineConfiguration;
 

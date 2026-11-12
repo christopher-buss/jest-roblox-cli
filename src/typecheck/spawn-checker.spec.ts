@@ -1,7 +1,6 @@
 import { fromAny } from "@total-typescript/shoehorn";
 
-import * as childProcess from "node:child_process";
-import process from "node:process";
+import type * as childProcess from "node:child_process";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 
 import type { ChildProcessRunner } from "../utils/child-process.ts";
@@ -12,22 +11,6 @@ type Callback = (
 	stdout: string,
 	stderr: string,
 ) => void;
-
-function nodeChecker(
-	script: string,
-	overrides: Partial<SpawnCheckerOptions> = {},
-): SpawnCheckerOptions {
-	return {
-		args: ["-e", script],
-		childProcess,
-		command: process.execPath,
-		cwd: process.cwd(),
-		label: "node",
-		runTimeout: 30_000,
-		spawnTimeout: 30_000,
-		...overrides,
-	};
-}
 
 function stubChecker(respond?: (callback: Callback) => void) {
 	const kill = vi.fn<() => void>();
@@ -47,11 +30,35 @@ function stubChecker(respond?: (callback: Callback) => void) {
 	return { emitSpawn: () => spawnListener?.(), kill, runner };
 }
 
+function checker(overrides: Partial<SpawnCheckerOptions> = {}): SpawnCheckerOptions {
+	return {
+		args: [],
+		childProcess: stubChecker().runner,
+		command: "checker",
+		cwd: "/project",
+		label: "checker",
+		runTimeout: 30_000,
+		spawnTimeout: 30_000,
+		...overrides,
+	};
+}
+
+function respondWith(...response: Parameters<Callback>): Partial<SpawnCheckerOptions> {
+	const { runner } = stubChecker((callback) => {
+		callback(...response);
+	});
+	return { childProcess: runner };
+}
+
+function exitError(code: number | string): childProcess.ExecFileException {
+	return Object.assign(new Error(`exit ${String(code)}`), { code });
+}
+
 describe(spawnCheckerAsync, () => {
 	it("should resolve the stdout of a clean run", async () => {
 		expect.assertions(1);
 
-		await expect(spawnCheckerAsync(nodeChecker("process.stdout.write('clean')"))).resolves.toBe(
+		await expect(spawnCheckerAsync(checker(respondWith(null, "clean", "")))).resolves.toBe(
 			"clean",
 		);
 	});
@@ -60,7 +67,7 @@ describe(spawnCheckerAsync, () => {
 		expect.assertions(1);
 
 		await expect(
-			spawnCheckerAsync(nodeChecker("process.stdout.write('found'); process.exit(2)")),
+			spawnCheckerAsync(checker(respondWith(exitError(2), "found", ""))),
 		).resolves.toBe("found");
 	});
 
@@ -68,7 +75,7 @@ describe(spawnCheckerAsync, () => {
 		expect.assertions(1);
 
 		await expect(
-			spawnCheckerAsync(nodeChecker("process.stderr.write('broken'); process.exit(1)")),
+			spawnCheckerAsync(checker(respondWith(exitError(1), "", "broken"))),
 		).resolves.toBe("broken");
 	});
 
@@ -80,9 +87,7 @@ describe(spawnCheckerAsync, () => {
 		});
 
 		await expect(
-			spawnCheckerAsync(
-				nodeChecker("", { childProcess: runner, label: "tsgo", runTimeout: 50 }),
-			),
+			spawnCheckerAsync(checker({ childProcess: runner, label: "tsgo", runTimeout: 50 })),
 		).rejects.toThrow("tsgo typecheck timed out after 50ms (timeout)");
 	});
 
@@ -90,7 +95,7 @@ describe(spawnCheckerAsync, () => {
 		expect.assertions(1);
 
 		await expect(
-			spawnCheckerAsync(nodeChecker("", { command: "jest-roblox-missing-checker" })),
+			spawnCheckerAsync(checker(respondWith(exitError("ENOENT"), "", ""))),
 		).rejects.toThrow(/ENOENT/);
 	});
 
@@ -103,7 +108,7 @@ describe(spawnCheckerAsync, () => {
 		});
 		const { kill, runner } = stubChecker();
 		const result = spawnCheckerAsync(
-			nodeChecker("", { childProcess: runner, label: "luau", spawnTimeout: 100 }),
+			checker({ childProcess: runner, label: "luau", spawnTimeout: 100 }),
 		);
 		vi.advanceTimersByTime(100);
 
@@ -122,9 +127,7 @@ describe(spawnCheckerAsync, () => {
 		const { emitSpawn, kill, runner } = stubChecker((callback) => {
 			finish = callback;
 		});
-		const result = spawnCheckerAsync(
-			nodeChecker("", { childProcess: runner, spawnTimeout: 100 }),
-		);
+		const result = spawnCheckerAsync(checker({ childProcess: runner, spawnTimeout: 100 }));
 		emitSpawn();
 		vi.advanceTimersByTime(1000);
 		finish!(null, "ok", "");

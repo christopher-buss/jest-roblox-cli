@@ -16,12 +16,15 @@ import {
 import { posixPath } from "#test/mocks/posix-path.ts";
 import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
 import type { CliOptions, ResolvedConfig } from "../config/resolved-config.ts";
+import type { ChildProcessRunner } from "../utils/child-process.ts";
 import type { Backend } from "./dispatch-request.ts";
 import type { OpenBackendRequest } from "./open-backend.ts";
 import { openBackend } from "./open-backend.ts";
 
 type SingleRequest = Except<OpenBackendRequest, "fileSystem" | "workspace"> &
 	Partial<Pick<OpenBackendRequest, "fileSystem">>;
+
+type RojoCallback = (error: Error | null, stdout: string, stderr: string) => void;
 
 // oxlint-disable-next-line typescript/require-await -- a throw becomes a rejection, as the pipeline sees it
 async function resolveBackendAsync(request: SingleRequest): Promise<Backend> {
@@ -270,7 +273,15 @@ describe(openBackend, () => {
 		const { fileSystem } = createMemoryFileSystem({ [studioPath]: "" });
 		stubPlatform("darwin");
 		vi.stubEnv("JEST_ROBLOX_PLUGINS_DIR", "environment-plugins");
-		vi.stubEnv("PATH", "");
+		const rojoMissing: ChildProcessRunner = fromAny({
+			execFile: (...execFileArguments: [string, Array<string>, object, RojoCallback]) => {
+				execFileArguments[3](
+					Object.assign(new Error("spawn rojo ENOENT"), { code: "ENOENT" }),
+					"",
+					"",
+				);
+			},
+		});
 
 		async function runAsync(pluginsDirectory: string | undefined): Promise<void> {
 			const config = makeConfig({
@@ -281,7 +292,12 @@ describe(openBackend, () => {
 				rootDir: rootDirectory,
 				studioPath,
 			});
-			const backend = await resolveBackendAsync({ cli: makeCli(), config, fileSystem });
+			const backend = await resolveBackendAsync({
+				childProcess: rojoMissing,
+				cli: makeCli(),
+				config,
+				fileSystem,
+			});
 			await backend.runTestsAsync(
 				fromAny({
 					jobs: [{ config, displayName: "project", testFiles: ["test.spec.ts"] }],

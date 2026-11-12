@@ -1,5 +1,6 @@
 import type { CliOptions, ParallelCount } from "../config/resolved-config.ts";
 import { VM_HOST_POOL_SIZE } from "../protocol/studio.ts";
+import type { ChildProcessRunner } from "../utils/child-process.ts";
 import { nodeChildProcessRunner } from "../utils/child-process.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import type {
@@ -33,6 +34,8 @@ export interface BackendCapabilities {
 
 /** Inputs of {@link openBackend}. */
 export interface OpenBackendRequest {
+	/** Launches the processes of the `studio-cli` backend. */
+	readonly childProcess?: ChildProcessRunner;
 	/** Parsed command-line options. */
 	readonly cli: CliOptions;
 	/** The config of the run's mode. */
@@ -71,6 +74,7 @@ export const BACKEND_CAPABILITIES: Readonly<Record<BackendKind, BackendCapabilit
  *   parallelism, or its settings do not resolve.
  */
 export function openBackend({
+	childProcess = nodeChildProcessRunner,
 	cli,
 	config,
 	fileSystem,
@@ -80,15 +84,20 @@ export function openBackend({
 	const settings = resolveBackendSettings({ cli, config, isStudioInstalled });
 	const capabilities = BACKEND_CAPABILITIES[settings.kind];
 	assertVmParallel(capabilities, config.experimentalVmParallel);
-	return createBackend(settings, { fileSystem, webSocketServerFactory });
+	return createBackend(settings, { childProcess, fileSystem, webSocketServerFactory });
 }
 
 function createBackend(
 	settings: BackendSettings,
 	{
+		childProcess,
 		fileSystem,
 		webSocketServerFactory,
-	}: { fileSystem: FileSystem; webSocketServerFactory: WebSocketServerFactory },
+	}: {
+		childProcess: ChildProcessRunner;
+		fileSystem: FileSystem;
+		webSocketServerFactory: WebSocketServerFactory;
+	},
 ): Backend {
 	if (settings.kind === "studio") {
 		return new StudioBackend({
@@ -101,7 +110,7 @@ function createBackend(
 		const { kind: _kind, ...options } = settings;
 		return new StudioCliBackend({
 			...options,
-			childProcess: nodeChildProcessRunner,
+			childProcess,
 			fileSystem,
 			webSocketServerFactory,
 		});
