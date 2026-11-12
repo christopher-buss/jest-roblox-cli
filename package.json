@@ -100,6 +100,9 @@
 		"ws": "8.21.3"
 	},
 	"devDependencies": {
+		"@cspell/parser-typescript": "1.3.1",
+		"@isentinel/dict-rbxts": "1.0.31",
+		"@isentinel/dict-roblox": "1.0.24",
 		"@isentinel/eslint-config": "6.4.0",
 		"@isentinel/luau-ast": "workspace:*",
 		"@isentinel/roblox-runner": "workspace:*",

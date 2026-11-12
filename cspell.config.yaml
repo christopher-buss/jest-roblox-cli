@@ -1,6 +1,25 @@
 version: "0.2"
 language: en
 
+# Keep import, dictionaries, dictionaryDefinitions and ignoreRegExpList
+# in step with .config/cspell.config.yaml at the monorepo root.
+import:
+  - "@cspell/parser-typescript/recommended"
+
+dictionaryDefinitions:
+  - name: rbxts
+    path: ./node_modules/@isentinel/dict-rbxts/dict/rbxts.txt
+  - name: roblox
+    path: ./node_modules/@isentinel/dict-roblox/dict/roblox.txt
+
+dictionaries:
+  - rbxts
+  - roblox
+
+# @cspell/parser-typescript 1.3.1 decodes escapes inside String.raw templates.
+ignoreRegExpList:
+  - '/String\.raw`[^`]*`/g'
+
 words:
   - IMAGENAME
   - NOSYSTEM
@@ -50,6 +69,7 @@ words:
   - interpolatedstring
   - interpstring
   - ipairs
+  - isentinel
   - languagemode
   - ldexp
   - lhsOperand
@@ -77,6 +97,7 @@ words:
   - rbxlx
   - rbxm
   - rbxmx
+  - rbxtsc
   - recognised
   - rhsOperand
   - rojo
@@ -90,7 +111,9 @@ words:
   - typealias
   - typeassertion
   - typefunction
+  - typetest
   - uncompiled
+  - uninvoked
   - unmappable
   - unparseable
   - unprobed

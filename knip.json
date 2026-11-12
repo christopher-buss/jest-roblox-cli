@@ -18,7 +18,9 @@
 				"eslint-plugin-pnpm",
 				"oxlint-plugin-oxlint-comments",
 				"@rbxts/types",
-				"better-typescript-lib"
+				"better-typescript-lib",
+				"@isentinel/dict-rbxts",
+				"@isentinel/dict-roblox"
 			],
 			"ignoreUnresolved": ["^file:///.*/stryker[.]shared[.]config[.]ts$"],
 			"entry": [
