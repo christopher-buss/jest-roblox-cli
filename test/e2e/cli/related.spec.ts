@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, symlinkSync, writeFileSync } from "node:fs";
 import * as path from "node:path";
 import { stripVTControlCharacters } from "node:util";
 import { describe, expect, it } from "vitest";
@@ -12,6 +12,7 @@ import {
 import { createFixtureSandbox, rojoOnPath } from "#test/harness/helpers.ts";
 
 const RELATED_FIXTURE_PATH = path.resolve(__dirname, "../fixtures/related-project");
+const RBXTS_FIXTURE_PATH = path.resolve(__dirname, "../fixtures/related-rbxts-project");
 
 interface WideningCase {
 	changes: Record<string, string>;
@@ -75,6 +76,18 @@ async function runRelatedAsync(
 	const sandbox = createGitWorkspace();
 	writeChanges(sandbox, changes);
 	return runPartialAsync(sandbox, ["related", ...files]);
+}
+
+function createRbxtsSandbox(): string {
+	const sandbox = createFixtureSandbox(RBXTS_FIXTURE_PATH);
+	const scope = path.join(sandbox, "app", "node_modules", "@scope");
+	mkdirSync(scope, { recursive: true });
+	symlinkSync(path.join(sandbox, "lib"), path.join(scope, "lib"), "junction");
+	return path.join(sandbox, "app");
+}
+
+async function runRbxtsRelatedAsync(files: Array<string>): Promise<PartialRunResult> {
+	return runPartialAsync(createRbxtsSandbox(), ["related", ...files]);
 }
 
 describe.skipIf(!rojoOnPath())("related", () => {
@@ -159,4 +172,65 @@ describe.skipIf(!rojoOnPath())("related", () => {
 		},
 		RUN_TIMEOUT_MS * 2,
 	);
+
+	describe("in a roblox-ts project", () => {
+		it(
+			"should dispatch only the .ts spec whose Luau reaches a changed .ts file through TS.import",
+			async () => {
+				expect.assertions(4);
+
+				const run = await runRbxtsRelatedAsync(["src/leaf.ts"]);
+
+				expect(
+					run.exitCode,
+					`stderr: ${run.stderr}
+stdout: ${run.stdout}`,
+				).toBe(0);
+				expect(run.patterns).toHaveLength(1);
+				expect(run.patterns[0]!).toMatch(/^\(\S*top\\\.spec\)$/);
+				expect(stripVTControlCharacters(run.stdout)).toContain(
+					"   Affected  1 of 3 test files (related to src/leaf.ts)",
+				);
+			},
+			RUN_TIMEOUT_MS * 2,
+		);
+
+		it(
+			"should dispatch the spec that imports a changed .ts file of another workspace package",
+			async () => {
+				expect.assertions(3);
+
+				const run = await runRbxtsRelatedAsync(["../lib/src/thing.ts"]);
+
+				expect(
+					run.exitCode,
+					`stderr: ${run.stderr}
+stdout: ${run.stdout}`,
+				).toBe(0);
+				expect(run.patterns).toHaveLength(1);
+				expect(run.patterns[0]!).toMatch(/^\(\S*uses-lib\\\.spec\)$/);
+			},
+			RUN_TIMEOUT_MS * 2,
+		);
+
+		it(
+			"should dispatch every spec for a changed .ts file with no Luau module",
+			async () => {
+				expect.assertions(3);
+
+				const run = await runRbxtsRelatedAsync(["src/types.d.ts"]);
+
+				expect(
+					run.exitCode,
+					`stderr: ${run.stderr}
+stdout: ${run.stdout}`,
+				).toBe(0);
+				expect(run.patterns).toHaveLength(1);
+				expect(stripVTControlCharacters(run.stdout)).toContain(
+					"   Affected  3 of 3 test files (related to src/types.d.ts)",
+				);
+			},
+			RUN_TIMEOUT_MS * 2,
+		);
+	});
 });

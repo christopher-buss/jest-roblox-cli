@@ -646,6 +646,9 @@ describe(runProjectLayoutAsync, () => {
 
 		const { config, fileSystem, volume } = setupDefaults();
 		seedProjectFiles(volume);
+		volume.writeFileSync("/test/tsconfig.json", "{}");
+		volume.mkdirSync("/test/out/client", { recursive: true });
+		volume.writeFileSync("/test/out/client/a.spec.luau", "");
 
 		const result = await runClientServerAsync(
 			{ config, fileSystem },
@@ -668,6 +671,9 @@ describe(runProjectLayoutAsync, () => {
 
 		const { config, fileSystem, volume } = setupDefaults();
 		seedProjectFiles(volume);
+		volume.writeFileSync("/test/tsconfig.json", "{}");
+		volume.mkdirSync("/test/out/server", { recursive: true });
+		volume.writeFileSync("/test/out/server/b.spec.luau", "");
 		const execFileSync = vi
 			.fn<() => string>()
 			.mockReturnValueOnce("/test\n")

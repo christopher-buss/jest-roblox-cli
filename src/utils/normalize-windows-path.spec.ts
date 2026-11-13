@@ -1,8 +1,10 @@
+import * as path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
 	dropDriveLetter,
 	isAbsolutePath,
+	isPathInside,
 	isWithinRoot,
 	normalizeWindowsPath,
 	relativeToRoot,
@@ -26,6 +28,24 @@ describe(isAbsolutePath, () => {
 		expect(isAbsolutePath("D:/repo/file.ts")).toBeTrue();
 		expect(isAbsolutePath("/repo/file.ts")).toBeTrue();
 		expect(isAbsolutePath("prefix/D:/repo/file.ts")).toBeFalse();
+	});
+});
+
+describe(isPathInside, () => {
+	it("should hold a directory and the paths below it", () => {
+		expect.assertions(2);
+
+		expect(isPathInside(path.resolve("/repo"), path.resolve("/repo"))).toBeTrue();
+		expect(isPathInside(path.resolve("/repo"), path.resolve("/repo/src/file.ts"))).toBeTrue();
+	});
+
+	it("should leave out a sibling and a parent", () => {
+		expect.assertions(2);
+
+		expect(
+			isPathInside(path.resolve("/repo"), path.resolve("/repository/file.ts")),
+		).toBeFalse();
+		expect(isPathInside(path.resolve("/repo/src"), path.resolve("/repo"))).toBeFalse();
 	});
 });
 

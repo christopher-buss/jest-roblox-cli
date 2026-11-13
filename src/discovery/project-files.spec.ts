@@ -7,6 +7,7 @@ import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
 import type { ResolvedProjectConfig } from "../config/projects.ts";
 import type { ResolvedTypecheckConfig } from "../config/resolve-typecheck-config.ts";
+import type { RelatedFileFilter } from "../related/related-tests.ts";
 import type { ProjectSelection, ProjectSelectionInput } from "./project-files.ts";
 import { selectProjectFiles } from "./project-files.ts";
 
@@ -115,11 +116,21 @@ describe(selectProjectFiles, () => {
 	it("should keep only the related tests and narrow to them", () => {
 		expect.assertions(1);
 
+		const rojoProject = path.resolve("/test", "default.project.json");
 		const related = new Set(
-			["src/a.spec-d.luau", "src/a.spec.luau"].map((file) => path.resolve("/test", file)),
+			["src/a.spec-d.luau", "src/a.spec.luau"].map((file) => {
+				return JSON.stringify([rojoProject, path.resolve("/test", file)]);
+			}),
 		);
-		function filterRelated(files: Array<string>, rootDirectory: string): Array<string> {
-			return files.filter((file) => related.has(path.resolve(rootDirectory, file)));
+		function filterRelated(
+			files: Array<string>,
+			{ rojoProjectPath, rootDirectory }: Parameters<RelatedFileFilter>[1],
+		): Array<string> {
+			return files.filter((file) => {
+				return related.has(
+					JSON.stringify([rojoProjectPath, path.resolve(rootDirectory, file)]),
+				);
+			});
 		}
 
 		const selection = select(
@@ -131,7 +142,15 @@ describe(selectProjectFiles, () => {
 			},
 			{
 				filterRelated,
-				project: makeProject({ include: ["src/**/*.spec.luau"] }),
+				project: makeProject({
+					config: {
+						...createResolvedConfig(),
+						rojoProject,
+						rootDir: "/test",
+						testPathIgnorePatterns: [],
+					},
+					include: ["src/**/*.spec.luau"],
+				}),
 				typecheck: makeTypecheck({ enabled: true }),
 			},
 		);

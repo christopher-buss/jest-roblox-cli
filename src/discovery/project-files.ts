@@ -111,9 +111,17 @@ function buildDiscoveryConfig(
 
 function keepSelected(
 	files: Array<string>,
-	{ filterRelated, rootDir }: { filterRelated: RelatedFileFilter | undefined; rootDir: string },
+	{
+		config,
+		filterRelated,
+	}: { config: ResolvedConfig; filterRelated: RelatedFileFilter | undefined },
 ): Array<string> {
-	return filterRelated?.(files, rootDir) ?? files;
+	return (
+		filterRelated?.(files, {
+			rojoProjectPath: config.rojoProject,
+			rootDirectory: config.rootDir,
+		}) ?? files
+	);
 }
 
 function matchesIgnore(pattern: string, file: string): boolean {
@@ -175,7 +183,7 @@ function discoverProjectFiles(
 			isPositional
 				? runtimeCandidates
 				: filterByTestPathPattern(runtimeCandidates, discoveryConfig.testPathPattern),
-			{ filterRelated, rootDir: discoveryConfig.rootDir },
+			{ config: discoveryConfig, filterRelated },
 		),
 		typeTestFiles: keepSelected(
 			isPositional
@@ -184,7 +192,7 @@ function discoverProjectFiles(
 						include(classified.typeTestFiles, typecheck.exclude),
 						discoveryConfig.testPathPattern,
 					),
-			{ filterRelated, rootDir: discoveryConfig.rootDir },
+			{ config: discoveryConfig, filterRelated },
 		),
 	};
 }

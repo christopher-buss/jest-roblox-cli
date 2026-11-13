@@ -1,0 +1,14 @@
+{
+	"name": "related-rbxts-e2e",
+	"tree": {
+		"$className": "DataModel",
+		"ReplicatedStorage": {
+			"$className": "ReplicatedStorage",
+			"app": { "$path": "compiled" },
+			"node_modules": {
+				"$className": "Folder",
+				"@scope": { "$className": "Folder", "$path": "node_modules/@scope" }
+			}
+		}
+	}
+}

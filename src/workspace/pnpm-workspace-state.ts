@@ -2,7 +2,7 @@ import { type } from "arktype";
 import * as path from "node:path";
 
 import type { FileSystem } from "../utils/file-system.ts";
-import { isAbsolutePath, normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
+import { isPathInside } from "../utils/normalize-windows-path.ts";
 import type { PackageInfo } from "./package-resolver.ts";
 import { PNPM_MARKER } from "./workspace-root.ts";
 
@@ -50,7 +50,7 @@ export function readPnpmWorkspaceProjects(
 		}
 
 		const packageDirectory = path.resolve(directory);
-		if (!isInside(resolvedRoot, packageDirectory)) {
+		if (!isPathInside(resolvedRoot, packageDirectory)) {
 			return undefined;
 		}
 
@@ -91,16 +91,4 @@ function manifestPredatesInstall({
 		throwIfNoEntry: false,
 	});
 	return stat !== undefined && stat.mtimeMs <= lastValidatedTimestamp;
-}
-
-/**
- * Must stay `isAbsolutePath`: a Windows path reads as relative on Linux.
- *
- * @param resolvedParent - Absolute parent directory.
- * @param candidate - Absolute path to test.
- * @returns Whether `candidate` is `resolvedParent` or below it.
- */
-function isInside(resolvedParent: string, candidate: string): boolean {
-	const relative = normalizeWindowsPath(path.relative(resolvedParent, candidate));
-	return !relative.startsWith("..") && !isAbsolutePath(relative);
 }

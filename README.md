@@ -136,16 +136,17 @@ jest-roblox
 jest-roblox src/player.spec.ts
 jest-roblox src/player.spec.luau
 
-# Run only the tests that reach these source files through string requires
-# (require("./x"), "../", "@self", aliases); supported in workspace mode too.
-# Every test runs when the run cannot be sure: a given file matches
-# forceRerunTriggers, or sits in the project root or Rojo tree without being a
-# Luau module, or a test reaches a require it cannot follow (instance path,
-# TS.import, dynamic, unresolved) or a test file it cannot read. A file outside
-# the project root, the Rojo tree and forceRerunTriggers is ignored. The
-# forceRerunTriggers globs are relative to the nearest folder with a
-# pnpm-workspace.yaml, turbo.json or nx.json, else to the project root.
-# Workspace mode does not widen yet: it follows string requires only.
+# Run only the tests that reach these source files through require or
+# TS.import; supported in workspace mode too. Instance paths and TS.import
+# resolve through the Rojo project. A .ts file stands for its compiled .luau
+# module, so compile first. Every test runs when the run cannot be sure: a
+# given file matches forceRerunTriggers, or sits in the project root or Rojo
+# tree without being a Luau module or a compiled .ts file, or a test reaches a
+# require it cannot follow (dynamic, unresolved) or a test file it cannot read.
+# A file outside the project root, the Rojo tree and forceRerunTriggers is
+# ignored. The forceRerunTriggers globs are relative to the nearest folder with
+# a pnpm-workspace.yaml, turbo.json or nx.json, else to the project root.
+# Workspace mode does not widen yet.
 # Passes when no test reaches them, as --passWithNoTests does.
 # To run tests filtered to a file named related, write ./related
 jest-roblox related src/util.luau src/inventory/init.luau

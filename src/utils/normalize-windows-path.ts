@@ -22,6 +22,19 @@ export function isAbsolutePath(input: string): boolean {
 }
 
 /**
+ * Whether a path is a directory or lies below it. Both paths are absolute.
+ * Uses `isAbsolutePath`, not `path.isAbsolute`, because a Windows path reads as
+ * relative on Linux, which would let CI accept what a local run rejects.
+ * @param directory - Absolute directory.
+ * @param candidate - Absolute path to test.
+ * @returns Whether `candidate` is `directory` or below it.
+ */
+export function isPathInside(directory: string, candidate: string): boolean {
+	const relative = normalizeWindowsPath(path.relative(directory, candidate));
+	return !relative.startsWith("..") && !isAbsolutePath(relative);
+}
+
+/**
  * Resolve a path against a directory, keeping an absolute one as it is.
  * @param directory - Directory a relative path resolves in.
  * @param filePath - Path to resolve.

@@ -284,6 +284,7 @@ function relatedFilter(input: PlanTestsInput): RelatedFileFilter | undefined {
 				relatedFiles: input.partialRun.files,
 				scope: input.partialRun.scope,
 				timing: input.timing,
+				tsconfigReader: input.tsconfigReader,
 			});
 }
 
