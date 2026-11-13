@@ -28,7 +28,7 @@ export interface RootReachability {
 export interface MountFrame {
 	/** What a coverage root is written relative to. */
 	frame: string;
-	/** What a `$path` resolves against — the rojo project's own directory. */
+	/** What a `$path` resolves against: the rojo project's own directory. */
 	rojoDirectory: string;
 }
 

@@ -104,7 +104,7 @@ describe("coverage mapping pipeline (roblox-ts)", { timeout: 30_000 }, () => {
 	it("should report an instrumented file with zero hits when no test exercised it", async () => {
 		expect.assertions(2);
 
-		// No runtime hits at all — every instrumented file is untested.
+		// No runtime hits at all: every instrumented file is untested.
 		const result = await buildCoverageResultAsync({});
 
 		const exampleCoverage = Object.entries(result.files).find(([filePath]) => {

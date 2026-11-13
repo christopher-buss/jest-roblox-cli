@@ -59,7 +59,7 @@ function setupFilesystem({
 describe(nodeInstrumenter, () => {
 	// Cross-machine join-key guard. The per-file key recorded in the manifest
 	// MUST be byte-identical to the `__cov_file_key` literal baked into the
-	// instrumented preamble — the runtime bumps
+	// instrumented preamble. The runtime bumps
 	// `_G.__jest_roblox_cov[__cov_file_key]` with that exact literal, so the
 	// manifest key, the preamble key, and the harvested hit-table key are one
 	// string. If a refactor let the two writers (manifest record vs preamble)
@@ -92,7 +92,7 @@ describe(nodeInstrumenter, () => {
 
 	// The shadow tree carries no `.luau.map`: `coverageCopyIgnorePatterns`
 	// leaves them behind because every reader opens the one in `outDir`. This
-	// pins the coverage half of that — the stack mapper's half holds because a
+	// pins the coverage half of that; the stack mapper's half holds because a
 	// coverage run swaps only `placeFile`, never `rojoProject`.
 	it("should record each source map against the source root, not the shadow", () => {
 		expect.assertions(1);
@@ -170,7 +170,7 @@ describe(nodeInstrumenter, () => {
 		it("should not parse a skipped file at all", () => {
 			expect.assertions(1);
 
-			// The skipped file does not even parse — proven by it being
+			// The skipped file does not even parse, proven by it being
 			// syntactically invalid without failing the run.
 			const { fileSystem } = setupFilesystem({
 				files: { "broken.luau": "local = = =\n", "init.luau": "local x = 1\n" },
@@ -233,7 +233,7 @@ describe(nodeInstrumenter, () => {
 
 	// A root holds far more files than directories, so creating the output
 	// directory per file spends a recursive stat/mkdir chain to make something
-	// the previous sibling already made — thousands of them over a real root.
+	// the previous sibling already made, thousands of them over a real root.
 	describe("when several files share a shadow directory", () => {
 		it("should create each directory once for the twin, not once per file", () => {
 			expect.assertions(3);
@@ -457,7 +457,7 @@ describe("nodeInstrumenter output", () => {
 		// Regression: roblox-ts emits `.lua` (not `.luau`) for its vendor
 		// runtime (`include/RuntimeLib.lua`). A regex that only stripped
 		// `.luau$` left the cov-map path identical to the instrumented source
-		// path, so the JSON write clobbered the Lua text — every `require`
+		// path, so the JSON write clobbered the Lua text. Every `require`
 		// through RuntimeLib then failed at load.
 		it("should write covmap sidecar without clobbering .lua source", () => {
 			expect.assertions(2);

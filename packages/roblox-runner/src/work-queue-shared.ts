@@ -13,7 +13,7 @@ export type QueueData = EnqueueQueueItemParameters["data"];
 
 /**
  * One dequeue's worth of items, with the claim to acknowledge them by. An
- * absent `readId` is the one signal that the read was empty — nothing was
+ * absent `readId` is the one signal that the read was empty: nothing was
  * claimed, so there is nothing to discard and no reason to sweep again.
  */
 export interface QueueRead {
@@ -35,7 +35,7 @@ export interface QueueRead {
  * when *fewer than* `count` items are available, so the status stops proving
  * the queue is empty and starts meaning "not this many". Reading that as an
  * empty queue would drop a partial batch on the floor. Forbid the flag rather
- * than branch on it — nothing here asks for all-or-nothing delivery, and a
+ * than branch on it. Nothing here asks for all-or-nothing delivery, and a
  * caller that starts to must reach for `storage.queues.dequeue` directly and
  * say what its own 404 means.
  */
@@ -58,7 +58,7 @@ const EMPTY_READ = {
  * failure.
  *
  * `items:read` answers 404 `NOT_FOUND` "Queue items not found." when no item
- * is visible. That is the endpoint's empty read, not a fault — it never
+ * is visible. That is the endpoint's empty read, not a fault; it never
  * answers a 200 with an empty item list. A queue that was never created
  * answers byte-identically, and to a caller draining or claiming from one both
  * mean the same thing: there is nothing here.
@@ -69,7 +69,7 @@ const EMPTY_READ = {
  * empty queue for the rest of the process's life, silently. That one stays a
  * failure, and each caller words it their own way.
  *
- * The read must be one whose 404 can only mean empty — see
+ * The read must be one whose 404 can only mean empty; see
  * {@link BestEffortDequeueParameters}.
  * @param storage - SDK client that owns the queue request.
  * @param parameters - Server request parameters for this queue operation.

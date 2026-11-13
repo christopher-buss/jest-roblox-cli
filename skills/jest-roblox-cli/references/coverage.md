@@ -19,7 +19,7 @@ coverage place to `.jest-roblox/place/`, which is not the place Studio serves.
 | Flag                  | Purpose                                                                                                                      | Default        |
 | --------------------- | ---------------------------------------------------------------------------------------------------------------------------- | -------------- |
 | `--coverage`          | Enable coverage collection                                                                                                   | `false`        |
-| `--no-coverage`       | Disable coverage for this run, overriding `collectCoverage` in config (skips instrumentation, so it runs at plain-run speed) | —              |
+| `--no-coverage`       | Disable coverage for this run, overriding `collectCoverage` in config (skips instrumentation, so it runs at plain-run speed) | -              |
 | `--coverageDirectory` | Output directory                                                                                                             | `"coverage"`   |
 | `--coverageReporters` | Reporter list                                                                                                                | `text`, `lcov` |
 

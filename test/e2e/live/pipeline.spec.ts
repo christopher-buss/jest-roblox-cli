@@ -28,7 +28,7 @@ import { quotaSkipNote, skipOnQuotaAsync } from "#test/setup/quota-skip.ts";
  * existing run can carry the assertion.
  *
  * The fixture (`test/e2e/fixtures/live-place`) ships a pre-built `.rbxl` and
- * two configured `projects` in its `jest.config.ts` — `live-place-shared`
+ * two configured `projects` in its `jest.config.ts`: `live-place-shared`
  * (one spec) and `live-place-server` (four).
  *
  * Only the first run below carries the boot probe. One live proof that a fresh
@@ -272,7 +272,7 @@ describe("live pipeline", () => {
 	// path below the mount and the mount's own name.
 	//
 	// This is the only check that the FS→Instance namespace normalization
-	// produces a string real Roblox-side Jest matches — a wrong assumption runs
+	// produces a string real Roblox-side Jest matches. A wrong assumption runs
 	// 3 here, or 0. Which pattern `narrowConfigByFiles` and `narrowForLuauRun`
 	// build from which input is settled off-wire in
 	// `src/discovery/narrow-by-files.spec.ts`.

@@ -1,7 +1,7 @@
 --!nocheck
 -- Lute-driven test for the coordinator's dispatch arithmetic: which configs go
 -- to which VM host, and how the entries the hosts send back become one
--- request-ordered array. Pure table math over an injected `encode` — no
+-- request-ordered array. Pure table math over an injected `encode`, no
 -- Roblox, no jest. The module under test is inlined into the placeholder below
 -- by vm-parallel.spec.ts. Any failed assertion calls error(), failing the
 -- wrapper spec.
@@ -46,7 +46,7 @@ local function testRoundRobinSplit()
 	checkList(slices[2], { 2, 4 }, "T1: host 2 takes the even configs")
 end
 
--- T2: more hosts than configs plans no empty slice — the coordinator
+-- T2: more hosts than configs plans no empty slice: the coordinator
 -- dispatches to exactly as many hosts as it can use.
 local function testMoreHostsThanConfigs()
 	local slices = VmParallel.planSlices({ configCount = 2, hostCount = 4 })
@@ -138,7 +138,7 @@ end
 
 -- T8: two configs whose stub mounts nest must run on one host. Their
 -- `jest.config` stubs would otherwise sit in the DataModel at the same time,
--- and Jest's parent-traversal config lookup resolves the wrong one — the
+-- and Jest's parent-traversal config lookup resolves the wrong one: the
 -- hazard the coordinator's just-in-time injection exists to avoid. On one host
 -- they run sequentially, injected and cleaned up one at a time.
 local function testNestedMountsShareAHost()
@@ -164,7 +164,7 @@ local function testIdenticalMountsShareAHost()
 	checkList(slices[1], { 1, 2 }, "T9: both configs land on the same host")
 end
 
--- T10: nesting is by path segment, not by string prefix — `Foo` does not
+-- T10: nesting is by path segment, not by string prefix: `Foo` does not
 -- contain `Foobar`, so those two projects still overlap across hosts.
 local function testSiblingMountsDoNotShareAHost()
 	local slices = VmParallel.planSlices({

@@ -55,7 +55,7 @@ function isJsonObject(value: JSONValue): value is JSONObject {
 
 /**
  * The queue-add body's `data` field. Open Cloud rejects an absent or null
- * value, so a fake handed one is being driven wrongly — fail loudly rather
+ * value, so a fake handed one is being driven wrongly. Fail loudly rather
  * than enqueue a bogus item.
  * @param parsed - Parsed request body.
  * @returns The non-null `data` value.

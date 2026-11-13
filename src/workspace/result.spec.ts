@@ -173,7 +173,7 @@ describe(buildWorkspaceResult, () => {
 			});
 
 			expect(result.coverage).toStrictEqual({
-				notice: "Warning: coverage data was empty — the Rojo project may point at uninstrumented source (@halcyon/foo)",
+				notice: "Warning: coverage data was empty. The Rojo project may point at uninstrumented source (@halcyon/foo)",
 				units: [],
 			});
 		});
@@ -195,8 +195,8 @@ describe(buildWorkspaceResult, () => {
 
 			expect(result.coverage!.notice).toBe(
 				[
-					"Warning: coverage data was empty — the Rojo project may point at uninstrumented source (@halcyon/foo)",
-					"Warning: coverage data was empty — the Rojo project may point at uninstrumented source (@halcyon/bar)",
+					"Warning: coverage data was empty. The Rojo project may point at uninstrumented source (@halcyon/foo)",
+					"Warning: coverage data was empty. The Rojo project may point at uninstrumented source (@halcyon/bar)",
 				].join("\n"),
 			);
 		});

@@ -40,7 +40,7 @@ interface ExecuteOptions {
 /**
  * A tsconfig reader over one volume. `get-tsconfig` reads through a `node:fs`
  * binding of its own, so a run under an in-memory volume is handed this
- * instead — the same seam production hands the real reader.
+ * instead, the same seam production hands the real reader.
  * @param fileSystem - Volume to read from.
  * @returns A reader that returns null when the file is missing or invalid.
  */
@@ -692,9 +692,9 @@ describe("execute single-project helper", () => {
 
 		const timing = fakeTimingCollector();
 
-		// Studio backend never uploads — uploadMs is omitted from BackendTiming.
-		// The orchestrator must skip the span instead of recording a 0ms or
-		// emitting an "undefined ms" line.
+		// Studio backend never uploads, so uploadMs is omitted from
+		// BackendTiming. The orchestrator must skip the span instead of recording
+		// a 0ms or emitting an "undefined ms" line.
 		const studioBackend = fakeStudioBackend(() => {
 			return singleEntryResult({ result: createPassingResult() }, { executionMs: 100 });
 		});
@@ -790,7 +790,7 @@ describe("execute single-project helper", () => {
 
 		timing.flushTimingReport();
 
-		// 100.25ms + 200.35ms = 300.6ms — sub-ms fractions must survive until
+		// 100.25ms + 200.35ms = 300.6ms. Sub-ms fractions must survive until
 		// the emit-time round, not be rounded away per project.
 		expect(
 			vi
@@ -1341,7 +1341,7 @@ describe("execute single-project helper", () => {
 		// relative `rojoProject` like "test.project.json" must resolve under
 		// each package's `rootDir`, not where the CLI was invoked. Stub
 		// process.cwd() to a sentinel that is NOT a parent of rootDir so the
-		// resolution is unambiguous — without the rootDir-relative resolve
+		// resolution is unambiguous. Without the rootDir-relative resolve
 		// fs.existsSync would interpret the relative path against this CWD
 		// sentinel and miss every package.
 		expect.assertions(3);

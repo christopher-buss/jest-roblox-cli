@@ -107,8 +107,8 @@ function formatPropertyConflict({
 	return [
 		`workspace packages disagree on \`${label}\`.`,
 		"",
-		`  - ${JSON.stringify(owner.value)} — declared by ${owner.packageName}`,
-		`  - ${JSON.stringify(rival.value)} — declared by ${rival.packageName}`,
+		`  - ${JSON.stringify(owner.value)} (declared by ${owner.packageName})`,
+		`  - ${JSON.stringify(rival.value)} (declared by ${rival.packageName})`,
 		"",
 		"Every package in a workspace run shares one synthesized place, so a",
 		"service property is a property of the whole run. Either align the value",

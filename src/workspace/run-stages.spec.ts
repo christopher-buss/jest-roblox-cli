@@ -830,7 +830,7 @@ describe(createWorkspaceRunStages, () => {
 	});
 
 	// The Luau side matches Instance paths, so a positional narrows through the
-	// same translation `--testPathPattern` does — a namesake in a sibling
+	// same translation `--testPathPattern` does. A namesake in a sibling
 	// directory must not ride along.
 	it("should narrow to the positional file's instance sub-path", async () => {
 		expect.assertions(2);
@@ -1015,8 +1015,8 @@ describe(createWorkspaceRunStages, () => {
 	it("should drop runtime test files matching a package-level test.exclude glob", async () => {
 		expect.assertions(1);
 
-		// No `projects:` — the package's global `test.exclude` must flow into the
-		// synthesized virtual project, mirroring single-mode `test.exclude`.
+		// No `projects:`, so the package's global `test.exclude` must flow into
+		// the synthesized virtual project, mirroring single-mode `test.exclude`.
 		const { captured } = await runScenarioAsync({
 			configs: {
 				[FOO_DIR]: rooted(FOO_DIR, {
@@ -1353,7 +1353,7 @@ describe(createWorkspaceRunStages, () => {
 		});
 
 		// No project declares setupFiles/setupFilesAfterEnv, so the costly
-		// RojoResolver tree walk must be skipped entirely — it is the dominant
+		// RojoResolver tree walk must be skipped entirely; it is the dominant
 		// resolveContexts cost and resolves nothing here.
 		expect(createSetupResolver).not.toHaveBeenCalled();
 	});
@@ -1385,7 +1385,7 @@ describe(createWorkspaceRunStages, () => {
 
 		const { fileSystem } = stageWorkspace(
 			{
-				// Bar has ONLY custom.project.json — no test.project.json on
+				// Bar has ONLY custom.project.json; no test.project.json on
 				// disk. Bar's per-package config sets rojoProject:
 				// "custom.project.json". If the per-package value is ignored,
 				// preflight fails because the default test.project.json does not
@@ -1488,11 +1488,11 @@ describe(createWorkspaceRunStages, () => {
 	it("should NOT fall back to workspace-root config.rojoProject when the package config omits it", async () => {
 		expect.assertions(1);
 
-		// Bar's per-pkg config has no rojoProject — previously the middle
+		// Bar's per-pkg config has no rojoProject. Previously the middle
 		// arm of `pkg ?? config ?? DEFAULT` would pick up the workspace-root
 		// value below and resolve "custom.project.json". After the collapse,
 		// resolution falls straight to `ROJO_PROJECT_DEFAULT`
-		// ("test.project.json") — which does not exist at BAR_DIR, so preflight
+		// ("test.project.json"), which does not exist at BAR_DIR, so preflight
 		// fails.
 		const { fileSystem } = stageWorkspace(
 			{
@@ -1693,7 +1693,7 @@ describe(createWorkspaceRunStages, () => {
 					name: "@halcyon/foo",
 				}),
 				// Pre-existing leaf-file mount lets ensure-paths see a $path with
-				// extension and no children — should NOT be created as a
+				// extension and no children; should NOT be created as a
 				// directory.
 				[path.join(FOO_DIR, "src/init.luau")]: "return {}",
 				[path.join(FOO_DIR, "test.project.json")]: packageJson({
@@ -2184,7 +2184,7 @@ describe(createWorkspaceRunStages, () => {
 		});
 
 		// A package with several projects is one package. When a bail stops it
-		// part-way, the package RAN — naming it as not-run too would report the
+		// part-way, the package RAN. Naming it as not-run too would report the
 		// same package on both sides of the count.
 		it("should not report a partly-run package as one the bail skipped", async () => {
 			expect.assertions(2);
@@ -2501,7 +2501,7 @@ describe("workspace type tests", () => {
 
 		const { files } = runTypecheck.mock.calls[0]![0];
 
-		// Absolute and platform-native, the same shape the glob half produces —
+		// Absolute and platform-native, the same shape the glob half produces:
 		// the two feed one tsgo group, and the ownership match that selected
 		// this file hands back a posix path.
 		expect(files).toStrictEqual([path.join(FOO_DIR, "src/wanted.spec-d.ts")]);
@@ -2838,7 +2838,7 @@ describe("workspace type tests", () => {
 		expect.assertions(2);
 
 		// passWithNoTests defaults false; only a `.spec-d.ts` exists, so runtime
-		// discovery finds nothing. The package must not error — its type tests
+		// discovery finds nothing. The package must not error; its type tests
 		// run.
 		const { fileSystem } = stageWorkspace(
 			{

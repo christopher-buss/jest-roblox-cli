@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 /**
  * The specifier `src/backends/runner-plugin.ts` imports. Nothing on
  * disk answers it: the module is built here, from the plugin's Luau source, by
- * whichever loader is running — the two tsdown configs, vitest, or the node
+ * whichever loader is running: the two tsdown configs, vitest, or the node
  * hook `bin/jest-roblox.js` registers.
  *
  * `studio-cli` builds its Managed Plugin from these files with rojo, and the

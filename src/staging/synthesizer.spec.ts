@@ -22,7 +22,7 @@ function projectJson(json: JSONObject): string {
 }
 
 // Rojo tree nodes are keyed by arbitrary instance/service names dictated by
-// the fixture's project.json — not declared properties — so they're read
+// the fixture's project.json (not declared properties), so they're read
 // through one owned schema (@isentinel/rojo-utils' RojoTreeNode) rather than
 // ad-hoc inline cast types per test.
 const rojoTreeNodeSchema = type({
@@ -625,8 +625,8 @@ describe(synthesize, () => {
 		}).toThrow(
 			configErrorLike(
 				"workspace packages disagree on `globIgnorePaths`.\n\n" +
-					'  - ["**/tsconfig.json"] — declared by @halcyon/foo\n' +
-					'  - ["**/out/**"] — declared by @halcyon/bar\n\n' +
+					'  - ["**/tsconfig.json"] (declared by @halcyon/foo)\n' +
+					'  - ["**/out/**"] (declared by @halcyon/bar)\n\n' +
 					"Every package in a workspace run shares one synthesized place, so one\n" +
 					"ignore list covers every mount in it. Either align the list across each\n" +
 					"package's rojo project, or run the odd package on its own.",
@@ -746,7 +746,7 @@ describe(synthesize, () => {
 		["StarterPlayer", "StarterCharacterScripts"],
 		["Workspace", "Terrain"],
 	] as const)(
-		"should rewrite %s.%s to Folder — the engine pins the class to one parent",
+		"should rewrite %s.%s to Folder: the engine pins the class to one parent",
 		([parent, pinned]) => {
 			expect.assertions(1);
 

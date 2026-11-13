@@ -211,7 +211,7 @@ function buildLoadedProject({
 	const { fields, raw } = parseProject(content, projectPath);
 
 	// Named field by field, not spread: arktype applies no morph here, so
-	// `fields` IS `raw` — undeclared keys and all. Spreading it would surface
+	// `fields` IS `raw`, undeclared keys and all. Spreading it would surface
 	// gameId, placeId and the rest at the top level, where `LoadedRojoProject`
 	// promises they live on `raw` alone.
 	return {

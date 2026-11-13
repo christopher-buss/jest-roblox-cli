@@ -40,7 +40,7 @@ const SEA_BUNDLE = path.resolve(__dirname, "../../dist/sea/sea-entry.cjs");
 const mergedResultSchema = type({ testResults: type({ testFilePath: "string" }).array() });
 
 // runCli passes `encoding: "utf-8"`, so the thrown failure carries the captured
-// streams as strings — Buffer would only appear if we dropped that option.
+// streams as strings; Buffer would only appear if we dropped that option.
 const execFailureSchema = type({
 	"status?": "number | null",
 	"stderr?": "string",
@@ -86,7 +86,7 @@ export async function runCliAsync(
 
 /**
  * Drives the CJS bundle the SEA executable is built from, rather than
- * `bin/jest-roblox.js` — which prefers `src/` and so never loads a bundle at
+ * `bin/jest-roblox.js`, which prefers `src/` and so never loads a bundle at
  * all. Everything the binary carries has to be inside that one file: a
  * dependency reaching for a sibling module or a data file at run time resolves
  * beside the bundle here, and beside the executable there, and neither holds
@@ -242,7 +242,7 @@ export function createRbxtsFixtureSandbox(sourcePath: string): string {
 }
 
 /**
- * Mixed stdout the Luau runner produces around the Jest JSON payload —
+ * Mixed stdout the Luau runner produces around the Jest JSON payload;
  * exercises `extractJsonFromOutput`'s log-noise stripping.
  * @param payload - Jest payload to embed.
  * @returns Log lines with the payload between them.
@@ -297,7 +297,7 @@ export function buildPassingPayload(): JestEnvelopePayload {
 
 /**
  * The serialized Jest payload a `FakeOpenCloudTask` carries when the run under
- * test only needs the task to succeed. Counts, not results — a spec asserting
+ * test only needs the task to succeed. Counts, not results. A spec asserting
  * on pipeline shape reads `1 passed` and the server-side call record, never the
  * suite bodies.
  * @param snapshotWrites - Snapshot files the run reports writing, if any.

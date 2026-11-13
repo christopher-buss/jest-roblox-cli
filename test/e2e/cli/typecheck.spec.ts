@@ -1,12 +1,12 @@
 /**
- * E2e — bare-config + `projects:` `--typecheckOnly`.
+ * E2e: bare-config + `projects:` `--typecheckOnly`.
  *
  * Drives the real CLI binary through config-load → discovery → classification
  * → grouping → real tsgo → result-merge → exit-code, for a bare config (which
  * collapses into the multi pipeline with no Rojo project on disk) and for an
  * explicit `projects:` config.
  * `--typecheckOnly` is pure-local tsgo: no rojo build, no Open Cloud, no
- * secrets — so this lives in the default `e2e` project (not the
+ * secrets, so this lives in the default `e2e` project (not the
  * rojo/live-gated ones).
  *
  * The runner-level integration spec (`integration/typecheck.spec.ts`) calls
@@ -43,7 +43,7 @@ describe("single --typecheckOnly e2e", () => {
 	it("should enable type tests from the --typecheckOnly flag and surface a failure", async () => {
 		expect.assertions(3);
 
-		// This fixture's config does NOT enable Type Tests — the CLI flag is the
+		// This fixture's config does NOT enable Type Tests. The CLI flag is the
 		// entry point that turns them on (`only` implies `enabled`).
 		const sandbox = createFixtureSandbox(SINGLE_BROKEN_FIXTURE);
 
@@ -69,7 +69,7 @@ describe("multi --typecheckOnly e2e", () => {
 		});
 
 		// `beta` carries a deliberate type error checked against its own
-		// tsconfig, so the run fails overall — but both projects' Type Tests
+		// tsconfig, so the run fails overall, but both projects' Type Tests
 		// are reported.
 		const output = result.stdout + result.stderr;
 

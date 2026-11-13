@@ -75,7 +75,7 @@ describe.skipIf(!rojoOnPath())("an ordinary Open Cloud run on a Shared Place", (
 		expect(placeNames).toContain("example.spec");
 
 		// The probe and the one test task, in that order, both against the
-		// version the upload returned — never head.
+		// version the upload returned, never head.
 		const taskPosts = server.calls.filter(isTaskCreatePost);
 
 		expect(taskPosts.map((call) => call.url)).toStrictEqual([

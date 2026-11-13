@@ -396,7 +396,7 @@ describe(createTimingCollector, () => {
 			collector.profile("parse-ast", () => {});
 		});
 
-		// Nested spans never announce — one line per phase, not per file.
+		// Nested spans never announce: one line per phase, not per file.
 		expect(lines.filter((line) => line.endsWith(": start"))).toStrictEqual([
 			"[TIMING] prepareCoverage: start",
 		]);

@@ -25,7 +25,7 @@ export interface MemoryStoreJanitorOptions extends OpenCloudConnection {
 	readonly queueId: string;
 	/**
 	 * Ceiling on the reclaim pass's wait, in seconds. What a claim window is
-	 * worth in held-open time is the caller's policy, not the janitor's — the
+	 * worth in held-open time is the caller's policy, not the janitor's. The
 	 * janitor only reports the shortfall when the cap bites.
 	 */
 	readonly reclaimBudgetSeconds: number;
@@ -42,7 +42,7 @@ export interface MemoryStoreJanitor {
 	 */
 	cleanupAsync(): Promise<void>;
 	/**
-	 * Outwait the claim window, then clean again — the pass that reaches items
+	 * Outwait the claim window, then clean again: the pass that reaches items
 	 * a live consumer held when the run ended. Never rejects.
 	 */
 	reclaimClaimedAsync(): Promise<void>;
@@ -52,14 +52,14 @@ export interface MemoryStoreJanitor {
 const PAGE_SIZE = 100;
 /**
  * A failed discard must not hide leftovers from a retry for the default 30s
- * window — the janitor never processes what it claims, so the shortest window
+ * window. The janitor never processes what it claims, so the shortest window
  * the server accepts is the right one.
  */
 const DISCARD_CLAIM_SECONDS = 1;
 /**
  * Termination guarantee for the drain loop: a leftover backlog is finite (the
  * streaming budget bounds it well under one page), so hitting this cap means
- * something else is filling the queue — stop and let the TTL take it.
+ * something else is filling the queue. Stop and let the TTL take it.
  */
 const MAX_DRAIN_SWEEPS = 50;
 
@@ -67,7 +67,7 @@ const MAX_DRAIN_SWEEPS = 50;
  * Best-effort teardown for the MemoryStore structures a cancelled run leaves
  * behind: its work queue and the SortedMaps its tasks write. Bound to one
  * `queueId` and its `mapIds` at construction, so it structurally cannot touch a
- * concurrent sibling run's data — and it never issues the universe-wide
+ * concurrent sibling run's data, and it never issues the universe-wide
  * `memory-store:flush`. Every failure is logged and swallowed: leftovers the
  * janitor cannot reach (a mid-drain API error, a claim that outlives the
  * caller's reclaim budget) expire with the queue TTL backstop.
@@ -109,7 +109,7 @@ class OpenCloudMemoryStoreJanitor implements MemoryStoreJanitor {
 	 *
 	 * The caller's budget caps the wait, and a capped wait is a wait rather
 	 * than an age filter: sleeping `B` exposes only the claims with `B` or less
-	 * left to run — those already older than `window - B`. A claim taken long
+	 * left to run: those already older than `window - B`. A claim taken long
 	 * before the run ended can still have most of its window ahead of it, so a
 	 * cap well under the window reclaims little. The log line says which case
 	 * this run is in.
@@ -121,7 +121,7 @@ class OpenCloudMemoryStoreJanitor implements MemoryStoreJanitor {
 		const waitSeconds = Math.min(this.claimWindowSeconds, this.reclaimBudgetSeconds);
 		const tail =
 			waitSeconds < this.claimWindowSeconds
-				? ` of the ${this.claimWindowSeconds}s claim window — only items with ${waitSeconds}s or less left on their claim resurface; the rest expire with the queue TTL`
+				? ` of the ${this.claimWindowSeconds}s claim window. Only items with ${waitSeconds}s or less left on their claim resurface; the rest expire with the queue TTL`
 				: " for claimed items to resurface";
 		this.log?.(`memory-store teardown: waiting ${waitSeconds}s${tail}`);
 		await this.sleep(waitSeconds * 1000);
@@ -130,7 +130,7 @@ class OpenCloudMemoryStoreJanitor implements MemoryStoreJanitor {
 
 	/**
 	 * Delete every key the list surfaces. An individual delete failure skips to
-	 * the next key — the survivors self-expire.
+	 * the next key; the survivors self-expire.
 	 * @param mapId - Run-owned SortedMap resource to inspect.
 	 */
 	private async deleteMapKeysAsync(mapId: string): Promise<void> {
@@ -163,7 +163,7 @@ class OpenCloudMemoryStoreJanitor implements MemoryStoreJanitor {
 		}
 
 		this.log?.(
-			"memory-store teardown: drain sweep cap reached — remaining items expire with the queue TTL",
+			"memory-store teardown: drain sweep cap reached. Remaining items expire with the queue TTL",
 		);
 	}
 
@@ -212,7 +212,7 @@ class OpenCloudMemoryStoreJanitor implements MemoryStoreJanitor {
 		});
 		if (!read.success) {
 			this.log?.(
-				`memory-store teardown: queue drain failed: ${read.err.message} — leftovers expire with the queue TTL`,
+				`memory-store teardown: queue drain failed: ${read.err.message}. Leftovers expire with the queue TTL`,
 			);
 			return false;
 		}
@@ -228,7 +228,7 @@ class OpenCloudMemoryStoreJanitor implements MemoryStoreJanitor {
 		});
 		if (!discarded.success) {
 			this.log?.(
-				`memory-store teardown: queue discard failed: ${discarded.err.message} — leftovers expire with the queue TTL`,
+				`memory-store teardown: queue discard failed: ${discarded.err.message}. Leftovers expire with the queue TTL`,
 			);
 			return false;
 		}

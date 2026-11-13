@@ -105,7 +105,7 @@ describe(writeCoverageMap, () => {
 
 	// This runs once per covered file into the shadow mirror the instrumenter
 	// is filling, so it is the one publisher that declines `atomicWrite`'s
-	// stray sweep — a directory scan per file is more than the write costs.
+	// stray sweep: a directory scan per file is more than the write costs.
 	it("should not scan the directory for strays", () => {
 		expect.assertions(2);
 
@@ -182,7 +182,7 @@ describe(readCoverageMap, () => {
 
 		const { fileSystem, volume } = createMemoryFileSystem();
 
-		// Reading a directory triggers EISDIR — a non-ENOENT IO error that
+		// Reading a directory triggers EISDIR, a non-ENOENT IO error that
 		// must not be folded into the missing/invalid cases.
 		volume.mkdirSync("/coverage/dir.cov-map.json", { recursive: true });
 

@@ -18,8 +18,8 @@ import {
 // holds no config at all, which is exactly why a config leaking into the report,
 // the print layer, or the exit code was invisible here for so long.
 //
-// This spec runs the same command twice in the SAME sandbox — once bare, then
-// again with a hostile root config beside the packages — and pins that the run
+// This spec runs the same command twice in the SAME sandbox (once bare, then
+// again with a hostile root config beside the packages) and pins that the run
 // is indistinguishable. Reusing one sandbox keeps the workspace root, and every
 // path printed relative to it, byte-identical between the two runs.
 
@@ -87,7 +87,7 @@ function listFiles(sandbox: string): Array<string> {
 }
 
 /**
- * Blank the parts of a run that legitimately vary between two invocations — the
+ * Blank the parts of a run that legitimately vary between two invocations: the
  * wall clock, elapsed times, the ephemeral port the fake Open Cloud server
  * bound, and the pid and import cache-buster Node stamps onto its own warnings.
  * What survives is everything the config could have changed.

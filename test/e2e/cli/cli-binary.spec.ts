@@ -27,7 +27,7 @@ describe("cli binary", () => {
 	});
 
 	// Discovery runs before backend resolution, so reaching the credential
-	// error is itself the proof that discovery found the spec files — a
+	// error is itself the proof that discovery found the spec files. A
 	// discovery failure prints "No test files found" and stops earlier.
 	it("should load luau config and find test files", () => {
 		expect.assertions(3);

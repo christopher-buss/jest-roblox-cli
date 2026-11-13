@@ -4,7 +4,7 @@ import { sharedViteOptions, unitProject } from "./vitest.config.ts";
 
 // Stryker runs one suite: the coverage-measured `unit` project, hoisted to the
 // root so there is no `projects` array to filter (the vitest runner exposes no
-// project filter). The others are unaffordable per mutant — `integration`
+// project filter). The others are unaffordable per mutant: `integration`
 // boots the real c12/jiti loader, `e2e` spawns the built CLI, and `live` talks
 // to Open Cloud.
 export default defineConfig({
@@ -16,10 +16,10 @@ export default defineConfig({
 		// worker cannot carry a module registry between files.
 		isolate: true,
 		// Threads over the vitest default (forks): no process spawn per worker.
-		// Safe since oxc-parser 0.146.0 — at 0.123.0 its native bindings hit a
+		// Safe since oxc-parser 0.146.0. At 0.123.0 its native bindings hit a
 		// segfault (0xC0000005) in worker threads, which forced `forks` here.
 		pool: "threads",
-		// Reaches the mutant runs only — `test/setup/stryker-dry-run-budget.ts`
+		// Reaches the mutant runs only; `test/setup/stryker-dry-run-budget.ts`
 		// hands the dry run the suite's ordinary budget back.
 		setupFiles: [...unitProject.test.setupFiles, "./test/setup/stryker-dry-run-budget.ts"],
 		// A mutant that slips a busy async loop past Stryker's run budget is

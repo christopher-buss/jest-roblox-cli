@@ -16,7 +16,7 @@ import type { ResolvedConfig } from "./resolved-config.ts";
 const CWD = "/project";
 
 const SRC_HINT =
-	'Path starts with "src/" — if using roblox-ts, set "outDir" in your project config to the compiled output directory (e.g. "out/client")';
+	'Path starts with "src/". If using roblox-ts, set "outDir" in your project config to the compiled output directory (e.g. "out/client")';
 
 type MountKinds = Record<string, PathKind>;
 
@@ -569,7 +569,7 @@ describe("project resolution", () => {
 
 		// `testTimeout: undefined` cannot be expressed under
 		// exactOptionalPropertyTypes, but a hand-written config can still
-		// deliver it at runtime — which is the path under test.
+		// deliver it at runtime, which is the path under test.
 		const project: ProjectTestConfig = fromAny({
 			...makeProject({ displayName: "client", outDir: "out/client" }),
 			testTimeout: undefined,
@@ -1016,7 +1016,7 @@ describe("project resolution", () => {
 
 		expect(caught).toHaveProperty(
 			"hint",
-			'Path starts with "src/" — if using roblox-ts, set "outDir" in your project config to the compiled output directory (e.g. "out/client")',
+			'Path starts with "src/". If using roblox-ts, set "outDir" in your project config to the compiled output directory (e.g. "out/client")',
 		);
 	});
 

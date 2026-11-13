@@ -200,7 +200,7 @@ describe(prepareWorkStealingQueueAsync, () => {
 	it("should construct a real queue writer when no factory is provided", () => {
 		expect.assertions(1);
 
-		// Just confirming construction succeeds — actual HTTP would fail without
+		// Just confirming construction succeeds. Actual HTTP would fail without
 		// mocks; this exercises the default factory branch.
 		const promise = prepareWorkStealingQueueAsync({
 			credentials: CREDENTIALS,

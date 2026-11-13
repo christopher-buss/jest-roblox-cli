@@ -30,8 +30,8 @@ describe(computePlaceContentId, () => {
 		expect.assertions(1);
 
 		// The maps' key order is the order the instrumenter walked in, which two
-		// builds of one tree need not agree on. Written out of order on purpose
-		// — sorting these keys is deleting the case.
+		// builds of one tree need not agree on. Written out of order on purpose;
+		// sorting these keys is deleting the case.
 		// eslint-disable-next-line perfectionist/sort-objects -- see above
 		const files = { "out/b.luau": { sourceHash: "bb" }, "out/a.luau": { sourceHash: "aa" } };
 
@@ -42,7 +42,7 @@ describe(computePlaceContentId, () => {
 		expect.assertions(1);
 
 		// The specs the place carries decide every verdict, and no probed file
-		// changes when one is edited — so a digest over the probed half alone
+		// changes when one is edited, so a digest over the probed half alone
 		// would score this build's mutants against another build's tests.
 		const set = covering();
 		set.nonInstrumentedFiles["out/a.spec.luau"] = { sourceHash: "edited" };

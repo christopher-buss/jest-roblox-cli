@@ -17,7 +17,7 @@ describe(rethrowOversizedResult, () => {
 		expect.assertions(2);
 
 		// Open Cloud names neither the cause nor a way out, and it rejects
-		// the whole task — every package that task ran is lost with it. A
+		// the whole task. Every package that task ran is lost with it. A
 		// run reaching here is either single-task or has one package whose
 		// own results exceed the cap, so the remedy has to be spelled out.
 		const cause = new Error(
@@ -31,7 +31,7 @@ describe(rethrowOversizedResult, () => {
 			[
 				cause.message,
 				"One task returned more Jest output than Open Cloud accepts (4 MiB).",
-				"Coverage is usually the bulk of it — try --no-coverage to confirm.",
+				"Coverage is usually the bulk of it. Try --no-coverage to confirm.",
 				"Only files in the coverage universe are probed, so narrowing `collectCoverageFrom` to what you actually report on shrinks the payload with it.",
 				'Otherwise set `parallel: "auto"` (or --parallel 2+) so results come back split across tasks, or narrow the run with --packages / --project.',
 			].join("\n"),

@@ -29,7 +29,7 @@ async function runPassingOpenCloudAsync(sandbox: string) {
 // Regression: a bare `test:` config with no `projects` must run end to end. It
 // collapses into the multi pipeline, where one project is synthesized from the
 // config's Luau roots mapped through the Rojo tree. The Luau runner resolves
-// per-project config from a `jest.config` ModuleScript at each root — which a
+// per-project config from a `jest.config` ModuleScript at each root, which a
 // bare config never supplied, so before the synthesized project carried a
 // generated stub the run reached Roblox and died there.
 //
@@ -52,7 +52,7 @@ describe("bare no-projects config", () => {
 
 			// Asserted before the run, not just after. `.jest-roblox/` is a
 			// gitignored run artifact, and the specs that drive the CLI at a
-			// fixture path rather than a sandbox leave one behind — so on a
+			// fixture path rather than a sandbox leave one behind. So on a
 			// machine where those ran first, a sandbox that copied it would
 			// satisfy every assertion below with stub generation fully broken.
 			// `createFixtureSandbox` filters it out; this is the check that says
@@ -71,7 +71,7 @@ describe("bare no-projects config", () => {
 				"generated stub for the synthesized root",
 			).toBeTrue();
 
-			// The marker prefix is what makes it a *generated* stub — the
+			// The marker prefix is what makes it a *generated* stub: the
 			// workspace runner's pre-flight cleanup keys off this exact string,
 			// and a user-authored file must never carry it. The `displayName`
 			// alongside it is the evidence that a project was synthesized at
@@ -108,7 +108,7 @@ describe("bare no-projects config", () => {
 	// names no `luauRoots`, so the case above takes the fallback that derives
 	// them from the Rojo tree; this one sets them explicitly and takes the early
 	// return. Both reach `buildImplicitProject`, and only the explicit branch
-	// can put a root in the config that the tree does not mount — which is the
+	// can put a root in the config that the tree does not mount, which is the
 	// error the branch exists to raise.
 	it.skipIf(!rojoOnPath())(
 		"should synthesize from an explicit luauRoots rather than the rojo tree",

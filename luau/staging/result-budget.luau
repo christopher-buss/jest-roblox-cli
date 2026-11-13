@@ -79,7 +79,7 @@ end
 	Whether the worker should stop taking new queue items.
 
 	The next entry's size is unknown, so the largest one measured so far stands
-	in for it — `fits` asked of a guess. A run whose entries are many small
+	in for it: `fits` asked of a guess. A run whose entries are many small
 	ones followed by one large one defeats that guess, which is why the caller
 	asks again once the entry has been measured.
 ]=]

@@ -520,11 +520,11 @@ describe(prepareWorkspaceCoverage, () => {
 		expect(Object.keys(manifest.files)).toContain(expectedKey);
 	});
 
-	// Codex review follow-up: a cold run only ever adds to the package shadow —
+	// Codex review follow-up: a cold run only ever adds to the package shadow:
 	// the instrumenter and the mirror sync both merge, and the reconcile that
 	// deletes runs warm. If a prior run wrote files that have since been deleted
-	// from source — or the cache is invalid / version-stale and we fall back to
-	// a cold run — those stale files survive into the redirected $path mount.
+	// from source (or the cache is invalid / version-stale and we fall back to
+	// a cold run), those stale files survive into the redirected $path mount.
 	// Single-package prepares avoid this by rmSync-ing COVERAGE_DIR before
 	// instrumenting; workspace must nuke its own per-package shadow root for
 	// symmetry.
@@ -561,14 +561,14 @@ describe(prepareWorkspaceCoverage, () => {
 			}),
 			[path.join(FOO_DIR, "out/init.luau")]: "local x = 1",
 			[path.join(FOO_DIR, "out/live.spec.luau")]: "return {}",
-			// Stale spec from a prior run — source has no matching file.
+			// Stale spec from a prior run; source has no matching file.
 			[staleSpecPath]: "return {}",
 		});
 		const instrumenter = createInstrumenter();
 
 		prepareFoo({ fileSystem, instrumenter });
 
-		// Stale shadow file gone — rmSync of the package shadow before the run
+		// Stale shadow file gone: rmSync of the package shadow before the run
 		// writes anything into it.
 		expect(volume.existsSync(staleSpecPath)).toBeFalse();
 		// Current source still landed, through the mirror sync.
@@ -735,7 +735,7 @@ describe(prepareWorkspaceCoverage, () => {
 		volume.fromJSON({
 			[`${packageShadow}/out-test/test/fixtures.cov-map.json`]: "{}",
 			// Cached helper shadow files exist (so instrumentation is skipped
-			// for the helper) — but the spec's shadow file does NOT exist.
+			// for the helper), but the spec's shadow file does NOT exist.
 			[`${packageShadow}/out-test/test/fixtures.luau`]: "instrumented",
 			...fooProject({
 				$className: "DataModel",
@@ -750,7 +750,7 @@ describe(prepareWorkspaceCoverage, () => {
 		prepareFoo({ fileSystem, instrumenter });
 
 		// previousRecord matched the source hash but pointed at a missing
-		// shadow file — re-copy via copyFileSync so the shadow stays
+		// shadow file. Re-copy via copyFileSync so the shadow stays
 		// consistent with the manifest.
 		expect(volume.existsSync(shadowSpecPath)).toBeTrue();
 	});
@@ -935,7 +935,7 @@ describe(prepareWorkspaceCoverage, () => {
 	// those files isn't useful (they're vendor code, not project source) and
 	// the synthesizer would then redirect `rbxts_include.$path` to the shadow,
 	// adding probe overhead to every `require` through `TS.import`. Skip any
-	// `$path` whose root contains a `RuntimeLib` file — the canonical marker.
+	// `$path` whose root contains a `RuntimeLib` file, the canonical marker.
 	it("should skip directories containing RuntimeLib (rbxts include)", async () => {
 		expect.assertions(2);
 
@@ -1152,7 +1152,7 @@ describe(prepareWorkspaceCoverage, () => {
 	});
 
 	// Workspace coverage walked every rojo `$path` mount and
-	// instrumented every directory containing luau files — ignoring per-pkg
+	// instrumented every directory containing luau files, ignoring per-pkg
 	// `luauRoots` and `coveragePathIgnorePatterns` that single mode honors. The
 	// fix threads both knobs through `WorkspacePackageDescriptor`. These cases
 	// seed a multi-mount rojo tree (the user-owned `src/` + a vendored
@@ -1466,7 +1466,7 @@ describe(prepareWorkspaceCoverage, () => {
 
 			const { fileSystem, volume } = createMemoryFileSystem();
 			// Spelled with no leading `..`, so only resolving it reveals that it
-			// lands outside the package — on a directory the rojo tree really
+			// lands outside the package, on a directory the rojo tree really
 			// does mount, so reachability alone would wave it through.
 			volume.fromJSON({
 				...fooProject({
@@ -1763,7 +1763,7 @@ describe(prepareWorkspaceCoverage, () => {
 			expect.assertions(2);
 
 			const { fileSystem, volume } = createMemoryFileSystem();
-			// `..` path escapes the package — the relative path starts with
+			// `..` path escapes the package: the relative path starts with
 			// "..", which `buildRojoMountSet` drops. Combined with a per-pkg
 			// `luauRoots` that lists the absolute-equivalent root, this
 			// confirms the off-tree filter and the warning fire.

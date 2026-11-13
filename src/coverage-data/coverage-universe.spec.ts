@@ -64,7 +64,7 @@ describe(filterCoverageUniverse, () => {
 	it("should match ignore patterns by substring like Jest", () => {
 		expect.assertions(1);
 
-		// `contains: true` — a bare `index.ts` matches anywhere in the path,
+		// `contains: true`: a bare `index.ts` matches anywhere in the path,
 		// mirroring Jest's regex-based coveragePathIgnorePatterns.
 		const filtered = filterCoverageUniverse(resultFor("src/foo/index.ts"), {
 			ignore: ["index.ts"],

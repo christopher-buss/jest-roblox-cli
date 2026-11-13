@@ -51,7 +51,7 @@ function rewriteEscapingPaths(
 /**
  * Rojo project files use `$path` values relative to the project file. When a
  * fixture references siblings outside its own directory (e.g. `rojo-sync/`),
- * the relative path is calibrated to the fixture's location in the repo —
+ * the relative path is calibrated to the fixture's location in the repo;
  * copying the fixture to a temp sandbox at a different depth breaks those
  * references. For each `$path` that escapes the source fixture, rewrite it
  * to a sandbox-relative path that points back at the original target.

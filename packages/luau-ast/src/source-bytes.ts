@@ -15,7 +15,7 @@ export interface ByteRange {
 /**
  * A Luau source indexed for byte-offset math. Every position the parser
  * reports counts UTF-8 bytes (Luau's convention), so all offsets here are
- * byte offsets against the UTF-8 encoding of the text — never UTF-16 indexes
+ * byte offsets against the UTF-8 encoding of the text, never UTF-16 indexes
  * into the JavaScript string.
  */
 export interface SourceBytes {
@@ -42,7 +42,7 @@ export interface SourceBytes {
 	rangeToSpan: (range: ByteRange) => LuauSpan;
 	/**
 	 * Decode the bytes in `[start, end)` as text. Offsets must sit on
-	 * character boundaries — parser spans always do.
+	 * character boundaries; parser spans always do.
 	 */
 	slice: (start: number, end: number) => string;
 	/**
@@ -71,7 +71,7 @@ export interface SourceBytes {
  * these, whatever grammar it reads, so they live here; a byte that means
  * something only to one grammar belongs to the scanner that knows it.
  *
- * A byte this low can only be the character itself — a multi-byte UTF-8
+ * A byte this low can only be the character itself: a multi-byte UTF-8
  * sequence never contains one.
  */
 export const BYTE_CARRIAGE_RETURN = 0x0d;

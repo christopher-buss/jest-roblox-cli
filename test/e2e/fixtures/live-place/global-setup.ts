@@ -5,7 +5,7 @@ import * as path from "node:path";
 // Vitest `globalSetup` for the `live` project. Ensures rbxtsc intermediates
 // (`out/`, `include/`) exist before live tests run. The CLI's multi-project
 // path (`createProjectLayout` in src/run/project-layout.ts) writes per-project stubs into the
-// rojo source tree and rebuilds the rbxl — that rebuild needs the compiled
+// rojo source tree and rebuilds the rbxl. That rebuild needs the compiled
 // Luau output and rbxts runtime to be present. Both directories are
 // gitignored (regenerated artifacts), so we compile on demand.
 //
@@ -14,7 +14,7 @@ import * as path from "node:path";
 //
 // Under Nx the compile is normally done upstream by the cacheable
 // `e2e-live-fixture` target, which `e2e-live` `dependsOn`, so this hook just
-// hits the sentinel and returns — which is what keeps the spec files from
+// hits the sentinel and returns, which is what keeps the spec files from
 // racing on `out/`. It stays as the on-demand fallback for direct
 // `vitest run --project live` invocations.
 
@@ -23,8 +23,8 @@ const SENTINEL = path.join(FIXTURE_DIR, "out", "shared", "example.luau");
 
 export default function setup(): void {
 	// Live tests themselves are gated on JEST_ROBLOX_LIVE=1 (see the specs in
-	// test/e2e/live/). Skip the rbxtsc rebuild when live tests won't run —
-	// avoids requiring fixture deps in environments (e.g. the standalone
+	// test/e2e/live/). Skip the rbxtsc rebuild when live tests won't run.
+	// That avoids requiring fixture deps in environments (e.g. the standalone
 	// repo's CI) where the fixture's package.json isn't part of the pnpm
 	// workspace.
 	if (process.env["JEST_ROBLOX_LIVE"] !== "1") {

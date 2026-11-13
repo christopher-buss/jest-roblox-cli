@@ -3,7 +3,7 @@ import type { RojoTreeNode } from "./rojo-types.ts";
 /**
  * Narrow an arbitrary tree value to a {@link RojoTreeNode}. Tree walkers reach
  * values through the index signature, whose union is wider than the node type,
- * so they need this rather than an assertion. Arrays and `null` are rejected —
+ * so they need this rather than an assertion. Arrays and `null` are rejected:
  * neither is a valid child instance, and `typeof null === "object"` would
  * otherwise crash the walk.
  * @param value - The tree value to test.

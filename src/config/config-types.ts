@@ -168,7 +168,7 @@ export interface GlobalTestConfig extends SharedTestConfig {
 	};
 	/** Print Jest's resolved config and debugging info. */
 	debug?: boolean;
-	/** Reporter label for the whole run — a string, or `{ name, color }`. */
+	/** Reporter label for the whole run: a string, or `{ name, color }`. */
 	displayName?: DisplayName | string;
 	/** Test environment to use, forwarded to the Jest runtime. */
 	env?: string;

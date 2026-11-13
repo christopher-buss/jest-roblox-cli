@@ -138,7 +138,7 @@ function mapFsRootToDataModel(outDirectory: PosixRoot, rojoTree: RojoTreeNode): 
 		}
 
 		const hint = outDirectory.startsWith("src/")
-			? 'Path starts with "src/" — if using roblox-ts, set "outDir" in your project config to the compiled output directory (e.g. "out/client")'
+			? 'Path starts with "src/". If using roblox-ts, set "outDir" in your project config to the compiled output directory (e.g. "out/client")'
 			: undefined;
 
 		throw new ConfigError(message, hint);
@@ -177,7 +177,7 @@ function unmappableRootError({
 	}
 
 	const hint = root.startsWith("src/")
-		? 'Path starts with "src/" — if using roblox-ts, set "outDir" in your project config to the compiled output directory (e.g. "out/client")'
+		? 'Path starts with "src/". If using roblox-ts, set "outDir" in your project config to the compiled output directory (e.g. "out/client")'
 		: undefined;
 
 	return new ConfigError(message, hint);

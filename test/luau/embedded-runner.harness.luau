@@ -148,7 +148,7 @@ end
 
 local MemoryStoreService = {}
 
--- Highest priority first, insertion order breaking ties — how the real queue
+-- Highest priority first, insertion order breaking ties: how the real queue
 -- orders reads, and what a re-queued item rides to the front of.
 local function popHighestPriority()
 	local best = nil
@@ -223,7 +223,7 @@ local stagingCalls = {}
 local sharedIsMissing = false
 local silent = {}
 local jestHangs = {}
--- Parks the way a slow package does — no warning, nothing wrong, just still
+-- Parks the way a slow package does: no warning, nothing wrong, just still
 -- working. The budget is the only thing that can end it.
 local jestParks = {}
 
@@ -236,7 +236,7 @@ local function say(pkg: string, message: string, messageType)
 end
 
 -- The accumulator the per-test coverage hook hands back on install, and the
--- config Jest was last handed — both written by the stubs below and read by
+-- config Jest was last handed, both written by the stubs below and read by
 -- the coverage tests.
 local liveRecords: any = nil
 local jestSawConfig: any = nil
@@ -539,7 +539,7 @@ local function require(target)
 end
 
 -- The real tap and the real installer that reaches for it, so what a package
--- writes to Jest's stdout here reaches Banner Output the way it does in a run —
+-- writes to Jest's stdout here reaches Banner Output the way it does in a run,
 -- and a tree the installer cannot find RobloxShared in fails here the same way.
 -- Assigned before the modules that require it are inlined below: each of those
 -- bodies runs where it is written.
@@ -702,7 +702,7 @@ local function testResultsNameTheirJob()
 end
 
 -- T1: the capture opens before the package is materialized and spans its run,
--- and two packages that each print distinct messages get only their own —
+-- and two packages that each print distinct messages get only their own,
 -- including the reset between them, which belongs to neither capture.
 local function testWindowAndNoBleedAcrossPackages()
 	local results = run({ "a", "b" })
@@ -734,8 +734,8 @@ local function testRecordShape()
 	check(sawWarning, "T2: warning records keep their message type")
 end
 
--- T3: every failure path — a missing stage, a Jest rejection, a runner failure
--- before Jest is even found (no interception installed yet) — still returns
+-- T3: every failure path (a missing stage, a Jest rejection, a runner failure
+-- before Jest is even found with no interception installed yet) still returns
 -- what was printed on the way down, as a per-package failure.
 local FAILURE_CASES = {
 	{ flags = materializeFails, pkg = "c", wanted = "materialize:c", label = "stage failure" },
@@ -766,7 +766,7 @@ local function testSilentPackageHasNoOutput()
 end
 
 -- T5: --bail stops the sequential walk at the first package whose TESTS
--- failed — Jest itself returned, so nothing errored; only the result did.
+-- failed. Jest itself returned, so nothing errored; only the result did.
 local function testBailStopsTheWalk()
 	jestRedTests.a = true
 	local results, outcome = runBailing({ "a", "b", "c" })
@@ -775,7 +775,7 @@ local function testBailStopsTheWalk()
 	check(#results == 1, "T5: the walk stops after the failing package")
 	check(results[1].pkg == "a", "T5: the failing package is still reported")
 	check(outcome.bailed, "T5: the outcome says it bailed")
-	check(not outcome.deferred, "T5: a bail is not a deferral — no replacement task")
+	check(not outcome.deferred, "T5: a bail is not a deferral, no replacement task")
 end
 
 -- T6: without --bail the same failure changes nothing; every package runs.
@@ -802,7 +802,7 @@ local function testBailStopsThePopLoop()
 	check(#queueItems == 2, "T7: the packages it never reached stay in the queue")
 end
 
--- T8: a sibling's signal stops this task before it pops anything at all —
+-- T8: a sibling's signal stops this task before it pops anything at all:
 -- the check runs ahead of the read, not after the run.
 local function testSiblingSignalStopsBeforeFirstPop()
 	sortedMaps["sibling-map"] = nil
@@ -855,7 +855,7 @@ local function runnerFieldsOf(result)
 end
 
 -- T10: a workspace run with per-test attribution on reports the records the
--- hook collected, not just the cumulative sink — the same dimensions a multi
+-- hook collected, not just the cumulative sink: the same dimensions a multi
 -- run reports, so covering-test narrowing works on both.
 local function testPerTestCoverageReachesTheWire()
 	liveRecords = nil
@@ -869,7 +869,7 @@ local function testPerTestCoverageReachesTheWire()
 	check(runner.perTestCoverage[1].testCaseId == "covers a", "T10: the record names its test")
 end
 
--- T11: attribution is per-package, like the sink it diffs — package b's
+-- T11: attribution is per-package, like the sink it diffs: package b's
 -- records carry none of a's.
 local function testPerTestCoverageIsPerPackage()
 	liveRecords = nil
@@ -1063,7 +1063,7 @@ end
 -- The anime-rush shape in miniature: two small packages, then one that
 -- overshoots the cap on its own. `measure` counts the pkg field like any other,
 -- so a name this long stands in for the entry that carries a coverage payload.
--- Small entries first is what matters — they keep the largest measured low, so
+-- Small entries first is what matters: they keep the largest measured low, so
 -- the projection lets the worker take the big one.
 local HUGE_PKG = string.rep("z", 5000)
 local SMALL_BUDGET_BYTES = 3000
@@ -1094,7 +1094,7 @@ end
 
 -- T20: the dropped entry is not streamed either. It is going to run again on
 -- another task, and a package the CLI has already been told about would print
--- twice and — under --bail — trip the run on a failure no envelope reports.
+-- twice and (under --bail) trip the run on a failure no envelope reports.
 local function testDroppedEntryIsNotStreamed()
 	sortedMaps["stream-map"] = nil
 	local results = run({ "a", HUGE_PKG }, {
@@ -1111,7 +1111,7 @@ end
 -- T21: the pop loop drops the same entry, and puts its queue item back so the
 -- replacement task finds it. Left as this worker read it, the item stays
 -- invisible for the rest of the window and a replacement that boots inside it
--- reads an empty queue — the package would be lost, not retried.
+-- reads an empty queue. The package would be lost, not retried.
 local function testOversizedEntryGoesBackOnTheQueue()
 	local results, outcome = runStealing(
 		{ "a", "b", HUGE_PKG },
@@ -1128,7 +1128,7 @@ end
 -- T22: the replacement task takes the dropped item before anything else, so it
 -- meets it with an empty envelope, which accepts an entry of any size. Put back
 -- behind the items still queued, the worker that reached it would be carrying
--- results again and could drop it a second time — and a third, until the CLI
+-- results again and could drop it a second time, then a third, until the CLI
 -- runs out of launches and the run ends missing that package.
 local function testReplacementTakesTheDroppedItemFirst()
 	local pkgs = { "a", HUGE_PKG, "b", "c" }
@@ -1176,7 +1176,7 @@ end
 -- T25: a refused put-back is retried, and the item lands on the retry. Giving up
 -- on the first refusal would leave the item invisible for the rest of its
 -- window, and the replacement task the deferral asks for reads the queue
--- non-blocking — it boots well inside that window and finds nothing.
+-- non-blocking. It boots well inside that window and finds nothing.
 local function testRefusedRequeueIsRetried()
 	requeueFailures = 2
 	local results, outcome = runStealing(
@@ -1247,7 +1247,7 @@ local function testFailureBeforeTheTapAnswersNothing()
 end
 
 -- T29: what Jest writes to its own stdout reaches Banner Output. This is where
--- the cause of an exit lives — "No tests found, exiting with code 1" is written
+-- the cause of an exit lives: "No tests found, exiting with code 1" is written
 -- through process.stdout, not through the print LogService hears.
 local function testJestStdoutReachesBannerOutput()
 	jestBanners.a = "No tests found in a"
@@ -1361,8 +1361,8 @@ local function testFanOutStageFailureFailsThePackage()
 	check(results[3].pkg == "b", "T33: b still runs")
 end
 
--- T34: --bail lets the failing package finish — its projects already ran
--- together — and takes no further package.
+-- T34: --bail lets the failing package finish (its projects already ran
+-- together) and takes no further package.
 local function testFanOutBailStopsAtThePackage()
 	jestRedTests.a = true
 	local results, outcome = runFannedOut(

@@ -450,7 +450,7 @@ describe(OcaleRunner, () => {
 		it("should pass through an API error the poll returns", async () => {
 			expect.assertions(1);
 
-			// A 404 mid-poll is authoritative — ocale stops the loop and hands
+			// A 404 mid-poll is authoritative: ocale stops the loop and hands
 			// it back, and there is nothing to add to it.
 			const http = createFakeHttpClient();
 			http.mockResponse({ body: taskBody({ state: "QUEUED" }), status: 200 });
@@ -630,7 +630,7 @@ describe(OcaleRunner, () => {
 		it("should cap the poll at an explicit budget, not the deadline plus grace", async () => {
 			expect.assertions(3);
 
-			// A caller that wants a wall-clock answer — "did this boot at all?" —
+			// A caller that wants a wall-clock answer ("did this boot at all?")
 			// has no use for the grace, which exists so Roblox’s own verdict on a
 			// running script is observable.
 			const http = createFakeHttpClient();

@@ -520,7 +520,7 @@ describe("resolveSourceSnippets snapshot-diff fallback", () => {
 			title: "snap test",
 		};
 
-		// filePath provided but nonexistent, no sourceMapper — exercises the
+		// filePath provided but nonexistent, no sourceMapper: exercises the
 		// hasSnapshotDiff && filePath !== undefined fallback
 		// (formatSnapshotCallSnippet returns [] because file doesn't exist)
 		const formatted = formatFailure({
@@ -656,7 +656,7 @@ describe("formatSnapshotCallSnippet via formatFailure", () => {
 			test,
 		});
 
-		// Multiple toMatchSnapshot calls — no snippet shown
+		// Multiple toMatchSnapshot calls: no snippet shown
 		expect(formatted).not.toContain("❯");
 	});
 });
@@ -762,7 +762,7 @@ describe("formatFallbackSnippet nonexistent file", () => {
 		const formatted = formatFailure({ styles: createPlainStyles(), test });
 
 		// parseSourceLocation parses the location but getSourceSnippet returns
-		// undefined because the file doesn't exist — no snippet rendered
+		// undefined because the file doesn't exist, so no snippet renders
 		expect(formatted).not.toContain("❯");
 	});
 });
@@ -830,7 +830,7 @@ describe("formatMappedLocationSnippets undefined branches", () => {
 
 		const formatted = formatFailure({ sourceMapper, styles: createPlainStyles(), test });
 
-		// No snippet rendered — source file nonexistent and no sourceContent
+		// No snippet rendered: source file nonexistent and no sourceContent
 		expect(formatted).not.toContain("❯");
 	});
 

@@ -46,7 +46,7 @@ export interface FakeOpenCloudTask {
 	jobIndex?: number;
 	/**
 	 * Structured log messages the task's `/logs` page returns. Read only on a
-	 * failure — that is the one path the runner fetches logs for.
+	 * failure; that is the one path the runner fetches logs for.
 	 */
 	logs?: ReadonlyArray<{ message: string; messageType: string }>;
 	/**
@@ -61,7 +61,7 @@ export interface FakeOpenCloudTask {
 	/**
 	 * Terminal state to return after `pollsBeforeComplete` is exhausted.
 	 * Defaults to `"COMPLETE"`. Set to `"FAILED"` to drive the failure
-	 * branch — the contract suite needs both to prove fake/live parity.
+	 * branch. The contract suite needs both to prove fake/live parity.
 	 */
 	state?: "COMPLETE" | "FAILED";
 }

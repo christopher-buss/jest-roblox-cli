@@ -30,7 +30,7 @@ describe(dequeueOrEmptyAsync, () => {
 
 		const http = createFakeHttpClient();
 		// The 404 `items:read` answers when no item is visible, and the one a
-		// queue that was never created answers — byte-identical, and to a
+		// queue that was never created answers are byte-identical, and to a
 		// caller the same thing.
 		http.mockApiError({
 			code: "NOT_FOUND",

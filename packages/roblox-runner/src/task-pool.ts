@@ -5,7 +5,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import type { ScriptResult } from "./runner-types.ts";
 
 /**
- * Measured Open Cloud per-place active-task ceiling — a platform constant, not
+ * Measured Open Cloud per-place active-task ceiling: a platform constant, not
  * a tuning knob. `P` places offer `10·P` concurrent task slots, so the pool
  * caps each place's slot share here and warns when the requested total exceeds
  * the aggregate ceiling.
@@ -111,8 +111,8 @@ export interface TaskPoolOptions {
 	onError?: (error: Error, slot: number) => void;
 	/**
 	 * Fold a settled task's envelope into the consumer's result set. `slot` is
-	 * the index of the slot the task ran in — stable for the run and unique
-	 * across every place — so a consumer can attribute settled tasks to the
+	 * the index of the slot the task ran in (stable for the run and unique
+	 * across every place), so a consumer can attribute settled tasks to the
 	 * slot that produced them rather than to one undifferentiated stream.
 	 */
 	onResult: (result: ScriptResult, slot: number) => void;
@@ -162,7 +162,7 @@ interface LiveTasks {
 /**
  * The pool's resolved dependencies, built once per run so the slot workers can
  * live at module scope instead of closing over {@link runTaskPoolAsync}'s
- * locals. Internal — {@link TaskPoolOptions} stays the public surface.
+ * locals. Internal: {@link TaskPoolOptions} stays the public surface.
  */
 interface PoolRuntime {
 	isDone: () => boolean;
@@ -184,14 +184,14 @@ interface PoolRuntime {
  * (`!isDone()`), and resolve once every slot has drained and the done-signal
  * has fired. All places drain the consumer's one shared queue, so a slot that
  * frees on a fast place transparently re-runs a sibling's lost work. The pool
- * is jest/mutation-agnostic — chunk sizing, result de-duplication, and bail
+ * is jest/mutation-agnostic: chunk sizing, result de-duplication, and bail
  * live in the consumer.
  *
  * A task that throws a recognised platform backoff signal (a genuinely-full
  * place's `RESOURCE_EXHAUSTED`, the ~10s slot-recycle lag, or a rate-limit 429)
  * waits the slot out and retries without surfacing an error; any other throw
  * frees the slot (its in-flight work re-surfaces via the queue invisibility
- * window), reports through `onError`, and is relaunched while work remains — so
+ * window), reports through `onError`, and is relaunched while work remains, so
  * neither a transient failure nor platform backoff aborts the run or corrupts
  * results.
  * @param options - Places, concurrency, completion callbacks and timing adapters.
@@ -276,7 +276,7 @@ async function backoffAsync({
 	const waitMs = sinceCompletion < RECYCLE_LAG_MS ? RECYCLE_LAG_MS - sinceCompletion : genuineMs;
 	// The signal, not the wait: a 429 carries a server retry delay, a full place
 	// carries none, and the recycle-lag branch above can shorten either one.
-	// The two are not interchangeable to a reader — one is scoped to this
+	// The two are not interchangeable to a reader: one is scoped to this
 	// place, the other to the whole key.
 	const kind = retryAfterMs === undefined ? "place-full" : "rate-limit";
 	runtime.onBackoff?.({ kind, placeIndex: state.placeIndex, slot, waitMs });

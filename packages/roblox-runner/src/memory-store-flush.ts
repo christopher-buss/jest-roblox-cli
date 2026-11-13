@@ -7,7 +7,7 @@ import { createFetchHttpClient, DEFAULT_BASE_URL } from "./open-cloud-fetch.ts";
 export type FlushMemoryStoreOptions = OpenCloudConnection;
 
 /**
- * Issue the **universe-wide** `memory-store:flush` — it destroys every queue,
+ * Issue the **universe-wide** `memory-store:flush`. It destroys every queue,
  * sorted map, and hash map in the universe, including a concurrent run's
  * in-flight work. Never called automatically; the one legitimate caller is an
  * operator who owns the universe exclusively and asked for it by flag. The SDK

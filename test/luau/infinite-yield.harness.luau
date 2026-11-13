@@ -146,7 +146,7 @@ local function testReturnedValueIsPassedThrough()
 	check(not isWatching(), "T1: the watch is disconnected when the run ends")
 end
 
--- T2: a thunk that throws is reported as a failure, not as an abort — the
+-- T2: a thunk that throws is reported as a failure, not as an abort. The
 -- watchdog only replaces the outcome when the warning arrived first.
 local function testThrownErrorIsPassedThrough()
 	local outcome = guardInThread(function()
@@ -158,7 +158,7 @@ local function testThrownErrorIsPassedThrough()
 	check(not isWatching(), "T2: the watch is disconnected on the error path")
 end
 
--- T3: the production ordering — the thunk parks first, and the warning arrives
+-- T3: the production ordering: the thunk parks first, and the warning arrives
 -- five seconds later. The caller is woken by the warning rather than by a poll.
 local function testWarningWhileParkedAbortsTheRun()
 	local outcome = guardInThread(parkForever)
@@ -201,7 +201,7 @@ local function testFirstWarningWins()
 end
 
 -- T6: neither an unrelated warning nor the same text at another message type
--- ends a run — an engine warning is the only signal, and print is not one.
+-- ends a run. An engine warning is the only signal, and print is not one.
 local function testUnrelatedMessagesAreIgnored()
 	local outcome = guardInThread(function()
 		emit("Something else entirely", WARNING)
@@ -225,7 +225,7 @@ local function testFinishedRunKeepsItsResult()
 	check(outcome.value == "value", "T7: the thunk's value survives the warning")
 end
 
--- T8: a warning between runs belongs to nothing — the watch of the run that
+-- T8: a warning between runs belongs to nothing. The watch of the run that
 -- ended is disconnected, so the next run cannot inherit it.
 local function testWarningBetweenRunsAbortsNothing()
 	emit(YIELD_WARNING, WARNING)
@@ -253,8 +253,8 @@ local function testAbandonedThunkCannotWakeLater()
 	check(not resumeOk, "T9: the closed thunk refuses to resume")
 end
 
--- T10: the caller's cleanup is what reaches the thread the engine parked — the
--- thunk only waits on it — so an abort must run it, and run it before the
+-- T10: the caller's cleanup is what reaches the thread the engine parked (the
+-- thunk only waits on it), so an abort must run it, and run it before the
 -- guard hands its verdict back.
 local function testAbandonRunsTheCallersCleanup()
 	local cancelled = false
@@ -273,7 +273,7 @@ local function testAbandonRunsTheCallersCleanup()
 end
 
 -- T11: a run that ends on its own cancels nothing, whether it returned or
--- threw — there is no abandoned work to end.
+-- threw. There is no abandoned work to end.
 local function testFinishedRunSkipsTheCleanup()
 	local cancelled = false
 	local returned = guardInThread(function()
@@ -311,7 +311,7 @@ local function testThrowingCleanupKeepsTheVerdict()
 	check(outcome.value == ABORT_PREFIX .. YIELD_WARNING, "T12: it still names the yield")
 end
 
--- T13: the whole point of the budget — a run still parked when it runs out is
+-- T13: the whole point of the budget: a run still parked when it runs out is
 -- abandoned the way a warned one is, and says which of the two happened.
 local function testElapsedBudgetAbortsTheRun()
 	local cancelled = false
@@ -350,7 +350,7 @@ local function testWarningDisarmsTheBudget()
 end
 
 -- T15: zero is how a config asks for no budget at all, and an absent one is the
--- same answer — the warning stays the only thing that can end the run.
+-- same answer. The warning stays the only thing that can end the run.
 local function testNoBudgetArmsNoDeadline()
 	local zero = guardInThread(parkForever, { timeoutMs = 0 })
 	check(#armed == 0, "T15: a zero budget arms no deadline")
@@ -383,7 +383,7 @@ end
 
 -- T17: the budget covers the thunk's first turn. `task.spawn` runs `fn` up to
 -- its first yield before it returns, so a deadline armed after that call would
--- exclude every bit of synchronous setup from the budget it advertises — 50s of
+-- exclude every bit of synchronous setup from the budget it advertises: 50s of
 -- resolving instances followed by a park would get a further 60s.
 local function testBudgetCoversWorkBeforeTheFirstYield()
 	local cancelled = false
@@ -439,7 +439,7 @@ local function testAbandonNoteIsAppended()
 	check(asked == 0, "T18: and is never asked for a note")
 end
 
--- T19: the note is a description, not a verdict — one that throws or says
+-- T19: the note is a description, not a verdict. One that throws or says
 -- nothing leaves the abort exactly as it was.
 local function testUselessNoteLeavesTheAbortAlone()
 	local threw = guardInThread(parkForever, {

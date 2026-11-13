@@ -342,8 +342,8 @@ describe(readDeclaredClasses, () => {
 	it("should stop at the first chunk after the class table", () => {
 		expect.assertions(1);
 
-		// Everything past `PROP` is property data — the bulk of a game-sized
-		// model — and none of it names a class.
+		// Everything past `PROP` is property data (the bulk of a game-sized
+		// model), and none of it names a class.
 		const model = Buffer.concat([
 			binaryHeader(),
 			chunk("INST", instancePayload("Workspace")),

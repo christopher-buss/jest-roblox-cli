@@ -33,7 +33,7 @@ export function completedResult(task: CompleteTask, startTime: number): ScriptRe
 
 /**
  * The task a submit describes. `versionId` and `binaryInput` are each present
- * or the key is absent — the parameters never carry one as `undefined`, which
+ * or the key is absent. The parameters never carry one as `undefined`, which
  * the client would send.
  * @param input - Credentials, script, execution deadline and optional pinned inputs.
  * @returns Pinned-version or head submission parameters with optional binary input.

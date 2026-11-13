@@ -32,8 +32,8 @@ function pooledProject(
 
 /**
  * The digest the pass is expected to key a pooled path on, derived here from
- * the documented rule — a sha256 over the posix path relative to the project
- * directory — rather than from the pass itself.
+ * the documented rule (a sha256 over the posix path relative to the project
+ * directory) rather than from the pass itself.
  * @param absolutePath - Pooled mount path.
  * @returns The expected 16-digit hex key.
  */
@@ -46,7 +46,7 @@ function digestOf(absolutePath: string): string {
 }
 
 /**
- * A childless node mounting a directory — the shape the pass pools.
+ * A childless node mounting a directory: the shape the pass pools.
  * @param mountPath - Directory the node mounts.
  * @returns The Folder node.
  */
@@ -333,7 +333,7 @@ describe(poolSharedMounts, () => {
 		(fileName) => {
 			expect.assertions(1);
 
-			// Rojo builds no Instance for either — one it does not read, one
+			// Rojo builds no Instance for either: one it does not read, one
 			// that only describes an Instance built from elsewhere. A marker
 			// naming an entry the place does not hold fails the materialize,
 			// where the mount it replaced was merely absent, so the rule reads

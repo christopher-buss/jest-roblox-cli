@@ -1,9 +1,9 @@
 /**
- * E2e — workspace `--typecheckOnly`.
+ * E2e: workspace `--typecheckOnly`.
  *
  * Drives the real CLI binary through config-load → discovery → classification
  * → grouping → real tsgo → result-merge → exit-code, in workspace mode.
- * Pure-local tsgo: no rojo build, no Open Cloud, no secrets — so this lives in
+ * Pure-local tsgo: no rojo build, no Open Cloud, no secrets, so this lives in
  * the default `e2e` project (not the rojo/live-gated ones).
  */
 import * as path from "node:path";
@@ -39,7 +39,7 @@ describe("workspace --typecheckOnly e2e", () => {
 
 	// The mixed run carries the failure reporting too. A broken package on its
 	// own used to have a test of its own, but it drives the same tsgo spawn and
-	// prints the same diagnostics — nothing about the failure path is specific
+	// prints the same diagnostics; nothing about the failure path is specific
 	// to running the broken package alone.
 	it("should group type tests per package and name the failing one with its TS code", async () => {
 		expect.assertions(5);
@@ -60,7 +60,7 @@ describe("workspace --typecheckOnly e2e", () => {
 
 		const output = result.stdout + result.stderr;
 
-		// typed passes, typed-broken fails — the run fails overall, but BOTH
+		// typed passes, typed-broken fails. The run fails overall, but BOTH
 		// packages' type tests are reported under their own package identity.
 		expect(result.exitCode).toBe(1);
 		expect(output).toContain("should reject a string assigned to number");

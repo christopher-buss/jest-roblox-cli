@@ -58,7 +58,7 @@ type Position = [number, number, number, number];
 /**
  * Turn the wasm's position-only tree into a {@link CstRoot}: every token
  * position becomes a {@link Token} with its text sliced from the source, and
- * the gap between consecutive tokens becomes trivia, split Lute's way —
+ * the gap between consecutive tokens becomes trivia, split Lute's way:
  * trailing on the previous token up to and including the first newline,
  * leading on the next token after it.
  *

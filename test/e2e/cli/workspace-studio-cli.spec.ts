@@ -22,7 +22,7 @@ describe("workspace studio-cli smoke", () => {
 			// Two-package workspace fixture (@e2e/studio-foo, @e2e/studio-bar).
 			// studio-cli builds the synthesized mega-place (with `__pkg_stage`
 			// staging) and the plugin runner clones each package from it, runs
-			// Jest, resets — all in one Studio process (no sharding).
+			// Jest, resets, all in one Studio process (no sharding).
 			const sandbox = createFixtureSandbox(WORKSPACE_FIXTURE_PATH);
 			for (const name of ["foo", "bar"]) {
 				writeRbxtsJsProject(path.join(sandbox, "packages", name));

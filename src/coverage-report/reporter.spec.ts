@@ -101,7 +101,7 @@ function textReportOutput(mapped: MappedCoverageResult): string {
 }
 
 /**
- * One file at 100%, one below — for testing skipFull behavior.
+ * One file at 100%, one below, for testing skipFull behavior.
  * @returns The two-file result.
  */
 function createMixedCoverageResult(): MappedCoverageResult {
@@ -433,7 +433,7 @@ describe(generateReports, () => {
 			const output = stdoutOutput();
 
 			expect(output).toContain("------");
-			// No files means no totals to report — Istanbul's blank summary has
+			// No files means no totals to report. Istanbul's blank summary has
 			// pct "Unknown", which must never reach the totals line.
 			expect(output).not.toContain("Coverage:");
 		});
@@ -945,7 +945,7 @@ describe(printCoverageHeader, () => {
 			"
 		`);
 		// Invariant guard so a blanket snapshot update can't silently
-		// reintroduce color — agent mode emits plain text, ANSI only wastes
+		// reintroduce color: agent mode emits plain text, ANSI only wastes
 		// tokens.
 		expect(output).toBe(stripVTControlCharacters(output));
 	});
@@ -1021,7 +1021,7 @@ describe(checkThresholds, () => {
 		it("should skip threshold check for metrics with non-numeric pct", () => {
 			expect.assertions(1);
 
-			// Empty coverage map — no files at all — produces an empty summary
+			// Empty coverage map (no files at all) produces an empty summary
 			// where istanbul may report pct as "Unknown" or 0 for some metrics.
 			// With no files, the summary will have 0 totals.
 			const emptyResult = createResult({});

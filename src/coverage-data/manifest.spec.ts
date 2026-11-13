@@ -403,7 +403,7 @@ describe(readManifest, () => {
 
 		const { fileSystem, volume } = createMemoryFileSystem();
 
-		// Reading a directory triggers EISDIR — a non-ENOENT IO error that
+		// Reading a directory triggers EISDIR, a non-ENOENT IO error that
 		// must not be folded into the malformed-json case (which would
 		// mislead callers into thinking the file is corrupt).
 		volume.mkdirSync("/coverage/manifest.json", { recursive: true });

@@ -152,7 +152,7 @@ describe(toPosixRoot, () => {
 	});
 
 	// `path.posix.normalize` reads `D:` as an ordinary segment, so a climb past
-	// it eats the drive and leaves a relative path — one the check that refuses
+	// it eats the drive and leaves a relative path: one the check that refuses
 	// absolute roots waves through, and the walk then leaves the project.
 	it("should keep a drive root a parent segment climbs past", () => {
 		expect.assertions(3);
@@ -222,7 +222,7 @@ describe(relativeToRoot, () => {
 
 	// The current directory holds every relative name and nothing else. Its
 	// prefix is empty, so a boundary test that only strips a prefix claims
-	// every key there is — including one named in another frame entirely.
+	// every key there is, including one named in another frame entirely.
 	it("should refuse an absolute key under the current directory", () => {
 		expect.assertions(2);
 

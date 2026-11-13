@@ -1382,7 +1382,7 @@ describe("writeGameOutput integration", () => {
 describe("result file sink", () => {
 	// Single AND multi serialize *exactly* the shared `mergeResults` output, so a
 	// new result dimension reaches the file in every mode by a one-line change to
-	// that merge — no per-writer / per-branch hunt. (The workspace mode's
+	// that merge, with no per-writer / per-branch hunt. (The workspace mode's
 	// identical guarantee is asserted in `workspace-runner.spec.ts` against the
 	// real on-disk file.)
 

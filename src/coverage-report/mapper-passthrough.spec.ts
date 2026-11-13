@@ -56,7 +56,7 @@ describe(passthroughFile, () => {
 			},
 		});
 
-		// Only cov-map exists — no .luau.map source map
+		// Only cov-map exists; no .luau.map source map
 		const file = mapNativeFile(coverageMap, { s: { "0": 5 } });
 
 		expect(file).toBeDefined();

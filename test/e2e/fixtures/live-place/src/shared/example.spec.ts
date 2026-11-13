@@ -15,7 +15,7 @@ it("subtracts at the top level", () => {
 describe("shared example", () => {
 	it("adds two numbers", () => {
 		// Game-output regression marker. Asserted by the live e2e in
-		// test/e2e/live/pipeline.spec.ts — native `warn` must land in
+		// test/e2e/live/pipeline.spec.ts: native `warn` must land in
 		// the `--gameOutput` JSON dump (LogService capture path).
 		warn("game-output marker");
 		expect(add(2, 3)).toBe(5);

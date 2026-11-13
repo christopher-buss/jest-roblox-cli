@@ -119,7 +119,7 @@ function scriptedEntries(request: ExecuteRequest): ScriptResult {
 
 /**
  * Answers every script with the packages it asked for, except one carrying
- * more than one entry and leading with `deferringHead` — that comes back
+ * more than one entry and leading with `deferringHead`. That comes back
  * deferred, having run only the head.
  *
  * @param deferringHead - Package that leads the script to defer.
@@ -308,8 +308,8 @@ describe(dispatchJobsAsync, () => {
 	it("should keep a sibling bucket's results when one bucket bails", async () => {
 		expect.assertions(2);
 
-		// A bail is task-local on this path — there is no signal map to
-		// broadcast it — so it stops the bucket that hit it and no other.
+		// A bail is task-local on this path (there is no signal map to
+		// broadcast it), so it stops the bucket that hit it and no other.
 		// The sibling still runs its whole share, and the only jobs
 		// reported skipped are the tail the bailing bucket never reached.
 		const stub = createExecuteStub(bailingBucketExecute("alpha"));

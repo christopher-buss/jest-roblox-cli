@@ -87,7 +87,7 @@ describe(printError, () => {
 
 	it("should lead the banner with captured banner output when the message is just an exit code", () => {
 		// When Jest exits via process.exit(N), the message "Exited
-		// with code: N" is only a transport — the real error message Jest
+		// with code: N" is only a transport; the real error message Jest
 		// printed to stdout lives in `bannerOutput` (the InterceptWriteable
 		// capture, distinct from the LogService-sourced `gameOutput` dump).
 		// Lead the banner with that.
@@ -604,6 +604,7 @@ describe("runner error hints", () => {
 		const spies = setupOutputSpies();
 		printError(
 			new LuauScriptError(
+				// eslint-disable-next-line flawless/no-em-dash -- Installed plugins print this text verbatim.
 				"Studio plugin protocol version mismatch — plugin v3, CLI v6. Update the jest-roblox Studio plugin to match the CLI.",
 			),
 		);

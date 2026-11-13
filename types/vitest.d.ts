@@ -97,7 +97,7 @@ type CallArgs<T> =
 type CallReturn<T> = Callable<T> extends (...args: Array<any>) => infer R ? R : unknown;
 
 /**
- * Recursion stops at the built-ins whose shape is methods rather than data —
+ * Recursion stops at the built-ins whose shape is methods rather than data:
  * mapping over one drops those methods and would reject a valid argument.
  * @template T - Type to make partial.
  */

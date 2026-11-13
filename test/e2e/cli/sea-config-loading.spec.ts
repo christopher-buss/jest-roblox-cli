@@ -15,8 +15,8 @@ import {
 const RBXTS_FIXTURE = path.resolve(__dirname, "../fixtures/rbxts-project");
 const WORKSPACE_FIXTURE = path.resolve(__dirname, "../fixtures/workspace");
 
-// Strip every Open Cloud credential so a run halts right after config discovery
-// — reaching the credential check proves the configs loaded.
+// Strip every Open Cloud credential so a run halts right after config discovery;
+// reaching the credential check proves the configs loaded.
 const NO_OPEN_CLOUD_CREDENTIALS = {
 	JEST_ROBLOX_OPEN_CLOUD_API_KEY: undefined,
 	JEST_ROBLOX_PLACE_ID: undefined,
@@ -37,7 +37,7 @@ describe("sea config loading", () => {
 		expect.assertions(2);
 
 		// The rbxts fixture's `jest.config.ts` imports `defineConfig` from
-		// `@isentinel/jest-roblox` — a runtime value resolved from the sandbox's
+		// `@isentinel/jest-roblox`, a runtime value resolved from the sandbox's
 		// `node_modules`, exercising the import caveat end to end.
 		const sandbox = createRbxtsFixtureSandbox(RBXTS_FIXTURE);
 		const server = await startFakeOpenCloudServerAsync([
@@ -61,7 +61,7 @@ describe("sea config loading", () => {
 		// The headline failure: workspace mode "breaks on the first package it
 		// enumerates" because each package config goes through `seaImport`.
 		// Reaching the Open-Cloud credential check proves both `@e2e/foo` and
-		// `@e2e/bar` `.ts` configs loaded — discovery ran to completion.
+		// `@e2e/bar` `.ts` configs loaded: discovery ran to completion.
 		const sandbox = createFixtureSandbox(WORKSPACE_FIXTURE);
 
 		const result = await runCliAsync(

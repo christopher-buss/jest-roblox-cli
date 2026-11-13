@@ -1,5 +1,5 @@
 --!nocheck
--- Lute-driven test for the workspace return-envelope budget. Pure over sizes —
+-- Lute-driven test for the workspace return-envelope budget. Pure over sizes:
 -- no Roblox, no MemoryStore. The module under test is inlined into the
 -- placeholder below by result-budget.spec.ts. Any failed assertion calls
 -- error(), failing the wrapper spec.
@@ -30,7 +30,7 @@ local function testKeepsTakingWhileItFits()
 	local tracker = Budget.new(1000)
 	Budget.add(tracker, 100)
 
-	check(not Budget.shouldStop(tracker), "T2: 100 used, 100 projected, 1000 cap — keep going")
+	check(not Budget.shouldStop(tracker), "T2: 100 used, 100 projected, 1000 cap, keep going")
 end
 
 -- T3: the projection uses the largest entry seen, not the last one. A worker
@@ -99,7 +99,7 @@ local function testMeasuredEntryOverBudgetDoesNotFit()
 	check(not Budget.fits(tracker, 900), "T8: the entry it took does not fit once measured")
 end
 
--- T9: an entry that exactly fills what is left still fits — the cap bounds what
+-- T9: an entry that exactly fills what is left still fits. The cap bounds what
 -- the envelope may reach, not what it must stay under.
 local function testEntryFillingTheBudgetFits()
 	local tracker = Budget.new(1000)

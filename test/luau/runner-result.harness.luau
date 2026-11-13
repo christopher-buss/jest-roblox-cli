@@ -225,7 +225,7 @@ end
 
 -- T1d: an arm that throws inside the circus hook is the same answer as one
 -- that could not resolve. The hook asserts on the jest-runtime shape it
--- patches, and that assert fires from inside the run — a record that cannot
+-- patches, and that assert fires from inside the run. A record that cannot
 -- go on has to reach the abort as a reason, never as the run's cause of death.
 local function testAThrowingArmStillWatches()
 	reset()
@@ -256,7 +256,7 @@ local function testAbandonNoteIsFiledAndReturned()
 	)
 end
 
--- T2: coverage attaches the whole sink, even empty — "the run collected
+-- T2: coverage attaches the whole sink, even empty: "the run collected
 -- coverage and nothing was hit" is not the same answer as "no coverage run".
 -- The sink comes off the state, so what a run reports is what that run armed,
 -- whatever the global says by the time the payload is assembled.

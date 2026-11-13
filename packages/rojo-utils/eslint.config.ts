@@ -23,7 +23,6 @@ export default isentinel(
 		},
 		roblox: false,
 		rules: {
-			"flawless/no-em-dash": "off",
 			"flawless/no-redundant-type-annotation": "off",
 			"flawless/no-shared-mocks": "off",
 			"flawless/no-unknown-parameters": "off",

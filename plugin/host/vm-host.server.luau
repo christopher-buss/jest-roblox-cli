@@ -3,7 +3,7 @@
 	One Luau VM's worth of an in-session parallel run.
 
 	Scripts under an `Actor` run in their own Luau VM, so this host gets its own
-	`_G`, its own module cache, and its own copy of every module it requires —
+	`_G`, its own module cache, and its own copy of every module it requires,
 	including Jest's. That is what makes overlapping `Jest.runCLI` calls safe:
 	the runner's process-wide patches (game output capture, stdout intercept,
 	coverage sink, setup timing, snapshot patch) and Jest's own `_G` run state
@@ -20,8 +20,8 @@ local RunService = game:GetService("RunService")
 
 -- Set once `BindToMessage` is live. The coordinator waits for this rather than
 -- sleeping: a message sent before the bind is dropped, which would strand the
--- whole slice. Anything that throws before it — a missing results channel, an
--- unloadable planner — leaves the host un-ready, and the coordinator runs
+-- whole slice. Anything that throws before it (a missing results channel, an
+-- unloadable planner) leaves the host un-ready, and the coordinator runs
 -- without it rather than waiting on a host that will never answer.
 local READY_ATTRIBUTE = require(script.Parent.shared.protocol).studio.vmHostReadyAttribute
 

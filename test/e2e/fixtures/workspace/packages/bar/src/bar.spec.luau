@@ -1,2 +1,2 @@
--- Minimal placeholder spec — see foo.spec.luau for rationale.
+-- Minimal placeholder spec; see foo.spec.luau for rationale.
 return {}

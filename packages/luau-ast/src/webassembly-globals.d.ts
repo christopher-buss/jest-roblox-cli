@@ -1,6 +1,6 @@
 /**
  * The slice of the WebAssembly JS API wasm-runtime.ts uses. Node provides the
- * global at runtime, but `@types/node` leaves the types to `lib.dom` — which
+ * global at runtime, but `@types/node` leaves the types to `lib.dom`, which
  * this Node-only package deliberately does not load.
  */
 declare namespace WebAssembly {

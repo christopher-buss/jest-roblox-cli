@@ -25,7 +25,7 @@ export interface UploadPlaceOptions {
 	 * mid-run when a warm server recycles. Pinning execution to the uploaded
 	 * version (see {@link ExecuteScriptOptions.placeVersion}) removes that
 	 * hazard, so a Saved upload plus a pinned run isolates concurrent runs
-	 * without disturbing the live slot — making this flag moot for that path.
+	 * without disturbing the live slot, making this flag moot for that path.
 	 */
 	publish?: boolean;
 }
@@ -79,7 +79,7 @@ export interface ExecuteScriptOptions {
 	 *
 	 * Explicitly `undefined` as well as absent: a caller that ships no bundle
 	 * holds the value rather than the key, and the submit body omits the field
-	 * either way — so no caller has to strip it back out before spreading.
+	 * either way, so no caller has to strip it back out before spreading.
 	 */
 	binaryInput?: string | undefined;
 	/**
@@ -113,7 +113,7 @@ export interface ExecuteScriptOptions {
 	 *
 	 * The default budget is built to outlast the deadline so Roblox's own
 	 * verdict on a script that overran is observable. A caller asking a
-	 * wall-clock question instead — "did this place boot at all?" — wants no
+	 * wall-clock question instead ("did this place boot at all?") wants no
 	 * such allowance: past the budget there is nothing left to wait for, and
 	 * the grace only delays the answer.
 	 */
@@ -136,7 +136,7 @@ export interface ExecuteScriptOptions {
 	 * A task create is the one call that answers a 429 by sleeping: Open Cloud
 	 * meters creates per key, so a key several runs share refuses on a window
 	 * this run did not fill and cannot shorten. The retry that waits it out is
-	 * what a caller wants — but counted in attempts rather than seconds it has
+	 * what a caller wants, but counted in attempts rather than seconds it has
 	 * no upper bound in time, and the stage sits silent for as long as the
 	 * server keeps saying "later". A budget converts that into a failure with
 	 * a number on it.
@@ -214,8 +214,8 @@ export interface RemoteRunner {
 /**
  * A runner that can hand a task a payload out of band. Kept apart from
  * {@link RemoteRunner} because a consumer that only boots whole places has no
- * use for it, and the transport it names — a presigned PUT at a slot the
- * client allocates — is Open Cloud's, not a property of every runner.
+ * use for it, and the transport it names (a presigned PUT at a slot the
+ * client allocates) is Open Cloud's, not a property of every runner.
  */
 export interface BinaryInputUploader {
 	/**

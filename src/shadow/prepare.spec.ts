@@ -66,7 +66,7 @@ function readRojoProjectJson(volume: MemoryVolume, filePath: string): JSONValue 
 
 /**
  * Walks a nested plain-object tree by key, so a test can reach into a parsed
- * rojo project without asserting a shape onto it. Lives at module scope — the
+ * rojo project without asserting a shape onto it. Lives at module scope; the
  * per-key guard would otherwise be a conditional inside a test body.
  * @param source - Parsed tree to walk.
  * @param keys - Property names, outermost first.
@@ -472,8 +472,8 @@ describe(prepareCoverageAsync, () => {
 
 			const { fileSystem, volume } = seedFilesystem();
 			// The instrumenter writes the prod `.luau` twins itself. Everything
-			// it never emits — spec/test/snap luau and every non-luau rojo file
-			// — reaches the shadow through the mirror sync instead.
+			// it never emits (spec/test/snap luau and every non-luau rojo file)
+			// reaches the shadow through the mirror sync instead.
 			volume.writeFileSync("out-tsc/test/init.spec.luau", "-- spec");
 			volume.writeFileSync("out-tsc/test/init.meta.json", "{}");
 			const { childProcess, instrumenter } = setupMocks(volume);
@@ -559,7 +559,7 @@ describe(prepareCoverageAsync, () => {
 			const { fileSystem, volume } = seedFilesystem();
 			// One fixture per default. `.luau.map` earns its own: every reader
 			// of a source map opens the one in `outDir`, so the shadow copy is
-			// dead weight — but nothing else here would notice it being copied.
+			// dead weight, but nothing else here would notice it being copied.
 			volume.writeFileSync("out-tsc/test/init.d.ts", "export {};");
 			volume.writeFileSync("out-tsc/test/init.d.ts.map", "{}");
 			volume.writeFileSync("out-tsc/test/init.luau.map", "{}");
@@ -787,7 +787,7 @@ describe(prepareCoverageAsync, () => {
 				".jest-roblox/place/synthesized.project.json",
 			);
 
-			// Paths are written relative to the project file's own directory —
+			// Paths are written relative to the project file's own directory:
 			// rojo matches globIgnorePaths against the path as expressed, so an
 			// absolute one would leave every ignore pattern inert.
 			//
@@ -911,7 +911,7 @@ describe(prepareCoverageAsync, () => {
 
 			// The nested $path: "default.project.json" is resolved to $path:
 			// "src", then redirected to the instrumented shadow dir since "src"
-			// matches the configured luauRoot — and written relative to the
+			// matches the configured luauRoot, and written relative to the
 			// project file, which sits one directory over from that shadow dir.
 			expect(
 				readNestedProperty(written, "tree", "ReplicatedStorage", "uuid-generator", "$path"),
@@ -1101,7 +1101,7 @@ describe(prepareCoverageAsync, () => {
 				tsconfigReader: noTsconfig,
 			});
 
-			// Still in the place, just without probes — the runtime has to be
+			// Still in the place, just without probes. The runtime has to be
 			// able to require it, the report just never asks about it.
 			expect(result.manifest.nonInstrumentedFiles).toHaveProperty(UNCOVERED_FILE);
 			expect(volume.existsSync(`.jest-roblox/coverage/${UNCOVERED_FILE}`)).toBeTrue();
@@ -1220,7 +1220,7 @@ describe(prepareCoverageAsync, () => {
 				tsconfigReader: noTsconfig,
 			});
 			// The place mounts this root's source directly, so its bytes are in
-			// the built place — but no shadow record covers them, and the rojo
+			// the built place, but no shadow record covers them, and the rojo
 			// inputs hash skips whatever the shadow is supposed to be watching.
 			// Something has to notice, or the run serves a stale place.
 			volume.writeFileSync("out-tsc/vendor/dep.luau", "local d = 2");
@@ -1334,7 +1334,7 @@ describe(prepareCoverageAsync, () => {
 			});
 
 			// The previous shadow was wiped, so the skip list carries no
-			// previously-instrumented file forward — only the exclusions.
+			// previously-instrumented file forward, only the exclusions.
 			expect(Object.keys(result.manifest.files)).toStrictEqual([COVERED_FILE]);
 		});
 	});
@@ -2427,7 +2427,7 @@ describe(prepareCoverageAsync, () => {
 				});
 				// What the last run left where this run has to put a directory.
 				// The reconcile cannot clear it: it runs after the mirror, and
-				// it only drops entries whose source is gone — this one's source
+				// it only drops entries whose source is gone. This one's source
 				// is still there, just a directory now.
 				volume.writeFileSync(".jest-roblox/coverage/out-tsc/test/data", "-- stale file");
 
@@ -2482,7 +2482,7 @@ describe(prepareCoverageAsync, () => {
 			// still there, and `existsSync` says yes to a directory. An
 			// interrupted run that changed a source's kind leaves exactly that,
 			// and carrying the record forward would hand rojo a Folder under
-			// the name a file should have — silently, since nothing throws.
+			// the name a file should have, silently, since nothing throws.
 			it("should re-copy when the recorded shadow path became a directory", async () => {
 				expect.assertions(1);
 
@@ -2582,7 +2582,7 @@ describe(prepareCoverageAsync, () => {
 			// The three failure shapes a warm run takes when the copy-ignore
 			// list moves under it: a carried-forward record for a file the
 			// reconcile just deleted, an orphan cov-map keeping that file in
-			// the report at 0%, and — the hard one — a new file lost entirely
+			// the report at 0%, and (the hard one) a new file lost entirely
 			// because `instrumentable.size` cancelled against a newly-ignored
 			// one and faked a full cache hit. All three are the same bug: the
 			// warm path reasons from counts a manifest the old list wrote.
@@ -2803,7 +2803,7 @@ describe(prepareCoverageAsync, () => {
 
 				await seedIncrementalScenarioAsync(fileSystem, { volume });
 				// No file write reaches a directory with nothing in it, so the
-				// mirror is the only thing that can notice one appeared — and
+				// mirror is the only thing that can notice one appeared, and
 				// rojo builds a Folder for it, so the place has to be rebuilt.
 				volume.mkdirSync("out-tsc/test/empty", { recursive: true });
 
@@ -2882,7 +2882,7 @@ describe(prepareCoverageAsync, () => {
 
 				await seedIncrementalScenarioAsync(fileSystem, { volume });
 				// Nothing under an orphaned parent can be anything but orphaned,
-				// so the skip must not veto the parent’s removal — otherwise a
+				// so the skip must not veto the parent’s removal. Otherwise a
 				// stale `vendor/` survives beside a fresh `vendor.luau`.
 				volume.mkdirSync(".jest-roblox/coverage/out-tsc/test/vendor/node_modules", {
 					recursive: true,
@@ -3763,7 +3763,7 @@ describe("when a run bakes generated jest.config stubs into the shadow", () => {
 		await prepareAsync();
 
 		// Rojo mounts an empty directory as a Folder, so one left in the shadow
-		// is a node in the place — a change the run has to report even though
+		// is a node in the place: a change the run has to report even though
 		// no file went with it.
 		volume.mkdirSync(".jest-roblox/coverage/out/absent/hollow", { recursive: true });
 		const second = await prepareAsync();

@@ -117,7 +117,7 @@ describe(mapSourceMappedFile, () => {
 		it("should keep single-line statements that merely share a line apart", () => {
 			expect.assertions(1);
 
-			// `first(); second();` — two source statements, neither spanning
+			// `first(); second();`: two source statements, neither spanning
 			// lines. Nothing marks them as fragments of one statement, so they
 			// stay separate.
 			const file = runFile({

@@ -52,7 +52,7 @@ async function runOpenCloudWorkspaceAsync(
 // every per-package lookup missed and silently dropped every captured snapshot.
 // The tests that came before asserted on the in-memory envelope and stopped
 // short of `writeSnapshots`, which is how the disk-write regression slipped
-// through — so the assertion here is the file on disk, at the rootDir-relative
+// through, so the assertion here is the file on disk, at the rootDir-relative
 // location `path.resolve(config.rootDir, ...)` guarantees.
 describe("workspace --parallel work-stealing", () => {
 	it.skipIf(!rojoOnPath())(
@@ -170,7 +170,7 @@ describe("workspace synthesizer $path-mounted parent virtualization", () => {
 // sub-directory that doesn't exist on disk (the package has no specs, so the
 // compiler produces no output there). Before stubMount emission learned to
 // skip zero-test projects, the synthesizer crashed walking the missing
-// segment — but only when at least one OTHER package had pending tests, so
+// segment, but only when at least one OTHER package had pending tests, so
 // the workspace runner reached `writeStubsAndBuildDescriptors` instead of
 // short-circuiting on `pending.length === 0`. The mixed `@e2e/foo` +
 // `@e2e/empty-tests` invocation is what surfaces the bug.
@@ -252,7 +252,7 @@ describe("workspace pre-flight cleanup of leftover own-stubs", () => {
 // above: the pnpm source's `jest.config.*` gate, and `workspace.exclude`.
 //
 // One invocation covers both. The exclude narrows the seven fixture packages
-// down to `@e2e/nested` — which keeps this to a single dispatch — and the
+// down to `@e2e/nested` (which keeps this to a single dispatch) and the
 // fixture's `packages/no-tests` carries a package.json with no jest config, so
 // a run that reached it at all would dispatch a second time.
 describe("workspace bare enumeration", () => {

@@ -8,7 +8,7 @@
 // Augmenting the global interfaces here adds a `json` method whose signature
 // the checker resolves over the inherited `unknown` property.
 //
-// The trailing `export {}` makes this file a module — required for both
+// The trailing `export {}` makes this file a module, required for both
 // `declare global` blocks and `declare module` augmentations to take effect.
 
 declare global {

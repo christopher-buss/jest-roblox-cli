@@ -18,7 +18,7 @@ function emptyResult(): CollectorResult<LuauSpan> {
 }
 
 /**
- * A span within one line — every source under test here is one statement.
+ * A span within one line. Every source under test here is one statement.
  * @param line - Line the span sits on.
  * @param options - Begin and end columns.
  * @returns Single-line span.
@@ -49,7 +49,7 @@ describe("utf16-columns", () => {
 			expect<CollectorResult<LuauSpan>>(converted).toStrictEqual(result);
 		});
 
-		// `local a = "∞" 1` — the closing quote is byte column 15 and UTF-16
+		// `local a = "∞" 1`: the closing quote is byte column 15 and UTF-16
 		// column 13, because U+221E is three bytes and one UTF-16 unit. The
 		// column math itself belongs to `indexSourceBytes` and is covered
 		// there; what these cases pin is which fields this file reaches.
@@ -100,7 +100,7 @@ describe("utf16-columns", () => {
 		});
 
 		// `bodyFirstLine`/`bodyFirstColumn` of 0 is the "wrap probe, not point
-		// probe" sentinel — it names no position, so it must survive untouched.
+		// probe" sentinel. It names no position, so it must survive untouched.
 		it("should leave the wrap-probe sentinel at zero", () => {
 			expect.assertions(1);
 

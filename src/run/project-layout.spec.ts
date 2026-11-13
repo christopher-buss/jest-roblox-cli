@@ -1550,7 +1550,7 @@ describe(runProjectLayoutAsync, () => {
 		const { config, fileSystem, volume } = setupDefaults({
 			typecheck: { enabled: true, only: true },
 		});
-		// No spec-d files seeded — the project produces no Type Tests.
+		// No spec-d files seeded, so the project produces no Type Tests.
 		mocks.resolveAllProjects.mockResolvedValue([
 			makeResolvedProject({
 				displayName: "client",
@@ -1575,7 +1575,7 @@ describe(runProjectLayoutAsync, () => {
 			passWithNoTests: true,
 			typecheck: { enabled: true, only: true },
 		});
-		// No spec-d files seeded — the project produces no Type Tests.
+		// No spec-d files seeded, so the project produces no Type Tests.
 		mocks.resolveAllProjects.mockResolvedValue([
 			makeResolvedProject({
 				displayName: "client",
@@ -1761,7 +1761,7 @@ describe(runProjectLayoutAsync, () => {
 		expect.assertions(4);
 
 		const { config, fileSystem, volume } = setupDefaults();
-		// No project files seeded — the plan is empty.
+		// No project files seeded, so the plan is empty.
 		mocks.openBackend.mockImplementation(() => {
 			throw new Error("backend unavailable");
 		});

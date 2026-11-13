@@ -3,7 +3,7 @@
  * TypeScript types mirroring the official Luau parser's AST JSON, as emitted
  * by wasm/wrapper.cpp (Luau's AstJsonEncoder at the pinned version). Node
  * `type` values are the C++ class names. Type-annotation nodes are typed
- * `unknown` — no consumer traverses them.
+ * `unknown`: no consumer traverses them.
  *
  * Optional fields are omitted by the encoder when absent, except `luauType`,
  * which is an explicit `null`.
@@ -16,7 +16,7 @@
 
 /**
  * Lines and columns are 1-based, and an end is exclusive. A column counts
- * UTF-8 *bytes*, which is Luau's convention across its tooling — convert it
+ * UTF-8 *bytes*, which is Luau's convention across its tooling. Convert it
  * before indexing a JavaScript string, whose offsets are UTF-16 code units,
  * or a span on a line holding a multi-byte character will resolve inside that
  * character.

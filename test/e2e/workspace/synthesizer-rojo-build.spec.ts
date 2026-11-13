@@ -47,7 +47,7 @@ const RBXTS_INCLUDE: RojoTreeNode = {
 
 /**
  * A package whose test project mounts its own `src` plus whatever `shared`
- * declares under `ReplicatedStorage` — the shape every package in a real
+ * declares under `ReplicatedStorage`, the shape every package in a real
  * workspace has, differing only in what it mounts beside its sources.
  * @param options - Package name, shared mounts and workspace directory.
  * @returns The written package.
@@ -99,7 +99,7 @@ function writeSharedDependencies(workspace: string): void {
 	fs.writeFileSync(path.join(include, "runtime.luau"), "return {}\n");
 
 	// `init.luau` directories, which rojo mounts as ModuleScripts rather than
-	// Folders — the shape every `@rbxts/*` package has. Two of them, because
+	// Folders, the shape every `@rbxts/*` package has. Two of them, because
 	// the pool gives each leaf an entry of its own.
 	for (const leaf of NODE_MODULES_LEAVES) {
 		const directory = path.join(workspace, "vendor/packages", leaf);

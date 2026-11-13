@@ -34,7 +34,7 @@ describe(toCoverageUnit, () => {
 				settings: SETTINGS,
 			}),
 		).toStrictEqual({
-			notice: "Warning: coverage data was empty — the Rojo project may point at uninstrumented source",
+			notice: "Warning: coverage data was empty. The Rojo project may point at uninstrumented source",
 			units: [],
 		});
 	});

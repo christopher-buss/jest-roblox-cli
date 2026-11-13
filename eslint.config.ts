@@ -2,7 +2,7 @@ import { isentinel } from "@isentinel/eslint-config";
 
 const SOURCE_FILES = ["src/**/*.ts"];
 const MODULE_MOCK_MESSAGE =
-	"vi.mock breaks `isolate: false` for the whole unit project. Take the dependency as a parameter instead — see 'Testing patterns' in AGENTS.md.";
+	"vi.mock breaks `isolate: false` for the whole unit project. Take the dependency as a parameter instead. See 'Testing patterns' in AGENTS.md.";
 
 export default isentinel(
 	{

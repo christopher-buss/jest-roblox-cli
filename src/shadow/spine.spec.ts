@@ -197,8 +197,8 @@ describe(prepareSpine, () => {
 		}).directories;
 
 		// Rojo mounts a directory whole. A mount that physically held the level
-		// below it would serve that level twice — once through this `$path`,
-		// once through the explicit child the demote hangs beside it — and the
+		// below it would serve that level twice (once through this `$path`,
+		// once through the explicit child the demote hangs beside it), and the
 		// place would carry two Instances of the same name.
 		expect(below!.shadowDir.startsWith(`${above!.shadowDir}/`)).toBeFalse();
 		expect(volume.readdirSync(above!.shadowDir)).toStrictEqual(["loose.luau"]);
@@ -318,8 +318,8 @@ describe(prepareSpine, () => {
 			});
 			const bakedPath = bake(volume, "out/server");
 
-			// Nothing in the source tree produces this file — the bake writes
-			// it after the mirror — so clearing it would only be undone
+			// Nothing in the source tree produces this file (the bake writes
+			// it after the mirror), so clearing it would only be undone
 			// moments later, with both halves reporting a change and the place
 			// rebuilding on every run.
 			const second = spineOf(fileSystem, {

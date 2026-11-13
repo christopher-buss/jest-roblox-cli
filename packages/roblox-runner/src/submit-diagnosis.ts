@@ -30,7 +30,7 @@ type SubmitResult = Awaited<ReturnType<LuauExecutionClient["tasks"]["submit"]>>;
 
 /**
  * Names a submit that never created a task. Kept apart from the poll path
- * because a submit failure has no task to point at — there is nothing to look
+ * because a submit failure has no task to point at: there is nothing to look
  * up and nothing to log. A 429 is the quota's refusal, and carries its
  * evidence.
  *

@@ -93,8 +93,8 @@ function decodeErrors(raw: string): Array<string> {
 
 /**
  * The encoder prints non-finite doubles as bare `Infinity` / `-Infinity`,
- * which is invalid JSON. Rewrite each bare occurrence to `1e999` — which
- * `JSON.parse` overflows back to the same infinity, sign included — while
+ * which is invalid JSON. Rewrite each bare occurrence to `1e999`, which
+ * `JSON.parse` overflows back to the same infinity, sign included, while
  * leaving occurrences inside JSON strings untouched.
  * @param json - The raw serializer JSON to rewrite.
  * @returns Valid JSON retaining the original numeric values.

@@ -72,8 +72,8 @@ function job(displayName: string, overrides: Partial<ResolvedConfig> = {}): Conf
 }
 
 /**
- * The lock-poll interval never arms on the timeout path — a hung run gets no
- * graceful wait — so setTimeout is the only timer worth faking here.
+ * The lock-poll interval never arms on the timeout path (a hung run gets no
+ * graceful wait), so setTimeout is the only timer worth faking here.
  */
 function useResultDeadlineTimers(): void {
 	vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
@@ -153,7 +153,7 @@ function resultFrame(requestId: string, reply: ReplyOptions): string {
 
 /**
  * A launcher that, once the backend is listening, drives the canned result
- * frame back over the mock WebSocket server — the socket stand-in for a real
+ * frame back over the mock WebSocket server: the socket stand-in for a real
  * bootstrap pushing its envelope. `onLaunch` runs synchronously with the
  * launch request (to capture args/bootstrap before the reply).
  * @param root0 - Launcher input.
@@ -658,7 +658,7 @@ describe(StudioCliBackend, () => {
 					socket = new MockWebSocket();
 					server.emit("connection", socket);
 					// Non-JSON noise, a non-results frame, and a result for a
-					// different request — each ignored — then the real one.
+					// different request (each ignored), then the real one.
 					socket.emit("message", Buffer.from("not json {{"));
 					socket.emit("message", Buffer.from(JSON.stringify({ hello: 1, type: "log" })));
 					socket.emit(
@@ -1503,7 +1503,7 @@ describe(StudioCliBackend, () => {
 		it("should let the background watch own teardown when a post-result check throws", async () => {
 			// The result frame landed (Studio is idle and gracefully closeable),
 			// so even though the protocol check then rejects the run, the
-			// graceful watch already owns the kill — the run must not also
+			// graceful watch already owns the kill; the run must not also
 			// hard-kill.
 			expect.assertions(3);
 

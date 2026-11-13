@@ -90,7 +90,7 @@ describe(createSourceMapper, () => {
 		// A `rootDirs: ["src", "test"]` tsconfig collapses rootDir to ".". The
 		// spec compiles to `out-test/src/...` and mounts under `server-tests`.
 		// The frame must resolve its sourcemap from the outDir-anchored Luau
-		// path, not a bare `src/...` path that has no `.luau.map` beside it —
+		// path, not a bare `src/...` path that has no `.luau.map` beside it,
 		// which is why the map is seeded there and nowhere else.
 		const generated = "out-test/src/server/modules/ecs/context.spec.luau";
 		const source = "../../../../../src/server/modules/ecs/context.spec.ts";

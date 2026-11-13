@@ -41,7 +41,7 @@ export interface CoverageInputs {
 	rojoInputsHash: string | undefined;
 	/** Path of the rojo project file. */
 	rojoProjectPath: string;
-	/** Absent when the config narrows nothing — the whole root is probed. */
+	/** Absent when the config narrows nothing; the whole root is probed. */
 	universe: InstrumentUniverse | undefined;
 }
 

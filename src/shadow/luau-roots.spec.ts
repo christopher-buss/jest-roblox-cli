@@ -578,7 +578,7 @@ describe("rojo mount detection", () => {
 	// The mount is judged on where it lands, not on how it is spelled: the
 	// shadow mirrors a tree under `rootDir` and the manifest keys the report
 	// reads are written from there, so a mount elsewhere in the rojo tree has
-	// no root to be — however it is written.
+	// no root to be, however it is written.
 	describe("when a $path is resolved against rootDir", () => {
 		it.for([
 			{
@@ -653,7 +653,7 @@ describe("rojo mount detection", () => {
 			// `path.dirname("default.project.json")` is `"."`, which is what a
 			// project named relative to the cwd hands down. A mount joined onto
 			// that is relative too, and nothing relative is ever inside the
-			// absolute frame — so the project would report no roots at all and
+			// absolute frame, so the project would report no roots at all and
 			// fall back to the tsconfig `outDir`.
 			const config = makeConfig({ rootDir: process.cwd() });
 

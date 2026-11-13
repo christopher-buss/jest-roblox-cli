@@ -514,7 +514,7 @@ describe("createStdoutRunProgress with injected options", () => {
 			progress.begin("instrument");
 			progress.begin("build");
 
-			// One row was drawn, so one row is erased — the row `build` adds is
+			// One row was drawn, so one row is erased. The row `build` adds is
 			// not on screen yet, and counting it would eat the line above the
 			// block.
 			expect(writes.at(-1)).toBe(

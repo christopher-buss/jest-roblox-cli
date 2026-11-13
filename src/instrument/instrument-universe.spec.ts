@@ -228,7 +228,7 @@ describe(createInstrumentUniverse, () => {
 		const universe = universeFor(fileSystem, { include: ["src/ecs/**/*.luau"] });
 
 		// A hand-written Luau project has no source map, and the mapper keys
-		// such a file on its own path — so the same path decides the gate.
+		// such a file on its own path, so the same path decides the gate.
 		expect(universe.includes(covered)).toBeTrue();
 		expect(universe.includes(uncovered)).toBeFalse();
 	});

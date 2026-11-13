@@ -6,7 +6,7 @@ import path from "node:path";
 /**
  * The specifier `src/coverage-report/html-assets.ts` imports. Nothing on disk
  * answers it: the module is built here, from the asset files inside the
- * installed `istanbul-reports`, by whichever of the four loaders is running —
+ * installed `istanbul-reports`, by whichever of the four loaders is running:
  * the two tsdown configs, vitest, or the node hook `bin/jest-roblox.js`
  * registers.
  *

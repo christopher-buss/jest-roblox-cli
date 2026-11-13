@@ -3,8 +3,8 @@
 -- boundary, how long it says that state has held, and what it says when there
 -- is nothing to say. The module under test is inlined into the placeholder
 -- below (with its circus-hook and data-model-path dependencies already inlined
--- by the spec). Every case drives it the way a run does — `arm`, then test
--- files against a stood-in circus and jest runtime — so no Roblox and no
+-- by the spec). Every case drives it the way a run does (`arm`, then test
+-- files against a stood-in circus and jest runtime), so no Roblox and no
 -- engine, and the stand-ins keep the property the record turns on: jest gives
 -- every test file a fresh module registry, so the handler goes in per file. Any
 -- failed assertion calls error(), failing the wrapper spec.
@@ -158,7 +158,7 @@ local function testRecordsTheRunningTest()
 end
 
 -- T2: a test that has finished is recorded as finished, and the elapsed clock
--- restarts at the boundary — what wedged is whatever ran after it.
+-- restarts at the boundary: what wedged is whatever ran after it.
 local function testRecordsTheFinishedTest()
 	local now, advance = makeClock()
 	local matcherState: any = {}
@@ -207,7 +207,7 @@ local function testTestFunctionEndFinishesTheTest()
 	)
 end
 
--- T4: a repeated boundary for the same test does not restart the clock — the
+-- T4: a repeated boundary for the same test does not restart the clock. The
 -- record times the state, and circus fires more than one event per state.
 local function testRepeatedBoundaryKeepsTheClock()
 	local now, advance = makeClock()
@@ -227,7 +227,7 @@ local function testRepeatedBoundaryKeepsTheClock()
 	)
 end
 
--- T5: a run wedged between files — the next file's imports parked — reports
+-- T5: a run wedged between files (the next file's imports parked) reports
 -- the last test that finished, in the file it finished in.
 local function testWedgeBetweenFilesNamesTheLastTest()
 	local now, advance = makeClock()
@@ -246,7 +246,7 @@ end
 
 -- T6: circus's own file boundary is ignored on purpose. Jest sets Expect's
 -- `testPath` for a file after dispatching `setup`, so a record written there
--- would name the file before it — which reads as the run having reached a file
+-- would name the file before it, which reads as the run having reached a file
 -- it had already left.
 local function testFileBoundaryIsIgnored()
 	local now = makeClock()
@@ -351,8 +351,8 @@ local function testArmingAgainStandsThePreviousRunDown()
 	)
 end
 
--- T11: arming against the JestCircus package root — the module that has no
--- `addEventHandler` — reports the failure instead of throwing out of jest's
+-- T11: arming against the JestCircus package root (the module that has no
+-- `addEventHandler`) reports the failure instead of throwing out of jest's
 -- per-file setup, and the abort says why it has nothing to name.
 local function testMissingAddEventHandlerIsReported()
 	local now = makeClock()
@@ -371,7 +371,7 @@ local function testMissingAddEventHandlerIsReported()
 end
 
 -- T12: a run whose jest internals could not be resolved gets a watch that
--- carries the reason, and stands down whatever was armed before it — the abort
+-- carries the reason, and stands down whatever was armed before it. The abort
 -- must name why it has no test rather than read the previous run's record.
 local function testUnarmedWatchCarriesItsReason()
 	local now = makeClock()

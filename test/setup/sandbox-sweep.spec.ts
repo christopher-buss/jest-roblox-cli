@@ -60,7 +60,7 @@ describe(sweepStaleSandboxes, () => {
 
 	// The same concurrency, one step finer: a live run's `onTestFinished` can
 	// take its sandbox away between the listing and the measurement. A dangling
-	// link is that gap made reproducible — the name is listed, and reading it
+	// link is that gap made reproducible: the name is listed, and reading it
 	// raises ENOENT. Throwing here would fail the whole run from `globalSetup`,
 	// which is the outcome the age gate exists to avoid.
 	it("should skip an entry that disappears before it is measured", () => {

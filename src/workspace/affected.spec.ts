@@ -56,7 +56,7 @@ function packageInfoFor(name: string, relativePath: string = packagePathFor(name
 
 /**
  * Route execFileSync mock calls between `nx show projects` and per-project
- * `nx show project <name>`. Linux platforms only — on Windows the args are
+ * `nx show project <name>`. Linux platforms only. On Windows the args are
  * wrapped in `cmd /c "<command> <quoted args>"`, so `args[0]` is `/d`, not
  * `show`, and this helper's routing falls through. Any Windows nx test must
  * set up `execFileSync` manually and inspect the inner `/c` string.
@@ -105,7 +105,7 @@ function mockNxResponses(
 
 /**
  * Windows wraps the nx args in `cmd /c "<command> <quoted args>"`, so
- * `mockNxResponses`' arg-routing falls through — route on the inner `/c` string
+ * `mockNxResponses`' arg-routing falls through. Route on the inner `/c` string
  * instead.
  * @param childProcess - Runner whose `execFileSync` mock gets the routing.
  * @param responses - Canned nx output.
@@ -648,7 +648,7 @@ describe(getAffectedPackages, () => {
 
 	it("should silently drop turbo entries that live outside our known workspace globs", () => {
 		// Real-world workspaces have packages turbo's discovery surfaces that
-		// pnpm-workspace.yaml globs don't match — e.g. nested workspaces,
+		// pnpm-workspace.yaml globs don't match, e.g. nested workspaces,
 		// packages in directories not covered by the top-level patterns. Those
 		// aren't a config error and they aren't Roblox packages: drop them
 		// quietly instead of failing the run.
@@ -677,7 +677,7 @@ describe(getAffectedPackages, () => {
 	it("should resolve the nx project to its package.json name when the two diverge", () => {
 		// Regression: nx project names live in a separate namespace from
 		// `package.json.name`. The returned PackageInfo must carry the
-		// `package.json` name — downstream resolution matches against it, so
+		// `package.json` name. Downstream resolution matches against it, so
 		// returning the nx name ("foo") would fail with "Package not found"
 		// whenever the two diverge (e.g. nx `foo` for `@org/foo`).
 		expect.assertions(1);
@@ -777,7 +777,7 @@ describe(getAffectedPackages, () => {
 	});
 
 	it("should surface the project name when 'nx show project' fails", () => {
-		// Loud failure on resolver drift — no silent under-coverage. nx
+		// Loud failure on resolver drift, no silent under-coverage. nx
 		// reporting an affected project it can't subsequently locate is a
 		// real inconsistency the user needs to see.
 		expect.assertions(1);
@@ -805,7 +805,7 @@ describe(getAffectedPackages, () => {
 
 	it("should surface the project name when 'nx show project' returns non-JSON", () => {
 		// nx's own stderr already mentions the name on failure, but
-		// parseJson's error doesn't know about names — wrap so the name is
+		// parseJson's error doesn't know about names. Wrap so the name is
 		// in the message regardless of failure mode.
 		expect.assertions(3);
 

@@ -5,7 +5,7 @@
 -- registry, never once per run). The module under test is inlined into the
 -- placeholder below (with its coverage-attribution dependency already inlined
 -- by the spec). Circus and the jest runtime are stood in for, so no Roblox and
--- no engine — but the stand-ins keep the two properties the hook turns on:
+-- no engine. But the stand-ins keep the two properties the hook turns on:
 -- circus's handler list is module scope, and jest gives every test file a fresh
 -- module registry. Any failed assertion calls error(), failing the wrapper spec.
 
@@ -131,8 +131,8 @@ local function testSequentialTests()
 	check(records[2].testCaseId == "second", "T3: second test recorded")
 end
 
--- T4: an error while reading the test identity must not propagate — circus does
--- not guard event handlers — but is recorded on the installation, so the run
+-- T4: an error while reading the test identity must not propagate (circus does
+-- not guard event handlers) but is recorded on the installation, so the run
 -- fails loudly instead of reading as "no test covers this line".
 local function testHandlerRecordsErrors()
 	local addEventHandler, dispatch = makeDispatcher()
@@ -194,7 +194,7 @@ local CIRCUS_STATE_MODULE = { Name = "state" }
 local CIRCUS_ROOT_MODULE = { Name = "JestCircus" }
 
 -- jest-runtime, one instance per test file, each with its own internal module
--- registry — which is what makes a handler installed once before the run reach
+-- registry. That is what makes a handler installed once before the run reach
 -- no test file at all.
 local RuntimeClass = {}
 RuntimeClass.__index = RuntimeClass
@@ -305,8 +305,8 @@ local function testDisarmStopsAttributing()
 	check(circus.handlerCount() == 0, "T6: and installs no handler")
 end
 
--- T7: arming against the JestCircus package root — the module that has no
--- `addEventHandler` — reports the failure instead of throwing out of jest's
+-- T7: arming against the JestCircus package root (the module that has no
+-- `addEventHandler`) reports the failure instead of throwing out of jest's
 -- per-file setup, where it would read as a broken test file.
 local function testMissingAddEventHandlerIsReported()
 	local coverage = {}
@@ -325,8 +325,8 @@ end
 
 -- T8: two projects of one package arm the same runtime class in turn, because
 -- they are separate runs against one materialized clone. Each arm owns its
--- accumulator — the finished one has already been encoded and returned, so
--- appending to it or clearing it rewrites an answer the host has — and the
+-- accumulator. The finished one has already been encoded and returned, so
+-- appending to it or clearing it rewrites an answer the host has. And the
 -- second arm still puts exactly one handler in each of its own files.
 local function testProjectsOfOnePackageKeepSeparateAccumulators()
 	local coverage = {}

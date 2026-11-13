@@ -1,6 +1,6 @@
 --!nocheck
 -- Lute-driven test for the shared `runner.timing` envelope builder. Pure over a list
--- of already-measured (name, seconds) pairs — no Roblox, no jest, no os.clock
+-- of already-measured (name, seconds) pairs: no Roblox, no jest, no os.clock
 -- dependency of its own. The module under test is inlined into the
 -- placeholder below by phase-timing.spec.ts. Any failed assertion calls
 -- error(), failing the wrapper spec.
@@ -41,7 +41,7 @@ local function testNilEnabledReturnsNil()
 end
 
 -- T3: enabled maps every phase's name to its seconds, unrounded and
--- unconverted — the host converts seconds to ms, not this module.
+-- unconverted. The host converts seconds to ms, not this module.
 local function testEnabledMapsPhases()
 	local result = PhaseTiming.build(true, {
 		{ name = "findJest", seconds = 0.1 },
@@ -54,7 +54,7 @@ local function testEnabledMapsPhases()
 	check(count(result) == 2, "T3: no extra keys added")
 end
 
--- T4: enabled with no phases returns an empty table, not nil — the caller
+-- T4: enabled with no phases returns an empty table, not nil. The caller
 -- can still tell "timing was on" from a defined (if empty) result.
 local function testEnabledEmptyPhases()
 	local result = PhaseTiming.build(true, {})

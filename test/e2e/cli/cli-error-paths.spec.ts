@@ -31,7 +31,7 @@ describe("cli error paths", () => {
 				env: createOpenCloudEnvironment(server.baseUrl),
 			});
 
-			// Exit 1 is the test-failure signal — distinct from exit 2 which
+			// Exit 1 is the test-failure signal, distinct from exit 2 which
 			// the CLI uses for argv/config errors.
 			expect(result.exitCode).toBe(1);
 			expect(result.stdout).toContain("1 failed");

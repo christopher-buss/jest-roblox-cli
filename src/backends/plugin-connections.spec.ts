@@ -32,7 +32,7 @@ function useFakeTimers(): void {
 }
 
 /**
- * Connect without announcing — every plugin predating the handshake.
+ * Connect without announcing: every plugin predating the handshake.
  * @param wss - Server the socket connects to.
  * @returns The connected socket.
  */
@@ -233,7 +233,7 @@ describe(PluginConnectionPool, () => {
 	it("should open a fresh grace window for a second selection", async () => {
 		// A backend runs more than once against the same server. A spent grace
 		// window left in place would make the second run wait out the connect
-		// timeout instead — 300s on `--backend studio`.
+		// timeout instead: 300s on `--backend studio`.
 		expect.assertions(2);
 
 		const { pool, wss } = makePool();
@@ -301,7 +301,7 @@ describe(PluginConnectionPool, () => {
 
 	it("should keep what a socket announced when its connection is announced twice", async () => {
 		// Re-tracking would reset the candidate, losing the announcement made at
-		// open — the plugin never sends a second one, so it would read as stale.
+		// open. The plugin never sends a second one, so it would read as stale.
 		expect.assertions(2);
 
 		const { pool, wss } = makePool();

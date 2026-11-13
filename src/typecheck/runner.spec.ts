@@ -374,7 +374,7 @@ describe(runTypecheckAsync, () => {
 		expect(kill).toHaveBeenCalledExactlyOnceWith();
 
 		// The kill's late `killed` callback arrives after the launch timer
-		// already settled the promise — it must be a silent no-op.
+		// already settled the promise; it must be a silent no-op.
 		expect(() => {
 			captured!(Object.assign(new Error("killed"), { killed: true }), "", "");
 		}).not.toThrow();
@@ -551,7 +551,7 @@ describe(runTypecheckAsync, () => {
 		assert(error instanceof ConfigError, "expected a ConfigError");
 
 		expect({ hint: error.hint, message: error.message }).toStrictEqual({
-			hint: "npm install -D typescript@7 — or run without --typecheck/--typecheckOnly.",
+			hint: "npm install -D typescript@7, or run without --typecheck/--typecheckOnly.",
 			message:
 				"Type tests need TypeScript 7 ('typescript' 7+, or '@typescript/native' beside TypeScript 6), an optional peer dependency that is not installed.",
 		});
@@ -684,7 +684,7 @@ describe(runTypecheckAsync, () => {
 			}),
 		).rejects.toThrow(
 			expect.objectContaining({
-				hint: "npm install -D typescript@7 — or run without --typecheck/--typecheckOnly.",
+				hint: "npm install -D typescript@7, or run without --typecheck/--typecheckOnly.",
 				message:
 					"Type tests need TypeScript 7 ('typescript' 7+, or '@typescript/native' beside TypeScript 6), an optional peer dependency that is not installed.",
 			}),

@@ -29,10 +29,10 @@ jobs:
           TRAILER=$(git log -1 --format='%(trailers:key=Source-Sha,valueonly=true)' \
             | tr -d '[:space:]')
           if [[ -n "$TRAILER" ]]; then
-            echo "HEAD carries a Source-Sha trailer ($TRAILER) — monorepo-originated. Skipping."
+            echo "HEAD carries a Source-Sha trailer ($TRAILER): monorepo-originated. Skipping."
             echo "skip=true" >> "$GITHUB_OUTPUT"
           else
-            echo "External change — dispatching to the monorepo."
+            echo "External change. Dispatching to the monorepo."
             echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
 

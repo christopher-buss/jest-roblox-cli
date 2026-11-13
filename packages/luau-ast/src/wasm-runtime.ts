@@ -44,7 +44,7 @@ interface WasmExports {
 
 /**
  * Instantiate the embedded wasm parser synchronously. The module is a
- * standalone (glue-free) Emscripten build with a single import — the memory
+ * standalone (glue-free) Emscripten build with a single import: the memory
  * growth notification, which needs no action because heap views are created
  * fresh per call.
  *

@@ -21,11 +21,11 @@ Root fields control the CLI/runner. Jest passthrough fields live under `test:`.
 | `parallel`             | Concurrent Open Cloud sessions, or `"auto"` (= `min(jobs, 3)`)                                         | one session                      |
 | `rojoProject`          | Path to Rojo project file                                                                              | auto-detected                    |
 | `formatters`           | Output formatters (`"default"`, `"agent"`, `"json"`, `"github-actions"`)                               | `["default"]`                    |
-| `gameOutput`           | Write game print/warn/error to a file: a path, or `true` for `game-output.log`.                        | —                                |
-| `outputFile`           | Write the Jest result JSON: a path, or `true` for `jest-output.log`.                                   | —                                |
-| `workspace.exclude`    | Globs naming package directories an enumerated `--workspace` run must skip                             | —                                |
-| `workspace.gameOutput` | `true` to emit per-package game output under `.jest-roblox/output/` (`--workspace` only)               | —                                |
-| `workspace.outputFile` | `true` to emit per-package result files under `.jest-roblox/output/` (`--workspace` only)              | —                                |
+| `gameOutput`           | Write game print/warn/error to a file: a path, or `true` for `game-output.log`.                        | -                                |
+| `outputFile`           | Write the Jest result JSON: a path, or `true` for `jest-output.log`.                                   | -                                |
+| `workspace.exclude`    | Globs naming package directories an enumerated `--workspace` run must skip                             | -                                |
+| `workspace.gameOutput` | `true` to emit per-package game output under `.jest-roblox/output/` (`--workspace` only)               | -                                |
+| `workspace.outputFile` | `true` to emit per-package result files under `.jest-roblox/output/` (`--workspace` only)              | -                                |
 | `coverageCache`        | Reuse incrementally-instrumented coverage shadow dir between runs                                      | `true`                           |
 | `uploadCache`          | Skip the place upload when the place file's bytes are unchanged                                        | `true`                           |
 | `luauRoots`            | Compiled Luau directories to instrument                                                                | auto from tsconfig `outDir`      |
@@ -40,14 +40,14 @@ Put these under `test: { ... }`.
 | ------------------------ | ------------------------------------------------- | ------------------------------------ |
 | `projects`               | DataModel paths to search for tests               | one project per `luauRoots` mount    |
 | `testMatch`              | Glob patterns for test files                      | `**/*.spec.ts`, `**/*.test.ts`, etc. |
-| `testPathPattern`        | Regex to filter test files by path                | —                                    |
+| `testPathPattern`        | Regex to filter test files by path                | -                                    |
 | `testPathIgnorePatterns` | Regex patterns to exclude from discovery          | `/node_modules/`, `/dist/`, `/out/`  |
-| `exclude`                | Globs subtracted from Runtime Test discovery      | —                                    |
-| `setupFiles`             | DataModel paths to setup scripts (run before env) | —                                    |
-| `setupFilesAfterEnv`     | DataModel paths to post-env setup scripts         | —                                    |
-| `snapshotFormat`         | Snapshot serialization options                    | —                                    |
+| `exclude`                | Globs subtracted from Runtime Test discovery      | -                                    |
+| `setupFiles`             | DataModel paths to setup scripts (run before env) | -                                    |
+| `setupFilesAfterEnv`     | DataModel paths to post-env setup scripts         | -                                    |
+| `snapshotFormat`         | Snapshot serialization options                    | -                                    |
 | `verbose`                | Show individual test results                      | `false`                              |
-| `updateSnapshot`         | Update snapshot files                             | —                                    |
+| `updateSnapshot`         | Update snapshot files                             | -                                    |
 
 `exclude` is valid at root `test:` and per-project; it applies in single-,
 multi-project (`projects`), and `--workspace` runs, but is skipped for explicit
@@ -62,23 +62,23 @@ Put these under `test: { ... }`.
 | `collectCoverage`            | Enable coverage collection                                                | `false`                                 |
 | `coverageDirectory`          | Output directory                                                          | `"coverage"`                            |
 | `coverageReporters`          | Istanbul reporter list                                                    | `["text", "lcov"]`                      |
-| `coverageThreshold`          | Min percentages; fail if not met (branches, functions, lines, statements) | —                                       |
+| `coverageThreshold`          | Min percentages; fail if not met (branches, functions, lines, statements) | -                                       |
 | `coveragePathIgnorePatterns` | Globs to exclude from coverage                                            | test files, node_modules, rbxts_include |
-| `collectCoverageFrom`        | Globs for files to include in coverage                                    | —                                       |
+| `collectCoverageFrom`        | Globs for files to include in coverage                                    | -                                       |
 
 ## Type-Check Fields
 
 Type Tests (`*.spec-d.ts`, `*.test-d.ts`) are configured under
 `test: { typecheck: { ... } }`, valid at the root `test:` block and per-project.
-Host-only — never forwarded to the Roblox runtime.
+Host-only: never forwarded to the Roblox runtime.
 
 | Field                | Purpose                                                                                                           | Default |
 | -------------------- | ----------------------------------------------------------------------------------------------------------------- | ------- |
 | `enabled`            | Enable Type Tests (the only gate; setting other fields does not auto-enable)                                      | `false` |
 | `only`               | Run only Type Tests, skip Runtime Tests                                                                           | `false` |
 | `include`            | Globs for Type Test files; when unset, derived from the project's runtime `include` (`.spec.`→`.spec-d.`)         | derived |
-| `exclude`            | Globs to exclude from Type Test discovery                                                                         | —       |
-| `tsconfig`           | Custom tsconfig for type testing (root-only in projects mode)                                                     | —       |
+| `exclude`            | Globs to exclude from Type Test discovery                                                                         | -       |
+| `tsconfig`           | Custom tsconfig for type testing (root-only in projects mode)                                                     | -       |
 | `ignoreSourceErrors` | `false`: surface type errors in non-test source files; `true`: report only errors inside Type Test files          | `false` |
 | `spawnTimeout`       | Milliseconds to wait for the tsgo process to start before the run throws; bounds startup only, not the type-check | `10000` |
 

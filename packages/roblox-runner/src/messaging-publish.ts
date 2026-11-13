@@ -20,7 +20,7 @@ export interface PublishMessageOptions extends OpenCloudConnection {
 const PUBLISH_SCOPE = "universe-messaging-service:publish";
 
 /**
- * Publish one message to a universe topic — the push channel into a running
+ * Publish one message to a universe topic: the push channel into a running
  * Open Cloud Luau Execution task, which can subscribe to it with
  * `MessagingService:SubscribeAsync` (measured: a task reaches a published
  * message in ~1s, and the engine call is not sandboxed away). The SDK has no
@@ -28,7 +28,7 @@ const PUBLISH_SCOPE = "universe-messaging-service:publish";
  * same way `flushMemoryStoreAsync` does.
  *
  * Throws on any failure. Open Cloud guarantees no delivery, so a caller may
- * well shrug one off — but that is the caller's call to make. A refused key has
+ * well shrug one off, but that is the caller's call to make. A refused key has
  * to be able to reach a human, and swallowing it here would make a missing
  * scope indistinguishable from a delivered message.
  * @param options - Universe, topic, message and authorized transport.
@@ -68,6 +68,6 @@ function describeScopeHint(err: OpenCloudError): string {
 	}
 
 	return err.statusCode === 401 || err.statusCode === 403
-		? ` — the API key needs the ${PUBLISH_SCOPE} permission`
+		? `; the API key needs the ${PUBLISH_SCOPE} permission`
 		: "";
 }

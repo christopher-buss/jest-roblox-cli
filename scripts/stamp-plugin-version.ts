@@ -12,7 +12,7 @@ const manifestSchema = type({ version: "string" });
  * connected plugin can name itself in the CLI's handshake.
  *
  * The `.rbxm` carries no metadata of its own, and a user running several
- * installed copies has no way to tell them apart otherwise — a protocol number
+ * installed copies has no way to tell them apart otherwise. A protocol number
  * says a copy is stale, not which file to delete. Generated rather than
  * committed because the release tool writes the version to `package.json`
  * alone, so a checked-in copy would be stale for the length of every release

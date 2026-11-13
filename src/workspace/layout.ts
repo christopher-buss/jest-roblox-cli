@@ -222,7 +222,7 @@ async function resolveUnitsAsync(
 	}
 
 	if (resolved.kind === "none-affected") {
-		process.stdout.write("No affected packages — nothing to test.\n");
+		process.stdout.write("No affected packages; nothing to test.\n");
 		return { refused: EMPTY_RESULT };
 	}
 

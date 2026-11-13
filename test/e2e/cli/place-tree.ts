@@ -62,7 +62,7 @@ export function readPlaceTree(placeFile: string): PlaceNode {
 
 /**
  * The node at a path of instance names. Addressed by path rather than searched
- * for, so a test says which parent it expects the instance under — a name found
+ * for, so a test says which parent it expects the instance under. A name found
  * anywhere in the place proves nothing about where the stage put it. A missing
  * step throws naming the step, which reads better than an assertion on
  * `undefined`.

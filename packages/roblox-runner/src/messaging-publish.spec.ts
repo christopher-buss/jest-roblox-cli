@@ -128,12 +128,12 @@ describe("messaging publish", () => {
 		{
 			message: "No key",
 			statusCode: 401,
-			suffix: " — the API key needs the universe-messaging-service:publish permission",
+			suffix: "; the API key needs the universe-messaging-service:publish permission",
 		},
 		{
 			message: "Refused",
 			statusCode: 403,
-			suffix: " — the API key needs the universe-messaging-service:publish permission",
+			suffix: "; the API key needs the universe-messaging-service:publish permission",
 		},
 	])(
 		"should retain complete publish diagnostics: %j",

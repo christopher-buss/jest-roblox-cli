@@ -105,7 +105,7 @@ describe("narrowRootToUniverse", () => {
 		// The universe reaches `world.luau` and the list takes it, so nothing
 		// survives to narrow towards. Dropping the mount here would leave the
 		// place on the original tree, which serves the module the list
-		// excluded — the shadow is the only tree missing it.
+		// excluded. The shadow is the only tree missing it.
 		expect(
 			narrowRootToUniverse(MOUNT, {
 				fileSystem,
@@ -481,8 +481,8 @@ describe(narrowRootsInFrame, () => {
 			"client/d.luau",
 		);
 
-		// A luauRoot can sit above the mounts — `luauRoots: ["out"]` against
-		// `$path: "out/modules"` — and only a directory the place actually
+		// A luauRoot can sit above the mounts (`luauRoots: ["out"]` against
+		// `$path: "out/modules"`), and only a directory the place actually
 		// mounts is one a demote can rewrite.
 		expect(
 			narrowLuauRoots([MOUNT], {

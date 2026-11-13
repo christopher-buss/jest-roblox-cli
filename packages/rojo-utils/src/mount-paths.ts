@@ -34,7 +34,7 @@ export function collectRequiredPaths(node: RojoTreeNode, result: Array<string>):
  * Not `path.isAbsolute`, which answers for the host it runs on: `D:/out` and
  * `\out` both read as relative on Linux, so the same project file would resolve
  * to two different trees depending on which machine read it. Every root a
- * project can write is here — posix, drive, and the backslash forms Windows
+ * project can write is here: posix, drive, and the backslash forms Windows
  * uses for a drive-relative root and a UNC share.
  * @param value - Candidate from an existing parsed tree.
  * @returns Whether the mount has a POSIX, Windows drive or backslash root.
@@ -55,9 +55,9 @@ export function resolveNativeMountPath(baseDirectory: string, mount: string): st
 
 /**
  * The filesystem path a `$path` mount names, given the directory it is written
- * against — a project's own directory, or the root a mount was already rebased
- * onto. A `luauRoot` is written the same way and resolves through here too, so
- * a root and a mount are weighed on one rule.
+ * against. That is a project's own directory, or the root a mount was already
+ * rebased onto. A `luauRoot` is written the same way and resolves through here
+ * too, so a root and a mount are weighed on one rule.
  *
  * Joined, never resolved. `path.resolve` reads a drive-less absolute path
  * (`/external/out`) as drive-relative on Windows and answers with the base's

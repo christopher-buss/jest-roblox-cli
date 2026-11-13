@@ -170,7 +170,7 @@ describe("upload cache", () => {
 			target: TARGET,
 		});
 
-		// The superseded hash must not still resolve — otherwise the file grows
+		// The superseded hash must not still resolve. Otherwise the file grows
 		// without bound and old bytes keep a version alive.
 		expect(
 			readCachedVersion({ fileSystem, hash: stale, rootDirectory: ROOT, target: TARGET }),

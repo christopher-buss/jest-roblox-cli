@@ -11,8 +11,8 @@ export type ProgressMapOptions<T> = SortedMapInboxOptions<T>;
  * Read-only view over a MemoryStore SortedMap used as an approximate progress
  * channel: each in-flight task overwrites one key named after itself with its
  * running tally, and {@link ProgressMap.readAllAsync} sweeps every key for the
- * Node-side aggregator. The map is never written from Node — the Luau tasks own
- * the writes — so this is the read counterpart to the work queue, kept minimal
+ * Node-side aggregator. The map is never written from Node (the Luau tasks own
+ * the writes), so this is the read counterpart to the work queue, kept minimal
  * and injectable (fake `httpClient`) for tests.
  * @template T
  */

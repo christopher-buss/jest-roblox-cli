@@ -764,7 +764,7 @@ describe(OpenCloudBackend, () => {
 			expect(stub.uploadCalls).toHaveLength(1);
 		});
 
-		it("should not replenish a freed slot — single-wave fires exactly parallel tasks", async () => {
+		it("should not replenish a freed slot: single-wave fires exactly parallel tasks", async () => {
 			expect.assertions(1);
 
 			// One task returns immediately while the other lingers. The shared
@@ -1215,7 +1215,7 @@ describe("boot probe", () => {
 	 *
 	 * The deadline stays short and separate. Set to the whole budget the two
 	 * would expire together, so a place that booted just inside the budget
-	 * would be reported as one Roblox cannot start while its script ran — the
+	 * would be reported as one Roblox cannot start while its script ran: the
 	 * one verdict that has to be trustworthy.
 	 */
 	it("should give the probe its own budget, 90s by default", async () => {

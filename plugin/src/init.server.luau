@@ -25,7 +25,7 @@ local socketUrl = require(script:WaitForChild("socket-url") :: any)
 -- copies is told which file to remove.
 --
 -- `script` is the plugin root here (rojo maps `src/init.server.luau` onto the
--- tree root), so `version` is a child of it rather than a sibling — unlike in
+-- tree root), so `version` is a child of it rather than a sibling, unlike in
 -- the run-mode runner beside this file.
 local versionOk, PluginVersion =
 	pcall(require, script:FindFirstChild(Protocol.studio.pluginVersionModule) :: any)
@@ -128,7 +128,7 @@ local function connect(attempt: any): ()
 					else nil
 				if clientVersion ~= PROTOCOL_VERSION then
 					warn(
-						"[jest-roblox] Protocol version mismatch — CLI v"
+						"[jest-roblox] Protocol version mismatch: CLI v"
 							.. tostring(clientVersion)
 							.. ", plugin v"
 							.. tostring(PROTOCOL_VERSION)

@@ -1,5 +1,5 @@
 --!nocheck
--- Lute-driven test for the workspace bail signal. Pure over a fake SortedMap —
+-- Lute-driven test for the workspace bail signal. Pure over a fake SortedMap:
 -- no Roblox, no MemoryStore. The module under test is inlined into the
 -- placeholder below by bail.spec.ts. Any failed assertion calls error(),
 -- failing the wrapper spec.
@@ -85,7 +85,7 @@ local function testTripBroadcastsSignal()
 	check(write.ttl == 300, "B4: the signal carries the run TTL")
 end
 
--- B5: a passing package writes nothing — otherwise the first package to
+-- B5: a passing package writes nothing. Otherwise the first package to
 -- finish would halt every sibling.
 local function testPassDoesNotBroadcast()
 	local map = newMap()
@@ -112,7 +112,7 @@ local function testEmptyMapKeepsGoing()
 	check(not Bail.shouldStop(state), "B7: an unsignalled map must not stop the task")
 end
 
--- B8: bail disabled never reads the map at all — no per-pop API call is spent
+-- B8: bail disabled never reads the map at all: no per-pop API call is spent
 -- on a run that did not ask to fail fast.
 local function testDisabledNeverReadsMap()
 	local map = newMap({ stored = { bailed = true } })
@@ -143,7 +143,7 @@ local function testReadFailureIsNotFatal()
 end
 
 -- B12: the enabled flag is readable, so callers can skip work only the bail
--- decision needs — decoding a package's Jest output to learn whether it passed.
+-- decision needs: decoding a package's Jest output to learn whether it passed.
 local function testIsEnabledReportsTheFlag()
 	check(
 		Bail.isEnabled(Bail.new({ enabled = true, ttlSeconds = 600 })),
@@ -159,7 +159,7 @@ local function testIsEnabledReportsTheFlag()
 	)
 end
 
--- B11: a write that throws still trips this task locally — the broadcast is
+-- B11: a write that throws still trips this task locally. The broadcast is
 -- best effort, the local decision is not.
 local function testWriteFailureStillTripsLocally()
 	local map = newMap({ throwOnSet = true })

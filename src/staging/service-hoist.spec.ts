@@ -91,8 +91,8 @@ describe(mergeHoistedServices, () => {
 		}).toThrow(
 			configErrorLike(
 				"workspace packages disagree on `Workspace.StreamingEnabled`.\n\n" +
-					"  - true — declared by @halcyon/foo\n" +
-					"  - false — declared by @halcyon/bar\n\n" +
+					"  - true (declared by @halcyon/foo)\n" +
+					"  - false (declared by @halcyon/bar)\n\n" +
 					"Every package in a workspace run shares one synthesized place, so a\n" +
 					"service property is a property of the whole run. Either align the value\n" +
 					"across each package's rojo project, or run the odd package on its own.",

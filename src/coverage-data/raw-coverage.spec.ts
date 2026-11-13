@@ -35,7 +35,7 @@ describe(normalizeRawCoverage, () => {
 		});
 	});
 
-	it("should keep the fileKey verbatim — it is the cross-machine join key", () => {
+	it("should keep the fileKey verbatim; it is the cross-machine join key", () => {
 		expect.assertions(1);
 
 		const key = "data-package/src/init.luau";
@@ -127,7 +127,7 @@ describe(parseCoverageEnvelope, () => {
 		expect.assertions(1);
 
 		// Machine B reading `_G.__jest_roblox_cov` directly has no
-		// `runner.coverage` wrapper — the object IS the table.
+		// `runner.coverage` wrapper; the object IS the table.
 		expect(parseCoverageEnvelope({ "out/init.luau": { s: [1] } })).toStrictEqual({
 			"out/init.luau": { s: { "1": 1 } },
 		});
@@ -142,7 +142,7 @@ describe(parseCoverageEnvelope, () => {
 	it("should return undefined for a JSON string that decodes to a non-object", () => {
 		expect.assertions(1);
 
-		// Valid JSON, but a scalar — not a coverage table.
+		// Valid JSON, but a scalar, not a coverage table.
 		expect(parseCoverageEnvelope("42")).toBeUndefined();
 	});
 

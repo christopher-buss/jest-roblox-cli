@@ -127,6 +127,6 @@ function buildNoMatchMessage(files: ReadonlyArray<string>, roots: ReadonlyArray<
 	const rootsList =
 		uniqueRoots.length > 0
 			? uniqueRoots.map((root) => `  - ${root}`).join("\n")
-			: "  (none — projects use include patterns with no static directory prefix; pass --project explicitly)";
+			: "  (none: projects use include patterns with no static directory prefix; pass --project explicitly)";
 	return `No project contains the requested file(s):\n${filesList}\n\nProject roots searched:\n${rootsList}`;
 }

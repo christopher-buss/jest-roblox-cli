@@ -27,7 +27,7 @@ end
 function module.create(runtimeStubMounts: { { string } }): (Hooks, () -> ())
 	-- Unique key per run: the assert below catches a persisted session.
 	local sessionKey = "__JEST_ROBLOX_RT_" .. HttpService:GenerateGUID(false):gsub("-", "")
-	assert(_G[sessionKey] == nil, "Session key collision — re-entrant run detected")
+	assert(_G[sessionKey] == nil, "Session key collision: re-entrant run detected")
 	_G[sessionKey] = { configs = {} }
 
 	-- Per config: nested mounts with stubs present at once mislead Jest.

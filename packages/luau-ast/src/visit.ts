@@ -1,7 +1,7 @@
 /* oxlint-disable max-lines -- Visitor pattern is inherently verbose. */
 /**
  * Visitor over the official parser's AST (see ast-types.ts). Each enter
- * callback returns boolean — false skips the node's children. All callbacks
+ * callback returns boolean; false skips the node's children. All callbacks
  * optional, default true. Type-annotation nodes are not visited.
  */
 import type * as Ast from "./ast-types.ts";

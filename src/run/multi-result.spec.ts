@@ -168,7 +168,7 @@ describe("buildMultiRunResult coverage", () => {
 		expect.assertions(1);
 
 		expect(coverageOf({ config: coverageConfig(), hits: undefined })).toStrictEqual({
-			notice: "Warning: coverage data was empty — the Rojo project may point at uninstrumented source",
+			notice: "Warning: coverage data was empty. The Rojo project may point at uninstrumented source",
 			units: [],
 		});
 	});

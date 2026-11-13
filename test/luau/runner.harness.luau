@@ -1,8 +1,8 @@
 --!nocheck
 local activeScheduling = 0
 -- Lute-driven test for the multi-mode runner's per-config dispatch. The runner
--- and the three modules it shares with the workspace runner — the Game Output
--- capture, the watchdog and the result seam — are inlined into the
+-- and the three modules it shares with the workspace runner (the Game Output
+-- capture, the watchdog and the result seam) are inlined into the
 -- placeholders below by runner.spec.ts; the fake `game`, `require`, `task` and
 -- `warn` declared here are the upvalues they close over, so every other
 -- sibling module is a stub defined in this file. Any failed assertion calls
@@ -568,7 +568,7 @@ local function testJestRejectionIsAFailureEnvelope()
 end
 
 -- T3: a config with no Jest to find fails before the run starts, and the
--- engine warnings from the lookup still reach its capture — the window opens
+-- engine warnings from the lookup still reach its capture. The window opens
 -- at the top of the run for exactly this.
 local function testMissingJestFailsBeforeTheRun()
 	reset()
@@ -582,7 +582,7 @@ local function testMissingJestFailsBeforeTheRun()
 	check(failed.runner.captureInstalled == nil, "T3: and answers nothing about an unattempted tap")
 end
 
--- T3b: what Jest writes to its own stdout reaches Banner Output — that is where
+-- T3b: what Jest writes to its own stdout reaches Banner Output. That is where
 -- the cause of an exit lives, written through process.stdout rather than
 -- through the print LogService hears. A tree the installer cannot find
 -- RobloxShared in says so, rather than reporting an empty capture as silence.
@@ -645,7 +645,7 @@ local function testElapsedBudgetAbandonsOnlyItsConfig()
 	check(outputOf(entries[2]).success == true, "T4: the next config still runs")
 end
 
--- T4b: the other way a run is abandoned names the test too — a config parked
+-- T4b: the other way a run is abandoned names the test too: a config parked
 -- on a `WaitForChild` the place cannot satisfy reports the warning and the
 -- test the run had reached, not one or the other.
 local function testInfiniteYieldNamesTheTest()
@@ -748,7 +748,7 @@ local function testRunnerFlagsAreStripped()
 end
 
 -- T7: the hooks fire around each config in turn, and `afterConfig` fires even
--- for a config whose run failed — the stubs it parented have to come out
+-- for a config whose run failed. The stubs it parented have to come out
 -- before the next config's go in, whatever happened in between.
 local function testHooksFireAroundEveryConfig()
 	reset()
@@ -797,7 +797,7 @@ local function testFailedInjectionStillCleansUp()
 end
 
 -- T9: an `afterConfig` that throws is warned about rather than allowed to end
--- the batch — a config that ran must still be reported, and the ones behind it
+-- the batch. A config that ran must still be reported, and the ones behind it
 -- must still run.
 local function testFailedCleanupDoesNotEndTheBatch()
 	reset()

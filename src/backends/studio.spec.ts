@@ -31,7 +31,7 @@ import { StudioBackend } from "./studio.ts";
 
 const RUN_TIMEOUT = 300_000;
 
-// Mirrors the wire format StudioBackend emits in `attachSocket` — used by the
+// Mirrors the wire format StudioBackend emits in `attachSocket`. Used by the
 // send-mock to assert the backend keeps sending the handshake fields.
 // Drift here means the protocol-version handshake regressed.
 const pluginRequest = type({
@@ -285,7 +285,7 @@ describe("protocol version handshake", () => {
 				jestOutput: envelope([{ jestOutput: successResult() }]),
 				requestId,
 				type: "results",
-				// no protocolVersion — simulating stale plugin
+				// no protocolVersion: simulating stale plugin
 			};
 		});
 
@@ -472,7 +472,7 @@ describe(StudioBackend, () => {
 		// The VM count the plugin receives is a request the CLI has already
 		// resolved: `"auto"` becomes one VM per config (up to the hosts the
 		// plugin ships), an oversized count is clamped to the configs there
-		// are, and anything that lands on a single VM leaves the field off —
+		// are, and anything that lands on a single VM leaves the field off;
 		// that is the sequential path.
 		it("should send the run budget the coordinator must finish inside", async () => {
 			expect.assertions(1);
@@ -512,7 +512,7 @@ describe(StudioBackend, () => {
 	it("should send a workspace entries payload when jobs carry pkg", async () => {
 		// The same run-mode dispatch lights up workspace in the attached
 		// (WebSocket) studio backend. A workspace run sends `workspace.entries`,
-		// not `configs` — the plugin's run-mode runner dispatches on
+		// not `configs`. The plugin's run-mode runner dispatches on
 		// shape.
 		expect.assertions(4);
 

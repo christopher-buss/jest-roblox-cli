@@ -186,7 +186,7 @@ function formatMessage({
 		if (omittedBy.length > 0) {
 			lines.push(`  - declared as ${valueText} by: ${group.packages.join(", ")}`);
 		} else {
-			lines.push(`  - ${valueText} — declared by ${group.packages.join(", ")}`);
+			lines.push(`  - ${valueText} (declared by ${group.packages.join(", ")})`);
 		}
 	}
 
@@ -197,7 +197,7 @@ function formatMessage({
 	lines.push(
 		"",
 		"In workspace mode this field must be uniform across all selected",
-		`packages — the entire run uses one ${field}. Either:`,
+		`packages. The entire run uses one ${field}. Either:`,
 		"  - Declare it consistently across packages (typically by inheriting",
 		"    from a shared config), OR",
 		"  - Pass the CLI override to set a single value for the run.",

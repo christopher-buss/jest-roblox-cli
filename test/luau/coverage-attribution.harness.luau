@@ -2,7 +2,7 @@
 -- Lute-driven test for the per-test coverage attribution diff. The module under
 -- test is inlined into the placeholder below by coverage-attribution.spec.ts
 -- (the same wrap mutation-kernel.spec.ts uses). The functions are pure over a
--- hand-built `_G.__jest_roblox_cov`-shaped hit table — no Roblox, no jest. Any
+-- hand-built `_G.__jest_roblox_cov`-shaped hit table: no Roblox, no jest. Any
 -- failed assertion calls error(), so a non-zero lute exit fails the wrapper spec.
 
 local attribution = __MODULE__
@@ -85,7 +85,7 @@ local function testEmptyDelta()
 	check(next(delta) == nil, "S4: no file recorded when nothing new is covered")
 end
 
--- S5: the snapshot is an independent copy — mutating the live table after
+-- S5: the snapshot is an independent copy. Mutating the live table after
 -- snapshotting must not change the captured baseline, or the diff would alias
 -- `after` and attribute nothing.
 local function testSnapshotIsolation()

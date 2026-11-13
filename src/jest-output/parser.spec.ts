@@ -431,7 +431,7 @@ describe(parseJestOutput, () => {
 	});
 
 	it("should stop walking the parent chain at null rather than dereferencing it", () => {
-		// `typeof null === "object"` in JS — a null parent must not be
+		// `typeof null === "object"` in JS, so a null parent must not be
 		// treated as a traversable level, otherwise the walker
 		// dereferences null and throws a TypeError that swallows the
 		// real error message.
@@ -489,8 +489,8 @@ describe(parseJestOutput, () => {
 	it("should extract trailing message when err is a top-level Promise-trace string", () => {
 		// Regression: workspace materializer (luau/staging/entry.luau) encodes
 		// Jest-side failures as { success: false, err: tostring(promiseError) }
-		// — a *string* err, not the { kind: "ExecutionError" } object shape
-		// produced by runner.luau's runProjects. stringifyError must also
+		// (a *string* err, not the { kind: "ExecutionError" } object shape
+		// produced by runner.luau's runProjects). stringifyError must also
 		// detect Promise traces in that top-level string form, otherwise the
 		// multi-frame __tostring blob leaks into the banner.
 		expect.assertions(1);
@@ -521,7 +521,7 @@ describe(parseJestOutput, () => {
 
 	it("should extract a no-space cause line from a Promise trace", () => {
 		// Luau `error(msg, 0)` emits `path:N:msg` with no space after the
-		// second colon — the cause regex must accept that shape.
+		// second colon; the cause regex must accept that shape.
 		expect.assertions(1);
 
 		const promiseTrace = [
@@ -582,7 +582,7 @@ describe(parseJestOutput, () => {
 		// Regression: promise-error.luau walks the parent chain to a leaf whose
 		// .error field is `<path>:<line>: <msg>` (e.g.
 		// "...nodeUtils:25: Exited with code: 1"). The CLI banner's exit-code
-		// branch (`^Exited with code: \d+$`) only fires on the bare cause —
+		// branch (`^Exited with code: \d+$`) only fires on the bare cause;
 		// stringifyError must surface the trailing message so the captured
 		// stdout body replaces the transport line.
 		expect.assertions(1);
@@ -628,7 +628,7 @@ describe(parseJestOutput, () => {
 		// Defensive branch: a string that matches the `-- Promise.Error(` header
 		// but carries no `:N:` cause line (e.g. a malformed/partial trace from
 		// an unexpected encoder) must return as-is rather than collapse to an
-		// empty string — preserving whatever context the producer did emit.
+		// empty string, preserving whatever context the producer did emit.
 		expect.assertions(1);
 
 		const headerOnly = "-- Promise.Error(ExecutionError) --";

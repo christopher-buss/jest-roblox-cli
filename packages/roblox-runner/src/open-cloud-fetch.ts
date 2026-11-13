@@ -5,7 +5,7 @@ export const DEFAULT_BASE_URL = "https://apis.roblox.com";
 
 /**
  * Minimal fetch transport for the Open Cloud endpoints the ocale SDK does not
- * model — the universe-wide `memory-store:flush` and the messaging publish.
+ * model: the universe-wide `memory-store:flush` and the messaging publish.
  * Both are single calls against a fixed URL, so neither earns a generated
  * client, but both need the SDK's own failure classification or their callers
  * cannot tell a refusal from a dropped connection: non-2xx ⇒ `ApiError`

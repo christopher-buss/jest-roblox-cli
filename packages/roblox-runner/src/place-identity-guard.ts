@@ -4,7 +4,7 @@
  *
  * The booted version is all that travels back. The expected identity is baked
  * into the guard and the host already holds it, so nothing the place could add
- * would tell the host something it did not send — and the version it did boot
+ * would tell the host something it did not send. And the version it did boot
  * is what a host relaunches pinned against, and what it diagnoses the mismatch
  * from.
  *
@@ -66,7 +66,7 @@ const PLACE_MISMATCH_PATTERN = new RegExp(`^${PLACE_MISMATCH}:([0-9]+)$`);
 
 /**
  * A refusal as the guard writes it. The guard itself builds this in Luau, so
- * nothing in production calls this — it is here so a fake task standing in for
+ * nothing in production calls this. It is here so a fake task standing in for
  * a guarded one speaks the format rather than respelling it.
  *
  * @param bootedVersion - The version the task found itself running.
@@ -83,18 +83,18 @@ export function formatPlaceMismatch(bootedVersion: number): string {
  *
  * A stamped place is judged on the stamp alone. The stamp *is* the build, so
  * two places carrying it are interchangeable to a task however their version
- * numbers differ — which is what stops a second checkout of one commit, whose
+ * numbers differ. That is what stops a second checkout of one commit, whose
  * own publish mints its own number, from refusing a place holding exactly the
  * build this run collected. An absent stamp is a mismatch rather than a
  * fallback to the version: every place a stamping run uploads carries one, so a
  * place without it is some other build. The class is checked before `Value` is
- * read, because `FindFirstChild` returns whatever holds the name — reading
+ * read, because `FindFirstChild` returns whatever holds the name. Reading
  * `Value` off a `Folder` raises, and a task that raises is a lost result the
  * pool relaunches rather than a refusal the host can pin against.
  *
  * Given a version instead, the version is all there is to compare. It proves
  * the place is the object this run's upload made, which is as much as a caller
- * that did not build the place can ask for — and no more, since the same upload
+ * that did not build the place can ask for, and no more, since the same upload
  * of a stale file mints a version too.
  *
  * One statement, so a caller may splice it wherever its own script permits:
@@ -139,7 +139,7 @@ export function placeIdentityGuardSource({
 
 /**
  * The version a task says it booted, when it refused the place rather than
- * doing its work. Undefined for every other output — including a missing one,
+ * doing its work. Undefined for every other output, including a missing one,
  * which is a lost result rather than a refusal, and including the sentinel on
  * its own, which the guard never emits and only a user script could produce.
  *

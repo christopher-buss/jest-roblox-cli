@@ -145,8 +145,8 @@ function formatGlobConflict(owner: DeclaredGlobs, rival: DeclaredGlobs): string 
 	return [
 		"workspace packages disagree on `globIgnorePaths`.",
 		"",
-		`  - ${JSON.stringify(owner.patterns)} — declared by ${owner.packageName}`,
-		`  - ${JSON.stringify(rival.patterns)} — declared by ${rival.packageName}`,
+		`  - ${JSON.stringify(owner.patterns)} (declared by ${owner.packageName})`,
+		`  - ${JSON.stringify(rival.patterns)} (declared by ${rival.packageName})`,
 		"",
 		"Every package in a workspace run shares one synthesized place, so one",
 		"ignore list covers every mount in it. Either align the list across each",

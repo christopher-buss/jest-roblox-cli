@@ -99,7 +99,7 @@ describe.skipIf(!rojoOnPath())("staged pinned classes", () => {
 		]);
 
 		// The materializer matches the live sub-service by name, and exactly one
-		// node may carry it — a duplicate would mean the ignored original came
+		// node may carry it. A duplicate would mean the ignored original came
 		// back alongside the stand-in. The one that survives is the stand-in,
 		// where the materializer walks for it; anywhere else it never reaches
 		// the live service.

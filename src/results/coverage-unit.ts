@@ -10,7 +10,7 @@ import type { CoverageMapper } from "../coverage-report/mapper.ts";
 import type { RunCoverage } from "./run-result-types.ts";
 
 const EMPTY_DATA_NOTICE =
-	"Warning: coverage data was empty — the Rojo project may point at uninstrumented source";
+	"Warning: coverage data was empty. The Rojo project may point at uninstrumented source";
 const NO_MANIFEST_NOTICE = "Warning: Coverage manifest not found, skipping TS mapping";
 
 /** The settings one coverage report unit is mapped, filtered and gated by. */

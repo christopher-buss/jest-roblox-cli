@@ -106,7 +106,7 @@ function collectNodes(
  * 7.7.0-rc.1 it wrote `std::path::absolute`, which keeps symlinks and 8.3
  * short names and collapses `..` only on Windows. From 7.7.0 it canonicalizes
  * the project first (rojo-rbx/rojo#1217), which on Windows yields a verbatim
- * `\\?\` path with every short name expanded — while `os.tmpdir()` is often
+ * `\\?\` path with every short name expanded, while `os.tmpdir()` is often
  * a short name itself. Asking the file system for the real path of both sides
  * reduces every one of those spellings to the same string; every path compared
  * here names a file on disk.

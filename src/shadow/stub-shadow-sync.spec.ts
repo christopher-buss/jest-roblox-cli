@@ -27,7 +27,7 @@ function syncThroughBake({
 }
 
 /**
- * A shadow whose mirror is where every mount is read from — no demote.
+ * A shadow whose mirror is where every mount is read from; no demote.
  *
  * @param root - Directory every mount resolves under.
  * @returns A layout that shadows every path.

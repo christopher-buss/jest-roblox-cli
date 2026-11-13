@@ -19,7 +19,7 @@ import {
 // (e.g. `out-test/src/init.luau` next to `out-test/src/nested.spec.luau`).
 // Pre-fix, `containsLuauFiles` made the dir a coverage root via the helper,
 // the synthesizer redirected `$path` to the shadow, and the instrumenter
-// filtered specs out — the shadow held only the instrumented helper and
+// filtered specs out. The shadow held only the instrumented helper and
 // testMatch returned zero matches.
 //
 // All other workspace e2e tests run without `--coverage`, and the only other
@@ -29,7 +29,7 @@ import {
 
 const WORKSPACE_FIXTURE_PATH = path.resolve(__dirname, "../fixtures/workspace");
 
-// Only the field these regressions read — the manifest's full schema lives in
+// Only the field these regressions read. The manifest's full schema lives in
 // `src/coverage-pipeline/manifest.ts` and is validated by the CLI itself.
 const manifestFilesSchema = type({ files: "object" });
 
@@ -125,7 +125,7 @@ function readVendoredShadow(sandbox: string) {
 	};
 }
 
-describe("workspace coverage — $path mounts specs alongside helpers", () => {
+describe("workspace coverage: $path mounts specs alongside helpers", () => {
 	it.skipIf(!rojoOnPath())(
 		"should preserve spec files in the shadow and reach backend dispatch",
 		async () => {
@@ -162,7 +162,7 @@ describe("workspace coverage — $path mounts specs alongside helpers", () => {
 
 			expect(fs.existsSync(shadowSpecPath)).toBeTrue();
 
-			// Guard against silent short-circuits — `passWithNoTests` on the
+			// Guard against silent short-circuits: `passWithNoTests` on the
 			// nested fixture would let zero-discovery pass even with the bug,
 			// so we pin that the place was actually built and dispatched.
 			expect(server.uploadCount).toBe(1);
@@ -175,9 +175,9 @@ describe("workspace coverage — $path mounts specs alongside helpers", () => {
 // `collectCoverageFrom` decides what gets probes, not just what the report
 // keeps: the probe counts for everything else still rode home in the task's
 // 4 MiB return envelope. A file outside the globs must reach the shadow
-// verbatim — dropping it instead would break the place, and probing it anyway
+// verbatim. Dropping it instead would break the place, and probing it anyway
 // would put the payload back.
-describe("workspace coverage — collectCoverageFrom scopes instrumentation", () => {
+describe("workspace coverage: collectCoverageFrom scopes instrumentation", () => {
 	it.skipIf(!rojoOnPath())(
 		"should mirror an out-of-universe file verbatim and leave it out of the manifest",
 		async () => {
@@ -220,7 +220,7 @@ describe("workspace coverage — collectCoverageFrom scopes instrumentation", ()
 // Regression: `--workspace --coverage` against a package whose rojo
 // `test.project.json` mounts multiple `$path` entries (e.g. `src/` PLUS a
 // vendored `Packages/` dir). Pre-fix, `discoverPackageLuauRoots` walked every
-// `collectPaths` entry and instrumented every mounted directory — the per-pkg
+// `collectPaths` entry and instrumented every mounted directory; the per-pkg
 // `luauRoots: ["src"]` was honored only in single mode, not workspace mode.
 // The per-pkg `coveragePathIgnorePatterns` was likewise ignored because
 // `prepareWorkspaceCoverage` read the matcher from the workspace-root config,
@@ -230,7 +230,7 @@ describe("workspace coverage — collectCoverageFrom scopes instrumentation", ()
 // directory after a CLI run: the user's source root must be instrumented; the
 // vendored mount must not appear under the shadow.
 
-describe("workspace coverage — multi-$path rojo tree honors per-pkg luauRoots", () => {
+describe("workspace coverage: multi-$path rojo tree honors per-pkg luauRoots", () => {
 	it.skipIf(!rojoOnPath()).for([
 		{
 			name: "should instrument only the luauRoot-listed mounts, skipping vendored $path dirs",

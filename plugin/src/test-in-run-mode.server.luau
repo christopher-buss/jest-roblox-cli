@@ -43,7 +43,7 @@ if not RunService:IsRunning() then
 end
 
 -- Written by `scripts/stamp-plugin-version.ts` at build time, and absent from a
--- tree served straight out of source control. Diagnostic only — see the same
+-- tree served straight out of source control. Diagnostic only; see the same
 -- lookup in `init.server.luau`.
 local versionOk, PluginVersion =
 	pcall(require, script.Parent:FindFirstChild(Protocol.studio.pluginVersionModule) :: any)
@@ -197,7 +197,7 @@ local clientVersion = if typeof(testArgs.protocolVersion) == "number"
 local requestedKey = if typeof(testArgs.pluginKey) == "string" then testArgs.pluginKey else nil
 local mismatchMessage: string? = nil
 if clientVersion ~= PROTOCOL_VERSION then
-	mismatchMessage = "Studio plugin protocol version mismatch — plugin v"
+	mismatchMessage = "Studio plugin protocol version mismatch: plugin v"
 		.. tostring(PROTOCOL_VERSION)
 		.. " ("
 		.. PluginVersion
@@ -205,7 +205,7 @@ if clientVersion ~= PROTOCOL_VERSION then
 		.. tostring(clientVersion)
 		.. ". Update the jest-roblox Studio plugin to match the CLI."
 elseif requestedKey ~= nil and requestedKey ~= PluginKey then
-	mismatchMessage = "Studio plugin key mismatch — the CLI asked for plugin "
+	mismatchMessage = "Studio plugin key mismatch: the CLI asked for plugin "
 		.. requestedKey
 		.. ", but no copy with that key answered (this copy: "
 		.. (PluginKey or ("manually installed " .. PluginVersion))
@@ -255,7 +255,7 @@ end
 
 	Level-triggered on purpose: a host signals readiness by setting an
 	attribute, not by firing an event, so a host that bound before this runs is
-	still seen. Sorted by name so slice 1 always lands on host1 — the dispatch
+	still seen. Sorted by name so slice 1 always lands on host1, so the dispatch
 	is deterministic even though the DataModel child order need not be.
 ]]
 local function collectReadyHosts(limit: number): { Actor }
@@ -297,7 +297,7 @@ end
 --[[
 	One round trip to the VM hosts: each host gets `payloadFor` of its slice,
 	and `readAnswer` turns what a host fires back into the request index it
-	answers and the answer itself — or no index, for an answer this exchange
+	answers and the answer itself, or no index, for an answer this exchange
 	did not ask for.
 ]]
 type HostExchange = {
@@ -429,7 +429,7 @@ end
 
 -- Dispatch by payload shape. A `workspace` payload drives the staged
 -- materializer (clone each package from the mega-place's `__pkg_stage`, run,
--- reset) via the shared single-process embedded runner — the same code OCALE
+-- reset) via the shared single-process embedded runner: the same code OCALE
 -- runs, minus the MemoryStore queue. Otherwise the existing single-/multi-
 -- project configs path runs `Runner.runProjects`.
 if testArgs.workspace ~= nil then
@@ -592,7 +592,7 @@ end
 -- The hooks let `Runner.runProjects` inject each config's `jest.config`
 -- ModuleScripts just-in-time and destroy them before the next config runs, so
 -- nested-project mounts (e.g. `ReplicatedStorage` and `ReplicatedStorage/Foo`)
--- never have stubs in DataModel simultaneously — which would let Jest's
+-- never have stubs in DataModel simultaneously, which would let Jest's
 -- parent-traversal config lookup resolve the wrong project's config.
 local hooks, cleanupAllStubs = StubHooks.create(runtimeStubMounts)
 

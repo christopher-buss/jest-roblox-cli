@@ -37,7 +37,7 @@ pnpm vitest run --project unit src/cli.spec.ts
 ## Mutation testing
 
 Stryker mutates `src/`, `loaders/` and the two build scripts, and holds the
-mutation score at 100 alongside the coverage gate. The run is incremental —
+mutation score at 100 alongside the coverage gate. The run is incremental:
 `reports/stryker-incremental.json` carries results forward, so pass `--force`
 after changing the config. The script builds the Luau bundle first, so it works
 on a fresh checkout.

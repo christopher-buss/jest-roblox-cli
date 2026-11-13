@@ -8,7 +8,7 @@ export interface Utf8OffsetMap {
 	/**
 	 * The 0-based UTF-16 offset a 0-based byte offset falls on. An offset
 	 * outside the text clamps to its nearest end, and one inside a multi-byte
-	 * character resolves to where that character starts — both keep a slice
+	 * character resolves to where that character starts. Both keep a slice
 	 * taken with the result on a character boundary.
 	 */
 	toUtf16: (byteOffset: number) => number;
@@ -17,15 +17,15 @@ export interface Utf8OffsetMap {
 /**
  * Index `text` so lute's byte offsets can address it as a JavaScript string.
  *
- * Every position lute reports — a source-span column, a node offset —
+ * Every position lute reports (a source-span column, a node offset)
  * counts UTF-8 bytes, Luau's convention across its tooling, while
  * `String.prototype` counts UTF-16 code units. The two agree only while the
  * text stays ASCII: a `∞` is three bytes and one unit, an emoji four bytes and
  * two. Indexing a string with a byte offset therefore lands inside a character
  * as soon as one multi-byte character precedes it.
  *
- * The map is eager — one pass over `text`, one `Int32Array` of its byte length
- * — so each lookup afterwards is a single array read. Callers that convert only
+ * The map is eager (one pass over `text`, one `Int32Array` of its byte length),
+ * so each lookup afterwards is a single array read. Callers that convert only
  * part of a file build one map per part rather than one for the whole.
  * @param text - The source text to index.
  * @returns The map from UTF-8 byte offsets to UTF-16 string offsets.

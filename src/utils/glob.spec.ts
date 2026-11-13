@@ -190,7 +190,7 @@ describe("walk caching", () => {
 		const cache = createGlobCache();
 
 		expect(globSync("**/*.ts", { cache, cwd: CWD, fileSystem })).toStrictEqual(["src/app.ts"]);
-		// The cache was declared for nothing, so its walk keeps everything —
+		// The cache was declared for nothing, so its walk keeps everything;
 		// filtering it by the first pattern's leaf would answer this short.
 		expect(globSync("**/*.luau", { cache, cwd: CWD, fileSystem })).toStrictEqual([
 			"src/app.luau",

@@ -366,7 +366,7 @@ describe("memory store janitor", () => {
 
 			expect(sleep.waits).toStrictEqual([60_000]);
 			expect(log).toHaveBeenCalledExactlyOnceWith(
-				"memory-store teardown: waiting 60s of the 300s claim window — only items with 60s or less left on their claim resurface; the rest expire with the queue TTL",
+				"memory-store teardown: waiting 60s of the 300s claim window. Only items with 60s or less left on their claim resurface; the rest expire with the queue TTL",
 			);
 		});
 

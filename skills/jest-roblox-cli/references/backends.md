@@ -2,7 +2,7 @@
 
 | Backend    | Flag                   | Requirements                                                         | Coverage |
 | ---------- | ---------------------- | -------------------------------------------------------------------- | -------- |
-| Auto       | `--backend auto`       | (default) see below                                                  | —        |
+| Auto       | `--backend auto`       | (default) see below                                                  | -        |
 | studio-cli | `--backend studio-cli` | Roblox Studio installed and logged in, `rojo` on PATH                | yes      |
 | Open Cloud | `--backend open-cloud` | `ROBLOX_OPEN_CLOUD_API_KEY`, `ROBLOX_UNIVERSE_ID`, `ROBLOX_PLACE_ID` | yes      |
 | Studio     | `--backend studio`     | Studio open with the jest-roblox plugin installed                    | no       |

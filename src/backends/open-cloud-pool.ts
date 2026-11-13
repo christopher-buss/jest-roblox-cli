@@ -122,7 +122,7 @@ function warnStreamingDisabled(err: unknown, state: PollState): void {
 	}
 
 	state.warned = true;
-	process.stderr.write(`Warning: live per-package streaming disabled — ${describeError(err)}\n`);
+	process.stderr.write(`Warning: live per-package streaming disabled: ${describeError(err)}\n`);
 	process.stderr.write("  Tests still run; results print as usual once each task finishes.\n");
 }
 

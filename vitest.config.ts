@@ -59,7 +59,7 @@ const SANDBOX_EXCLUDE = ["**/.tmp", "**/.tmp/**"];
 // the built package during coverage; alias only the workspace deps that need
 // inline source for node-builtin mocks.
 //
-// `createRequire` earns its keep for `.resolve()` only — mapping a bare
+// `createRequire` earns its keep for `.resolve()` only. Mapping a bare
 // `<pkg>/package.json` specifier to a path needs CJS resolution. Reading the
 // file goes through `readFileSync`, because `require()` returns `any` and
 // casting it back to a shape is what `ts/no-unsafe-type-assertion` forbids.
@@ -160,8 +160,8 @@ const workspaceSourceAliases = [
 /**
  * The `config`/`executor` integration tests load a `jest.config.ts` fixture
  * through the real config loader (c12 → jiti). The fixture imports
- * `@isentinel/jest-roblox`, and that load happens inside jiti's own resolver —
- * not Vitest's module graph — so the `resolve.alias` above does not reach it
+ * `@isentinel/jest-roblox`, and that load happens inside jiti's own resolver
+ * (not Vitest's module graph), so the `resolve.alias` above does not reach it
  * and plain resolution lands on `dist/index.mjs`, forcing a prior `build`.
  * Point jiti at the package's own `source` export via its `JITI_ALIAS` env
  * contract so the fixture load resolves to source, keeping `test` build-free.
@@ -205,8 +205,8 @@ export const unitProject = {
 		...projectTestDefaults,
 		name: "unit",
 		// `test/bench/*.bench.ts` benchmarks belong to this project. Scope
-		// them to this project so the e2e/live projects — the latter
-		// has a network globalSetup — never pick them up. `vitest
+		// them to this project so the e2e/live projects (the latter
+		// has a network globalSetup) never pick them up. `vitest
 		// bench` derives a separate project per entry, so this one's
 		// benchmarks run as `unit (bench)`; that is the name the
 		// `bench` package script filters on.
@@ -222,7 +222,7 @@ export const unitProject = {
 			"test/fixtures/**",
 			"test/e2e/**",
 			// Integration tests run in the `integration` project
-			// (no coverage) — see the JITI_ALIAS note above.
+			// (no coverage). See the JITI_ALIAS note above.
 			"test/integration/**",
 			"test/luau/**",
 		],
@@ -352,7 +352,7 @@ export default defineConfig({
 					// otherwise reach the real wire from here, because CI
 					// exports the flag and the credentials for the whole `nx
 					// affected` command. Blanking it makes that spec skip
-					// instead. Nothing else reads it — `runCliAsync`'s allow-list
+					// instead. Nothing else reads it: `runCliAsync`'s allow-list
 					// never forwards it to a child.
 					env: {
 						JEST_ROBLOX_LIVE: "",
@@ -362,7 +362,7 @@ export default defineConfig({
 					// excludes of its own: `fixtures/**` holds Jest-on-Roblox
 					// specs, which are inputs rather than tests, and
 					// `defaultExclude` must be spread back in rather than
-					// replaced — the live fixture's `node_modules` symlinks this
+					// replaced. The live fixture's `node_modules` symlinks this
 					// package onto itself, so without `**/node_modules/**` the
 					// glob collects every spec a second time through the loop.
 					exclude: [
@@ -376,7 +376,7 @@ export default defineConfig({
 					// `onTestFinished` hook, and a `--coverage` run leaves a
 					// whole instrumented shadow tree behind. Deleting that many
 					// small files outruns the 10s default `hookTimeout` on
-					// Windows once the workspace specs are competing for I/O —
+					// Windows once the workspace specs are competing for I/O,
 					// which reads as a failure in a test that already passed.
 					hookTimeout: 30_000,
 					include: ["test/e2e/**/*.spec.ts"],
@@ -385,7 +385,7 @@ export default defineConfig({
 					// scales with how many other files are running. Measured at
 					// 14s idle and 38s with the rest of the project competing,
 					// so 30s was a coin flip once the workspace specs moved in
-					// here — and a timeout in one `it` corrupts the assertion
+					// here, and a timeout in one `it` corrupts the assertion
 					// count of the next, so it surfaces as two unrelated-looking
 					// failures. Same reason the integration project sits above
 					// the default.

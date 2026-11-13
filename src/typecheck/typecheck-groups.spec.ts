@@ -301,7 +301,7 @@ describe("runPolicyTypecheckPassAsync grouping", () => {
 			run,
 		);
 
-		// Both groups start before either resolves — a sequential pass would
+		// Both groups start before either resolves. A sequential pass would
 		// leave the second group un-invoked until the first settled.
 		expect(run).toHaveBeenCalledTimes(2);
 

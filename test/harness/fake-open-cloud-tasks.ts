@@ -63,7 +63,7 @@ export function handleCreateTask({
 
 /**
  * Serve a task's structured log page. Live Open Cloud writes these only once a
- * task is terminal, so a task the fake never completes has nothing to return —
+ * task is terminal, so a task the fake never completes has nothing to return,
  * the same empty page the live endpoint gives while a task is still running.
  * @param options - Response, fake state and request URL.
  */

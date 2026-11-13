@@ -226,7 +226,7 @@ describe(atomicWrite, () => {
 		expect(nonce).toHaveLength(8);
 	});
 
-	// Two live writers on one target would otherwise share a temp pathname —
+	// Two live writers on one target would otherwise share a temp pathname,
 	// and so would a writer handed a pid the operating system recycled from the
 	// owner whose stray the sweep is on its way to delete.
 	it("should give two writes to one target different temp names", () => {

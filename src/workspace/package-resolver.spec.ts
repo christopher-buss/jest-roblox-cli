@@ -217,7 +217,7 @@ describe(resolvePackages, () => {
 	});
 
 	// Verified against pnpm 11.17 (`pnpm ls -r --depth -1`): pnpm does not trim
-	// its `packages:` entries, so neither of these is an exclusion — each is a
+	// its `packages:` entries, so neither of these is an exclusion. Each is a
 	// positive pattern that matches nothing, and the package survives.
 	it("should read a padded exclusion as a pattern that matches nothing", () => {
 		expect.assertions(1);
@@ -1079,7 +1079,7 @@ describe("workspace enumeration walk sharing", () => {
 describe("workspace pattern-list handling", () => {
 	// Through the config-glob source, for the reason the bare-`!` spec below
 	// gives: `path.posix.join("", leaf)` is the bare leaf, so an entry naming
-	// nothing selects the root — which a source that always carries the root
+	// nothing selects the root, which a source that always carries the root
 	// would hide.
 	it("should not let an empty entry select the root package", () => {
 		expect.assertions(1);
@@ -1232,7 +1232,7 @@ describe("workspace.exclude glob shapes", () => {
 
 	// Asserted through the config-glob source rather than the pnpm one on
 	// purpose. Joining the leaf onto an empty negation body yields the bare
-	// leaf, which is whatever file the root itself carries — so the entry
+	// leaf, which is whatever file the root itself carries, so the entry
 	// deletes the root package. A pnpm source that prepends the root
 	// unconditionally (as pnpm does, and as a package-manager snapshot would)
 	// puts it back either way, leaving nothing for the assertion to catch.

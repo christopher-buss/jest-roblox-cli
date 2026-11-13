@@ -37,7 +37,7 @@ const FOOTER = `Open Cloud credentials (open-cloud backend only):
        JEST_ROBLOX_UNIVERSE_ID, JEST_ROBLOX_PLACE_ID)
     3. ROBLOX_* env vars (ROBLOX_OPEN_CLOUD_API_KEY, ROBLOX_UNIVERSE_ID,
        ROBLOX_PLACE_ID)
-    4. jest.config.ts (universeId, placeId — apiKey is CLI/env only)
+    4. jest.config.ts (universeId, placeId; apiKey is CLI/env only)
 
   --apiKey is visible in process listings; prefer env vars in CI.
 

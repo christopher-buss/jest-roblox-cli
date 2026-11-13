@@ -358,7 +358,7 @@ describe(drainStealingPoolAsync, () => {
 
 		expect(reader.readCalls).toBe(2);
 		expect(writes).toStrictEqual([
-			"Warning: live per-package streaming disabled — network broke\n",
+			"Warning: live per-package streaming disabled: network broke\n",
 			"  Tests still run; results print as usual once each task finishes.\n",
 		]);
 	});
@@ -442,7 +442,7 @@ describe(drainStealingPoolAsync, () => {
 		expect(results).toHaveLength(1);
 		expect(deletionCount).toBeGreaterThanOrEqual(1);
 		expect(writes).toStrictEqual([
-			"Warning: live per-package streaming disabled — delete failed\n",
+			"Warning: live per-package streaming disabled: delete failed\n",
 			"  Tests still run; results print as usual once each task finishes.\n",
 		]);
 	});

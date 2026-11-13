@@ -311,7 +311,7 @@ describe(prepareArtifactsAsync, () => {
 
 		const bundle = await prepareArtifactsAsync(makeConfig(), harness);
 
-		// The id the coverage run's own file records digest to — the place has
+		// The id the coverage run's own file records digest to. The place has
 		// to carry the identity of the build the collector read, and this is
 		// where the two are tied together.
 		expect(bundle.cleanPlace.contentId).toBe(contentIdOf(manifestWithFile()));

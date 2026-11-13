@@ -249,7 +249,7 @@ describe(filterProjectsByFiles, () => {
 			include: ["src/client/**/*.spec.ts"],
 		});
 
-		// Relative path — must be resolved under `/repo` to match the project
+		// Relative path: must be resolved under `/repo` to match the project
 		// root.
 		const result = filterProjectsByFiles({
 			files: ["src/client/foo.spec.ts"],
@@ -352,7 +352,7 @@ describe(filterProjectsByFiles, () => {
 				rootDirectory: "/repo",
 			});
 		}).toThrow(
-			"  (none — projects use include patterns with no static directory prefix; pass --project explicitly)",
+			"  (none: projects use include patterns with no static directory prefix; pass --project explicitly)",
 		);
 	});
 

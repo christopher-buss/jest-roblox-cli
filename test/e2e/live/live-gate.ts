@@ -7,7 +7,7 @@ export const IS_LIVE = process.env["JEST_ROBLOX_LIVE"] === "1";
  * The credentials a spawned CLI needs to reach real Open Cloud. Passed through
  * rather than read from `process.env` by the child, because `runCliAsync`
  * builds the child's environment from an allow-list that deliberately excludes
- * them — a spec that wants the live wire has to say so.
+ * them. A spec that wants the live wire has to say so.
  * @returns Live credential variables from the host environment.
  */
 export function liveEnvironment(): Record<string, string | undefined> {

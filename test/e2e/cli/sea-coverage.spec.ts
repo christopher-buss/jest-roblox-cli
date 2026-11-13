@@ -12,7 +12,7 @@ import {
 } from "#test/harness/helpers.ts";
 
 // Regression: every `--coverage` run on the standalone binary died after the
-// suite, before writing a report — `No such built-in module: <exe dir>\lib\text`
+// suite, before writing a report: `No such built-in module: <exe dir>\lib\text`
 // (jest-roblox-cli#6). `istanbul-reports` picks a reporter with
 // `require(path.join(__dirname, 'lib', name))`, so no reporter class is in the
 // bundle and the binary's require resolves built-ins only. The default

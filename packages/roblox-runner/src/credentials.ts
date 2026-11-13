@@ -25,7 +25,7 @@ export interface ResolveCredentialsInput {
 /**
  * Optional properties tolerate an explicit `undefined`. Every field is read
  * by value below (`normalize(overrides?.[field])`), so a present-but-undefined
- * key behaves exactly like an absent one — and callers forwarding optional CLI
+ * key behaves exactly like an absent one, and callers forwarding optional CLI
  * flags would otherwise need a conditional spread per field.
  * @template T
  */

@@ -179,7 +179,7 @@ describe("parse", () => {
 		const parser = loadLuauParser();
 
 		// ~2 MB of statements produce >20 MB of AST JSON, past the default
-		// 16 MB initial heap — exercising ALLOW_MEMORY_GROWTH end to end.
+		// 16 MB initial heap, exercising ALLOW_MEMORY_GROWTH end to end.
 		const lines = Array.from(
 			{ length: 60_000 },
 			(_unused, index) => `local variable${index} = ${index} + ${index}`,

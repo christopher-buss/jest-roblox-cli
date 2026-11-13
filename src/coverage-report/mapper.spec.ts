@@ -24,7 +24,7 @@ function traceMapFactory(): PositionResolver {
 
 /**
  * Position resolver: the span start (column 0) resolves to a.ts, its end to
- * b.ts. Hoisted to module scope — the split would otherwise be a conditional
+ * b.ts. Hoisted to module scope; the split would otherwise be a conditional
  * inside a test body.
  * @param position - Generated position to resolve.
  * @returns Original position in a.ts or b.ts.
@@ -749,7 +749,7 @@ describe(mapCoverageToTypeScript, () => {
 		it("should throw when a functionMap entry fails schema validation", () => {
 			expect.assertions(1);
 
-			// "1" is missing required "name" field — whole-sidecar schema fails.
+			// "1" is missing required "name" field; whole-sidecar schema fails.
 			const coverageMap = createCoverageMap(
 				{},
 				{
@@ -787,8 +787,8 @@ describe(mapCoverageToTypeScript, () => {
 
 			const fileSystem = playerFs(coverageMap);
 
-			// Only start has a mapping; end (line 8) returns null source
-			// — function can't be mapped, and no statements resolved a
+			// Only start has a mapping; end (line 8) returns null source,
+			// so function can't be mapped, and no statements resolved a
 			// TS path to fall back to
 			setupSourceMapMappings({
 				"5:0": playerTs(3, 0),
@@ -942,7 +942,7 @@ describe(mapCoverageToTypeScript, () => {
 
 			const fileSystem = playerFs(coverageMap);
 
-			// No mappings at all — no TS path can be inferred
+			// No mappings at all; no TS path can be inferred
 			setupSourceMapMappings({});
 
 			const coverageData: RawCoverageData = {
@@ -1247,7 +1247,7 @@ describe(mapCoverageToTypeScript, () => {
 
 			const fileSystem = playerFs(coverageMap);
 
-			// No mappings — originalPositionFor returns null source
+			// No mappings: originalPositionFor returns null source
 			setupSourceMapMappings({});
 
 			const coverageData: RawCoverageData = {
@@ -1332,7 +1332,7 @@ describe(mapCoverageToTypeScript, () => {
 
 			const fileSystem = playerFs(coverageMap);
 
-			// All positions return null source — mapBranchArmLocations returns
+			// All positions return null source; mapBranchArmLocations returns
 			// undefined
 			resolvePosition.mockReturnValue({
 				column: null,
@@ -1655,7 +1655,7 @@ describe(mapCoverageToTypeScript, () => {
 			// A single-line ternary compiles to a one-line Luau if-expression.
 			// roblox-ts emits one column-0 source-map segment for that line, so
 			// every arm's start/end greatest-lower-bound-snaps to the same TS
-			// position — looking exactly like a collapsed phantom. But an
+			// position, looking exactly like a collapsed phantom. But an
 			// expr-if IS a real branch that tests can cover and must never be
 			// dropped; the
 			// phantom signature only applies to compiler-synthesized statement
@@ -1706,7 +1706,7 @@ describe(mapCoverageToTypeScript, () => {
 				},
 			});
 
-			// Only cov-map exists — no .luau.map source map (native Luau).
+			// Only cov-map exists; no .luau.map source map (native Luau).
 			const fileSystem = setupFs({
 				"out/shared/player.luau.cov-map.json": JSON.stringify(coverageMap),
 			});
@@ -1760,7 +1760,7 @@ describe(mapCoverageToTypeScript, () => {
 				"shared/player.luau": baseFile,
 			});
 
-			// Process both entries — second hits "already initialized" branches
+			// Process both entries; second hits "already initialized" branches
 			const combinedCoverage: RawCoverageData = {
 				"shared/player-alias.luau": {
 					b: { "0": [0, 1] },
@@ -1783,7 +1783,7 @@ describe(mapCoverageToTypeScript, () => {
 
 			const file = result.files["shared/player.luau"]!;
 
-			// Both entries contributed — second hit the "already initialized"
+			// Both entries contributed; second hit the "already initialized"
 			// branch
 			expect(file).toBeDefined();
 			expect(Object.keys(file.fnMap)).not.toBeEmpty();

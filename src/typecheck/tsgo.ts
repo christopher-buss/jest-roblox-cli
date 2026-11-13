@@ -14,7 +14,7 @@ const MISSING_TSGO_MESSAGE =
 	"beside TypeScript 6), an optional peer dependency that is not installed.";
 
 const MISSING_TSGO_HINT =
-	"npm install -D typescript@7 — or run without --typecheck/--typecheckOnly.";
+	"npm install -D typescript@7, or run without --typecheck/--typecheckOnly.";
 
 // TypeScript's advice for running 7 beside 6 aliases 7 as `@typescript/native`;
 // `@typescript/native-preview` is the nightly package 7 replaced.

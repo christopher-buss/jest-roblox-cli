@@ -27,7 +27,7 @@ local Enum = {
 	},
 }
 
--- LocalScript deliberately does NOT inherit Script — that is the real class
+-- LocalScript deliberately does NOT inherit Script. That is the real class
 -- hierarchy, and the materializer relies on it to skip client scripts.
 local SUPERCLASS: { [string]: string } = {
 	BaseScript = "LuaSourceContainer",
@@ -408,8 +408,8 @@ local function testWithoutRunContextAttribute()
 end
 
 -- T5: a collision the Folder/Model merge does not cover is found before
--- anything is parented, so a failed materialize leaves nothing live behind it
--- — not even the siblings staged ahead of the collision.
+-- anything is parented, so a failed materialize leaves nothing live behind it,
+-- not even the siblings staged ahead of the collision.
 local function testCollisionMaterializesNothing()
 	local liveModule = newInstance("ModuleScript", "Shared")
 	setParent(liveModule, ReplicatedStorage)
@@ -440,7 +440,7 @@ local function testCollisionMaterializesNothing()
 	setParent(liveModule, nil)
 end
 
--- T6: a container on one side only is still a collision, not a merge — a
+-- T6: a container on one side only is still a collision, not a merge: a
 -- Folder cannot absorb a ModuleScript's children, and a ModuleScript has none
 -- to absorb.
 local function testMixedContainerCollisionErrors(liveClass: string, stagedClass: string)
@@ -644,7 +644,7 @@ end
 
 -- T16: a package's plain assets reach the live service as they were staged.
 -- Nothing here reads a staged child's class except the merge rule, so what this
--- catches is a walk that skips what it does not recognize — a class filter over
+-- catches is a walk that skips what it does not recognize. A class filter over
 -- the plan leaves a model on the stage and the live service short a subtree.
 --
 -- The class checks ride along rather than carry the case: the materializer
@@ -823,8 +823,8 @@ local function testPooledMarkerMergesIntoLiveFolder()
 end
 
 -- T15: a marker below the top of a staged subtree resolves too. The pass pools
--- at any depth — `rbxts_include.node_modules.@rbxts.services` is a bare mount
--- two levels down, and every package shares it — while the live service has no
+-- at any depth: `rbxts_include.node_modules.@rbxts.services` is a bare mount
+-- two levels down, and every package shares it, while the live service has no
 -- `rbxts_include` to merge into, so the whole subtree is cloned in one go and
 -- the marker rides along inside it.
 local function testNestedPooledMarkerResolves()
@@ -1064,7 +1064,7 @@ end
 
 -- T19: a pooled clone goes live whole. A script inside a pooled entry starts
 -- running the moment the clone is parented, so the marker's own children have
--- to be inside it by then — one `require` of `node_modules` at the top of a
+-- to be inside it by then. One `require` of `node_modules` at the top of a
 -- module is enough to fail against a clone that arrives without it.
 local function testPooledCloneGoesLiveWhole()
 	local marker = stagePooledPackage("wholeOnArrival", true)

@@ -45,7 +45,7 @@ export interface PollContext {
  * terminal `FAILED` the server writes is observable rather than raced.
  *
  * Roblox starts a task's `timeout` when the script begins running, not when
- * the task is created — a submit answers immediately and the place boot sits
+ * the task is created. A submit answers immediately and the place boot sits
  * between the two. Measured against a warm server the gap is 4-7s; a version
  * nobody has booted yet costs a cold boot, which
  * `open-cloud.ts` documents at 10-45s. A poll budget equal to the deadline
@@ -56,7 +56,7 @@ export interface PollContext {
  *
  * This is a cap, not a wait. A task that fails on time ends the poll the
  * moment it turns terminal, so the grace costs nothing on any run that gets
- * an answer — only a task Roblox never resolves spends it.
+ * an answer; only a task Roblox never resolves spends it.
  */
 /**
  * Task log messages carried on a failure, counted from the end. The tail is
@@ -108,7 +108,7 @@ export function resolveBudgets(
 export function describeTaskRef(ref: LuauExecutionTaskRef): string {
 	// Both optional segments are present on any ref that got this far: ocale's
 	// GET builder rejects a ref missing either, so a task that was polled at all
-	// carries them — including one submitted against head, which Roblox answers
+	// carries them, including one submitted against head, which Roblox answers
 	// with the version it resolved.
 	return (
 		`universes/${ref.universeId}/places/${ref.placeId}` +

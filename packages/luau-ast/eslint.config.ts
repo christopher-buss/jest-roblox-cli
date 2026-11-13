@@ -41,7 +41,7 @@ export default isentinel(
 				projectService: true,
 			},
 		},
-		// `AstExpr*` mirror Luau's own AST node names — keep the vocabulary.
+		// `AstExpr*` mirror Luau's own AST node names; keep the vocabulary.
 		unicorn: {
 			nameReplacements: { expr: false },
 		},

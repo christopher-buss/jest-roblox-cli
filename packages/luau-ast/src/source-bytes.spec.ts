@@ -117,7 +117,7 @@ describe("byte columns as UTF-16 columns", () => {
 		expect<number>(bytes.toUtf16Column(1, 11)).toBe(11);
 	});
 
-	// `local a = "∞" 1` — the closing quote is byte column 15 and UTF-16
+	// `local a = "∞" 1`: the closing quote is byte column 15 and UTF-16
 	// column 13, because U+221E is three bytes and one UTF-16 unit.
 	it("should subtract the extra bytes of a preceding character", () => {
 		expect.assertions(2);
