@@ -45,7 +45,7 @@ export interface WorkspacePackageCoverage {
 }
 
 /** Inputs for instrumenting every workspace package. */
-export interface PrepareWorkspaceCoverageOptions {
+export interface WorkspaceCoverageOptions {
 	/** Workspace cache directory the package shadows are written under. */
 	cacheDirectory: string;
 	/** Where the shadows are built. Defaults to the real filesystem. */
@@ -80,7 +80,7 @@ interface PreparePackageOptions {
  * @returns One entry per package, in input order.
  */
 export function prepareWorkspaceCoverage(
-	options: PrepareWorkspaceCoverageOptions,
+	options: WorkspaceCoverageOptions,
 ): Array<WorkspacePackageCoverage> {
 	const {
 		cacheDirectory,

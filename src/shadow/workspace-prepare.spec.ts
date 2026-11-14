@@ -20,7 +20,7 @@ import type { CoverageManifest, InstrumentedFileRecord } from "../coverage-data/
 import type { Instrumenter } from "../instrument/instrumenter.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import type { WorkspaceCoveragePackage } from "./workspace-prepare-types.ts";
-import type { PrepareWorkspaceCoverageOptions } from "./workspace-prepare.ts";
+import type { WorkspaceCoverageOptions } from "./workspace-prepare.ts";
 import { emitWorkspaceBuildManifests, prepareWorkspaceCoverage } from "./workspace-prepare.ts";
 
 function sha256(content: string): string {
@@ -123,7 +123,7 @@ type FooDescriptorFields = Except<LoosePackage, "name" | "packageDirectory" | "r
  * @returns What the prepare pass returned.
  */
 function prepare(
-	options: Except<PrepareWorkspaceCoverageOptions, "packages"> & {
+	options: Except<WorkspaceCoverageOptions, "packages"> & {
 		packages: Array<LoosePackage>;
 	},
 ): ReturnType<typeof prepareWorkspaceCoverage> {

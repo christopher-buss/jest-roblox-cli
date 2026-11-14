@@ -37,7 +37,7 @@ const WORKSPACE_ONLY_FLAGS: ReadonlyArray<{
 ];
 
 /** Inputs of {@link resolveWorkspacePackages}. */
-export interface ResolveWorkspacePackagesOptions extends WorkspacePackageSelection {
+export interface WorkspacePackagesOptions extends WorkspacePackageSelection {
 	/** Parsed command-line options. */
 	cli: CliOptions;
 	/** Absolute workspace root directory. */
@@ -97,7 +97,7 @@ export function resolveWorkspacePackages({
 	fileSystem,
 	patterns,
 	workspaceRoot,
-}: ResolveWorkspacePackagesOptions): Array<PackageInfo> {
+}: WorkspacePackagesOptions): Array<PackageInfo> {
 	if (cli.affectedSince !== undefined) {
 		return excludePackages({
 			exclude,

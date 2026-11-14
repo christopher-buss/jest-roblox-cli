@@ -145,7 +145,7 @@ declare module "vitest" {
 		toEqual: <E extends Expected<T>>(expected: E) => R;
 		toHaveBeenCalledWith: <E extends CallArgs<T>>(...args: E) => R;
 		toHaveBeenLastCalledWith: <E extends CallArgs<T>>(...args: E) => R;
-		toHaveBeenNthCalledWith: <E extends CallArgs<T>>(n: number, ...args: E) => R;
+		toHaveBeenNthCalledWith: <E extends CallArgs<T>>(nthCall: number, ...args: E) => R;
 		toHaveLastReturnedWith: <E extends Deep<CallReturn<T>>>(value: E) => R;
 		toHaveNthReturnedWith: <E extends Deep<CallReturn<T>>>(nthCall: number, value: E) => R;
 		toHaveProperty<K extends number | string, E extends Deep<PropertyValue<T, K>>>(

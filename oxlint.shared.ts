@@ -15,12 +15,6 @@ const OXLINT_OVERRIDES: Array<OxlintOverride> = [
 		},
 	},
 	{
-		files: ["**/*"],
-		rules: {
-			"id-length": "off",
-		},
-	},
-	{
 		files: ["**/*.d.ts"],
 		rules: {
 			"import/no-unassigned-import": ["error", { allow: ["jest-extended", "vitest"] }],

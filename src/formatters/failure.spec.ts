@@ -538,7 +538,7 @@ describe("resolveSourceSnippets snapshot-diff fallback", () => {
 		expect.assertions(1);
 
 		const resolveTestFilePath = vi
-			.fn<(p: string) => string>()
+			.fn<(path: string) => string>()
 			.mockReturnValue("also-nonexistent.spec.ts");
 		const sourceMapper = fromPartial<SourceMapper>({
 			mapFailureWithLocations: (message: string) => ({ locations: [], message }),

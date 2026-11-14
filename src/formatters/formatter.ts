@@ -44,7 +44,7 @@ export interface FormatResultOptions {
 /**
  * Inputs of `formatMultiProjectResult`.
  */
-export interface FormatMultiProjectResultOptions {
+export interface MultiProjectFormatOptions {
 	/**
 	 * Format options.
 	 */
@@ -125,7 +125,7 @@ export function formatMultiProjectResult({
 	options,
 	projects,
 	timing,
-}: FormatMultiProjectResultOptions): string {
+}: MultiProjectFormatOptions): string {
 	const styles = createStyles(options.color, options.slowTestThreshold);
 
 	const failureCtx: FailureContext = {

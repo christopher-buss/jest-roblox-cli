@@ -43,7 +43,7 @@ export interface TsconfigDirectories {
 export type TsconfigMappingCache = Map<string, Array<TsconfigMapping>>;
 
 /** Inputs for `resolveAllTsconfigMappings`. */
-export interface ResolveAllTsconfigMappingsOptions {
+export interface TsconfigMappingsOptions {
 	/** Cache shared across one pass, if any. */
 	cache?: TsconfigMappingCache | undefined;
 	/** File system to scan; defaults to Node's. */
@@ -113,7 +113,7 @@ export function resolveAllTsconfigMappings({
 	fileSystem,
 	projectRoot,
 	tsconfigReader,
-}: ResolveAllTsconfigMappingsOptions): Array<TsconfigMapping> {
+}: TsconfigMappingsOptions): Array<TsconfigMapping> {
 	const resolvedRoot = path.resolve(projectRoot);
 	const cached = cache?.get(resolvedRoot);
 	if (cached !== undefined) {

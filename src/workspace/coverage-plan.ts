@@ -1,5 +1,5 @@
 import { pickCoverageSettings } from "../config/coverage-settings.ts";
-import type { PrepareWorkspaceCoverageOptions } from "../shadow/workspace-prepare.ts";
+import type { WorkspaceCoverageOptions } from "../shadow/workspace-prepare.ts";
 import type { prepareWorkspaceCoverageMap } from "./coverage-attach.ts";
 
 /**
@@ -14,7 +14,7 @@ export function buildWorkspaceCoveragePlan({
 }: Pick<
 	Parameters<typeof prepareWorkspaceCoverageMap>[0],
 	"contexts" | "loaded" | "pending"
->): Pick<PrepareWorkspaceCoverageOptions, "packages"> {
+>): Pick<WorkspaceCoverageOptions, "packages"> {
 	const pendingPackageNames = new Set(pending.map((entry) => entry.job.pkg));
 	const coverageOptIn = new Set(
 		contexts.filter((ctx) => ctx.pkgConfig.collectCoverage).map((ctx) => ctx.info.name),

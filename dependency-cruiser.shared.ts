@@ -4,7 +4,7 @@ import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 
-export interface DependencyCruiserProjectOptions {
+export interface CruiserProjectOptions {
 	/**
 	 * Bare specifiers the type checker declares but no file on disk resolves.
 	 */
@@ -24,7 +24,7 @@ export interface DependencyCruiserProjectOptions {
 }
 
 type SharedRuleOptions = Pick<
-	DependencyCruiserProjectOptions,
+	CruiserProjectOptions,
 	"ambientModules" | "projectRoot" | "sourceRoots" | "testRoot"
 >;
 
@@ -146,10 +146,7 @@ function createStructureRules(
 	];
 }
 
-type TierRuleOptions = Pick<
-	DependencyCruiserProjectOptions,
-	"projectRoot" | "sourceRoots" | "testRoot"
-> & {
+type TierRuleOptions = Pick<CruiserProjectOptions, "projectRoot" | "sourceRoots" | "testRoot"> & {
 	fileSystemSeam: ReadonlyArray<string> | string | undefined;
 	productionUnitHelpers: ReadonlyArray<string>;
 	unitHelperRoots: ReadonlyArray<string> | undefined;
@@ -294,7 +291,7 @@ export function createDependencyCruiserConfig({
 	testRoot,
 	tsConfig,
 	unitHelperRoots,
-}: DependencyCruiserProjectOptions): IConfiguration {
+}: CruiserProjectOptions): IConfiguration {
 	assertTypeScriptResolves();
 	const tierRules = createTierRules({
 		fileSystemSeam,
