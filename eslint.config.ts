@@ -90,10 +90,13 @@ export default isentinel(
 						"TSEnumDeclaration",
 						"TSMethodSignature",
 						"TSPropertySignature",
+						"VariableDeclarator > ArrowFunctionExpression",
+						"AssignmentExpression > ArrowFunctionExpression",
+						"ExportDefaultDeclaration > ArrowFunctionExpression",
+						"PropertyDefinition > ArrowFunctionExpression",
 					],
 					publicOnly: { ancestorsOnly: true },
 					require: {
-						ArrowFunctionExpression: true,
 						ClassDeclaration: true,
 						FunctionDeclaration: true,
 						FunctionExpression: true,
@@ -123,12 +126,6 @@ export default isentinel(
 		files: ["./bin/**/*"],
 		rules: {
 			"antfu/no-top-level-await": "off",
-		},
-	},
-	{
-		name: "project/pending-preset-rules",
-		rules: {
-			"jsdoc/require-jsdoc": "off",
 		},
 	},
 );
