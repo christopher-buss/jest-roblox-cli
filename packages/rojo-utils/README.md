@@ -86,7 +86,7 @@ pnpm integration
 pnpm boundaries
 pnpm cpd
 pnpm knip
-pnpm mutation --force
+pnpm mutation
 ```
 
 `test` runs owned unit specs and entry-point type tests with 100% statement,
@@ -96,8 +96,7 @@ excluded. Each unit test owns its memory filesystem. Integration tests use the
 package entry point with temporary directories and native links. This library
 has no process interface or end-to-end tier.
 
-The mutation command measures the whole population. `--force` disables
-incremental verdict reuse.
+The mutation command measures the whole population and reuses earlier verdicts.
 
 Stryker uses unit tests only and enforces a 100% floor over maintained runtime
 TypeScript. The shared Stryker config ignores static mutants and

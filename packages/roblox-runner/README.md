@@ -112,7 +112,7 @@ pnpm integration
 pnpm boundaries
 pnpm cpd
 pnpm knip
-pnpm mutation --force
+pnpm mutation
 ```
 
 `test` runs unit and entry-point type tests with 100% statement, branch,
@@ -124,7 +124,6 @@ rejects exports used only by specs.
 scans specs at 75 tokens. Boundaries enforce test-tier isolation, production
 cycles, package interfaces and the disk adapter.
 
-The mutation command measures the whole population. `--force` disables
-incremental verdict reuse.
+The mutation command measures the whole population and reuses earlier verdicts.
 
 Mutation uses unit tests only with a 100% threshold.

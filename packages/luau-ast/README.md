@@ -135,7 +135,7 @@ pnpm e2e
 pnpm boundaries
 pnpm cpd
 pnpm knip
-pnpm mutation --force
+pnpm mutation
 ```
 
 Unit specs live beside their runtime module. Integration specs enter through
@@ -151,8 +151,7 @@ threshold. The shared mutation policy ignores static mutants and
 assertion-message mutations. Generated base64 modules and type-only declarations
 are outside the measured runtime population.
 
-The mutation command measures the whole population. `--force` disables
-incremental verdict reuse.
+The mutation command measures the whole population and reuses earlier verdicts.
 
 Architecture checks enforce unit ownership, test-tier isolation, package entry
 points, production cycles and filesystem access through the Lute adapter. Local
