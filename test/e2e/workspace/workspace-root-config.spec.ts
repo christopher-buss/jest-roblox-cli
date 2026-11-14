@@ -12,24 +12,16 @@ import {
 	runCliAsync,
 } from "#test/harness/helpers.ts";
 
-// A workspace run resolves per-package configs; the file at the invocation
-// directory is bootstrap only, read for `workspace.root` / `workspace.packages`
-// and nothing else. Every other workspace e2e runs against a fixture root that
-// holds no config at all, which is exactly why a config leaking into the report,
-// the print layer, or the exit code was invisible here for so long.
-//
-// This spec runs the same command twice in the SAME sandbox (once bare, then
-// again with a hostile root config beside the packages) and pins that the run
-// is indistinguishable. Reusing one sandbox keeps the workspace root, and every
-// path printed relative to it, byte-identical between the two runs.
+// In a workspace run the invocation-directory config is bootstrap only, read
+// for `workspace.root` / `workspace.packages`. This runs the same command
+// twice in the SAME sandbox, bare then with a hostile root config, so
+// printed paths stay byte-identical.
 
 const WORKSPACE_FIXTURE_PATH = path.resolve(__dirname, "../fixtures/workspace");
 
-// Every field here differs from what the packages resolve, and each one used to
-// reach the run: the globs match no file under `packages/`, so the report
-// universe filtered to empty; the reporters, directory, and sink decided which
-// files landed on disk; `silent` and `formatters` decided what printed; and the
-// threshold gated packages that declared none, so it moved the exit code.
+// Every field here differs from what the packages resolve, and each one
+// used to reach the run: the report universe, files on disk, printed
+// output, or the exit code.
 const HOSTILE_ROOT_CONFIG = [
 	"export default {",
 	'\tformatters: ["json"],',

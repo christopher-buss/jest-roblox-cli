@@ -93,22 +93,11 @@ function readSharedMount(sandbox: string): object | undefined {
 }
 
 describe("live pipeline", () => {
-	// One invocation, four regressions. Each was its own live test until the
-	// wall-clock made the case for merging: all four drive the same fixture
-	// through the same both-mounts run, and their flags do not interact.
-	//
-	// 1. Results merge across both mounts, each under its own displayName.
-	// 2. The runner resolves per-project config from the `jest.config`
-	//    ModuleScript injected at each mount, and the rebuilt place loads.
-	// 3. Native `warn(...)` from a spec reaches the `--gameOutput` dump.
-	//    Pre-#150 used LogService:GetLogHistory; #150 swapped to
-	//    InterceptWriteable on Jest's process.stdout/stderr, which only sees
-	//    Jest's reporter writes, so the dump became `[]` for real game output.
-	// 4. Coverage probes survive the round trip and map back to `.ts` keys.
-	//
-	// Note: after editing fixture sources, run `rm -rf
-	// tools/jest-roblox-cli/test/e2e/fixtures/live-place/out` once so
-	// global-setup's sentinel cache re-compiles the spec with the marker warn.
+	// One both-mounts run checks four things: results merge per displayName,
+	// injected `jest.config` stubs load, native `warn(...)` reaches
+	// `--gameOutput`, and coverage maps back to `.ts` keys. After editing
+	// fixture sources, delete `test/e2e/fixtures/live-place/out` so
+	// global-setup compiles it again.
 	it.runIf(IS_LIVE)(
 		"should run both mounts, capture game output, and report coverage in one run",
 		async (context) => {
@@ -195,13 +184,9 @@ describe("live pipeline", () => {
 		CLI_RUN_TIMEOUT_MS + VITEST_CLEANUP_ALLOWANCE_MS,
 	);
 
-	// Regression for the patched jest-circus: the runtime reads a test's call
-	// site off a Luau stack whose depth differs per entry path (a bare `it`, one
-	// inside a `describe`, an `each` row), and a trim or frame-index slip on any
-	// one of them silently drops that test's location and range hash. Only the
-	// artifacts path persists attribution, so this drives `prepareArtifactsAsync`
-	// rather than the CLI; it is its own upload because no CLI run carries
-	// `tests[]`.
+	// The patched jest-circus reads a test's call site off a Luau stack whose
+	// depth differs per entry path. Only the artifacts path persists
+	// attribution, so this drives `prepareArtifactsAsync` in its own upload.
 	it.runIf(IS_LIVE)(
 		"should record each test's own it( line and range hash, whichever way it was declared",
 		async (context) => {
@@ -264,18 +249,10 @@ describe("live pipeline", () => {
 		RECOVERY_DEADLINE_MS + VITEST_CLEANUP_ALLOWANCE_MS,
 	);
 
-	// Regression: a positional file is forwarded to Jest-on-Roblox as a pattern,
-	// and a basename-only pattern runs every namesake. The server mount ships
-	// three specs that all compile to an Instance named `init.spec`, one of them
-	// at `nested/namesake` so the named file's path is a bare suffix of it. "1
-	// passed" therefore only holds if the forwarded pattern carries both the
-	// path below the mount and the mount's own name.
-	//
-	// This is the only check that the FS→Instance namespace normalization
-	// produces a string real Roblox-side Jest matches. A wrong assumption runs
-	// 3 here, or 0. Which pattern `narrowConfigByFiles` and `narrowForLuauRun`
-	// build from which input is settled off-wire in
-	// `src/discovery/narrow-by-files.spec.ts`.
+	// A positional file is forwarded to Jest-on-Roblox as a pattern. Three
+	// mounted specs compile to `init.spec`, so "1 passed" holds only if the
+	// pattern carries the mount's name and the path below it. This is the only
+	// live check of the FS to Instance normalization.
 	it.runIf(IS_LIVE)(
 		"should run only the named file when a namesake shares its basename",
 		async (context) => {

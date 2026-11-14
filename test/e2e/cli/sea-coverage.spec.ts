@@ -11,15 +11,10 @@ import {
 	runSeaBundleAsync,
 } from "#test/harness/helpers.ts";
 
-// Regression: every `--coverage` run on the standalone binary died after the
-// suite, before writing a report: `No such built-in module: <exe dir>\lib\text`
-// (jest-roblox-cli#6). `istanbul-reports` picks a reporter with
-// `require(path.join(__dirname, 'lib', name))`, so no reporter class is in the
-// bundle and the binary's require resolves built-ins only. The default
-// reporters are `text` and `lcov`, so no coverage configuration escaped it.
-//
-// These specs drive the bundle rather than `bin/jest-roblox.js`: only there does
-// a reporter have to be a bundled module rather than a file on disk beside it.
+// Regression (jest-roblox-cli#6): `istanbul-reports` loads reporters with
+// `require(path.join(__dirname, 'lib', name))`, which the standalone binary
+// cannot resolve, so every `--coverage` run died before its report. These
+// specs drive the bundle, the only place a reporter must be bundled.
 
 const LUAU_FIXTURE_PATH = path.resolve(__dirname, "../fixtures/luau-project");
 

@@ -14,18 +14,10 @@ import {
 	runCliAsync,
 } from "#test/harness/helpers.ts";
 
-// Regression: `--workspace --coverage` against a package whose rojo
-// `$path` mounts a directory holding BOTH `*.spec.luau` and non-spec helpers
-// (e.g. `out-test/src/init.luau` next to `out-test/src/nested.spec.luau`).
-// Pre-fix, `containsLuauFiles` made the dir a coverage root via the helper,
-// the synthesizer redirected `$path` to the shadow, and the instrumenter
-// filtered specs out. The shadow held only the instrumented helper and
-// testMatch returned zero matches.
-//
-// All other workspace e2e tests run without `--coverage`, and the only other
-// coverage e2e (`test/e2e/live/pipeline.spec.ts`) is
-// `JEST_ROBLOX_LIVE`-gated. The bug lived squarely in the intersection of those
-// missing axes.
+// Regression: a rojo `$path` mount holding both `*.spec.luau` and helpers
+// left the shadow with only the instrumented helper, so testMatch found
+// nothing. The only other coverage e2e (`test/e2e/live/pipeline.spec.ts`)
+// is `JEST_ROBLOX_LIVE`-gated.
 
 const WORKSPACE_FIXTURE_PATH = path.resolve(__dirname, "../fixtures/workspace");
 
@@ -172,11 +164,9 @@ describe("workspace coverage: $path mounts specs alongside helpers", () => {
 	);
 });
 
-// `collectCoverageFrom` decides what gets probes, not just what the report
-// keeps: the probe counts for everything else still rode home in the task's
-// 4 MiB return envelope. A file outside the globs must reach the shadow
-// verbatim. Dropping it instead would break the place, and probing it anyway
-// would put the payload back.
+// `collectCoverageFrom` decides what gets probes, since probe counts ride
+// home in the task's 4 MiB return envelope. A file outside the globs must
+// reach the shadow verbatim: dropping it breaks the place.
 describe("workspace coverage: collectCoverageFrom scopes instrumentation", () => {
 	it.skipIf(!rojoOnPath())(
 		"should mirror an out-of-universe file verbatim and leave it out of the manifest",
@@ -217,18 +207,10 @@ describe("workspace coverage: collectCoverageFrom scopes instrumentation", () =>
 	);
 });
 
-// Regression: `--workspace --coverage` against a package whose rojo
-// `test.project.json` mounts multiple `$path` entries (e.g. `src/` PLUS a
-// vendored `Packages/` dir). Pre-fix, `discoverPackageLuauRoots` walked every
-// `collectPaths` entry and instrumented every mounted directory; the per-pkg
-// `luauRoots: ["src"]` was honored only in single mode, not workspace mode.
-// The per-pkg `coveragePathIgnorePatterns` was likewise ignored because
-// `prepareWorkspaceCoverage` read the matcher from the workspace-root config,
-// never the merged pkgConfig.
-//
-// Both regression cases below assert on the shape of the per-package shadow
-// directory after a CLI run: the user's source root must be instrumented; the
-// vendored mount must not appear under the shadow.
+// A package whose rojo mounts `src/` plus a vendored `Packages/` dir must
+// honor per-pkg `luauRoots` and `coveragePathIgnorePatterns` in workspace
+// mode. The cases below assert the per-package shadow: the source root is
+// instrumented and the vendored mount is absent.
 
 describe("workspace coverage: multi-$path rojo tree honors per-pkg luauRoots", () => {
 	it.skipIf(!rojoOnPath()).for([

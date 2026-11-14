@@ -79,13 +79,10 @@ async function stageAsync({
 }
 
 describe(stageRunAsync, () => {
-	// `buildSourceMapper` resolves a DataModel path to a file through the
-	// `rojoProject` this config carries, then reads `<outDir>/x.luau.map`.
-	// Only the user's project points at the real `outDir`; the synthesized
-	// coverage project points into the shadow tree, whose `.luau.map`
-	// mirroring is incidental rather than guaranteed. Swapping the field
-	// degrades every frame to a bare Luau path with no error, so the whole
-	// object is pinned rather than one key.
+	// `buildSourceMapper` reads `<outDir>/x.luau.map` through this config's
+	// `rojoProject`. Only the user's project points at the real `outDir`; a
+	// swapped field degrades every frame to a bare Luau path with no error, so
+	// the whole object is pinned.
 	it("should change only placeFile when coverage rebuilds the place", async () => {
 		expect.assertions(3);
 

@@ -41,11 +41,9 @@ describe(prepareShadowRoot, () => {
 		expect(readdir.mock.calls.filter(([directory]) => directory === "/source")).toHaveLength(1);
 	});
 
-	// Both halves of the manifest key one file under one root, and the
-	// incremental gate reads them back by that key. A root of `.` is the case
-	// the two spellings disagree on (`path.join` drops the segment while a
-	// pasted `${root}/` keeps it), and a key nothing else writes is a record
-	// that never carries forward, so every warm run re-instruments the file.
+	// The incremental gate reads the manifest back by this key. Under a root of
+	// `.`, `path.join` drops the segment while a pasted `${root}/` keeps it, and
+	// a mismatched key re-instruments the file on every warm run.
 	it("should key an instrumented file and a mirrored one alike under a current-directory root", () => {
 		expect.assertions(3);
 

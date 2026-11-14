@@ -2010,11 +2010,9 @@ describe(createWorkspaceRunStages, () => {
 			[FOO_DIR]: rooted(FOO_DIR),
 		});
 
-		// Staging is synchronous, so the only way to give it a measurable
-		// duration is to move the clock from inside the rojo build it ends on.
-		// Two counters, moved by different amounts: a phase duration comes off
-		// the collector's clock, while `startTime` stamps the wall clock the
-		// "Start at" line renders.
+		// Staging is synchronous, so the clock moves from inside the rojo build.
+		// Two counters: a phase duration comes off the collector's clock, while
+		// `startTime` stamps the wall clock the "Start at" line renders.
 		const clock = movableClockCollector(0);
 		let wallMs = 1_000;
 		vi.spyOn(Date, "now").mockImplementation(() => wallMs);

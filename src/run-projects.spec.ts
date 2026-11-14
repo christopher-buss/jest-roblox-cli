@@ -1337,13 +1337,9 @@ describe("execute single-project helper", () => {
 	});
 
 	it("should resolve relative config.rojoProject against rootDir, not CWD", async () => {
-		// Regression: in workspace mode CWD is the workspace root and a
-		// relative `rojoProject` like "test.project.json" must resolve under
-		// each package's `rootDir`, not where the CLI was invoked. Stub
-		// process.cwd() to a sentinel that is NOT a parent of rootDir so the
-		// resolution is unambiguous. Without the rootDir-relative resolve
-		// fs.existsSync would interpret the relative path against this CWD
-		// sentinel and miss every package.
+		// In workspace mode a relative `rojoProject` must resolve under each
+		// package's `rootDir`, not the CWD. The CWD sentinel is NOT a parent of
+		// rootDir, so a CWD-relative resolve misses every package.
 		expect.assertions(3);
 
 		const { fileSystem, volume } = memoryFileSystem();

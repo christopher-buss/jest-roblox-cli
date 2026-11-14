@@ -1652,14 +1652,10 @@ describe(mapCoverageToTypeScript, () => {
 		it("should keep a collapsing expr-if branch (a real ternary is not a phantom)", () => {
 			expect.assertions(2);
 
-			// A single-line ternary compiles to a one-line Luau if-expression.
-			// roblox-ts emits one column-0 source-map segment for that line, so
-			// every arm's start/end greatest-lower-bound-snaps to the same TS
-			// position, looking exactly like a collapsed phantom. But an
-			// expr-if IS a real branch that tests can cover and must never be
-			// dropped; the
-			// phantom signature only applies to compiler-synthesized statement
-			// `if`s (type "if").
+			// A one-line ternary compiles to a Luau if-expression with one
+			// column-0 source-map segment, so every arm snaps to the same TS
+			// position, like a phantom. An expr-if is a real branch; the phantom
+			// signature applies only to statement `if`s (type "if").
 			const coverageMap = createCoverageMap(
 				{},
 				{

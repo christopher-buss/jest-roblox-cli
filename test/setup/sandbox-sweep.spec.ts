@@ -58,11 +58,9 @@ describe(sweepStaleSandboxes, () => {
 		expect(fileSystem.existsSync(`${ROOT}/${inFlight}`)).toBeTrue();
 	});
 
-	// The same concurrency, one step finer: a live run's `onTestFinished` can
-	// take its sandbox away between the listing and the measurement. A dangling
-	// link is that gap made reproducible: the name is listed, and reading it
-	// raises ENOENT. Throwing here would fail the whole run from `globalSetup`,
-	// which is the outcome the age gate exists to avoid.
+	// A live run's `onTestFinished` can remove its sandbox between listing and
+	// measuring; a dangling link reproduces that as ENOENT. Throwing would fail
+	// the whole run from `globalSetup`.
 	it("should skip an entry that disappears before it is measured", () => {
 		expect.assertions(1);
 

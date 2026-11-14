@@ -51,11 +51,9 @@ describe.skipIf(!rojoOnPath())("staged plain models", () => {
 	it("should leave a plain model alone inside a stand-in it was nested in", async () => {
 		expect.assertions(2);
 
-		// The fold rebuilds the whole offending mount through rojo and rewrites
-		// classes across the result, so everything the mount held is in its
-		// path. A model mounted on its own never reaches it:
-		// `demotePinnedMounts` returns early when it collects nothing. That is
-		// why the plain case above cannot speak for this one.
+		// A model mounted on its own never reaches the fold:
+		// `demotePinnedMounts` returns early when it collects nothing. So the
+		// plain case above cannot speak for this one.
 		const placeFile = await buildFixturePlaceAsync({
 			files: {
 				"StarterPlayerScripts.rbxmx": modelXml({

@@ -80,11 +80,8 @@ export function writeTemporaryLuauScript(
 	const directory = path.join(os.tmpdir(), "luau-ast");
 	fileSystem.mkdirSync(directory, { recursive: true });
 
-	// Scope the filename to the process. Test runners execute spec files in
-	// parallel worker processes, each spawning Lute against this script; a
-	// shared path lets one process truncate-and-rewrite the file while
-	// another's Lute reads it, yielding intermittent parse failures. One file
-	// per process avoids the race (calls within a process run sync, serially).
+	// One file per process: parallel test workers each spawn Lute, and a shared
+	// path lets one rewrite the script while another reads it.
 	const scriptPath = path.join(directory, `${name}.${process.pid}.luau`);
 	fileSystem.writeFileSync(scriptPath, source);
 

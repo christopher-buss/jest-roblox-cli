@@ -26,12 +26,10 @@ const NO_OPEN_CLOUD_CREDENTIALS = {
 	ROBLOX_UNIVERSE_ID: undefined,
 } as const satisfies Record<string, string | undefined>;
 
-// A SEA binary can't `import()` a config off disk, and only the `.json` branch
-// of `seaImport` was ever SEA-safe, so any `.ts`/`.js` config failed before the
-// run began. These specs drive the real CLI as a child process with
-// `JEST_ROBLOX_SEA=true`, routing config discovery through `seaImport` over
-// genuine Node module resolution (`createRequire`) rather than Vitest's
-// path-tolerant import runner.
+// A SEA binary can't `import()` a config off disk. These specs run the real
+// CLI as a child process with `JEST_ROBLOX_SEA=true`, so config discovery
+// goes through `seaImport` over real Node resolution (`createRequire`), not
+// Vitest's import runner.
 describe("sea config loading", () => {
 	it("should load a `.ts` config under the SEA loader and run to completion", async () => {
 		expect.assertions(2);

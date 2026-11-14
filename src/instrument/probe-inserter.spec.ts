@@ -776,12 +776,9 @@ describe("probe-inserter", () => {
 		it("should nest and/or wraps so outer wraps surround inner wraps", () => {
 			expect.assertions(1);
 
-			// `local v = a and b and c` parses as `(a and b) and c`. The outer
-			// node's lhs span (`a and b`) and the inner node's lhs span (`a`)
-			// both start at column 11; their closes both land at column 18. The
-			// inserter must order the colliding wraps so the outer wrap fully
-			// surrounds the inner one.
-			// columns:        1234567890123456789012345
+			// `(a and b) and c`: the outer and inner lhs spans both open at
+			// column 11 and close at column 18. The outer wrap must fully
+			// surround the inner one. columns:        1234567890123456789012345
 			const source = "local v = a and b and c";
 			const collector: CollectorResult<LuauSpan> = {
 				...emptyResult(),
@@ -827,11 +824,9 @@ describe("probe-inserter", () => {
 		it("should nest wraps whose colliding opens close on different lines", () => {
 			expect.assertions(1);
 
-			// `local v = a\n\tand b and c` parses as `(a and b) and c`. The outer
-			// node's lhs operand (`a and b`) spans lines 1-2 while the inner `a`
-			// operand is line 1 only; both opens land at line 1 column 11 but
-			// their closes are on different lines, so ordering falls to the
-			// line component of the wrap's far end.
+			// `(a and b) and c` across two lines: both lhs opens land at line 1
+			// column 11 but the closes are on different lines, so ordering falls
+			// to the line of the wrap's far end.
 			const source = "local v = a\n\tand b and c";
 			const collector: CollectorResult<LuauSpan> = {
 				...emptyResult(),

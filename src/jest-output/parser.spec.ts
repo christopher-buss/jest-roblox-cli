@@ -579,12 +579,10 @@ describe(parseJestOutput, () => {
 	});
 
 	it("should strip a path:line prefix from a single-line top-level err string", () => {
-		// Regression: promise-error.luau walks the parent chain to a leaf whose
-		// .error field is `<path>:<line>: <msg>` (e.g.
-		// "...nodeUtils:25: Exited with code: 1"). The CLI banner's exit-code
-		// branch (`^Exited with code: \d+$`) only fires on the bare cause;
-		// stringifyError must surface the trailing message so the captured
-		// stdout body replaces the transport line.
+		// promise-error.luau walks to a leaf whose .error is `<path>:<line>:
+		// <msg>`. The CLI banner's exit-code branch (`^Exited with code: \d+$`)
+		// fires only on the bare cause, so stringifyError must surface the
+		// trailing message.
 		expect.assertions(1);
 
 		const output = JSON.stringify({

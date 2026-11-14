@@ -520,14 +520,10 @@ describe(prepareWorkspaceCoverage, () => {
 		expect(Object.keys(manifest.files)).toContain(expectedKey);
 	});
 
-	// Codex review follow-up: a cold run only ever adds to the package shadow:
-	// the instrumenter and the mirror sync both merge, and the reconcile that
-	// deletes runs warm. If a prior run wrote files that have since been deleted
-	// from source (or the cache is invalid / version-stale and we fall back to
-	// a cold run), those stale files survive into the redirected $path mount.
-	// Single-package prepares avoid this by rmSync-ing COVERAGE_DIR before
-	// instrumenting; workspace must nuke its own per-package shadow root for
-	// symmetry.
+	// A cold run only adds to the package shadow; the reconcile that deletes
+	// runs warm. Stale files from a prior run would survive into the redirected
+	// $path mount, so workspace must clear its per-package shadow root, as
+	// single-package prepares clear COVERAGE_DIR.
 	it("should name the workspace manifest when it discards a malformed one", async () => {
 		expect.assertions(1);
 
@@ -930,12 +926,9 @@ describe(prepareWorkspaceCoverage, () => {
 		expect(volume.existsSync(specInShadow)).toBeTrue();
 	});
 
-	// Regression: roblox-ts ships its vendor runtime (`RuntimeLib.lua`,
-	// `Promise.lua`) into the project's rbxts `include/` dir. Instrumenting
-	// those files isn't useful (they're vendor code, not project source) and
-	// the synthesizer would then redirect `rbxts_include.$path` to the shadow,
-	// adding probe overhead to every `require` through `TS.import`. Skip any
-	// `$path` whose root contains a `RuntimeLib` file, the canonical marker.
+	// roblox-ts ships `RuntimeLib.lua` and `Promise.lua` into rbxts `include/`.
+	// Instrumenting that vendor code adds probe overhead to every `TS.import`, so
+	// any `$path` whose root holds a `RuntimeLib` file is skipped.
 	it("should skip directories containing RuntimeLib (rbxts include)", async () => {
 		expect.assertions(2);
 
@@ -1151,12 +1144,10 @@ describe(prepareWorkspaceCoverage, () => {
 		}).toThrow('Could not determine luauRoots for package "@halcyon/foo"');
 	});
 
-	// Workspace coverage walked every rojo `$path` mount and
-	// instrumented every directory containing luau files, ignoring per-pkg
-	// `luauRoots` and `coveragePathIgnorePatterns` that single mode honors. The
-	// fix threads both knobs through `WorkspacePackageDescriptor`. These cases
-	// seed a multi-mount rojo tree (the user-owned `src/` + a vendored
-	// `vendored-packages/`) and pin the new descriptor fields' semantics.
+	// Workspace coverage must honor per-pkg `luauRoots` and
+	// `coveragePathIgnorePatterns` through `WorkspacePackageDescriptor`, as
+	// single mode does. These cases seed a user-owned `src/` plus a vendored
+	// `vendored-packages/` mount.
 	describe("multi-$path rojo tree with per-pkg descriptor fields", () => {
 		const multiMountTree = {
 			$className: "DataModel",

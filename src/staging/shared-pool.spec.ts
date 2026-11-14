@@ -156,11 +156,9 @@ describe(poolSharedMounts, () => {
 	] as const)("should %s", ([, node, expected]) => {
 		expect.assertions(1);
 
-		// Rojo reads a `$className` against what the `$path` builds and
-		// refuses the pair unless that is a Folder. The entry is where the
-		// mount now lives, so it is where the class has to be read: dropping
-		// it would build the ModuleScript an `init.luau` directory makes,
-		// under a name the project declared a Folder.
+		// Rojo refuses a `$className` unless the `$path` builds a Folder. The
+		// entry is where the mount now lives, so it carries the class; dropping
+		// it would build a ModuleScript under a name declared a Folder.
 		const { fileSystem } = seed({ [path.join(INCLUDE, "runtime.luau")]: "" });
 
 		const project = pooledProject(fileSystem, twoPackagesStaging(node));
@@ -333,11 +331,9 @@ describe(poolSharedMounts, () => {
 		(fileName) => {
 			expect.assertions(1);
 
-			// Rojo builds no Instance for either: one it does not read, one
-			// that only describes an Instance built from elsewhere. A marker
-			// naming an entry the place does not hold fails the materialize,
-			// where the mount it replaced was merely absent, so the rule reads
-			// an allow list rather than guessing.
+			// Rojo builds no Instance for either. A marker naming an entry the
+			// place does not hold fails the materialize, so the rule reads an
+			// allow list rather than guessing.
 			const file = path.join(path.resolve("/repo"), fileName);
 			const { fileSystem } = seed({ [file]: "{}" });
 			const projectJson = twoPackagesStaging({ $path: file }, "Loose");

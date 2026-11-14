@@ -26,19 +26,10 @@ async function runPassingOpenCloudAsync(sandbox: string) {
 	return { result, server };
 }
 
-// Regression: a bare `test:` config with no `projects` must run end to end. It
-// collapses into the multi pipeline, where one project is synthesized from the
-// config's Luau roots mapped through the Rojo tree. The Luau runner resolves
-// per-project config from a `jest.config` ModuleScript at each root, which a
-// bare config never supplied, so before the synthesized project carried a
-// generated stub the run reached Roblox and died there.
-//
-// Everything that decides whether the stub exists and where it goes is local:
-// the synthesized project list, the emitted cache stub, and the place actually
-// being built and dispatched. Those are what this asserts, against the fake
-// backend. That the Luau runner then reads an injected stub is the same code
-// path the live both-mounts run in `test/e2e/live/pipeline.spec.ts`
-// exercises, so it is not worth a second place upload here.
+// A bare `test:` config with no `projects` must run end to end, with its
+// synthesized project carrying a generated `jest.config` stub. The live
+// both-mounts run in `test/e2e/live/pipeline.spec.ts` covers the Luau runner
+// reading that stub, so this asserts locally against the fake backend.
 describe("bare no-projects config", () => {
 	it.skipIf(!rojoOnPath())(
 		"should synthesize a project from the rojo tree and give it a generated stub",
@@ -50,13 +41,10 @@ describe("bare no-projects config", () => {
 			// Canonical location is the cache; the source tree stays clean.
 			const cacheStubPath = path.join(sandbox, ".jest-roblox/cache/src/jest.config.luau");
 
-			// Asserted before the run, not just after. `.jest-roblox/` is a
-			// gitignored run artifact, and the specs that drive the CLI at a
-			// fixture path rather than a sandbox leave one behind. So on a
-			// machine where those ran first, a sandbox that copied it would
-			// satisfy every assertion below with stub generation fully broken.
-			// `createFixtureSandbox` filters it out; this is the check that says
-			// so, and it fails loudly if the filter ever stops working.
+			// `.jest-roblox/` is a gitignored artifact that fixture-path specs
+			// leave behind; a sandbox that copied it would pass every assertion
+			// below with stub generation broken. This pins the
+			// `createFixtureSandbox` filter.
 			expect(fs.existsSync(cacheStubPath), "sandbox starts with no stub").toBeFalse();
 
 			fs.writeFileSync(path.join(sandbox, "src/typed.spec-d.luau"), "--!strict\n");
@@ -104,12 +92,9 @@ describe("bare no-projects config", () => {
 		RUN_TIMEOUT_MS + 5000,
 	);
 
-	// The other half of `resolveLuauRootsWithRojo`. The fixture's own config
-	// names no `luauRoots`, so the case above takes the fallback that derives
-	// them from the Rojo tree; this one sets them explicitly and takes the early
-	// return. Both reach `buildImplicitProject`, and only the explicit branch
-	// can put a root in the config that the tree does not mount, which is the
-	// error the branch exists to raise.
+	// The explicit-`luauRoots` branch of `resolveLuauRootsWithRojo`; the case
+	// above takes the Rojo-derived fallback. Only this branch can name a root
+	// the tree does not mount, which is the error it exists to raise.
 	it.skipIf(!rojoOnPath())(
 		"should synthesize from an explicit luauRoots rather than the rojo tree",
 		async () => {

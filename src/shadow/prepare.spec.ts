@@ -2478,11 +2478,9 @@ describe(prepareCoverageAsync, () => {
 				expect(result.rebuilt).toBeTrue();
 			});
 
-			// Both carry-forwards ask whether the output they would keep is
-			// still there, and `existsSync` says yes to a directory. An
-			// interrupted run that changed a source's kind leaves exactly that,
-			// and carrying the record forward would hand rojo a Folder under
-			// the name a file should have, silently, since nothing throws.
+			// Both carry-forwards check `existsSync`, which says yes to a
+			// directory. A carried record would then hand rojo a Folder under a
+			// file's name, and nothing throws.
 			it("should re-copy when the recorded shadow path became a directory", async () => {
 				expect.assertions(1);
 
@@ -2579,13 +2577,10 @@ describe(prepareCoverageAsync, () => {
 				).toBeDefined();
 			});
 
-			// The three failure shapes a warm run takes when the copy-ignore
-			// list moves under it: a carried-forward record for a file the
-			// reconcile just deleted, an orphan cov-map keeping that file in
-			// the report at 0%, and (the hard one) a new file lost entirely
-			// because `instrumentable.size` cancelled against a newly-ignored
-			// one and faked a full cache hit. All three are the same bug: the
-			// warm path reasons from counts a manifest the old list wrote.
+			// A moved copy-ignore list breaks a warm run three ways: a record
+			// carried for a deleted file, an orphan cov-map at 0%, and a new file
+			// lost because `instrumentable.size` cancelled against a
+			// newly-ignored one. All three come from counts the old list wrote.
 			it("should rebuild cold when the copy-ignore list changed since the manifest", async () => {
 				expect.assertions(2);
 

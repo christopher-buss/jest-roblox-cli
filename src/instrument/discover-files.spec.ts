@@ -32,10 +32,9 @@ describe(discoverRootFiles, () => {
 		expect(result).toStrictEqual(new Set(["init.luau", "shared/player.luau"]));
 	});
 
-	// A root reaches the walk however the config spelled it, and every spelling
-	// here names the same directory. A walk that states each file by slicing
-	// the root's own length off the front offsets every name instead, which
-	// surfaces far from the config as an ENOENT on a file that never existed.
+	// Every spelling here names the same directory. A walk that slices the
+	// root's own length off each file offsets every name, which surfaces as an
+	// ENOENT on a file that never existed.
 	it.for(["out/../out", "out/.", "out//", "out/./"])(
 		"should name walked files the same for a root spelled %s",
 		async (luauRoot) => {
@@ -195,11 +194,9 @@ describe(discoverRootFiles, () => {
 		expect(result.excluded).toStrictEqual(new Set(["ui/button.luau"]));
 	});
 
-	// The universe names files as `path.join` writes them, which for the
-	// current directory is the bare name. A root that pastes its own `.` on
-	// the front asks about a file the universe has never heard of, so every
-	// probe silently demotes to a mirrored copy and the run reports no
-	// coverage at all.
+	// The universe names files as `path.join` writes them: the bare name under
+	// `.`. A root that pastes its own `.` on the front misses the universe, so
+	// every probe demotes to a mirrored copy and the run reports no coverage.
 	it("should split prod files by the universe under a current-directory root", async () => {
 		expect.assertions(2);
 

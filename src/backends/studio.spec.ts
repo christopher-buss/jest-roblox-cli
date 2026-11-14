@@ -469,11 +469,9 @@ describe(StudioBackend, () => {
 	});
 
 	describe("experimental vm-parallel", () => {
-		// The VM count the plugin receives is a request the CLI has already
-		// resolved: `"auto"` becomes one VM per config (up to the hosts the
-		// plugin ships), an oversized count is clamped to the configs there
-		// are, and anything that lands on a single VM leaves the field off;
-		// that is the sequential path.
+		// The CLI resolves the VM count before the plugin sees it: `"auto"` is
+		// one VM per config, a large count clamps to the config count, and a
+		// single VM leaves the field off (the sequential path).
 		it("should send the run budget the coordinator must finish inside", async () => {
 			expect.assertions(1);
 

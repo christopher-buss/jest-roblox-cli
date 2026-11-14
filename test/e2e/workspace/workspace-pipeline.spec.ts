@@ -38,22 +38,10 @@ async function runOpenCloudWorkspaceAsync(
 	return { result, server };
 }
 
-// Workspace + --parallel exercises the work-stealing path: per-run MemoryStore
-// queue populated with every (pkg, project), N OCALE tasks all running the
-// same materializer script. Driven through the fake Open Cloud server so the
-// test stays fast and runs without secrets.
-//
-// `--updateSnapshot` rides along on the same invocation, because it is the same
-// two-package parallel run and the flags do not interact. Its own regression:
-// per-package snapshot writeback only landed on disk in single-package mode,
-// because `writeSnapshots` interpreted a relative `config.rojoProject` against
-// `process.cwd()`. Single-pkg happens to launch with CWD == rootDir so the
-// lookup coincidentally worked; workspace mode runs from the workspace root, so
-// every per-package lookup missed and silently dropped every captured snapshot.
-// The tests that came before asserted on the in-memory envelope and stopped
-// short of `writeSnapshots`, which is how the disk-write regression slipped
-// through, so the assertion here is the file on disk, at the rootDir-relative
-// location `path.resolve(config.rootDir, ...)` guarantees.
+// Workspace + --parallel drives the work-stealing path through the fake
+// Open Cloud server. `--updateSnapshot` rides along: workspace mode runs
+// from the workspace root, so a CWD-relative `config.rojoProject` dropped
+// every snapshot. The assertion is the file on disk, not the envelope.
 describe("workspace --parallel work-stealing", () => {
 	it.skipIf(!rojoOnPath())(
 		"should fan results across N parallel tasks and write each package's snapshots",
@@ -135,12 +123,9 @@ describe("workspace --parallel work-stealing", () => {
 	);
 });
 
-// Regression: a package whose rojo declares a `$path`-mounted parent (e.g.
-// `Tests: { $path: "out-test" }`) with no explicit child for the sub-directory
-// targeted by `outDir: "out-test/src"`. Before the synthesizer learned to
-// virtualize the missing `Tests/src` child from the on-disk directory, the
-// workspace runner crashed with `stubMount dataModelPath ... does not resolve
-// in synthesized tree (missing segment "src")` before reaching the backend.
+// Regression: a `$path`-mounted parent (`Tests: { $path: "out-test" }`)
+// with no child for `outDir: "out-test/src"`. The synthesizer must
+// virtualize the missing `Tests/src` child from disk.
 describe("workspace synthesizer $path-mounted parent virtualization", () => {
 	it.skipIf(!rojoOnPath())(
 		"should reach backend dispatch when stubMount targets a sub-directory of a $path-mounted parent",
@@ -166,14 +151,9 @@ describe("workspace synthesizer $path-mounted parent virtualization", () => {
 	);
 });
 
-// Regression: a workspace package with `jest.config` + `outDir` pointing at a
-// sub-directory that doesn't exist on disk (the package has no specs, so the
-// compiler produces no output there). Before stubMount emission learned to
-// skip zero-test projects, the synthesizer crashed walking the missing
-// segment, but only when at least one OTHER package had pending tests, so
-// the workspace runner reached `writeStubsAndBuildDescriptors` instead of
-// short-circuiting on `pending.length === 0`. The mixed `@e2e/foo` +
-// `@e2e/empty-tests` invocation is what surfaces the bug.
+// Regression: a package whose `outDir` does not exist on disk crashed the
+// synthesizer, but only when another package had pending tests. The mixed
+// `@e2e/foo` + `@e2e/empty-tests` invocation surfaces it.
 describe("workspace synthesizer zero-test project tolerance", () => {
 	it.skipIf(!rojoOnPath())(
 		"should not emit stubMounts for projects with no discovered tests",
@@ -247,14 +227,10 @@ describe("workspace pre-flight cleanup of leftover own-stubs", () => {
 	);
 });
 
-// A bare `--workspace` enumerates the workspace itself, so the two things that
-// decide its package set are unreachable from the `--packages` invocations
-// above: the pnpm source's `jest.config.*` gate, and `workspace.exclude`.
-//
-// One invocation covers both. The exclude narrows the seven fixture packages
-// down to `@e2e/nested` (which keeps this to a single dispatch) and the
-// fixture's `packages/no-tests` carries a package.json with no jest config, so
-// a run that reached it at all would dispatch a second time.
+// A bare `--workspace` reaches the pnpm source's `jest.config.*` gate and
+// `workspace.exclude`. The exclude keeps only `@e2e/nested`, and
+// `packages/no-tests` has no jest config, so reaching it would dispatch a
+// second time.
 describe("workspace bare enumeration", () => {
 	it.skipIf(!rojoOnPath())(
 		"should select every package the exclude leaves and skip one with no jest.config",
@@ -312,12 +288,10 @@ describe("workspace bare enumeration", () => {
 	);
 });
 
-// The positional had to survive argv parsing, package enumeration, and the
-// place synthesis to matter, and none of that is reachable from the unit seam:
-// `parseArgs` is what turns `--workspace <path>` into a boolean plus a
-// positional, and the path is typed relative to the invocation directory rather
-// than to any package. A bare `--workspace` over this fixture otherwise
-// dispatches every package in it.
+// `parseArgs` turns `--workspace <path>` into a boolean plus a positional
+// typed relative to the invocation directory, and the positional must
+// survive enumeration and place synthesis. The unit seam reaches none of
+// that.
 describe("workspace positional file scoping", () => {
 	it.skipIf(!rojoOnPath())(
 		"should dispatch only the package that owns a relative positional file",

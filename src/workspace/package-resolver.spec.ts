@@ -1230,12 +1230,9 @@ describe("workspace.exclude glob shapes", () => {
 		expect(enumerated.map((info) => info.name)).toStrictEqual(["@halcyon/core"]);
 	});
 
-	// Asserted through the config-glob source rather than the pnpm one on
-	// purpose. Joining the leaf onto an empty negation body yields the bare
-	// leaf, which is whatever file the root itself carries, so the entry
-	// deletes the root package. A pnpm source that prepends the root
-	// unconditionally (as pnpm does, and as a package-manager snapshot would)
-	// puts it back either way, leaving nothing for the assertion to catch.
+	// Asserted through the config-glob source on purpose. A bare `!` yields the
+	// bare leaf and deletes the root package, but the pnpm source prepends the
+	// root unconditionally and would hide that.
 	it("should ignore a bare ! rather than delete the root package", () => {
 		expect.assertions(1);
 

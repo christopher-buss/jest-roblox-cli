@@ -87,11 +87,9 @@ describe(createSourceMapper, () => {
 	it("should look up the sourcemap under outDir when rootDir is '.' (rootDirs project)", () => {
 		expect.assertions(1);
 
-		// A `rootDirs: ["src", "test"]` tsconfig collapses rootDir to ".". The
-		// spec compiles to `out-test/src/...` and mounts under `server-tests`.
-		// The frame must resolve its sourcemap from the outDir-anchored Luau
-		// path, not a bare `src/...` path that has no `.luau.map` beside it,
-		// which is why the map is seeded there and nowhere else.
+		// `rootDirs: ["src", "test"]` collapses rootDir to ".". The frame must
+		// resolve its sourcemap from the outDir-anchored Luau path, not a bare
+		// `src/...` path, so the map is seeded there and nowhere else.
 		const generated = "out-test/src/server/modules/ecs/context.spec.luau";
 		const source = "../../../../../src/server/modules/ecs/context.spec.ts";
 		const sourcePath = posixPath(path.resolve(path.dirname(generated), source));

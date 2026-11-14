@@ -680,11 +680,10 @@ describe("rojo mount detection", () => {
 			volume.mkdirSync("/out", { recursive: true });
 			volume.writeFileSync("/out/init.luau", "");
 
-			// The one frame that carries a trailing separator, so a containment
-			// test reading it verbatim weighs every child against `//` and keeps
-			// none. Written as the volume writes it: the frame and the rojo
-			// directory name one directory, and only a host-dependent read of
-			// "absolute" could make `/` and `C:/` meet.
+			// The one frame with a trailing separator: a containment test
+			// reading it verbatim weighs every child against `//` and keeps none.
+			// Only a host-dependent read of "absolute" could make `/` and `C:/`
+			// meet.
 			const config = makeConfig({ rootDir: "/" });
 
 			expect(

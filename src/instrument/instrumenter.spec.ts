@@ -57,14 +57,10 @@ function setupFilesystem({
 }
 
 describe(nodeInstrumenter, () => {
-	// Cross-machine join-key guard. The per-file key recorded in the manifest
-	// MUST be byte-identical to the `__cov_file_key` literal baked into the
-	// instrumented preamble. The runtime bumps
-	// `_G.__jest_roblox_cov[__cov_file_key]` with that exact literal, so the
-	// manifest key, the preamble key, and the harvested hit-table key are one
-	// string. If a refactor let the two writers (manifest record vs preamble)
-	// diverge, coverage would silently map to the wrong source lines across the
-	// build/run machine boundary with no type error to catch it.
+	// The manifest key MUST be byte-identical to the `__cov_file_key` literal in
+	// the instrumented preamble: the runtime bumps
+	// `_G.__jest_roblox_cov[__cov_file_key]` with it. If the two writers diverge,
+	// coverage maps to the wrong lines across machines with no type error.
 	describe("cross-machine join key", () => {
 		it("should bake the manifest file key verbatim into the instrumented preamble", () => {
 			expect.assertions(2);
@@ -256,16 +252,11 @@ describe(nodeInstrumenter, () => {
 				shadowDir: "/shadow",
 			});
 
-			// Two sources land here, and only the first is this cache's to
-			// elide: one call per directory for the twin, plus one call per
-			// file from the `atomicWrite` under `writeCoverageMap`, which
-			// makes its own parent for every sidecar. So `/shadow/shared`
-			// holds two files and appears three times, not four.
-			//
-			// Sorted, not walk-ordered: the counts are the claim, and pinning
-			// the order would tie this to the directory walk instead.
-			// Normalized because the target is a host `path.join`, so it
-			// carries backslashes on Windows and forward slashes elsewhere.
+			// One call per twin directory, plus one per file from the
+			// `atomicWrite` under `writeCoverageMap`; only the first is this
+			// cache's to elide. So `/shadow/shared` appears three times, not
+			// four. Sorted and normalized so the claim is the counts, on any
+			// host.
 			const directories = mkdirSpy.mock.calls.map(([directory]) => {
 				return posixPath(String(directory));
 			});

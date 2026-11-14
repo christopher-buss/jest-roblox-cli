@@ -54,15 +54,10 @@ const LIVE_DIRECTORY = "test/e2e/live";
  */
 const SANDBOX_EXCLUDE = ["**/.tmp", "**/.tmp/**"];
 
-// This package has fixture configs that import `@isentinel/jest-roblox`.
-// Avoid the broad `source` condition here so those self-imports keep exercising
-// the built package during coverage; alias only the workspace deps that need
-// inline source for node-builtin mocks.
-//
-// `createRequire` earns its keep for `.resolve()` only. Mapping a bare
-// `<pkg>/package.json` specifier to a path needs CJS resolution. Reading the
-// file goes through `readFileSync`, because `require()` returns `any` and
-// casting it back to a shape is what `ts/no-unsafe-type-assertion` forbids.
+// Fixture configs import `@isentinel/jest-roblox`, so no broad `source`
+// condition: those self-imports must exercise the built package. Reading
+// goes through `readFileSync` because `require()` returns `any`, which
+// `ts/no-unsafe-type-assertion` forbids casting.
 const requireFromConfig = createRequire(import.meta.url);
 
 /**
@@ -204,12 +199,9 @@ export const unitProject = {
 	test: {
 		...projectTestDefaults,
 		name: "unit",
-		// `test/bench/*.bench.ts` benchmarks belong to this project. Scope
-		// them to this project so the e2e/live projects (the latter
-		// has a network globalSetup) never pick them up. `vitest
-		// bench` derives a separate project per entry, so this one's
-		// benchmarks run as `unit (bench)`; that is the name the
-		// `bench` package script filters on.
+		// Scoped here so the e2e/live projects never pick up benchmarks. `vitest
+		// bench` names this one `unit (bench)`, which the `bench` package script
+		// filters on.
 		benchmark: {
 			include: ["test/bench/**/*.bench.ts"],
 		},
@@ -357,14 +349,10 @@ export default defineConfig({
 					env: {
 						JEST_ROBLOX_LIVE: "",
 					},
-					// Every `*.spec.ts` under `test/e2e/`, so no file there
-					// can miss both projects. The price is two
-					// excludes of its own: `fixtures/**` holds Jest-on-Roblox
-					// specs, which are inputs rather than tests, and
-					// `defaultExclude` must be spread back in rather than
-					// replaced. The live fixture's `node_modules` symlinks this
-					// package onto itself, so without `**/node_modules/**` the
-					// glob collects every spec a second time through the loop.
+					// Every `*.spec.ts` under `test/e2e/`, so no file misses both projects.
+					// `fixtures/**` holds Jest-on-Roblox inputs, and the live fixture's
+					// `node_modules` symlinks this package onto itself, so `defaultExclude`
+					// must be spread back in.
 					exclude: [
 						...defaultExclude,
 						...SANDBOX_EXCLUDE,
@@ -372,23 +360,15 @@ export default defineConfig({
 						"test/e2e/fixtures/**",
 					],
 					globalSetup: ["./test/e2e/global-setup.ts"],
-					// `createFixtureSandbox` tears its temp tree down in an
-					// `onTestFinished` hook, and a `--coverage` run leaves a
-					// whole instrumented shadow tree behind. Deleting that many
-					// small files outruns the 10s default `hookTimeout` on
-					// Windows once the workspace specs are competing for I/O,
-					// which reads as a failure in a test that already passed.
+					// `createFixtureSandbox` deletes its temp tree in
+					// `onTestFinished`, and a `--coverage` shadow tree outruns
+					// the default `hookTimeout` on Windows under I/O contention.
 					hookTimeout: 30_000,
 					include: ["test/e2e/**/*.spec.ts"],
-					// The `--typecheckOnly` specs spawn a real tsgo build, which
-					// is the slowest thing in this project by a wide margin and
-					// scales with how many other files are running. Measured at
-					// 14s idle and 38s with the rest of the project competing,
-					// so 30s was a coin flip once the workspace specs moved in
-					// here, and a timeout in one `it` corrupts the assertion
-					// count of the next, so it surfaces as two unrelated-looking
-					// failures. Same reason the integration project sits above
-					// the default.
+					// The `--typecheckOnly` specs spawn a real tsgo build that
+					// scales with concurrent load, and a timeout in one `it`
+					// corrupts the next one's assertion count. Same reason the
+					// integration project sits above the default.
 					testTimeout: 60_000,
 				},
 			},
