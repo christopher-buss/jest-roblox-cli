@@ -21,7 +21,7 @@ import type { BackendResult } from "../backends/interface.ts";
 import type { OpenCloudDispatch, OpenCloudSharding } from "../backends/open-cloud-dispatch.ts";
 import type { StudioDispatch } from "../backends/plugin-payload.ts";
 import type { ProjectEntry } from "../config/config-types.ts";
-import type { loadConfig } from "../config/loader.ts";
+import type { ConfigLoadRequest, loadConfig } from "../config/loader.ts";
 import type { CliOptions, ResolvedConfig, WorkspaceRunOptions } from "../config/resolved-config.ts";
 import type { EnvelopeEntry } from "../protocol/envelope.ts";
 import { nodeRunSeams, type RunSeams } from "../run/seams.ts";
@@ -242,7 +242,7 @@ function buildManifestAt(
 	return fromAny(JSON.parse(fileSystem.readFileSync(buildManifestPath(manifestPath), "utf-8")));
 }
 
-const loadPackageConfig = vi.fn<typeof loadConfig>(async ({ cwd } = {}) => {
+const loadPackageConfig = vi.fn<typeof loadConfig>(async ({ cwd }: ConfigLoadRequest = {}) => {
 	return createResolvedConfig(cwd === undefined ? {} : { rootDir: cwd });
 });
 
@@ -385,7 +385,7 @@ function makeProjectEntries(entries: Array<ProjectEntry>): Array<ProjectEntry> {
 }
 
 function setLoadedConfigPerPackage(map: Readonly<Record<string, PreResolutionConfig>>): void {
-	loadPackageConfig.mockImplementation(async ({ cwd } = {}) => {
+	loadPackageConfig.mockImplementation(async ({ cwd }: ConfigLoadRequest = {}) => {
 		const config = map[cwd ?? ""];
 		if (config === undefined) {
 			throw new Error(`No mocked config for cwd: ${cwd ?? "<undefined>"}`);
