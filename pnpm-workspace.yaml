@@ -14,6 +14,15 @@ overrides:
 minimumReleaseAgeExclude:
   - "@bedrock-rbx/ocale"
   - "@isentinel/eslint-config"
+  - tsrs@7.1.0-beta.tsrs2
+  - "@tsrs/darwin-arm64@7.1.0-beta.tsrs2"
+  - "@tsrs/darwin-x64@7.1.0-beta.tsrs2"
+  - "@tsrs/linux-arm64-gnu@7.1.0-beta.tsrs2"
+  - "@tsrs/linux-arm64-musl@7.1.0-beta.tsrs2"
+  - "@tsrs/linux-x64-gnu@7.1.0-beta.tsrs2"
+  - "@tsrs/linux-x64-musl@7.1.0-beta.tsrs2"
+  - "@tsrs/win32-arm64@7.1.0-beta.tsrs2"
+  - "@tsrs/win32-x64@7.1.0-beta.tsrs2"
 
 publicHoistPattern:
   - "*@rbxts*"
