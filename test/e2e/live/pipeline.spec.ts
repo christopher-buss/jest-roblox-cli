@@ -96,8 +96,7 @@ describe("live pipeline", () => {
 	// One both-mounts run checks four things: results merge per displayName,
 	// injected `jest.config` stubs load, native `warn(...)` reaches
 	// `--gameOutput`, and coverage maps back to `.ts` keys. After editing
-	// fixture sources, delete `test/e2e/fixtures/live-place/out` so
-	// global-setup compiles it again.
+	// fixture sources, recompile the fixture as its README says.
 	it.runIf(IS_LIVE)(
 		"should run both mounts, capture game output, and report coverage in one run",
 		async (context) => {

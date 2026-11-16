@@ -6,7 +6,6 @@
 	"type": "module",
 	"devDependencies": {
 		"@isentinel/jest-roblox": "workspace:*",
-		"@isentinel/roblox-ts": "workspace:*",
 		"@isentinel/tsconfig": "catalog:tsc",
 		"@rbxts/compiler-types": "catalog:types",
 		"@rbxts/jest": "catalog:test",

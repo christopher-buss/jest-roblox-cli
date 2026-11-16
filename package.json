@@ -107,7 +107,6 @@
 		"@isentinel/eslint-config": "6.5.2",
 		"@isentinel/luau-ast": "workspace:*",
 		"@isentinel/roblox-runner": "workspace:*",
-		"@isentinel/roblox-ts": "4.0.11",
 		"@isentinel/rojo-utils": "workspace:*",
 		"@isentinel/tsconfig": "2.0.0",
 		"@isentinel/weld": "0.2.2",

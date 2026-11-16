@@ -382,15 +382,14 @@ export default defineConfig({
 					benchmark: {
 						include: [],
 					},
+					// Every spec that reaches real Open Cloud lives here and
+					// nowhere else; the `e2e` project globs the complement.
+					include: [`${LIVE_DIRECTORY}/**/*.spec.ts`],
 					// Concurrent live runs must not collide, whether they are
 					// files here or other checkouts on the same place: version
 					// identity guards execution, streaming keys are per-run
 					// UUIDs, and each test builds its own sandbox. Nothing may
 					// serialize this project to keep that true.
-					globalSetup: ["./test/e2e/fixtures/live-place/global-setup.ts"],
-					// Every spec that reaches real Open Cloud lives here and
-					// nowhere else; the `e2e` project globs the complement.
-					include: [`${LIVE_DIRECTORY}/**/*.spec.ts`],
 					pool: "forks",
 					// Exercise recovery without retrying failed assertions.
 					retry: 0,
