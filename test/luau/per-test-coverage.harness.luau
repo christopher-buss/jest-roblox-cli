@@ -84,8 +84,8 @@ local function testRecordsCoverage()
 	check(contains(records[1].delta["out/m.luau"].s, 1), "T1: statement 1 attributed")
 end
 
--- T2: a test that covers nothing new produces no record.
-local function testDropsEmptyTest()
+-- T2: a test that covers nothing new produces a record with an empty delta.
+local function testRecordsEmptyTest()
 	local addEventHandler, dispatch = makeDispatcher()
 	local state = { currentTestName = "Foo > noop", testPath = makeFakeFile() }
 	local cov = { ["out/m.luau"] = { s = { 1 } } }
@@ -101,7 +101,9 @@ local function testDropsEmptyTest()
 	-- nothing changes before test_done
 	dispatch({ name = "test_done" })
 
-	check(#records == 0, "T2: no record for a test that covered nothing")
+	check(#records == 1, "T2: a record for a test that covered nothing")
+	check(records[1].testCaseId == "Foo > noop", "T2: full test name")
+	check(next(records[1].delta) == nil, "T2: empty delta")
 end
 
 -- T3: two sequential tests against a cumulative table each get their own delta.
@@ -355,7 +357,7 @@ local function testProjectsOfOnePackageKeepSeparateAccumulators()
 end
 
 testRecordsCoverage()
-testDropsEmptyTest()
+testRecordsEmptyTest()
 testSequentialTests()
 testHandlerRecordsErrors()
 testInstallsInEveryTestFile()

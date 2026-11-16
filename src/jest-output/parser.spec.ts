@@ -764,7 +764,35 @@ End of output
 		expect(perTestCoverage).toBeUndefined();
 	});
 
-	it("should leave perTestCoverage undefined when no test covered anything", () => {
+	it("should read an empty delta the runtime encoded as an array as covering nothing", () => {
+		expect.assertions(1);
+
+		const payload = JSON.stringify({
+			runner: {
+				perTestCoverage: [
+					{ delta: [], testCaseId: "math > noop", testFilePath: "out/m.spec.luau" },
+				],
+			},
+			success: true,
+			value: {
+				numFailedTests: 0,
+				numPassedTests: 1,
+				numPendingTests: 0,
+				numTotalTests: 1,
+				startTime: 0,
+				success: true,
+				testResults: [],
+			},
+		});
+
+		const { perTestCoverage } = parseJestOutput(payload);
+
+		expect(perTestCoverage).toStrictEqual([
+			{ delta: {}, testCaseId: "math > noop", testFilePath: "out/m.spec.luau" },
+		]);
+	});
+
+	it("should leave perTestCoverage undefined when the run recorded no test", () => {
 		expect.assertions(1);
 
 		const payload = JSON.stringify({

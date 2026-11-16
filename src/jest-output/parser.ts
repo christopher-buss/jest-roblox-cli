@@ -175,7 +175,9 @@ function extractPerTestCoverage(runner: RunnerFields): Array<PerTestCoverageEntr
 		return undefined;
 	}
 
-	return validated.length > 0 ? validated : undefined;
+	return validated.length > 0
+		? validated.map((entry) => (Array.isArray(entry.delta) ? { ...entry, delta: {} } : entry))
+		: undefined;
 }
 
 function extractSnapshotWrites(runner: RunnerFields): SnapshotWrites | undefined {

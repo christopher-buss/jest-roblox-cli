@@ -13,7 +13,7 @@ export interface AttributionResult {
 	coveringTestIds: Record<string, Record<string, Array<string>>>;
 	/** Per Luau file: statement ids hit but credited to no test (ADR-0003). */
 	staticStatementIds: Record<string, Array<string>>;
-	/** Tests that covered at least one statement. */
+	/** Every test the run reported, including those that covered nothing. */
 	tests: Array<TestRecord>;
 }
 
@@ -35,13 +35,6 @@ export function harvestAttribution({
 	const coveringTestIds: AttributionResult["coveringTestIds"] = {};
 
 	for (const entry of entries) {
-		const hasCoveredAnything = Object.values(entry.delta).some(
-			(fileDelta) => fileDelta.s.length > 0,
-		);
-		if (!hasCoveredAnything) {
-			continue;
-		}
-
 		const testId = `${entry.testFilePath}::${entry.testCaseId}`;
 
 		tests.push({
@@ -51,7 +44,10 @@ export function harvestAttribution({
 			testId,
 		});
 
-		for (const [fileKey, fileDelta] of Object.entries(entry.delta)) {
+		const coveredFiles = Object.entries(entry.delta).filter(
+			([, fileDelta]) => fileDelta.s.length > 0,
+		);
+		for (const [fileKey, fileDelta] of coveredFiles) {
 			const fileAttribution = (coveringTestIds[fileKey] ??= {});
 			for (const statementId of fileDelta.s) {
 				(fileAttribution[String(statementId)] ??= []).push(testId);

@@ -43,9 +43,6 @@ function module.install(
 
 				local delta = Attribution.diff(before, getCoverage())
 				before = nil
-				if next(delta) == nil then
-					return
-				end
 
 				local state = getMatcherState()
 				table.insert(installation.records, {

@@ -157,7 +157,7 @@ describe(harvestAttribution, () => {
 		});
 	});
 
-	it("should drop a test that covered no statements", () => {
+	it("should record a test that covered no statements without crediting it", () => {
 		expect.assertions(2);
 
 		const result = harvestAttribution({
@@ -173,7 +173,10 @@ describe(harvestAttribution, () => {
 			resolveTestSource: () => ({ testFileSourceHash: "hash-a" }),
 		});
 
-		expect(result.tests).toStrictEqual([]);
+		expect(result.tests.map(({ testId }) => testId)).toStrictEqual([
+			"out/m.spec.luau::covers nothing",
+			"out/m.spec.luau::covers a file with no statements",
+		]);
 		expect(result.coveringTestIds).toStrictEqual({});
 	});
 

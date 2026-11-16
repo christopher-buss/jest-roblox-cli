@@ -93,7 +93,7 @@ export interface CoverageManifest {
 	rojoInputsHash?: string | undefined;
 	/** The shadow directory the manifest describes. */
 	shadowDir: string;
-	/** One record per test case that covered a statement. */
+	/** One record per test case the run reported, covering or not. */
 	tests?: Array<TestRecord>;
 	/** On-disk format version. */
 	version: typeof MANIFEST_VERSION;
