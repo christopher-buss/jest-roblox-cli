@@ -4,6 +4,12 @@ import * as fs from "node:fs";
 
 const VERBATIM_PREFIX = /^\/\/\?\//u;
 
+export interface SourcemapNode {
+	name: string;
+	children?: Array<SourcemapNode>;
+	filePaths?: Array<string>;
+}
+
 // A scope rather than a bare `type`, because the node refers to itself and
 // only an alias can carry that.
 const sourcemapNodeSchema = scope({
@@ -13,8 +19,6 @@ const sourcemapNodeSchema = scope({
 		"filePaths?": "string[]",
 	},
 }).export().sourcemapNode;
-
-export type SourcemapNode = typeof sourcemapNodeSchema.infer;
 
 /**
  * What rojo would build, read without building it. `sourcemap` names every

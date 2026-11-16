@@ -20,7 +20,8 @@
 				"@rbxts/types",
 				"better-typescript-lib",
 				"@isentinel/dict-rbxts",
-				"@isentinel/dict-roblox"
+				"@isentinel/dict-roblox",
+				"tsrs"
 			],
 			"ignoreUnresolved": ["^file:///.*/stryker[.]shared[.]config[.]ts$"],
 			"entry": [

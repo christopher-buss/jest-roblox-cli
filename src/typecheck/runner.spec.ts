@@ -553,7 +553,7 @@ describe(runTypecheckAsync, () => {
 		expect({ hint: error.hint, message: error.message }).toStrictEqual({
 			hint: "npm install -D typescript@7, or run without --typecheck/--typecheckOnly.",
 			message:
-				"Type tests need TypeScript 7 ('typescript' 7+, or '@typescript/native' beside TypeScript 6), an optional peer dependency that is not installed.",
+				"Type tests need a TypeScript 7 checker ('tsrs', 'typescript' 7+, or '@typescript/native' beside TypeScript 6), an optional peer dependency that is not installed.",
 		});
 	});
 
@@ -686,7 +686,7 @@ describe(runTypecheckAsync, () => {
 			expect.objectContaining({
 				hint: "npm install -D typescript@7, or run without --typecheck/--typecheckOnly.",
 				message:
-					"Type tests need TypeScript 7 ('typescript' 7+, or '@typescript/native' beside TypeScript 6), an optional peer dependency that is not installed.",
+					"Type tests need a TypeScript 7 checker ('tsrs', 'typescript' 7+, or '@typescript/native' beside TypeScript 6), an optional peer dependency that is not installed.",
 			}),
 		);
 	});

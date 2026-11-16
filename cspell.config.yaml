@@ -110,6 +110,7 @@ words:
   - thenBlock
   - thenExpr
   - thenbody
+  - tsrs
   - typealias
   - typeassertion
   - typefunction

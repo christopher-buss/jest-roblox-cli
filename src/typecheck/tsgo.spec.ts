@@ -116,6 +116,54 @@ describe(spawnTsgoAsync, () => {
 			}),
 		).rejects.toThrow("tsgo typecheck timed out after 1000ms (timeout)");
 	});
+
+	it("should spawn tsrs before any other checker", async () => {
+		expect.assertions(1);
+
+		const manifests: Record<string, string> = {
+			"@typescript/native": TSC_MANIFEST,
+			"@typescript/native-preview": JSON.stringify({
+				bin: { tsgo: "./bin/tsgo" },
+				version: "7.0.0-dev.20260707.2",
+			}),
+			"tsrs": JSON.stringify({ bin: { tsrs: "./bin/tsrs" }, version: "0.25.0-ts7.1.0-beta" }),
+			"typescript": TSC_MANIFEST,
+		};
+		const scripts: Array<string> = [];
+		const child: childProcess.ChildProcess = fromAny({ once: () => child });
+		const execFile: typeof childProcess.execFile = fromAny(
+			(
+				...[, commandArguments, , callback]: [
+					string,
+					Array<string>,
+					unknown,
+					(error: null, stdout: string, stderr: string) => void,
+				]
+			) => {
+				scripts.push(commandArguments[0]!);
+				callback(null, "", "");
+				return child;
+			},
+		);
+
+		await spawnTsgoAsync({
+			childProcess: fromAny({ execFile }),
+			files: [],
+			fileSystem: fromAny({
+				readFileSync: (filePath: string) => {
+					return manifests[
+						path.dirname(path.relative("/modules", filePath)).replaceAll("\\", "/")
+					];
+				},
+			}),
+			resolveModule: (specifier) => path.join("/modules", specifier),
+			rootDir: "/project",
+			runTimeout: 1000,
+			spawnTimeout: 1000,
+		});
+
+		expect(scripts[0]).toBe(path.join("/modules", "tsrs", "bin", "tsrs"));
+	});
 });
 
 describe("tsgo composite detection", () => {

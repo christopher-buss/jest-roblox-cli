@@ -28,7 +28,7 @@ export default mergeConfig(
 						include: [],
 						typecheck: {
 							build: true,
-							checker: "tsc",
+							checker: "tsrs",
 							enabled: true,
 							include: ["src/**/*.spec-d.ts"],
 							only: true,

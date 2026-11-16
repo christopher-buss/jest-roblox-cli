@@ -148,6 +148,7 @@
 		"publint": "0.3.24",
 		"remeda": "2.52.0",
 		"tsdown": "0.23.0",
+		"tsrs": "0.25.0-ts7.1.0-beta",
 		"type-fest": "5.7.0",
 		"typescript": "6.0.3",
 		"vitest": "5.1.0"
@@ -155,6 +156,7 @@
 	"peerDependencies": {
 		"@typescript/native": ">=7.0.0",
 		"@typescript/native-preview": ">=7.0.0-0",
+		"tsrs": ">=0.25.0-0",
 		"typescript": ">=7.0.0"
 	},
 	"peerDependenciesMeta": {
@@ -162,6 +164,9 @@
 			"optional": true
 		},
 		"@typescript/native-preview": {
+			"optional": true
+		},
+		"tsrs": {
 			"optional": true
 		},
 		"typescript": {

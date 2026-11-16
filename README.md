@@ -42,15 +42,22 @@ The npm package needs Node.js 24.12 or later. Each run also needs a backend:
 Roblox Studio with [rojo](https://rojo.space) on `PATH`, or Open Cloud
 credentials (see [Backends](#backends)).
 
-Type tests need TypeScript 7, an optional peer dependency. Install it only if
-you run `--typecheck` or `--typecheckOnly`; runtime tests do not use it.
+Type tests need a TypeScript 7 checker, an optional peer dependency. Install it
+only if you run `--typecheck` or `--typecheckOnly`; runtime tests do not use it.
 
 ```bash
 npm install -D typescript@7
 ```
 
+Type tests use [tsrs](https://github.com/oxc-project/tsrs) first when it is
+installed:
+
+```bash
+npm install -D tsrs
+```
+
 A project that keeps TypeScript 6 for other tools can install 7 beside it as
-`@typescript/native`, which type tests use first:
+`@typescript/native`, which type tests use before `typescript`:
 
 ```bash
 npm install -D @typescript/native@npm:typescript@7

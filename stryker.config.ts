@@ -6,7 +6,7 @@ import { type PartialStrykerOptions, sharedConfig } from "./stryker.shared.confi
 const CPU_SHARE = 0.75;
 const MAX_CONCURRENCY = 12;
 
-export default {
+const config: PartialStrykerOptions = {
 	...sharedConfig,
 	// Higher concurrency causes false timeouts that inflate the mutation score.
 	concurrency: Math.max(
@@ -41,4 +41,6 @@ export default {
 	vitest: {
 		configFile: join(import.meta.dirname, "vitest.stryker.config.ts"),
 	},
-} satisfies PartialStrykerOptions;
+};
+
+export default config;

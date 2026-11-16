@@ -10,8 +10,9 @@ import type { CheckerSpawnOptions, TypecheckOptions } from "./runner.ts";
 import { spawnCheckerAsync } from "./spawn-checker.ts";
 
 const MISSING_TSGO_MESSAGE =
-	"Type tests need TypeScript 7 ('typescript' 7+, or '@typescript/native' " +
-	"beside TypeScript 6), an optional peer dependency that is not installed.";
+	"Type tests need a TypeScript 7 checker ('tsrs', 'typescript' 7+, or " +
+	"'@typescript/native' beside TypeScript 6), an optional peer dependency " +
+	"that is not installed.";
 
 const MISSING_TSGO_HINT =
 	"npm install -D typescript@7, or run without --typecheck/--typecheckOnly.";
@@ -19,9 +20,10 @@ const MISSING_TSGO_HINT =
 // TypeScript's advice for running 7 beside 6 aliases 7 as `@typescript/native`;
 // `@typescript/native-preview` is the nightly package 7 replaced.
 const TSGO_PACKAGES = [
-	{ name: "@typescript/native", bin: "tsc" },
-	{ name: "typescript", bin: "tsc" },
-	{ name: "@typescript/native-preview", bin: "tsgo" },
+	{ name: "tsrs", bin: "tsrs", minimumMajor: 0 },
+	{ name: "@typescript/native", bin: "tsc", minimumMajor: 7 },
+	{ name: "typescript", bin: "tsc", minimumMajor: 7 },
+	{ name: "@typescript/native-preview", bin: "tsgo", minimumMajor: 7 },
 ] as const;
 
 const tsgoManifestSchema = type({
@@ -116,7 +118,7 @@ function resolveTsgoScript(
 	resolveModule: (specifier: string) => string,
 	fileSystem: FileSystem,
 ): string {
-	for (const { name, bin: binName } of TSGO_PACKAGES) {
+	for (const { name, bin: binName, minimumMajor } of TSGO_PACKAGES) {
 		const packageJsonPath = resolveManifest(resolveModule, name);
 		if (packageJsonPath === undefined) {
 			continue;
@@ -126,7 +128,7 @@ function resolveTsgoScript(
 			JSON.parse(fileSystem.readFileSync(packageJsonPath, "utf-8")),
 		);
 		const script = bin?.[binName];
-		if (script !== undefined && Number.parseInt(version, 10) >= 7) {
+		if (script !== undefined && Number.parseInt(version, 10) >= minimumMajor) {
 			return path.join(path.dirname(packageJsonPath), script);
 		}
 	}

@@ -288,7 +288,7 @@ export default defineConfig({
 					// the reference's emitted declarations and fails TS6305.
 					typecheck: {
 						build: true,
-						checker: "tsc",
+						checker: "tsrs",
 						enabled: true,
 						include: ["src/**/*.spec-d.ts", "loaders/**/*.spec-d.ts"],
 						only: true,
