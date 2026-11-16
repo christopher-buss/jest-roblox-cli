@@ -28,9 +28,10 @@ Run your roblox-ts and Luau tests inside Roblox, get results in your terminal.
 
 <!-- prettier-ignore -->
 > [!NOTE]
-> roblox-ts projects currently require
-> [@isentinel/roblox-ts](https://npmx.dev/package/@isentinel/roblox-ts) for
-> source maps and coverage support.
+> Source maps and coverage for roblox-ts projects need a compiler that writes
+> `.luau.map` files:
+> [sloptor](https://github.com/howmanyslop/sloptor) or
+> [@isentinel/roblox-ts](https://npmx.dev/package/@isentinel/roblox-ts).
 
 ## Install
 
