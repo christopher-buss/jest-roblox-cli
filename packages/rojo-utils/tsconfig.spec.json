@@ -9,7 +9,8 @@
 		"paths": {
 			"jest-extended": ["../../types/jest-extended.d.ts"]
 		},
-		"outDir": "./out-tsc/vitest"
+		"outDir": "./out-tsc/vitest",
+		"isolatedDeclarations": false
 	},
 	"references": [
 		{

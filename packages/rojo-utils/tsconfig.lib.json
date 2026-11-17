@@ -9,8 +9,7 @@
 		"rewriteRelativeImportExtensions": true,
 		"allowJs": false,
 		"noEmit": false,
-		"outDir": "dist",
-		"isolatedDeclarations": true
+		"outDir": "dist"
 	},
 	"references": [],
 	"include": ["src/**/*.ts"],

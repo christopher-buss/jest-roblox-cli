@@ -9,7 +9,8 @@
 		},
 		"types": [],
 		"emitDeclarationOnly": true,
-		"outDir": "./out-tsc/vitest"
+		"outDir": "./out-tsc/vitest",
+		"isolatedDeclarations": false
 	},
 	"references": [
 		{

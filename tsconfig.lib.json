@@ -8,8 +8,7 @@
 		"allowJs": false,
 		"emitDeclarationOnly": true,
 		"noEmit": false,
-		"outDir": "out",
-		"isolatedDeclarations": true
+		"outDir": "out"
 	},
 	"references": [
 		{
