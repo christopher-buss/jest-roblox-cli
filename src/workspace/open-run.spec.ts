@@ -1,6 +1,6 @@
 import * as path from "node:path";
 import process from "node:process";
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import { clockTimingCollector } from "#test/mocks/clock-timing-collector.ts";
 import { createLuteChildProcess } from "#test/mocks/lute-child-process.ts";
@@ -85,7 +85,7 @@ async function openEmptyFooAsync(overrides: Partial<ResolvedConfig> = {}) {
 }
 
 describe(openWorkspaceRunAsync, () => {
-	it("should error with no tests when passWithNoTests is false", async () => {
+	it("should error with no tests when passWithNoTests is false", async ({ expect }) => {
 		expect.assertions(1);
 
 		const pending = openEmptyFooAsync();
@@ -93,7 +93,9 @@ describe(openWorkspaceRunAsync, () => {
 		await expect(pending).rejects.toThrow("Could not determine luauRoots");
 	});
 
-	it("should still error for a truly empty package even with typecheck enabled", async () => {
+	it("should still error for a truly empty package even with typecheck enabled", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const pending = openEmptyFooAsync({
@@ -104,7 +106,7 @@ describe(openWorkspaceRunAsync, () => {
 		await expect(pending).rejects.toThrow("Could not determine luauRoots");
 	});
 
-	it("should surface preflight errors", async () => {
+	it("should surface preflight errors", async ({ expect }) => {
 		expect.assertions(3);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -128,7 +130,9 @@ describe(openWorkspaceRunAsync, () => {
 		expect(stderr).toHaveBeenCalledWith(expect.stringMatching(/@halcyon\/bar/));
 	});
 
-	it("should defer malformed rojo project to preflight without crashing ensure-paths", async () => {
+	it("should defer malformed rojo project to preflight without crashing ensure-paths", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -145,7 +149,7 @@ describe(openWorkspaceRunAsync, () => {
 		expect(stderr).toHaveBeenCalledWith(expect.stringMatching(/failed to parse rojoProject/));
 	});
 
-	it("should select the tests of a package that passes preflight", async () => {
+	it("should select the tests of a package that passes preflight", async ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = createMemoryFileSystem();

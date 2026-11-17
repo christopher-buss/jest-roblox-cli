@@ -1,17 +1,20 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { collectRojoMounts, resolveMountWithin } from "./root-reachability.ts";
 
 describe(resolveMountWithin, () => {
-	it.for(["/", "D:/"])("should exclude the namespace frame itself for %s", (frame) => {
-		expect.assertions(1);
+	it.for(["/", "D:/"])(
+		"should exclude the namespace frame itself for %s",
+		(frame, { expect }) => {
+			expect.assertions(1);
 
-		expect(resolveMountWithin(frame, { frame, rojoDirectory: frame })).toBeUndefined();
-	});
+			expect(resolveMountWithin(frame, { frame, rojoDirectory: frame })).toBeUndefined();
+		},
+	);
 });
 
 describe(collectRojoMounts, () => {
-	it("should return only declared mounts and collapse repeated paths", () => {
+	it("should return only declared mounts and collapse repeated paths", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -26,7 +29,7 @@ describe(collectRojoMounts, () => {
 		).toStrictEqual(new Set(["D:/project/out"]));
 	});
 
-	it("should return the inner path of an optional mount", () => {
+	it("should return the inner path of an optional mount", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(

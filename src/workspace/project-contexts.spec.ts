@@ -1,5 +1,5 @@
 import * as path from "node:path";
-import { assert, describe, expect, it, vi } from "vitest";
+import { assert, describe, it, vi } from "vitest";
 
 import { createLuteChildProcess } from "#test/mocks/lute-child-process.ts";
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
@@ -49,7 +49,9 @@ function loadedPackage(overrides: Partial<ResolvedConfig>): LoadedPackage {
 }
 
 describe(resolvePackageContextsAsync, () => {
-	it("should synthesize one project from only the directory mounts in the Rojo tree", async () => {
+	it("should synthesize one project from only the directory mounts in the Rojo tree", async ({
+		expect,
+	}) => {
 		expect.assertions(5);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -97,7 +99,7 @@ describe(resolvePackageContextsAsync, () => {
 		]);
 	});
 
-	it("should reject an implicit project whose roots have no Rojo mount", async () => {
+	it("should reject an implicit project whose roots have no Rojo mount", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({ [ROJO_PROJECT_PATH]: rojoProject("src") });
@@ -114,7 +116,9 @@ describe(resolvePackageContextsAsync, () => {
 		).rejects.toThrow("No test projects could be derived");
 	});
 
-	it("should read a project's jest.config.luau through the injected filesystem", async () => {
+	it("should read a project's jest.config.luau through the injected filesystem", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -138,7 +142,9 @@ describe(resolvePackageContextsAsync, () => {
 		expect(project.include).toStrictEqual(["src/shared/**/*.spec.luau"]);
 	});
 
-	it("should run a project's jest.config.luau that holds code through the injected runner", async () => {
+	it("should run a project's jest.config.luau that holds code through the injected runner", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -159,7 +165,7 @@ describe(resolvePackageContextsAsync, () => {
 		).rejects.toThrow('--version" printed "9.9.9"');
 	});
 
-	it("should build the setup resolver through the injected factory", async () => {
+	it("should build the setup resolver through the injected factory", async ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem } = createMemoryFileSystem({

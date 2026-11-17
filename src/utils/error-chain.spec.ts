@@ -1,11 +1,11 @@
 import { ApiError, PermissionError } from "@bedrock-rbx/ocale";
 
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { formatMissingScopes, walkErrorChain } from "./error-chain.ts";
 
 describe(formatMissingScopes, () => {
-	it("should list a single scope in the singular", () => {
+	it("should list a single scope in the singular", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(formatMissingScopes(["universe-places:write"])).toBe(
@@ -13,7 +13,7 @@ describe(formatMissingScopes, () => {
 		);
 	});
 
-	it("should list multiple scopes in the plural", () => {
+	it("should list multiple scopes in the plural", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(formatMissingScopes(["a", "b"])).toBe(
@@ -21,7 +21,7 @@ describe(formatMissingScopes, () => {
 		);
 	});
 
-	it("should fall back to a scope-less hint when no scopes are carried", () => {
+	it("should fall back to a scope-less hint when no scopes are carried", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(formatMissingScopes([])).toBe(
@@ -31,7 +31,7 @@ describe(formatMissingScopes, () => {
 });
 
 describe(walkErrorChain, () => {
-	it("should return a single entry with name and message for a bare Error", () => {
+	it("should return a single entry with name and message for a bare Error", ({ expect }) => {
 		expect.assertions(2);
 
 		const entries = walkErrorChain(new Error("something broke"));
@@ -40,13 +40,13 @@ describe(walkErrorChain, () => {
 		expect(entries[0]).toMatchObject({ name: "Error", message: "something broke" });
 	});
 
-	it("should return an empty array when given a non-Error input", () => {
+	it("should return an empty array when given a non-Error input", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(walkErrorChain(undefined)).toStrictEqual([]);
 	});
 
-	it("should treat null code/errno/syscall as absent on the entry", () => {
+	it("should treat null code/errno/syscall as absent on the entry", ({ expect }) => {
 		expect.assertions(3);
 
 		const cause = Object.assign(new Error("nulls everywhere"), {
@@ -62,7 +62,7 @@ describe(walkErrorChain, () => {
 		expect(entry!.syscall).toBeUndefined();
 	});
 
-	it("should walk Error.cause and emit entries in nest order", () => {
+	it("should walk Error.cause and emit entries in nest order", ({ expect }) => {
 		expect.assertions(3);
 
 		const inner = new Error("inner failure");
@@ -75,7 +75,7 @@ describe(walkErrorChain, () => {
 		expect(entries[1]).toMatchObject({ name: "Error", message: "inner failure" });
 	});
 
-	it("should capture node-style code, errno, and syscall on each entry", () => {
+	it("should capture node-style code, errno, and syscall on each entry", ({ expect }) => {
 		expect.assertions(1);
 
 		const cause = Object.assign(new Error("connect ECONNRESET 1.2.3.4:443"), {
@@ -95,7 +95,7 @@ describe(walkErrorChain, () => {
 		});
 	});
 
-	it("should cap output at five entries when the cause chain runs deeper", () => {
+	it("should cap output at five entries when the cause chain runs deeper", ({ expect }) => {
 		expect.assertions(3);
 
 		let chain = new Error("level 0");
@@ -110,7 +110,7 @@ describe(walkErrorChain, () => {
 		expect(entries[4]).toMatchObject({ message: "level 2" });
 	});
 
-	it("should capture the failing request and status from an ApiError link", () => {
+	it("should capture the failing request and status from an ApiError link", ({ expect }) => {
 		expect.assertions(1);
 
 		const cause = new ApiError("HTTP 500: Internal", {
@@ -128,7 +128,7 @@ describe(walkErrorChain, () => {
 		});
 	});
 
-	it("should carry a string details body through verbatim", () => {
+	it("should carry a string details body through verbatim", ({ expect }) => {
 		expect.assertions(1);
 
 		const cause = new ApiError("Failed to parse response body", {
@@ -141,7 +141,7 @@ describe(walkErrorChain, () => {
 		expect(entry!.details).toBe('{"path":"universes/1/luau-execution-session-tasks/abc","sta');
 	});
 
-	it("should encode a structured details body as JSON", () => {
+	it("should encode a structured details body as JSON", ({ expect }) => {
 		expect.assertions(1);
 
 		const cause = new ApiError("HTTP 400: Bad Request", {
@@ -154,7 +154,7 @@ describe(walkErrorChain, () => {
 		expect(entry!.details).toBe('{"code":"INVALID_ARGUMENT","message":"place is too large"}');
 	});
 
-	it("should leave details undefined for a plain Error", () => {
+	it("should leave details undefined for a plain Error", ({ expect }) => {
 		expect.assertions(1);
 
 		const [entry] = walkErrorChain(new Error("plain"));
@@ -162,7 +162,7 @@ describe(walkErrorChain, () => {
 		expect(entry!.details).toBeUndefined();
 	});
 
-	it("should capture requiredScopes from a PermissionError link", () => {
+	it("should capture requiredScopes from a PermissionError link", ({ expect }) => {
 		expect.assertions(1);
 
 		const cause = new PermissionError("insufficient scopes", {
@@ -176,7 +176,7 @@ describe(walkErrorChain, () => {
 		expect(entry!.requiredScopes).toStrictEqual(["universe-places:write"]);
 	});
 
-	it("should leave requiredScopes undefined for a plain Error", () => {
+	it("should leave requiredScopes undefined for a plain Error", ({ expect }) => {
 		expect.assertions(1);
 
 		const [entry] = walkErrorChain(new Error("plain"));
@@ -184,7 +184,7 @@ describe(walkErrorChain, () => {
 		expect(entry!.requiredScopes).toBeUndefined();
 	});
 
-	it("should terminate at the first non-Error link mid-chain", () => {
+	it("should terminate at the first non-Error link mid-chain", ({ expect }) => {
 		expect.assertions(1);
 
 		const middle = new Error("middle", { cause: "raw-string-cause" });

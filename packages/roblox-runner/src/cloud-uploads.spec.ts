@@ -10,7 +10,7 @@ import { fromAny } from "@total-typescript/shoehorn";
 
 import buffer from "node:buffer";
 import path from "node:path";
-import { assert, describe, expect, it, vi } from "vitest";
+import { assert, describe, it, vi } from "vitest";
 
 import { CloudUploads } from "./cloud-uploads.ts";
 
@@ -45,25 +45,28 @@ describe(CloudUploads, () => {
 	it.for([
 		{ kind: "Saved", publish: false },
 		{ kind: "Published", publish: true },
-	])("should retain place version and upload duration: %j", async ({ kind, publish }) => {
-		expect.assertions(2);
+	])(
+		"should retain place version and upload duration: %j",
+		async ({ kind, publish }, { expect }) => {
+			expect.assertions(2);
 
-		const clock = vi.spyOn(Date, "now").mockReturnValue(1000);
-		const { http, uploads } = makeUploads({
-			readFile: () => {
-				clock.mockReturnValue(1543);
-				return buffer.Buffer.from('<roblox version="4"></roblox>');
-			},
-		});
-		http.mockResponse({ body: { versionNumber: 9 }, status: 200 });
+			const clock = vi.spyOn(Date, "now").mockReturnValue(1000);
+			const { http, uploads } = makeUploads({
+				readFile: () => {
+					clock.mockReturnValue(1543);
+					return buffer.Buffer.from('<roblox version="4"></roblox>');
+				},
+			});
+			http.mockResponse({ body: { versionNumber: 9 }, status: 200 });
 
-		await expect(
-			uploads.uploadPlaceAsync({ placeFilePath: "place.rbxlx", publish }),
-		).resolves.toStrictEqual({ uploadMs: 543, versionNumber: 9 });
-		expect(http.requests[0]!.request.url).toContain(`versionType=${kind}`);
-	});
+			await expect(
+				uploads.uploadPlaceAsync({ placeFilePath: "place.rbxlx", publish }),
+			).resolves.toStrictEqual({ uploadMs: 543, versionNumber: 9 });
+			expect(http.requests[0]!.request.url).toContain(`versionType=${kind}`);
+		},
+	);
 
-	it("should retain binary resource, payload and upload duration", async () => {
+	it("should retain binary resource, payload and upload duration", async ({ expect }) => {
 		expect.assertions(2);
 
 		const clock = vi.spyOn(Date, "now").mockReturnValue(1000);
@@ -102,16 +105,16 @@ describe(CloudUploads, () => {
 		},
 	])(
 		"should surface a rejected allocation before uploading bytes: $message",
-		async ({ error, message }) => {
+		async ({ error, message }, { expect }) => {
 			expect.assertions(3);
 
 			const fetch = vi.fn<typeof globalThis.fetch>();
 			const { http, uploads } = makeUploads({ fetch });
 			http.mockError(error);
 
-			const caught: unknown = await uploads
+			const caught = await uploads
 				.uploadBinaryInputAsync({ payload: new Uint8Array() })
-				.catch((err: unknown) => err);
+				.catch((err) => err);
 			assert(caught instanceof Error);
 
 			expect(caught.message).toBe(message);
@@ -120,7 +123,7 @@ describe(CloudUploads, () => {
 		},
 	);
 
-	it("should retain storage response text on a refused binary PUT", async () => {
+	it("should retain storage response text on a refused binary PUT", async ({ expect }) => {
 		expect.assertions(1);
 
 		const fetch = vi.fn<typeof globalThis.fetch>(async () => {
@@ -140,7 +143,7 @@ describe(CloudUploads, () => {
 		);
 	});
 
-	it("should identify the place file and SDK cause on upload failure", async () => {
+	it("should identify the place file and SDK cause on upload failure", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { http, uploads } = makeUploads();
@@ -156,7 +159,7 @@ describe(CloudUploads, () => {
 		});
 	});
 
-	it("should send an XML place file as XML", async () => {
+	it("should send an XML place file as XML", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { http, uploads } = makeUploads();
@@ -166,7 +169,7 @@ describe(CloudUploads, () => {
 		expect(http.requests[0]!.request.headers!["content-type"]).toMatch(/xml/i);
 	});
 
-	it("should upload again when the same bytes are uploaded twice", async () => {
+	it("should upload again when the same bytes are uploaded twice", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { http, uploads } = makeUploads();
@@ -185,7 +188,7 @@ describe("place upload retries", () => {
 		{ publish: true, statusCode: 503 },
 	])(
 		"should retry a rejected upload on a transient $statusCode: publish=$publish",
-		async ({ publish, statusCode }) => {
+		async ({ publish, statusCode }, { expect }) => {
 			expect.assertions(2);
 
 			const { http, uploads } = makeUploads({ maxRetries: 1 });
@@ -213,7 +216,7 @@ describe("place upload retries", () => {
 			}),
 			kind: "connection reset",
 		},
-	])("should retry a place save after a $kind", async ({ error }) => {
+	])("should retry a place save after a $kind", async ({ error }, { expect }) => {
 		expect.assertions(2);
 
 		const { http, uploads } = makeUploads({ maxRetries: 1 });

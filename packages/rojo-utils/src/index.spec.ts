@@ -1,9 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import * as rojo from "./index.ts";
 
 describe("package interface", () => {
-	it("should expose the maintained resolver and mapping API", () => {
+	it("should expose the maintained resolver and mapping API", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(Object.keys(rojo).sort()).toStrictEqual(

@@ -1,6 +1,6 @@
 import { fromAny } from "@total-typescript/shoehorn";
 
-import { assert, describe, expect, it, vi } from "vitest";
+import { assert, describe, it, vi } from "vitest";
 
 import { numberNode } from "#test/helpers/unit/cst";
 import { cstTree } from "#test/helpers/unit/trees";
@@ -18,7 +18,7 @@ import type { CstNode, Token } from "./cst.ts";
 const UNION_AND_CALL = "type T = A | B\nlocal x = f(1, 2)\n";
 
 describe(someCstNode, () => {
-	it("should stop after the first matching node", () => {
+	it("should stop after the first matching node", ({ expect }) => {
 		expect.assertions(2);
 
 		const first = numberNode();
@@ -32,7 +32,7 @@ describe(someCstNode, () => {
 		expect(visited).toStrictEqual([first]);
 	});
 
-	it("should return false after checking every unmatched node", () => {
+	it("should return false after checking every unmatched node", ({ expect }) => {
 		expect.assertions(2);
 
 		const nodes = [numberNode(), numberNode()];
@@ -46,7 +46,7 @@ describe(someCstNode, () => {
 		expect(visited).toStrictEqual(nodes);
 	});
 
-	it("should search the nodes of punctuated entries and stop inside them", () => {
+	it("should search the nodes of punctuated entries and stop inside them", ({ expect }) => {
 		expect.assertions(2);
 
 		const visited: Array<string> = [];
@@ -71,7 +71,7 @@ describe(someCstNode, () => {
 		]);
 	});
 
-	it("should name a slot that holds no node, token, or list", () => {
+	it("should name a slot that holds no node, token, or list", ({ expect }) => {
 		expect.assertions(1);
 
 		const number = numberNode();
@@ -84,7 +84,7 @@ describe(someCstNode, () => {
 });
 
 describe(walkCst, () => {
-	it("should skip a claimed node's tokens", () => {
+	it("should skip a claimed node's tokens", ({ expect }) => {
 		expect.assertions(2);
 
 		const onToken = vi.fn<() => void>();
@@ -95,7 +95,9 @@ describe(walkCst, () => {
 		expect(onExit).not.toHaveBeenCalled();
 	});
 
-	it("should visit a union member's separator before it and a call argument's after it", () => {
+	it("should visit a union member's separator before it and a call argument's after it", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const tokens: Array<string> = [];
@@ -123,7 +125,7 @@ describe(walkCst, () => {
 		]);
 	});
 
-	it("should reject a node of an unknown kind", () => {
+	it("should reject a node of an unknown kind", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(() => {
@@ -131,7 +133,7 @@ describe(walkCst, () => {
 		}).toThrow("Mystery is not a node kind");
 	});
 
-	it("should reject a slot holding null", () => {
+	it("should reject a slot holding null", ({ expect }) => {
 		expect.assertions(1);
 
 		const number = numberNode();
@@ -152,7 +154,7 @@ describe("cST node classification", () => {
 		{ node: false, record: true, value: { type: 0 } },
 		{ node: false, record: true, value: { type: "unknown" } },
 		{ node: true, record: true, value: { type: "Number" } },
-	])("should classify tree value %#", ({ node, record, value }) => {
+	])("should classify tree value %#", ({ node, record, value }, { expect }) => {
 		expect.assertions(2);
 
 		expect(isRecord(value)).toBe(record);
@@ -161,7 +163,7 @@ describe("cST node classification", () => {
 });
 
 describe("cST traversal", () => {
-	it("should enumerate nodes and bounding tokens in lexical order", () => {
+	it("should enumerate nodes and bounding tokens in lexical order", ({ expect }) => {
 		expect.assertions(4);
 
 		const root = cstTree("return 1\n");
@@ -180,7 +182,7 @@ describe("cST traversal", () => {
 		expect(tokenBounds({ body: [], location: root.location, type: "Block" })).toBeUndefined();
 	});
 
-	it("should bound a node past empty edge slots and from both ends of a list", () => {
+	it("should bound a node past empty edge slots and from both ends of a list", ({ expect }) => {
 		expect.assertions(2);
 
 		const root = cstTree(UNION_AND_CALL);
@@ -196,7 +198,7 @@ describe("cST traversal", () => {
 		]);
 	});
 
-	it("should read a union member's separator before the member at either edge", () => {
+	it("should read a union member's separator before the member at either edge", ({ expect }) => {
 		expect.assertions(2);
 
 		const union = cstTree(UNION_AND_CALL).body.body[0]!;
@@ -208,7 +210,9 @@ describe("cST traversal", () => {
 		expect(tokenBounds(union.value)!.last.text).toBe("B");
 	});
 
-	it("should enter before children and exit after them while respecting skipped slots", () => {
+	it("should enter before children and exit after them while respecting skipped slots", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const events: Array<string> = [];
@@ -239,7 +243,7 @@ describe("cST traversal", () => {
 		["a token with no trivia", { text: "1" }],
 		["a node of an unknown kind", { type: "Mystery" }],
 		["a bare punctuated entry", { node: numberNode() }],
-	])("should reject a slot holding %s through every walk", ([, value]) => {
+	])("should reject a slot holding %s through every walk", ([, value], { expect }) => {
 		expect.assertions(5);
 
 		const number = numberNode();
@@ -259,7 +263,7 @@ describe("cST traversal", () => {
 		expect(() => tokenBounds(number)).toThrow(message);
 	});
 
-	it("should reject a malformed child slot with its node kind and slot name", () => {
+	it("should reject a malformed child slot with its node kind and slot name", ({ expect }) => {
 		expect.assertions(1);
 
 		const number = numberNode();

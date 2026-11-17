@@ -7,7 +7,7 @@ import {
 	validQueueItemBody,
 } from "@bedrock-rbx/ocale/testing";
 
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import { createMemoryStoreJanitor, type MemoryStoreJanitor } from "./memory-store-janitor.ts";
 
@@ -69,7 +69,7 @@ function mockEmptyProgress(http: FakeHttpClient): void {
 
 describe("memory store janitor", () => {
 	describe("queue drain", () => {
-		it("should sweep dequeue→discard until an empty read", async () => {
+		it("should sweep dequeue→discard until an empty read", async ({ expect }) => {
 			expect.assertions(4);
 
 			const http = createFakeHttpClient();
@@ -86,7 +86,9 @@ describe("memory store janitor", () => {
 			expect(http.requests[3]!.request.body).toStrictEqual({ readId: "read-2" });
 		});
 
-		it("should claim with a short invisibility window so a failed sweep re-exposes items fast", async () => {
+		it("should claim with a short invisibility window so a failed sweep re-exposes items fast", async ({
+			expect,
+		}) => {
 			expect.assertions(2);
 
 			const http = createFakeHttpClient();
@@ -99,7 +101,9 @@ describe("memory store janitor", () => {
 			expect(http.requests[0]!.request.url).toContain("invisibilityWindow=1s");
 		});
 
-		it("should be a no-op after a clean drain (one empty read, zero discards, no log)", async () => {
+		it("should be a no-op after a clean drain (one empty read, zero discards, no log)", async ({
+			expect,
+		}) => {
 			expect.assertions(3);
 
 			const http = createFakeHttpClient();
@@ -114,7 +118,9 @@ describe("memory store janitor", () => {
 			expect(log).not.toHaveBeenCalled();
 		});
 
-		it("should stay silent on the 404 the endpoint really ends a drain with", async () => {
+		it("should stay silent on the 404 the endpoint really ends a drain with", async ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			const http = createFakeHttpClient();
@@ -134,7 +140,9 @@ describe("memory store janitor", () => {
 			expect(log).not.toHaveBeenCalled();
 		});
 
-		it("should touch only its own queue and map, and never the universe flush endpoint", async () => {
+		it("should touch only its own queue and map, and never the universe flush endpoint", async ({
+			expect,
+		}) => {
 			expect.assertions(3);
 
 			const http = createFakeHttpClient();
@@ -151,15 +159,17 @@ describe("memory store janitor", () => {
 			const urls = http.requests.map(({ request }) => request.url);
 
 			expect(urls).toHaveLength(5);
-			expect(urls).toSatisfyAll((url: string) => {
+			expect(urls).toSatisfyAll((url) => {
 				return /\/memory-store\/(?:queues\/run-a-queue|sorted-maps\/run-a-progress)\//.test(
 					url,
 				);
 			});
-			expect(urls).toSatisfyAll((url: string) => !url.includes("memory-store:flush"));
+			expect(urls).toSatisfyAll((url) => !url.includes("memory-store:flush"));
 		});
 
-		it("should log and bail the drain on a dequeue failure, but still clean progress keys", async () => {
+		it("should log and bail the drain on a dequeue failure, but still clean progress keys", async ({
+			expect,
+		}) => {
 			expect.assertions(3);
 
 			const http = createFakeHttpClient();
@@ -174,7 +184,9 @@ describe("memory store janitor", () => {
 			);
 		});
 
-		it("should log and bail the drain on a discard failure, but still clean progress keys", async () => {
+		it("should log and bail the drain on a discard failure, but still clean progress keys", async ({
+			expect,
+		}) => {
 			expect.assertions(3);
 
 			const http = createFakeHttpClient();
@@ -193,7 +205,7 @@ describe("memory store janitor", () => {
 			);
 		});
 
-		it("should stop at the sweep cap when the queue never reads empty", async () => {
+		it("should stop at the sweep cap when the queue never reads empty", async ({ expect }) => {
 			expect.assertions(2);
 
 			const http = createFakeHttpClient();
@@ -210,7 +222,7 @@ describe("memory store janitor", () => {
 	});
 
 	describe("progress keys", () => {
-		it("should delete every key across list pages", async () => {
+		it("should delete every key across list pages", async ({ expect }) => {
 			expect.assertions(4);
 
 			const http = createFakeHttpClient();
@@ -241,7 +253,7 @@ describe("memory store janitor", () => {
 			);
 		});
 
-		it("should delete the keys of every map it was given", async () => {
+		it("should delete the keys of every map it was given", async ({ expect }) => {
 			expect.assertions(3);
 
 			const http = createFakeHttpClient();
@@ -268,7 +280,7 @@ describe("memory store janitor", () => {
 			);
 		});
 
-		it("should clean the next map when one map's list fails", async () => {
+		it("should clean the next map when one map's list fails", async ({ expect }) => {
 			expect.assertions(2);
 
 			const http = createFakeHttpClient();
@@ -286,7 +298,9 @@ describe("memory store janitor", () => {
 			expect(http.requests[2]!.request.url).toContain("/sorted-maps/run-a-settle/");
 		});
 
-		it("should log a failed delete and continue with the remaining keys", async () => {
+		it("should log a failed delete and continue with the remaining keys", async ({
+			expect,
+		}) => {
 			expect.assertions(3);
 
 			const http = createFakeHttpClient();
@@ -313,7 +327,7 @@ describe("memory store janitor", () => {
 	});
 
 	describe("reclaim pass", () => {
-		it("should outwait the claim window, then sweep the items it hid", async () => {
+		it("should outwait the claim window, then sweep the items it hid", async ({ expect }) => {
 			expect.assertions(3);
 
 			const http = createFakeHttpClient();
@@ -329,7 +343,9 @@ describe("memory store janitor", () => {
 			expect(http.requests[1]!.request.body).toStrictEqual({ readId: "read-late" });
 		});
 
-		it("should delete the progress keys a starved task rewrote during the wait", async () => {
+		it("should delete the progress keys a starved task rewrote during the wait", async ({
+			expect,
+		}) => {
 			expect.assertions(2);
 
 			const http = createFakeHttpClient();
@@ -349,7 +365,9 @@ describe("memory store janitor", () => {
 			);
 		});
 
-		it("should cap the wait at the caller's reclaim budget and record the shortfall", async () => {
+		it("should cap the wait at the caller's reclaim budget and record the shortfall", async ({
+			expect,
+		}) => {
 			expect.assertions(2);
 
 			const http = createFakeHttpClient();
@@ -370,7 +388,7 @@ describe("memory store janitor", () => {
 			);
 		});
 
-		it("should leave a clean cleanup with no wait at all", async () => {
+		it("should leave a clean cleanup with no wait at all", async ({ expect }) => {
 			expect.assertions(2);
 
 			const http = createFakeHttpClient();
@@ -386,7 +404,7 @@ describe("memory store janitor", () => {
 	});
 
 	describe("best effort", () => {
-		it("should resolve (never reject) when every call fails", async () => {
+		it("should resolve (never reject) when every call fails", async ({ expect }) => {
 			expect.assertions(1);
 
 			const http = createFakeHttpClient();
@@ -397,7 +415,7 @@ describe("memory store janitor", () => {
 			expect(log).toHaveBeenCalledTimes(2);
 		});
 
-		it("should default the wait seam to a real timer", async () => {
+		it("should default the wait seam to a real timer", async ({ expect }) => {
 			expect.assertions(1);
 
 			const http = createFakeHttpClient();
@@ -411,7 +429,7 @@ describe("memory store janitor", () => {
 			).resolves.toBeUndefined();
 		});
 
-		it("should default the log seam to a no-op", async () => {
+		it("should default the log seam to a no-op", async ({ expect }) => {
 			expect.assertions(1);
 
 			const http = createFakeHttpClient();
@@ -430,7 +448,9 @@ async function cleanupWithLogAsync(http: Parameters<typeof makeJanitor>[0]) {
 }
 
 describe("reclaim boundary", () => {
-	it("should describe complete reclaim waits when the budget exactly fits the claim window", async () => {
+	it("should describe complete reclaim waits when the budget exactly fits the claim window", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const http = createFakeHttpClient();

@@ -1,5 +1,5 @@
 import * as path from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import { MANIFEST_VERSION } from "#test/mocks/coverage-versions.ts";
 import type { MemoryVolume } from "#test/mocks/memory-file-system.ts";
@@ -76,7 +76,9 @@ function prepareAndPublish(
 }
 
 describe(prepareShadowTree, () => {
-	it("should key files under the source prefix and pair each root with its shadow", () => {
+	it("should key files under the source prefix and pair each root with its shadow", ({
+		expect,
+	}) => {
 		expect.assertions(3);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -94,7 +96,7 @@ describe(prepareShadowTree, () => {
 		expect(tree.luauRoots).toStrictEqual([posixRoot("out")]);
 	});
 
-	it("should key files by the bare root when the prefix is empty", () => {
+	it("should key files by the bare root when the prefix is empty", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -110,7 +112,7 @@ describe(prepareShadowTree, () => {
 		expect(Object.keys(tree.files)).toStrictEqual(["out/init.luau"]);
 	});
 
-	it("should keep the prior tree when a root is added", () => {
+	it("should keep the prior tree when a root is added", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -131,7 +133,7 @@ describe(prepareShadowTree, () => {
 			{ universe: { digest: "current", includes: () => true } },
 			{ coverageUniverseHash: "previous" },
 		],
-	] as const)("should wipe the prior tree when %s", ([, inputs, manifestPatch]) => {
+	] as const)("should wipe the prior tree when %s", ([, inputs, manifestPatch], { expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -143,7 +145,7 @@ describe(prepareShadowTree, () => {
 		expect(tree.isIncremental).toBeFalse();
 	});
 
-	it("should wipe the prior tree when a root is dropped", () => {
+	it("should wipe the prior tree when a root is dropped", ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -159,7 +161,7 @@ describe(prepareShadowTree, () => {
 });
 
 describe(createCoverageManifest, () => {
-	it("should record the frame-relative roots and the build fields", () => {
+	it("should record the frame-relative roots and the build fields", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();

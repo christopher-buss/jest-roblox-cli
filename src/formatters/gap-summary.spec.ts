@@ -1,6 +1,6 @@
 import { fromPartial } from "@total-typescript/shoehorn";
 
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import type { SourceMapper } from "../source-mapper/index.ts";
 import type { JestResult, TestCaseResult, TestFileResult } from "../types/jest-result-types.ts";
@@ -24,7 +24,7 @@ function result(...testResults: Array<TestFileResult>): JestResult {
 }
 
 describe(formatGapSummary, () => {
-	it("should return undefined when no test is Blocked", () => {
+	it("should return undefined when no test is Blocked", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -34,7 +34,7 @@ describe(formatGapSummary, () => {
 		).toBeUndefined();
 	});
 
-	it("should name each Blocked test with its gaps, sorted by member", () => {
+	it("should name each Blocked test with its gaps, sorted by member", ({ expect }) => {
 		expect.assertions(1);
 
 		const summary = formatGapSummary(
@@ -65,7 +65,9 @@ describe(formatGapSummary, () => {
 		);
 	});
 
-	it("should block every test of a file with a file-level gap, and name a file with no test", () => {
+	it("should block every test of a file with a file-level gap, and name a file with no test", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const summary = formatGapSummary(
@@ -92,7 +94,7 @@ describe(formatGapSummary, () => {
 		);
 	});
 
-	it("should add the position in its file to a test whose name repeats there", () => {
+	it("should add the position in its file to a test whose name repeats there", ({ expect }) => {
 		expect.assertions(1);
 
 		const summary = formatGapSummary(
@@ -121,7 +123,7 @@ describe(formatGapSummary, () => {
 		);
 	});
 
-	it("should show each test file by its display path", () => {
+	it("should show each test file by its display path", ({ expect }) => {
 		expect.assertions(1);
 
 		const sourceMapper = fromPartial<SourceMapper>({

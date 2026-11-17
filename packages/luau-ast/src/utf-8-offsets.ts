@@ -53,7 +53,7 @@ export function createUtf8OffsetMap(text: string): Utf8OffsetMap {
 
 	return {
 		byteLength,
-		toUtf16: (offset: number): number => {
+		toUtf16: (offset): number => {
 			const clamped = Math.min(Math.max(offset, 0), byteLength);
 			const mapped = utf16Offsets[clamped];
 			assert(mapped !== undefined, "Clamped byte offset must be within the map");

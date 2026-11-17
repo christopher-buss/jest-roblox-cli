@@ -1,10 +1,10 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { readTimingSetting, settleRunEntry } from "./run-entry-options.ts";
 
 describe(readTimingSetting, () => {
-	it("should enable timing only when TIMING is set", () => {
+	it("should enable timing only when TIMING is set", ({ expect }) => {
 		expect.assertions(2);
 
 		vi.stubEnv("TIMING", undefined);
@@ -18,7 +18,7 @@ describe(readTimingSetting, () => {
 });
 
 describe(settleRunEntry, () => {
-	it("should keep the caller's file system", () => {
+	it("should keep the caller's file system", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();

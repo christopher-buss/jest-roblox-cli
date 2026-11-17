@@ -1,6 +1,6 @@
 import { type } from "arktype";
 import { Buffer } from "node:buffer";
-import { assert, describe, expect, it } from "vitest";
+import { assert, describe, it } from "vitest";
 
 import { buildIstanbulHtmlAssetsModule, ISTANBUL_HTML_ASSETS_ID } from "./istanbul-html-assets.mjs";
 
@@ -35,13 +35,13 @@ function decodeAsset(asset: BuiltAssets["html"][number]): Buffer {
 }
 
 describe("istanbul html assets module", () => {
-	it("should be named for the specifier the source imports", () => {
+	it("should be named for the specifier the source imports", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(ISTANBUL_HTML_ASSETS_ID).toBe("virtual:istanbul-html-assets");
 	});
 
-	it("should carry the html reporter's own assets and its vendor directory", () => {
+	it("should carry the html reporter's own assets and its vendor directory", ({ expect }) => {
 		expect.assertions(2);
 
 		const assets = buildAssets();
@@ -53,7 +53,7 @@ describe("istanbul html assets module", () => {
 		expect(names).toContain("prettify.js");
 	});
 
-	it("should carry text as text and bytes as base64", () => {
+	it("should carry text as text and bytes as base64", ({ expect }) => {
 		expect.assertions(2);
 
 		const assets = buildAssets();
@@ -67,7 +67,7 @@ describe("istanbul html assets module", () => {
 		expect(favicon.subarray(0, 4).toString("hex")).toBe("89504e47");
 	});
 
-	it("should carry the html-spa bundle", () => {
+	it("should carry the html-spa bundle", ({ expect }) => {
 		expect.assertions(1);
 
 		const assets = buildAssets();

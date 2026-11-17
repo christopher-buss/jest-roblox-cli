@@ -11,7 +11,7 @@ import type { CstPosition, CstSourcemapSegment } from "@isentinel/luau-ast";
 import { forEachCstNode } from "@isentinel/luau-ast/cst";
 import type { CstIndexName, CstLocalDeclaration, CstNode, CstRoot } from "@isentinel/luau-ast/cst";
 
-import { assert, describe, expect, it } from "vitest";
+import { assert, describe, it } from "vitest";
 
 import { parseCst } from "#test/helpers/integration/parse-cst";
 
@@ -88,7 +88,9 @@ function bindingOf(root: CstRoot, name: string): number {
 }
 
 describe(renameBinding, () => {
-	it("should rename every declaration and reference of the binding and nothing else", () => {
+	it("should rename every declaration and reference of the binding and nothing else", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const root = parseCst("local x = 1\ndo\n\tlocal x = 2\n\tprint(x)\nend\nreturn x + x\n");
@@ -102,7 +104,9 @@ describe(renameBinding, () => {
 });
 
 describe(printCstMapped, () => {
-	it("should map a renamed token to the original line and UTF-16 column past multi-byte text", () => {
+	it("should map a renamed token to the original line and UTF-16 column past multi-byte text", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		// `local x` sits after a two-byte `é` and a three-byte `€`, so the
@@ -122,7 +126,9 @@ describe(printCstMapped, () => {
 		]);
 	});
 
-	it("should map a token after an inserted statement separator to its original position", () => {
+	it("should map a token after an inserted statement separator to its original position", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const source = "f()\n_G.cfg.x = 1\n";
@@ -150,7 +156,7 @@ describe(printCstMapped, () => {
 		});
 	});
 
-	it("should omit attribution when an edit surface does not expose a caller", () => {
+	it("should omit attribution when an edit surface does not expose a caller", ({ expect }) => {
 		expect.assertions(1);
 
 		const source = "return value\n";
@@ -174,7 +180,7 @@ describe(printCstMapped, () => {
 });
 
 describe(printCst, () => {
-	it("should preserve the origins of an existing replacement subtree", () => {
+	it("should preserve the origins of an existing replacement subtree", ({ expect }) => {
 		expect.assertions(1);
 
 		const root = parseCst("local value = 1\nreturn value\n");
@@ -188,7 +194,9 @@ describe(printCst, () => {
 		expect(printCst(root, edits)).toContain("return value");
 	});
 
-	it("should separate a printed parenthesized statement from the preceding call", () => {
+	it("should separate a printed parenthesized statement from the preceding call", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const root = parseCst("f()\n_G.cfg.x = 1\n");
@@ -199,7 +207,7 @@ describe(printCst, () => {
 		expect(printCst(root, edits)).toBe("f()\n;(nil).x = 1\n");
 	});
 
-	it("should leave a parenthesized first statement without a separator", () => {
+	it("should leave a parenthesized first statement without a separator", ({ expect }) => {
 		expect.assertions(1);
 
 		const root = parseCst("_G.cfg.x = 1\n");
@@ -210,7 +218,7 @@ describe(printCst, () => {
 		expect(printCst(root, edits)).toBe("(nil).x = 1\n");
 	});
 
-	it("should ignore a removed predecessor when separating statements", () => {
+	it("should ignore a removed predecessor when separating statements", ({ expect }) => {
 		expect.assertions(1);
 
 		const root = parseCst("local y = 1\n_G.cfg.x = 1\n");
@@ -222,7 +230,7 @@ describe(printCst, () => {
 		expect(printCst(root, edits)).toBe("(nil).x = 1\n");
 	});
 
-	it("should separate statements that become neighbors after a removal", () => {
+	it("should separate statements that become neighbors after a removal", ({ expect }) => {
 		expect.assertions(1);
 
 		const root = parseCst("f()\nlocal y = 1\n_G.cfg.x = 1\n");
@@ -234,7 +242,7 @@ describe(printCst, () => {
 		expect(printCst(root, edits)).toBe("f()\n;(nil).x = 1\n");
 	});
 
-	it("should count a constructed statement block as a printed predecessor", () => {
+	it("should count a constructed statement block as a printed predecessor", ({ expect }) => {
 		expect.assertions(1);
 
 		const root = parseCst("f()\n_G.cfg.x = 1\n");
@@ -253,7 +261,7 @@ describe(printCst, () => {
 		expect(printCst(root, edits)).toBe("g()\n;(nil).x = 1\n");
 	});
 
-	it("should ignore a whitespace-only statement replacement as a predecessor", () => {
+	it("should ignore a whitespace-only statement replacement as a predecessor", ({ expect }) => {
 		expect.assertions(1);
 
 		const root = parseCst("f()\n_G.cfg.x = 1\n");
@@ -274,7 +282,7 @@ describe(printCst, () => {
 });
 
 describe(renameBindings, () => {
-	it("should rename each listed binding and leave the rest", () => {
+	it("should rename each listed binding and leave the rest", ({ expect }) => {
 		expect.assertions(1);
 
 		const root = parseCst("local x = 1\nlocal y = x\nlocal z = y\nreturn z\n");
@@ -292,7 +300,9 @@ describe(renameBindings, () => {
 });
 
 describe(createCstEdits, () => {
-	it("should keep a header comment and leave no blank line when a statement is removed with leading trivia kept", () => {
+	it("should keep a header comment and leave no blank line when a statement is removed with leading trivia kept", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const root = parseCst("-- header\nlocal boilerplate = 1\nreturn 2\n");
@@ -307,7 +317,7 @@ describe(createCstEdits, () => {
 		expect(printCst(root, edits)).toBe("-- header\nreturn 2\n");
 	});
 
-	it("should print replacement text between the replaced node's outer trivia", () => {
+	it("should print replacement text between the replaced node's outer trivia", ({ expect }) => {
 		expect.assertions(1);
 
 		const root = parseCst("local a = 1\n\nlocal b = f(a) -- call\nreturn b\n");
@@ -322,7 +332,9 @@ describe(createCstEdits, () => {
 		expect(printCst(root, edits)).toBe("local a = 1\n\nlocal b = a -- call\nreturn b\n");
 	});
 
-	it("should remove an indented line with its indentation and keep the comment above", () => {
+	it("should remove an indented line with its indentation and keep the comment above", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const root = parseCst("do\n\t-- c\n\tlocal x = 1\n\tprint(x)\nend\n");
@@ -335,7 +347,7 @@ describe(createCstEdits, () => {
 		expect(printCst(root, edits)).toBe("do\n\t-- c\n\tprint(x)\nend\n");
 	});
 
-	it("should keep the whitespace on both sides of a removed mid-line statement", () => {
+	it("should keep the whitespace on both sides of a removed mid-line statement", ({ expect }) => {
 		expect.assertions(1);
 
 		const root = parseCst("do local x = 1 end\n");
@@ -348,7 +360,7 @@ describe(createCstEdits, () => {
 		expect(printCst(root, edits)).toBe("do  end\n");
 	});
 
-	it("should keep a block comment that shares the removed statement's line", () => {
+	it("should keep a block comment that shares the removed statement's line", ({ expect }) => {
 		expect.assertions(1);
 
 		const root = parseCst("--[[c]] local x = 1\nlocal y = 2\n");
@@ -359,7 +371,7 @@ describe(createCstEdits, () => {
 		expect(printCst(root, edits)).toBe("--[[c]] \nlocal y = 2\n");
 	});
 
-	it("should remove the last statement of a file that has no trailing newline", () => {
+	it("should remove the last statement of a file that has no trailing newline", ({ expect }) => {
 		expect.assertions(1);
 
 		const root = parseCst("local y = 2\nlocal x = 1");
@@ -370,7 +382,7 @@ describe(createCstEdits, () => {
 		expect(printCst(root, edits)).toBe("local y = 2\n");
 	});
 
-	it("should keep a trailing comment on a removed statement's line", () => {
+	it("should keep a trailing comment on a removed statement's line", ({ expect }) => {
 		expect.assertions(1);
 
 		const root = parseCst("local x = 1 -- keep\nlocal y = 2\n");
@@ -381,7 +393,7 @@ describe(createCstEdits, () => {
 		expect(printCst(root, edits)).toBe(" -- keep\nlocal y = 2\n");
 	});
 
-	it("should drop both sides' trivia around replacement text when asked", () => {
+	it("should drop both sides' trivia around replacement text when asked", ({ expect }) => {
 		expect.assertions(1);
 
 		const root = parseCst("-- above\nlocal dep = f(1) -- import\n");
@@ -396,7 +408,9 @@ describe(createCstEdits, () => {
 		expect(printCst(root, edits)).toBe("return 1");
 	});
 
-	it("should drop the comment above a statement removed with leading trivia dropped", () => {
+	it("should drop the comment above a statement removed with leading trivia dropped", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const root = parseCst("local a = 1\n-- about b\nlocal b = 2\nreturn a\n");
@@ -411,7 +425,9 @@ describe(createCstEdits, () => {
 		expect(printCst(root, edits)).toBe("local a = 1\nreturn a\n");
 	});
 
-	it("should take the indentation with an indented statement it removes, keeping what is above", () => {
+	it("should take the indentation with an indented statement it removes, keeping what is above", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const root = parseCst("do\n\n\t-- about b\n\tlocal b = 2\n\treturn 1\nend\n");
@@ -423,7 +439,9 @@ describe(createCstEdits, () => {
 		expect(printCst(root, edits)).toBe("do\n\n\t-- about b\n\treturn 1\nend\n");
 	});
 
-	it("should remove a statement that opens the file, which has no leading trivia", () => {
+	it("should remove a statement that opens the file, which has no leading trivia", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const root = parseCst("local a = 1\nreturn 2\n");
@@ -434,7 +452,9 @@ describe(createCstEdits, () => {
 		expect(printCst(root, edits)).toBe("return 2\n");
 	});
 
-	it("should drop indentation that follows a comment on the line above a removed statement", () => {
+	it("should drop indentation that follows a comment on the line above a removed statement", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const root = parseCst("local a = 1 -- one\n\tlocal b = 2\nreturn a\n");
@@ -447,7 +467,7 @@ describe(createCstEdits, () => {
 });
 
 describe("replacement conflicts", () => {
-	it("should throw naming both callers when two replacements target one node", () => {
+	it("should throw naming both callers when two replacements target one node", ({ expect }) => {
 		expect.assertions(1);
 
 		const root = parseCst("local x = 1\n");
@@ -477,7 +497,7 @@ function firstCall(root: CstNode): Extract<CstNode, { type: "Call" }> {
 }
 
 describe("node construction", () => {
-	it("should splice a constructed statement list over a statement and re-parse", () => {
+	it("should splice a constructed statement list over a statement and re-parse", ({ expect }) => {
 		expect.assertions(2);
 
 		const root = parseCst("-- header\nlocal v = f()\nreturn v\n");
@@ -495,7 +515,9 @@ describe("node construction", () => {
 		expect(parser.parse(code).ok).toBeTrue();
 	});
 
-	it("should map a splice inside a constructed subtree to the host node once the subtree is spliced", () => {
+	it("should map a splice inside a constructed subtree to the host node once the subtree is spliced", ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const source = "local v = f()\nreturn v\n";
@@ -522,7 +544,7 @@ describe("node construction", () => {
 		});
 	});
 
-	it("should reject an expression snippet that does not parse", () => {
+	it("should reject an expression snippet that does not parse", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(() => loadLuauParser().constructExpression("1 +")).toThrow(
@@ -530,7 +552,7 @@ describe("node construction", () => {
 		);
 	});
 
-	it("should reject a snippet of two expressions", () => {
+	it("should reject a snippet of two expressions", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(() => loadLuauParser().constructExpression("1, 2")).toThrow(
@@ -538,7 +560,7 @@ describe("node construction", () => {
 		);
 	});
 
-	it("should reject an empty expression snippet", () => {
+	it("should reject an empty expression snippet", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(() => loadLuauParser().constructExpression("")).toThrow(
@@ -546,7 +568,9 @@ describe("node construction", () => {
 		);
 	});
 
-	it("should splice a constructed expression over a call, re-parse, and map its tokens to the call's first token", () => {
+	it("should splice a constructed expression over a call, re-parse, and map its tokens to the call's first token", ({
+		expect,
+	}) => {
 		expect.assertions(3);
 
 		const source = "local v = compute(1, 2) -- note\nreturn v\n";

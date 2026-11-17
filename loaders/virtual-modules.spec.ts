@@ -1,9 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { virtualModulesPlugin } from "./virtual-modules.mjs";
 
 describe(virtualModulesPlugin, () => {
-	it("should resolve and build a virtual module in the bundle", () => {
+	it("should resolve and build a virtual module in the bundle", ({ expect }) => {
 		expect.assertions(2);
 
 		const plugin = virtualModulesPlugin();
@@ -17,13 +17,13 @@ describe(virtualModulesPlugin, () => {
 		);
 	});
 
-	it("should name itself for build diagnostics", () => {
+	it("should name itself for build diagnostics", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(virtualModulesPlugin().name).toBe("virtual-modules");
 	});
 
-	it("should leave every other module to the next plugin", () => {
+	it("should leave every other module to the next plugin", ({ expect }) => {
 		expect.assertions(2);
 
 		const plugin = virtualModulesPlugin();

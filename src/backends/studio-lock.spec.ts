@@ -1,4 +1,4 @@
-import { describe, expect, it, onTestFinished, vi } from "vitest";
+import { describe, it, type TestContext, vi } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { clearStaleLock, watchLockRelease } from "./studio-lock.ts";
@@ -6,7 +6,7 @@ import { clearStaleLock, watchLockRelease } from "./studio-lock.ts";
 const PLACE_FILE = "C:/work/place.rbxl";
 const LOCK_FILE = `${PLACE_FILE}.lock`;
 
-function useFakeTimers(): void {
+function useFakeTimers(onTestFinished: TestContext["onTestFinished"]): void {
 	vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
 	onTestFinished(() => {
 		vi.useRealTimers();
@@ -14,7 +14,7 @@ function useFakeTimers(): void {
 }
 
 describe(clearStaleLock, () => {
-	it("should remove the place lock and name it", () => {
+	it("should remove the place lock and name it", ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = createMemoryFileSystem({ [LOCK_FILE]: "" });
@@ -23,7 +23,7 @@ describe(clearStaleLock, () => {
 		expect(volume.existsSync(LOCK_FILE)).toBeFalse();
 	});
 
-	it("should accept a place with no lock", () => {
+	it("should accept a place with no lock", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -33,10 +33,10 @@ describe(clearStaleLock, () => {
 });
 
 describe(watchLockRelease, () => {
-	it("should terminate once the lock is released", () => {
+	it("should terminate once the lock is released", ({ expect, onTestFinished }) => {
 		expect.assertions(2);
 
-		useFakeTimers();
+		useFakeTimers(onTestFinished);
 		const { fileSystem, volume } = createMemoryFileSystem({ [LOCK_FILE]: "" });
 		const terminate = vi.fn<() => void>();
 		watchLockRelease({ fileSystem, graceCapMs: 10_000, lockFile: LOCK_FILE, terminate });
@@ -50,10 +50,13 @@ describe(watchLockRelease, () => {
 		expect(terminate).toHaveBeenCalledOnce();
 	});
 
-	it("should terminate at the grace cap while the lock is still held", () => {
+	it("should terminate at the grace cap while the lock is still held", ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(1);
 
-		useFakeTimers();
+		useFakeTimers(onTestFinished);
 		const { fileSystem } = createMemoryFileSystem({ [LOCK_FILE]: "" });
 		const terminate = vi.fn<() => void>();
 		watchLockRelease({ fileSystem, graceCapMs: 1000, lockFile: LOCK_FILE, terminate });

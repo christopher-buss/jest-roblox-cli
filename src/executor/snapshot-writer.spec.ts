@@ -3,7 +3,7 @@ import { fromAny } from "@total-typescript/shoehorn";
 import * as path from "node:path";
 import process from "node:process";
 import { stripVTControlCharacters } from "node:util";
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
@@ -35,7 +35,7 @@ function seedProject(fileSystem: FileSystem): void {
 }
 
 describe(writeSnapshots, () => {
-	it("should write a mapped snapshot to both source and output directories", () => {
+	it("should write a mapped snapshot to both source and output directories", ({ expect }) => {
 		expect.assertions(3);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -59,7 +59,7 @@ describe(writeSnapshots, () => {
 		).toBe("snapshot body");
 	});
 
-	it("should count unresolved paths as failures and report partial success", () => {
+	it("should count unresolved paths as failures and report partial success", ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -82,7 +82,7 @@ describe(writeSnapshots, () => {
 		expect(stderr).toHaveBeenCalledWith("Wrote 1 of 2 snapshot files\n");
 	});
 
-	it("should use singular and plural success summaries", () => {
+	it("should use singular and plural success summaries", ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -113,7 +113,7 @@ describe(writeSnapshots, () => {
 		expect(stderr).toHaveBeenLastCalledWith("Wrote 2 snapshot files\n");
 	});
 
-	it("should fail the entire batch when the configured project is missing", () => {
+	it("should fail the entire batch when the configured project is missing", ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -135,7 +135,7 @@ describe(writeSnapshots, () => {
 		);
 	});
 
-	it("should not print a success summary when every path is unresolved", () => {
+	it("should not print a success summary when every path is unresolved", ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -155,7 +155,7 @@ describe(writeSnapshots, () => {
 		expect(stderr).not.toHaveBeenCalledWith(expect.stringMatching(/^Wrote /));
 	});
 
-	it("should report malformed project JSON with its source path", () => {
+	it("should report malformed project JSON with its source path", ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -180,7 +180,7 @@ describe(writeSnapshots, () => {
 		expect(stripVTControlCharacters(warning)).toContain(`File: ${projectPath}`);
 	});
 
-	it("should count a filesystem write error as a failed snapshot", () => {
+	it("should count a filesystem write error as a failed snapshot", ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -188,9 +188,7 @@ describe(writeSnapshots, () => {
 		seedProject(fileSystem);
 
 		const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
-		vi.spyOn(fileSystem, "writeFileSync").mockImplementation(() => {
-			throw new Error("disk full");
-		});
+		vi.spyOn(fileSystem, "writeFileSync").mockThrow(new Error("disk full"));
 
 		expect(
 			writeSnapshots({

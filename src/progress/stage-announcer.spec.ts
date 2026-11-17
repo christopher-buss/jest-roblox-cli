@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import type { RunProgress } from "./run-progress.ts";
 import { createStageAnnouncer } from "./stage-announcer.ts";
@@ -25,7 +25,7 @@ function createRecordingProgress(): { calls: Array<string>; progress: RunProgres
 }
 
 describe(createStageAnnouncer, () => {
-	it("should open and close the stage a span stands for", () => {
+	it("should open and close the stage a span stands for", ({ expect }) => {
 		expect.assertions(1);
 
 		const { calls, progress } = createRecordingProgress();
@@ -44,7 +44,7 @@ describe(createStageAnnouncer, () => {
 		]);
 	});
 
-	it("should stay silent for a span that stands for no stage", () => {
+	it("should stay silent for a span that stands for no stage", ({ expect }) => {
 		expect.assertions(1);
 
 		const { calls, progress } = createRecordingProgress();
@@ -56,7 +56,7 @@ describe(createStageAnnouncer, () => {
 		expect(calls).toStrictEqual([]);
 	});
 
-	it("should close nothing for a stage span that never opened", () => {
+	it("should close nothing for a stage span that never opened", ({ expect }) => {
 		expect.assertions(1);
 
 		const { calls, progress } = createRecordingProgress();

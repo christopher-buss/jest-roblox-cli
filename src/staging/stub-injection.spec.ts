@@ -2,7 +2,7 @@ import { isRojoTreeNode } from "@isentinel/rojo-utils";
 import type { RojoTreeNode } from "@isentinel/rojo-utils";
 
 import * as path from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { posixPath } from "#test/mocks/posix-path.ts";
@@ -29,7 +29,7 @@ function storage(node: RojoTreeNode): RojoTreeNode {
 }
 
 describe(injectStubMounts, () => {
-	it("should inject jest.config child at dataModelPath leaf", () => {
+	it("should inject jest.config child at dataModelPath leaf", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -48,7 +48,7 @@ describe(injectStubMounts, () => {
 		);
 	});
 
-	it("should leave the tree alone without stubMounts", () => {
+	it("should leave the tree alone without stubMounts", ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -58,7 +58,7 @@ describe(injectStubMounts, () => {
 		expect(root).toStrictEqual(storage({ Common: { $path: fooPath("src") } }));
 	});
 
-	it("should inject multiple stubMounts", () => {
+	it("should inject multiple stubMounts", ({ expect }) => {
 		expect.assertions(2);
 
 		const stubA = path.join(ROOT, ".cache/foo/a/jest.config.luau");
@@ -84,7 +84,7 @@ describe(injectStubMounts, () => {
 
 	it.for(["jest.config.lua", "jest.config.luau"])(
 		"should report a %s in the leaf source dir as replaced",
-		(userConfig) => {
+		(userConfig, { expect }) => {
 			expect.assertions(2);
 
 			const sourceDirectory = path.join(FOO_DIR, "src");
@@ -107,7 +107,9 @@ describe(injectStubMounts, () => {
 		},
 	);
 
-	it("should report nothing replaced when the leaf source dir holds only unrelated files", () => {
+	it("should report nothing replaced when the leaf source dir holds only unrelated files", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -124,7 +126,7 @@ describe(injectStubMounts, () => {
 		).toStrictEqual([]);
 	});
 
-	it("should throw ConfigError when dataModelPath does not resolve in the tree", () => {
+	it("should throw ConfigError when dataModelPath does not resolve in the tree", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -148,7 +150,7 @@ describe(injectStubMounts, () => {
 		);
 	});
 
-	it("should report nothing replaced when the leaf has no $path", () => {
+	it("should report nothing replaced when the leaf has no $path", ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -166,7 +168,7 @@ describe(injectStubMounts, () => {
 		expect(child(root, "ReplicatedStorage", "Branch", "jest.config")).toBeDefined();
 	});
 
-	it("should demote a $path-mounted parent to reach a stubMount child on disk", () => {
+	it("should demote a $path-mounted parent to reach a stubMount child on disk", ({ expect }) => {
 		expect.assertions(5);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -192,7 +194,7 @@ describe(injectStubMounts, () => {
 		expect(child(fooTests, "src", "jest.config")!.$path).toBe(posixPath(STUB_PATH));
 	});
 
-	it("should promote only directories without a $ prefix during demotion", () => {
+	it("should promote only directories without a $ prefix during demotion", ({ expect }) => {
 		expect.assertions(3);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -215,7 +217,7 @@ describe(injectStubMounts, () => {
 		expect(tests!["src"]).toBeDefined();
 	});
 
-	it("should preserve existing explicit children during demotion", () => {
+	it("should preserve existing explicit children during demotion", ({ expect }) => {
 		expect.assertions(1);
 
 		const extra = posixPath(path.join(ROOT, "packages/other/extra"));
@@ -234,7 +236,7 @@ describe(injectStubMounts, () => {
 		expect(child(root, "ReplicatedStorage", "Tests", "keep")!.$path).toBe(extra);
 	});
 
-	it("should demote multiple consecutive $path-mounted segments", () => {
+	it("should demote multiple consecutive $path-mounted segments", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -259,7 +261,7 @@ describe(injectStubMounts, () => {
 		["a $-prefixed segment", { Tests: { $path: fooPath("out-test") } }, "Tests/$weird"],
 		["a parent without $path", { Branch: { $className: "Folder" } }, "Branch/Missing"],
 		["an optional path value", { Maybe: { optional: "out-test" } }, "Maybe"],
-	] as const)("should throw ConfigError on %s", ([, node, leaf]) => {
+	] as const)("should throw ConfigError on %s", ([, node, leaf], { expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -279,7 +281,7 @@ describe(injectStubMounts, () => {
 
 	it.for(["leaf.luau", "missing"])(
 		"should throw ConfigError without reading the parent when %s is not a directory",
-		(segment) => {
+		(segment, { expect }) => {
 			expect.assertions(2);
 
 			const { fileSystem } = createMemoryFileSystem({
@@ -303,7 +305,9 @@ describe(injectStubMounts, () => {
 		},
 	);
 
-	it("should error when the tree already declares a jest.config child at the leaf", () => {
+	it("should error when the tree already declares a jest.config child at the leaf", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -330,7 +334,7 @@ describe(injectStubMounts, () => {
 		);
 	});
 
-	it("should inject once when mounts share one leaf and stub", () => {
+	it("should inject once when mounts share one leaf and stub", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -344,7 +348,7 @@ describe(injectStubMounts, () => {
 		expect(child(root, "ReplicatedStorage", "jest.config")!.$path).toBe(posixPath(STUB_PATH));
 	});
 
-	it("should error when two mounts share a leaf but point at different stubs", () => {
+	it("should error when two mounts share a leaf but point at different stubs", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();

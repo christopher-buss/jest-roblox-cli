@@ -1,5 +1,5 @@
 import { type } from "arktype";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import {
 	buildRunnerPluginSourcesModule,
@@ -15,13 +15,15 @@ function buildPaths(): Array<string> {
 }
 
 describe("runner plugin sources module", () => {
-	it("should be named for the specifier the source imports", () => {
+	it("should be named for the specifier the source imports", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(RUNNER_PLUGIN_SOURCES_ID).toBe("virtual:runner-plugin-sources");
 	});
 
-	it("should carry the plugin project, its run-mode runner, vm host, and shared luau tree", () => {
+	it("should carry the plugin project, its run-mode runner, vm host, and shared luau tree", ({
+		expect,
+	}) => {
 		expect.assertions(4);
 
 		const paths = buildPaths();
@@ -32,7 +34,7 @@ describe("runner plugin sources module", () => {
 		expect(paths).toContain("luau/staging/embedded-runner.luau");
 	});
 
-	it("should leave out the edit-mode client and the stamped version", () => {
+	it("should leave out the edit-mode client and the stamped version", ({ expect }) => {
 		expect.assertions(2);
 
 		const paths = buildPaths();

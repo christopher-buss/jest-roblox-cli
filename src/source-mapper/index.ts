@@ -96,15 +96,15 @@ export function createSourceMapper({
 	const mapLine = createLineMapper(context);
 
 	return {
-		mapFailureWithLocations(message: string): MappedFailure {
+		mapFailureWithLocations(message): MappedFailure {
 			return rewriteFrames(message, mapFrame);
 		},
 
-		mapTestFileLine(testFilePath: string, luauLine: number): number | undefined {
+		mapTestFileLine(testFilePath, luauLine): number | undefined {
 			return mapLine(toDataModelPath(testFilePath), luauLine);
 		},
 
-		resolveDisplayPath(testFilePath: string): string {
+		resolveDisplayPath(testFilePath): string {
 			const resolved = resolveTestFilePath(testFilePath) ?? testFilePath;
 			return mappings.length > 0 ? luauInitToIndex(resolved) : resolved;
 		},
@@ -135,22 +135,22 @@ export function combineSourceMappers(
 	}
 
 	return {
-		mapFailureWithLocations(message: string): MappedFailure {
+		mapFailureWithLocations(message): MappedFailure {
 			return chainFailures(mappers, message);
 		},
 
-		mapTestFileLine(testFilePath: string, luauLine: number): number | undefined {
+		mapTestFileLine(testFilePath, luauLine): number | undefined {
 			return findOwningMapper(mappers, testFilePath)?.mapTestFileLine(testFilePath, luauLine);
 		},
 
-		resolveDisplayPath(testFilePath: string): string {
+		resolveDisplayPath(testFilePath): string {
 			return (
 				findOwningMapper(mappers, testFilePath)?.resolveDisplayPath(testFilePath) ??
 				testFilePath
 			);
 		},
 
-		resolveTestFilePath(testFilePath: string): string | undefined {
+		resolveTestFilePath(testFilePath): string | undefined {
 			return findOwningMapper(mappers, testFilePath)?.resolveTestFilePath(testFilePath);
 		},
 	};

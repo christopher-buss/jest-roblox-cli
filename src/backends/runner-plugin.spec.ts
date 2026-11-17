@@ -2,7 +2,7 @@
 import { fromAny } from "@total-typescript/shoehorn";
 
 import { type } from "arktype";
-import { assert, describe, expect, it, vi } from "vitest";
+import { assert, describe, it, vi } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { writingRojoExec } from "#test/mocks/rojo-exec.ts";
@@ -107,7 +107,9 @@ function usageMark(key: string): string {
 }
 
 describe("managed plugin install", () => {
-	it("should build and install the managed plugin when its key is missing", async () => {
+	it("should build and install the managed plugin when its key is missing", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -118,7 +120,9 @@ describe("managed plugin install", () => {
 		expect(fileSystem.readFileSync(managedFile(key), "utf8")).toBe("rbxm-bytes");
 	});
 
-	it("should build the plugin's tree around the run-mode runner, without the edit-mode client", async () => {
+	it("should build the plugin's tree around the run-mode runner, without the edit-mode client", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -141,7 +145,7 @@ describe("managed plugin install", () => {
 		});
 	});
 
-	it("should stamp the plugin with its key and the CLI version", async () => {
+	it("should stamp the plugin with its key and the CLI version", async ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -162,7 +166,7 @@ describe("managed plugin install", () => {
 		expect(modules[1]).toBe('--!strict\nreturn "1.2.3"\n');
 	});
 
-	it("should give an edited source a key of its own", async () => {
+	it("should give an edited source a key of its own", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -174,7 +178,7 @@ describe("managed plugin install", () => {
 		expect(second.key).not.toBe(first.key);
 	});
 
-	it("should build from a staging tree cleared of a previous build", async () => {
+	it("should build from a staging tree cleared of a previous build", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({ [`${STAGING}/luau/removed.luau`]: "" });
@@ -189,7 +193,9 @@ describe("managed plugin install", () => {
 		expect(wasStaleKept).toBeFalse();
 	});
 
-	it("should keep a plugin another run published while this one was building", async () => {
+	it("should keep a plugin another run published while this one was building", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { key } = await installManagedPluginAsync(
@@ -207,7 +213,7 @@ describe("managed plugin install", () => {
 		expect(fileSystem.readFileSync(managedFile(key), "utf8")).toBe("loaded-by-studio");
 	});
 
-	it("should refuse sources that carry no plugin project", async () => {
+	it("should refuse sources that carry no plugin project", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -217,7 +223,9 @@ describe("managed plugin install", () => {
 		).rejects.toThrow("runner plugin sources carry no plugin/plugin.project.json");
 	});
 
-	it("should reuse the installed plugin and mark it used outside the plugins folder", async () => {
+	it("should reuse the installed plugin and mark it used outside the plugins folder", async ({
+		expect,
+	}) => {
 		expect.assertions(5);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -235,7 +243,9 @@ describe("managed plugin install", () => {
 		expect(fileSystem.readFileSync(usageMark(key), "utf8")).toBe("");
 	});
 
-	it("should delete other managed plugins idle for a day, and keep the rest", async () => {
+	it("should delete other managed plugins idle for a day, and keep the rest", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -265,7 +275,9 @@ describe("managed plugin install", () => {
 		);
 	});
 
-	it("should judge idleness by the usage mark where one exists, and drop marks it outlives", async () => {
+	it("should judge idleness by the usage mark where one exists, and drop marks it outlives", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -299,7 +311,9 @@ describe("managed plugin install", () => {
 		);
 	});
 
-	it("should delete managed plugins of an older generation however recently used", async () => {
+	it("should delete managed plugins of an older generation however recently used", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -327,7 +341,7 @@ describe("managed plugin install", () => {
 		expect(fileSystem.readdirSync(USAGE)).toStrictEqual([`JestRobloxRunner.cli-${key}.rbxm`]);
 	});
 
-	it("should let a concurrent sweep take a stale plugin and mark first", async () => {
+	it("should let a concurrent sweep take a stale plugin and mark first", async ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem: disk } = createMemoryFileSystem();
@@ -356,7 +370,7 @@ describe("managed plugin install", () => {
 		expect(disk.existsSync(orphanMark)).toBeFalse();
 	});
 
-	it("should name the jest-roblox plugins it does not manage", async () => {
+	it("should name the jest-roblox plugins it does not manage", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -372,7 +386,7 @@ describe("managed plugin install", () => {
 });
 
 describe(installRunnerPluginAsync, () => {
-	it("should install nothing where the OS has no known plugins folder", async () => {
+	it("should install nothing where the OS has no known plugins folder", async ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -389,7 +403,9 @@ describe(installRunnerPluginAsync, () => {
 		expect(execFile).not.toHaveBeenCalled();
 	});
 
-	it("should build the runner plugin with rojo into the Windows plugins folder", async () => {
+	it("should build the runner plugin with rojo into the Windows plugins folder", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -432,23 +448,28 @@ describe(installRunnerPluginAsync, () => {
 			discovery: { environment: {}, homeDirectory: "/home/me", platform: "darwin" as const },
 			usageDirectory: "/home/me/Library/Caches/jest-roblox/managed-plugins",
 		},
-	])("should mark the plugin used in $usageDirectory", async ({ discovery, usageDirectory }) => {
-		expect.assertions(1);
+	])(
+		"should mark the plugin used in $usageDirectory",
+		async ({ discovery, usageDirectory }, { expect }) => {
+			expect.assertions(1);
 
-		const { fileSystem } = createMemoryFileSystem();
-		const { childProcess } = rojoChildProcess(fileSystem);
+			const { fileSystem } = createMemoryFileSystem();
+			const { childProcess } = rojoChildProcess(fileSystem);
 
-		const install = await installRunnerPluginAsync({
-			childProcess,
-			fileSystem,
-			workDirectory: "/repo/.jest-roblox/studio-cli",
-			...discovery,
-		});
+			const install = await installRunnerPluginAsync({
+				childProcess,
+				fileSystem,
+				workDirectory: "/repo/.jest-roblox/studio-cli",
+				...discovery,
+			});
 
-		expect(
-			fileSystem.existsSync(`${usageDirectory}/JestRobloxRunner.cli-${install!.key}.rbxm`),
-		).toBeTrue();
-	});
+			expect(
+				fileSystem.existsSync(
+					`${usageDirectory}/JestRobloxRunner.cli-${install!.key}.rbxm`,
+				),
+			).toBeTrue();
+		},
+	);
 
 	it.for([
 		{ environment: {}, pluginsDirectory: "/custom/Plugins", source: "pluginsDirectory" },
@@ -457,7 +478,7 @@ describe(installRunnerPluginAsync, () => {
 			pluginsDirectory: undefined,
 			source: "JEST_ROBLOX_PLUGINS_DIR",
 		},
-	])("should install into and sweep the folder $source names", async (discovery) => {
+	])("should install into and sweep the folder $source names", async (discovery, { expect }) => {
 		expect.assertions(2);
 
 		const idlePlugin = "/custom/Plugins/JestRobloxRunner.cli-g2-1.0.0-aaaaaaaa.rbxm";
@@ -485,7 +506,9 @@ describe(installRunnerPluginAsync, () => {
 		expect(fileSystem.existsSync("/Users/dev/Documents/Roblox/Plugins")).toBeFalse();
 	});
 
-	it("should keep the per-OS plugins folder over an empty JEST_ROBLOX_PLUGINS_DIR", async () => {
+	it("should keep the per-OS plugins folder over an empty JEST_ROBLOX_PLUGINS_DIR", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();

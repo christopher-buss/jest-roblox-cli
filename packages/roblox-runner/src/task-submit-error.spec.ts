@@ -1,11 +1,11 @@
 import { NetworkError } from "@bedrock-rbx/ocale";
 
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { TaskSubmitError } from "./task-submit-error.ts";
 
 describe(TaskSubmitError, () => {
-	it("should identify submission failures and preserve their cause", () => {
+	it("should identify submission failures and preserve their cause", ({ expect }) => {
 		expect.assertions(3);
 
 		const cause = new NetworkError("offline");
@@ -16,7 +16,7 @@ describe(TaskSubmitError, () => {
 		expect(error.cause).toBe(cause);
 	});
 
-	it("should accept a more specific diagnostic message", () => {
+	it("should accept a more specific diagnostic message", ({ expect }) => {
 		expect.assertions(1);
 
 		const error = new TaskSubmitError(new NetworkError("offline"), "refused");

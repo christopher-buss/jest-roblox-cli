@@ -5,14 +5,14 @@ import {
 	RetryDelayExceededError,
 } from "@bedrock-rbx/ocale";
 
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import { isEdgeRateLimited, refuseUnfitWait, toSubmitError } from "./submit-diagnosis.ts";
 
 const TASK = { apiKey: "secret", placeVersion: 4, timeoutSeconds: 6 };
 
 describe(toSubmitError, () => {
-	it("should preserve a submission failure's original cause", () => {
+	it("should preserve a submission failure's original cause", ({ expect }) => {
 		expect.assertions(3);
 
 		const cause = new NetworkError("offline");
@@ -23,7 +23,7 @@ describe(toSubmitError, () => {
 		expect(error.cause).toBe(cause);
 	});
 
-	it("should include lockout unlock, server code and redacted headers", () => {
+	it("should include lockout unlock, server code and redacted headers", ({ expect }) => {
 		expect.assertions(2);
 
 		vi.spyOn(Date, "now").mockReturnValue(Date.UTC(2026, 0, 1));
@@ -44,11 +44,14 @@ describe(toSubmitError, () => {
 	it.for([
 		{ details: undefined, retryAfterSeconds: 60 },
 		{ details: { errors: [] }, retryAfterSeconds: 75 },
-	])("should omit account lockout claims for minute limits and edge refusals: %j", (options) => {
-		expect.assertions(1);
+	])(
+		"should omit account lockout claims for minute limits and edge refusals: %j",
+		(options, { expect }) => {
+			expect.assertions(1);
 
-		expect(toSubmitError(new RateLimitError("quota", options), TASK).message).toBe("quota");
-	});
+			expect(toSubmitError(new RateLimitError("quota", options), TASK).message).toBe("quota");
+		},
+	);
 
 	it.for([
 		(quota: RateLimitError) => {
@@ -60,7 +63,7 @@ describe(toSubmitError, () => {
 			});
 		},
 		(quota: RateLimitError) => new RateLimitWaitRefusedError("too long", { cause: quota }),
-	])("should retain a refusal that wraps the quota cause", (makeCause) => {
+	])("should retain a refusal that wraps the quota cause", (makeCause, { expect }) => {
 		expect.assertions(2);
 
 		const quota = new RateLimitError("quota", { retryAfterSeconds: 2 });
@@ -88,14 +91,14 @@ describe("edge admission policy", () => {
 		},
 	])(
 		"should distinguish the edge envelope from server and network failures: $expected",
-		({ error, expected }) => {
+		({ error, expected }, { expect }) => {
 			expect.assertions(1);
 
 			expect(isEdgeRateLimited({ err: error, success: false })).toBe(expected);
 		},
 	);
 
-	it("should permit a wait that ends exactly at the deadline", () => {
+	it("should permit a wait that ends exactly at the deadline", ({ expect }) => {
 		expect.assertions(1);
 
 		vi.spyOn(Date, "now").mockReturnValue(1000);
@@ -105,7 +108,7 @@ describe("edge admission policy", () => {
 		).toBeUndefined();
 	});
 
-	it("should preserve the refused wait, remaining budget and original cause", () => {
+	it("should preserve the refused wait, remaining budget and original cause", ({ expect }) => {
 		expect.assertions(2);
 
 		vi.spyOn(Date, "now").mockReturnValue(1000);
@@ -123,7 +126,7 @@ describe("edge admission policy", () => {
 		);
 	});
 
-	it("should clamp an elapsed deadline to no remaining time", () => {
+	it("should clamp an elapsed deadline to no remaining time", ({ expect }) => {
 		expect.assertions(1);
 
 		vi.spyOn(Date, "now").mockReturnValue(5000);
@@ -135,7 +138,7 @@ describe("edge admission policy", () => {
 });
 
 describe("wrapped transport failure", () => {
-	it("should keep a transport failure distinct from SDK quota-wait refusal", () => {
+	it("should keep a transport failure distinct from SDK quota-wait refusal", ({ expect }) => {
 		expect.assertions(1);
 
 		const quota = new RateLimitError("quota", { retryAfterSeconds: 5 });

@@ -1,5 +1,5 @@
 import * as path from "node:path";
-import { assert, describe, expect, it, vi } from "vitest";
+import { assert, describe, it, vi } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { ROOT, writeInstalledWorkspace } from "#test/mocks/spec-pnpm-workspace.ts";
@@ -39,7 +39,7 @@ function resolveOne({
 }
 
 describe(resolvePackages, () => {
-	it("should resolve a package by exact package.json.name match", () => {
+	it("should resolve a package by exact package.json.name match", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -55,7 +55,7 @@ describe(resolvePackages, () => {
 		);
 	});
 
-	it("should throw with candidate names when package is not found", () => {
+	it("should throw with candidate names when package is not found", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -76,7 +76,7 @@ describe(resolvePackages, () => {
 		);
 	});
 
-	it("should expand multiple workspace patterns", () => {
+	it("should expand multiple workspace patterns", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -90,7 +90,7 @@ describe(resolvePackages, () => {
 		).toBe(path.join(ROOT, "libs/core"));
 	});
 
-	it("should resolve the workspace root when the pattern is a bare dot", () => {
+	it("should resolve the workspace root when the pattern is a bare dot", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -105,7 +105,7 @@ describe(resolvePackages, () => {
 		});
 	});
 
-	it("should resolve a package selected by two overlapping patterns once", () => {
+	it("should resolve a package selected by two overlapping patterns once", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -119,7 +119,7 @@ describe(resolvePackages, () => {
 		).toBe(path.join(ROOT, "packages/foo"));
 	});
 
-	it("should throw when two pnpm packages share a name", () => {
+	it("should throw when two pnpm packages share a name", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -133,7 +133,9 @@ describe(resolvePackages, () => {
 		}).toThrow(/Duplicate package name.*foo.*\. and packages\/foo/s);
 	});
 
-	it("should ignore a blank pattern rather than let it select a package nobody listed", () => {
+	it("should ignore a blank pattern rather than let it select a package nobody listed", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -156,7 +158,7 @@ describe(resolvePackages, () => {
 
 	// pnpm reads the root manifest as a workspace project whether or not
 	// `packages:` lists `.`, so a repo that omits it still runs its root tests.
-	it("should resolve the workspace root even when packages: does not list it", () => {
+	it("should resolve the workspace root even when packages: does not list it", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -171,7 +173,7 @@ describe(resolvePackages, () => {
 		});
 	});
 
-	it("should drop packages an exclusion pattern removes", () => {
+	it("should drop packages an exclusion pattern removes", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -193,7 +195,7 @@ describe(resolvePackages, () => {
 		);
 	});
 
-	it("should apply an exclusion that reaches through a deep wildcard", () => {
+	it("should apply an exclusion that reaches through a deep wildcard", ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -219,7 +221,7 @@ describe(resolvePackages, () => {
 	// Verified against pnpm 11.17 (`pnpm ls -r --depth -1`): pnpm does not trim
 	// its `packages:` entries, so neither of these is an exclusion. Each is a
 	// positive pattern that matches nothing, and the package survives.
-	it("should read a padded exclusion as a pattern that matches nothing", () => {
+	it("should read a padded exclusion as a pattern that matches nothing", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -233,7 +235,7 @@ describe(resolvePackages, () => {
 		).toBe(path.join(ROOT, "packages/foo"));
 	});
 
-	it("should read an exclamation mark followed by a space as no exclusion", () => {
+	it("should read an exclamation mark followed by a space as no exclusion", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -247,7 +249,7 @@ describe(resolvePackages, () => {
 		).toBe(path.join(ROOT, "packages/foo"));
 	});
 
-	it("should ignore a bare exclamation mark rather than let it drop the root", () => {
+	it("should ignore a bare exclamation mark rather than let it drop the root", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -260,7 +262,7 @@ describe(resolvePackages, () => {
 		).toBe(ROOT);
 	});
 
-	it("should throw when pnpm-workspace.yaml has no packages field", () => {
+	it("should throw when pnpm-workspace.yaml has no packages field", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -276,7 +278,7 @@ describe(resolvePackages, () => {
 		}).toThrowWithMessage(Error, 'Package "@halcyon/foo" not found in workspace. Available: ');
 	});
 
-	it("should ignore a package.json that is not a JSON object (e.g. an array)", () => {
+	it("should ignore a package.json that is not a JSON object (e.g. an array)", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -290,7 +292,7 @@ describe(resolvePackages, () => {
 		).toBe(path.join(ROOT, "packages/bar"));
 	});
 
-	it("should ignore package.json files that lack a string name field", () => {
+	it("should ignore package.json files that lack a string name field", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -304,7 +306,9 @@ describe(resolvePackages, () => {
 		).toBe(path.join(ROOT, "packages/bar"));
 	});
 
-	it("should ignore directories under a workspace pattern that lack package.json", () => {
+	it("should ignore directories under a workspace pattern that lack package.json", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -318,7 +322,7 @@ describe(resolvePackages, () => {
 		).toBe(path.join(ROOT, "packages/foo"));
 	});
 
-	it("should throw a clear error when pnpm-workspace.yaml is missing", () => {
+	it("should throw a clear error when pnpm-workspace.yaml is missing", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -341,7 +345,7 @@ describe(resolvePackages, () => {
 		);
 	});
 
-	it("should resolve several names in the order they were asked for", () => {
+	it("should resolve several names in the order they were asked for", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -362,7 +366,7 @@ describe(resolvePackages, () => {
 		]);
 	});
 
-	it("should name the missing package when one of several does not resolve", () => {
+	it("should name the missing package when one of several does not resolve", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -383,7 +387,9 @@ describe(resolvePackages, () => {
 	});
 
 	describe("pnpm workspace state", () => {
-		it("should enumerate a testable snapshot package whose manifest is unavailable", () => {
+		it("should enumerate a testable snapshot package whose manifest is unavailable", ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			const fileSystem = writeInstalledWorkspace(
@@ -399,7 +405,7 @@ describe(resolvePackages, () => {
 			]);
 		});
 
-		it("should resolve a batch where only some names reach the snapshot", () => {
+		it("should resolve a batch where only some names reach the snapshot", ({ expect }) => {
 			expect.assertions(1);
 
 			const fileSystem = writeInstalledWorkspace(
@@ -422,7 +428,7 @@ describe(resolvePackages, () => {
 			]);
 		});
 
-		it("should report the walked names when a miss survives the fallback", () => {
+		it("should report the walked names when a miss survives the fallback", ({ expect }) => {
 			expect.assertions(1);
 
 			const fileSystem = writeInstalledWorkspace(
@@ -444,7 +450,7 @@ describe(resolvePackages, () => {
 
 		// The snapshot is machine-written, but two packages can still share a
 		// name in it, and the resolver has no way to pick between them.
-		it("should reject two snapshot projects that share a name", () => {
+		it("should reject two snapshot projects that share a name", ({ expect }) => {
 			expect.assertions(1);
 
 			const fileSystem = writeInstalledWorkspace(
@@ -468,7 +474,9 @@ describe(resolvePackages, () => {
 			);
 		});
 
-		it("should ignore the snapshot when workspace.packages patterns are given", () => {
+		it("should ignore the snapshot when workspace.packages patterns are given", ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			const fileSystem = writeInstalledWorkspace(
@@ -488,7 +496,7 @@ describe(resolvePackages, () => {
 	});
 
 	describe("workspace.packages globs", () => {
-		it("should treat a leading wildcard pattern as an inclusion", () => {
+		it("should treat a leading wildcard pattern as an inclusion", ({ expect }) => {
 			expect.assertions(1);
 
 			const { fileSystem } = createMemoryFileSystem({
@@ -506,7 +514,7 @@ describe(resolvePackages, () => {
 			expect(names).toStrictEqual(["bar", "foo"]);
 		});
 
-		it("should enumerate packages via patterns when no PM file exists", () => {
+		it("should enumerate packages via patterns when no PM file exists", ({ expect }) => {
 			expect.assertions(1);
 
 			const { fileSystem } = createMemoryFileSystem({
@@ -524,7 +532,7 @@ describe(resolvePackages, () => {
 			expect(info.packageDirectory).toBe(path.join(ROOT, "packages/foo"));
 		});
 
-		it("should enumerate the workspace root when the pattern is a bare dot", () => {
+		it("should enumerate the workspace root when the pattern is a bare dot", ({ expect }) => {
 			expect.assertions(1);
 
 			const { fileSystem } = createMemoryFileSystem({
@@ -543,7 +551,9 @@ describe(resolvePackages, () => {
 			expect(info.packageDirectory).toBe(ROOT);
 		});
 
-		it("should infer name from directory basename when no package.json exists (Luau-only)", () => {
+		it("should infer name from directory basename when no package.json exists (Luau-only)", ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			const { fileSystem } = createMemoryFileSystem({
@@ -561,7 +571,7 @@ describe(resolvePackages, () => {
 			expect(info.packageDirectory).toBe(path.join(ROOT, "packages/foo"));
 		});
 
-		it("should prefer package.json#name over directory basename", () => {
+		it("should prefer package.json#name over directory basename", ({ expect }) => {
 			expect.assertions(1);
 
 			const { fileSystem } = createMemoryFileSystem({
@@ -579,7 +589,7 @@ describe(resolvePackages, () => {
 			}).toThrow(/not found/);
 		});
 
-		it("should skip directories without a jest.config", () => {
+		it("should skip directories without a jest.config", ({ expect }) => {
 			expect.assertions(1);
 
 			const { fileSystem } = createMemoryFileSystem({
@@ -597,7 +607,7 @@ describe(resolvePackages, () => {
 			expect(info.packageDirectory).toBe(path.join(ROOT, "packages/foo"));
 		});
 
-		it("should skip jest.config.spec.ts and similar non-config jest files", () => {
+		it("should skip jest.config.spec.ts and similar non-config jest files", ({ expect }) => {
 			expect.assertions(2);
 
 			const { fileSystem, volume } = createMemoryFileSystem({
@@ -626,7 +636,7 @@ describe(resolvePackages, () => {
 			}).toThrowWithMessage(Error, 'Package "foo" not found in workspace. Available: ');
 		});
 
-		it("should skip filenames that only end with jest.config.<ext>", () => {
+		it("should skip filenames that only end with jest.config.<ext>", ({ expect }) => {
 			expect.assertions(1);
 
 			const { fileSystem } = createMemoryFileSystem({
@@ -643,7 +653,7 @@ describe(resolvePackages, () => {
 			}).toThrowWithMessage(Error, 'Package "foo" not found in workspace. Available: ');
 		});
 
-		it("should expand multiple patterns", () => {
+		it("should expand multiple patterns", ({ expect }) => {
 			expect.assertions(2);
 
 			const { fileSystem } = createMemoryFileSystem({
@@ -671,7 +681,7 @@ describe(resolvePackages, () => {
 			).toBe(path.join(ROOT, "libs/core"));
 		});
 
-		it("should throw when two packages resolve to the same name", () => {
+		it("should throw when two packages resolve to the same name", ({ expect }) => {
 			expect.assertions(1);
 
 			const { fileSystem } = createMemoryFileSystem({
@@ -689,7 +699,9 @@ describe(resolvePackages, () => {
 			}).toThrow(/Duplicate package name.*foo.*libs\/foo.*packages\/foo/s);
 		});
 
-		it("should name the workspace root as . when it duplicates a package name", () => {
+		it("should name the workspace root as . when it duplicates a package name", ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			const { fileSystem } = createMemoryFileSystem({
@@ -708,7 +720,7 @@ describe(resolvePackages, () => {
 			}).toThrow(/Duplicate package name.*foo.*\. and packages\/foo/s);
 		});
 
-		it("should take precedence over pnpm-workspace.yaml when both exist", () => {
+		it("should take precedence over pnpm-workspace.yaml when both exist", ({ expect }) => {
 			expect.assertions(1);
 
 			const { fileSystem } = createMemoryFileSystem({
@@ -730,7 +742,7 @@ describe(resolvePackages, () => {
 
 		// `matchUnderPatterns` serves both sources, so an exclusion means the
 		// same thing in `workspace.packages` as it does in `packages:`.
-		it("should drop packages an exclusion pattern removes", () => {
+		it("should drop packages an exclusion pattern removes", ({ expect }) => {
 			expect.assertions(2);
 
 			const { fileSystem } = createMemoryFileSystem({
@@ -762,7 +774,7 @@ describe(resolvePackages, () => {
 		// selecting it there is invisible. Here it is not: nothing else puts the
 		// root in the list, so an unguarded blank entry hands back a package the
 		// config never named.
-		it("should ignore a blank pattern rather than let it select the root", () => {
+		it("should ignore a blank pattern rather than let it select the root", ({ expect }) => {
 			expect.assertions(1);
 
 			const { fileSystem } = createMemoryFileSystem({
@@ -784,7 +796,7 @@ describe(resolvePackages, () => {
 			);
 		});
 
-		it("should dedupe a directory with multiple jest.config files", () => {
+		it("should dedupe a directory with multiple jest.config files", ({ expect }) => {
 			expect.assertions(1);
 
 			const { fileSystem } = createMemoryFileSystem({
@@ -805,7 +817,7 @@ describe(resolvePackages, () => {
 });
 
 describe(enumerateWorkspacePackages, () => {
-	it("should drop a pnpm package that carries no jest.config", () => {
+	it("should drop a pnpm package that carries no jest.config", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -820,7 +832,7 @@ describe(enumerateWorkspacePackages, () => {
 		]);
 	});
 
-	it("should drop a package an exclude glob names", () => {
+	it("should drop a package an exclude glob names", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -839,7 +851,7 @@ describe(enumerateWorkspacePackages, () => {
 		expect(enumerated.map((info) => info.name)).toStrictEqual(["@halcyon/foo"]);
 	});
 
-	it("should apply an exclude to the config glob source too", () => {
+	it("should apply an exclude to the config glob source too", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -856,7 +868,7 @@ describe(enumerateWorkspacePackages, () => {
 		expect(enumerated.map((info) => info.name)).toStrictEqual(["core"]);
 	});
 
-	it("should not report a duplicate name the exclude removed", () => {
+	it("should not report a duplicate name the exclude removed", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -875,7 +887,7 @@ describe(enumerateWorkspacePackages, () => {
 		]);
 	});
 
-	it("should still resolve a named package that carries no jest.config", () => {
+	it("should still resolve a named package that carries no jest.config", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -892,7 +904,7 @@ describe(enumerateWorkspacePackages, () => {
 });
 
 describe("pnpm-workspace.yaml negation", () => {
-	it("should drop a package a ! pattern excludes", () => {
+	it("should drop a package a ! pattern excludes", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -909,7 +921,7 @@ describe("pnpm-workspace.yaml negation", () => {
 		).toStrictEqual(["@halcyon/foo"]);
 	});
 
-	it("should drop a package a ! pattern excludes at any depth", () => {
+	it("should drop a package a ! pattern excludes at any depth", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -926,7 +938,7 @@ describe("pnpm-workspace.yaml negation", () => {
 		).toStrictEqual(["@halcyon/core"]);
 	});
 
-	it("should apply a ! pattern to the config glob source too", () => {
+	it("should apply a ! pattern to the config glob source too", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -946,13 +958,13 @@ describe("pnpm-workspace.yaml negation", () => {
 describe(excludePackages, () => {
 	const packages = [{ name: "@halcyon/foo", packageDirectory: path.join(ROOT, "packages/foo") }];
 
-	it("should return the input untouched for an empty exclude list", () => {
+	it("should return the input untouched for an empty exclude list", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(excludePackages({ exclude: [], packages, workspaceRoot: ROOT })).toBe(packages);
 	});
 
-	it("should return the input untouched when no exclude is given", () => {
+	it("should return the input untouched when no exclude is given", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(excludePackages({ exclude: undefined, packages, workspaceRoot: ROOT })).toBe(
@@ -960,7 +972,7 @@ describe(excludePackages, () => {
 		);
 	});
 
-	it("should keep a package no glob names", () => {
+	it("should keep a package no glob names", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -968,7 +980,7 @@ describe(excludePackages, () => {
 		).toStrictEqual(packages);
 	});
 
-	it("should drop a package only one of several globs names", () => {
+	it("should drop a package only one of several globs names", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -982,7 +994,7 @@ describe(excludePackages, () => {
 });
 
 describe("workspace enumeration edge cases", () => {
-	it("should report a duplicate name the exclude did not remove", () => {
+	it("should report a duplicate name the exclude did not remove", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -1001,7 +1013,7 @@ describe("workspace enumeration edge cases", () => {
 	// Asserted through the config-glob source, which has no floor. The pnpm
 	// source seats the workspace root whatever the patterns say, so the root
 	// comes back there whether the guard ran or not.
-	it("should skip a blank pattern rather than selecting the root", () => {
+	it("should skip a blank pattern rather than selecting the root", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -1018,7 +1030,7 @@ describe("workspace enumeration edge cases", () => {
 		).toStrictEqual(["@halcyon/foo"]);
 	});
 
-	it("should find a jest.config beside a manifest at any depth", () => {
+	it("should find a jest.config beside a manifest at any depth", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -1034,7 +1046,7 @@ describe("workspace enumeration edge cases", () => {
 		).toStrictEqual(["@halcyon/deep"]);
 	});
 
-	it("should not treat a dotted config suffix as a jest config", () => {
+	it("should not treat a dotted config suffix as a jest config", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -1063,7 +1075,9 @@ function enumerateAppsAndLibs() {
 }
 
 describe("workspace enumeration walk sharing", () => {
-	it("should walk the workspace root once for every pnpm pattern and both leaves", () => {
+	it("should walk the workspace root once for every pnpm pattern and both leaves", ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const { enumerated, readdir } = enumerateAppsAndLibs();
@@ -1081,7 +1095,7 @@ describe("workspace pattern-list handling", () => {
 	// gives: `path.posix.join("", leaf)` is the bare leaf, so an entry naming
 	// nothing selects the root, which a source that always carries the root
 	// would hide.
-	it("should not let an empty entry select the root package", () => {
+	it("should not let an empty entry select the root package", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -1097,7 +1111,7 @@ describe("workspace pattern-list handling", () => {
 		).toStrictEqual(["core"]);
 	});
 
-	it("should drop a package matching any one of several negations", () => {
+	it("should drop a package matching any one of several negations", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -1118,7 +1132,7 @@ describe("workspace pattern-list handling", () => {
 		).toStrictEqual(["pkg-c"]);
 	});
 
-	it("should walk the workspace root once for an uncached multi-pattern match", () => {
+	it("should walk the workspace root once for an uncached multi-pattern match", ({ expect }) => {
 		expect.assertions(2);
 
 		const { enumerated: found, readdir } = enumerateAppsAndLibs();
@@ -1130,7 +1144,7 @@ describe("workspace pattern-list handling", () => {
 		expect(readdir).toHaveBeenCalledTimes(directoriesWalked.size);
 	});
 
-	it("should name the remedy when two packages share a name", () => {
+	it("should name the remedy when two packages share a name", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -1153,7 +1167,7 @@ describe("workspace pattern-list handling", () => {
 // which source answered. A source that gated itself would make `exclude` and
 // the jest.config requirement intermittent the day a third source is added.
 describe("workspace enumeration filters are source-independent", () => {
-	it("should require a jest.config from the config-glob source too", () => {
+	it("should require a jest.config from the config-glob source too", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -1168,7 +1182,7 @@ describe("workspace enumeration filters are source-independent", () => {
 		).toStrictEqual(["core"]);
 	});
 
-	it("should apply the exclude to the config-glob source too", () => {
+	it("should apply the exclude to the config-glob source too", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -1185,7 +1199,7 @@ describe("workspace enumeration filters are source-independent", () => {
 		).toStrictEqual(["core"]);
 	});
 
-	it("should apply both filters to the pnpm source too", () => {
+	it("should apply both filters to the pnpm source too", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -1208,7 +1222,7 @@ describe("workspace enumeration filters are source-independent", () => {
 describe("workspace.exclude glob shapes", () => {
 	// The shape the README documents. It needs a trailing `**` to reach a
 	// package nested below the excluded directory rather than beside it.
-	it("should drop packages at any depth below a trailing doublestar", () => {
+	it("should drop packages at any depth below a trailing doublestar", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -1233,7 +1247,7 @@ describe("workspace.exclude glob shapes", () => {
 	// Asserted through the config-glob source on purpose. A bare `!` yields the
 	// bare leaf and deletes the root package, but the pnpm source prepends the
 	// root unconditionally and would hide that.
-	it("should ignore a bare ! rather than delete the root package", () => {
+	it("should ignore a bare ! rather than delete the root package", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({

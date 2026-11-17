@@ -1,7 +1,7 @@
 import type { LuauSpan } from "@isentinel/luau-ast/ast";
 import { fromAny } from "@total-typescript/shoehorn";
 
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { COLLECTED_FIXTURES } from "#test/mocks/coverage-collected-fixtures.ts";
 import type { CollectorResult } from "./coverage-accumulator.ts";
@@ -130,7 +130,7 @@ describe("probe-inserter", () => {
 		// preamble: appended, it lands inside the comment; prepended, the
 		// directive stops opening the file. Nothing to count either, so nothing
 		// to declare.
-		it("should leave a file with no coverage sites verbatim", () => {
+		it("should leave a file with no coverage sites verbatim", ({ expect }) => {
 			expect.assertions(3);
 
 			expect(
@@ -156,7 +156,9 @@ describe("probe-inserter", () => {
 			).toBe("-- one\n-- two");
 		});
 
-		it("should declare the function bucket for a file whose only sites are functions", () => {
+		it("should declare the function bucket for a file whose only sites are functions", ({
+			expect,
+		}) => {
 			expect.assertions(3);
 
 			const collector: CollectorResult<LuauSpan> = {
@@ -183,7 +185,9 @@ describe("probe-inserter", () => {
 			expect(result).not.toContain("__cov_s[__i]");
 		});
 
-		it("should declare the branch bucket for a file whose only sites are branches", () => {
+		it("should declare the branch bucket for a file whose only sites are branches", ({
+			expect,
+		}) => {
 			expect.assertions(2);
 
 			const collector: CollectorResult<LuauSpan> = {
@@ -213,7 +217,7 @@ describe("probe-inserter", () => {
 		// The one case no fixture in `test/fixtures/coverage-pipeline` covers:
 		// a leading mode directive, which the fold has to skip past. The branch
 		// count is what used to grow the shift, so it varies here too.
-		it("should keep every original line at its original line number", () => {
+		it("should keep every original line at its original line number", ({ expect }) => {
 			expect.assertions(2);
 
 			const source = '--!strict\nlocal a = 1\nlocal b = 2\nerror("boom")';
@@ -239,7 +243,7 @@ describe("probe-inserter", () => {
 			expect(lines[3]).toBe('error("boom")');
 		});
 
-		it("should declare only the buckets the file's sites need", () => {
+		it("should declare only the buckets the file's sites need", ({ expect }) => {
 			expect.assertions(5);
 
 			const source = "local x = 1";
@@ -256,7 +260,7 @@ describe("probe-inserter", () => {
 			expect(result).toMatchSnapshot();
 		});
 
-		it("should preserve the complete instrumentation contract", () => {
+		it("should preserve the complete instrumentation contract", ({ expect }) => {
 			expect.assertions(2);
 
 			const source = "--!strict\nlocal x = if flag then 1 else 2";
@@ -303,7 +307,7 @@ describe("probe-inserter", () => {
 			expect(result).toMatchSnapshot();
 		});
 
-		it("should hoist every leading mode directive above the preamble", () => {
+		it("should hoist every leading mode directive above the preamble", ({ expect }) => {
 			expect.assertions(2);
 
 			const directives = "--!strict\n--!native\n--!optimize 2\n";
@@ -319,7 +323,7 @@ describe("probe-inserter", () => {
 			expect(result.slice(directives.length)).not.toContain("--!");
 		});
 
-		it("should keep hoisting past a directive Luau does not act on", () => {
+		it("should keep hoisting past a directive Luau does not act on", ({ expect }) => {
 			expect.assertions(1);
 
 			// Luau reads `--!Native` as a hot comment and ignores it, so the
@@ -334,7 +338,7 @@ describe("probe-inserter", () => {
 			expect(result).toStartWith(directives);
 		});
 
-		it("should keep hoisting past a blank line between directives", () => {
+		it("should keep hoisting past a blank line between directives", ({ expect }) => {
 			expect.assertions(1);
 
 			const header = "--!strict\n\n--!native\n";
@@ -347,7 +351,7 @@ describe("probe-inserter", () => {
 			expect(result).toStartWith(header);
 		});
 
-		it("should keep hoisting past a plain comment between directives", () => {
+		it("should keep hoisting past a plain comment between directives", ({ expect }) => {
 			expect.assertions(2);
 
 			const lineCommented = "--!strict\n-- why native\n--!native\n";
@@ -369,7 +373,7 @@ describe("probe-inserter", () => {
 			).toStartWith(blockCommented);
 		});
 
-		it("should hoist a directive that carries leading whitespace", () => {
+		it("should hoist a directive that carries leading whitespace", ({ expect }) => {
 			expect.assertions(1);
 
 			const header = "--!strict\n\t--!native\n";
@@ -382,7 +386,7 @@ describe("probe-inserter", () => {
 			expect(result).toStartWith(header);
 		});
 
-		it("should keep code below the preamble when a bare return splits a line", () => {
+		it("should keep code below the preamble when a bare return splits a line", ({ expect }) => {
 			expect.assertions(1);
 
 			const collector: CollectorResult<LuauSpan> = {
@@ -406,7 +410,7 @@ describe("probe-inserter", () => {
 			expect(result).toStartWith("if _G.__jest_roblox_cov");
 		});
 
-		it("should only treat a leading mode directive as a directive", () => {
+		it("should only treat a leading mode directive as a directive", ({ expect }) => {
 			expect.assertions(1);
 
 			expect(
@@ -418,7 +422,7 @@ describe("probe-inserter", () => {
 			).toEndWith("local x = '--!strict'");
 		});
 
-		it("should insert statement probes before each statement", () => {
+		it("should insert statement probes before each statement", ({ expect }) => {
 			expect.assertions(3);
 
 			const source = "local x = 1\nprint(x)";
@@ -431,7 +435,7 @@ describe("probe-inserter", () => {
 			expect(result).toContain("for __i = 1, 2 do");
 		});
 
-		it("should insert function probes at body first statement", () => {
+		it("should insert function probes at body first statement", ({ expect }) => {
 			expect.assertions(2);
 
 			const source = "local function greet(name)\n    return name\nend";
@@ -464,7 +468,7 @@ describe("probe-inserter", () => {
 			expect(result).toContain("__cov_f");
 		});
 
-		it("should insert branch probes at arm body first statements", () => {
+		it("should insert branch probes at arm body first statements", ({ expect }) => {
 			expect.assertions(4);
 
 			const source = "if true then\n    local a = 1\nelse\n    local b = 2\nend";
@@ -524,7 +528,7 @@ describe("probe-inserter", () => {
 			expect(result).toMatchSnapshot();
 		});
 
-		it("should insert implicit else probes before end keyword", () => {
+		it("should insert implicit else probes before end keyword", ({ expect }) => {
 			expect.assertions(1);
 
 			const source = "if true then\n  local y = 2\nend";
@@ -576,7 +580,7 @@ describe("probe-inserter", () => {
 			expect(result).toContain("else __cov_b[1][2] += 1 end");
 		});
 
-		it("should preserve mode directive at top of file", () => {
+		it("should preserve mode directive at top of file", ({ expect }) => {
 			expect.assertions(2);
 
 			const source = "--!strict\nlocal x = 1";
@@ -596,7 +600,7 @@ describe("probe-inserter", () => {
 			expect(result).toContain("__cov_s[1] += 1; local x = 1");
 		});
 
-		it("should escape backslashes and quotes in file key", () => {
+		it("should escape backslashes and quotes in file key", ({ expect }) => {
 			expect.assertions(1);
 
 			const source = "local x = 1";
@@ -611,7 +615,7 @@ describe("probe-inserter", () => {
 			expect(result).toContain('__cov_file_key = "path\\\\to\\\\\\"file\\".luau"');
 		});
 
-		it("should insert function probe in empty body using body start position", () => {
+		it("should insert function probe in empty body using body start position", ({ expect }) => {
 			expect.assertions(1);
 
 			const source = "local function noop() end";
@@ -622,7 +626,7 @@ describe("probe-inserter", () => {
 			expect(result).toContain("__cov_f[1] += 1;");
 		});
 
-		it("should skip function probe when bodyFirstLine is zero", () => {
+		it("should skip function probe when bodyFirstLine is zero", ({ expect }) => {
 			expect.assertions(1);
 
 			const source = "local function noop() end";
@@ -633,7 +637,7 @@ describe("probe-inserter", () => {
 			expect(result).not.toContain("__cov_f[1] += 1");
 		});
 
-		it("should wrap expr-if arms with __cov_br helper", () => {
+		it("should wrap expr-if arms with __cov_br helper", ({ expect }) => {
 			expect.assertions(3);
 
 			// local x = if true then 1 else 2
@@ -696,7 +700,7 @@ describe("probe-inserter", () => {
 			expect(result).toContain("local function __cov_br(__bi, __ai, ...)");
 		});
 
-		it("should wrap all arms of expr-if with elseif", () => {
+		it("should wrap all arms of expr-if with elseif", ({ expect }) => {
 			expect.assertions(3);
 
 			// local x = if a then 1 elseif b then 2 else 3
@@ -773,7 +777,7 @@ describe("probe-inserter", () => {
 			expect(result).toContain("__cov_br(1, 3, 3)");
 		});
 
-		it("should nest and/or wraps so outer wraps surround inner wraps", () => {
+		it("should nest and/or wraps so outer wraps surround inner wraps", ({ expect }) => {
 			expect.assertions(1);
 
 			// `(a and b) and c`: the outer and inner lhs spans both open at
@@ -821,7 +825,7 @@ describe("probe-inserter", () => {
 			);
 		});
 
-		it("should nest wraps whose colliding opens close on different lines", () => {
+		it("should nest wraps whose colliding opens close on different lines", ({ expect }) => {
 			expect.assertions(1);
 
 			// `(a and b) and c` across two lines: both lhs opens land at line 1
@@ -888,7 +892,7 @@ describe("probe-inserter", () => {
 			expect(result).toContain("local v = __cov_br(1, 1, __cov_br(2, 1, a)");
 		});
 
-		it("should keep a point probe outside a wrap opening at the same column", () => {
+		it("should keep a point probe outside a wrap opening at the same column", ({ expect }) => {
 			expect.assertions(1);
 
 			// A statement bump and a wrap open landing on the same column: the
@@ -920,7 +924,7 @@ describe("probe-inserter", () => {
 			expect(result.indexOf("__cov_s[1]")).toBeLessThan(result.indexOf("__cov_br(1, 1,"));
 		});
 
-		it("should not emit __cov_br helper when no wrap probes exist", () => {
+		it("should not emit __cov_br helper when no wrap probes exist", ({ expect }) => {
 			expect.assertions(1);
 
 			const source = "local x = 1";
@@ -931,7 +935,7 @@ describe("probe-inserter", () => {
 			expect(result).not.toContain("__cov_br");
 		});
 
-		it("should add space when branch probe follows non-whitespace", () => {
+		it("should add space when branch probe follows non-whitespace", ({ expect }) => {
 			expect.assertions(1);
 
 			const source = "if x then\n    -- comment\nend";
@@ -968,7 +972,7 @@ describe("probe-inserter", () => {
 			expect(result).toContain("if x then __cov_b[1][1] += 1;");
 		});
 
-		it("should handle CRLF line endings", () => {
+		it("should handle CRLF line endings", ({ expect }) => {
 			expect.assertions(1);
 
 			const source = "local x = 1\r\nprint(x)";
@@ -995,13 +999,13 @@ describe("probes in collected fixtures", () => {
 		"if-else.luau",
 		"expr-if.luau",
 		"and-or.luau",
-	])("should produce the expected instrumented source for %s", (name) => {
+	])("should produce the expected instrumented source for %s", (name, { expect }) => {
 		expect.assertions(1);
 
 		expect(instrumentFixture(name)).toMatchSnapshot();
 	});
 
-	it("should key the preamble on the file key", () => {
+	it("should key the preamble on the file key", ({ expect }) => {
 		expect.assertions(3);
 
 		const instrumented = instrumentFixture("simple.luau", "shared/simple.luau");
@@ -1011,13 +1015,13 @@ describe("probes in collected fixtures", () => {
 		expect(instrumented).toContain("__cov_s");
 	});
 
-	it("should count function entry inside the body", () => {
+	it("should count function entry inside the body", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(instrumentFixture("functions.luau")).toContain("__cov_f[1] += 1;");
 	});
 
-	it("should probe every if/elseif/else arm and size the preamble to match", () => {
+	it("should probe every if/elseif/else arm and size the preamble to match", ({ expect }) => {
 		expect.assertions(4);
 
 		const instrumented = instrumentFixture("if-else.luau");
@@ -1028,13 +1032,13 @@ describe("probes in collected fixtures", () => {
 		expect(instrumented).toContain("__cov_b[1] = {0, 0, 0}");
 	});
 
-	it("should not point-probe an expression-if", () => {
+	it("should not point-probe an expression-if", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(instrumentFixture("expr-if.luau")).not.toContain("__cov_b[1][1] += 1");
 	});
 
-	it("should wrap and/or operands, outer wraps around inner", () => {
+	it("should wrap and/or operands, outer wraps around inner", ({ expect }) => {
 		expect.assertions(3);
 
 		const instrumented = instrumentFixture("and-or.luau");
@@ -1046,7 +1050,7 @@ describe("probes in collected fixtures", () => {
 		);
 	});
 
-	it("should place probes at character boundaries on multi-byte lines", () => {
+	it("should place probes at character boundaries on multi-byte lines", ({ expect }) => {
 		expect.assertions(4);
 
 		const instrumented = instrumentFixture("utf8-columns.luau");
@@ -1067,7 +1071,7 @@ describe("probes in collected fixtures", () => {
 
 	it.for(Object.keys(COLLECTED_FIXTURES))(
 		"should keep %s line-for-line aligned with its original",
-		(name) => {
+		(name, { expect }) => {
 			expect.assertions(1);
 
 			const { source } = COLLECTED_FIXTURES[name]!;

@@ -3,7 +3,7 @@ import type { RojoTreeNode } from "@isentinel/rojo-utils";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { describe, expect, inject, it, onTestFinished } from "vitest";
+import { describe, inject, it, type TestContext } from "vitest";
 
 import { buildPlaceAsync } from "#src/staging/place-builder.ts";
 import type { PackageDescriptor } from "#src/staging/synthesizer-types.ts";
@@ -17,7 +17,7 @@ import {
 	readSourcemap,
 } from "#test/e2e/workspace/sourcemap.ts";
 
-function createTemporaryDirectory(): string {
+function createTemporaryDirectory(onTestFinished: TestContext["onTestFinished"]): string {
 	const directory = fs.mkdtempSync(path.join(os.tmpdir(), "synth-rojo-"));
 	onTestFinished(() => {
 		fs.rmSync(directory, { force: true, recursive: true });
@@ -128,10 +128,10 @@ function writeSharedDependencies(workspace: string): void {
 describe("synthesizer + rojo build integration", () => {
 	it.skipIf(!inject("rojoOnPath"))(
 		"should build a directory two packages mount into the place once",
-		async () => {
+		async ({ expect, onTestFinished }) => {
 			expect.assertions(4);
 
-			const workspace = createTemporaryDirectory();
+			const workspace = createTemporaryDirectory(onTestFinished);
 			const shared = path.join(workspace, "shared");
 			fs.mkdirSync(shared, { recursive: true });
 			fs.writeFileSync(path.join(shared, "sharedModule.luau"), "return {}\n");
@@ -166,10 +166,10 @@ describe("synthesizer + rojo build integration", () => {
 
 	it.skipIf(!inject("rojoOnPath"))(
 		"should build one copy of a shared include tree that keeps its own children",
-		async () => {
+		async ({ expect, onTestFinished }) => {
 			expect.assertions(5);
 
-			const workspace = createTemporaryDirectory();
+			const workspace = createTemporaryDirectory(onTestFinished);
 			writeSharedDependencies(workspace);
 
 			const synthDirectory = path.join(workspace, ".jest-roblox/workspace");

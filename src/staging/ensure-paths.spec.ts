@@ -1,7 +1,7 @@
 import { fromPartial } from "@total-typescript/shoehorn";
 
 import * as path from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { posixPath } from "#test/mocks/posix-path.ts";
@@ -16,7 +16,7 @@ function packagePath(relativePath: string): string {
 }
 
 describe(ensurePackageDirectories, () => {
-	it("should create only directory-shaped Rojo paths recursively", () => {
+	it("should create only directory-shaped Rojo paths recursively", ({ expect }) => {
 		expect.assertions(4);
 
 		const { fileSystem, volume } = createMemoryFileSystem({
@@ -77,7 +77,7 @@ describe(ensurePackageDirectories, () => {
 		expect(readFileSync.mock.calls.map(([file]) => file)).not.toContain(missingProject);
 	});
 
-	it("should ignore missing and malformed projects", () => {
+	it("should ignore missing and malformed projects", ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem } = createMemoryFileSystem();

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { copyIgnoreMatcher } from "#test/mocks/coverage-copy-ignore.ts";
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
@@ -6,7 +6,7 @@ import { posixRoot } from "#test/mocks/posix-path.ts";
 import { reconcileShadowToSource, tryRemove } from "./shadow-reconcile.ts";
 
 describe(reconcileShadowToSource, () => {
-	it("should remove a shadow file whose source is gone", () => {
+	it("should remove a shadow file whose source is gone", ({ expect }) => {
 		expect.assertions(3);
 
 		const { fileSystem, volume } = createMemoryFileSystem({
@@ -28,7 +28,7 @@ describe(reconcileShadowToSource, () => {
 		expect(volume.existsSync("/shadow/kept.json")).toBeTrue();
 	});
 
-	it("should keep what a bake owns inside an orphaned directory", () => {
+	it("should keep what a bake owns inside an orphaned directory", ({ expect }) => {
 		expect.assertions(3);
 
 		const { fileSystem, volume } = createMemoryFileSystem({
@@ -52,7 +52,7 @@ describe(reconcileShadowToSource, () => {
 });
 
 describe(tryRemove, () => {
-	it("should report an entry it cannot delete as kept", () => {
+	it("should report an entry it cannot delete as kept", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(

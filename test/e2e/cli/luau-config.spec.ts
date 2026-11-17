@@ -1,6 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { nodeAt, readPlaceTree } from "#test/e2e/cli/place-tree.ts";
 import { startFakeOpenCloudServerAsync } from "#test/harness/fake-open-cloud.ts";
@@ -43,7 +43,7 @@ async function runSeaOnFakeOpenCloudAsync(
 describe("luau configs", () => {
 	it.skipIf(!rojoOnPath())(
 		"should run to completion on a jest.config.luau under the sea executable",
-		async () => {
+		async ({ expect }) => {
 			expect.assertions(2);
 
 			const sandbox = createFixtureSandbox(LUAU_FIXTURE_PATH);
@@ -64,7 +64,7 @@ describe("luau configs", () => {
 
 	it.skipIf(!rojoOnPath())(
 		"should run a jest.config.luau that holds code with lute under the sea executable",
-		async () => {
+		async ({ expect }) => {
 			expect.assertions(2);
 
 			const sandbox = createFixtureSandbox(LUAU_FIXTURE_PATH);
@@ -89,7 +89,7 @@ describe("luau configs", () => {
 
 	it.skipIf(!rojoOnPath())(
 		"should stage a stub without cli keys for a jest.config.luau that is also the top-level config",
-		async () => {
+		async ({ expect }) => {
 			expect.assertions(6);
 
 			const sandbox = createFixtureSandbox(LUAU_FIXTURE_PATH);
@@ -137,7 +137,7 @@ describe("luau configs", () => {
 		RUN_TIMEOUT_MS + 5000,
 	);
 
-	it("should load the luau file that --config names", async () => {
+	it("should load the luau file that --config names", async ({ expect }) => {
 		expect.assertions(2);
 
 		const sandbox = createFixtureSandbox(LUAU_FIXTURE_PATH);
@@ -159,7 +159,7 @@ describe("luau configs", () => {
 		expect(result.stderr).toContain(MISSING_ALL_BUT_PLACE_ID);
 	});
 
-	it("should name the file when lute cannot evaluate a jest.config.luau", async () => {
+	it("should name the file when lute cannot evaluate a jest.config.luau", async ({ expect }) => {
 		expect.assertions(2);
 
 		const sandbox = createFixtureSandbox(LUAU_FIXTURE_PATH);
@@ -175,7 +175,7 @@ describe("luau configs", () => {
 		expect(result.stderr).toContain(`Luau config ${configPath} failed in lute: `);
 	});
 
-	it("should load a workspace package's jest.config.luau", async () => {
+	it("should load a workspace package's jest.config.luau", async ({ expect }) => {
 		expect.assertions(2);
 
 		const sandbox = createFixtureSandbox(WORKSPACE_FIXTURE_PATH);

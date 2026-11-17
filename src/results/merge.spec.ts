@@ -1,12 +1,12 @@
 import { fromAny } from "@total-typescript/shoehorn";
 
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { makeBlockedResult, makeExecuteResult, makeJestResult } from "#test/mocks/spec-results.ts";
 import { mergeProjectResults } from "./merge.ts";
 
 describe(mergeProjectResults, () => {
-	it("should reject an empty project result set", () => {
+	it("should reject an empty project result set", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(() => mergeProjectResults([])).toThrow(
@@ -14,7 +14,7 @@ describe(mergeProjectResults, () => {
 		);
 	});
 
-	it("should fail otherwise successful projects when snapshot writes failed", () => {
+	it("should fail otherwise successful projects when snapshot writes failed", ({ expect }) => {
 		expect.assertions(2);
 
 		const merged = mergeProjectResults([
@@ -26,7 +26,7 @@ describe(mergeProjectResults, () => {
 		expect(merged.snapshotWriteFailures).toBe(2);
 	});
 
-	it("should omit a zero snapshot-write count from successful projects", () => {
+	it("should omit a zero snapshot-write count from successful projects", ({ expect }) => {
 		expect.assertions(2);
 
 		const merged = mergeProjectResults([
@@ -38,7 +38,7 @@ describe(mergeProjectResults, () => {
 		expect(merged.snapshotWriteFailures).toBeUndefined();
 	});
 
-	it("should preserve every merged result and timing dimension", () => {
+	it("should preserve every merged result and timing dimension", ({ expect }) => {
 		expect.assertions(1);
 
 		const snapshot = { added: 1, matched: 2, total: 4, unmatched: 1, updated: 0 };
@@ -113,7 +113,7 @@ describe(mergeProjectResults, () => {
 		});
 	});
 
-	it("should keep the gaps of each named test across projects", () => {
+	it("should keep the gaps of each named test across projects", ({ expect }) => {
 		expect.assertions(1);
 
 		const merged = mergeProjectResults([
@@ -134,7 +134,7 @@ describe(mergeProjectResults, () => {
 		]);
 	});
 
-	it("should merge a single result into an equal one", () => {
+	it("should merge a single result into an equal one", ({ expect }) => {
 		expect.assertions(1);
 
 		const single = makeExecuteResult();
@@ -142,7 +142,7 @@ describe(mergeProjectResults, () => {
 		expect(mergeProjectResults([single])).toMatchObject(single);
 	});
 
-	it("should aggregate counts across multiple results", () => {
+	it("should aggregate counts across multiple results", ({ expect }) => {
 		expect.assertions(3);
 
 		const a = makeExecuteResult({
@@ -169,7 +169,7 @@ describe(mergeProjectResults, () => {
 		expect(merged.result.success).toBeFalse();
 	});
 
-	it("should merge coverage data across results", () => {
+	it("should merge coverage data across results", ({ expect }) => {
 		expect.assertions(1);
 
 		const a = makeExecuteResult({ coverageData: fromAny({ "a.luau": { s: { "0": 1 } } }) });
@@ -180,7 +180,7 @@ describe(mergeProjectResults, () => {
 		expect(merged.coverageData).toBeDefined();
 	});
 
-	it("should leave coverage undefined when no result has coverage", () => {
+	it("should leave coverage undefined when no result has coverage", ({ expect }) => {
 		expect.assertions(1);
 
 		const a = makeExecuteResult();
@@ -189,7 +189,7 @@ describe(mergeProjectResults, () => {
 		expect(mergeProjectResults([a, b]).coverageData).toBeUndefined();
 	});
 
-	it("should sum testsMs across results", () => {
+	it("should sum testsMs across results", ({ expect }) => {
 		expect.assertions(1);
 
 		const a = makeExecuteResult({
@@ -214,7 +214,7 @@ describe(mergeProjectResults, () => {
 		expect(mergeProjectResults([a, b]).timing.testsMs).toBe(125);
 	});
 
-	it("should sum setupMs when present on any result", () => {
+	it("should sum setupMs when present on any result", ({ expect }) => {
 		expect.assertions(1);
 
 		const a = makeExecuteResult({
@@ -241,7 +241,7 @@ describe(mergeProjectResults, () => {
 		expect(mergeProjectResults([a, b]).timing.setupMs).toBe(60);
 	});
 
-	it("should leave setupMs undefined when no result has any setup time", () => {
+	it("should leave setupMs undefined when no result has any setup time", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -249,7 +249,7 @@ describe(mergeProjectResults, () => {
 		).toBeUndefined();
 	});
 
-	it("should combine source mappers across results", () => {
+	it("should combine source mappers across results", ({ expect }) => {
 		expect.assertions(1);
 
 		const sourceMapper = {
@@ -264,13 +264,13 @@ describe(mergeProjectResults, () => {
 		expect(mergeProjectResults([a, b]).sourceMapper).toBeDefined();
 	});
 
-	it("should yield exitCode 0 when all results succeeded", () => {
+	it("should yield exitCode 0 when all results succeeded", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(mergeProjectResults([makeExecuteResult(), makeExecuteResult()]).exitCode).toBe(0);
 	});
 
-	it("should yield exitCode 1 when any result failed", () => {
+	it("should yield exitCode 1 when any result failed", ({ expect }) => {
 		expect.assertions(1);
 
 		const failing = makeExecuteResult({
@@ -280,7 +280,7 @@ describe(mergeProjectResults, () => {
 		expect(mergeProjectResults([makeExecuteResult(), failing]).exitCode).toBe(1);
 	});
 
-	it("should sum numTodoTests across results when present", () => {
+	it("should sum numTodoTests across results when present", ({ expect }) => {
 		expect.assertions(1);
 
 		const a = makeExecuteResult({
@@ -293,7 +293,7 @@ describe(mergeProjectResults, () => {
 		expect(mergeProjectResults([a, b]).result.numTodoTests).toBe(5);
 	});
 
-	it("should default numTodoTests to 0 when undefined on results", () => {
+	it("should default numTodoTests to 0 when undefined on results", ({ expect }) => {
 		expect.assertions(1);
 
 		const a = makeExecuteResult({
@@ -306,7 +306,7 @@ describe(mergeProjectResults, () => {
 		expect(mergeProjectResults([a, b]).result.numTodoTests).toBe(0);
 	});
 
-	it("should fold every project's snapshot summary into the merged one", () => {
+	it("should fold every project's snapshot summary into the merged one", ({ expect }) => {
 		expect.assertions(1);
 
 		const first = { added: 1, matched: 2, total: 3, unmatched: 0, updated: 0 };

@@ -2,10 +2,13 @@ import { writeTemporaryLuauScript } from "@isentinel/luau-ast";
 
 import fs from "node:fs";
 import path from "node:path";
-import { describe, expect, it, onTestFinished } from "vitest";
+import { describe, it } from "vitest";
 
 describe(writeTemporaryLuauScript, () => {
-	it("should create a temporary script containing the supplied source", () => {
+	it("should create a temporary script containing the supplied source", ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(3);
 
 		const scriptPath = writeTemporaryLuauScript({

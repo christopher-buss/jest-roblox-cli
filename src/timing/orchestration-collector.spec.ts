@@ -1,5 +1,5 @@
 import process from "node:process";
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, type TestContext, vi } from "vitest";
 
 import { createTimingCollector, type SpanListener } from "./orchestration-collector.ts";
 
@@ -38,7 +38,15 @@ function createRecordingListener() {
 	return { calls, listener };
 }
 
-function profilePastThrowingSink(sink: (line: string) => void, times: Array<number>): void {
+function profilePastThrowingSink({
+	expect,
+	sink,
+	times,
+}: {
+	expect: TestContext["expect"];
+	sink: (line: string) => void;
+	times: Array<number>;
+}): void {
 	const collector = createTimingCollector({
 		clock: createScriptedClock(times),
 		enabled: true,
@@ -53,7 +61,9 @@ function profilePastThrowingSink(sink: (line: string) => void, times: Array<numb
 }
 
 describe(createTimingCollector, () => {
-	it("should avoid reading the clock for disabled operations without durations", async () => {
+	it("should avoid reading the clock for disabled operations without durations", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const now = vi.fn<() => number>().mockReturnValue(0);
@@ -67,7 +77,7 @@ describe(createTimingCollector, () => {
 		expect(now).not.toHaveBeenCalled();
 	});
 
-	it("should close a rejecting timed async phase before opening another", async () => {
+	it("should close a rejecting timed async phase before opening another", async ({ expect }) => {
 		expect.assertions(2);
 
 		const { lines, sink } = createCapturingSink();
@@ -93,7 +103,7 @@ describe(createTimingCollector, () => {
 		]);
 	});
 
-	it("should indent nested spans and total only the top level", () => {
+	it("should indent nested spans and total only the top level", ({ expect }) => {
 		expect.assertions(1);
 
 		const { lines, sink } = createCapturingSink();
@@ -117,7 +127,7 @@ describe(createTimingCollector, () => {
 		]);
 	});
 
-	it("should merge sibling spans that share a name into one accumulated line", () => {
+	it("should merge sibling spans that share a name into one accumulated line", ({ expect }) => {
 		expect.assertions(1);
 
 		const { lines, sink } = createCapturingSink();
@@ -140,7 +150,7 @@ describe(createTimingCollector, () => {
 		]);
 	});
 
-	it("should report an async phase when it settles, before any flush", async () => {
+	it("should report an async phase when it settles, before any flush", async ({ expect }) => {
 		expect.assertions(2);
 
 		const { lines, sink } = createCapturingSink();
@@ -166,7 +176,9 @@ describe(createTimingCollector, () => {
 		]);
 	});
 
-	it("should record the elapsed time of a rejecting async phase and rethrow", async () => {
+	it("should record the elapsed time of a rejecting async phase and rethrow", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const { lines, sink } = createCapturingSink();
@@ -191,7 +203,9 @@ describe(createTimingCollector, () => {
 		]);
 	});
 
-	it("should run wrapped functions unchanged but write nothing when disabled", async () => {
+	it("should run wrapped functions unchanged but write nothing when disabled", async ({
+		expect,
+	}) => {
 		expect.assertions(3);
 
 		const { lines, sink } = createCapturingSink();
@@ -205,7 +219,7 @@ describe(createTimingCollector, () => {
 		expect(lines).toStrictEqual([]);
 	});
 
-	it("should write nothing when enabled but no spans were recorded", () => {
+	it("should write nothing when enabled but no spans were recorded", ({ expect }) => {
 		expect.assertions(1);
 
 		const { lines, sink } = createCapturingSink();
@@ -216,7 +230,7 @@ describe(createTimingCollector, () => {
 		expect(lines).toStrictEqual([]);
 	});
 
-	it("should not re-emit recorded spans on a second flush", () => {
+	it("should not re-emit recorded spans on a second flush", ({ expect }) => {
 		expect.assertions(1);
 
 		const { lines, sink } = createCapturingSink();
@@ -237,7 +251,7 @@ describe(createTimingCollector, () => {
 		]);
 	});
 
-	it("should stay off by default, whatever the TIMING env var says", () => {
+	it("should stay off by default, whatever the TIMING env var says", ({ expect }) => {
 		expect.assertions(1);
 
 		vi.stubEnv("TIMING", "");
@@ -251,7 +265,7 @@ describe(createTimingCollector, () => {
 		expect(lines).toStrictEqual([]);
 	});
 
-	it("should write to process.stderr by default", () => {
+	it("should write to process.stderr by default", ({ expect }) => {
 		expect.assertions(1);
 
 		const write = vi.spyOn(process.stderr, "write").mockReturnValue(true);
@@ -268,7 +282,7 @@ describe(createTimingCollector, () => {
 		);
 	});
 
-	it("should nest recorded spans under the currently-open profile frame", () => {
+	it("should nest recorded spans under the currently-open profile frame", ({ expect }) => {
 		expect.assertions(1);
 
 		const { lines, sink } = createCapturingSink();
@@ -293,7 +307,7 @@ describe(createTimingCollector, () => {
 		]);
 	});
 
-	it("should accumulate repeated record() calls with the same name", () => {
+	it("should accumulate repeated record() calls with the same name", ({ expect }) => {
 		expect.assertions(1);
 
 		const { lines, sink } = createCapturingSink();
@@ -309,7 +323,7 @@ describe(createTimingCollector, () => {
 		]);
 	});
 
-	it("should be a no-op when record() is called on a disabled collector", () => {
+	it("should be a no-op when record() is called on a disabled collector", ({ expect }) => {
 		expect.assertions(1);
 
 		const { lines, sink } = createCapturingSink();
@@ -321,7 +335,7 @@ describe(createTimingCollector, () => {
 		expect(lines).toStrictEqual([]);
 	});
 
-	it("should expose enabled true when constructed with enabled: true", () => {
+	it("should expose enabled true when constructed with enabled: true", ({ expect }) => {
 		expect.assertions(1);
 
 		const collector = createTimingCollector({ enabled: true });
@@ -329,7 +343,7 @@ describe(createTimingCollector, () => {
 		expect(collector.enabled).toBeTrue();
 	});
 
-	it("should expose enabled false when constructed with enabled: false", () => {
+	it("should expose enabled false when constructed with enabled: false", ({ expect }) => {
 		expect.assertions(1);
 
 		const collector = createTimingCollector({ enabled: false });
@@ -337,7 +351,7 @@ describe(createTimingCollector, () => {
 		expect(collector.enabled).toBeFalse();
 	});
 
-	it("should expose enabled false by default even with the TIMING env var set", () => {
+	it("should expose enabled false by default even with the TIMING env var set", ({ expect }) => {
 		expect.assertions(1);
 
 		vi.stubEnv("TIMING", "");
@@ -347,7 +361,7 @@ describe(createTimingCollector, () => {
 		expect(collector.enabled).toBeFalse();
 	});
 
-	it("should use a real clock by default", () => {
+	it("should use a real clock by default", ({ expect }) => {
 		expect.assertions(1);
 
 		const { lines, sink } = createCapturingSink();
@@ -363,7 +377,7 @@ describe(createTimingCollector, () => {
 		]);
 	});
 
-	it("should announce a top-level phase before it runs", () => {
+	it("should announce a top-level phase before it runs", ({ expect }) => {
 		expect.assertions(2);
 
 		const { lines, sink } = createCapturingSink();
@@ -381,7 +395,7 @@ describe(createTimingCollector, () => {
 		expect(lines).toStrictEqual(["[TIMING] synthesize: start", "[TIMING] synthesize: 5ms"]);
 	});
 
-	it("should announce a top-level phase once per run of it", () => {
+	it("should announce a top-level phase once per run of it", ({ expect }) => {
 		expect.assertions(1);
 
 		const { lines, sink } = createCapturingSink();
@@ -402,7 +416,7 @@ describe(createTimingCollector, () => {
 		]);
 	});
 
-	it("should hold a nested span until its top-level phase closes", () => {
+	it("should hold a nested span until its top-level phase closes", ({ expect }) => {
 		expect.assertions(2);
 
 		const { lines, sink } = createCapturingSink();
@@ -426,7 +440,7 @@ describe(createTimingCollector, () => {
 		]);
 	});
 
-	it("should hold a root-level record until the flush", () => {
+	it("should hold a root-level record until the flush", ({ expect }) => {
 		expect.assertions(2);
 
 		const { lines, sink } = createCapturingSink();
@@ -441,15 +455,13 @@ describe(createTimingCollector, () => {
 		expect(lines).toStrictEqual(["[TIMING] runTypecheck: 4ms", "[TIMING] TOTAL (host): 4ms"]);
 	});
 
-	it("should keep the span stack intact when the announcing sink throws", () => {
+	it("should keep the span stack intact when the announcing sink throws", ({ expect }) => {
 		expect.assertions(2);
 
 		const sink = vi.fn<(line: string) => void>();
-		sink.mockImplementationOnce(() => {
-			throw new Error("sink boom");
-		});
+		sink.mockThrowOnce(new Error("sink boom"));
 
-		profilePastThrowingSink(sink, [0, 1]);
+		profilePastThrowingSink({ expect, sink, times: [0, 1] });
 
 		// A stranded frame would swallow the second phase's own announcement
 		// and its report, so those two lines are what prove the stack unwound.
@@ -460,17 +472,15 @@ describe(createTimingCollector, () => {
 		]);
 	});
 
-	it("should keep the span stack intact when the reporting sink throws", () => {
+	it("should keep the span stack intact when the reporting sink throws", ({ expect }) => {
 		expect.assertions(2);
 
 		const sink = vi.fn<(line: string) => void>();
 		// First call is the announcement; the phase's own report is second.
 		sink.mockImplementationOnce(() => {});
-		sink.mockImplementationOnce(() => {
-			throw new Error("sink boom");
-		});
+		sink.mockThrowOnce(new Error("sink boom"));
 
-		profilePastThrowingSink(sink, [0, 1, 2, 3]);
+		profilePastThrowingSink({ expect, sink, times: [0, 1, 2, 3] });
 
 		expect(sink.mock.calls.map((call) => call[0])).toStrictEqual([
 			"[TIMING] boom-phase: start",
@@ -480,7 +490,7 @@ describe(createTimingCollector, () => {
 		]);
 	});
 
-	it("should write nothing while disabled", () => {
+	it("should write nothing while disabled", ({ expect }) => {
 		expect.assertions(1);
 
 		const { lines, sink } = createCapturingSink();
@@ -492,7 +502,7 @@ describe(createTimingCollector, () => {
 		expect(lines).toStrictEqual([]);
 	});
 
-	it("should tell the listener of every span, nested ones too", () => {
+	it("should tell the listener of every span, nested ones too", ({ expect }) => {
 		expect.assertions(1);
 
 		const { calls, listener } = createRecordingListener();
@@ -510,7 +520,7 @@ describe(createTimingCollector, () => {
 		]);
 	});
 
-	it("should tell the listener of an async span with the report off", async () => {
+	it("should tell the listener of an async span with the report off", async ({ expect }) => {
 		expect.assertions(2);
 
 		const { calls, listener } = createRecordingListener();
@@ -524,7 +534,7 @@ describe(createTimingCollector, () => {
 		expect(lines).toStrictEqual([]);
 	});
 
-	it("should hand back a profiled phase's own elapsed time with its value", () => {
+	it("should hand back a profiled phase's own elapsed time with its value", ({ expect }) => {
 		expect.assertions(2);
 
 		const { lines, sink } = createCapturingSink();
@@ -543,7 +553,7 @@ describe(createTimingCollector, () => {
 		]);
 	});
 
-	it("should hand back the elapsed time of an async profiled phase", async () => {
+	it("should hand back the elapsed time of an async profiled phase", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { sink } = createCapturingSink();
@@ -558,7 +568,9 @@ describe(createTimingCollector, () => {
 		expect(built).toStrictEqual({ elapsedMs: 250, value: "place.rbxl" });
 	});
 
-	it("should still measure a timed phase on a collector with the report off", async () => {
+	it("should still measure a timed phase on a collector with the report off", async ({
+		expect,
+	}) => {
 		expect.assertions(3);
 
 		const { lines, sink } = createCapturingSink();
@@ -578,7 +590,7 @@ describe(createTimingCollector, () => {
 		expect(lines).toStrictEqual([]);
 	});
 
-	it("should round a timed phase to whole milliseconds", () => {
+	it("should round a timed phase to whole milliseconds", ({ expect }) => {
 		expect.assertions(1);
 
 		const collector = createTimingCollector({
@@ -590,7 +602,7 @@ describe(createTimingCollector, () => {
 		expect(collector.profileTimed("buildStubs", () => {}).elapsedMs).toBe(41);
 	});
 
-	it("should close a timed phase that throws and rethrow", () => {
+	it("should close a timed phase that throws and rethrow", ({ expect }) => {
 		expect.assertions(2);
 
 		const { lines, sink } = createCapturingSink();
@@ -618,7 +630,7 @@ describe(createTimingCollector, () => {
 		]);
 	});
 
-	it("should keep the timing report quiet while only a listener is wanted", () => {
+	it("should keep the timing report quiet while only a listener is wanted", ({ expect }) => {
 		expect.assertions(1);
 
 		const { listener } = createRecordingListener();

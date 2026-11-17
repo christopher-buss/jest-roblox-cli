@@ -1,12 +1,12 @@
 import { Buffer } from "node:buffer";
 import * as path from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { describePlaceFile, describeProjectCount, LAST_STAGE, STAGE_IDS } from "./stages.ts";
 
 describe("the stage the block settles on", () => {
-	it("should be the last stage a run passes through", () => {
+	it("should be the last stage a run passes through", ({ expect }) => {
 		expect.assertions(1);
 
 		// The block settles here, so a stage listed after it would open onto a
@@ -16,19 +16,19 @@ describe("the stage the block settles on", () => {
 });
 
 describe(describeProjectCount, () => {
-	it("should say a lone project in the singular", () => {
+	it("should say a lone project in the singular", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(describeProjectCount(1)).toBe("1 project");
 	});
 
-	it("should count several projects in the plural", () => {
+	it("should count several projects in the plural", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(describeProjectCount(42)).toBe("42 projects");
 	});
 
-	it("should count no projects in the plural", () => {
+	it("should count no projects in the plural", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(describeProjectCount(0)).toBe("0 projects");
@@ -44,39 +44,39 @@ function makePlaceFile(bytes: number): Parameters<typeof describePlaceFile> {
 }
 
 describe(describePlaceFile, () => {
-	it("should report a place under a kilobyte in whole bytes", () => {
+	it("should report a place under a kilobyte in whole bytes", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(describePlaceFile(...makePlaceFile(512))).toBe("512 B");
 	});
 
-	it("should report a kilobyte-scale place to one decimal", () => {
+	it("should report a kilobyte-scale place to one decimal", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(describePlaceFile(...makePlaceFile(1536))).toBe("1.5 KB");
 	});
 
-	it("should report a megabyte-scale place to one decimal", () => {
+	it("should report a megabyte-scale place to one decimal", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(describePlaceFile(...makePlaceFile(13_002_342))).toBe("12.4 MB");
 	});
 
-	it("should turn over to kilobytes at exactly one kilobyte", () => {
+	it("should turn over to kilobytes at exactly one kilobyte", ({ expect }) => {
 		expect.assertions(2);
 
 		expect(describePlaceFile(...makePlaceFile(1023))).toBe("1023 B");
 		expect(describePlaceFile(...makePlaceFile(1024))).toBe("1.0 KB");
 	});
 
-	it("should turn over to megabytes at exactly one megabyte", () => {
+	it("should turn over to megabytes at exactly one megabyte", ({ expect }) => {
 		expect.assertions(2);
 
 		expect(describePlaceFile(...makePlaceFile(1_048_575))).toBe("1024.0 KB");
 		expect(describePlaceFile(...makePlaceFile(1_048_576))).toBe("1.0 MB");
 	});
 
-	it("should report nothing for a place that cannot be read", () => {
+	it("should report nothing for a place that cannot be read", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -84,7 +84,7 @@ describe(describePlaceFile, () => {
 		expect(describePlaceFile(path.resolve("no-such-place.rbxl"), fileSystem)).toBeUndefined();
 	});
 
-	it("should stat a missing place without building an error", () => {
+	it("should stat a missing place without building an error", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -95,7 +95,7 @@ describe(describePlaceFile, () => {
 		expect(stat).toHaveBeenCalledExactlyOnceWith(placeFilePath, { throwIfNoEntry: false });
 	});
 
-	it("should report nothing for a place whose stat fails", () => {
+	it("should report nothing for a place whose stat fails", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();

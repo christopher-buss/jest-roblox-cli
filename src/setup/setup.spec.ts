@@ -1,5 +1,5 @@
 import * as path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { aliasVersionWarning, formatSetupOutcome, runSetup } from "./setup.ts";
@@ -25,7 +25,7 @@ function setup(seed: Record<string, string> = {}) {
 }
 
 describe(runSetup, () => {
-	it("should write the type module to the versioned home folder", () => {
+	it("should write the type module to the versioned home folder", ({ expect }) => {
 		expect.assertions(1);
 
 		const { volume } = setup();
@@ -35,7 +35,7 @@ describe(runSetup, () => {
 		);
 	});
 
-	it("should create .config.luau when the project has no Luau configuration", () => {
+	it("should create .config.luau when the project has no Luau configuration", ({ expect }) => {
 		expect.assertions(2);
 
 		const { outcome, read } = setup();
@@ -50,7 +50,7 @@ describe(runSetup, () => {
 		);
 	});
 
-	it("should add the alias to an existing .config.luau and keep its comments", () => {
+	it("should add the alias to an existing .config.luau and keep its comments", ({ expect }) => {
 		expect.assertions(2);
 
 		const { outcome, read } = setup({
@@ -64,7 +64,9 @@ describe(runSetup, () => {
 		);
 	});
 
-	it("should leave a .config.luau that builds its aliases with code and name the entry", () => {
+	it("should leave a .config.luau that builds its aliases with code and name the entry", ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const source = "local aliases = {}\nreturn { luau = { aliases = aliases } }\n";
@@ -79,7 +81,7 @@ describe(runSetup, () => {
 		expect(read(".config.luau")).toBe(source);
 	});
 
-	it("should merge the alias into a .luaurc and keep its other keys", () => {
+	it("should merge the alias into a .luaurc and keep its other keys", ({ expect }) => {
 		expect.assertions(3);
 
 		const { exists, outcome, read } = setup({
@@ -98,7 +100,7 @@ describe(runSetup, () => {
 		expect(exists(".config.luau")).toBeFalse();
 	});
 
-	it("should add an aliases object to a .luaurc without one", () => {
+	it("should add an aliases object to a .luaurc without one", ({ expect }) => {
 		expect.assertions(1);
 
 		const { read } = setup({ ".luaurc": '{"languageMode":"strict"}' });
@@ -108,7 +110,9 @@ describe(runSetup, () => {
 		);
 	});
 
-	it("should leave a .luaurc with a comment unchanged and name the entry to add", () => {
+	it("should leave a .luaurc with a comment unchanged and name the entry to add", ({
+		expect,
+	}) => {
 		expect.assertions(3);
 
 		const source = '{\n\t-- strict everywhere\n\t"languageMode": "strict",\n}\n';
@@ -127,7 +131,7 @@ describe(runSetup, () => {
 		expect(exists(".config.luau")).toBeFalse();
 	});
 
-	it("should name the key of a .luaurc whose aliases are not strings", () => {
+	it("should name the key of a .luaurc whose aliases are not strings", ({ expect }) => {
 		expect.assertions(2);
 
 		const source = '{ "aliases": { "x": 1 } }';
@@ -145,7 +149,7 @@ describe(runSetup, () => {
 });
 
 describe(formatSetupOutcome, () => {
-	it("should say which file got the alias", () => {
+	it("should say which file got the alias", ({ expect }) => {
 		expect.assertions(2);
 
 		expect(
@@ -162,7 +166,7 @@ describe(formatSetupOutcome, () => {
 		).toContain('\nCreated .config.luau with the "jest-roblox" alias\n');
 	});
 
-	it("should print the exact entry to add by hand", () => {
+	it("should print the exact entry to add by hand", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -196,7 +200,7 @@ describe(aliasVersionWarning, () => {
 		[".luaurc", '{ "aliases": { "Jest-Roblox": "~/.jest-roblox/typedefs/1.0.0/" } }'],
 	] as const)(
 		"should name both versions and say to run setup for an alias in %s",
-		([file, source]) => {
+		([file, source], { expect }) => {
 			expect.assertions(1);
 
 			expect(warn({ [file]: source })).toBe(
@@ -205,7 +209,7 @@ describe(aliasVersionWarning, () => {
 		},
 	);
 
-	it("should read an alias written as an absolute Windows path", () => {
+	it("should read an alias written as an absolute Windows path", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -241,18 +245,23 @@ describe(aliasVersionWarning, () => {
 				".luaurc": '{ "aliases": { "jest-roblox": "~/.jest-roblox/typedefs/1.0.0" } }',
 			},
 		],
-	] as const)("should not warn when %s", ([, seed]) => {
+	] as const)("should not warn when %s", ([, seed], { expect }) => {
 		expect.assertions(1);
 
 		expect(warn(seed)).toBeUndefined();
 	});
 
-	it.for([".config.luau", ".luaurc"])("should not warn when %s cannot be read", (file) => {
-		expect.assertions(1);
+	it.for([".config.luau", ".luaurc"])(
+		"should not warn when %s cannot be read",
+		(file, { expect }) => {
+			expect.assertions(1);
 
-		const { fileSystem, volume } = createMemoryFileSystem();
-		volume.mkdirSync(path.join(PROJECT, file), { recursive: true });
+			const { fileSystem, volume } = createMemoryFileSystem();
+			volume.mkdirSync(path.join(PROJECT, file), { recursive: true });
 
-		expect(aliasVersionWarning({ cwd: PROJECT, fileSystem, version: "1.2.3" })).toBeUndefined();
-	});
+			expect(
+				aliasVersionWarning({ cwd: PROJECT, fileSystem, version: "1.2.3" }),
+			).toBeUndefined();
+		},
+	);
 });

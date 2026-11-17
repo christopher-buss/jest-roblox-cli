@@ -1,7 +1,7 @@
 // cspell:words includ
 
 import * as path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { createLuteChildProcess } from "#test/mocks/lute-child-process.ts";
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
@@ -23,8 +23,25 @@ function seedLuauProjectConfig({
 	return { fileSystem };
 }
 
+async function loadSharedTestMatchConfigAsync(
+	filePath: string,
+): ReturnType<typeof loadProjectConfigFile> {
+	const { configLoader, seams } = createProjectSeams();
+	configLoader.mockResolvedValueOnce({
+		config: {
+			displayName: "shared",
+			testMatch: ["**/__tests__/**/*.test"],
+		},
+		configFile: "jest.config.ts",
+		cwd: "/project",
+		layers: [],
+	});
+
+	return loadProjectConfigFile({ cwd: "/project", filePath, input: seams });
+}
+
 describe(loadProjectConfigFile, () => {
-	it("should load and return project config via c12", async () => {
+	it("should load and return project config via c12", async ({ expect }) => {
 		expect.assertions(3);
 
 		const { configLoader, seams } = createProjectSeams();
@@ -59,7 +76,7 @@ describe(loadProjectConfigFile, () => {
 		});
 	});
 
-	it("should unwrap project configs exported with defineProject shape", async () => {
+	it("should unwrap project configs exported with defineProject shape", async ({ expect }) => {
 		expect.assertions(2);
 
 		const { configLoader, seams } = createProjectSeams();
@@ -85,7 +102,7 @@ describe(loadProjectConfigFile, () => {
 		expect(result.include).toStrictEqual(["src/client/**/*.spec.ts"]);
 	});
 
-	it("should throw when config file not found", async () => {
+	it("should throw when config file not found", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { configLoader, seams } = createProjectSeams();
@@ -100,7 +117,7 @@ describe(loadProjectConfigFile, () => {
 		).rejects.toThrow("Failed to load project config file ./missing.config.ts: File not found");
 	});
 
-	it("should stringify non-Error thrown values", async () => {
+	it("should stringify non-Error thrown values", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { configLoader, seams } = createProjectSeams();
@@ -113,7 +130,7 @@ describe(loadProjectConfigFile, () => {
 		);
 	});
 
-	it("should preserve original error message for non-ENOENT errors", async () => {
+	it("should preserve original error message for non-ENOENT errors", async ({ expect }) => {
 		expect.assertions(3);
 
 		const { configLoader, seams } = createProjectSeams();
@@ -135,7 +152,7 @@ describe(loadProjectConfigFile, () => {
 		);
 	});
 
-	it("should extract displayName from object-style displayName", async () => {
+	it("should extract displayName from object-style displayName", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { configLoader, seams } = createProjectSeams();
@@ -158,7 +175,7 @@ describe(loadProjectConfigFile, () => {
 		expect(result.displayName).toStrictEqual({ name: "client", color: "cyan" });
 	});
 
-	it("should throw when config has no displayName", async () => {
+	it("should throw when config has no displayName", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { configLoader, seams } = createProjectSeams();
@@ -181,7 +198,7 @@ describe(loadProjectConfigFile, () => {
 		).rejects.toThrow('Project config file "./no-name.config.ts" must have a displayName');
 	});
 
-	it("should throw when config omits displayName entirely", async () => {
+	it("should throw when config omits displayName entirely", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { configLoader, seams } = createProjectSeams();
@@ -201,7 +218,7 @@ describe(loadProjectConfigFile, () => {
 		).rejects.toThrow(/Invalid project config file "\.\/no-name\.config\.ts"/);
 	});
 
-	it("should reject an unknown key in a project config file", async () => {
+	it("should reject an unknown key in a project config file", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { configLoader, seams } = createProjectSeams();
@@ -217,25 +234,10 @@ describe(loadProjectConfigFile, () => {
 		).rejects.toThrow(/Invalid project config file "\.\/typo\.config\.ts".*includ/);
 	});
 
-	it("should derive include from testMatch when include is missing", async () => {
+	it("should derive include from testMatch when include is missing", async ({ expect }) => {
 		expect.assertions(1);
 
-		const { configLoader, seams } = createProjectSeams();
-		configLoader.mockResolvedValueOnce({
-			config: {
-				displayName: "shared",
-				testMatch: ["**/__tests__/**/*.test"],
-			},
-			configFile: "jest.config.ts",
-			cwd: "/project",
-			layers: [],
-		});
-
-		const result = await loadProjectConfigFile({
-			cwd: "/project",
-			filePath: "./shared/jest.config.ts",
-			input: seams,
-		});
+		const result = await loadSharedTestMatchConfigAsync("./shared/jest.config.ts");
 
 		expect(result.include).toStrictEqual([
 			"shared/**/__tests__/**/*.test.ts",
@@ -243,7 +245,9 @@ describe(loadProjectConfigFile, () => {
 		]);
 	});
 
-	it("should leave include undefined when neither include nor testMatch is set", async () => {
+	it("should leave include undefined when neither include nor testMatch is set", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { configLoader, seams } = createProjectSeams();
@@ -265,30 +269,15 @@ describe(loadProjectConfigFile, () => {
 		expect(result).not.toHaveProperty("include");
 	});
 
-	it("should derive outDir from config path for roblox-ts projects", async () => {
+	it("should derive outDir from config path for roblox-ts projects", async ({ expect }) => {
 		expect.assertions(1);
 
-		const { configLoader, seams } = createProjectSeams();
-		configLoader.mockResolvedValueOnce({
-			config: {
-				displayName: "shared",
-				testMatch: ["**/__tests__/**/*.test"],
-			},
-			configFile: "jest.config.ts",
-			cwd: "/project",
-			layers: [],
-		});
-
-		const result = await loadProjectConfigFile({
-			cwd: "/project",
-			filePath: "src/shared/jest.config.ts",
-			input: seams,
-		});
+		const result = await loadSharedTestMatchConfigAsync("src/shared/jest.config.ts");
 
 		expect(result.outDir).toBe("out/shared");
 	});
 
-	it("should not derive outDir when tsconfig has no rootDir/outDir", async () => {
+	it("should not derive outDir when tsconfig has no rootDir/outDir", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { configLoader, resolveTsconfigDirectories, seams } = createProjectSeams();
@@ -320,7 +309,7 @@ describe(loadProjectConfigFile, () => {
 		{ outDir: undefined, rootDir: "src" },
 	])(
 		"should not derive outDir when only one tsconfig directory is available",
-		async (directories) => {
+		async (directories, { expect }) => {
 			expect.assertions(1);
 
 			const { configLoader, resolveTsconfigDirectories, seams } = createProjectSeams();
@@ -342,7 +331,9 @@ describe(loadProjectConfigFile, () => {
 		},
 	);
 
-	it("should not infer a missing rootDir from a literal undefined directory", async () => {
+	it("should not infer a missing rootDir from a literal undefined directory", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { configLoader, resolveTsconfigDirectories, seams } = createProjectSeams();
@@ -363,7 +354,9 @@ describe(loadProjectConfigFile, () => {
 		expect(result).not.toHaveProperty("outDir");
 	});
 
-	it("should preserve an explicit outDir when tsconfig directories are available", async () => {
+	it("should preserve an explicit outDir when tsconfig directories are available", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { configLoader, seams } = createProjectSeams();
@@ -383,7 +376,7 @@ describe(loadProjectConfigFile, () => {
 		expect(result.outDir).toBe("custom-output");
 	});
 
-	it("should not derive outDir when config path is not under src/", async () => {
+	it("should not derive outDir when config path is not under src/", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { configLoader, seams } = createProjectSeams();
@@ -406,7 +399,7 @@ describe(loadProjectConfigFile, () => {
 		expect(result.outDir).toBeUndefined();
 	});
 
-	it("should keep testMatch patterns that already have source extensions", async () => {
+	it("should keep testMatch patterns that already have source extensions", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { configLoader, seams } = createProjectSeams();
@@ -433,7 +426,9 @@ describe(loadProjectConfigFile, () => {
 		]);
 	});
 
-	it("should keep Lua and Luau testMatch extensions without adding TypeScript variants", async () => {
+	it("should keep Lua and Luau testMatch extensions without adding TypeScript variants", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { configLoader, seams } = createProjectSeams();
@@ -456,7 +451,9 @@ describe(loadProjectConfigFile, () => {
 		expect(result.include).toStrictEqual(["shared/**/*.spec.lua", "shared/**/*.test.luau"]);
 	});
 
-	it("should only recognize source extensions at the end of a testMatch pattern", async () => {
+	it("should only recognize source extensions at the end of a testMatch pattern", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { configLoader, seams } = createProjectSeams();
@@ -482,7 +479,7 @@ describe(loadProjectConfigFile, () => {
 		]);
 	});
 
-	it("should not override include when already provided", async () => {
+	it("should not override include when already provided", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { configLoader, seams } = createProjectSeams();
@@ -506,7 +503,9 @@ describe(loadProjectConfigFile, () => {
 		expect(result.include).toStrictEqual(["src/client/**/*.spec.ts"]);
 	});
 
-	it("should run a Luau config that holds code through the given child process", async () => {
+	it("should run a Luau config that holds code through the given child process", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const input = seedLuauProjectConfig({
@@ -523,7 +522,7 @@ describe(loadProjectConfigFile, () => {
 		).rejects.toThrow('--version" printed "9.9.9"');
 	});
 
-	it("should load Luau config when jest.config.luau exists", async () => {
+	it("should load Luau config when jest.config.luau exists", async ({ expect }) => {
 		expect.assertions(2);
 
 		const input = seedLuauProjectConfig({
@@ -541,7 +540,7 @@ describe(loadProjectConfigFile, () => {
 		expect(result.include).toContain("packages/shared/**/*.spec.luau");
 	});
 
-	it("should throw when Luau config has empty displayName", async () => {
+	it("should throw when Luau config has empty displayName", async ({ expect }) => {
 		expect.assertions(1);
 
 		const input = seedLuauProjectConfig({
@@ -554,7 +553,7 @@ describe(loadProjectConfigFile, () => {
 		).rejects.toThrowWithMessage(Error, /must have a displayName string/);
 	});
 
-	it("should throw when Luau config has no displayName", async () => {
+	it("should throw when Luau config has no displayName", async ({ expect }) => {
 		expect.assertions(1);
 
 		const input = seedLuauProjectConfig({ directoryOrFile: "lib", source: "return {}" });
@@ -564,7 +563,9 @@ describe(loadProjectConfigFile, () => {
 		).rejects.toThrowWithMessage(Error, /must have a displayName string/);
 	});
 
-	it("should derive default include pattern when Luau config has no testMatch", async () => {
+	it("should derive default include pattern when Luau config has no testMatch", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const input = seedLuauProjectConfig({
@@ -577,7 +578,7 @@ describe(loadProjectConfigFile, () => {
 		expect(result.include).toStrictEqual(["shared/**/*.spec.luau"]);
 	});
 
-	it("should set testMatch on config when Luau config provides testMatch", async () => {
+	it("should set testMatch on config when Luau config provides testMatch", async ({ expect }) => {
 		expect.assertions(1);
 
 		const input = seedLuauProjectConfig({
@@ -590,7 +591,7 @@ describe(loadProjectConfigFile, () => {
 		expect(result.testMatch).toStrictEqual(["**/*.spec", "**/*.test"]);
 	});
 
-	it("should copy boolean optional fields from Luau config", async () => {
+	it("should copy boolean optional fields from Luau config", async ({ expect }) => {
 		expect.assertions(2);
 
 		const input = seedLuauProjectConfig({
@@ -604,7 +605,7 @@ describe(loadProjectConfigFile, () => {
 		expect(result.resetMocks).toBeFalse();
 	});
 
-	it("should copy number optional fields from Luau config", async () => {
+	it("should copy number optional fields from Luau config", async ({ expect }) => {
 		expect.assertions(1);
 
 		const input = seedLuauProjectConfig({
@@ -617,7 +618,7 @@ describe(loadProjectConfigFile, () => {
 		expect(result.testTimeout).toBe(5000);
 	});
 
-	it("should copy string optional fields from Luau config", async () => {
+	it("should copy string optional fields from Luau config", async ({ expect }) => {
 		expect.assertions(1);
 
 		const input = seedLuauProjectConfig({
@@ -630,7 +631,7 @@ describe(loadProjectConfigFile, () => {
 		expect(result.testEnvironment).toBe("jest-environment-jsdom");
 	});
 
-	it("should copy string array optional fields from Luau config", async () => {
+	it("should copy string array optional fields from Luau config", async ({ expect }) => {
 		expect.assertions(1);
 
 		const input = seedLuauProjectConfig({
@@ -643,7 +644,7 @@ describe(loadProjectConfigFile, () => {
 		expect(result.setupFiles).toStrictEqual(["setup.luau"]);
 	});
 
-	it("should reject fields with wrong types in Luau config", async () => {
+	it("should reject fields with wrong types in Luau config", async ({ expect }) => {
 		expect.assertions(1);
 
 		const input = seedLuauProjectConfig({

@@ -1,7 +1,7 @@
 import type { AstStat, AstStatIf } from "@isentinel/luau-ast/ast";
 import { loadLuauParser } from "@isentinel/luau-ast/parser";
 
-import { assert, describe, expect, it } from "vitest";
+import { assert, describe, it } from "vitest";
 
 import type { CoverageIgnores } from "./coverage-ignore.ts";
 import { resolveCoverageIgnores } from "./coverage-ignore.ts";
@@ -35,7 +35,7 @@ function firstIf({ statements }: Resolved): AstStatIf {
 const luauParser = loadLuauParser();
 
 describe(resolveCoverageIgnores, () => {
-	it("should cover the statement after a line directive", () => {
+	it("should cover the statement after a line directive", ({ expect }) => {
 		expect.assertions(1);
 
 		const resolved = resolve("local a = 1\n-- cov ignore next\nlocal b = 2\nlocal c = 3");
@@ -43,7 +43,7 @@ describe(resolveCoverageIgnores, () => {
 		expect(coveredLines(resolved)).toStrictEqual([3]);
 	});
 
-	it("should cover nothing in a file without directives", () => {
+	it("should cover nothing in a file without directives", ({ expect }) => {
 		expect.assertions(1);
 
 		const resolved = resolve("-- a comment\nlocal a = 1");
@@ -51,7 +51,7 @@ describe(resolveCoverageIgnores, () => {
 		expect(coveredLines(resolved)).toBeEmpty();
 	});
 
-	it("should reach past other comments between the directive and its node", () => {
+	it("should reach past other comments between the directive and its node", ({ expect }) => {
 		expect.assertions(1);
 
 		const resolved = resolve(
@@ -66,7 +66,7 @@ describe(resolveCoverageIgnores, () => {
 		["a leveled block comment", "--[==[ cov ignore next ]==]"],
 		["a comment without inner spaces", "--cov ignore next"],
 		["a trailing reason", "-- cov ignore next: unreachable"],
-	])("should read %s as a directive", ([, comment]) => {
+	])("should read %s as a directive", ([, comment], { expect }) => {
 		expect.assertions(1);
 
 		const resolved = resolve(`${comment}\nlocal a = 1`);
@@ -78,7 +78,7 @@ describe(resolveCoverageIgnores, () => {
 		["a comment that only mentions it", "-- see cov ignore next"],
 		["a longer keyword", "-- cov ignore elsewhere"],
 		["an unknown hint", "-- cov ignore file"],
-	])("should not read %s as a directive", ([, comment]) => {
+	])("should not read %s as a directive", ([, comment], { expect }) => {
 		expect.assertions(1);
 
 		const resolved = resolve(`${comment}\nlocal a = 1`);
@@ -86,7 +86,7 @@ describe(resolveCoverageIgnores, () => {
 		expect(coveredLines(resolved)).toBeEmpty();
 	});
 
-	it("should read byte offsets past a multi-byte character", () => {
+	it("should read byte offsets past a multi-byte character", ({ expect }) => {
 		expect.assertions(1);
 
 		const resolved = resolve('local s = "é" -- cov ignore next\nlocal t = 1');
@@ -94,7 +94,7 @@ describe(resolveCoverageIgnores, () => {
 		expect(coveredLines(resolved)).toStrictEqual([2]);
 	});
 
-	it("should cover a tab-indented statement inside a nested block", () => {
+	it("should cover a tab-indented statement inside a nested block", ({ expect }) => {
 		expect.assertions(2);
 
 		const resolved = resolve("do\n\t-- cov ignore next\n\tlocal a = 1\n\tlocal b = 2\nend");
@@ -105,7 +105,7 @@ describe(resolveCoverageIgnores, () => {
 		expect(resolved.ignores.covers(outer.body[1]!.location)).toBeFalse();
 	});
 
-	it("should cover a statement inside a function body", () => {
+	it("should cover a statement inside a function body", ({ expect }) => {
 		expect.assertions(1);
 
 		const resolved = resolve("local f = function()\n\t-- cov ignore next\n\treturn 1\nend");
@@ -117,7 +117,7 @@ describe(resolveCoverageIgnores, () => {
 		expect(resolved.ignores.covers(func.body.body[0]!.location)).toBeTrue();
 	});
 
-	it("should reach past a carriage return line ending", () => {
+	it("should reach past a carriage return line ending", ({ expect }) => {
 		expect.assertions(1);
 
 		const resolved = resolve("-- cov ignore next\r\nlocal a = 1");
@@ -125,7 +125,7 @@ describe(resolveCoverageIgnores, () => {
 		expect(coveredLines(resolved)).toStrictEqual([2]);
 	});
 
-	it("should drop a directive at the end of the file", () => {
+	it("should drop a directive at the end of the file", ({ expect }) => {
 		expect.assertions(1);
 
 		const resolved = resolve("local a = 1\n-- cov ignore next\n");
@@ -133,7 +133,7 @@ describe(resolveCoverageIgnores, () => {
 		expect(coveredLines(resolved)).toBeEmpty();
 	});
 
-	it("should drop a directive before an elseif", () => {
+	it("should drop a directive before an elseif", ({ expect }) => {
 		expect.assertions(2);
 
 		const resolved = resolve("if a then\n\tf()\n-- cov ignore if\nelseif b then\n\tg()\nend");
@@ -145,7 +145,7 @@ describe(resolveCoverageIgnores, () => {
 		expect(resolved.ignores.dropsImplicitElse(node)).toBeFalse();
 	});
 
-	it("should drop a directive with code between it and the next node", () => {
+	it("should drop a directive with code between it and the next node", ({ expect }) => {
 		expect.assertions(1);
 
 		const resolved = resolve(
@@ -155,7 +155,7 @@ describe(resolveCoverageIgnores, () => {
 		expect(coveredLines(resolved)).toBeEmpty();
 	});
 
-	it("should cover the then block of the next if under ignore if", () => {
+	it("should cover the then block of the next if under ignore if", ({ expect }) => {
 		expect.assertions(3);
 
 		const resolved = resolve("-- cov ignore if\nif a then\n\tf()\nelse\n\tg()\nend");
@@ -166,7 +166,7 @@ describe(resolveCoverageIgnores, () => {
 		expect(resolved.ignores.covers(node.elsebody!.location)).toBeFalse();
 	});
 
-	it("should cover the final else block of an if chain under ignore else", () => {
+	it("should cover the final else block of an if chain under ignore else", ({ expect }) => {
 		expect.assertions(3);
 
 		const resolved = resolve(
@@ -181,7 +181,7 @@ describe(resolveCoverageIgnores, () => {
 		expect(resolved.ignores.dropsImplicitElse(node)).toBeFalse();
 	});
 
-	it("should drop the implicit else of an if chain under ignore else", () => {
+	it("should drop the implicit else of an if chain under ignore else", ({ expect }) => {
 		expect.assertions(2);
 
 		const resolved = resolve("-- cov ignore else\nif a then\n\tf()\nelseif b then\n\tg()\nend");
@@ -193,7 +193,7 @@ describe(resolveCoverageIgnores, () => {
 
 	it.for(["if", "else"])(
 		"should leave a statement that is not an if alone under ignore %s",
-		(hint) => {
+		(hint, { expect }) => {
 			expect.assertions(1);
 
 			const resolved = resolve(`-- cov ignore ${hint}\nlocal a = 1`);

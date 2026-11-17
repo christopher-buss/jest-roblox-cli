@@ -1,7 +1,7 @@
 import { fromAny } from "@total-typescript/shoehorn";
 
 import * as path from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
@@ -110,7 +110,7 @@ function readBuildManifest({ fileSystem }: Harness): {
 }
 
 describe(buildCoveragePlaceAsync, () => {
-	it("should return the coverage place, build id, and manifest paths", async () => {
+	it("should return the coverage place, build id, and manifest paths", async ({ expect }) => {
 		expect.assertions(1);
 
 		const harness = seed();
@@ -127,7 +127,7 @@ describe(buildCoveragePlaceAsync, () => {
 		});
 	});
 
-	it("should force coverage collection on regardless of the input config", async () => {
+	it("should force coverage collection on regardless of the input config", async ({ expect }) => {
 		expect.assertions(1);
 
 		const harness = seed();
@@ -139,7 +139,9 @@ describe(buildCoveragePlaceAsync, () => {
 		expect(config.collectCoverage).toBeTrue();
 	});
 
-	it("should emit the build manifest with the coverage place and no clean place", async () => {
+	it("should emit the build manifest with the coverage place and no clean place", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const harness = seed();
@@ -152,7 +154,9 @@ describe(buildCoveragePlaceAsync, () => {
 		expect(manifest.cleanPlace).toBeUndefined();
 	});
 
-	it("should always bake jest.config stubs so the place is self-contained", async () => {
+	it("should always bake jest.config stubs so the place is self-contained", async ({
+		expect,
+	}) => {
 		expect.assertions(3);
 
 		const harness = seed();
@@ -168,7 +172,7 @@ describe(buildCoveragePlaceAsync, () => {
 
 	it.for([undefined, []])(
 		"should resolve the implicit project for projects=%j",
-		async (projects) => {
+		async (projects, { expect }) => {
 			expect.assertions(2);
 
 			const harness = seed();
@@ -180,7 +184,7 @@ describe(buildCoveragePlaceAsync, () => {
 		},
 	);
 
-	it("should resolve declared projects in multi mode", async () => {
+	it("should resolve declared projects in multi mode", async ({ expect }) => {
 		expect.assertions(2);
 
 		const harness = seed();
@@ -205,7 +209,9 @@ describe(buildCoveragePlaceAsync, () => {
 		]);
 	});
 
-	it("should bake the setup files' Instance paths into the build manifest", async () => {
+	it("should bake the setup files' Instance paths into the build manifest", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const harness = seed();
@@ -225,7 +231,9 @@ describe(buildCoveragePlaceAsync, () => {
 		]);
 	});
 
-	it("should not rewrite the build manifest on the incremental no-change reuse path", async () => {
+	it("should not rewrite the build manifest on the incremental no-change reuse path", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const harness = seed(false);

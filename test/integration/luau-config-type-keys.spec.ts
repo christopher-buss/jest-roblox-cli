@@ -3,7 +3,7 @@ import { loadLuauParser } from "@isentinel/luau-ast/parser";
 
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { assert, describe, expect, it } from "vitest";
+import { assert, describe, it } from "vitest";
 
 import { configSchema } from "#src/config/config-validation.ts";
 
@@ -58,7 +58,7 @@ const SCHEMA_KEYS = new Map<string, Array<string>>([
 ]);
 
 describe("luau config type", () => {
-	it("should declare one table type for each schema object", () => {
+	it("should declare one table type for each schema object", ({ expect }) => {
 		expect.assertions(1);
 
 		expect([...readLuauTypeKeys().keys()].toSorted()).toStrictEqual(
@@ -68,7 +68,7 @@ describe("luau config type", () => {
 
 	it.for([...SCHEMA_KEYS])(
 		"should give %s the keys of its schema object",
-		([typeName, schemaKeys]) => {
+		([typeName, schemaKeys], { expect }) => {
 			expect.assertions(1);
 
 			expect(readLuauTypeKeys().get(typeName)!.toSorted()).toStrictEqual(

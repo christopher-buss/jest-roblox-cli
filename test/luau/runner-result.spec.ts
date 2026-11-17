@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import {
 	fillPlaceholders,
@@ -17,7 +17,7 @@ const STUBBED = stubbedModules(HARNESS);
 const MODULE_SOURCE = readLuauTree("runner-result.luau", STUBBED);
 
 describe("shared runner-result builder under lute", () => {
-	it("should pass the runner-result harness assertions", () => {
+	it("should pass the runner-result harness assertions", ({ expect }) => {
 		expect.assertions(1);
 
 		const script = fillPlaceholders(HARNESS, { __MODULE__: MODULE_SOURCE });

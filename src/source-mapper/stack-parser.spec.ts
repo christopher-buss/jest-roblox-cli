@@ -1,9 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { parseStack } from "./stack-parser.ts";
 
 describe(parseStack, () => {
-	it("should parse single frame", () => {
+	it("should parse single frame", ({ expect }) => {
 		expect.assertions(3);
 
 		const input = '[string "ReplicatedStorage.client.lib.test.spec"]:24';
@@ -15,7 +15,7 @@ describe(parseStack, () => {
 		expect(result.frames[0]!.line).toBe(24);
 	});
 
-	it("should parse multiple frames", () => {
+	it("should parse multiple frames", ({ expect }) => {
 		expect.assertions(3);
 
 		const input = `[string "ReplicatedStorage.foo"]:10
@@ -28,7 +28,7 @@ describe(parseStack, () => {
 		expect(result.frames[1]!.dataModelPath).toBe("ReplicatedStorage.bar");
 	});
 
-	it("should separate message from frames", () => {
+	it("should separate message from frames", ({ expect }) => {
 		expect.assertions(2);
 
 		const input = `Error: expected true to be false
@@ -40,7 +40,7 @@ describe(parseStack, () => {
 		expect(result.frames).toHaveLength(1);
 	});
 
-	it("should return empty frames for no matches", () => {
+	it("should return empty frames for no matches", ({ expect }) => {
 		expect.assertions(2);
 
 		const input = "Just an error message with no stack";
@@ -51,7 +51,7 @@ describe(parseStack, () => {
 		expect(result.message).toBe("Just an error message with no stack");
 	});
 
-	it("should parse frame with column number", () => {
+	it("should parse frame with column number", ({ expect }) => {
 		expect.assertions(3);
 
 		const input = '[string "ReplicatedStorage.test"]:24:15';
@@ -63,7 +63,7 @@ describe(parseStack, () => {
 		expect(result.frames[0]!.column).toBe(15);
 	});
 
-	it("should snapshot parsed multi-frame stack", () => {
+	it("should snapshot parsed multi-frame stack", ({ expect }) => {
 		expect.assertions(1);
 
 		const input = `expect(received).toBe(expected)
@@ -95,7 +95,7 @@ Received: 0
 		`);
 	});
 
-	it("should parse frame without column as undefined", () => {
+	it("should parse frame without column as undefined", ({ expect }) => {
 		expect.assertions(2);
 
 		const input = '[string "ReplicatedStorage.test"]:24';

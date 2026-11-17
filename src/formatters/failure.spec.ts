@@ -1,7 +1,7 @@
 import { fromPartial } from "@total-typescript/shoehorn";
 
 import * as path from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import { createPlainStyles } from "#test/mocks/format-plain-styles.ts";
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
@@ -36,7 +36,7 @@ function makeSourceFile(content: string) {
 }
 
 describe(formatFailure, () => {
-	it("should paint the Error: prefix bold and omit the file segment by default", () => {
+	it("should paint the Error: prefix bold and omit the file segment by default", ({ expect }) => {
 		expect.assertions(2);
 
 		const test = fromPartial<TestCaseResult>({
@@ -54,7 +54,7 @@ describe(formatFailure, () => {
 		expect(plainLines[1]).toBe("   FAIL  suite > case");
 	});
 
-	it("should omit Luau snippets by default", () => {
+	it("should omit Luau snippets by default", ({ expect }) => {
 		expect.assertions(2);
 
 		const { filePath: luauPath, fileSystem } = makeSourceFile("return false\n");
@@ -92,7 +92,7 @@ describe(formatFailure, () => {
 
 	it.for(["Mismatch\nExpected: one", "Mismatch\nReceived: two"])(
 		"should omit a diff when only one comparison value was parsed",
-		(failureMessage) => {
+		(failureMessage, { expect }) => {
 			expect.assertions(2);
 
 			const test = fromPartial<TestCaseResult>({
@@ -107,7 +107,7 @@ describe(formatFailure, () => {
 		},
 	);
 
-	it("should dim context lines in snapshot diffs", () => {
+	it("should dim context lines in snapshot diffs", ({ expect }) => {
 		expect.assertions(1);
 
 		const test = fromPartial<TestCaseResult>({
@@ -121,7 +121,7 @@ describe(formatFailure, () => {
 		);
 	});
 
-	it("should not search for a snapshot call for an ordinary failure", () => {
+	it("should not search for a snapshot call for an ordinary failure", ({ expect }) => {
 		expect.assertions(1);
 
 		const { filePath, fileSystem } = makeSourceFile("expect(value).toMatchSnapshot();\n");
@@ -136,7 +136,7 @@ describe(formatFailure, () => {
 		).not.toContain("❯");
 	});
 
-	it("should render expected/received and snapshot failures completely", () => {
+	it("should render expected/received and snapshot failures completely", ({ expect }) => {
 		expect.assertions(1);
 
 		const test = fromPartial<TestCaseResult>({
@@ -161,7 +161,7 @@ describe(formatFailure, () => {
 });
 
 describe(formatExecErrorDetail, () => {
-	it("should render the cleaned failure, hint, separator, and counter update", () => {
+	it("should render the cleaned failure, hint, separator, and counter update", ({ expect }) => {
 		expect.assertions(2);
 
 		const failureContext = { currentIndex: 1, totalFailures: 2 };
@@ -182,7 +182,7 @@ describe(formatExecErrorDetail, () => {
 		expect(failureContext.currentIndex).toBe(2);
 	});
 
-	it("should badge a timed-out file as a timeout rather than a failure", () => {
+	it("should badge a timed-out file as a timeout rather than a failure", ({ expect }) => {
 		expect.assertions(1);
 
 		const file = fromPartial<TestFileResult>({
@@ -201,7 +201,7 @@ describe(formatExecErrorDetail, () => {
 		).toContain(" TIMEOUT ");
 	});
 
-	it("should preserve an unstyled blank line inside a multiline message", () => {
+	it("should preserve an unstyled blank line inside a multiline message", ({ expect }) => {
 		expect.assertions(2);
 
 		const failureContext = { currentIndex: 1, totalFailures: 1 };
@@ -222,7 +222,7 @@ describe(formatExecErrorDetail, () => {
 });
 
 describe(formatFileFailures, () => {
-	it("should number only failed tests and advance the shared counter", () => {
+	it("should number only failed tests and advance the shared counter", ({ expect }) => {
 		expect.assertions(3);
 
 		const failureContext = { currentIndex: 3, totalFailures: 4 };
@@ -263,7 +263,7 @@ describe(formatFileFailures, () => {
 });
 
 describe(formatFailure, () => {
-	it("should format test failure with vitest-style diff", () => {
+	it("should format test failure with vitest-style diff", ({ expect }) => {
 		expect.assertions(5);
 
 		const test: TestCaseResult = {
@@ -288,7 +288,7 @@ describe(formatFailure, () => {
 		expect(formatted).toContain("- 100");
 	});
 
-	it("should format failure with file path and ancestors", () => {
+	it("should format failure with file path and ancestors", ({ expect }) => {
 		expect.assertions(1);
 
 		const test: TestCaseResult = {
@@ -309,7 +309,7 @@ describe(formatFailure, () => {
 		expect(formatted).toContain("test.spec.ts > Math > Addition > should add");
 	});
 
-	it("should render snapshot diff with unified format", () => {
+	it("should render snapshot diff with unified format", ({ expect }) => {
 		expect.assertions(3);
 
 		const test: TestCaseResult = {
@@ -344,7 +344,7 @@ describe(formatFailure, () => {
 		expect(formatted).toContain('-   "health": 100,');
 	});
 
-	it("should not include mapped source location inside snapshot diff", () => {
+	it("should not include mapped source location inside snapshot diff", ({ expect }) => {
 		expect.assertions(3);
 
 		const sourceContent = Array.from({ length: 31 }, (_, index) => `line ${index + 1}`);
@@ -406,7 +406,7 @@ describe(formatFailure, () => {
 		expect(formatted.match(/src\/traits\.spec\.ts:29/g)!).toHaveLength(1);
 	});
 
-	it("should show Luau snippet for Luau-only mapped location", () => {
+	it("should show Luau snippet for Luau-only mapped location", ({ expect }) => {
 		expect.assertions(3);
 
 		const luauFile = path.resolve("test.spec.luau");
@@ -443,7 +443,7 @@ describe(formatFailure, () => {
 		expect(formatted).not.toContain("(Luau)");
 	});
 
-	it("should format multiple failure messages", () => {
+	it("should format multiple failure messages", ({ expect }) => {
 		expect.assertions(2);
 
 		const test: TestCaseResult = {
@@ -463,7 +463,7 @@ describe(formatFailure, () => {
 });
 
 describe("formatErrorLine bold Error: branch", () => {
-	it("should bold the Error: prefix through the palette", () => {
+	it("should bold the Error: prefix through the palette", ({ expect }) => {
 		expect.assertions(1);
 
 		const test: TestCaseResult = {
@@ -480,7 +480,7 @@ describe("formatErrorLine bold Error: branch", () => {
 		expect(formatted).toContain("<fail><bold>Error:</bold> something went wrong</fail>");
 	});
 
-	it("should not bold when message does not start with Error:", () => {
+	it("should not bold when message does not start with Error:", ({ expect }) => {
 		expect.assertions(1);
 
 		const test: TestCaseResult = {
@@ -499,7 +499,9 @@ describe("formatErrorLine bold Error: branch", () => {
 });
 
 describe("resolveSourceSnippets snapshot-diff fallback", () => {
-	it("should attempt snapshot call snippet when snapshot diff present and no mapped locations", () => {
+	it("should attempt snapshot call snippet when snapshot diff present and no mapped locations", ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const snapshotMessage = [
@@ -537,7 +539,9 @@ describe("resolveSourceSnippets snapshot-diff fallback", () => {
 		expect(formatted).not.toContain("❯");
 	});
 
-	it("should use sourceMapper.resolveTestFilePath for snapshot call snippet lookup", () => {
+	it("should use sourceMapper.resolveTestFilePath for snapshot call snippet lookup", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const resolveTestFilePath = vi
@@ -601,7 +605,9 @@ describe("formatSnapshotCallSnippet via formatFailure", () => {
 		].join("\n");
 	}
 
-	it("should show snapshot call snippet when file exists with exactly one toMatchSnapshot", () => {
+	it("should show snapshot call snippet when file exists with exactly one toMatchSnapshot", ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const { filePath, fileSystem } = makeTypeScriptFile(
@@ -636,7 +642,7 @@ describe("formatSnapshotCallSnippet via formatFailure", () => {
 		expect(formatted).toContain("toMatchSnapshot");
 	});
 
-	it("should not show snippet when file has multiple toMatchSnapshot calls", () => {
+	it("should not show snippet when file has multiple toMatchSnapshot calls", ({ expect }) => {
 		expect.assertions(1);
 
 		const { filePath, fileSystem } = makeTypeScriptFile(
@@ -665,7 +671,7 @@ describe("formatSnapshotCallSnippet via formatFailure", () => {
 });
 
 describe("showLuau mapped location snippets", () => {
-	it("should show both TypeScript and Luau snippets when showLuau is true", () => {
+	it("should show both TypeScript and Luau snippets when showLuau is true", ({ expect }) => {
 		expect.assertions(3);
 
 		const luauContent = Array.from({ length: 15 }, (_, index) => `-- line ${index + 1}`);
@@ -718,7 +724,9 @@ describe("showLuau mapped location snippets", () => {
 });
 
 describe("formatFallbackSnippet via formatFailure", () => {
-	it("should show fallback snippet when message contains a parseable source location", () => {
+	it("should show fallback snippet when message contains a parseable source location", ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const fileContent = [
@@ -750,7 +758,9 @@ describe("formatFallbackSnippet via formatFailure", () => {
 });
 
 describe("formatFallbackSnippet nonexistent file", () => {
-	it("should return no snippet when parseSourceLocation matches but file does not exist", () => {
+	it("should return no snippet when parseSourceLocation matches but file does not exist", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const test: TestCaseResult = {
@@ -771,7 +781,7 @@ describe("formatFallbackSnippet nonexistent file", () => {
 });
 
 describe("formatMappedLocationSnippets undefined branches", () => {
-	it("should skip TS snippet when tsPath points to nonexistent file", () => {
+	it("should skip TS snippet when tsPath points to nonexistent file", ({ expect }) => {
 		expect.assertions(2);
 
 		const sourceMapper = fromPartial<SourceMapper>({
@@ -810,7 +820,7 @@ describe("formatMappedLocationSnippets undefined branches", () => {
 		expect(formatted).toContain("Expected: 1");
 	});
 
-	it("should skip Luau-only snippet when luauPath points to nonexistent file", () => {
+	it("should skip Luau-only snippet when luauPath points to nonexistent file", ({ expect }) => {
 		expect.assertions(1);
 
 		const sourceMapper = fromPartial<SourceMapper>({
@@ -837,7 +847,9 @@ describe("formatMappedLocationSnippets undefined branches", () => {
 		expect(formatted).not.toContain("❯");
 	});
 
-	it("should skip Luau snippet when luauPath points to nonexistent file with showLuau", () => {
+	it("should skip Luau snippet when luauPath points to nonexistent file with showLuau", ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const tsContent = Array.from({ length: 10 }, (_, index) => `// line ${index + 1}`);
@@ -883,7 +895,7 @@ describe("formatMappedLocationSnippets undefined branches", () => {
 });
 
 describe("complete formatter contracts", () => {
-	it("should render an expected/received failure exactly", () => {
+	it("should render an expected/received failure exactly", ({ expect }) => {
 		expect.assertions(1);
 
 		const test: TestCaseResult = {
@@ -908,7 +920,7 @@ describe("complete formatter contracts", () => {
 		).toMatchSnapshot();
 	});
 
-	it("should render a snapshot diff exactly", () => {
+	it("should render a snapshot diff exactly", ({ expect }) => {
 		expect.assertions(1);
 
 		const test: TestCaseResult = {

@@ -49,13 +49,13 @@ function createContentWriter(filePath: string, fileSystem: FileSystem): ContentW
 			fileSystem.mkdirSync(path.dirname(filePath), { recursive: true });
 			fileSystem.writeFileSync(filePath, Buffer.concat(chunks));
 		},
-		colorize(text: string): string {
+		colorize(text): string {
 			return text;
 		},
-		println(text: string): void {
+		println(text): void {
 			chunks.push(Buffer.from(`${text}\n`));
 		},
-		write(chunk: Buffer | string): void {
+		write(chunk): void {
 			chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
 		},
 	};
@@ -72,12 +72,12 @@ function createMemoryWriter({
 }): MemoryWriter {
 	// eslint-disable-next-line ts/no-unsafe-class-instance-assignment -- memory double of the istanbul writer class
 	return {
-		copyFile(source: string, destination: string, header = ""): void {
+		copyFile(source, destination, header = ""): void {
 			const output = this.writeFile(destination);
 			output.write(Buffer.concat([Buffer.from(header), fileSystem.readFileSync(source)]));
 			output.close();
 		},
-		writeFile(file: null | string): ContentWriter {
+		writeFile(file): ContentWriter {
 			if (file === null || file === "-") {
 				return consoleWriter;
 			}
@@ -85,14 +85,14 @@ function createMemoryWriter({
 			const filePath = path.join(directory, file);
 			return createContentWriter(filePath, fileSystem);
 		},
-		writeForDir(subdirectory: string): FileWriter {
+		writeForDir(subdirectory): FileWriter {
 			return createMemoryWriter({
 				consoleWriter,
 				directory: path.join(directory, subdirectory),
 				fileSystem,
 			});
 		},
-		writerForDir(subdirectory: string): FileWriter {
+		writerForDir(subdirectory): FileWriter {
 			return this.writeForDir(subdirectory);
 		},
 	};

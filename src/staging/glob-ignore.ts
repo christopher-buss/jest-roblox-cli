@@ -58,7 +58,7 @@ export function createIgnoreMatcher(
 	}
 
 	const match = picomatch([...patterns], { dot: true });
-	return (absolutePath: string) => {
+	return (absolutePath) => {
 		const normalized = normalizeWindowsPath(absolutePath);
 		return match(normalized) || match(normalized.replace(DRIVE_LETTER, ""));
 	};

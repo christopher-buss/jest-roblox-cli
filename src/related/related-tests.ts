@@ -100,7 +100,7 @@ export function createRelatedFileFilter({
 	tsconfigReader,
 }: RelatedFileFilterOptions): RelatedFileFilter {
 	const outputOf = memoize(createLuauOutputResolver({ fileSystem, tsconfigReader }));
-	const keyOf = memoize((file: string) => toModuleKey(fileSystem, file));
+	const keyOf = memoize((file) => toModuleKey(fileSystem, file));
 	const readerOf = createReaderCache({
 		fileSystem,
 		parser,

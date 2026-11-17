@@ -1,9 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { toOutputSettings } from "./output-settings.ts";
 
 describe(toOutputSettings, () => {
-	it("should flag coverage on for a run whose coverage report holds only a notice", () => {
+	it("should flag coverage on for a run whose coverage report holds only a notice", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const settings = toOutputSettings(

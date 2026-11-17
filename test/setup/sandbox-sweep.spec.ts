@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { SANDBOX_PREFIX, sweepStaleSandboxes } from "./sandbox-sweep.ts";
@@ -18,7 +18,7 @@ function seedSandbox(name: string, modified: Date) {
 }
 
 describe(sweepStaleSandboxes, () => {
-	it("should delete a sandbox an interrupted run left behind", () => {
+	it("should delete a sandbox an interrupted run left behind", ({ expect }) => {
 		expect.assertions(1);
 
 		const leaked = `${SANDBOX_PREFIX}Ab3xYz`;
@@ -33,7 +33,7 @@ describe(sweepStaleSandboxes, () => {
 	// built it failed. Renaming one out of the `mkdtemp` prefix is how you keep
 	// it past the next run, so the sweep matches on that prefix rather than
 	// emptying the directory.
-	it("should leave a renamed sandbox kept for inspection alone", () => {
+	it("should leave a renamed sandbox kept for inspection alone", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = seedSandbox("keep-the-failing-one", ONE_DAY_AGO);
@@ -47,7 +47,7 @@ describe(sweepStaleSandboxes, () => {
 	// in it too, and CI runs `nx affected --parallel=2 -t e2e e2e-live`. A sweep
 	// that deleted whatever it found would take a concurrent run's live sandbox
 	// with it, mid-test.
-	it("should leave a sandbox young enough to belong to a running suite", () => {
+	it("should leave a sandbox young enough to belong to a running suite", ({ expect }) => {
 		expect.assertions(1);
 
 		const inFlight = `${SANDBOX_PREFIX}Cd4wXy`;
@@ -61,7 +61,7 @@ describe(sweepStaleSandboxes, () => {
 	// A live run's `onTestFinished` can remove its sandbox between listing and
 	// measuring; a dangling link reproduces that as ENOENT. Throwing would fail
 	// the whole run from `globalSetup`.
-	it("should skip an entry that disappears before it is measured", () => {
+	it("should skip an entry that disappears before it is measured", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem({ [`${ROOT}/.keep`]: "" }, "/");
@@ -72,7 +72,7 @@ describe(sweepStaleSandboxes, () => {
 		}).not.toThrow();
 	});
 
-	it("should do nothing when no run has made the root yet", () => {
+	it("should do nothing when no run has made the root yet", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({}, "/");

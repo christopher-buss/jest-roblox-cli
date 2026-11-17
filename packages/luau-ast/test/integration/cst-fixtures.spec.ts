@@ -17,7 +17,7 @@ import type { CstNode, CstRoot, CstWalker, Token, TokenBounds } from "@isentinel
 
 import fs from "node:fs";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 // Handwritten Luau covering comments, tabs, trailing whitespace, CRLF, every
 // number and string spelling, parentheses, semicolons, interpolated strings,
@@ -127,7 +127,7 @@ function indexedFacts(root: CstRoot): IndexedFacts {
 }
 
 describe("fidelity fixtures", () => {
-	it("should have a CRLF fixture", () => {
+	it("should have a CRLF fixture", ({ expect }) => {
 		expect.assertions(1);
 
 		const crlf = fixtures.find((fixture) => fixture.fileName === "crlf.luau");
@@ -135,7 +135,7 @@ describe("fidelity fixtures", () => {
 		expect(crlf!.source).toContain("\r\n");
 	});
 
-	it("should exercise every node kind the serializer emits", () => {
+	it("should exercise every node kind the serializer emits", ({ expect }) => {
 		expect.assertions(1);
 
 		const seen = new Set<string>();
@@ -148,7 +148,7 @@ describe("fidelity fixtures", () => {
 		expect(seen).toStrictEqual(new Set(CST_NODE_KINDS));
 	});
 
-	it("should walk every node's slots in serializer order", () => {
+	it("should walk every node's slots in serializer order", ({ expect }) => {
 		expect.assertions(1);
 
 		const written = new Set<string>();
@@ -174,7 +174,7 @@ describe("fidelity fixtures", () => {
 
 	it.for(fixtures)(
 		"should bound every node in $fileName by the first and last token it walks",
-		({ fileName, source }) => {
+		({ fileName, source }, { expect }) => {
 			expect.assertions(1);
 
 			const bounds: Array<TokenBounds | undefined> = [];
@@ -190,7 +190,7 @@ describe("fidelity fixtures", () => {
 
 	it.for(fixtures)(
 		"should index every node and token in $fileName as the walk reaches them",
-		({ fileName, source }) => {
+		({ fileName, source }, { expect }) => {
 			expect.assertions(1);
 
 			const root = parseFixture(fileName, source);
@@ -199,15 +199,18 @@ describe("fidelity fixtures", () => {
 		},
 	);
 
-	it.for(fixtures)("should print $fileName byte-identical", ({ fileName, source }) => {
-		expect.assertions(1);
+	it.for(fixtures)(
+		"should print $fileName byte-identical",
+		({ fileName, source }, { expect }) => {
+			expect.assertions(1);
 
-		const printed = printCst(parseFixture(fileName, source));
+			const printed = printCst(parseFixture(fileName, source));
 
-		expect(printed).toBe(source);
-	});
+			expect(printed).toBe(source);
+		},
+	);
 
-	it.for(fixtures)("should re-parse printed $fileName", ({ fileName, source }) => {
+	it.for(fixtures)("should re-parse printed $fileName", ({ fileName, source }, { expect }) => {
 		expect.assertions(1);
 
 		const printed = printCst(parseFixture(fileName, source));
@@ -219,7 +222,7 @@ describe("fidelity fixtures", () => {
 describe("fidelity fixtures through the edit printer", () => {
 	it.for(fixtures)(
 		"should print $fileName byte-identical with an empty edit ledger and a map",
-		({ fileName, source }) => {
+		({ fileName, source }, { expect }) => {
 			expect.assertions(1);
 
 			const printed = printCstMapped(parseFixture(fileName, source), {

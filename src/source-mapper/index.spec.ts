@@ -1,5 +1,5 @@
 import * as path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { posixPath } from "#test/mocks/posix-path.ts";
@@ -59,7 +59,7 @@ function lineToLine(generatedLine: number, sourceLine: number): SourceMapSegment
 }
 
 describe(createSourceMapper, () => {
-	it("should map failure message using V3 sourcemap", () => {
+	it("should map failure message using V3 sourcemap", ({ expect }) => {
 		expect.assertions(1);
 
 		const fileSystem = seedProject({
@@ -79,7 +79,9 @@ describe(createSourceMapper, () => {
 		expect(mapper.mapFailureWithLocations(input).message).toContain(`${SHARED_SOURCE_PATH}:2`);
 	});
 
-	it("should look up the sourcemap under outDir when rootDir is '.' (rootDirs project)", () => {
+	it("should look up the sourcemap under outDir when rootDir is '.' (rootDirs project)", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		// `rootDirs: ["src", "test"]` collapses rootDir to ".". The frame must
@@ -114,7 +116,7 @@ describe(createSourceMapper, () => {
 		expect(mapper.mapFailureWithLocations(input).message).toContain(`${sourcePath}:3`);
 	});
 
-	it("should snapshot mapped failure message", () => {
+	it("should snapshot mapped failure message", ({ expect }) => {
 		expect.assertions(1);
 
 		const fileSystem = seedProject({
@@ -147,7 +149,7 @@ Received: "world"
 		`);
 	});
 
-	it("should resolve test file path by converting slashes to dots", () => {
+	it("should resolve test file path by converting slashes to dots", ({ expect }) => {
 		expect.assertions(1);
 
 		const mapper = createSourceMapper({
@@ -162,7 +164,7 @@ Received: "world"
 		);
 	});
 
-	it("should map no test file line for a path outside the rojo tree", () => {
+	it("should map no test file line for a path outside the rojo tree", ({ expect }) => {
 		expect.assertions(1);
 
 		const mapper = createSourceMapper({
@@ -174,7 +176,7 @@ Received: "world"
 		expect(mapper.mapTestFileLine("/Workspace/test.spec", 4)).toBeUndefined();
 	});
 
-	it("should return locations from mapFailureWithLocations", () => {
+	it("should return locations from mapFailureWithLocations", ({ expect }) => {
 		expect.assertions(3);
 
 		const fileSystem = seedProject({
@@ -198,7 +200,7 @@ Received: "world"
 		expect(result.locations[0]!.luauLine).toBe(10);
 	});
 
-	it("should skip unresolvable frames in mapFailureWithLocations", () => {
+	it("should skip unresolvable frames in mapFailureWithLocations", ({ expect }) => {
 		expect.assertions(2);
 
 		const mapper = createSourceMapper({
@@ -216,7 +218,9 @@ Received: "world"
 		expect(result.message).toContain('[string "ServerStorage.unknown"]:5');
 	});
 
-	it("should emit Luau-only location when no tsconfig (outDir/rootDir undefined)", () => {
+	it("should emit Luau-only location when no tsconfig (outDir/rootDir undefined)", ({
+		expect,
+	}) => {
 		expect.assertions(4);
 
 		const mapper = createSourceMapper({
@@ -236,7 +240,7 @@ Received: "world"
 		expect(result.locations[0]!.tsPath).toBeUndefined();
 	});
 
-	it("should replace DataModel path with Luau file path for Luau-only frames", () => {
+	it("should replace DataModel path with Luau file path for Luau-only frames", ({ expect }) => {
 		expect.assertions(1);
 
 		const mapper = createSourceMapper({
@@ -253,7 +257,7 @@ Received: "world"
 		);
 	});
 
-	it("should return location without column when source file missing", () => {
+	it("should return location without column when source file missing", ({ expect }) => {
 		expect.assertions(2);
 
 		const mapper = createSourceMapper({
@@ -271,7 +275,7 @@ Received: "world"
 		expect(result.locations[0]!.sourceContent).toBeUndefined();
 	});
 
-	it("should handle source line beyond file bounds", () => {
+	it("should handle source line beyond file bounds", ({ expect }) => {
 		expect.assertions(1);
 
 		const fileSystem = seedProject({
@@ -291,7 +295,7 @@ Received: "world"
 		expect(mapper.mapFailureWithLocations(input).locations[0]!.tsLine).toBe(999);
 	});
 
-	it("should only push the first luau-only frame as a location", () => {
+	it("should only push the first luau-only frame as a location", ({ expect }) => {
 		expect.assertions(2);
 
 		const mapper = createSourceMapper({
@@ -310,7 +314,7 @@ Received: "world"
 		expect(result.locations[0]).toMatchObject({ luauLine: 5 });
 	});
 
-	it("should return luau-only location when source map is unavailable", () => {
+	it("should return luau-only location when source map is unavailable", ({ expect }) => {
 		expect.assertions(4);
 
 		const mapper = createSourceMapper({
@@ -332,7 +336,7 @@ Received: "world"
 });
 
 describe("resolveDisplayPath", () => {
-	it("should rewrite init to index for unmapped Luau path in roblox-ts project", () => {
+	it("should rewrite init to index for unmapped Luau path in roblox-ts project", ({ expect }) => {
 		expect.assertions(1);
 
 		const mapper = createSourceMapper({
@@ -349,7 +353,9 @@ describe("resolveDisplayPath", () => {
 		);
 	});
 
-	it("should rewrite init to index for unresolvable raw path in roblox-ts project", () => {
+	it("should rewrite init to index for unresolvable raw path in roblox-ts project", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const mapper = createSourceMapper({
@@ -361,7 +367,7 @@ describe("resolveDisplayPath", () => {
 		expect(mapper.resolveDisplayPath("src/init.spec")).toBe("src/index.spec");
 	});
 
-	it("should leave init untouched in pure-Luau project", () => {
+	it("should leave init untouched in pure-Luau project", ({ expect }) => {
 		expect.assertions(1);
 
 		const mapper = createSourceMapper({
@@ -373,7 +379,7 @@ describe("resolveDisplayPath", () => {
 		expect(mapper.resolveDisplayPath("src/init.spec")).toBe("src/init.spec");
 	});
 
-	it("should be idempotent for already-resolved TS path", () => {
+	it("should be idempotent for already-resolved TS path", ({ expect }) => {
 		expect.assertions(1);
 
 		const mapper = createSourceMapper({
@@ -403,13 +409,13 @@ describe(combineSourceMappers, () => {
 		};
 	}
 
-	it("should return undefined when given no mappers", () => {
+	it("should return undefined when given no mappers", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(combineSourceMappers([])).toBeUndefined();
 	});
 
-	it("should map a test file line through the child that owns the file", () => {
+	it("should map a test file line through the child that owns the file", ({ expect }) => {
 		expect.assertions(2);
 
 		const composite = combineSourceMappers([makeStub("A"), makeStub("B")]);
@@ -418,7 +424,7 @@ describe(combineSourceMappers, () => {
 		expect(composite!.mapTestFileLine("missing", 7)).toBeUndefined();
 	});
 
-	it("should return the only mapper unchanged when given one", () => {
+	it("should return the only mapper unchanged when given one", ({ expect }) => {
 		expect.assertions(1);
 
 		const mapper = makeStub("A");
@@ -426,7 +432,7 @@ describe(combineSourceMappers, () => {
 		expect(combineSourceMappers([mapper])).toBe(mapper);
 	});
 
-	it("should accumulate locations and chain the message across children", () => {
+	it("should accumulate locations and chain the message across children", ({ expect }) => {
 		expect.assertions(2);
 
 		const composite = combineSourceMappers([makeStub("A"), makeStub("B")]);
@@ -436,7 +442,7 @@ describe(combineSourceMappers, () => {
 		expect(result.message).toBe("A_TS B_TS");
 	});
 
-	it("should return the first resolveTestFilePath hit", () => {
+	it("should return the first resolveTestFilePath hit", ({ expect }) => {
 		expect.assertions(2);
 
 		const composite = combineSourceMappers([makeStub("A"), makeStub("B")]);
@@ -445,7 +451,7 @@ describe(combineSourceMappers, () => {
 		expect(composite!.resolveTestFilePath("missing")).toBeUndefined();
 	});
 
-	it("should return the first resolveDisplayPath hit and fall back otherwise", () => {
+	it("should return the first resolveDisplayPath hit and fall back otherwise", ({ expect }) => {
 		expect.assertions(2);
 
 		const composite = combineSourceMappers([makeStub("A"), makeStub("B")]);
@@ -454,7 +460,9 @@ describe(combineSourceMappers, () => {
 		expect(composite!.resolveDisplayPath("missing")).toBe("missing");
 	});
 
-	it("should not let a non-owning roblox-ts child rewrite another project's path", () => {
+	it("should not let a non-owning roblox-ts child rewrite another project's path", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const fileSystem = seedProject({ "lib/init.spec.luau": "-- test" });
@@ -481,7 +489,7 @@ describe(combineSourceMappers, () => {
 });
 
 describe(getSourceSnippet, () => {
-	it("should return snippet with context lines", () => {
+	it("should return snippet with context lines", ({ expect }) => {
 		expect.assertions(3);
 
 		const fileSystem = seedProject({ "test.ts": "line 1\nline 2\nline 3\nline 4\nline 5" });
@@ -493,7 +501,7 @@ describe(getSourceSnippet, () => {
 		expect(snippet!.lines).toHaveLength(3);
 	});
 
-	it("should include column if provided", () => {
+	it("should include column if provided", ({ expect }) => {
 		expect.assertions(2);
 
 		const fileSystem = seedProject({
@@ -512,7 +520,7 @@ describe(getSourceSnippet, () => {
 		expect(snippet!.column).toBe(10);
 	});
 
-	it("should return undefined when file does not exist", () => {
+	it("should return undefined when file does not exist", ({ expect }) => {
 		expect.assertions(1);
 
 		const snippet = getSourceSnippet({
@@ -524,7 +532,7 @@ describe(getSourceSnippet, () => {
 		expect(snippet).toBeUndefined();
 	});
 
-	it("should handle lines at start of file", () => {
+	it("should handle lines at start of file", ({ expect }) => {
 		expect.assertions(2);
 
 		const fileSystem = seedProject({ "test.ts": "line 1\nline 2\nline 3" });
@@ -535,7 +543,7 @@ describe(getSourceSnippet, () => {
 		expect(snippet!.lines[0]!.num).toBe(1);
 	});
 
-	it("should return the failing line with its context", () => {
+	it("should return the failing line with its context", ({ expect }) => {
 		expect.assertions(1);
 
 		const fileSystem = seedProject({
@@ -567,7 +575,7 @@ describe("math", () => {
 		});
 	});
 
-	it("should use sourceContent when provided instead of reading file", () => {
+	it("should use sourceContent when provided instead of reading file", ({ expect }) => {
 		expect.assertions(2);
 
 		const snippet = getSourceSnippet({
@@ -582,7 +590,7 @@ describe("math", () => {
 		expect(snippet!.lines).toHaveLength(3);
 	});
 
-	it("should handle out-of-bounds line in getSourceSnippet", () => {
+	it("should handle out-of-bounds line in getSourceSnippet", ({ expect }) => {
 		expect.assertions(2);
 
 		const snippet = getSourceSnippet({
@@ -596,7 +604,7 @@ describe("math", () => {
 		expect(snippet!.failureLine).toBe(100);
 	});
 
-	it("should compute column from expect line when not provided", () => {
+	it("should compute column from expect line when not provided", ({ expect }) => {
 		expect.assertions(2);
 
 		const fileSystem = seedProject({

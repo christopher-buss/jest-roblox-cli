@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { lastStatementCall } from "#test/helpers/unit/cst";
 import { cstTree } from "#test/helpers/unit/trees";
@@ -58,7 +58,7 @@ describe(readRequireCall, () => {
 			'TS.import(script, TS.getModule(script, "@rbxts", "vide").src, "x")\n',
 			{ kind: "ts-package", segments: ["@rbxts", "vide", "src", "x"] },
 		],
-	])("should read %j", ([source, expected]) => {
+	])("should read %j", ([source, expected], { expect }) => {
 		expect.assertions(1);
 
 		expect(readRequireCall(outerCall(source))).toStrictEqual(expected);
@@ -82,7 +82,7 @@ describe(readRequireCall, () => {
 		"TS.import(script)\n",
 		"TS.import(script, folder.Child)\n",
 		"TS.import(script, TS.getModule(script, scope).src)\n",
-	])("should read %j as dynamic", (source) => {
+	])("should read %j as dynamic", (source, { expect }) => {
 		expect.assertions(1);
 
 		expect(readRequireCall(outerCall(source))).toStrictEqual(DYNAMIC);
@@ -93,7 +93,7 @@ describe(readRequireCall, () => {
 		'TS:import(script, script, "x")\n',
 		'TS.other(script, script, "x")\n',
 		'Other.import(script, script, "x")\n',
-	])("should not read %j as a require", (source) => {
+	])("should not read %j as a require", (source, { expect }) => {
 		expect.assertions(1);
 
 		expect(readRequireCall(outerCall(source))).toBeUndefined();

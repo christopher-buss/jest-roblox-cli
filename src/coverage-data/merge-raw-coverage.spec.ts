@@ -1,9 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { mergeRawCoverage } from "./merge-raw-coverage.ts";
 
 describe(mergeRawCoverage, () => {
-	it("should union disjoint files", () => {
+	it("should union disjoint files", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = mergeRawCoverage(
@@ -17,7 +17,7 @@ describe(mergeRawCoverage, () => {
 		});
 	});
 
-	it("should sum statement hit counts for overlapping files", () => {
+	it("should sum statement hit counts for overlapping files", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = mergeRawCoverage(
@@ -30,7 +30,7 @@ describe(mergeRawCoverage, () => {
 		});
 	});
 
-	it("should sum function hit counts for overlapping files", () => {
+	it("should sum function hit counts for overlapping files", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = mergeRawCoverage(
@@ -43,7 +43,7 @@ describe(mergeRawCoverage, () => {
 		});
 	});
 
-	it("should sum branch arm counts element-wise", () => {
+	it("should sum branch arm counts element-wise", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = mergeRawCoverage(
@@ -56,7 +56,7 @@ describe(mergeRawCoverage, () => {
 		});
 	});
 
-	it("should keep f from target when source has no f", () => {
+	it("should keep f from target when source has no f", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = mergeRawCoverage(
@@ -69,7 +69,7 @@ describe(mergeRawCoverage, () => {
 		});
 	});
 
-	it("should keep f from source when target has no f", () => {
+	it("should keep f from source when target has no f", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = mergeRawCoverage(
@@ -82,7 +82,7 @@ describe(mergeRawCoverage, () => {
 		});
 	});
 
-	it("should keep b from target when source has no b", () => {
+	it("should keep b from target when source has no b", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = mergeRawCoverage(
@@ -95,7 +95,7 @@ describe(mergeRawCoverage, () => {
 		});
 	});
 
-	it("should keep b from source when target has no b", () => {
+	it("should keep b from source when target has no b", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = mergeRawCoverage(
@@ -108,7 +108,7 @@ describe(mergeRawCoverage, () => {
 		});
 	});
 
-	it("should sum statement keys that exist only in one side", () => {
+	it("should sum statement keys that exist only in one side", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = mergeRawCoverage(
@@ -121,7 +121,7 @@ describe(mergeRawCoverage, () => {
 		});
 	});
 
-	it("should sum branch arrays when target is longer", () => {
+	it("should sum branch arrays when target is longer", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = mergeRawCoverage(
@@ -134,7 +134,7 @@ describe(mergeRawCoverage, () => {
 		});
 	});
 
-	it("should sum branch arrays when source is longer", () => {
+	it("should sum branch arrays when source is longer", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = mergeRawCoverage(
@@ -147,7 +147,7 @@ describe(mergeRawCoverage, () => {
 		});
 	});
 
-	it("should return source when target is undefined", () => {
+	it("should return source when target is undefined", ({ expect }) => {
 		expect.assertions(1);
 
 		const source = { "a.luau": { s: { "0": 1 } } };
@@ -155,7 +155,7 @@ describe(mergeRawCoverage, () => {
 		expect(mergeRawCoverage(undefined, source)).toStrictEqual(source);
 	});
 
-	it("should return target when source is undefined", () => {
+	it("should return target when source is undefined", ({ expect }) => {
 		expect.assertions(1);
 
 		const target = { "a.luau": { s: { "0": 1 } } };

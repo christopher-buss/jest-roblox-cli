@@ -9,7 +9,7 @@ import type { MemoryFileSystem, MemoryVolume } from "#test/mocks/memory-file-sys
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
 
-export const PROJECT_DIR: string = process.cwd();
+export const PROJECT_DIR = process.cwd();
 
 const ROJO_PROJECT = {
 	name: "test",

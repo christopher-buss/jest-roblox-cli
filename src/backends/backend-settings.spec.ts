@@ -1,5 +1,5 @@
 import process from "node:process";
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import type { BackendSettingsRequest } from "./backend-settings.ts";
 import { isStudioDiscoverable, resolveBackendSettings } from "./backend-settings.ts";
@@ -37,13 +37,13 @@ function resolveKind(
 }
 
 describe(isStudioDiscoverable, () => {
-	it("should find Studio where discovery finds an executable", () => {
+	it("should find Studio where discovery finds an executable", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(isStudioDiscoverable(() => STUDIO_EXECUTABLE)).toBeTrue();
 	});
 
-	it("should not find Studio where discovery throws", () => {
+	it("should not find Studio where discovery throws", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -53,7 +53,7 @@ describe(isStudioDiscoverable, () => {
 		).toBeFalse();
 	});
 
-	it("should not look for Studio while discovery is off", () => {
+	it("should not look for Studio while discovery is off", ({ expect }) => {
 		expect.assertions(2);
 
 		const discover = vi.fn<() => string>(() => STUDIO_EXECUTABLE);
@@ -62,7 +62,7 @@ describe(isStudioDiscoverable, () => {
 		expect(discover).not.toHaveBeenCalled();
 	});
 
-	it("should reject an unknown JEST_ROBLOX_STUDIO_DISCOVERY value", () => {
+	it("should reject an unknown JEST_ROBLOX_STUDIO_DISCOVERY value", ({ expect }) => {
 		expect.assertions(1);
 
 		vi.stubEnv("JEST_ROBLOX_STUDIO_DISCOVERY", "true");
@@ -79,7 +79,7 @@ describe(isStudioDiscoverable, () => {
 });
 
 describe("auto backend", () => {
-	it("should select studio-cli when Studio is installed", () => {
+	it("should select studio-cli when Studio is installed", ({ expect }) => {
 		expect.assertions(1);
 
 		vi.spyOn(process.stderr, "write").mockReturnValue(true);
@@ -87,7 +87,7 @@ describe("auto backend", () => {
 		expect(resolveKind({ backend: "auto" }, () => true)).toBe("studio-cli");
 	});
 
-	it("should select open-cloud when Studio is not installed", () => {
+	it("should select open-cloud when Studio is not installed", ({ expect }) => {
 		expect.assertions(1);
 
 		stubNoStudioPath();
@@ -98,14 +98,14 @@ describe("auto backend", () => {
 
 	it.for(["open-cloud", "studio", "studio-cli"] as const)(
 		"should keep an explicit %s backend",
-		(backend) => {
+		(backend, { expect }) => {
 			expect.assertions(1);
 
 			expect(resolveKind({ backend }, () => backend !== "studio-cli")).toBe(backend);
 		},
 	);
 
-	it("should select studio-cli when a Studio path is configured", () => {
+	it("should select studio-cli when a Studio path is configured", ({ expect }) => {
 		// A configured path is a request for Studio: a wrong one fails at
 		// launch rather than quietly running on Open Cloud.
 		expect.assertions(1);
@@ -117,7 +117,7 @@ describe("auto backend", () => {
 		).toBe("studio-cli");
 	});
 
-	it("should select studio-cli when the environment names a Studio path", () => {
+	it("should select studio-cli when the environment names a Studio path", ({ expect }) => {
 		expect.assertions(1);
 
 		vi.stubEnv("JEST_ROBLOX_STUDIO_PATH", "missing/Studio.exe");
@@ -126,7 +126,7 @@ describe("auto backend", () => {
 		expect(resolveKind({ backend: "auto" }, () => false)).toBe("studio-cli");
 	});
 
-	it("should ignore an empty Studio path in the environment", () => {
+	it("should ignore an empty Studio path in the environment", ({ expect }) => {
 		expect.assertions(1);
 
 		vi.stubEnv("JEST_ROBLOX_STUDIO_PATH", "");
@@ -135,7 +135,7 @@ describe("auto backend", () => {
 		expect(resolveKind({ backend: "auto" }, () => false)).toBe("open-cloud");
 	});
 
-	it("should name the backend it selects", () => {
+	it("should name the backend it selects", ({ expect }) => {
 		expect.assertions(1);
 
 		stubNoStudioPath();
@@ -151,7 +151,7 @@ describe("auto backend", () => {
 });
 
 describe(resolveBackendSettings, () => {
-	it("should give the attached studio backend its port", () => {
+	it("should give the attached studio backend its port", ({ expect }) => {
 		expect.assertions(1);
 
 		const settings = resolveBackendSettings({
@@ -163,7 +163,7 @@ describe(resolveBackendSettings, () => {
 		expect(settings).toStrictEqual({ kind: "studio", port: 4000 });
 	});
 
-	it("should give studio-cli its config and the CLI-only headed flag", () => {
+	it("should give studio-cli its config and the CLI-only headed flag", ({ expect }) => {
 		expect.assertions(1);
 
 		const settings = resolveBackendSettings({
@@ -185,7 +185,9 @@ describe(resolveBackendSettings, () => {
 		});
 	});
 
-	it("should let CLI ids beat the environment, and the environment beat config ids", () => {
+	it("should let CLI ids beat the environment, and the environment beat config ids", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		stubNoCredentials();

@@ -1,11 +1,11 @@
 import * as path from "node:path";
 import process from "node:process";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { resolveCoverageLayout } from "./coverage-layout.ts";
 
 describe(resolveCoverageLayout, () => {
-	it("should keep relative paths when rootDir is the cwd", () => {
+	it("should keep relative paths when rootDir is the cwd", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(resolveCoverageLayout(process.cwd())).toStrictEqual({
@@ -18,7 +18,7 @@ describe(resolveCoverageLayout, () => {
 		});
 	});
 
-	it("should place everything under rootDir when it is not the cwd", () => {
+	it("should place everything under rootDir when it is not the cwd", ({ expect }) => {
 		expect.assertions(2);
 
 		const rootDirectory = path.resolve("/elsewhere/pkg");

@@ -1,6 +1,6 @@
 import { fromAny } from "@total-typescript/shoehorn";
 
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import { createFetchHttpClient } from "./open-cloud-fetch.ts";
 
@@ -22,7 +22,7 @@ function stubOkFetch() {
 }
 
 describe("open cloud fetch transport", () => {
-	it("should send the full URL with the api key header", async () => {
+	it("should send the full URL with the api key header", async ({ expect }) => {
 		expect.assertions(3);
 
 		const fetchMock = stubOkFetch();
@@ -35,7 +35,9 @@ describe("open cloud fetch transport", () => {
 		expect(init!.headers).toStrictEqual({ "x-api-key": "test-key" });
 	});
 
-	it("should send no body and declare no content type when the request carries none", async () => {
+	it("should send no body and declare no content type when the request carries none", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const fetchMock = stubOkFetch();
@@ -47,7 +49,9 @@ describe("open cloud fetch transport", () => {
 		expect(init!.headers).not.toHaveProperty("content-type");
 	});
 
-	it("should send a JSON body under a JSON content type when the request carries one", async () => {
+	it("should send a JSON body under a JSON content type when the request carries one", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const fetchMock = stubOkFetch();
@@ -59,7 +63,9 @@ describe("open cloud fetch transport", () => {
 		expect(init!.headers).toMatchObject({ "content-type": "application/json" });
 	});
 
-	it("should classify a non-2xx response as an api failure carrying the body", async () => {
+	it("should classify a non-2xx response as an api failure carrying the body", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		vi.stubGlobal(
@@ -75,7 +81,9 @@ describe("open cloud fetch transport", () => {
 		expect(result).toMatchObject({ err: { message: "HTTP 429: quota", statusCode: 429 } });
 	});
 
-	it("should classify a thrown fetch as a network failure keeping its cause", async () => {
+	it("should classify a thrown fetch as a network failure keeping its cause", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const cause = new Error("socket hang up");
@@ -91,7 +99,7 @@ describe("open cloud fetch transport", () => {
 		});
 	});
 
-	it("should stringify a non-Error rejection", async () => {
+	it("should stringify a non-Error rejection", async ({ expect }) => {
 		expect.assertions(1);
 
 		vi.stubGlobal("fetch", vi.fn<typeof fetch>().mockRejectedValue("wire torn"));

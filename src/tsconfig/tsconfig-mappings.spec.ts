@@ -1,7 +1,7 @@
 import { fromAny } from "@total-typescript/shoehorn";
 
 import * as path from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import type { FileSystem } from "../utils/file-system.ts";
@@ -61,7 +61,7 @@ function tsconfig(compilerOptions: unknown): string {
 }
 
 describe(isLuauProject, () => {
-	it("should require no TypeScript source files and no tsconfig mappings", () => {
+	it("should require no TypeScript source files and no tsconfig mappings", ({ expect }) => {
 		expect.assertions(4);
 
 		expect(isLuauProject(["src/main.luau"], [])).toBeTrue();
@@ -70,7 +70,7 @@ describe(isLuauProject, () => {
 		expect(isLuauProject(["src/main.luau"], [{ outDir: "out", rootDir: "src" }])).toBeFalse();
 	});
 
-	it("should treat no test files as Luau and a mixed set as not", () => {
+	it("should treat no test files as Luau and a mixed set as not", ({ expect }) => {
 		expect.assertions(2);
 
 		expect(isLuauProject([], [])).toBeTrue();
@@ -79,7 +79,7 @@ describe(isLuauProject, () => {
 });
 
 describe(createTsconfigMappingCache, () => {
-	it("should create an empty independent cache", () => {
+	it("should create an empty independent cache", ({ expect }) => {
 		expect.assertions(3);
 
 		const first = createTsconfigMappingCache();
@@ -93,7 +93,7 @@ describe(createTsconfigMappingCache, () => {
 });
 
 describe("tsconfig mapping parsing", () => {
-	it("should treat empty rootDirs as absent", () => {
+	it("should treat empty rootDirs as absent", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -103,7 +103,7 @@ describe("tsconfig mapping parsing", () => {
 		).toStrictEqual([{ outDir: "out-test", rootDir: "test" }]);
 	});
 
-	it("should find the common ancestor when one rootDir contains another", () => {
+	it("should find the common ancestor when one rootDir contains another", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -116,7 +116,7 @@ describe("tsconfig mapping parsing", () => {
 		).toStrictEqual([{ outDir: "out", rootDir: "packages/core" }]);
 	});
 
-	it("should handle rootDirs with no common prefix", () => {
+	it("should handle rootDirs with no common prefix", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -126,7 +126,7 @@ describe("tsconfig mapping parsing", () => {
 		).toStrictEqual([{ outDir: "out-test", rootDir: "." }]);
 	});
 
-	it("should handle rootDirs with a common ancestor", () => {
+	it("should handle rootDirs with a common ancestor", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -139,7 +139,7 @@ describe("tsconfig mapping parsing", () => {
 		).toStrictEqual([{ outDir: "out", rootDir: "packages/core" }]);
 	});
 
-	it("should default rootDir to src when omitted", () => {
+	it("should default rootDir to src when omitted", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(resolveFromVolume({ "tsconfig.json": tsconfig({ outDir: "out" }) })).toStrictEqual([
@@ -147,7 +147,7 @@ describe("tsconfig mapping parsing", () => {
 		]);
 	});
 
-	it("should yield no mapping when rootDir is null", () => {
+	it("should yield no mapping when rootDir is null", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -157,7 +157,9 @@ describe("tsconfig mapping parsing", () => {
 });
 
 describe(resolveAllTsconfigMappings, () => {
-	it("should scan only tsconfig JSON files, deduplicate mappings, sort longest first, and cache", () => {
+	it("should scan only tsconfig JSON files, deduplicate mappings, sort longest first, and cache", ({
+		expect,
+	}) => {
 		expect.assertions(3);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -207,7 +209,7 @@ describe(resolveAllTsconfigMappings, () => {
 		).toStrictEqual(["tsconfig.json", "tsconfig.lib.json"]);
 	});
 
-	it("should return mappings from multiple tsconfig*.json files", () => {
+	it("should return mappings from multiple tsconfig*.json files", ({ expect }) => {
 		expect.assertions(2);
 
 		const result = resolveFromVolume({
@@ -219,7 +221,7 @@ describe(resolveAllTsconfigMappings, () => {
 		expect(result).toContainEqual({ outDir: "out-test", rootDir: "src" });
 	});
 
-	it("should return a single mapping when only tsconfig.json exists", () => {
+	it("should return a single mapping when only tsconfig.json exists", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -227,13 +229,13 @@ describe(resolveAllTsconfigMappings, () => {
 		).toStrictEqual([{ outDir: "out", rootDir: "src" }]);
 	});
 
-	it("should return an empty array when no tsconfigs exist", () => {
+	it("should return an empty array when no tsconfigs exist", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(resolveFromVolume({})).toBeEmpty();
 	});
 
-	it("should skip tsconfigs without compilerOptions or outDir", () => {
+	it("should skip tsconfigs without compilerOptions or outDir", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -244,7 +246,7 @@ describe(resolveAllTsconfigMappings, () => {
 		).toBeEmpty();
 	});
 
-	it("should return an empty array when the directory does not exist", () => {
+	it("should return an empty array when the directory does not exist", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -258,7 +260,7 @@ describe(resolveAllTsconfigMappings, () => {
 		).toBeEmpty();
 	});
 
-	it("should answer a repeated rootDir from the cache after the file is gone", () => {
+	it("should answer a repeated rootDir from the cache after the file is gone", ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -280,7 +282,7 @@ describe(resolveAllTsconfigMappings, () => {
 		expect(second).toStrictEqual(first);
 	});
 
-	it("should deduplicate identical mappings across tsconfig files", () => {
+	it("should deduplicate identical mappings across tsconfig files", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -291,7 +293,7 @@ describe(resolveAllTsconfigMappings, () => {
 		).toStrictEqual([{ outDir: "out", rootDir: "src" }]);
 	});
 
-	it("should skip malformed tsconfig JSON files", () => {
+	it("should skip malformed tsconfig JSON files", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(resolveFromVolume({ "tsconfig.json": "not json" })).toBeEmpty();
@@ -299,7 +301,9 @@ describe(resolveAllTsconfigMappings, () => {
 });
 
 describe(resolveTsconfigDirectories, () => {
-	it("should reject a tsconfig in a sibling directory with the same path prefix", () => {
+	it("should reject a tsconfig in a sibling directory with the same path prefix", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const getTsconfig = createReader();
@@ -316,7 +320,7 @@ describe(resolveTsconfigDirectories, () => {
 		});
 	});
 
-	it("should return undefined directories when no tsconfig exists", () => {
+	it("should return undefined directories when no tsconfig exists", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -324,7 +328,7 @@ describe(resolveTsconfigDirectories, () => {
 		).toStrictEqual({ outDir: undefined, rootDir: undefined });
 	});
 
-	it("should prefer tsconfig.lib.json over tsconfig.json", () => {
+	it("should prefer tsconfig.lib.json over tsconfig.json", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -344,7 +348,9 @@ describe(resolveTsconfigDirectories, () => {
 		});
 	});
 
-	it("should default outDir to out and rootDir to src when compilerOptions omits them", () => {
+	it("should default outDir to out and rootDir to src when compilerOptions omits them", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -364,7 +370,7 @@ describe(findMapping, () => {
 		{ outDir: "out-test", rootDir: "." },
 	];
 
-	it("should match by outDir prefix", () => {
+	it("should match by outDir prefix", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(findMapping({ filePath: "out/shared/foo", mappings })).toStrictEqual({
@@ -373,7 +379,7 @@ describe(findMapping, () => {
 		});
 	});
 
-	it("should match longest outDir prefix", () => {
+	it("should match longest outDir prefix", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -387,7 +393,7 @@ describe(findMapping, () => {
 		).toStrictEqual({ outDir: "out/shared", rootDir: "shared" });
 	});
 
-	it("should keep the first mapping when matching prefixes have equal length", () => {
+	it("should keep the first mapping when matching prefixes have equal length", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -401,13 +407,13 @@ describe(findMapping, () => {
 		).toStrictEqual({ outDir: "out", rootDir: "first" });
 	});
 
-	it("should not match partial prefix without boundary", () => {
+	it("should not match partial prefix without boundary", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(findMapping({ filePath: "output/foo", mappings })).toBeUndefined();
 	});
 
-	it("should match exact outDir", () => {
+	it("should match exact outDir", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(findMapping({ filePath: "out", mappings })).toStrictEqual({
@@ -416,19 +422,19 @@ describe(findMapping, () => {
 		});
 	});
 
-	it("should return undefined for no match", () => {
+	it("should return undefined for no match", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(findMapping({ filePath: "lib/foo", mappings })).toBeUndefined();
 	});
 
-	it("should return undefined for empty mappings", () => {
+	it("should return undefined for empty mappings", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(findMapping({ filePath: "out/foo", mappings: [] })).toBeUndefined();
 	});
 
-	it("should match by rootDir when key is rootDir", () => {
+	it("should match by rootDir when key is rootDir", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(findMapping({ key: "rootDir", filePath: "src/shared/foo", mappings })).toStrictEqual(
@@ -439,7 +445,7 @@ describe(findMapping, () => {
 		);
 	});
 
-	it("should match rootDir dot for paths starting with dot-slash", () => {
+	it("should match rootDir dot for paths starting with dot-slash", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(findMapping({ key: "rootDir", filePath: "./test/foo", mappings })).toStrictEqual({
@@ -450,7 +456,7 @@ describe(findMapping, () => {
 });
 
 describe(replacePrefix, () => {
-	it("should replace prefix with slash boundary", () => {
+	it("should replace prefix with slash boundary", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(replacePrefix({ filePath: "out/shared/foo", from: "out", to: "src" })).toBe(
@@ -458,19 +464,19 @@ describe(replacePrefix, () => {
 		);
 	});
 
-	it("should replace exact match", () => {
+	it("should replace exact match", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(replacePrefix({ filePath: "out", from: "out", to: "src" })).toBe("src");
 	});
 
-	it("should return unchanged when no match", () => {
+	it("should return unchanged when no match", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(replacePrefix({ filePath: "other/foo", from: "out", to: "src" })).toBe("other/foo");
 	});
 
-	it("should not replace partial prefix", () => {
+	it("should not replace partial prefix", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(replacePrefix({ filePath: "output/foo", from: "out", to: "src" })).toBe(
@@ -478,7 +484,7 @@ describe(replacePrefix, () => {
 		);
 	});
 
-	it("should prepend target when replacing the '.' root prefix", () => {
+	it("should prepend target when replacing the '.' root prefix", ({ expect }) => {
 		expect.assertions(1);
 
 		// A `rootDirs` tsconfig collapses rootDir to ".". The resolver strips the
@@ -489,7 +495,7 @@ describe(replacePrefix, () => {
 		);
 	});
 
-	it("should prepend target when replacing '.' for a dot-slash path", () => {
+	it("should prepend target when replacing '.' for a dot-slash path", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(

@@ -1,7 +1,7 @@
 import { fromAny } from "@total-typescript/shoehorn";
 
 import * as path from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import { expectedDefaultFormatters } from "#test/mocks/config-default-formatters.ts";
 import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
@@ -46,26 +46,29 @@ describe(buildWorkspaceRunOptions, () => {
 			{ workspace: { outputFile: true } },
 			{ workspace: { outputFile: false } },
 		],
-	] as const)("should identify a %s consensus conflict exactly", ([field, first, second]) => {
-		expect.assertions(1);
+	] as const)(
+		"should identify a %s consensus conflict exactly",
+		([field, first, second], { expect }) => {
+			expect.assertions(1);
 
-		let captured: unknown;
-		try {
-			buildWorkspaceRunOptions({
-				cli: {},
-				perPackageConfigs: fromAny([
-					{ name: "alpha", config: first },
-					{ name: "beta", config: second },
-				]),
-			});
-		} catch (err) {
-			captured = err;
-		}
+			let captured: unknown;
+			try {
+				buildWorkspaceRunOptions({
+					cli: {},
+					perPackageConfigs: fromAny([
+						{ name: "alpha", config: first },
+						{ name: "beta", config: second },
+					]),
+				});
+			} catch (err) {
+				captured = err;
+			}
 
-		expect(captured).toMatchObject({ name: "WorkspaceConsensusError", field });
-	});
+			expect(captured).toMatchObject({ name: "WorkspaceConsensusError", field });
+		},
+	);
 
-	it("should enable workspace bail only when the CLI flag is true", () => {
+	it("should enable workspace bail only when the CLI flag is true", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -76,7 +79,7 @@ describe(buildWorkspaceRunOptions, () => {
 		).toBeTrue();
 	});
 
-	it("should leave workspace bail off when the CLI flag is absent", () => {
+	it("should leave workspace bail off when the CLI flag is absent", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -88,7 +91,9 @@ describe(buildWorkspaceRunOptions, () => {
 	});
 
 	describe("happy path: per-package consensus", () => {
-		it("should use the agreed value when every package declares the same value", () => {
+		it("should use the agreed value when every package declares the same value", ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			const result = buildWorkspaceRunOptions({
@@ -102,7 +107,7 @@ describe(buildWorkspaceRunOptions, () => {
 			expect(result.backend).toBe("open-cloud");
 		});
 
-		it("should treat deep-equal arrays as agreement", () => {
+		it("should treat deep-equal arrays as agreement", ({ expect }) => {
 			expect.assertions(1);
 
 			const result = buildWorkspaceRunOptions({
@@ -116,7 +121,7 @@ describe(buildWorkspaceRunOptions, () => {
 			expect(result.formatters).toStrictEqual(["json"]);
 		});
 
-		it("should read silent from test.silent in the raw config", () => {
+		it("should read silent from test.silent in the raw config", ({ expect }) => {
 			expect.assertions(1);
 
 			const result = buildWorkspaceRunOptions({
@@ -130,7 +135,7 @@ describe(buildWorkspaceRunOptions, () => {
 			expect(result.silent).toBeTrue();
 		});
 
-		it("should read verbose and slowTestThreshold from the test block", () => {
+		it("should read verbose and slowTestThreshold from the test block", ({ expect }) => {
 			expect.assertions(1);
 
 			const config = { test: { slowTestThreshold: 3, verbose: true } };
@@ -145,7 +150,7 @@ describe(buildWorkspaceRunOptions, () => {
 			expect(result).toMatchObject({ slowTestThreshold: 3, verbose: true });
 		});
 
-		it("should let --no-show-luau override the packages' showLuau", () => {
+		it("should let --no-show-luau override the packages' showLuau", ({ expect }) => {
 			expect.assertions(1);
 
 			const result = buildWorkspaceRunOptions({
@@ -158,7 +163,7 @@ describe(buildWorkspaceRunOptions, () => {
 	});
 
 	describe("workspace.packages convergence", () => {
-		it("should throw when packages disagree on workspace.packages", () => {
+		it("should throw when packages disagree on workspace.packages", ({ expect }) => {
 			expect.assertions(1);
 
 			let thrown: unknown;
@@ -186,7 +191,7 @@ describe(buildWorkspaceRunOptions, () => {
 			});
 		});
 
-		it("should throw when packages disagree on workspace.root", () => {
+		it("should throw when packages disagree on workspace.root", ({ expect }) => {
 			expect.assertions(1);
 
 			expect(() => {
@@ -206,7 +211,9 @@ describe(buildWorkspaceRunOptions, () => {
 			}).toThrow(expect.objectContaining({ name: "WorkspaceConsensusError" }));
 		});
 
-		it("should not throw when every package agrees on workspace.root/packages", () => {
+		it("should not throw when every package agrees on workspace.root/packages", ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			expect(() => {
@@ -228,7 +235,9 @@ describe(buildWorkspaceRunOptions, () => {
 	});
 
 	describe("default-config fallback", () => {
-		it("should fall back to DEFAULT_CONFIG when no package declares the field", () => {
+		it("should fall back to DEFAULT_CONFIG when no package declares the field", ({
+			expect,
+		}) => {
 			expect.assertions(4);
 
 			const result = buildWorkspaceRunOptions({
@@ -245,7 +254,7 @@ describe(buildWorkspaceRunOptions, () => {
 			expect(result.port).toBe(createResolvedConfig().port);
 		});
 
-		it("should leave optional fields undefined when no one declares them", () => {
+		it("should leave optional fields undefined when no one declares them", ({ expect }) => {
 			expect.assertions(3);
 
 			const result = buildWorkspaceRunOptions({
@@ -258,7 +267,7 @@ describe(buildWorkspaceRunOptions, () => {
 			expect(result.parallel).toBeUndefined();
 		});
 
-		it("should fall back to the env-detected default formatter list", () => {
+		it("should fall back to the env-detected default formatter list", ({ expect }) => {
 			expect.assertions(1);
 
 			const result = buildWorkspaceRunOptions({
@@ -271,7 +280,9 @@ describe(buildWorkspaceRunOptions, () => {
 	});
 
 	describe("mixed-values conflict", () => {
-		it("should throw WorkspaceConsensusError when packages declare different values", () => {
+		it("should throw WorkspaceConsensusError when packages declare different values", ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			expect(() => {
@@ -285,7 +296,7 @@ describe(buildWorkspaceRunOptions, () => {
 			}).toThrow(expect.objectContaining({ name: "WorkspaceConsensusError" }));
 		});
 
-		it("should reject mixed values for deep-compared arrays", () => {
+		it("should reject mixed values for deep-compared arrays", ({ expect }) => {
 			expect.assertions(1);
 
 			expect(() => {
@@ -301,7 +312,7 @@ describe(buildWorkspaceRunOptions, () => {
 	});
 
 	describe("partial-declaration conflict", () => {
-		it("should throw when some packages declare and others omit", () => {
+		it("should throw when some packages declare and others omit", ({ expect }) => {
 			expect.assertions(1);
 
 			expect(() => {
@@ -317,7 +328,7 @@ describe(buildWorkspaceRunOptions, () => {
 	});
 
 	describe("cli override", () => {
-		it("should let a CLI flag beat per-package disagreement", () => {
+		it("should let a CLI flag beat per-package disagreement", ({ expect }) => {
 			expect.assertions(1);
 
 			const result = buildWorkspaceRunOptions({
@@ -331,7 +342,7 @@ describe(buildWorkspaceRunOptions, () => {
 			expect(result.backend).toBe("open-cloud");
 		});
 
-		it("should let a CLI silent override beat per-package disagreement", () => {
+		it("should let a CLI silent override beat per-package disagreement", ({ expect }) => {
 			expect.assertions(1);
 
 			const result = buildWorkspaceRunOptions({
@@ -345,7 +356,7 @@ describe(buildWorkspaceRunOptions, () => {
 			expect(result.silent).toBeTrue();
 		});
 
-		it("should let CLI formatters override per-package values", () => {
+		it("should let CLI formatters override per-package values", ({ expect }) => {
 			expect.assertions(1);
 
 			const result = buildWorkspaceRunOptions({
@@ -359,7 +370,9 @@ describe(buildWorkspaceRunOptions, () => {
 			expect(result.formatters).toStrictEqual(["json"]);
 		});
 
-		it("should let CLI override an optional field (placeId/universeId/parallel)", () => {
+		it("should let CLI override an optional field (placeId/universeId/parallel)", ({
+			expect,
+		}) => {
 			expect.assertions(3);
 
 			const result = buildWorkspaceRunOptions({
@@ -374,7 +387,7 @@ describe(buildWorkspaceRunOptions, () => {
 	});
 
 	describe("hiddenDesktop resolution", () => {
-		it("should let the CLI override per-package hiddenDesktop", () => {
+		it("should let the CLI override per-package hiddenDesktop", ({ expect }) => {
 			expect.assertions(1);
 
 			const result = buildWorkspaceRunOptions({
@@ -385,7 +398,9 @@ describe(buildWorkspaceRunOptions, () => {
 			expect(result.hiddenDesktop).toBeTrue();
 		});
 
-		it("should leave hiddenDesktop to the platform default when no package sets it", () => {
+		it("should leave hiddenDesktop to the platform default when no package sets it", ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			const result = buildWorkspaceRunOptions({
@@ -399,7 +414,7 @@ describe(buildWorkspaceRunOptions, () => {
 			expect(result.hiddenDesktop).toBeUndefined();
 		});
 
-		it("should reject a hiddenDesktop opt-out only some packages declare", () => {
+		it("should reject a hiddenDesktop opt-out only some packages declare", ({ expect }) => {
 			expect.assertions(1);
 
 			expect(() => {
@@ -416,7 +431,7 @@ describe(buildWorkspaceRunOptions, () => {
 
 		it.for(["win32", "darwin"] as const)(
 			"should accept hiddenDesktop true beside an unset package on %s",
-			(platform) => {
+			(platform, { expect }) => {
 				expect.assertions(1);
 
 				const result = buildWorkspaceRunOptions({
@@ -432,7 +447,7 @@ describe(buildWorkspaceRunOptions, () => {
 			},
 		);
 
-		it("should accept hiddenDesktop false beside an unset package on linux", () => {
+		it("should accept hiddenDesktop false beside an unset package on linux", ({ expect }) => {
 			expect.assertions(1);
 
 			const result = buildWorkspaceRunOptions({
@@ -447,7 +462,7 @@ describe(buildWorkspaceRunOptions, () => {
 			expect(result.hiddenDesktop).toBeFalse();
 		});
 
-		it("should reject hiddenDesktop true beside an unset package on linux", () => {
+		it("should reject hiddenDesktop true beside an unset package on linux", ({ expect }) => {
 			expect.assertions(1);
 
 			expect(() => {
@@ -464,7 +479,7 @@ describe(buildWorkspaceRunOptions, () => {
 	});
 
 	describe("studioPath resolution", () => {
-		it("should let the CLI override studioPath for studio-cli workspace runs", () => {
+		it("should let the CLI override studioPath for studio-cli workspace runs", ({ expect }) => {
 			expect.assertions(1);
 
 			const result = buildWorkspaceRunOptions({
@@ -475,7 +490,7 @@ describe(buildWorkspaceRunOptions, () => {
 			expect(result.studioPath).toBe("C:/custom/RobloxStudioBeta.exe");
 		});
 
-		it("should propagate per-package studioPath when all agree", () => {
+		it("should propagate per-package studioPath when all agree", ({ expect }) => {
 			expect.assertions(1);
 
 			const result = buildWorkspaceRunOptions({
@@ -489,7 +504,7 @@ describe(buildWorkspaceRunOptions, () => {
 			expect(result.studioPath).toBe("C:/s.exe");
 		});
 
-		it("should leave studioPath undefined when no one declares it", () => {
+		it("should leave studioPath undefined when no one declares it", ({ expect }) => {
 			expect.assertions(1);
 
 			const result = buildWorkspaceRunOptions({
@@ -502,7 +517,7 @@ describe(buildWorkspaceRunOptions, () => {
 	});
 
 	describe("pluginsDirectory resolution", () => {
-		it("should propagate per-package pluginsDirectory when all agree", () => {
+		it("should propagate per-package pluginsDirectory when all agree", ({ expect }) => {
 			expect.assertions(1);
 
 			const result = buildWorkspaceRunOptions({
@@ -516,7 +531,7 @@ describe(buildWorkspaceRunOptions, () => {
 			expect(result.pluginsDirectory).toBe("/plugins");
 		});
 
-		it("should leave pluginsDirectory out when no one declares it", () => {
+		it("should leave pluginsDirectory out when no one declares it", ({ expect }) => {
 			expect.assertions(1);
 
 			const result = buildWorkspaceRunOptions({
@@ -529,7 +544,7 @@ describe(buildWorkspaceRunOptions, () => {
 	});
 
 	describe("optional-field consensus", () => {
-		it("should propagate per-package universeId when all agree", () => {
+		it("should propagate per-package universeId when all agree", ({ expect }) => {
 			expect.assertions(1);
 
 			const result = buildWorkspaceRunOptions({
@@ -545,7 +560,7 @@ describe(buildWorkspaceRunOptions, () => {
 	});
 
 	describe("env-driven formatter defaults", () => {
-		it("should append github-actions when GITHUB_ACTIONS env is true", () => {
+		it("should append github-actions when GITHUB_ACTIONS env is true", ({ expect }) => {
 			expect.assertions(1);
 
 			vi.stubEnv("GITHUB_ACTIONS", "true");
@@ -560,7 +575,7 @@ describe(buildWorkspaceRunOptions, () => {
 	});
 
 	describe("gameOutput (aggregated)", () => {
-		it("should resolve a unanimous string path against the workspace root", () => {
+		it("should resolve a unanimous string path against the workspace root", ({ expect }) => {
 			expect.assertions(1);
 
 			const result = buildWorkspaceRunOptions({
@@ -575,7 +590,7 @@ describe(buildWorkspaceRunOptions, () => {
 			expect(result.gameOutput).toBe(path.join("/repo", "logs.json"));
 		});
 
-		it("should expand `true` to game-output.log under the workspace root", () => {
+		it("should expand `true` to game-output.log under the workspace root", ({ expect }) => {
 			expect.assertions(1);
 
 			const result = buildWorkspaceRunOptions({
@@ -590,7 +605,7 @@ describe(buildWorkspaceRunOptions, () => {
 			expect(result.gameOutput).toBe(path.join("/repo", "game-output.log"));
 		});
 
-		it("should leave an absolute path untouched", () => {
+		it("should leave an absolute path untouched", ({ expect }) => {
 			expect.assertions(1);
 
 			const absolute = path.resolve("/abs/logs.json");
@@ -603,7 +618,7 @@ describe(buildWorkspaceRunOptions, () => {
 			expect(result.gameOutput).toBe(absolute);
 		});
 
-		it("should be undefined when no package declares gameOutput", () => {
+		it("should be undefined when no package declares gameOutput", ({ expect }) => {
 			expect.assertions(1);
 
 			const result = buildWorkspaceRunOptions({
@@ -615,7 +630,7 @@ describe(buildWorkspaceRunOptions, () => {
 			expect(result.gameOutput).toBeUndefined();
 		});
 
-		it("should let the CLI flag override per-package values", () => {
+		it("should let the CLI flag override per-package values", ({ expect }) => {
 			expect.assertions(1);
 
 			const result = buildWorkspaceRunOptions({
@@ -627,7 +642,9 @@ describe(buildWorkspaceRunOptions, () => {
 			expect(result.gameOutput).toBe(path.join("/repo", "cli.json"));
 		});
 
-		it("should throw WorkspaceConsensusError when `true` and a string disagree", () => {
+		it("should throw WorkspaceConsensusError when `true` and a string disagree", ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			expect(() => {
@@ -644,7 +661,7 @@ describe(buildWorkspaceRunOptions, () => {
 	});
 
 	describe("workspace.gameOutput (per-package files)", () => {
-		it("should be true when every package declares it", () => {
+		it("should be true when every package declares it", ({ expect }) => {
 			expect.assertions(1);
 
 			const result = buildWorkspaceRunOptions({
@@ -659,7 +676,7 @@ describe(buildWorkspaceRunOptions, () => {
 			expect(result.workspaceGameOutput).toBeTrue();
 		});
 
-		it("should be false when no package declares it", () => {
+		it("should be false when no package declares it", ({ expect }) => {
 			expect.assertions(1);
 
 			const result = buildWorkspaceRunOptions({
@@ -671,7 +688,9 @@ describe(buildWorkspaceRunOptions, () => {
 			expect(result.workspaceGameOutput).toBeFalse();
 		});
 
-		it("should throw WorkspaceConsensusError when only some packages declare it", () => {
+		it("should throw WorkspaceConsensusError when only some packages declare it", ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			expect(() => {
@@ -688,7 +707,7 @@ describe(buildWorkspaceRunOptions, () => {
 	});
 
 	describe("outputFile (aggregated)", () => {
-		it("should expand `true` to jest-output.log under the workspace root", () => {
+		it("should expand `true` to jest-output.log under the workspace root", ({ expect }) => {
 			expect.assertions(1);
 
 			const result = buildWorkspaceRunOptions({
@@ -703,7 +722,7 @@ describe(buildWorkspaceRunOptions, () => {
 			expect(result.outputFile).toBe(path.join("/repo", "jest-output.log"));
 		});
 
-		it("should resolve a unanimous string path against the workspace root", () => {
+		it("should resolve a unanimous string path against the workspace root", ({ expect }) => {
 			expect.assertions(1);
 
 			const result = buildWorkspaceRunOptions({
@@ -715,7 +734,7 @@ describe(buildWorkspaceRunOptions, () => {
 			expect(result.outputFile).toBe(path.join("/repo", "results.json"));
 		});
 
-		it("should be undefined when no package declares outputFile", () => {
+		it("should be undefined when no package declares outputFile", ({ expect }) => {
 			expect.assertions(1);
 
 			const result = buildWorkspaceRunOptions({
@@ -727,7 +746,7 @@ describe(buildWorkspaceRunOptions, () => {
 			expect(result.outputFile).toBeUndefined();
 		});
 
-		it("should let the CLI flag override per-package values", () => {
+		it("should let the CLI flag override per-package values", ({ expect }) => {
 			expect.assertions(1);
 
 			const result = buildWorkspaceRunOptions({
@@ -739,7 +758,9 @@ describe(buildWorkspaceRunOptions, () => {
 			expect(result.outputFile).toBe(path.join("/repo", "cli.json"));
 		});
 
-		it("should throw WorkspaceConsensusError when `true` and a string disagree", () => {
+		it("should throw WorkspaceConsensusError when `true` and a string disagree", ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			expect(() => {
@@ -756,7 +777,7 @@ describe(buildWorkspaceRunOptions, () => {
 	});
 
 	describe("workspace.outputFile (per-package files)", () => {
-		it("should be true when every package declares it", () => {
+		it("should be true when every package declares it", ({ expect }) => {
 			expect.assertions(1);
 
 			const result = buildWorkspaceRunOptions({
@@ -771,7 +792,7 @@ describe(buildWorkspaceRunOptions, () => {
 			expect(result.workspaceOutputFile).toBeTrue();
 		});
 
-		it("should be false when no package declares it", () => {
+		it("should be false when no package declares it", ({ expect }) => {
 			expect.assertions(1);
 
 			const result = buildWorkspaceRunOptions({
@@ -783,7 +804,9 @@ describe(buildWorkspaceRunOptions, () => {
 			expect(result.workspaceOutputFile).toBeFalse();
 		});
 
-		it("should throw WorkspaceConsensusError when only some packages declare it", () => {
+		it("should throw WorkspaceConsensusError when only some packages declare it", ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			expect(() => {
@@ -800,7 +823,7 @@ describe(buildWorkspaceRunOptions, () => {
 	});
 
 	describe("selection scope", () => {
-		it("should ignore packages not passed in perPackageConfigs", () => {
+		it("should ignore packages not passed in perPackageConfigs", ({ expect }) => {
 			expect.assertions(1);
 
 			// Excluded packages (those not in perPackageConfigs) cannot

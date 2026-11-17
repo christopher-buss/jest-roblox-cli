@@ -2,7 +2,7 @@ import { fromAny } from "@total-typescript/shoehorn";
 
 import * as path from "node:path";
 import { isAgent } from "std-env";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
@@ -13,7 +13,7 @@ import type { ResolvedConfig } from "./resolved-config.ts";
 const TERMINAL_DEFAULT = isAgent ? "agent" : "default";
 
 describe(resolveFunctionValues, () => {
-	it("should resolve merger functions against defaults", () => {
+	it("should resolve merger functions against defaults", ({ expect }) => {
 		expect.assertions(1);
 
 		const layer: Config = fromAny({
@@ -49,7 +49,9 @@ describe(resolveFunctionValues, () => {
 		});
 	});
 
-	it("should hand array mergers a copy of the default and object mergers an empty object", () => {
+	it("should hand array mergers a copy of the default and object mergers an empty object", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const layer: Config = fromAny({
@@ -63,7 +65,7 @@ describe(resolveFunctionValues, () => {
 		});
 	});
 
-	it("should extend the resolved Luau roots instead of an empty array", () => {
+	it("should extend the resolved Luau roots instead of an empty array", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -90,7 +92,7 @@ describe(resolveFunctionValues, () => {
 
 	it.for<Pick<Config, "rojoProject">>([{ rojoProject: "test.project.json" }, {}])(
 		"should resolve Rojo project %j in the configured root and honor test ignores",
-		(rojoConfig) => {
+		(rojoConfig, { expect }) => {
 			expect.assertions(1);
 
 			const rootDirectory = path.resolve("/repo/pkg");
@@ -122,7 +124,7 @@ describe(resolveFunctionValues, () => {
 		},
 	);
 
-	it("should preserve explicit roots without resolving defaults", () => {
+	it("should preserve explicit roots without resolving defaults", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(resolveFunctionValues({ luauRoots: ["custom"] })).toStrictEqual({
@@ -130,7 +132,7 @@ describe(resolveFunctionValues, () => {
 		});
 	});
 
-	it("should resolve a root merger function when no test block is present", () => {
+	it("should resolve a root merger function when no test block is present", ({ expect }) => {
 		expect.assertions(1);
 
 		const layer: Config = fromAny({

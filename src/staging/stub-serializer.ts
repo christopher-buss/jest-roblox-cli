@@ -58,7 +58,7 @@ function serializeLuauValue(value: unknown): string {
 	}
 
 	if (Array.isArray(value)) {
-		const items = value.map((item: unknown) => serializeLuauValue(item));
+		const items = value.map((item) => serializeLuauValue(item));
 		return `{ ${items.join(", ")} }`;
 	}
 

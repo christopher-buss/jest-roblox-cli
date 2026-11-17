@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import { createCompilerWasmRuntime } from "./compiler-wasm-runtime.ts";
 
@@ -19,7 +19,7 @@ function compilerExports() {
 describe(createCompilerWasmRuntime, () => {
 	it.for(["_initialize", "compile_with_statistics", "free", "free_result", "malloc", "memory"])(
 		"should reject an invalid %s export",
-		(key) => {
+		(key, { expect }) => {
 			expect.assertions(1);
 
 			const { exports } = compilerExports();
@@ -33,7 +33,7 @@ describe(createCompilerWasmRuntime, () => {
 
 	it.for([false, true])(
 		"should pass explicit compiler settings and listing flag %s",
-		(bytecodeText) => {
+		(bytecodeText, { expect }) => {
 			expect.assertions(2);
 
 			const { compile, exports, initialize } = compilerExports();
@@ -51,7 +51,7 @@ describe(createCompilerWasmRuntime, () => {
 		},
 	);
 
-	it("should return compiler payloads across repeated calls", () => {
+	it("should return compiler payloads across repeated calls", ({ expect }) => {
 		expect.assertions(2);
 
 		const runtime = createCompilerWasmRuntime();
@@ -67,7 +67,7 @@ describe(createCompilerWasmRuntime, () => {
 		expect(runtime.compileWithStatistics(request)).toBe(first);
 	});
 
-	it("should report compiler errors in the wrapper payload", () => {
+	it("should report compiler errors in the wrapper payload", ({ expect }) => {
 		expect.assertions(1);
 
 		const runtime = createCompilerWasmRuntime();

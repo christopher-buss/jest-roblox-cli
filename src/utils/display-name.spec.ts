@@ -1,21 +1,21 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { composeEntryDisplayName } from "./display-name.ts";
 
 describe(composeEntryDisplayName, () => {
-	it("should name the project alone when the run has no package", () => {
+	it("should name the project alone when the run has no package", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(composeEntryDisplayName(undefined, "client")).toBe("client");
 	});
 
-	it("should name the project alone when the package shares its name", () => {
+	it("should name the project alone when the package shares its name", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(composeEntryDisplayName("core", "core")).toBe("core");
 	});
 
-	it("should name the package, then the project", () => {
+	it("should name the package, then the project", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(composeEntryDisplayName("core", "client")).toBe("core › client");

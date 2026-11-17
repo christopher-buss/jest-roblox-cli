@@ -1,5 +1,5 @@
 import * as path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { posixPath } from "#test/mocks/posix-path.ts";
@@ -24,7 +24,9 @@ function scopeOf(seed: Record<string, string>): ChangeScope {
 }
 
 describe(resolveChangeScope, () => {
-	it("should take the nearest folder with a workspace marker as the workspace root", () => {
+	it("should take the nearest folder with a workspace marker as the workspace root", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const scope = scopeOf({ [path.join(WORKSPACE, "nx.json")]: "{}" });
@@ -32,7 +34,9 @@ describe(resolveChangeScope, () => {
 		expect(scope.workspaceRoot).toBe(key(WORKSPACE));
 	});
 
-	it("should fall back to the project root when no folder holds a workspace marker", () => {
+	it("should fall back to the project root when no folder holds a workspace marker", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const scope = scopeOf({ [path.join(PROJECT, "default.project.json")]: "{}" });
@@ -51,7 +55,7 @@ describe(classifyChange, () => {
 		["opaque", path.join(PROJECT, "jest.config.luau")],
 		["ignored", path.join(WORKSPACE, "packages", "other", "util.luau")],
 		["ignored", path.join(path.resolve("/elsewhere"), "pnpm-lock.yaml")],
-	])("should classify a change as %s: %s", ([kind, file]) => {
+	])("should classify a change as %s: %s", ([kind, file], { expect }) => {
 		expect.assertions(1);
 
 		const scope = scopeOf({ [path.join(WORKSPACE, "pnpm-workspace.yaml")]: "" });

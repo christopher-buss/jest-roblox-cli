@@ -1,7 +1,7 @@
 import { fromPartial } from "@total-typescript/shoehorn";
 
 import { Buffer } from "node:buffer";
-import { assert, describe, expect, it, onTestFinished, vi } from "vitest";
+import { assert, describe, it, type TestContext, vi } from "vitest";
 import type { WebSocket, WebSocketServer } from "ws";
 
 import { MockWebSocketServer } from "#test/mocks/mock-web-socket-server.ts";
@@ -24,7 +24,7 @@ function makePool(): { pool: PluginConnectionPool; wss: MockWebSocketServer } {
 	return { pool: new PluginConnectionPool(fromPartial<WebSocketServer>(wss)), wss };
 }
 
-function useFakeTimers(): void {
+function useFakeTimers(onTestFinished: TestContext["onTestFinished"]): void {
 	vi.useFakeTimers();
 	onTestFinished(() => {
 		vi.useRealTimers();
@@ -77,7 +77,7 @@ function connectPlugin(
 }
 
 describe(PluginConnectionPool, () => {
-	it("should select the connection that announces the expected protocol", async () => {
+	it("should select the connection that announces the expected protocol", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { pool, wss } = makePool();
@@ -93,7 +93,9 @@ describe(PluginConnectionPool, () => {
 		});
 	});
 
-	it("should select a connection that announced before the selection started", async () => {
+	it("should select a connection that announced before the selection started", async ({
+		expect,
+	}) => {
 		// The probe's own connection: recorded on arrival, matched on request.
 		expect.assertions(1);
 
@@ -108,7 +110,9 @@ describe(PluginConnectionPool, () => {
 		});
 	});
 
-	it("should report every connection when none announce the expected protocol", async () => {
+	it("should report every connection when none announce the expected protocol", async ({
+		expect,
+	}) => {
 		expect.assertions(3);
 
 		const { pool, wss } = makePool();
@@ -123,12 +127,15 @@ describe(PluginConnectionPool, () => {
 		assert(selection.kind === "incompatible");
 
 		expect(selection.candidates).toHaveLength(2);
-		expect(
-			selection.candidates.map((entry: PluginCandidate) => entry.hello!.protocolVersion),
-		).toStrictEqual([EXPECTED_VERSION - 1, EXPECTED_VERSION - 2]);
+		expect(selection.candidates.map((entry) => entry.hello!.protocolVersion)).toStrictEqual([
+			EXPECTED_VERSION - 1,
+			EXPECTED_VERSION - 2,
+		]);
 	});
 
-	it("should count a connection that never announces itself as incompatible", async () => {
+	it("should count a connection that never announces itself as incompatible", async ({
+		expect,
+	}) => {
 		// What every plugin predating the handshake looks like on the wire.
 		expect.assertions(2);
 
@@ -144,7 +151,7 @@ describe(PluginConnectionPool, () => {
 		expect(selection.candidates[0]!.hello).toBeUndefined();
 	});
 
-	it("should report no connection when nothing connects at all", async () => {
+	it("should report no connection when nothing connects at all", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { pool } = makePool();
@@ -154,7 +161,9 @@ describe(PluginConnectionPool, () => {
 		expect(selection.kind).toBe("no-connection");
 	});
 
-	it("should answer on the grace window rather than wait out the connect timeout", async () => {
+	it("should answer on the grace window rather than wait out the connect timeout", async ({
+		expect,
+	}) => {
 		// The point of the grace window. `--backend studio` gives the connect
 		// timeout the whole run budget (300s by default), so without this a
 		// Studio full of stale plugins would hang rather than fail.
@@ -169,10 +178,13 @@ describe(PluginConnectionPool, () => {
 		expect(selection.kind).toBe("incompatible");
 	});
 
-	it("should not restart the grace window when another stale plugin connects", async () => {
+	it("should not restart the grace window when another stale plugin connects", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(2);
 
-		useFakeTimers();
+		useFakeTimers(onTestFinished);
 		const { pool, wss } = makePool();
 		const selecting = pool.selectAsync({ ...REQUEST, connectTimeoutMs: 600_000, graceMs: 10 });
 		const settled = vi.fn<(selection: unknown) => void>();
@@ -191,7 +203,9 @@ describe(PluginConnectionPool, () => {
 		);
 	});
 
-	it("should give a late plugin the whole grace window past the connect timeout", async () => {
+	it("should give a late plugin the whole grace window past the connect timeout", async ({
+		expect,
+	}) => {
 		// Auto-detection probes for 500ms against a 750ms grace, so the two
 		// windows overlap. A stale socket arriving late in the probe must not
 		// close selection while a compatible one still has window left.
@@ -213,7 +227,9 @@ describe(PluginConnectionPool, () => {
 		});
 	});
 
-	it("should keep waiting for a first connection rather than open the grace window early", async () => {
+	it("should keep waiting for a first connection rather than open the grace window early", async ({
+		expect,
+	}) => {
 		// The grace window is for deciding between connections. Opening it with
 		// none would cut the connect timeout down to it, and a Studio that is
 		// still starting would read as absent.
@@ -230,7 +246,7 @@ describe(PluginConnectionPool, () => {
 		expect(raced).toBe(pending);
 	});
 
-	it("should open a fresh grace window for a second selection", async () => {
+	it("should open a fresh grace window for a second selection", async ({ expect }) => {
 		// A backend runs more than once against the same server. A spent grace
 		// window left in place would make the second run wait out the connect
 		// timeout instead: 300s on `--backend studio`.
@@ -247,7 +263,7 @@ describe(PluginConnectionPool, () => {
 		expect(second.kind).toBe("incompatible");
 	});
 
-	it("should ignore a frame that is not an announcement", async () => {
+	it("should ignore a frame that is not an announcement", async ({ expect }) => {
 		// Results and version_mismatch frames reach this listener too.
 		expect.assertions(1);
 
@@ -269,7 +285,7 @@ describe(PluginConnectionPool, () => {
 		expect(selection.kind).toBe("incompatible");
 	});
 
-	it("should keep the first announcement when a socket announces twice", async () => {
+	it("should keep the first announcement when a socket announces twice", async ({ expect }) => {
 		// A second claim from an already-identified socket is not something to
 		// act on: identity is established once, at open.
 		expect.assertions(1);
@@ -286,7 +302,7 @@ describe(PluginConnectionPool, () => {
 		expect(selection.candidates[0]!.hello!.protocolVersion).toBe(EXPECTED_VERSION - 1);
 	});
 
-	it("should drop a connection that closes before the selection settles", async () => {
+	it("should drop a connection that closes before the selection settles", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { pool, wss } = makePool();
@@ -299,7 +315,9 @@ describe(PluginConnectionPool, () => {
 		expect(selection.kind).toBe("no-connection");
 	});
 
-	it("should keep what a socket announced when its connection is announced twice", async () => {
+	it("should keep what a socket announced when its connection is announced twice", async ({
+		expect,
+	}) => {
 		// Re-tracking would reset the candidate, losing the announcement made at
 		// open. The plugin never sends a second one, so it would read as stale.
 		expect.assertions(2);
@@ -317,7 +335,7 @@ describe(PluginConnectionPool, () => {
 		expect(selection.candidates[0]!.hello!.protocolVersion).toBe(EXPECTED_VERSION - 1);
 	});
 
-	it("should end an in-flight selection on abort", async () => {
+	it("should end an in-flight selection on abort", async ({ expect }) => {
 		// The server failed to bind: no plugin will ever arrive, and the
 		// connect timer would otherwise hold the event loop open.
 		expect.assertions(1);
@@ -332,7 +350,7 @@ describe(PluginConnectionPool, () => {
 		expect(selection.kind).toBe("no-connection");
 	});
 
-	it("should ignore an abort with no selection in flight", async () => {
+	it("should ignore an abort with no selection in flight", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { pool } = makePool();
@@ -345,7 +363,7 @@ describe(PluginConnectionPool, () => {
 });
 
 describe(describePluginMismatch, () => {
-	it("should name each connection by plugin name and release", () => {
+	it("should name each connection by plugin name and release", ({ expect }) => {
 		expect.assertions(1);
 
 		const message = describePluginMismatch(
@@ -372,7 +390,9 @@ describe(describePluginMismatch, () => {
 		);
 	});
 
-	it("should fall back to an unnamed plugin when the announcement carries no name", () => {
+	it("should fall back to an unnamed plugin when the announcement carries no name", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const message = describePluginMismatch(
@@ -385,7 +405,7 @@ describe(describePluginMismatch, () => {
 });
 
 describe(closePluginServer, () => {
-	it("should terminate every socket before closing the server", () => {
+	it("should terminate every socket before closing the server", ({ expect }) => {
 		// A live socket keeps the Node event loop running, so closing the
 		// server alone hangs the CLI's exit.
 		expect.assertions(2);

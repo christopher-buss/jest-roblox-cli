@@ -3,7 +3,7 @@ import { fromAny } from "@total-typescript/shoehorn";
 import type * as childProcess from "node:child_process";
 import * as path from "node:path";
 import process from "node:process";
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import type { ChildProcessRunner } from "../utils/child-process.ts";
 import type { FileSystem } from "../utils/file-system.ts";
@@ -86,7 +86,7 @@ async function spawnFlagsAsync(fileSystem: FileSystem, tsconfig?: string): Promi
 }
 
 describe(spawnTsgoAsync, () => {
-	it("should name tsgo when the run deadline kills it", async () => {
+	it("should name tsgo when the run deadline kills it", async ({ expect }) => {
 		expect.assertions(1);
 
 		const child: childProcess.ChildProcess = fromAny({ once: () => child });
@@ -117,7 +117,7 @@ describe(spawnTsgoAsync, () => {
 		).rejects.toThrow("tsgo typecheck timed out after 1000ms (timeout)");
 	});
 
-	it("should spawn tsrs before any other checker", async () => {
+	it("should spawn tsrs before any other checker", async ({ expect }) => {
 		expect.assertions(1);
 
 		const manifests: Record<string, string> = {
@@ -167,7 +167,7 @@ describe(spawnTsgoAsync, () => {
 });
 
 describe("tsgo composite detection", () => {
-	it("should build when compilerOptions.composite is true", async () => {
+	it("should build when compilerOptions.composite is true", async ({ expect }) => {
 		expect.assertions(1);
 
 		const fileSystem = readingText(JSON.stringify({ compilerOptions: { composite: true } }));
@@ -175,7 +175,7 @@ describe("tsgo composite detection", () => {
 		await expect(spawnFlagsAsync(fileSystem)).resolves.toContain("--build");
 	});
 
-	it("should not build when composite is absent", async () => {
+	it("should not build when composite is absent", async ({ expect }) => {
 		expect.assertions(1);
 
 		const fileSystem = readingText(JSON.stringify({ compilerOptions: { strict: true } }));
@@ -183,7 +183,7 @@ describe("tsgo composite detection", () => {
 		await expect(spawnFlagsAsync(fileSystem)).resolves.toContain("--noEmit");
 	});
 
-	it("should not build when compilerOptions is absent", async () => {
+	it("should not build when compilerOptions is absent", async ({ expect }) => {
 		expect.assertions(1);
 
 		const fileSystem = readingText(JSON.stringify({ include: ["src"] }));
@@ -191,7 +191,7 @@ describe("tsgo composite detection", () => {
 		await expect(spawnFlagsAsync(fileSystem)).resolves.toContain("--noEmit");
 	});
 
-	it("should not build when compilerOptions is null", async () => {
+	it("should not build when compilerOptions is null", async ({ expect }) => {
 		expect.assertions(1);
 
 		const fileSystem = readingText('{ "compilerOptions": null }');
@@ -199,7 +199,7 @@ describe("tsgo composite detection", () => {
 		await expect(spawnFlagsAsync(fileSystem)).resolves.toContain("--noEmit");
 	});
 
-	it("should not build when compilerOptions is an array", async () => {
+	it("should not build when compilerOptions is an array", async ({ expect }) => {
 		expect.assertions(1);
 
 		const fileSystem = readingText('{ "compilerOptions": [] }');
@@ -207,7 +207,7 @@ describe("tsgo composite detection", () => {
 		await expect(spawnFlagsAsync(fileSystem)).resolves.toContain("--noEmit");
 	});
 
-	it("should not build when tsconfig does not exist", async () => {
+	it("should not build when tsconfig does not exist", async ({ expect }) => {
 		expect.assertions(1);
 
 		const fileSystem = throwingOnRead(new Error("ENOENT"));
@@ -215,7 +215,7 @@ describe("tsgo composite detection", () => {
 		await expect(spawnFlagsAsync(fileSystem)).resolves.toContain("--noEmit");
 	});
 
-	it("should not build on malformed JSON", async () => {
+	it("should not build on malformed JSON", async ({ expect }) => {
 		expect.assertions(1);
 
 		const fileSystem = readingText("not json{{{");
@@ -223,7 +223,7 @@ describe("tsgo composite detection", () => {
 		await expect(spawnFlagsAsync(fileSystem)).resolves.toContain("--noEmit");
 	});
 
-	it("should detect composite in tsconfig with comments", async () => {
+	it("should detect composite in tsconfig with comments", async ({ expect }) => {
 		expect.assertions(1);
 
 		const fileSystem = readingText(
@@ -233,7 +233,7 @@ describe("tsgo composite detection", () => {
 		await expect(spawnFlagsAsync(fileSystem)).resolves.toContain("--build");
 	});
 
-	it("should detect composite in tsconfig with trailing commas", async () => {
+	it("should detect composite in tsconfig with trailing commas", async ({ expect }) => {
 		expect.assertions(1);
 
 		const fileSystem = readingText('{ "compilerOptions": { "composite": true, }, }');
@@ -241,7 +241,7 @@ describe("tsgo composite detection", () => {
 		await expect(spawnFlagsAsync(fileSystem)).resolves.toContain("--build");
 	});
 
-	it("should warn when custom tsconfig cannot be read", async () => {
+	it("should warn when custom tsconfig cannot be read", async ({ expect }) => {
 		expect.assertions(2);
 
 		const stderrSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
@@ -254,7 +254,9 @@ describe("tsgo composite detection", () => {
 		expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining("tsconfig.build.json"));
 	});
 
-	it("should warn with stringified error when thrown value is not an Error", async () => {
+	it("should warn with stringified error when thrown value is not an Error", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const stderrSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
@@ -267,7 +269,7 @@ describe("tsgo composite detection", () => {
 		expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining("raw string error"));
 	});
 
-	it("should not warn when default tsconfig does not exist", async () => {
+	it("should not warn when default tsconfig does not exist", async ({ expect }) => {
 		expect.assertions(2);
 
 		const stderrSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
@@ -278,7 +280,7 @@ describe("tsgo composite detection", () => {
 		expect(stderrSpy).not.toHaveBeenCalled();
 	});
 
-	it("should resolve custom tsconfig path against root directory", async () => {
+	it("should resolve custom tsconfig path against root directory", async ({ expect }) => {
 		expect.assertions(1);
 
 		const fileSystem = readingText(JSON.stringify({ compilerOptions: { composite: true } }));

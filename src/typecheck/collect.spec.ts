@@ -1,10 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { collectTestDefinitions } from "./collect.ts";
 import type { TestDefinition } from "./typecheck-types.ts";
 
 describe(collectTestDefinitions, () => {
-	it("should ignore indirect calls returned by another function", () => {
+	it("should ignore indirect calls returned by another function", ({ expect }) => {
 		expect.assertions(1);
 
 		const definitions = collectTestDefinitions('makeTest()("indirect", () => {});');
@@ -12,7 +12,7 @@ describe(collectTestDefinitions, () => {
 		expect(definitions).toStrictEqual([]);
 	});
 
-	it("should normalize carriage returns in a template literal name", () => {
+	it("should normalize carriage returns in a template literal name", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(collectTestDefinitions("it(`first\r\nsecond`, () => {});")[0]!.name).toBe(
@@ -20,13 +20,13 @@ describe(collectTestDefinitions, () => {
 		);
 	});
 
-	it("should name a test with a non-string literal by its source text", () => {
+	it("should name a test with a non-string literal by its source text", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(collectTestDefinitions("it(42, () => {});")[0]!.name).toBe("42");
 	});
 
-	it("should only credit suites as ancestors of nested calls", () => {
+	it("should only credit suites as ancestors of nested calls", ({ expect }) => {
 		expect.assertions(1);
 
 		const definitions = collectTestDefinitions(
@@ -40,7 +40,7 @@ describe(collectTestDefinitions, () => {
 		]);
 	});
 
-	it("should collect a single it block", () => {
+	it("should collect a single it block", ({ expect }) => {
 		expect.assertions(2);
 
 		const source = 'it("should work", () => {});';
@@ -56,7 +56,7 @@ describe(collectTestDefinitions, () => {
 		});
 	});
 
-	it("should collect test as alias for it", () => {
+	it("should collect test as alias for it", ({ expect }) => {
 		expect.assertions(2);
 
 		const source = 'test("should work", () => {});';
@@ -66,7 +66,7 @@ describe(collectTestDefinitions, () => {
 		expect(definitions[0]!.type).toBe("test");
 	});
 
-	it("should collect describe wrapping it with correct ancestors", () => {
+	it("should collect describe wrapping it with correct ancestors", ({ expect }) => {
 		expect.assertions(3);
 
 		const source = 'describe("math", () => { it("should add", () => {}); });';
@@ -83,7 +83,7 @@ describe(collectTestDefinitions, () => {
 		);
 	});
 
-	it("should handle nested describe blocks", () => {
+	it("should handle nested describe blocks", ({ expect }) => {
 		expect.assertions(2);
 
 		const source = `
@@ -99,7 +99,7 @@ describe("outer", () => {
 		expect(testDefinition!.ancestorNames).toStrictEqual(["outer", "inner"]);
 	});
 
-	it("should return empty array for file with no test blocks", () => {
+	it("should return empty array for file with no test blocks", ({ expect }) => {
 		expect.assertions(1);
 
 		const source = "const x: number = 1; function foo() { return x; }";
@@ -108,7 +108,7 @@ describe("outer", () => {
 		expect(definitions).toBeEmpty();
 	});
 
-	it("should handle TypeScript syntax without errors", () => {
+	it("should handle TypeScript syntax without errors", ({ expect }) => {
 		expect.assertions(1);
 
 		const source = `
@@ -123,7 +123,7 @@ describe("types", () => {
 		expect(definitions).toHaveLength(2);
 	});
 
-	it("should collect it.skip and describe.skip", () => {
+	it("should collect it.skip and describe.skip", ({ expect }) => {
 		expect.assertions(2);
 
 		const source = 'describe.skip("skipped", () => { it.skip("also skipped", () => {}); });';
@@ -133,7 +133,7 @@ describe("types", () => {
 		expect(definitions.every((item: TestDefinition) => item.name !== "")).toBeTrue();
 	});
 
-	it("should handle template literal test names", () => {
+	it("should handle template literal test names", ({ expect }) => {
 		expect.assertions(1);
 
 		const source = "it(`should handle template`, () => {});";
@@ -142,7 +142,7 @@ describe("types", () => {
 		expect(definitions[0]!.name).toBe("should handle template");
 	});
 
-	it("should pop suite stack when sibling suites are sequential", () => {
+	it("should pop suite stack when sibling suites are sequential", ({ expect }) => {
 		expect.assertions(2);
 
 		const source = `
@@ -155,7 +155,7 @@ describe("second", () => { it("should b", () => {}); });`;
 		expect(tests[1]!.ancestorNames).toStrictEqual(["second"]);
 	});
 
-	it("should handle template literal with interpolation", () => {
+	it("should handle template literal with interpolation", ({ expect }) => {
 		expect.assertions(1);
 
 		// oxlint-disable-next-line no-template-curly-in-string -- testing template literal parsing
@@ -166,13 +166,13 @@ describe("second", () => { it("should b", () => {}); });`;
 		expect(definitions[0]!.name).toBe("should handle ${x}");
 	});
 
-	it("should preserve an empty string literal name", () => {
+	it("should preserve an empty string literal name", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(collectTestDefinitions('it("", () => {});')[0]!.name).toBe("");
 	});
 
-	it("should handle variable reference as test name", () => {
+	it("should handle variable reference as test name", ({ expect }) => {
 		expect.assertions(1);
 
 		const source = 'const name = "test"; it(name, () => {});';
@@ -181,7 +181,7 @@ describe("second", () => { it("should b", () => {}); });`;
 		expect(definitions[0]!.name).toBe("name");
 	});
 
-	it("should ignore test call with no arguments", () => {
+	it("should ignore test call with no arguments", ({ expect }) => {
 		expect.assertions(1);
 
 		const source = "it();";
@@ -190,7 +190,7 @@ describe("second", () => { it("should b", () => {}); });`;
 		expect(definitions).toBeEmpty();
 	});
 
-	it("should ignore member expression on non-test object", () => {
+	it("should ignore member expression on non-test object", ({ expect }) => {
 		expect.assertions(1);
 
 		const source = 'foo.bar("hello", () => {});';
@@ -199,7 +199,7 @@ describe("second", () => { it("should b", () => {}); });`;
 		expect(definitions).toBeEmpty();
 	});
 
-	it("should ignore non-test function calls", () => {
+	it("should ignore non-test function calls", ({ expect }) => {
 		expect.assertions(1);
 
 		const source = 'console.log("hello"); foo(); it("should work", () => {});';
@@ -208,7 +208,7 @@ describe("second", () => { it("should b", () => {}); });`;
 		expect(definitions).toHaveLength(1);
 	});
 
-	it("should ignore calls with computed callee", () => {
+	it("should ignore calls with computed callee", ({ expect }) => {
 		expect.assertions(1);
 
 		const source = 'const fns = [it]; fns[0]("should work", () => {});';
@@ -217,7 +217,7 @@ describe("second", () => { it("should b", () => {}); });`;
 		expect(definitions).toBeEmpty();
 	});
 
-	it("should handle multiple sibling test blocks", () => {
+	it("should handle multiple sibling test blocks", ({ expect }) => {
 		expect.assertions(3);
 
 		const source = `
@@ -233,7 +233,7 @@ describe("suite", () => {
 		expect(tests[1]!.ancestorNames).toStrictEqual(["suite"]);
 	});
 
-	it("should not treat a top-level test as an ancestor suite", () => {
+	it("should not treat a top-level test as an ancestor suite", ({ expect }) => {
 		expect.assertions(1);
 
 		const definitions = collectTestDefinitions('it("first", () => {});it("second", () => {});');
@@ -248,7 +248,7 @@ describe("suite", () => {
 		]);
 	});
 
-	it("should preserve expression source for non-literal names", () => {
+	it("should preserve expression source for non-literal names", ({ expect }) => {
 		expect.assertions(1);
 
 		const definitions = collectTestDefinitions("it(names[current + 1], () => {});");
@@ -256,7 +256,7 @@ describe("suite", () => {
 		expect(definitions[0]!.name).toBe("names[current + 1]");
 	});
 
-	it("should recognize suite and test modifiers but ignore computed members", () => {
+	it("should recognize suite and test modifiers but ignore computed members", ({ expect }) => {
 		expect.assertions(1);
 
 		const definitions = collectTestDefinitions(

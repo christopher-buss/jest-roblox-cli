@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { buildAncestorChain } from "./ancestor-chain.ts";
 import type { RawTestDefinition } from "./typecheck-types.ts";
@@ -11,7 +11,7 @@ function definition(
 }
 
 describe(buildAncestorChain, () => {
-	it("should name every open suite above each definition", () => {
+	it("should name every open suite above each definition", ({ expect }) => {
 		expect.assertions(1);
 
 		const outer = definition("suite", { name: "outer", end: 100, start: 0 });

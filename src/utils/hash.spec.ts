@@ -1,11 +1,11 @@
 import { Buffer } from "node:buffer";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { hashBuffer, hashFile, hashString } from "./hash.ts";
 
 describe(hashBuffer, () => {
-	it("should return consistent SHA256 hash for same input", () => {
+	it("should return consistent SHA256 hash for same input", ({ expect }) => {
 		expect.assertions(2);
 
 		const data = Buffer.from("test data");
@@ -16,7 +16,7 @@ describe(hashBuffer, () => {
 		expect(hash1).toHaveLength(64);
 	});
 
-	it("should return different hash for different input", () => {
+	it("should return different hash for different input", ({ expect }) => {
 		expect.assertions(1);
 
 		const hash1 = hashBuffer(Buffer.from("data1"));
@@ -25,7 +25,7 @@ describe(hashBuffer, () => {
 		expect(hash1).not.toBe(hash2);
 	});
 
-	it("should return hex string", () => {
+	it("should return hex string", ({ expect }) => {
 		expect.assertions(1);
 
 		const hash = hashBuffer(Buffer.from("test"));
@@ -35,7 +35,7 @@ describe(hashBuffer, () => {
 });
 
 describe(hashString, () => {
-	it("should hash the text's UTF-8 bytes identically to hashBuffer", () => {
+	it("should hash the text's UTF-8 bytes identically to hashBuffer", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(hashString("-- é")).toBe(hashBuffer(Buffer.from("-- é", "utf8")));
@@ -43,7 +43,7 @@ describe(hashString, () => {
 });
 
 describe(hashFile, () => {
-	it("should hash the file's bytes identically to hashBuffer", () => {
+	it("should hash the file's bytes identically to hashBuffer", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({ "/dir/file.luau": "local x = 1" });

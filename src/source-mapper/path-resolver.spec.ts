@@ -2,7 +2,7 @@ import type { RojoProject } from "@isentinel/rojo-utils";
 
 import * as path from "node:path";
 import process from "node:process";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import type { TsconfigMapping } from "../tsconfig/tsconfig-mappings.ts";
@@ -31,20 +31,23 @@ function createSharedOutResolver(): ReturnType<typeof createPathResolver> {
 }
 
 describe(createPathResolver, () => {
-	it.for(["lua", "luau"])("should preserve a directly mounted %s file", (extension) => {
-		expect.assertions(1);
+	it.for(["lua", "luau"])(
+		"should preserve a directly mounted %s file",
+		(extension, { expect }) => {
+			expect.assertions(1);
 
-		const { fileSystem } = createMemoryFileSystem();
-		const filePath = `out/suite.spec.${extension}`;
-		const resolver = createPathResolver(
-			{ name: "test", tree: { Suite: { $path: filePath } } },
-			{ fileSystem },
-		);
+			const { fileSystem } = createMemoryFileSystem();
+			const filePath = `out/suite.spec.${extension}`;
+			const resolver = createPathResolver(
+				{ name: "test", tree: { Suite: { $path: filePath } } },
+				{ fileSystem },
+			);
 
-		expect(resolver.resolve("Suite")).toStrictEqual({ filePath, luauPath: filePath });
-	});
+			expect(resolver.resolve("Suite")).toStrictEqual({ filePath, luauPath: filePath });
+		},
+	);
 
-	it("should map a directly mounted init script back to its TypeScript source", () => {
+	it("should map a directly mounted init script back to its TypeScript source", ({ expect }) => {
 		expect.assertions(1);
 
 		const mapping = { outDir: "out", rootDir: "src" };
@@ -60,7 +63,7 @@ describe(createPathResolver, () => {
 		});
 	});
 
-	it("should resolve a mount whose instance name ends with a dollar sign", () => {
+	it("should resolve a mount whose instance name ends with a dollar sign", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -75,7 +78,7 @@ describe(createPathResolver, () => {
 		});
 	});
 
-	it("should resolve a stack frame under an optional mount", () => {
+	it("should resolve a stack frame under an optional mount", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -90,7 +93,7 @@ describe(createPathResolver, () => {
 		});
 	});
 
-	it("should resolve through the deepest mount when its parent is also mounted", () => {
+	it("should resolve through the deepest mount when its parent is also mounted", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -112,7 +115,7 @@ describe(createPathResolver, () => {
 		);
 	});
 
-	it("should preserve the final test suffix in a source filename", () => {
+	it("should preserve the final test suffix in a source filename", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -126,7 +129,7 @@ describe(createPathResolver, () => {
 		);
 	});
 
-	it("should parse simple rojo tree", () => {
+	it("should parse simple rojo tree", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -145,7 +148,7 @@ describe(createPathResolver, () => {
 		expect(resolver.resolve("ReplicatedStorage.foo")!.filePath).toBe("out/shared/foo.luau");
 	});
 
-	it("should reject unrelated and prefix-colliding DataModel paths", () => {
+	it("should reject unrelated and prefix-colliding DataModel paths", ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -159,7 +162,7 @@ describe(createPathResolver, () => {
 		expect(resolver.resolve("ReplicatedStorageExtra.foo")).toBeUndefined();
 	});
 
-	it("should only combine a test suffix at the end of an instance path", () => {
+	it("should only combine a test suffix at the end of an instance path", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -174,7 +177,7 @@ describe(createPathResolver, () => {
 		);
 	});
 
-	it("should parse nested rojo tree", () => {
+	it("should parse nested rojo tree", ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -203,7 +206,7 @@ describe(createPathResolver, () => {
 		);
 	});
 
-	it("should map outDir to rootDir for TypeScript source", () => {
+	it("should map outDir to rootDir for TypeScript source", ({ expect }) => {
 		expect.assertions(1);
 
 		const resolver = createSharedOutResolver();
@@ -211,7 +214,7 @@ describe(createPathResolver, () => {
 		expect(resolver.resolve("ReplicatedStorage.foo")!.filePath).toBe("src/shared/foo.ts");
 	});
 
-	it("should return matched mapping for TypeScript paths", () => {
+	it("should return matched mapping for TypeScript paths", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -231,7 +234,7 @@ describe(createPathResolver, () => {
 		expect(resolver.resolve("ReplicatedStorage.foo")!.mapping).toStrictEqual(mapping);
 	});
 
-	it("should return undefined mapping for Luau paths", () => {
+	it("should return undefined mapping for Luau paths", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -250,7 +253,7 @@ describe(createPathResolver, () => {
 		expect(resolver.resolve("ReplicatedStorage.foo")!.mapping).toBeUndefined();
 	});
 
-	it("should return undefined for unknown path", () => {
+	it("should return undefined for unknown path", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -269,7 +272,7 @@ describe(createPathResolver, () => {
 		expect(resolver.resolve("ServerStorage.unknown")).toBeUndefined();
 	});
 
-	it("should prefer .luau over .lua when both exist", () => {
+	it("should prefer .luau over .lua when both exist", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem(
@@ -291,7 +294,7 @@ describe(createPathResolver, () => {
 		expect(resolver.resolve("ReplicatedStorage.foo")!.filePath).toBe("out/shared/foo.luau");
 	});
 
-	it("should match longest prefix when keys share a common prefix", () => {
+	it("should match longest prefix when keys share a common prefix", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -316,7 +319,7 @@ describe(createPathResolver, () => {
 		);
 	});
 
-	it("should fall back to Luau when basePath matches no mapping", () => {
+	it("should fall back to Luau when basePath matches no mapping", ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -341,7 +344,7 @@ describe(createPathResolver, () => {
 		expect(result!.mapping).toBeUndefined();
 	});
 
-	it("should resolve different mappings for different basePaths", () => {
+	it("should resolve different mappings for different basePaths", ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -372,7 +375,7 @@ describe(createPathResolver, () => {
 		).toBe("src/actions/define.spec.ts");
 	});
 
-	it("should map init back to index for TypeScript paths", () => {
+	it("should map init back to index for TypeScript paths", ({ expect }) => {
 		expect.assertions(1);
 
 		const resolver = createSharedOutResolver();
@@ -382,7 +385,7 @@ describe(createPathResolver, () => {
 		);
 	});
 
-	it("should fall back to .lua when .luau does not exist", () => {
+	it("should fall back to .lua when .luau does not exist", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({ "out/shared/foo.lua": "" }, process.cwd());
@@ -403,25 +406,25 @@ describe(createPathResolver, () => {
 });
 
 describe(luauInitToIndex, () => {
-	it("should rewrite a leading init stem to index", () => {
+	it("should rewrite a leading init stem to index", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(luauInitToIndex("init.spec")).toBe("index.spec");
 	});
 
-	it("should rewrite an init segment that follows a slash", () => {
+	it("should rewrite an init segment that follows a slash", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(luauInitToIndex("src/shared/init.spec")).toBe("src/shared/index.spec");
 	});
 
-	it("should not rewrite a name that merely starts with init", () => {
+	it("should not rewrite a name that merely starts with init", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(luauInitToIndex("initialize.spec")).toBe("initialize.spec");
 	});
 
-	it("should not rewrite an init substring embedded in a longer word", () => {
+	it("should not rewrite an init substring embedded in a longer word", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(luauInitToIndex("src/shared/definite.spec")).toBe("src/shared/definite.spec");
@@ -429,7 +432,7 @@ describe(luauInitToIndex, () => {
 });
 
 describe("resolveSnapshot", () => {
-	it("should preserve a directly mounted snapshot filename", () => {
+	it("should preserve a directly mounted snapshot filename", ({ expect }) => {
 		expect.assertions(1);
 
 		const resolver = snapshotResolver({
@@ -444,7 +447,7 @@ describe("resolveSnapshot", () => {
 		});
 	});
 
-	it("should resolve a mount whose instance name ends with a dollar sign", () => {
+	it("should resolve a mount whose instance name ends with a dollar sign", ({ expect }) => {
 		expect.assertions(1);
 
 		const resolver = snapshotResolver({
@@ -456,7 +459,7 @@ describe("resolveSnapshot", () => {
 		});
 	});
 
-	it("should resolve a snapshot under an optional mount", () => {
+	it("should resolve a snapshot under an optional mount", ({ expect }) => {
 		expect.assertions(1);
 
 		const resolver = snapshotResolver({
@@ -468,7 +471,7 @@ describe("resolveSnapshot", () => {
 		});
 	});
 
-	it("should resolve virtual path to filesystem path", () => {
+	it("should resolve virtual path to filesystem path", ({ expect }) => {
 		expect.assertions(1);
 
 		const resolver = snapshotResolver({
@@ -488,7 +491,7 @@ describe("resolveSnapshot", () => {
 		).toBe("out/shared/components/__snapshots__/Button.spec.snap.luau");
 	});
 
-	it("should replace outDir with rootDir for TypeScript projects", () => {
+	it("should replace outDir with rootDir for TypeScript projects", ({ expect }) => {
 		expect.assertions(1);
 
 		const resolver = snapshotResolver({
@@ -509,7 +512,7 @@ describe("resolveSnapshot", () => {
 		).toBe("src/shared/components/__snapshots__/Button.spec.snap.luau");
 	});
 
-	it("should match longest prefix when multiple mappings exist", () => {
+	it("should match longest prefix when multiple mappings exist", ({ expect }) => {
 		expect.assertions(2);
 
 		const resolver = snapshotResolver({
@@ -536,7 +539,7 @@ describe("resolveSnapshot", () => {
 		).toBe("src/shared/other/__snapshots__/Bar.spec.snap.luau");
 	});
 
-	it("should not replace outDir when it appears as substring in basePath", () => {
+	it("should not replace outDir when it appears as substring in basePath", ({ expect }) => {
 		expect.assertions(1);
 
 		const resolver = snapshotResolver({
@@ -560,7 +563,7 @@ describe("resolveSnapshot", () => {
 		).toBe("output/client/lib/__snapshots__/foo.spec.snap.luau");
 	});
 
-	it("should not match prefix that is substring of path segment", () => {
+	it("should not match prefix that is substring of path segment", ({ expect }) => {
 		expect.assertions(1);
 
 		const resolver = snapshotResolver({
@@ -580,7 +583,7 @@ describe("resolveSnapshot", () => {
 		).toBeUndefined();
 	});
 
-	it("should return undefined for unknown path", () => {
+	it("should return undefined for unknown path", ({ expect }) => {
 		expect.assertions(1);
 
 		const resolver = snapshotResolver({
@@ -597,7 +600,7 @@ describe("resolveSnapshot", () => {
 		expect(resolver.resolve("Workspace/unknown/snap.luau")).toBeUndefined();
 	});
 
-	it("should return the compiled copy for TypeScript paths", () => {
+	it("should return the compiled copy for TypeScript paths", ({ expect }) => {
 		expect.assertions(1);
 
 		const resolver = snapshotResolver({
@@ -618,7 +621,7 @@ describe("resolveSnapshot", () => {
 		).toBe("out/shared/components/__snapshots__/Button.spec.snap.luau");
 	});
 
-	it("should preserve rootDir prefix when rootDir is '.'", () => {
+	it("should preserve rootDir prefix when rootDir is '.'", ({ expect }) => {
 		expect.assertions(1);
 
 		// tsconfig `rootDirs: ["src", "test"]` collapses to rootDir "." in
@@ -644,7 +647,7 @@ describe("resolveSnapshot", () => {
 		).toBe("./src/shared/foo/__snapshots__/Bar.spec.snap.luau");
 	});
 
-	it("should return no compiled copy when basePath matches no outDir", () => {
+	it("should return no compiled copy when basePath matches no outDir", ({ expect }) => {
 		expect.assertions(1);
 
 		const resolver = snapshotResolver({
@@ -662,7 +665,7 @@ describe("resolveSnapshot", () => {
 		expect(resolver.resolve("ReplicatedStorage/foo/snap.luau")!.outPath).toBeUndefined();
 	});
 
-	it("should resolve mounts against the rojo project directory", () => {
+	it("should resolve mounts against the rojo project directory", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -683,7 +686,7 @@ describe("resolveSnapshot", () => {
 		});
 	});
 
-	it("should join a backslash-separated snapshot path", () => {
+	it("should join a backslash-separated snapshot path", ({ expect }) => {
 		expect.assertions(1);
 
 		const resolver = snapshotResolver({

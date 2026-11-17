@@ -3,7 +3,7 @@ import { fromAny } from "@total-typescript/shoehorn";
 import * as path from "node:path";
 import process from "node:process";
 import type { Mock } from "vitest";
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import { fakeTimingCollector } from "#test/mocks/fake-timing-collector.ts";
 import type { MemoryVolume } from "#test/mocks/memory-file-system.ts";
@@ -111,8 +111,8 @@ async function runMultiProjectAsync({
 	});
 }
 
-let mocks: RunMocks = createRunMocks();
-let seams: RunSeams = toSeams(mocks);
+let mocks = createRunMocks();
+let seams = toSeams(mocks);
 
 function makeConfig(overrides: Partial<ResolvedConfig> = {}): ResolvedConfig {
 	return {
@@ -478,7 +478,7 @@ function seedIndexNamesakes(volume: MemoryVolume): void {
 }
 
 describe(runProjectLayoutAsync, () => {
-	it("should create missing Rojo mount directories before building", async () => {
+	it("should create missing Rojo mount directories before building", async ({ expect }) => {
 		expect.assertions(2);
 
 		const { config, fileSystem, volume } = setupDefaults();
@@ -507,7 +507,7 @@ describe(runProjectLayoutAsync, () => {
 		],
 	] as const)(
 		"should report a clear preflight error for a %s Rojo project",
-		async ([, arrange, message]) => {
+		async ([, arrange, message], { expect }) => {
 			expect.assertions(3);
 
 			const { config, fileSystem, volume } = setupDefaults();
@@ -522,7 +522,7 @@ describe(runProjectLayoutAsync, () => {
 		},
 	);
 
-	it("should run the one implicit project of a config without projects", async () => {
+	it("should run the one implicit project of a config without projects", async ({ expect }) => {
 		expect.assertions(2);
 
 		const { config, fileSystem, volume } = setupDefaults({ luauRoots: ["out/client"] });
@@ -542,7 +542,7 @@ describe(runProjectLayoutAsync, () => {
 		expect(result.projectResults).toHaveLength(1);
 	});
 
-	it("should run a type-only implicit run without a Rojo project on disk", async () => {
+	it("should run a type-only implicit run without a Rojo project on disk", async ({ expect }) => {
 		expect.assertions(2);
 
 		const { config, fileSystem, volume } = setupDefaults({ passWithNoTests: true });
@@ -561,7 +561,7 @@ describe(runProjectLayoutAsync, () => {
 		expect(result.validationExitCode).toBeUndefined();
 	});
 
-	it("should run all projects when no --project filter is given", async () => {
+	it("should run all projects when no --project filter is given", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { config, fileSystem, volume } = setupDefaults();
@@ -572,7 +572,7 @@ describe(runProjectLayoutAsync, () => {
 		expect(result.projectResults).toHaveLength(2);
 	});
 
-	it("should emit the run header to stdout before running jobs", async () => {
+	it("should emit the run header to stdout before running jobs", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { config, fileSystem, volume } = setupDefaults();
@@ -584,7 +584,7 @@ describe(runProjectLayoutAsync, () => {
 		expect(stdout()).toContain(" RUN ");
 	});
 
-	it("should not emit the run header when there are no runtime jobs", async () => {
+	it("should not emit the run header when there are no runtime jobs", async ({ expect }) => {
 		expect.assertions(2);
 
 		const { config, fileSystem, volume } = setupDefaults({
@@ -605,7 +605,9 @@ describe(runProjectLayoutAsync, () => {
 	// modes are meant to answer alike. Left off here, `createFsClassifier`
 	// stats the real disk to decide which rojo mounts are directories, so a
 	// project resolves against the developer's checkout rather than the run's.
-	it("should resolve projects against the run's filesystem, not the real one", async () => {
+	it("should resolve projects against the run's filesystem, not the real one", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { config, fileSystem, volume } = setupDefaults();
@@ -626,7 +628,7 @@ describe(runProjectLayoutAsync, () => {
 		]);
 	});
 
-	it("should filter projects by --project name", async () => {
+	it("should filter projects by --project name", async ({ expect }) => {
 		expect.assertions(2);
 
 		const { config, fileSystem, volume } = setupDefaults();
@@ -641,7 +643,9 @@ describe(runProjectLayoutAsync, () => {
 		expect(result.projectResults[0]!.displayName).toBe("client");
 	});
 
-	it("should run every test when a related run cannot read the requires of a test file", async () => {
+	it("should run every test when a related run cannot read the requires of a test file", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const { config, fileSystem, volume } = setupDefaults();
@@ -666,7 +670,9 @@ describe(runProjectLayoutAsync, () => {
 		});
 	});
 
-	it("should run every test when a --changed run cannot read the requires of a test file", async () => {
+	it("should run every test when a --changed run cannot read the requires of a test file", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const { config, fileSystem, volume } = setupDefaults();
@@ -698,7 +704,9 @@ describe(runProjectLayoutAsync, () => {
 		});
 	});
 
-	it("should run no test for a related file outside the project root and the Rojo tree", async () => {
+	it("should run no test for a related file outside the project root and the Rojo tree", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const { config, fileSystem, volume } = setupDefaults({ passWithNoTests: true });
@@ -715,7 +723,9 @@ describe(runProjectLayoutAsync, () => {
 		);
 	});
 
-	it("should run every test for a related file in a Rojo mount outside the project root", async () => {
+	it("should run every test for a related file in a Rojo mount outside the project root", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { config, fileSystem, volume } = setupDefaults();
@@ -747,7 +757,7 @@ describe(runProjectLayoutAsync, () => {
 	});
 
 	describe("coverage display filter", () => {
-		it("should expose a source-twin filter for positional files", async () => {
+		it("should expose a source-twin filter for positional files", async ({ expect }) => {
 			expect.assertions(1);
 
 			const { config, fileSystem, volume } = setupDefaults();
@@ -765,7 +775,9 @@ describe(runProjectLayoutAsync, () => {
 			expect(result.coverageDisplayFilter!(twin)).toBeTrue();
 		});
 
-		it("should twin the matched runtime files for a testPathPattern run", async () => {
+		it("should twin the matched runtime files for a testPathPattern run", async ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			const { config, fileSystem, volume } = setupDefaults({ testPathPattern: "a" });
@@ -778,7 +790,7 @@ describe(runProjectLayoutAsync, () => {
 			expect(result.coverageDisplayFilter!(twin)).toBeTrue();
 		});
 
-		it("should expose a project-scope filter for a --project run", async () => {
+		it("should expose a project-scope filter for a --project run", async ({ expect }) => {
 			expect.assertions(1);
 
 			const { config, fileSystem, volume } = setupDefaults();
@@ -792,7 +804,9 @@ describe(runProjectLayoutAsync, () => {
 			expect(result.coverageDisplayFilter).toBeTypeOf("function");
 		});
 
-		it("should leave the filter and Luau pattern undefined on a bare run", async () => {
+		it("should leave the filter and Luau pattern undefined on a bare run", async ({
+			expect,
+		}) => {
 			expect.assertions(2);
 
 			const { config, fileSystem, volume } = setupDefaults();
@@ -806,7 +820,9 @@ describe(runProjectLayoutAsync, () => {
 			);
 		});
 
-		it("should leave the filter undefined for --project when no static roots derive", async () => {
+		it("should leave the filter undefined for --project when no static roots derive", async ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			const { config, fileSystem, volume } = setupDefaults();
@@ -827,7 +843,7 @@ describe(runProjectLayoutAsync, () => {
 		});
 	});
 
-	it("should throw on unknown --project displayName", async () => {
+	it("should throw on unknown --project displayName", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { config, fileSystem, volume } = setupDefaults();
@@ -846,7 +862,7 @@ describe(runProjectLayoutAsync, () => {
 		);
 	});
 
-	it("should refuse a Rojo project with an invalid schema", async () => {
+	it("should refuse a Rojo project with an invalid schema", async ({ expect }) => {
 		expect.assertions(2);
 
 		const { config, fileSystem, volume } = setupDefaults();
@@ -863,7 +879,9 @@ describe(runProjectLayoutAsync, () => {
 		expect(stderr()).toContain("Invalid Rojo project");
 	});
 
-	it("should default rojoProject to default.project.json when not configured", async () => {
+	it("should default rojoProject to default.project.json when not configured", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { config, fileSystem, volume } = setupDefaults({ rojoProject: undefined });
@@ -872,7 +890,9 @@ describe(runProjectLayoutAsync, () => {
 		await expect(runClientAsync(config, fileSystem)).resolves.toBeDefined();
 	});
 
-	it("should default rojoProject for the open-cloud synthesizer build when unset", async () => {
+	it("should default rojoProject for the open-cloud synthesizer build when unset", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { config, fileSystem, volume } = setupDefaults({ rojoProject: undefined });
@@ -886,7 +906,7 @@ describe(runProjectLayoutAsync, () => {
 		);
 	});
 
-	it("should build from the only Rojo project of a repo that names none", async () => {
+	it("should build from the only Rojo project of a repo that names none", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { config, fileSystem, volume } = setupDefaults({ rojoProject: undefined });
@@ -912,7 +932,7 @@ describe(runProjectLayoutAsync, () => {
 		return { config, volume };
 	}
 
-	it("should build the whole open-cloud place", async () => {
+	it("should build the whole open-cloud place", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { volume } = await runOpenCloudAsync();
@@ -936,7 +956,9 @@ describe(runProjectLayoutAsync, () => {
 		});
 	});
 
-	it("should call buildWithRojoAsync when coverage is disabled and backend is open-cloud", async () => {
+	it("should call buildWithRojoAsync when coverage is disabled and backend is open-cloud", async ({
+		expect,
+	}) => {
 		expect.assertions(5);
 
 		const { config, fileSystem, volume } = setupDefaults();
@@ -989,7 +1011,7 @@ describe(runProjectLayoutAsync, () => {
 		]);
 	});
 
-	it("should skip buildWithRojoAsync entirely when backend is studio", async () => {
+	it("should skip buildWithRojoAsync entirely when backend is studio", async ({ expect }) => {
 		expect.assertions(2);
 
 		const { config, fileSystem, volume } = setupDefaults();
@@ -1006,7 +1028,9 @@ describe(runProjectLayoutAsync, () => {
 		expect(volume.existsSync(SYNTH_PROJECT)).toBeFalse();
 	});
 
-	it("should build the dispatch place for any backend that takes the built place", async () => {
+	it("should build the dispatch place for any backend that takes the built place", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const { config, fileSystem, volume } = setupDefaults();
@@ -1019,7 +1043,9 @@ describe(runProjectLayoutAsync, () => {
 		expect(volume.existsSync(SYNTH_PROJECT)).toBeTrue();
 	});
 
-	it("should skip buildWithRojoAsync and prepare coverage when collectCoverage is true", async () => {
+	it("should skip buildWithRojoAsync and prepare coverage when collectCoverage is true", async ({
+		expect,
+	}) => {
 		expect.assertions(3);
 
 		const { config, fileSystem, volume } = setupDefaults({ collectCoverage: true });
@@ -1033,7 +1059,7 @@ describe(runProjectLayoutAsync, () => {
 		expect(result.coverageMs).toBeGreaterThanOrEqual(0);
 	});
 
-	it("should report the coverage place build as staging, not as coverage", async () => {
+	it("should report the coverage place build as staging, not as coverage", async ({ expect }) => {
 		expect.assertions(2);
 
 		const { config, fileSystem, volume } = setupDefaults({ collectCoverage: true });
@@ -1058,7 +1084,7 @@ describe(runProjectLayoutAsync, () => {
 		expect(result.stagingMs).toBe(250);
 	});
 
-	it("should measure the stub staging as stagingMs", async () => {
+	it("should measure the stub staging as stagingMs", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { config, fileSystem, volume } = setupDefaults();
@@ -1088,7 +1114,7 @@ describe(runProjectLayoutAsync, () => {
 		expect(result.stagingMs).toBe(40);
 	});
 
-	it("should measure the open-cloud place build as stagingMs", async () => {
+	it("should measure the open-cloud place build as stagingMs", async ({ expect }) => {
 		expect.assertions(2);
 
 		const { config, fileSystem, volume } = setupDefaults();
@@ -1128,7 +1154,7 @@ describe(runProjectLayoutAsync, () => {
 		expect(result.projectResults[0]!.result.timing.startTime).toBe(1_900);
 	});
 
-	it("should record the resolved projects in the coverage artifacts", async () => {
+	it("should record the resolved projects in the coverage artifacts", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { config, fileSystem, volume } = setupDefaults({ collectCoverage: true });
@@ -1146,7 +1172,9 @@ describe(runProjectLayoutAsync, () => {
 		);
 	});
 
-	it("should write each project's dispatched snapshot format into its stub", async () => {
+	it("should write each project's dispatched snapshot format into its stub", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { config, fileSystem, volume } = setupDefaults();
@@ -1186,7 +1214,7 @@ describe(runProjectLayoutAsync, () => {
 
 	it.for<Backend["kind"]>(["studio", "studio-cli"])(
 		"should bake stubs for a resolved %s backend",
-		async (kind) => {
+		async (kind, { expect }) => {
 			expect.assertions(1);
 
 			const { config, fileSystem, volume } = setupDefaults({
@@ -1208,7 +1236,9 @@ describe(runProjectLayoutAsync, () => {
 		},
 	);
 
-	it("should return validationExitCode 2 with message when no test files found", async () => {
+	it("should return validationExitCode 2 with message when no test files found", async ({
+		expect,
+	}) => {
 		expect.assertions(3);
 
 		const { config, fileSystem } = setupDefaults();
@@ -1221,7 +1251,9 @@ describe(runProjectLayoutAsync, () => {
 		expect(result.projectResults).toHaveLength(0);
 	});
 
-	it("should return empty projectResults without validation error when passWithNoTests", async () => {
+	it("should return empty projectResults without validation error when passWithNoTests", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const { config, fileSystem } = setupDefaults({ passWithNoTests: true });
@@ -1233,7 +1265,7 @@ describe(runProjectLayoutAsync, () => {
 		expect(result.projectResults).toHaveLength(0);
 	});
 
-	it("should run typecheck across all projects with deduplicated files", async () => {
+	it("should run typecheck across all projects with deduplicated files", async ({ expect }) => {
 		expect.assertions(5);
 
 		const { config, fileSystem, volume } = setupDefaults({
@@ -1284,7 +1316,7 @@ describe(runProjectLayoutAsync, () => {
 		expect(recorded.records[0]!.elapsedMs).toBeGreaterThan(0);
 	});
 
-	it("should run the typecheck pass concurrently with the runtime run", async () => {
+	it("should run the typecheck pass concurrently with the runtime run", async ({ expect }) => {
 		expect.assertions(2);
 
 		const { config, fileSystem, volume } = setupDefaults({ typecheck: { enabled: true } });
@@ -1322,20 +1354,18 @@ describe(runProjectLayoutAsync, () => {
 		expect(result.projectResults).toHaveLength(1);
 	});
 
-	it("should reject typescript type tests in the standalone binary before any build or dispatch", async () => {
+	it("should reject typescript type tests in the standalone binary before any build or dispatch", async ({
+		expect,
+	}) => {
 		expect.assertions(5);
 
 		vi.stubEnv("JEST_ROBLOX_SEA", "true");
 		const { config, fileSystem, volume } = setupDefaults({ typecheck: { enabled: true } });
-		mocks.openBackend.mockImplementation(() => {
-			throw new Error("backend unavailable");
-		});
+		mocks.openBackend.mockThrow(new Error("backend unavailable"));
 
 		seedClientTypeTests(volume, { runtime: true });
 
-		const error: unknown = await runClientAsync(config, fileSystem).catch(
-			(err: unknown) => err,
-		);
+		const error = await runClientAsync(config, fileSystem).catch((err) => err);
 
 		expect(error).toStrictEqual(
 			configErrorLike(
@@ -1349,7 +1379,7 @@ describe(runProjectLayoutAsync, () => {
 		expect(volume.existsSync(SYNTH_PROJECT)).toBeFalse();
 	});
 
-	it("should run luau-only type tests in the standalone binary", async () => {
+	it("should run luau-only type tests in the standalone binary", async ({ expect }) => {
 		expect.assertions(1);
 
 		vi.stubEnv("JEST_ROBLOX_SEA", "true");
@@ -1374,7 +1404,9 @@ describe(runProjectLayoutAsync, () => {
 		).toStrictEqual([path.resolve("/test/src/client/a.spec-d.luau")]);
 	});
 
-	it("should check projects with distinct typecheck tsconfigs against their own", async () => {
+	it("should check projects with distinct typecheck tsconfigs against their own", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const { config, fileSystem, volume } = setupDefaults({ typecheck: { enabled: true } });
@@ -1410,7 +1442,7 @@ describe(runProjectLayoutAsync, () => {
 		expect(result.typecheckResult!.numTotalTests).toBe(10);
 	});
 
-	it("should derive spec-d type tests from a runtime-only include", async () => {
+	it("should derive spec-d type tests from a runtime-only include", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { config, fileSystem, volume } = setupDefaults({ typecheck: { enabled: true } });
@@ -1433,7 +1465,9 @@ describe(runProjectLayoutAsync, () => {
 		).toStrictEqual([path.resolve("/test", "src/client/a.spec-d.ts")]);
 	});
 
-	it("should apply CLI typecheck options to discovery and the typecheck runner", async () => {
+	it("should apply CLI typecheck options to discovery and the typecheck runner", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const { config, fileSystem, volume } = setupDefaults();
@@ -1463,15 +1497,15 @@ describe(runProjectLayoutAsync, () => {
 		]);
 	});
 
-	it("should run typecheck-only without resolving a backend or runtime jobs", async () => {
+	it("should run typecheck-only without resolving a backend or runtime jobs", async ({
+		expect,
+	}) => {
 		expect.assertions(4);
 
 		const { config, fileSystem, volume } = setupDefaults({
 			typecheck: { enabled: true, only: true },
 		});
-		mocks.openBackend.mockImplementation(() => {
-			throw new Error("backend unavailable");
-		});
+		mocks.openBackend.mockThrow(new Error("backend unavailable"));
 
 		reportTypeFiles();
 		const recorded = recordingTimingCollector();
@@ -1494,7 +1528,9 @@ describe(runProjectLayoutAsync, () => {
 		expect(recorded.records.map((record) => record.name)).toStrictEqual(["runTypecheck"]);
 	});
 
-	it("should keep the runtime path when only one selected project is typecheck-only", async () => {
+	it("should keep the runtime path when only one selected project is typecheck-only", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const { config, fileSystem, volume } = setupDefaults({ typecheck: { enabled: true } });
@@ -1526,7 +1562,7 @@ describe(runProjectLayoutAsync, () => {
 		expect(volume.existsSync(cacheStubPath("out/client"))).toBeTrue();
 	});
 
-	it("should carry the configured timeout into the typecheck-only pass", async () => {
+	it("should carry the configured timeout into the typecheck-only pass", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { config, fileSystem, volume } = setupDefaults({
@@ -1544,7 +1580,9 @@ describe(runProjectLayoutAsync, () => {
 		expect(result.typecheckResult!.success).toBeTrue();
 	});
 
-	it("should return validationExitCode 2 on a typecheck-only run that finds no type tests", async () => {
+	it("should return validationExitCode 2 on a typecheck-only run that finds no type tests", async ({
+		expect,
+	}) => {
 		expect.assertions(3);
 
 		const { config, fileSystem, volume } = setupDefaults({
@@ -1557,9 +1595,7 @@ describe(runProjectLayoutAsync, () => {
 				include: ["src/client/**/*.spec-d.ts"],
 			}),
 		]);
-		mocks.openBackend.mockImplementation(() => {
-			throw new Error("backend unavailable");
-		});
+		mocks.openBackend.mockThrow(new Error("backend unavailable"));
 
 		const result = await runClientAsync(config, fileSystem);
 
@@ -1568,7 +1604,9 @@ describe(runProjectLayoutAsync, () => {
 		expect(volume.existsSync(cacheStubPath("out/client"))).toBeFalse();
 	});
 
-	it("should pass with no tests on a typecheck-only run when passWithNoTests is set", async () => {
+	it("should pass with no tests on a typecheck-only run when passWithNoTests is set", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const { config, fileSystem } = setupDefaults({
@@ -1589,7 +1627,9 @@ describe(runProjectLayoutAsync, () => {
 		expect(result.projectResults).toHaveLength(0);
 	});
 
-	it("should forward test.typecheck.ignoreSourceErrors to the typecheck runner", async () => {
+	it("should forward test.typecheck.ignoreSourceErrors to the typecheck runner", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { config, fileSystem, volume } = setupDefaults({
@@ -1606,7 +1646,9 @@ describe(runProjectLayoutAsync, () => {
 		expect(result.typecheckResult!.success).toBeTrue();
 	});
 
-	it("should not discover type tests when include is set but typecheck is disabled", async () => {
+	it("should not discover type tests when include is set but typecheck is disabled", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { config, fileSystem, volume } = setupDefaults({
@@ -1624,7 +1666,7 @@ describe(runProjectLayoutAsync, () => {
 		expect(result.typecheckResult).toBeUndefined();
 	});
 
-	it("should use an explicit typecheck include instead of deriving", async () => {
+	it("should use an explicit typecheck include instead of deriving", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { config, fileSystem, volume } = setupDefaults({
@@ -1647,7 +1689,7 @@ describe(runProjectLayoutAsync, () => {
 		).toStrictEqual([path.resolve("/test", "src/shared/x.spec-d.ts")]);
 	});
 
-	it("should drop type test files matching a typecheck exclude glob", async () => {
+	it("should drop type test files matching a typecheck exclude glob", async ({ expect }) => {
 		expect.assertions(2);
 
 		const { config, fileSystem, volume } = setupDefaults({
@@ -1671,7 +1713,9 @@ describe(runProjectLayoutAsync, () => {
 		expect(files).not.toContain(path.resolve("/test", "src/client/a.gen.spec-d.ts"));
 	});
 
-	it("should not apply typecheck exclude to explicitly named positional files", async () => {
+	it("should not apply typecheck exclude to explicitly named positional files", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { config, fileSystem, volume } = setupDefaults({
@@ -1700,7 +1744,7 @@ describe(runProjectLayoutAsync, () => {
 		).toStrictEqual([path.resolve("/test", "src/client/a.spec-d.ts")]);
 	});
 
-	it("should drop runtime test files matching a per-project exclude glob", async () => {
+	it("should drop runtime test files matching a per-project exclude glob", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { config, fileSystem, volume } = setupDefaults();
@@ -1721,7 +1765,9 @@ describe(runProjectLayoutAsync, () => {
 		expect(result.projectResults[0]!.result.result.numTotalTests).toBe(1);
 	});
 
-	it("should run coverage with typecheck enabled without inferring a -d source extension", async () => {
+	it("should run coverage with typecheck enabled without inferring a -d source extension", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { config, fileSystem, volume } = setupDefaults({
@@ -1743,7 +1789,7 @@ describe(runProjectLayoutAsync, () => {
 		expect(result.typecheckResult).toBeDefined();
 	});
 
-	it("should execute projects in separate VMs when configured", async () => {
+	it("should execute projects in separate VMs when configured", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { config, fileSystem, volume } = setupDefaults({ experimentalVmParallel: 2 });
@@ -1757,14 +1803,14 @@ describe(runProjectLayoutAsync, () => {
 		]);
 	});
 
-	it("should resolve no backend and stage nothing when no jobs were produced", async () => {
+	it("should resolve no backend and stage nothing when no jobs were produced", async ({
+		expect,
+	}) => {
 		expect.assertions(4);
 
 		const { config, fileSystem, volume } = setupDefaults();
 		// No project files seeded, so the plan is empty.
-		mocks.openBackend.mockImplementation(() => {
-			throw new Error("backend unavailable");
-		});
+		mocks.openBackend.mockThrow(new Error("backend unavailable"));
 
 		const result = await runMultiProjectAsync({
 			cli: makeCli({ passWithNoTests: true }),
@@ -1782,7 +1828,7 @@ describe(runProjectLayoutAsync, () => {
 
 	// The studio-cli backend exposes no `close` hook. `makeBackend` always
 	// defines one, so these two pin the optional-chain at each call site.
-	it("should tolerate a backend without a close hook", async () => {
+	it("should tolerate a backend without a close hook", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { config, fileSystem, volume } = setupDefaults();
@@ -1800,7 +1846,7 @@ describe(runProjectLayoutAsync, () => {
 		expect(result.projectResults).toHaveLength(1);
 	});
 
-	it("should tolerate a backend without a close hook when the run throws", async () => {
+	it("should tolerate a backend without a close hook when the run throws", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { config, fileSystem, volume } = setupDefaults();
@@ -1815,7 +1861,7 @@ describe(runProjectLayoutAsync, () => {
 		await expect(runClientAsync(config, fileSystem)).rejects.toBe(error);
 	});
 
-	it("should resolve setupFilesAfterEnv paths via the setup resolver", async () => {
+	it("should resolve setupFilesAfterEnv paths via the setup resolver", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { config, fileSystem, volume } = setupDefaults();
@@ -1834,7 +1880,7 @@ describe(runProjectLayoutAsync, () => {
 		);
 	});
 
-	it("should narrow project config by CLI files for Luau-side execution", async () => {
+	it("should narrow project config by CLI files for Luau-side execution", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { config, fileSystem, volume } = setupDefaults();
@@ -1864,7 +1910,9 @@ describe(runProjectLayoutAsync, () => {
 	// Regression: a basename pattern runs every namesake test file, so a repo
 	// naming each test `index.spec.ts` cannot run just one. The forwarded pattern
 	// carries the path below the Rojo mount instead.
-	it("should narrow to the instance sub-path so a namesake file is left out", async () => {
+	it("should narrow to the instance sub-path so a namesake file is left out", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { config, fileSystem, volume } = setupDefaults();
@@ -1892,7 +1940,9 @@ describe(runProjectLayoutAsync, () => {
 		).toStrictEqual(["client/a/init.spec"]);
 	});
 
-	it("should forward a basename pattern when --testPathPattern is a filesystem path", async () => {
+	it("should forward a basename pattern when --testPathPattern is a filesystem path", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { config, fileSystem, volume } = setupDefaults();
@@ -1927,7 +1977,7 @@ describe(runProjectLayoutAsync, () => {
 	it.for([
 		"should call filterProjectsByFiles with cli files when --project is absent",
 		"should select the owner of a relative positional file",
-	])("%s", async () => {
+	])("%s", async (_value, { expect }) => {
 		expect.assertions(1);
 
 		const { config, fileSystem, volume } = setupDefaults();
@@ -1943,7 +1993,9 @@ describe(runProjectLayoutAsync, () => {
 		expect(result.projectResults.map((entry) => entry.displayName)).toStrictEqual(["server"]);
 	});
 
-	it("should feed each project only the cli files filterProjectsByFiles paired with it", async () => {
+	it("should feed each project only the cli files filterProjectsByFiles paired with it", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const { config, fileSystem, volume } = setupDefaults();
@@ -1970,7 +2022,9 @@ describe(runProjectLayoutAsync, () => {
 		).toStrictEqual(["server/b.spec"]);
 	});
 
-	it("should propagate filterProjectsByFiles errors when no project owns the file", async () => {
+	it("should propagate filterProjectsByFiles errors when no project owns the file", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { config, fileSystem, volume } = setupDefaults();
@@ -1986,7 +2040,7 @@ describe(runProjectLayoutAsync, () => {
 		).rejects.toThrow(/No project contains the requested file/);
 	});
 
-	it("should resolve positional files from the invocation directory", async () => {
+	it("should resolve positional files from the invocation directory", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { config, fileSystem, volume } = setupDefaults();
@@ -2003,7 +2057,7 @@ describe(runProjectLayoutAsync, () => {
 		expect(result.projectResults.map((entry) => entry.displayName)).toStrictEqual(["server"]);
 	});
 
-	it("should default the positional file base to the process directory", async () => {
+	it("should default the positional file base to the process directory", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { config, fileSystem, volume } = setupDefaults({ rootDir: path.resolve("/test") });
@@ -2025,7 +2079,7 @@ describe(runProjectLayoutAsync, () => {
 		expect(result.projectResults.map((entry) => entry.displayName)).toStrictEqual(["server"]);
 	});
 
-	it("should reject files owned only by an excluded project", async () => {
+	it("should reject files owned only by an excluded project", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { config, fileSystem, volume } = setupDefaults();
@@ -2042,7 +2096,7 @@ describe(runProjectLayoutAsync, () => {
 		).rejects.toThrow(/No project contains the requested file/);
 	});
 
-	it("should skip filterProjectsByFiles when no cli files are passed", async () => {
+	it("should skip filterProjectsByFiles when no cli files are passed", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { config, fileSystem, volume } = setupDefaults();
@@ -2054,7 +2108,7 @@ describe(runProjectLayoutAsync, () => {
 		expect([bare.projectResults.length, empty.projectResults.length]).toStrictEqual([2, 2]);
 	});
 
-	it("should resolve setupFiles per-project via discovery helper", async () => {
+	it("should resolve setupFiles per-project via discovery helper", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { config, fileSystem, volume } = setupDefaults();
@@ -2074,7 +2128,7 @@ describe(runProjectLayoutAsync, () => {
 		);
 	});
 
-	it("should preserve backend errors and still close the backend", async () => {
+	it("should preserve backend errors and still close the backend", async ({ expect }) => {
 		expect.assertions(2);
 
 		const { config, fileSystem, volume } = setupDefaults();
@@ -2088,7 +2142,7 @@ describe(runProjectLayoutAsync, () => {
 		expect(backend.closeAsync).toHaveBeenCalledExactlyOnceWith();
 	});
 
-	it("should emit a stderr notice listing the leftover stubs cleaned", async () => {
+	it("should emit a stderr notice listing the leftover stubs cleaned", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { config, fileSystem, volume } = setupDefaults();
@@ -2103,7 +2157,7 @@ describe(runProjectLayoutAsync, () => {
 		);
 	});
 
-	it("should not emit a leftover-stub notice when cleanup finds nothing", async () => {
+	it("should not emit a leftover-stub notice when cleanup finds nothing", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { config, fileSystem, volume } = setupDefaults();
@@ -2115,7 +2169,9 @@ describe(runProjectLayoutAsync, () => {
 		expect(stderr()).toBe("");
 	});
 
-	it("should carry every mount without a user-authored config as a runtime injection path", async () => {
+	it("should carry every mount without a user-authored config as a runtime injection path", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { config, fileSystem, volume } = setupDefaults();
@@ -2130,7 +2186,9 @@ describe(runProjectLayoutAsync, () => {
 		]);
 	});
 
-	it("should mount the cache stub in place of a user-authored config and leave the user file out", async () => {
+	it("should mount the cache stub in place of a user-authored config and leave the user file out", async ({
+		expect,
+	}) => {
 		expect.assertions(5);
 
 		const { config, fileSystem, volume } = setupDefaults();

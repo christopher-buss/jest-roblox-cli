@@ -14,7 +14,7 @@ import {
 } from "@isentinel/roblox-runner";
 import { formatPlaceMismatch } from "@isentinel/roblox-runner/testing";
 
-import { assert, describe, expect, it, vi } from "vitest";
+import { assert, describe, it, vi } from "vitest";
 
 const CREDENTIALS = { apiKey: "test-key", placeId: "456", universeId: "123" };
 
@@ -39,7 +39,7 @@ async function executeAsync(runner: OcaleRunner, pollBudget?: number): Promise<u
 			script: "return 1",
 			timeout: 1000,
 		})
-		.catch((err: unknown) => err);
+		.catch((err) => err);
 }
 
 function makeRunner(http: FakeHttpClient): OcaleRunner {
@@ -47,7 +47,9 @@ function makeRunner(http: FakeHttpClient): OcaleRunner {
 }
 
 describe("public error identity", () => {
-	it("should reject a refused create with a TaskSubmitError that is no quota or timeout error", async () => {
+	it("should reject a refused create with a TaskSubmitError that is no quota or timeout error", async ({
+		expect,
+	}) => {
 		expect.assertions(3);
 
 		const http = createFakeHttpClient();
@@ -60,7 +62,9 @@ describe("public error identity", () => {
 		expect(caught).not.toBeInstanceOf(ExecutionTimeoutError);
 	});
 
-	it("should reject a quota refusal with a TaskQuotaError that is also a TaskSubmitError", async () => {
+	it("should reject a quota refusal with a TaskQuotaError that is also a TaskSubmitError", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const http = createFakeHttpClient();
@@ -78,7 +82,9 @@ describe("public error identity", () => {
 		expect(caught).toBeInstanceOf(TaskSubmitError);
 	});
 
-	it("should reject an unanswered task with a TaskStallError that recovers the same task", async () => {
+	it("should reject an unanswered task with a TaskStallError that recovers the same task", async ({
+		expect,
+	}) => {
 		expect.assertions(4);
 
 		let clock = 1_000_000;
@@ -112,7 +118,9 @@ describe("public error identity", () => {
 		]);
 	});
 
-	it("should reject a failed task with a plain Error rather than an infrastructure class", async () => {
+	it("should reject a failed task with a plain Error rather than an infrastructure class", async ({
+		expect,
+	}) => {
 		expect.assertions(3);
 
 		const http = createFakeHttpClient();
@@ -132,7 +140,7 @@ describe("public error identity", () => {
 });
 
 describe("testing entry point", () => {
-	it("should format a refusal the package root reads back", () => {
+	it("should format a refusal the package root reads back", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(readRefusedPlaceVersion(formatPlaceMismatch(7))).toBe(7);

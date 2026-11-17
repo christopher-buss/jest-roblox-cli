@@ -1,7 +1,7 @@
 import { fromAny } from "@total-typescript/shoehorn";
 
 import * as path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
@@ -72,7 +72,7 @@ function select({
 }
 
 describe(selectWorkspaceTests, () => {
-	it("should select nothing for an explicit empty project list", () => {
+	it("should select nothing for an explicit empty project list", ({ expect }) => {
 		expect.assertions(1);
 
 		const selection = select({
@@ -84,7 +84,9 @@ describe(selectWorkspaceTests, () => {
 		expect(selection.filteredContexts).toStrictEqual([]);
 	});
 
-	it("should intersect names and positional files from the invocation directory", () => {
+	it("should intersect names and positional files from the invocation directory", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const selection = select({
@@ -98,7 +100,7 @@ describe(selectWorkspaceTests, () => {
 		).toStrictEqual([{ files: [path.join(WORKSPACE, "foo/main/a.spec.ts")], pkg: "foo" }]);
 	});
 
-	it("should keep positional files with their package even when names repeat", () => {
+	it("should keep positional files with their package even when names repeat", ({ expect }) => {
 		expect.assertions(1);
 
 		const selection = select({
@@ -120,7 +122,7 @@ describe(selectWorkspaceTests, () => {
 		]);
 	});
 
-	it("should retain an empty package for empty-run validation without filters", () => {
+	it("should retain an empty package for empty-run validation without filters", ({ expect }) => {
 		expect.assertions(1);
 
 		const ctx = makeContext({ name: "empty" });
@@ -135,7 +137,7 @@ describe(selectWorkspaceTests, () => {
 		});
 	});
 
-	it("should retain an empty package when the positional file list is empty", () => {
+	it("should retain an empty package when the positional file list is empty", ({ expect }) => {
 		expect.assertions(1);
 
 		const ctx = makeContext({ name: "empty" });
@@ -147,7 +149,9 @@ describe(selectWorkspaceTests, () => {
 		});
 	});
 
-	it("should build each job and stub its project with the resolved snapshot format", () => {
+	it("should build each job and stub its project with the resolved snapshot format", ({
+		expect,
+	}) => {
 		expect.assertions(4);
 
 		const selection = select({
@@ -162,7 +166,7 @@ describe(selectWorkspaceTests, () => {
 		expect(entry!.project.config.snapshotFormat).toStrictEqual({ printBasicPrototype: false });
 	});
 
-	it("should collect runtime specs and type tests per package", () => {
+	it("should collect runtime specs and type tests per package", ({ expect }) => {
 		expect.assertions(4);
 
 		const fooDirectory = path.join(WORKSPACE, "foo");
@@ -205,7 +209,9 @@ describe(selectWorkspaceTests, () => {
 		]);
 	});
 
-	it("should report an empty package unless it passes with no tests or has type tests", () => {
+	it("should report an empty package unless it passes with no tests or has type tests", ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const selection = select({
@@ -229,7 +235,7 @@ describe(selectWorkspaceTests, () => {
 		expect(selection.pending).toStrictEqual([]);
 	});
 
-	it("should drop empty projects inside a populated package", () => {
+	it("should drop empty projects inside a populated package", ({ expect }) => {
 		expect.assertions(1);
 
 		const selection = select({
@@ -242,7 +248,7 @@ describe(selectWorkspaceTests, () => {
 		]);
 	});
 
-	it("should narrow to named projects before named files", () => {
+	it("should narrow to named projects before named files", ({ expect }) => {
 		expect.assertions(2);
 
 		const selection = select({
@@ -261,7 +267,7 @@ describe(selectWorkspaceTests, () => {
 		]);
 	});
 
-	it("should run only the type tests a positional file names", () => {
+	it("should run only the type tests a positional file names", ({ expect }) => {
 		expect.assertions(2);
 
 		const selection = select({

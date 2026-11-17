@@ -148,7 +148,7 @@ function isLuauCompileResult(value: JSONValue): value is JSONValue & LuauCompile
 function createLuauCompiler(runtime: CompilerWasmRuntime): LuauCompiler {
 	return {
 		compile(source, { bytecodeText = false, debugLevel, optimizationLevel }) {
-			const parsed: JSONValue = JSON.parse(
+			const parsed = JSON.parse(
 				runtime.compileWithStatistics({
 					bytecodeText,
 					debugLevel,

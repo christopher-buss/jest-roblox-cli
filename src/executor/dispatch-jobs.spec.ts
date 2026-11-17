@@ -1,6 +1,6 @@
 import { fromAny } from "@total-typescript/shoehorn";
 
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { NOOP_PROGRESS } from "#test/mocks/noop-progress.ts";
@@ -14,7 +14,9 @@ import type { ConfiguredJob } from "./executor-types.ts";
 import type { ExecuteJobs, JobResult } from "./executor.ts";
 
 describe(dispatchJobsAsync, () => {
-	it("should run the built jobs once, in a profiled phase, and return what ran", async () => {
+	it("should run the built jobs once, in a profiled phase, and return what ran", async ({
+		expect,
+	}) => {
 		expect.assertions(3);
 
 		const config = createResolvedConfig();

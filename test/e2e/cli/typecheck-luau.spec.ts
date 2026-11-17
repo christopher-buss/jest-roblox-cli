@@ -1,5 +1,5 @@
 import * as path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import {
 	createFixtureSandbox,
@@ -13,7 +13,7 @@ const MULTI_FIXTURE = path.resolve(__dirname, "../fixtures/typecheck-luau-multi"
 const MIXED_FIXTURE = path.resolve(__dirname, "../fixtures/typecheck-mixed");
 
 describe("single luau --typecheckOnly e2e", () => {
-	it("should check luau type tests with lute and exit 0 when they pass", async () => {
+	it("should check luau type tests with lute and exit 0 when they pass", async ({ expect }) => {
 		expect.assertions(2);
 
 		const sandbox = createFixtureSandbox(SINGLE_FIXTURE);
@@ -24,7 +24,7 @@ describe("single luau --typecheckOnly e2e", () => {
 		expect(result.stdout + result.stderr).toContain("2 passed");
 	});
 
-	it("should report the failing luau type test by name and message", async () => {
+	it("should report the failing luau type test by name and message", async ({ expect }) => {
 		expect.assertions(3);
 
 		const sandbox = createFixtureSandbox(SINGLE_BROKEN_FIXTURE);
@@ -40,7 +40,7 @@ describe("single luau --typecheckOnly e2e", () => {
 });
 
 describe("multi luau --typecheckOnly e2e", () => {
-	it("should check every project's luau type tests and merge the results", async () => {
+	it("should check every project's luau type tests and merge the results", async ({ expect }) => {
 		expect.assertions(5);
 
 		const sandbox = createFixtureSandbox(MULTI_FIXTURE);
@@ -64,7 +64,9 @@ describe("multi luau --typecheckOnly e2e", () => {
 });
 
 describe("mixed-language --typecheckOnly e2e", () => {
-	it("should check typescript and luau type tests in one pass and merge the counts", async () => {
+	it("should check typescript and luau type tests in one pass and merge the counts", async ({
+		expect,
+	}) => {
 		expect.assertions(4);
 
 		const sandbox = createFixtureSandbox(MIXED_FIXTURE);

@@ -1,4 +1,3 @@
-import type { AstStatBlock } from "@isentinel/luau-ast/ast";
 import type { LuauVisitor } from "@isentinel/luau-ast/visit";
 
 import type { CoverageAccumulator } from "./coverage-accumulator.ts";
@@ -33,7 +32,7 @@ export function createStatementCollector(
 	ignores: CoverageIgnores,
 ): Partial<LuauVisitor> {
 	return {
-		visitStatBlock(block: AstStatBlock): boolean {
+		visitStatBlock(block): boolean {
 			for (const statement of block.body) {
 				if (
 					!INSTRUMENTABLE_STATEMENT_TYPES.has(statement.type) ||

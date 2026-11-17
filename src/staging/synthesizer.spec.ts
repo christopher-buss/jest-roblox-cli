@@ -3,7 +3,7 @@ import type { RojoTreeNode } from "@isentinel/rojo-utils";
 import { type } from "arktype";
 import * as path from "node:path";
 import type { Except } from "type-fest";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { posixPath, posixRoot } from "#test/mocks/posix-path.ts";
@@ -102,6 +102,17 @@ function synthesizeFooUnwrapped(fileSystem: MemoryFileSystem): string {
 	});
 }
 
+function synthesizeFooReplicatedSource(): SynthesizedResult {
+	const { fileSystem } = createMemoryFileSystem({
+		...fooProject({
+			ReplicatedStorage: { $className: "ReplicatedStorage", $path: "src" },
+		}),
+		[path.join(FOO_DIR, "src/init.luau")]: "",
+	});
+
+	return parseFixture(synthesizeFooUnwrapped(fileSystem));
+}
+
 function synthesizeShadowedPackage(packagePath: string): {
 	parsed: SynthesizedResult;
 	shadowOut: string;
@@ -175,7 +186,7 @@ function stagedFoo(parsed: SynthesizedResult, ...keys: Array<string>): RojoTreeN
 }
 
 describe(synthesize, () => {
-	it("should nest a single package under ServerStorage.__pkg_stage.<name>", () => {
+	it("should nest a single package under ServerStorage.__pkg_stage.<name>", ({ expect }) => {
 		expect.assertions(3);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -216,7 +227,7 @@ describe(synthesize, () => {
 		).toBe("Folder");
 	});
 
-	it("should hardcode LoadStringEnabled at synth root", () => {
+	it("should hardcode LoadStringEnabled at synth root", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -237,7 +248,7 @@ describe(synthesize, () => {
 		});
 	});
 
-	it("should drop $properties entirely when only service-only props remain", () => {
+	it("should drop $properties entirely when only service-only props remain", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -256,7 +267,7 @@ describe(synthesize, () => {
 		expect(stagedFoo(parsed, "ServerScriptService")!.$properties).toBeUndefined();
 	});
 
-	it("should drop TestService-only $properties when rewriting to Folder", () => {
+	it("should drop TestService-only $properties when rewriting to Folder", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -275,7 +286,7 @@ describe(synthesize, () => {
 		expect(stagedFoo(parsed, "TestService")!.$properties).toBeUndefined();
 	});
 
-	it("should hoist a demoted service's $properties onto the real service", () => {
+	it("should hoist a demoted service's $properties onto the real service", ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -300,7 +311,9 @@ describe(synthesize, () => {
 		});
 	});
 
-	it("should hoist properties rojo would reject on a Folder onto the real service", () => {
+	it("should hoist properties rojo would reject on a Folder onto the real service", ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -324,7 +337,7 @@ describe(synthesize, () => {
 		});
 	});
 
-	it("should hoist DataModel root $properties onto the synthesized root", () => {
+	it("should hoist DataModel root $properties onto the synthesized root", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -341,7 +354,7 @@ describe(synthesize, () => {
 		});
 	});
 
-	it("should hoist a nested service's $properties onto a nested real service", () => {
+	it("should hoist a nested service's $properties onto a nested real service", ({ expect }) => {
 		expect.assertions(3);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -368,7 +381,9 @@ describe(synthesize, () => {
 		});
 	});
 
-	it("should demote a service outside the name set when it sits at the place root", () => {
+	it("should demote a service outside the name set when it sits at the place root", ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -390,7 +405,9 @@ describe(synthesize, () => {
 		});
 	});
 
-	it("should add $className Folder to a bare node named after a service outside the set", () => {
+	it("should add $className Folder to a bare node named after a service outside the set", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -409,7 +426,7 @@ describe(synthesize, () => {
 		expect(stagedFoo(parsed, "StarterGui")!.$className).toBe("Folder");
 	});
 
-	it("should leave $properties in place on a node that was never demoted", () => {
+	it("should leave $properties in place on a node that was never demoted", ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -437,7 +454,7 @@ describe(synthesize, () => {
 		});
 	});
 
-	it("should merge hoisted properties from different packages", () => {
+	it("should merge hoisted properties from different packages", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -471,7 +488,7 @@ describe(synthesize, () => {
 		});
 	});
 
-	it("should mark the stage when a package asks for non-legacy scripts", () => {
+	it("should mark the stage when a package asks for non-legacy scripts", ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -494,7 +511,7 @@ describe(synthesize, () => {
 		});
 	});
 
-	it("should leave the stage unmarked when a package asks for legacy scripts", () => {
+	it("should leave the stage unmarked when a package asks for legacy scripts", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -514,7 +531,7 @@ describe(synthesize, () => {
 		).toBeUndefined();
 	});
 
-	it("should leave the stage unmarked when a package declares nothing", () => {
+	it("should leave the stage unmarked when a package declares nothing", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -530,7 +547,7 @@ describe(synthesize, () => {
 		).toBeUndefined();
 	});
 
-	it("should keep a package's own $attributes when marking the stage", () => {
+	it("should keep a package's own $attributes when marking the stage", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -550,7 +567,7 @@ describe(synthesize, () => {
 		).toStrictEqual({ Existing: "kept", JestRunContextScripts: true });
 	});
 
-	it("should carry globIgnorePaths when every declaring package agrees", () => {
+	it("should carry globIgnorePaths when every declaring package agrees", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -572,7 +589,7 @@ describe(synthesize, () => {
 		]);
 	});
 
-	it("should omit globIgnorePaths when no package declares any", () => {
+	it("should omit globIgnorePaths when no package declares any", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -584,7 +601,7 @@ describe(synthesize, () => {
 		expect(parseFixture(result)["globIgnorePaths"]).toBeUndefined();
 	});
 
-	it("should ignore non-string entries in a declared globIgnorePaths", () => {
+	it("should ignore non-string entries in a declared globIgnorePaths", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -596,7 +613,7 @@ describe(synthesize, () => {
 		expect(parseFixture(result)["globIgnorePaths"]).toStrictEqual(["**/tsconfig.json"]);
 	});
 
-	it("should throw ConfigError when packages declare different globIgnorePaths", () => {
+	it("should throw ConfigError when packages declare different globIgnorePaths", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -634,7 +651,7 @@ describe(synthesize, () => {
 		);
 	});
 
-	it("should accept the same globIgnorePaths listed in a different order", () => {
+	it("should accept the same globIgnorePaths listed in a different order", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -654,7 +671,9 @@ describe(synthesize, () => {
 		]);
 	});
 
-	it("should merge hoisted properties into a service the synth root already declares", () => {
+	it("should merge hoisted properties into a service the synth root already declares", ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -676,7 +695,7 @@ describe(synthesize, () => {
 		expect(serverStorage["__pkg_stage"]).toBeDefined();
 	});
 
-	it("should keep LoadStringEnabled on when a package declares it off", () => {
+	it("should keep LoadStringEnabled on when a package declares it off", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -724,7 +743,7 @@ describe(synthesize, () => {
 		"StarterPlayerScripts",
 		"Terrain",
 		"Workspace",
-	])("should rewrite pinned class %s to Folder when nested", (serviceClass) => {
+	])("should rewrite pinned class %s to Folder when nested", (serviceClass, { expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -747,7 +766,7 @@ describe(synthesize, () => {
 		["Workspace", "Terrain"],
 	] as const)(
 		"should rewrite %s.%s to Folder: the engine pins the class to one parent",
-		([parent, pinned]) => {
+		([parent, pinned], { expect }) => {
 			expect.assertions(1);
 
 			const { fileSystem } = createMemoryFileSystem({
@@ -783,7 +802,9 @@ describe(synthesize, () => {
 		},
 	);
 
-	it("should add $className Folder to an implicit service node (no $className) when nested", () => {
+	it("should add $className Folder to an implicit service node (no $className) when nested", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -805,7 +826,9 @@ describe(synthesize, () => {
 		expect(stagedFoo(parsed, "ServerScriptService")!.$className).toBe("Folder");
 	});
 
-	it("should not add $className to an implicit service node that already carries a $path", () => {
+	it("should not add $className to an implicit service node that already carries a $path", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -824,7 +847,9 @@ describe(synthesize, () => {
 		expect(stagedFoo(parsed, "ServerScriptService")!.$className).toBeUndefined();
 	});
 
-	it("should isolate per-package service roots even when packages claim the same service", () => {
+	it("should isolate per-package service roots even when packages claim the same service", ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -876,7 +901,7 @@ describe(synthesize, () => {
 		);
 	});
 
-	it("should keep stubMounts isolated per package", () => {
+	it("should keep stubMounts isolated per package", ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -947,7 +972,7 @@ describe(synthesize, () => {
 		).toBe(stubFoo.replaceAll("\\", "/"));
 	});
 
-	it("should propagate coverage shadow dir through a virtualized $path child", () => {
+	it("should propagate coverage shadow dir through a virtualized $path child", ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -999,7 +1024,7 @@ describe(synthesize, () => {
 
 	it.for(["jest.config.lua", "jest.config.luau"])(
 		"should leave a %s in a virtualized leaf source dir out of the place",
-		(collidingFile) => {
+		(collidingFile, { expect }) => {
 			expect.assertions(2);
 
 			const { fileSystem, volume } = createMemoryFileSystem();
@@ -1049,7 +1074,9 @@ describe(synthesize, () => {
 		},
 	);
 
-	it("should produce identical output to a stubMounts-less descriptor when stubMounts is an empty array", () => {
+	it("should produce identical output to a stubMounts-less descriptor when stubMounts is an empty array", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -1074,7 +1101,9 @@ describe(synthesize, () => {
 		expect(withEmpty).toBe(baseline);
 	});
 
-	it("should swap $path to the per-package coverage shadow dir when a redirect is set", () => {
+	it("should swap $path to the per-package coverage shadow dir when a redirect is set", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { parsed, shadowOut } = synthesizeShadowedPackage("out");
@@ -1082,7 +1111,7 @@ describe(synthesize, () => {
 		expect(stagedFoo(parsed, "ReplicatedStorage", "Pkg")!.$path).toBe(shadowOut);
 	});
 
-	it("should leave $path untouched for packages that carry no redirect", () => {
+	it("should leave $path untouched for packages that carry no redirect", ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -1137,7 +1166,7 @@ describe(synthesize, () => {
 		expect(stagedFoo(parsed, "ReplicatedStorage", "Pkg")!.$path).toBe(fooShadow);
 	});
 
-	it("should pass nested $path entries through the coverage shadow dir prefix", () => {
+	it("should pass nested $path entries through the coverage shadow dir prefix", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -1162,7 +1191,7 @@ describe(synthesize, () => {
 		expect(stagedFoo(parsed, "ReplicatedStorage", "Client")!.$path).toBe(`${shadowOut}/client`);
 	});
 
-	it("should normalize trailing slashes on $path before matching redirects", () => {
+	it("should normalize trailing slashes on $path before matching redirects", ({ expect }) => {
 		expect.assertions(1);
 
 		const { parsed, shadowOut } = synthesizeShadowedPackage("out/");
@@ -1171,7 +1200,9 @@ describe(synthesize, () => {
 		expect(stagedFoo(parsed, "ReplicatedStorage", "Pkg")!.$path).toBe(shadowOut);
 	});
 
-	it("should leave $path entries that don't match any coverageRoot using package-relative resolution", () => {
+	it("should leave $path entries that don't match any coverageRoot using package-relative resolution", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -1198,7 +1229,7 @@ describe(synthesize, () => {
 		);
 	});
 
-	it("should be byte-stable regardless of input package ordering", () => {
+	it("should be byte-stable regardless of input package ordering", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -1240,7 +1271,7 @@ describe(synthesize, () => {
 		expect(ordered).toBe(reversed);
 	});
 
-	it("should stamp the place content id in wrap mode too", () => {
+	it("should stamp the place content id in wrap mode too", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -1264,25 +1295,20 @@ describe(synthesize, () => {
 	});
 
 	describe("no-wrap mode (single-package coverage)", () => {
-		it("should return the package's project tree without ServerStorage.__pkg_stage wrap", () => {
+		it("should return the package's project tree without ServerStorage.__pkg_stage wrap", ({
+			expect,
+		}) => {
 			expect.assertions(2);
 
-			const { fileSystem } = createMemoryFileSystem({
-				...fooProject({
-					ReplicatedStorage: { $className: "ReplicatedStorage", $path: "src" },
-				}),
-				[path.join(FOO_DIR, "src/init.luau")]: "",
-			});
-
-			const result = synthesizeFooUnwrapped(fileSystem);
-
-			const parsed = parseFixture(result);
+			const parsed = synthesizeFooReplicatedSource();
 
 			expect(child(parsed.tree, "ReplicatedStorage")!.$className).toBe("ReplicatedStorage");
 			expect(descend(parsed.tree, "ServerStorage", "__pkg_stage")).toBeUndefined();
 		});
 
-		it("should inject ServerScriptService.LoadStringEnabled when loadStringEnabled is set", () => {
+		it("should inject ServerScriptService.LoadStringEnabled when loadStringEnabled is set", ({
+			expect,
+		}) => {
 			expect.assertions(2);
 
 			const { fileSystem } = createMemoryFileSystem({
@@ -1310,7 +1336,9 @@ describe(synthesize, () => {
 			expect(serverScriptService!.$properties!["LoadStringEnabled"]).toBeTrue();
 		});
 
-		it("should merge LoadStringEnabled into an existing ServerScriptService, keeping its $path and props", () => {
+		it("should merge LoadStringEnabled into an existing ServerScriptService, keeping its $path and props", ({
+			expect,
+		}) => {
 			expect.assertions(3);
 
 			const { fileSystem } = createMemoryFileSystem({
@@ -1343,7 +1371,7 @@ describe(synthesize, () => {
 			expect(serverScriptService!.$path).toContain("server");
 		});
 
-		it("should stamp the place content id where a booted task can read it", () => {
+		it("should stamp the place content id where a booted task can read it", ({ expect }) => {
 			expect.assertions(2);
 
 			const { fileSystem } = createMemoryFileSystem({
@@ -1374,7 +1402,7 @@ describe(synthesize, () => {
 			expect(stamp!.$properties!["Value"]).toBe("deadbeef");
 		});
 
-		it("should stamp into a ReplicatedStorage the project never declared", () => {
+		it("should stamp into a ReplicatedStorage the project never declared", ({ expect }) => {
 			expect.assertions(1);
 
 			const { fileSystem } = createMemoryFileSystem({
@@ -1397,7 +1425,9 @@ describe(synthesize, () => {
 			expect(replicatedStorage!.$className).toBe("ReplicatedStorage");
 		});
 
-		it("should give an implicit existing ServerScriptService its canonical class", () => {
+		it("should give an implicit existing ServerScriptService its canonical class", ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			const { fileSystem } = createMemoryFileSystem({
@@ -1422,7 +1452,7 @@ describe(synthesize, () => {
 			);
 		});
 
-		it("should tolerate a malformed null $properties on ServerScriptService", () => {
+		it("should tolerate a malformed null $properties on ServerScriptService", ({ expect }) => {
 			// `typeof null === "object"`, so an unguarded property check would
 			// treat null as a record and `Object.entries(null)` would throw.
 			expect.assertions(1);
@@ -1456,24 +1486,19 @@ describe(synthesize, () => {
 			).toBeTrue();
 		});
 
-		it("should not inject ServerScriptService when loadStringEnabled is unset", () => {
+		it("should not inject ServerScriptService when loadStringEnabled is unset", ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
-			const { fileSystem } = createMemoryFileSystem({
-				...fooProject({
-					ReplicatedStorage: { $className: "ReplicatedStorage", $path: "src" },
-				}),
-				[path.join(FOO_DIR, "src/init.luau")]: "",
-			});
-
-			const result = synthesizeFooUnwrapped(fileSystem);
-
-			const parsed = parseFixture(result);
+			const parsed = synthesizeFooReplicatedSource();
 
 			expect(parsed.tree["ServerScriptService"]).toBeUndefined();
 		});
 
-		it("should preserve all top-level project fields (gameId, placeId, globIgnorePaths, servePort, name)", () => {
+		it("should preserve all top-level project fields (gameId, placeId, globIgnorePaths, servePort, name)", ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			const { fileSystem } = createMemoryFileSystem({
@@ -1498,26 +1523,19 @@ describe(synthesize, () => {
 			});
 		});
 
-		it("should absolutize $path entries against path.dirname(rojoProjectPath)", () => {
+		it("should absolutize $path entries against path.dirname(rojoProjectPath)", ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
-			const { fileSystem } = createMemoryFileSystem({
-				...fooProject({
-					ReplicatedStorage: { $className: "ReplicatedStorage", $path: "src" },
-				}),
-				[path.join(FOO_DIR, "src/init.luau")]: "",
-			});
-
-			const result = synthesizeFooUnwrapped(fileSystem);
-
-			const parsed = parseFixture(result);
+			const parsed = synthesizeFooReplicatedSource();
 
 			expect(child(parsed.tree, "ReplicatedStorage")!.$path).toBe(
 				posixPath(path.join(FOO_DIR, "src")),
 			);
 		});
 
-		it("should rebase the $path of a child named optional", () => {
+		it("should rebase the $path of a child named optional", ({ expect }) => {
 			expect.assertions(1);
 
 			const { fileSystem } = createMemoryFileSystem({
@@ -1536,7 +1554,7 @@ describe(synthesize, () => {
 			);
 		});
 
-		it("should leave an attribute named optional as written", () => {
+		it("should leave an attribute named optional as written", ({ expect }) => {
 			expect.assertions(1);
 
 			const { fileSystem } = createMemoryFileSystem({
@@ -1555,7 +1573,7 @@ describe(synthesize, () => {
 			).toStrictEqual({ optional: "src" });
 		});
 
-		it("should redirect the inner path of an optional $path under a redirect", () => {
+		it("should redirect the inner path of an optional $path under a redirect", ({ expect }) => {
 			expect.assertions(1);
 
 			const shadowDirectory = path.join(FOO_DIR, ".jest-roblox/coverage/src");
@@ -1585,7 +1603,9 @@ describe(synthesize, () => {
 			});
 		});
 
-		it("should redirect $path entries under a redirect to the shadow directory", () => {
+		it("should redirect $path entries under a redirect to the shadow directory", ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			const { fileSystem, volume } = createMemoryFileSystem();
@@ -1615,7 +1635,9 @@ describe(synthesize, () => {
 			expect(child(parsed.tree, "ReplicatedStorage")!.$path).toBe(posixPath(shadowDirectory));
 		});
 
-		it("should redirect a mount when rojoProject sits in a subdirectory of the package", () => {
+		it("should redirect a mount when rojoProject sits in a subdirectory of the package", ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			const { fileSystem, shadowDirectory, subProject } = subdirectoryProjectFixture();
@@ -1638,7 +1660,9 @@ describe(synthesize, () => {
 	});
 
 	describe("wrap mode (workspace) dual-base resolution", () => {
-		it("should redirect a mount when rojoProject sits in a subdirectory of the package", () => {
+		it("should redirect a mount when rojoProject sits in a subdirectory of the package", ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			const { fileSystem, shadowDirectory, subProject } = subdirectoryProjectFixture();
@@ -1661,7 +1685,7 @@ describe(synthesize, () => {
 	});
 
 	describe("no-wrap mode validation", () => {
-		it("should throw ConfigError when wrap=false with zero packages", () => {
+		it("should throw ConfigError when wrap=false with zero packages", ({ expect }) => {
 			expect.assertions(1);
 
 			expect(() => {
@@ -1675,7 +1699,7 @@ describe(synthesize, () => {
 			);
 		});
 
-		it("should resolve nested .project.json mounts in no-wrap mode", () => {
+		it("should resolve nested .project.json mounts in no-wrap mode", ({ expect }) => {
 			expect.assertions(1);
 
 			const { fileSystem, volume } = createMemoryFileSystem();
@@ -1708,7 +1732,7 @@ describe(synthesize, () => {
 			);
 		});
 
-		it("should throw ConfigError when wrap=false with more than one package", () => {
+		it("should throw ConfigError when wrap=false with more than one package", ({ expect }) => {
 			expect.assertions(1);
 
 			const { fileSystem, volume } = createMemoryFileSystem();
@@ -1739,7 +1763,9 @@ describe(synthesize, () => {
 		// Multi-project + open-cloud wire shape: synthesizer must produce a
 		// place-buildable project.json from a single user package with
 		// multiple project mounts and stubs in the cache.
-		it("should add a user config at a stub mount to the declared globIgnorePaths", () => {
+		it("should add a user config at a stub mount to the declared globIgnorePaths", ({
+			expect,
+		}) => {
 			expect.assertions(2);
 
 			const stubPath = path.join(FOO_DIR, ".jest-roblox/cache/out/Shared/jest.config.luau");
@@ -1787,7 +1813,9 @@ describe(synthesize, () => {
 			);
 		});
 
-		it("should produce a place-ready synthesized project for multi-project + open-cloud shape", () => {
+		it("should produce a place-ready synthesized project for multi-project + open-cloud shape", ({
+			expect,
+		}) => {
 			expect.assertions(5);
 
 			const { fileSystem } = createMemoryFileSystem({
@@ -1861,7 +1889,7 @@ describe(synthesize, () => {
 			);
 		});
 
-		it("should not error when wrapped packages share one leaf and stub", () => {
+		it("should not error when wrapped packages share one leaf and stub", ({ expect }) => {
 			expect.assertions(1);
 
 			const { fileSystem } = createMemoryFileSystem({
@@ -1896,7 +1924,9 @@ describe(synthesize, () => {
 		// Rojo schema additions, user custom fields) must survive
 		// `synthesize(wrap: false)` byte-for-byte, including when
 		// `injectStubMounts` mutates the tree.
-		it("should preserve arbitrary unknown top-level keys and nested unknown fields through stub injection", () => {
+		it("should preserve arbitrary unknown top-level keys and nested unknown fields through stub injection", ({
+			expect,
+		}) => {
 			expect.assertions(4);
 
 			const { fileSystem } = createMemoryFileSystem({

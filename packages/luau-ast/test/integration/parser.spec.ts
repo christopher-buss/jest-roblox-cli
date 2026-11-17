@@ -1,9 +1,9 @@
 import { loadLuauParser } from "@isentinel/luau-ast";
 
-import { assert, describe, expect, it } from "vitest";
+import { assert, describe, it } from "vitest";
 
 describe(loadLuauParser, () => {
-	it("should return the same parser instance on repeat loads", () => {
+	it("should return the same parser instance on repeat loads", ({ expect }) => {
 		expect.assertions(1);
 
 		const [first, second] = [loadLuauParser(), loadLuauParser()];
@@ -13,7 +13,7 @@ describe(loadLuauParser, () => {
 });
 
 describe("parse", () => {
-	it("should parse a local declaration into an AstStatBlock root", () => {
+	it("should parse a local declaration into an AstStatBlock root", ({ expect }) => {
 		expect.assertions(2);
 
 		const parser = loadLuauParser();
@@ -30,7 +30,7 @@ describe("parse", () => {
 		expect(statement.vars[0]!.name).toBe("x");
 	});
 
-	it("should carry the `if local` binding on the statement and the expression", () => {
+	it("should carry the `if local` binding on the statement and the expression", ({ expect }) => {
 		expect.assertions(2);
 
 		const parser = loadLuauParser();
@@ -50,7 +50,7 @@ describe("parse", () => {
 		expect(expression.conditionLocal!.isConst).toBeTrue();
 	});
 
-	it("should decode every location into a 1-based exclusive-end span", () => {
+	it("should decode every location into a 1-based exclusive-end span", ({ expect }) => {
 		expect.assertions(1);
 
 		const parser = loadLuauParser();
@@ -68,7 +68,7 @@ describe("parse", () => {
 		});
 	});
 
-	it("should decode nested location fields such as indexLocation", () => {
+	it("should decode nested location fields such as indexLocation", ({ expect }) => {
 		expect.assertions(1);
 
 		const parser = loadLuauParser();
@@ -90,7 +90,7 @@ describe("parse", () => {
 		});
 	});
 
-	it("should decode comment spans", () => {
+	it("should decode comment spans", ({ expect }) => {
 		expect.assertions(1);
 
 		const parser = loadLuauParser();
@@ -107,7 +107,7 @@ describe("parse", () => {
 		]);
 	});
 
-	it("should survive the encoder's bare Infinity for overflowing literals", () => {
+	it("should survive the encoder's bare Infinity for overflowing literals", ({ expect }) => {
 		expect.assertions(1);
 
 		const parser = loadLuauParser();
@@ -123,7 +123,7 @@ describe("parse", () => {
 		expect(value.value).toBe(Infinity);
 	});
 
-	it("should leave the word Infinity alone inside string constants", () => {
+	it("should leave the word Infinity alone inside string constants", ({ expect }) => {
 		expect.assertions(1);
 
 		const parser = loadLuauParser();
@@ -139,7 +139,7 @@ describe("parse", () => {
 		expect(value.value).toBe("to Infinity!");
 	});
 
-	it("should track escaped quotes when scanning for bare Infinity", () => {
+	it("should track escaped quotes when scanning for bare Infinity", ({ expect }) => {
 		expect.assertions(2);
 
 		const parser = loadLuauParser();
@@ -161,7 +161,7 @@ describe("parse", () => {
 		expect(numberValue.value).toBe(Infinity);
 	});
 
-	it("should parse explicit type instantiations", () => {
+	it("should parse explicit type instantiations", ({ expect }) => {
 		expect.assertions(1);
 
 		const parser = loadLuauParser();
@@ -173,7 +173,7 @@ describe("parse", () => {
 		expect(result.root.body).toHaveLength(1);
 	});
 
-	it("should survive a parse whose output outgrows the initial wasm heap", () => {
+	it("should survive a parse whose output outgrows the initial wasm heap", ({ expect }) => {
 		expect.assertions(1);
 
 		const parser = loadLuauParser();
@@ -192,7 +192,7 @@ describe("parse", () => {
 		expect(result.root.body).toHaveLength(60_000);
 	});
 
-	it("should report each parse error as a message", () => {
+	it("should report each parse error as a message", ({ expect }) => {
 		expect.assertions(2);
 
 		const parser = loadLuauParser();

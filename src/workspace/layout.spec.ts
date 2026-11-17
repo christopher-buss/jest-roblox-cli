@@ -3,7 +3,7 @@ import { fromAny } from "@total-typescript/shoehorn";
 import * as path from "node:path";
 import process from "node:process";
 import type { Except } from "type-fest";
-import { describe, expect, it, onTestFinished, vi } from "vitest";
+import { describe, it, type TestContext, vi } from "vitest";
 
 import { fakeTimingCollector } from "#test/mocks/fake-timing-collector.ts";
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
@@ -65,7 +65,7 @@ function seedTurboWorkspace(): Record<string, string> {
 	};
 }
 
-function stubLinux(): void {
+function stubLinux(onTestFinished: TestContext["onTestFinished"]): void {
 	const original = process.platform;
 	Object.defineProperty(process, "platform", { value: "linux" });
 	onTestFinished(() => {
@@ -412,7 +412,9 @@ function packageNames(harness: Harness): Array<string> {
 
 describe(createWorkspaceLayout, () => {
 	describe("validation", () => {
-		it("should surface mutually-exclusive --packages/--affected-since failure", async () => {
+		it("should surface mutually-exclusive --packages/--affected-since failure", async ({
+			expect,
+		}) => {
 			expect.assertions(2);
 
 			const { dependencies } = setupHappyPath();
@@ -427,7 +429,7 @@ describe(createWorkspaceLayout, () => {
 			);
 		});
 
-		it("should run every enumerated package for a bare --workspace", async () => {
+		it("should run every enumerated package for a bare --workspace", async ({ expect }) => {
 			expect.assertions(2);
 
 			const harness = setupHappyPath();
@@ -437,7 +439,7 @@ describe(createWorkspaceLayout, () => {
 			expect(packageNames(harness)).toIncludeSameMembers(WORKSPACE_PACKAGES);
 		});
 
-		it("should reject a bare --workspace that enumerates nothing", async () => {
+		it("should reject a bare --workspace that enumerates nothing", async ({ expect }) => {
 			expect.assertions(3);
 
 			const { dependencies } = setupHappyPath(seedWorkspace(ROOT, []));
@@ -456,7 +458,9 @@ describe(createWorkspaceLayout, () => {
 
 		// The remedy differs by source: a `workspace.packages` list is the
 		// user's own glob, so pointing at pnpm-workspace.yaml would misdirect.
-		it("should name workspace.packages when the config glob enumerates nothing", async () => {
+		it("should name workspace.packages when the config glob enumerates nothing", async ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			const { dependencies } = setupHappyPath(seedWorkspace(CONFIG_ROOT, []));
@@ -470,7 +474,7 @@ describe(createWorkspaceLayout, () => {
 			expect(result.validationMessage).toContain("Widen `workspace.packages`");
 		});
 
-		it("should accept studio-cli with --parallel > 1", async () => {
+		it("should accept studio-cli with --parallel > 1", async ({ expect }) => {
 			expect.assertions(1);
 
 			const harness = setupHappyPath();
@@ -491,7 +495,7 @@ describe(createWorkspaceLayout, () => {
 			expect(result.validationExitCode).toBeUndefined();
 		});
 
-		it("should accept studio-cli with --parallel auto", async () => {
+		it("should accept studio-cli with --parallel auto", async ({ expect }) => {
 			expect.assertions(1);
 
 			const harness = setupHappyPath();
@@ -514,7 +518,9 @@ describe(createWorkspaceLayout, () => {
 
 		// The reported failure: `parallel` comes from the package config, not
 		// from a flag the user can drop for the run.
-		it('should accept studio-cli when a package config declares parallel "auto"', async () => {
+		it('should accept studio-cli when a package config declares parallel "auto"', async ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			const harness = setupHappyPath();
@@ -532,7 +538,7 @@ describe(createWorkspaceLayout, () => {
 	});
 
 	describe("backend resolution", () => {
-		it("should reject --experimental-vm-parallel on open-cloud", async () => {
+		it("should reject --experimental-vm-parallel on open-cloud", async ({ expect }) => {
 			expect.assertions(1);
 
 			const harness = setupHappyPath();
@@ -549,7 +555,9 @@ describe(createWorkspaceLayout, () => {
 			).rejects.toThrow("--experimental-vm-parallel is Studio-only");
 		});
 
-		it("should forward --experimental-vm-parallel to a studio-cli workspace run", async () => {
+		it("should forward --experimental-vm-parallel to a studio-cli workspace run", async ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			const harness = setupHappyPath();
@@ -567,7 +575,7 @@ describe(createWorkspaceLayout, () => {
 			expect(runnerCall(harness).runOptions.experimentalVmParallel).toBe("auto");
 		});
 
-		it("should resolve auto to studio-cli when Studio is installed", async () => {
+		it("should resolve auto to studio-cli when Studio is installed", async ({ expect }) => {
 			expect.assertions(2);
 
 			const harness = setupHappyPath();
@@ -593,7 +601,7 @@ describe(createWorkspaceLayout, () => {
 			expect(harness.openBackend).toHaveBeenCalledOnce();
 		});
 
-		it("should run --bail on studio-cli when auto resolves to it", async () => {
+		it("should run --bail on studio-cli when auto resolves to it", async ({ expect }) => {
 			expect.assertions(2);
 
 			const harness = setupHappyPath();
@@ -614,7 +622,9 @@ describe(createWorkspaceLayout, () => {
 			});
 		});
 
-		it("should resolve the studio-cli backend without Open Cloud credentials", async () => {
+		it("should resolve the studio-cli backend without Open Cloud credentials", async ({
+			expect,
+		}) => {
 			expect.assertions(3);
 
 			const harness = setupHappyPath();
@@ -635,7 +645,9 @@ describe(createWorkspaceLayout, () => {
 			expect(openedBackend(harness).kind).toBe("studio-cli");
 		});
 
-		it("should forward the resolved studioPath to the studio-cli backend", async () => {
+		it("should forward the resolved studioPath to the studio-cli backend", async ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			const harness = setupHappyPath();
@@ -648,7 +660,9 @@ describe(createWorkspaceLayout, () => {
 			expect(backendSettings(harness)).toMatchObject({ studioPath: "C:/s.exe" });
 		});
 
-		it("should forward the resolved pluginsDirectory to the studio-cli backend", async () => {
+		it("should forward the resolved pluginsDirectory to the studio-cli backend", async ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			const harness = setupHappyPath();
@@ -661,7 +675,7 @@ describe(createWorkspaceLayout, () => {
 			expect(backendSettings(harness)).toMatchObject({ pluginsDirectory: "/plugins" });
 		});
 
-		it("should pass the configured timeout to the studio-cli backend", async () => {
+		it("should pass the configured timeout to the studio-cli backend", async ({ expect }) => {
 			expect.assertions(1);
 
 			const harness = setupHappyPath();
@@ -674,7 +688,9 @@ describe(createWorkspaceLayout, () => {
 			expect(backendSettings(harness)).toMatchObject({ timeout: 1234 });
 		});
 
-		it("should pass the configured timeout to the attached studio backend", async () => {
+		it("should pass the configured timeout to the attached studio backend", async ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			const harness = setupHappyPath();
@@ -687,7 +703,7 @@ describe(createWorkspaceLayout, () => {
 			expect(backendSettings(harness)).toMatchObject({ timeout: 1234 });
 		});
 
-		it("should give the backend the longest package timeout", async () => {
+		it("should give the backend the longest package timeout", async ({ expect }) => {
 			expect.assertions(1);
 
 			const harness = setupHappyPath();
@@ -702,7 +718,7 @@ describe(createWorkspaceLayout, () => {
 			expect(backendSettings(harness)).toMatchObject({ timeout: 900_000 });
 		});
 
-		it("should build the studio-cli backend on the run's file system", async () => {
+		it("should build the studio-cli backend on the run's file system", async ({ expect }) => {
 			expect.assertions(1);
 
 			const harness = setupHappyPath();
@@ -716,7 +732,7 @@ describe(createWorkspaceLayout, () => {
 			);
 		});
 
-		it("should let --timeout override the package timeouts", async () => {
+		it("should let --timeout override the package timeouts", async ({ expect }) => {
 			expect.assertions(1);
 
 			const harness = setupHappyPath();
@@ -729,7 +745,7 @@ describe(createWorkspaceLayout, () => {
 			expect(backendSettings(harness)).toMatchObject({ timeout: 5 });
 		});
 
-		it("should forward cli.headed to the studio-cli backend", async () => {
+		it("should forward cli.headed to the studio-cli backend", async ({ expect }) => {
 			expect.assertions(1);
 
 			const harness = setupHappyPath();
@@ -751,7 +767,9 @@ describe(createWorkspaceLayout, () => {
 			expect(backendSettings(harness)).toMatchObject({ headed: true });
 		});
 
-		it("should resolve the attached studio backend without Open Cloud credentials", async () => {
+		it("should resolve the attached studio backend without Open Cloud credentials", async ({
+			expect,
+		}) => {
 			expect.assertions(2);
 
 			const harness = setupHappyPath();
@@ -770,7 +788,7 @@ describe(createWorkspaceLayout, () => {
 	});
 
 	describe("--packages happy path", () => {
-		it("should resolve every package and forward them to runWorkspace", async () => {
+		it("should resolve every package and forward them to runWorkspace", async ({ expect }) => {
 			expect.assertions(3);
 
 			const harness = setupHappyPath();
@@ -800,7 +818,9 @@ describe(createWorkspaceLayout, () => {
 			expect(packageNames(harness)).toStrictEqual(["@halcyon/foo", "@halcyon/bar"]);
 		});
 
-		it("should emit the run header to stdout before running the workspace", async () => {
+		it("should emit the run header to stdout before running the workspace", async ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			const harness = setupHappyPath();
@@ -814,7 +834,7 @@ describe(createWorkspaceLayout, () => {
 			expect(stdout).toHaveBeenCalledWith(expect.stringContaining(" RUN "));
 		});
 
-		it("should not emit the run header when silent", async () => {
+		it("should not emit the run header when silent", async ({ expect }) => {
 			expect.assertions(1);
 
 			const harness = setupHappyPath();
@@ -831,7 +851,7 @@ describe(createWorkspaceLayout, () => {
 			expect(stdout).not.toHaveBeenCalledWith(expect.stringContaining(" RUN "));
 		});
 
-		it("should surface consensus-resolved sink paths on the result", async () => {
+		it("should surface consensus-resolved sink paths on the result", async ({ expect }) => {
 			expect.assertions(2);
 
 			const harness = setupHappyPath();
@@ -847,7 +867,9 @@ describe(createWorkspaceLayout, () => {
 			expect(result.output!.outputFile).toBe(path.join(ROOT, "jest-output.log"));
 		});
 
-		it("should collapse displayName when project name matches package name", async () => {
+		it("should collapse displayName when project name matches package name", async ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			const harness = setupHappyPath();
@@ -861,7 +883,9 @@ describe(createWorkspaceLayout, () => {
 			expect(result.projectResults[0]!.displayName).toBe("@halcyon/foo");
 		});
 
-		it("should pass an onStreamingResult hook when the default human formatter is active", async () => {
+		it("should pass an onStreamingResult hook when the default human formatter is active", async ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			const harness = setupHappyPath();
@@ -874,7 +898,9 @@ describe(createWorkspaceLayout, () => {
 			expect(runnerCall(harness).onStreamingResult).toBeFunction();
 		});
 
-		it("should omit onStreamingResult when the JSON formatter is active", async () => {
+		it("should omit onStreamingResult when the JSON formatter is active", async ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			const harness = setupHappyPath();
@@ -887,7 +913,7 @@ describe(createWorkspaceLayout, () => {
 			expect(runnerCall(harness).onStreamingResult).toBeUndefined();
 		});
 
-		it("should omit onStreamingResult when silent is true", async () => {
+		it("should omit onStreamingResult when silent is true", async ({ expect }) => {
 			expect.assertions(1);
 
 			const harness = setupHappyPath();
@@ -900,7 +926,9 @@ describe(createWorkspaceLayout, () => {
 			expect(runnerCall(harness).onStreamingResult).toBeUndefined();
 		});
 
-		it("should omit onStreamingResult when the non-verbose agent formatter is active", async () => {
+		it("should omit onStreamingResult when the non-verbose agent formatter is active", async ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			const harness = setupHappyPath();
@@ -913,18 +941,18 @@ describe(createWorkspaceLayout, () => {
 			expect(runnerCall(harness).onStreamingResult).toBeUndefined();
 		});
 
-		it("should write a progress line to stdout when the human-formatter sink is called", async () => {
+		it("should write a progress line to stdout when the human-formatter sink is called", async ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			const harness = setupHappyPath();
 
 			const writes: Array<string> = [];
-			const writeSpy = vi
-				.spyOn(process.stdout, "write")
-				.mockImplementation((chunk: Parameters<typeof process.stdout.write>[0]) => {
-					writes.push(toStdoutText(chunk));
-					return true;
-				});
+			const writeSpy = vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+				writes.push(toStdoutText(chunk));
+				return true;
+			});
 
 			await runWorkspaceModeAsync({
 				cli: makeCli({ color: false, packages: "@halcyon/foo", workspace: true }),
@@ -949,7 +977,7 @@ describe(createWorkspaceLayout, () => {
 			expect(writes.at(-1)).toBe("▶ @halcyon/foo  1 passed (42ms)\n");
 		});
 
-		it("should compose 'pkg › project' when names differ", async () => {
+		it("should compose 'pkg › project' when names differ", async ({ expect }) => {
 			expect.assertions(2);
 
 			const harness = setupHappyPath();
@@ -972,7 +1000,7 @@ describe(createWorkspaceLayout, () => {
 
 		// One package can own several projects, so the bail summary counts
 		// packages on both sides rather than the project rows on show.
-		it("should report how far a bailed run got, by package", async () => {
+		it("should report how far a bailed run got, by package", async ({ expect }) => {
 			expect.assertions(2);
 
 			const harness = setupHappyPath();
@@ -1022,7 +1050,9 @@ describe(createWorkspaceLayout, () => {
 			expect(complete.bail).toBeUndefined();
 		});
 
-		it("should leave the bail summary off a run that reached every package", async () => {
+		it("should leave the bail summary off a run that reached every package", async ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			const harness = setupHappyPath();
@@ -1036,7 +1066,9 @@ describe(createWorkspaceLayout, () => {
 			expect(result.bail).toBeUndefined();
 		});
 
-		it("should forward the type test result alongside runtime project results", async () => {
+		it("should forward the type test result alongside runtime project results", async ({
+			expect,
+		}) => {
 			expect.assertions(2);
 
 			const harness = setupHappyPath();
@@ -1061,7 +1093,9 @@ describe(createWorkspaceLayout, () => {
 			expect(result.projectResults).toHaveLength(1);
 		});
 
-		it("should surface a type-only result without collapsing to the empty result", async () => {
+		it("should surface a type-only result without collapsing to the empty result", async ({
+			expect,
+		}) => {
 			expect.assertions(2);
 
 			const harness = setupHappyPath();
@@ -1077,7 +1111,9 @@ describe(createWorkspaceLayout, () => {
 			expect(result.projectResults).toStrictEqual([]);
 		});
 
-		it("should resolve no backend and print no header for a run that opens none", async () => {
+		it("should resolve no backend and print no header for a run that opens none", async ({
+			expect,
+		}) => {
 			expect.assertions(3);
 
 			const harness = setupHappyPath();
@@ -1103,7 +1139,9 @@ describe(createWorkspaceLayout, () => {
 	});
 
 	describe("workspace.packages enumeration", () => {
-		it("should enumerate from workspace.packages without discovering a PM root", async () => {
+		it("should enumerate from workspace.packages without discovering a PM root", async ({
+			expect,
+		}) => {
 			expect.assertions(2);
 
 			const harness = setupHappyPath(seedWorkspace(CONFIG_ROOT, ["foo"]));
@@ -1119,7 +1157,7 @@ describe(createWorkspaceLayout, () => {
 			]);
 		});
 
-		it("should drive the aggregate sink root off workspace.root", async () => {
+		it("should drive the aggregate sink root off workspace.root", async ({ expect }) => {
 			expect.assertions(1);
 
 			const harness = setupHappyPath(seedWorkspace(CONFIG_ROOT, ["foo"]));
@@ -1135,10 +1173,13 @@ describe(createWorkspaceLayout, () => {
 	});
 
 	describe("--affected-since happy path", () => {
-		it("should ask turbo for the affected set and resolve every name", async () => {
+		it("should ask turbo for the affected set and resolve every name", async ({
+			expect,
+			onTestFinished,
+		}) => {
 			expect.assertions(3);
 
-			stubLinux();
+			stubLinux(onTestFinished);
 			const harness = setupHappyPath(seedTurboWorkspace());
 			turboReturns({
 				childProcess: harness.childProcess,
@@ -1174,10 +1215,13 @@ describe(createWorkspaceLayout, () => {
 			expect(packageNames(harness)).toStrictEqual(["@halcyon/foo", "@halcyon/bar"]);
 		});
 
-		it("should write a stdout notice and return empty when affected list is empty", async () => {
+		it("should write a stdout notice and return empty when affected list is empty", async ({
+			expect,
+			onTestFinished,
+		}) => {
 			expect.assertions(3);
 
-			stubLinux();
+			stubLinux(onTestFinished);
 			const harness = setupHappyPath(seedTurboWorkspace());
 			turboReturns({ childProcess: harness.childProcess, names: [] });
 			const stdoutSpy = vi.spyOn(process.stdout, "write").mockReturnValue(true);
@@ -1194,7 +1238,7 @@ describe(createWorkspaceLayout, () => {
 	});
 
 	describe("error handling", () => {
-		it("should let discoverWorkspaceRoot errors propagate", async () => {
+		it("should let discoverWorkspaceRoot errors propagate", async ({ expect }) => {
 			expect.assertions(1);
 
 			const { dependencies } = setupHappyPath({});
@@ -1207,7 +1251,7 @@ describe(createWorkspaceLayout, () => {
 			).rejects.toThrow("No workspace root");
 		});
 
-		it("should let enumeration errors propagate", async () => {
+		it("should let enumeration errors propagate", async ({ expect }) => {
 			expect.assertions(1);
 
 			const { dependencies } = setupHappyPath();
@@ -1220,7 +1264,7 @@ describe(createWorkspaceLayout, () => {
 			).rejects.toThrow('Package "@halcyon/absent" not found in workspace');
 		});
 
-		it("should let credentials errors propagate", async () => {
+		it("should let credentials errors propagate", async ({ expect }) => {
 			expect.assertions(1);
 
 			const { dependencies } = setupHappyPath();
@@ -1236,7 +1280,7 @@ describe(createWorkspaceLayout, () => {
 			).rejects.toThrow("Open Cloud credentials are required");
 		});
 
-		it("should reject empty --packages list after trimming", async () => {
+		it("should reject empty --packages list after trimming", async ({ expect }) => {
 			expect.assertions(2);
 
 			const { dependencies } = setupHappyPath();
@@ -1250,7 +1294,9 @@ describe(createWorkspaceLayout, () => {
 			expect(result.validationMessage).toContain("--packages names no packages");
 		});
 
-		it("should return validationExitCode 2 with no message when runWorkspace returns undefined", async () => {
+		it("should return validationExitCode 2 with no message when runWorkspace returns undefined", async ({
+			expect,
+		}) => {
 			expect.assertions(3);
 
 			const harness = setupHappyPath();
@@ -1266,7 +1312,7 @@ describe(createWorkspaceLayout, () => {
 			expect(result.projectResults).toStrictEqual([]);
 		});
 
-		it("should let workspace consensus conflicts propagate", async () => {
+		it("should let workspace consensus conflicts propagate", async ({ expect }) => {
 			expect.assertions(1);
 
 			const harness = setupHappyPath();
@@ -1282,7 +1328,9 @@ describe(createWorkspaceLayout, () => {
 			).rejects.toThrow("workspace packages disagree on `color`");
 		});
 
-		it("should read each package config through the run's own filesystem and runner", async () => {
+		it("should read each package config through the run's own filesystem and runner", async ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			const harness = setupHappyPath();
@@ -1299,7 +1347,7 @@ describe(createWorkspaceLayout, () => {
 			});
 		});
 
-		it("should let loadRawConfig errors propagate", async () => {
+		it("should let loadRawConfig errors propagate", async ({ expect }) => {
 			expect.assertions(1);
 
 			const harness = setupHappyPath();
@@ -1315,7 +1363,9 @@ describe(createWorkspaceLayout, () => {
 	});
 
 	describe("coverage aggregation", () => {
-		it("should aggregate when a runtime result has a coverage manifest even if workspace collectCoverage is false", async () => {
+		it("should aggregate when a runtime result has a coverage manifest even if workspace collectCoverage is false", async ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			const harness = setupHappyPath();
@@ -1344,7 +1394,9 @@ describe(createWorkspaceLayout, () => {
 			);
 		});
 
-		it("should leave coverage undefined when no package carries a manifest", async () => {
+		it("should leave coverage undefined when no package carries a manifest", async ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			const harness = setupHappyPath();
@@ -1359,7 +1411,7 @@ describe(createWorkspaceLayout, () => {
 		});
 	});
 
-	it("should carry the runner's staging and coverage times out apart", async () => {
+	it("should carry the runner's staging and coverage times out apart", async ({ expect }) => {
 		expect.assertions(2);
 
 		const harness = setupHappyPath();

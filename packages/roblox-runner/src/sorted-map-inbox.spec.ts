@@ -1,7 +1,7 @@
 import { createFakeHttpClient, type FakeHttpClient } from "@bedrock-rbx/ocale/testing";
 
 import { type } from "arktype";
-import { assert, describe, expect, it } from "vitest";
+import { assert, describe, it } from "vitest";
 
 import { SortedMapInbox } from "./sorted-map-inbox.ts";
 
@@ -28,7 +28,7 @@ function validItemBody(id: string, value: string) {
 }
 
 describe(SortedMapInbox, () => {
-	it("should list every entry with its id across list pages", async () => {
+	it("should list every entry with its id across list pages", async ({ expect }) => {
 		expect.assertions(2);
 
 		const http = createFakeHttpClient();
@@ -48,7 +48,7 @@ describe(SortedMapInbox, () => {
 		expect(http.requests[1]!.request.url).toContain("pageToken=page-2");
 	});
 
-	it("should return the failure when the list call returns an API error", async () => {
+	it("should return the failure when the list call returns an API error", async ({ expect }) => {
 		expect.assertions(1);
 
 		const http = createFakeHttpClient();
@@ -60,7 +60,7 @@ describe(SortedMapInbox, () => {
 		expect(read.err.message).toContain("Forbidden");
 	});
 
-	it("should delete one entry by its id", async () => {
+	it("should delete one entry by its id", async ({ expect }) => {
 		expect.assertions(2);
 
 		const http = createFakeHttpClient();
@@ -74,7 +74,9 @@ describe(SortedMapInbox, () => {
 		);
 	});
 
-	it("should return the failure when the delete call returns an API error", async () => {
+	it("should return the failure when the delete call returns an API error", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const http = createFakeHttpClient();

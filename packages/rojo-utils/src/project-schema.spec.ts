@@ -1,9 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { treeSchema } from "./project-schema.ts";
 
 describe("treeSchema", () => {
-	it("should preserve valid metadata and reject invalid roots and optional mounts", () => {
+	it("should preserve valid metadata and reject invalid roots and optional mounts", ({
+		expect,
+	}) => {
 		expect.assertions(3);
 
 		const tree = {
@@ -26,7 +28,7 @@ describe("treeSchema", () => {
 		{ $ignoreUnknownInstances: "yes" },
 		{ $path: { optional: 42 } },
 		{ $properties: false },
-	])("should reject invalid tree metadata %j", (value) => {
+	])("should reject invalid tree metadata %j", (value, { expect }) => {
 		expect.assertions(1);
 
 		expect(treeSchema(value)).toHaveProperty("summary");

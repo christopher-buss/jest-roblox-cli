@@ -2,7 +2,7 @@ import { isRojoTreeNode } from "@isentinel/rojo-utils";
 import type { RojoTreeNode } from "@isentinel/rojo-utils";
 
 import * as path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { posixPath, posixRoot } from "#test/mocks/posix-path.ts";
@@ -58,7 +58,7 @@ const SRC_MOUNT: RojoTreeNode = {
 };
 
 describe(absolutizePackagePaths, () => {
-	it("should rebase an optional $path and keep its optional wrapper", () => {
+	it("should rebase an optional $path and keep its optional wrapper", ({ expect }) => {
 		expect.assertions(1);
 
 		const tree = absolutize({
@@ -76,7 +76,7 @@ describe(absolutizePackagePaths, () => {
 		});
 	});
 
-	it("should rebase a child whose name ends in a dollar sign", () => {
+	it("should rebase a child whose name ends in a dollar sign", ({ expect }) => {
 		expect.assertions(1);
 
 		const tree = absolutize({
@@ -88,7 +88,7 @@ describe(absolutizePackagePaths, () => {
 	});
 
 	describe("coverage roots below a $path mount", () => {
-		it("should demote an optional mount onto the spine", () => {
+		it("should demote an optional mount onto the spine", ({ expect }) => {
 			expect.assertions(2);
 
 			const tree = absolutize({
@@ -109,7 +109,9 @@ describe(absolutizePackagePaths, () => {
 			expect(child(mount, "server")!.$path).toBe(posixPath(SERVER_SHADOW));
 		});
 
-		it("should demote the containing mount onto the spine and hang the root off it", () => {
+		it("should demote the containing mount onto the spine and hang the root off it", ({
+			expect,
+		}) => {
 			expect.assertions(5);
 
 			const tree = absolutize({
@@ -133,7 +135,7 @@ describe(absolutizePackagePaths, () => {
 			expect([mount["loose.luau"], mount["$reserved"]]).toStrictEqual([undefined, undefined]);
 		});
 
-		it("should carry the demote down every level of the spine", () => {
+		it("should carry the demote down every level of the spine", ({ expect }) => {
 			expect.assertions(3);
 
 			const shadowDirectory = path.join(FOO_DIR, ".jest-roblox/coverage/src/modules/ecs");
@@ -158,7 +160,7 @@ describe(absolutizePackagePaths, () => {
 			);
 		});
 
-		it("should leave a directory the project already declares to the project", () => {
+		it("should leave a directory the project already declares to the project", ({ expect }) => {
 			expect.assertions(1);
 
 			const tree = absolutize({

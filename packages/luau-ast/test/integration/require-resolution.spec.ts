@@ -8,7 +8,7 @@ import type { RequireCall } from "@isentinel/luau-ast";
 
 import fs from "node:fs";
 import path from "node:path";
-import { assert, describe, expect, it } from "vitest";
+import { assert, describe, it } from "vitest";
 
 const ROOT = path.join(import.meta.dirname, "../fixtures/require");
 
@@ -101,7 +101,7 @@ describe("require resolution", () => {
 			},
 		],
 		["src/dynamic.luau", { read: { kind: "dynamic" } }],
-	])("should read and resolve the require in %s", ([relativePath, expected]) => {
+	])("should read and resolve the require in %s", ([relativePath, expected], { expect }) => {
 		expect.assertions(1);
 
 		expect(readFixture(relativePath)).toStrictEqual([expected]);

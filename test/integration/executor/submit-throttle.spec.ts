@@ -1,7 +1,7 @@
 import { LuauExecutionClient } from "@bedrock-rbx/ocale/luau-execution";
 
 import { createServer } from "node:http";
-import { describe, expect, it, onTestFinished, vi } from "vitest";
+import { describe, it, type TestContext, vi } from "vitest";
 
 interface ThrottleResponse {
 	readonly name: string;
@@ -9,7 +9,10 @@ interface ThrottleResponse {
 	readonly waitMs: number;
 }
 
-async function startThrottleServerAsync({ headers }: ThrottleResponse) {
+async function startThrottleServerAsync(
+	{ headers }: ThrottleResponse,
+	onTestFinished: TestContext["onTestFinished"],
+) {
 	let requestCount = 0;
 	const server = createServer((_request, response) => {
 		requestCount += 1;
@@ -122,13 +125,13 @@ describe("submit throttling", () => {
 			headers: {},
 			waitMs: 1000,
 		},
-	])("should retry $name after $waitMs ms", async (throttle) => {
+	])("should retry $name after $waitMs ms", async (throttle, { expect, onTestFinished }) => {
 		expect.assertions(3);
 
 		let clock = 1_000_000;
 		vi.spyOn(Date, "now").mockImplementation(() => clock);
 		const waits: Array<number> = [];
-		const server = await startThrottleServerAsync(throttle);
+		const server = await startThrottleServerAsync(throttle, onTestFinished);
 		const client = new LuauExecutionClient({
 			apiKey: "test-key",
 			baseUrl: server.baseUrl,

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import type { ExpectedPlaceIdentity } from "./place-identity-guard.ts";
 import {
@@ -8,7 +8,7 @@ import {
 } from "./place-identity-guard.ts";
 
 describe(placeIdentityGuardSource, () => {
-	it("should compare the stamped content id when the host holds one", () => {
+	it("should compare the stamped content id when the host holds one", ({ expect }) => {
 		expect.assertions(1);
 
 		// Locked to the literal, because this line and readRefusedPlaceVersion
@@ -22,7 +22,7 @@ describe(placeIdentityGuardSource, () => {
 		);
 	});
 
-	it("should compare the version when that is the identity the host holds", () => {
+	it("should compare the version when that is the identity the host holds", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(placeIdentityGuardSource({ placeVersion: 42 })).toBe(
@@ -33,18 +33,21 @@ describe(placeIdentityGuardSource, () => {
 	it.for<[string, ExpectedPlaceIdentity]>([
 		["a stamped place", { contentId: "abc123" }],
 		["an unstamped one", { placeVersion: 7 }],
-	])("should stay one statement for %s, so a caller may splice it anywhere", ([, expected]) => {
-		expect.assertions(1);
+	])(
+		"should stay one statement for %s, so a caller may splice it anywhere",
+		([, expected], { expect }) => {
+			expect.assertions(1);
 
-		expect(placeIdentityGuardSource(expected)).not.toContain("\n");
-	});
+			expect(placeIdentityGuardSource(expected)).not.toContain("\n");
+		},
+	);
 
 	it.for<[string, string]>([
 		["a double quote", 'ab"cd'],
 		["a backslash", "ab\\cd"],
 		["a newline", "ab\ncd"],
 		["a carriage return", "ab\rcd"],
-	])("should refuse a content id carrying %s", ([, contentId]) => {
+	])("should refuse a content id carrying %s", ([, contentId], { expect }) => {
 		expect.assertions(1);
 
 		// The id is spliced into a Luau double-quoted literal. A value that
@@ -55,7 +58,7 @@ describe(placeIdentityGuardSource, () => {
 });
 
 describe(formatPlaceMismatch, () => {
-	it("should write what the guard writes, so a fake task can stand in for one", () => {
+	it("should write what the guard writes, so a fake task can stand in for one", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(formatPlaceMismatch(118)).toBe("ROBLOX_RUNNER_PLACE_MISMATCH:118");
@@ -63,7 +66,7 @@ describe(formatPlaceMismatch, () => {
 });
 
 describe(readRefusedPlaceVersion, () => {
-	it("should read the version a refusal names", () => {
+	it("should read the version a refusal names", ({ expect }) => {
 		expect.assertions(1);
 
 		// Against the literal, not against formatPlaceMismatch: a reader checked
@@ -78,7 +81,7 @@ describe(readRefusedPlaceVersion, () => {
 		["a non-numeric version", "ROBLOX_RUNNER_PLACE_MISMATCH:head"],
 		["trailing text", "ROBLOX_RUNNER_PLACE_MISMATCH:118 and more"],
 		["leading text", "ran: ROBLOX_RUNNER_PLACE_MISMATCH:118"],
-	])("should not read a version from %s", ([, output]) => {
+	])("should not read a version from %s", ([, output], { expect }) => {
 		expect.assertions(1);
 
 		expect(readRefusedPlaceVersion(output)).toBeUndefined();

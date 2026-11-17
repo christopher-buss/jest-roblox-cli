@@ -1,10 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
 import { pickCoverageSettings } from "./coverage-settings.ts";
 
 describe(pickCoverageSettings, () => {
-	it("should carry the resolved values, defaults included", () => {
+	it("should carry the resolved values, defaults included", ({ expect }) => {
 		expect.assertions(1);
 
 		const config = createResolvedConfig({

@@ -1,13 +1,13 @@
 import * as path from "node:path";
 import process from "node:process";
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
 import { runProjectPreflight } from "./preflight.ts";
 
 describe(runProjectPreflight, () => {
-	it("should report an undiscovered project at the default path", () => {
+	it("should report an undiscovered project at the default path", ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem } = createMemoryFileSystem();

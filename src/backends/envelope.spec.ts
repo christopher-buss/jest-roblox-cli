@@ -1,4 +1,4 @@
-import { assert, describe, expect, it } from "vitest";
+import { assert, describe, it } from "vitest";
 
 import type { RawCoverageData } from "../coverage-data/coverage-types.ts";
 import { LuauScriptError } from "../jest-output/luau-script-error.ts";
@@ -48,7 +48,7 @@ function captureThrown(action: () => void): Error {
 }
 
 describe("envelope entries", () => {
-	it("should return the entries array for a valid single-entry envelope", () => {
+	it("should return the entries array for a valid single-entry envelope", ({ expect }) => {
 		expect.assertions(1);
 
 		const envelope = JSON.stringify({
@@ -60,7 +60,7 @@ describe("envelope entries", () => {
 		expect(result).toStrictEqual([{ jestOutput: '{"some":"payload"}', jobIndex: 0 }]);
 	});
 
-	it("should return all entries for a valid multi-entry envelope", () => {
+	it("should return all entries for a valid multi-entry envelope", ({ expect }) => {
 		expect.assertions(1);
 
 		const envelope = JSON.stringify({
@@ -78,7 +78,7 @@ describe("envelope entries", () => {
 		]);
 	});
 
-	it("should accept entries carrying keys the schema does not declare", () => {
+	it("should accept entries carrying keys the schema does not declare", ({ expect }) => {
 		expect.assertions(1);
 
 		const envelope = JSON.stringify({
@@ -96,7 +96,7 @@ describe("envelope entries", () => {
 		expect(decodeEnvelope(envelope).entries.map(({ jobIndex }) => jobIndex)).toStrictEqual([0]);
 	});
 
-	it("should reject a bare non-error jest result: it names no job", () => {
+	it("should reject a bare non-error jest result: it names no job", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(() => decodeEnvelope(successJest())).toThrow(
@@ -104,7 +104,7 @@ describe("envelope entries", () => {
 		);
 	});
 
-	it("should reject an entry that names no job", () => {
+	it("should reject an entry that names no job", ({ expect }) => {
 		expect.assertions(1);
 
 		const envelope = JSON.stringify({ entries: [{ jestOutput: "{}", jobIndex: 1.5 }] });
@@ -112,7 +112,7 @@ describe("envelope entries", () => {
 		expect(() => decodeEnvelope(envelope)).toThrow(Error);
 	});
 
-	it("should surface a top-level whole-run error as a clean LuauScriptError", () => {
+	it("should surface a top-level whole-run error as a clean LuauScriptError", ({ expect }) => {
 		// A {success:false, err} payload is the runtime crashing before it emits
 		// any per-job entry. Surfacing it here (instead of rewrapping) keeps the
 		// caller's entries-vs-jobs count guard from masking the real cause.
@@ -129,7 +129,7 @@ describe("envelope entries", () => {
 		expect(thrown.message).toBe("boom");
 	});
 
-	it("should extract the leaf cause from a promise-trace whole-run error", () => {
+	it("should extract the leaf cause from a promise-trace whole-run error", ({ expect }) => {
 		expect.assertions(1);
 
 		const promiseTrace = [
@@ -150,7 +150,7 @@ describe("envelope entries", () => {
 		expect(thrown.message).toBe("LoadString must be enabled");
 	});
 
-	it("should propagate JSON.parse errors when the input is not valid JSON", () => {
+	it("should propagate JSON.parse errors when the input is not valid JSON", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(() => decodeEnvelope("{not valid json").entries).toThrow(SyntaxError);
@@ -158,7 +158,7 @@ describe("envelope entries", () => {
 });
 
 describe(buildProjectResult, () => {
-	it("should map a successful entry to the parsed Jest result", () => {
+	it("should map a successful entry to the parsed Jest result", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = buildProjectResult({
@@ -176,7 +176,7 @@ describe(buildProjectResult, () => {
 		});
 	});
 
-	it("should use the per-entry gameOutput when present", () => {
+	it("should use the per-entry gameOutput when present", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = buildProjectResult({
@@ -187,7 +187,7 @@ describe(buildProjectResult, () => {
 		expect(result.gameOutput).toBe("per-entry-output");
 	});
 
-	it("should fall back to fallbackGameOutput when the entry has no gameOutput", () => {
+	it("should fall back to fallbackGameOutput when the entry has no gameOutput", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = buildProjectResult({
@@ -198,7 +198,9 @@ describe(buildProjectResult, () => {
 		expect(result.gameOutput).toBe("fallback-output");
 	});
 
-	it("should convert setupSeconds to setupMs by multiplying by 1000 and rounding", () => {
+	it("should convert setupSeconds to setupMs by multiplying by 1000 and rounding", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const result = buildProjectResult({
@@ -209,7 +211,9 @@ describe(buildProjectResult, () => {
 		expect(result.setupMs).toBe(1235);
 	});
 
-	it("should leave setupMs undefined when parseJestOutput returns no setupSeconds", () => {
+	it("should leave setupMs undefined when parseJestOutput returns no setupSeconds", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const result = buildProjectResult({
@@ -220,7 +224,7 @@ describe(buildProjectResult, () => {
 		expect(result.setupMs).toBeUndefined();
 	});
 
-	it("should pass through coverageData and snapshotWrites from parseJestOutput", () => {
+	it("should pass through coverageData and snapshotWrites from parseJestOutput", ({ expect }) => {
 		expect.assertions(2);
 
 		const result = buildProjectResult({
@@ -243,7 +247,9 @@ describe(buildProjectResult, () => {
 		});
 	});
 
-	it("should attach the resolved gameOutput to LuauScriptError when parseJestOutput throws it", () => {
+	it("should attach the resolved gameOutput to LuauScriptError when parseJestOutput throws it", ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const errorPayload = JSON.stringify({ err: "boom", success: false });
@@ -261,7 +267,9 @@ describe(buildProjectResult, () => {
 		expect(thrown.gameOutput).toBe("fallback-output");
 	});
 
-	it("should prefer per-entry gameOutput over the backend fallback on the failure path", () => {
+	it("should prefer per-entry gameOutput over the backend fallback on the failure path", ({
+		expect,
+	}) => {
 		// Regression: luau/staging/entry.luau now installs an interceptWriteable
 		// around runEntry so per-pkg failures carry captured stdout
 		// (e.g. "No tests found, exiting with code 1") in `entry.gameOutput`.
@@ -290,7 +298,9 @@ describe(buildProjectResult, () => {
 		expect(thrown.gameOutput).toBe(capturedStdout);
 	});
 
-	it("should extract trailing cause when entry encodes err as a Promise-trace string", () => {
+	it("should extract trailing cause when entry encodes err as a Promise-trace string", ({
+		expect,
+	}) => {
 		// Regression: workspace materializer (luau/staging/entry.luau) encodes
 		// per-package failures as { success: false, err: tostring(promiseError)
 		// }. buildProjectResult must surface the leaf cause and attach gameOutput
@@ -321,7 +331,9 @@ describe(buildProjectResult, () => {
 		expect(thrown.gameOutput).toBe("No tests found");
 	});
 
-	it("should propagate non-LuauScriptError errors from parseJestOutput unchanged", () => {
+	it("should propagate non-LuauScriptError errors from parseJestOutput unchanged", ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const thrown = captureThrown(() => {
@@ -337,7 +349,7 @@ describe(buildProjectResult, () => {
 });
 
 describe(decodeEnvelope, () => {
-	it("should report a task that stopped on a failing package", () => {
+	it("should report a task that stopped on a failing package", ({ expect }) => {
 		expect.assertions(1);
 
 		const jestOutput = JSON.stringify({
@@ -348,7 +360,7 @@ describe(decodeEnvelope, () => {
 		expect(decodeEnvelope(jestOutput).bailed).toBeTrue();
 	});
 
-	it("should report a task that ran to the end", () => {
+	it("should report a task that ran to the end", ({ expect }) => {
 		expect.assertions(1);
 
 		const jestOutput = JSON.stringify({
@@ -359,7 +371,7 @@ describe(decodeEnvelope, () => {
 		expect(decodeEnvelope(jestOutput).bailed).toBeFalse();
 	});
 
-	it("should treat a missing bailed flag as no bail", () => {
+	it("should treat a missing bailed flag as no bail", ({ expect }) => {
 		expect.assertions(1);
 
 		const jestOutput = JSON.stringify({
@@ -371,7 +383,7 @@ describe(decodeEnvelope, () => {
 });
 
 describe("timed-out entries", () => {
-	it("should mark the raised error as a timeout so the report can say so", () => {
+	it("should mark the raised error as a timeout so the report can say so", ({ expect }) => {
 		expect.assertions(2);
 
 		const thrown = captureThrown(() => {
@@ -395,7 +407,7 @@ describe("timed-out entries", () => {
 		);
 	});
 
-	it("should leave an ordinary script failure unmarked", () => {
+	it("should leave an ordinary script failure unmarked", ({ expect }) => {
 		expect.assertions(1);
 
 		const thrown = captureThrown(() => {
@@ -412,7 +424,7 @@ describe("timed-out entries", () => {
 });
 
 describe(isEnvelopeDeferred, () => {
-	it("should report a task that stopped with queued work outstanding", () => {
+	it("should report a task that stopped with queued work outstanding", ({ expect }) => {
 		expect.assertions(1);
 
 		const jestOutput = JSON.stringify({
@@ -423,7 +435,7 @@ describe(isEnvelopeDeferred, () => {
 		expect(isEnvelopeDeferred(jestOutput)).toBeTrue();
 	});
 
-	it("should report a task that drained the queue", () => {
+	it("should report a task that drained the queue", ({ expect }) => {
 		expect.assertions(1);
 
 		const jestOutput = JSON.stringify({
@@ -434,7 +446,7 @@ describe(isEnvelopeDeferred, () => {
 		expect(isEnvelopeDeferred(jestOutput)).toBeFalse();
 	});
 
-	it("should treat a missing deferred flag as nothing outstanding", () => {
+	it("should treat a missing deferred flag as nothing outstanding", ({ expect }) => {
 		expect.assertions(1);
 
 		const jestOutput = JSON.stringify({
@@ -448,7 +460,7 @@ describe(isEnvelopeDeferred, () => {
 	// work. Throwing there would be swallowed as a task error, so a broken
 	// payload must read as "nothing outstanding" and leave the strict parse
 	// after the pool settles to surface the real failure.
-	it("should treat malformed output as nothing outstanding", () => {
+	it("should treat malformed output as nothing outstanding", ({ expect }) => {
 		expect.assertions(2);
 
 		expect(isEnvelopeDeferred("not json at all")).toBeFalse();

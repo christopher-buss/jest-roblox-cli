@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import {
 	fillPlaceholders,
@@ -11,7 +11,7 @@ const MODULE_SOURCE = readLuauModule("../plugin/src/reconnect-loop.luau");
 const HARNESS = readHarness("reconnect-loop");
 
 describe("edit-mode plugin reconnect loop under lute", () => {
-	it("should pass the reconnect-loop harness assertions", () => {
+	it("should pass the reconnect-loop harness assertions", ({ expect }) => {
 		expect.assertions(1);
 
 		const script = fillPlaceholders(HARNESS, { __MODULE__: MODULE_SOURCE });

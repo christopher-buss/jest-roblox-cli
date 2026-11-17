@@ -1,5 +1,5 @@
 import * as path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import type { RojoRequireResolver } from "./rojo-requires.ts";
@@ -71,7 +71,7 @@ function resolveFrom({
 }
 
 describe(createRojoRequireResolver, () => {
-	it("should resolve a script-relative instance path", () => {
+	it("should resolve a script-relative instance path", ({ expect }) => {
 		expect.assertions(1);
 
 		const resolved = resolveFrom({
@@ -88,7 +88,7 @@ describe(createRojoRequireResolver, () => {
 		expect(resolved).toBe(at("out/sibling.luau"));
 	});
 
-	it("should resolve a folder to its init module", () => {
+	it("should resolve a folder to its init module", ({ expect }) => {
 		expect.assertions(1);
 
 		const resolved = resolveFrom({
@@ -102,7 +102,7 @@ describe(createRojoRequireResolver, () => {
 		expect(resolved).toBe(at("out/feature/init.luau"));
 	});
 
-	it("should resolve a game:GetService path", () => {
+	it("should resolve a game:GetService path", ({ expect }) => {
 		expect.assertions(1);
 
 		const resolved = resolveFrom({
@@ -124,7 +124,7 @@ describe(createRojoRequireResolver, () => {
 		expect(resolved).toBe(at("out/feature/part.luau"));
 	});
 
-	it("should resolve a TS.import from its base and child names", () => {
+	it("should resolve a TS.import from its base and child names", ({ expect }) => {
 		expect.assertions(1);
 
 		const resolved = resolveFrom({
@@ -139,7 +139,7 @@ describe(createRojoRequireResolver, () => {
 		expect(resolved).toBe(at("out/feature/part.luau"));
 	});
 
-	it("should resolve a TS.getModule package through the nearest node_modules", () => {
+	it("should resolve a TS.getModule package through the nearest node_modules", ({ expect }) => {
 		expect.assertions(1);
 
 		const resolved = resolveFrom({
@@ -153,7 +153,7 @@ describe(createRojoRequireResolver, () => {
 		expect(resolved).toBe(at("node_modules/@rbxts/pkg/src/init.lua"));
 	});
 
-	it("should read a TS.getModule package with no scope as an @rbxts one", () => {
+	it("should read a TS.getModule package with no scope as an @rbxts one", ({ expect }) => {
 		expect.assertions(1);
 
 		const resolved = resolveFrom({
@@ -167,7 +167,7 @@ describe(createRojoRequireResolver, () => {
 		expect(resolved).toBe(at("node_modules/@rbxts/pkg/src/init.lua"));
 	});
 
-	it("should leave a path above the DataModel unresolved", () => {
+	it("should leave a path above the DataModel unresolved", ({ expect }) => {
 		expect.assertions(1);
 
 		const resolved = resolveFrom({
@@ -192,7 +192,7 @@ describe(createRojoRequireResolver, () => {
 		expect(resolved).toBeUndefined();
 	});
 
-	it("should leave a path with no module unresolved", () => {
+	it("should leave a path with no module unresolved", ({ expect }) => {
 		expect.assertions(1);
 
 		const resolved = resolveFrom({
@@ -209,7 +209,7 @@ describe(createRojoRequireResolver, () => {
 		expect(resolved).toBeUndefined();
 	});
 
-	it("should leave a script path from a file outside the Rojo tree unresolved", () => {
+	it("should leave a script path from a file outside the Rojo tree unresolved", ({ expect }) => {
 		expect.assertions(1);
 
 		const resolved = resolveFrom({
@@ -223,7 +223,7 @@ describe(createRojoRequireResolver, () => {
 		expect(resolved).toBeUndefined();
 	});
 
-	it("should resolve a Lua file the project mounts on its own", () => {
+	it("should resolve a Lua file the project mounts on its own", ({ expect }) => {
 		expect.assertions(1);
 
 		const resolved = resolveFrom({
@@ -254,7 +254,7 @@ describe(createRojoRequireResolver, () => {
 		expect(resolved).toBe(at("include/RuntimeLib.lua"));
 	});
 
-	it("should skip a mount with nothing on disk", () => {
+	it("should skip a mount with nothing on disk", ({ expect }) => {
 		expect.assertions(1);
 
 		const resolved = resolveFrom({
@@ -272,7 +272,7 @@ describe(createRojoRequireResolver, () => {
 		expect(resolved).toBe(at("out/sibling.luau"));
 	});
 
-	it("should leave a TS.import from a file outside the Rojo tree unresolved", () => {
+	it("should leave a TS.import from a file outside the Rojo tree unresolved", ({ expect }) => {
 		expect.assertions(1);
 
 		const resolved = resolveFrom({
@@ -287,13 +287,13 @@ describe(createRojoRequireResolver, () => {
 		expect(resolved).toBeUndefined();
 	});
 
-	it("should leave a package from a file outside the Rojo tree unresolved", () => {
+	it("should leave a package from a file outside the Rojo tree unresolved", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(resolveFrom({ call: PACKAGE_MODULE, file: "elsewhere.luau" })).toBeUndefined();
 	});
 
-	it("should leave a package no node_modules holds unresolved", () => {
+	it("should leave a package no node_modules holds unresolved", ({ expect }) => {
 		expect.assertions(1);
 
 		const resolved = resolveFrom({
@@ -307,7 +307,7 @@ describe(createRojoRequireResolver, () => {
 		expect(resolved).toBeUndefined();
 	});
 
-	it("should resolve only Luau modules", () => {
+	it("should resolve only Luau modules", ({ expect }) => {
 		expect.assertions(1);
 
 		const resolved = resolveFrom({
@@ -325,7 +325,7 @@ describe(createRojoRequireResolver, () => {
 		expect(resolved).toBeUndefined();
 	});
 
-	it("should find a package in a node_modules at the root of the tree", () => {
+	it("should find a package in a node_modules at the root of the tree", ({ expect }) => {
 		expect.assertions(1);
 
 		const resolved = resolveFrom({
@@ -344,7 +344,7 @@ describe(createRojoRequireResolver, () => {
 		expect(resolved).toBe(at("node_modules/@rbxts/pkg/src/init.lua"));
 	});
 
-	it("should follow a linked package folder", () => {
+	it("should follow a linked package folder", ({ expect }) => {
 		expect.assertions(1);
 
 		const resolved = resolveFrom({
@@ -357,7 +357,7 @@ describe(createRojoRequireResolver, () => {
 		expect(resolved).toBe(at("node_modules/@rbxts/linked/src/init.luau"));
 	});
 
-	it("should list a module reached only through a linked file", () => {
+	it("should list a module reached only through a linked file", ({ expect }) => {
 		expect.assertions(1);
 
 		const resolved = resolveFrom({
@@ -376,7 +376,7 @@ describe(createRojoRequireResolver, () => {
 		expect(resolved).toBe(at("out/linked.luau"));
 	});
 
-	it("should not list a linked file that is not Luau", () => {
+	it("should not list a linked file that is not Luau", ({ expect }) => {
 		expect.assertions(1);
 
 		const resolved = resolveFrom({
@@ -395,7 +395,7 @@ describe(createRojoRequireResolver, () => {
 		expect(resolved).toBeUndefined();
 	});
 
-	it("should not list a link with nothing at its target", () => {
+	it("should not list a link with nothing at its target", ({ expect }) => {
 		expect.assertions(1);
 
 		const resolved = resolveFrom({
@@ -413,7 +413,7 @@ describe(createRojoRequireResolver, () => {
 		expect(resolved).toBeUndefined();
 	});
 
-	it("should not list a mounted Luau file with nothing on disk", () => {
+	it("should not list a mounted Luau file with nothing on disk", ({ expect }) => {
 		expect.assertions(1);
 
 		const resolved = resolveFrom({

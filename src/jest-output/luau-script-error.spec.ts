@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { LuauScriptError } from "./luau-script-error.ts";
 
@@ -11,7 +11,7 @@ describe(LuauScriptError, () => {
 		["TaskScript:7 failed", "TaskScript:7 failed"],
 	] as const)(
 		"should normalize only a leading numeric TaskScript frame in %j",
-		([raw, expected]) => {
+		([raw, expected], { expect }) => {
 			expect.assertions(1);
 
 			const error = new LuauScriptError(raw);

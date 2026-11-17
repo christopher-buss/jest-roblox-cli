@@ -1,7 +1,7 @@
 import { fromAny } from "@total-typescript/shoehorn";
 
 import process from "node:process";
-import { assert, describe, expect, it, onTestFinished, vi } from "vitest";
+import { assert, describe, it, type TestContext, vi } from "vitest";
 
 import { createStdoutRunProgress } from "./reporter.ts";
 
@@ -40,8 +40,11 @@ function createHarness(overrides: Partial<RunProgressOptions> = {}) {
 	};
 }
 
-/** Presents both standard streams as a terminal for the length of one test. */
-function pretendTerminal(): void {
+/**
+ * Presents both standard streams as a terminal for the length of one test.
+ * @param onTestFinished - Restores the streams after the test.
+ */
+function pretendTerminal(onTestFinished: TestContext["onTestFinished"]): void {
 	for (const stream of [process.stdout, process.stderr]) {
 		const wasTTY = stream.isTTY;
 		Object.defineProperty(stream, "isTTY", { configurable: true, value: true });
@@ -52,24 +55,27 @@ function pretendTerminal(): void {
 }
 
 describe("createStdoutRunProgress with injected options", () => {
-	it.for([false, true])("should preserve a guarded stream's %s write result", (accepted) => {
-		expect.assertions(2);
+	it.for([false, true])(
+		"should preserve a guarded stream's %s write result",
+		(accepted, { expect, onTestFinished }) => {
+			expect.assertions(2);
 
-		const stream = { write: () => accepted };
-		const { progress } = createHarness({ guarded: [stream], live: true });
-		onTestFinished(() => {
-			progress.finish();
-		});
-		progress.reveal({ color: false });
+			const stream = { write: () => accepted };
+			const { progress } = createHarness({ guarded: [stream], live: true });
+			onTestFinished(() => {
+				progress.finish();
+			});
+			progress.reveal({ color: false });
 
-		expect(stream.write()).toBe(accepted);
+			expect(stream.write()).toBe(accepted);
 
-		progress.begin("tests");
+			progress.begin("tests");
 
-		expect(stream.write()).toBe(accepted);
-	});
+			expect(stream.write()).toBe(accepted);
+		},
+	);
 
-	it("should leave settled live output untouched when finishing", () => {
+	it("should leave settled live output untouched when finishing", ({ expect }) => {
 		expect.assertions(1);
 
 		const { progress, writes } = createHarness({ live: true });
@@ -81,7 +87,10 @@ describe("createStdoutRunProgress with injected options", () => {
 		expect(writes).toStrictEqual(settled);
 	});
 
-	it("should let the process exit while its animation timer is active", () => {
+	it("should let the process exit while its animation timer is active", ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(1);
 
 		const intervals = vi.spyOn(globalThis, "setInterval");
@@ -97,7 +106,7 @@ describe("createStdoutRunProgress with injected options", () => {
 		expect(created.value.hasRef()).toBeFalse();
 	});
 
-	it("should write nothing until the run header has been shown", () => {
+	it("should write nothing until the run header has been shown", ({ expect }) => {
 		expect.assertions(1);
 
 		const { progress, writes } = createHarness();
@@ -106,7 +115,7 @@ describe("createStdoutRunProgress with injected options", () => {
 		expect(writes).toStrictEqual([]);
 	});
 
-	it("should replay stages that already finished once the header is shown", () => {
+	it("should replay stages that already finished once the header is shown", ({ expect }) => {
 		expect.assertions(1);
 
 		const { advance, progress, writes } = createHarness();
@@ -118,7 +127,7 @@ describe("createStdoutRunProgress with injected options", () => {
 		expect(writes).toStrictEqual([" ✓ instrument   318 files  8.4s\n"]);
 	});
 
-	it("should replay finished stages only once however often the header lands", () => {
+	it("should replay finished stages only once however often the header lands", ({ expect }) => {
 		expect.assertions(1);
 
 		const { progress, writes } = createHarness();
@@ -129,7 +138,7 @@ describe("createStdoutRunProgress with injected options", () => {
 		expect(writes).toHaveLength(1);
 	});
 
-	it("should settle completed append-only output when the header arrives", () => {
+	it("should settle completed append-only output when the header arrives", ({ expect }) => {
 		expect.assertions(1);
 
 		const { progress, writes } = createHarness();
@@ -141,7 +150,7 @@ describe("createStdoutRunProgress with injected options", () => {
 		expect(writes).toStrictEqual(settled);
 	});
 
-	it("should announce a stage as it opens and again as it closes", () => {
+	it("should announce a stage as it opens and again as it closes", ({ expect }) => {
 		expect.assertions(1);
 
 		const { advance, progress, writes } = createHarness();
@@ -156,7 +165,7 @@ describe("createStdoutRunProgress with injected options", () => {
 		]);
 	});
 
-	it("should keep the first closing detail when a closer is called twice", () => {
+	it("should keep the first closing detail when a closer is called twice", ({ expect }) => {
 		expect.assertions(1);
 
 		const { progress, writes } = createHarness();
@@ -168,7 +177,7 @@ describe("createStdoutRunProgress with injected options", () => {
 		expect(writes).toStrictEqual([" → upload\n", " ✓ upload       version 88  0ms\n"]);
 	});
 
-	it("should carry a detail the work itself produced onto the closing line", () => {
+	it("should carry a detail the work itself produced onto the closing line", ({ expect }) => {
 		expect.assertions(1);
 
 		const { progress, writes } = createHarness();
@@ -182,7 +191,7 @@ describe("createStdoutRunProgress with injected options", () => {
 		expect(writes).toStrictEqual([" → build place\n", " ✓ build place  12.4 MB  0ms\n"]);
 	});
 
-	it("should ignore a detail for a stage that never opened", () => {
+	it("should ignore a detail for a stage that never opened", ({ expect }) => {
 		expect.assertions(1);
 
 		const { progress, writes } = createHarness();
@@ -192,7 +201,7 @@ describe("createStdoutRunProgress with injected options", () => {
 		expect(writes).toStrictEqual([]);
 	});
 
-	it("should report a stage that was over before it started as one line", () => {
+	it("should report a stage that was over before it started as one line", ({ expect }) => {
 		expect.assertions(1);
 
 		const { progress, writes } = createHarness();
@@ -202,7 +211,7 @@ describe("createStdoutRunProgress with injected options", () => {
 		expect(writes).toStrictEqual([" ✓ upload       cache hit, version 87  0ms\n"]);
 	});
 
-	it("should name the stage a run died inside", () => {
+	it("should name the stage a run died inside", ({ expect }) => {
 		expect.assertions(1);
 
 		const { progress, writes } = createHarness();
@@ -213,7 +222,7 @@ describe("createStdoutRunProgress with injected options", () => {
 		expect(writes.at(-1)).toBe(" · boot probe   version 88\n");
 	});
 
-	it("should keep a stage silent when the run never showed a header", () => {
+	it("should keep a stage silent when the run never showed a header", ({ expect }) => {
 		expect.assertions(1);
 
 		const { progress, writes } = createHarness();
@@ -223,7 +232,7 @@ describe("createStdoutRunProgress with injected options", () => {
 		expect(writes).toStrictEqual([]);
 	});
 
-	it("should let a foreign line straight through when no block is drawn", () => {
+	it("should let a foreign line straight through when no block is drawn", ({ expect }) => {
 		expect.assertions(1);
 
 		const { writeForeignLine, writes } = createHarness();
@@ -232,7 +241,7 @@ describe("createStdoutRunProgress with injected options", () => {
 		expect(writes).toStrictEqual([`${FOREIGN_LINE}\n`]);
 	});
 
-	it("should leave the scrollback alone in the append-only shape", () => {
+	it("should leave the scrollback alone in the append-only shape", ({ expect }) => {
 		expect.assertions(1);
 
 		const { progress, writeForeignLine, writes } = createHarness();
@@ -245,7 +254,7 @@ describe("createStdoutRunProgress with injected options", () => {
 		expect(writes.join("")).not.toContain(ESC);
 	});
 
-	it("should shorten a detail that would wrap the terminal", () => {
+	it("should shorten a detail that would wrap the terminal", ({ expect }) => {
 		expect.assertions(1);
 
 		const { progress, writes } = createHarness({ width: 40 });
@@ -255,7 +264,7 @@ describe("createStdoutRunProgress with injected options", () => {
 		expect(writes).toStrictEqual([" → upload       a-very-lo…\n"]);
 	});
 
-	it("should accumulate the time of a stage that runs more than once", () => {
+	it("should accumulate the time of a stage that runs more than once", ({ expect }) => {
 		expect.assertions(1);
 
 		const { advance, progress, writes } = createHarness();
@@ -270,7 +279,7 @@ describe("createStdoutRunProgress with injected options", () => {
 		expect(writes.at(-1)).toBe(" ✓ instrument   3 packages  2.0s\n");
 	});
 
-	it("should keep a detail that exactly fills the terminal", () => {
+	it("should keep a detail that exactly fills the terminal", ({ expect }) => {
 		expect.assertions(2);
 
 		const { progress, writes } = createHarness({ width: 40 });
@@ -284,7 +293,7 @@ describe("createStdoutRunProgress with injected options", () => {
 		expect(writes[1]).toBe(" → boot probe   012345678…\n");
 	});
 
-	it("should settle a stage the run finished before it ended", () => {
+	it("should settle a stage the run finished before it ended", ({ expect }) => {
 		expect.assertions(1);
 
 		const { progress, writes } = createHarness();
@@ -297,7 +306,7 @@ describe("createStdoutRunProgress with injected options", () => {
 		expect(writes).toHaveLength(settled);
 	});
 
-	it("should count the time a stage ran, not the clock it ran at", () => {
+	it("should count the time a stage ran, not the clock it ran at", ({ expect }) => {
 		expect.assertions(1);
 
 		const { advance, progress, writes } = createHarness();
@@ -310,7 +319,7 @@ describe("createStdoutRunProgress with injected options", () => {
 		expect(writes.at(-1)).toBe(" ✓ upload       1.2s\n");
 	});
 
-	it("should hold the block back until the header, however the run ends", () => {
+	it("should hold the block back until the header, however the run ends", ({ expect }) => {
 		expect.assertions(1);
 
 		const { progress, writes } = createHarness({ live: true });
@@ -321,7 +330,7 @@ describe("createStdoutRunProgress with injected options", () => {
 	});
 
 	describe("settling on the last stage", () => {
-		it("should say nothing more once the last stage is done", () => {
+		it("should say nothing more once the last stage is done", ({ expect }) => {
 			expect.assertions(1);
 
 			const { progress, writes } = createHarness();
@@ -338,7 +347,7 @@ describe("createStdoutRunProgress with injected options", () => {
 			expect(writes).toHaveLength(settled);
 		});
 
-		it("should let a foreign line straight through once it has settled", () => {
+		it("should let a foreign line straight through once it has settled", ({ expect }) => {
 			expect.assertions(1);
 
 			const { progress, writeForeignLine, writes } = createHarness({ live: true });
@@ -352,7 +361,10 @@ describe("createStdoutRunProgress with injected options", () => {
 			expect(writes.slice(settled)).toStrictEqual([`${FOREIGN_LINE}\n`]);
 		});
 
-		it("should let go of its timer once the last stage is done", () => {
+		it("should let go of its timer once the last stage is done", ({
+			expect,
+			onTestFinished,
+		}) => {
 			expect.assertions(2);
 
 			vi.useFakeTimers();
@@ -372,7 +384,7 @@ describe("createStdoutRunProgress with injected options", () => {
 			expect(vi.getTimerCount()).toBe(0);
 		});
 
-		it("should hand a guarded stream its own write back once it has settled", () => {
+		it("should hand a guarded stream its own write back once it has settled", ({ expect }) => {
 			expect.assertions(1);
 
 			const guarded = { write: () => true };
@@ -384,7 +396,7 @@ describe("createStdoutRunProgress with injected options", () => {
 			expect(guarded.write).toBe(ownWrite);
 		});
 
-		it("should settle a last stage that finished before the header landed", () => {
+		it("should settle a last stage that finished before the header landed", ({ expect }) => {
 			expect.assertions(1);
 
 			const { progress, writeForeignLine, writes } = createHarness({ live: true });
@@ -398,7 +410,7 @@ describe("createStdoutRunProgress with injected options", () => {
 	});
 
 	describe("repainting block", () => {
-		it("should stop animating once the run has ended", () => {
+		it("should stop animating once the run has ended", ({ expect, onTestFinished }) => {
 			expect.assertions(1);
 
 			vi.useFakeTimers();
@@ -415,7 +427,7 @@ describe("createStdoutRunProgress with injected options", () => {
 			expect(writes).toHaveLength(settled);
 		});
 
-		it("should show a running stage the time it has been running", () => {
+		it("should show a running stage the time it has been running", ({ expect }) => {
 			expect.assertions(1);
 
 			const { advance, progress, writes } = createHarness({ live: true });
@@ -427,7 +439,7 @@ describe("createStdoutRunProgress with injected options", () => {
 			expect(writes.at(-1)).toBe(`${ERASE_ONE_ROW} ⠋ run tests    42 projects  24.6s\n`);
 		});
 
-		it("should let go of its timer when the run ends", () => {
+		it("should let go of its timer when the run ends", ({ expect, onTestFinished }) => {
 			expect.assertions(2);
 
 			vi.useFakeTimers();
@@ -447,7 +459,7 @@ describe("createStdoutRunProgress with injected options", () => {
 			expect(vi.getTimerCount()).toBe(0);
 		});
 
-		it("should draw the stages a run already had when the header lands", () => {
+		it("should draw the stages a run already had when the header lands", ({ expect }) => {
 			expect.assertions(1);
 
 			const { progress, writes } = createHarness({ live: true });
@@ -457,7 +469,10 @@ describe("createStdoutRunProgress with injected options", () => {
 			expect(writes).toStrictEqual([" ✓ instrument   0ms\n"]);
 		});
 
-		it("should keep animating while one stage of several is open", () => {
+		it("should keep animating while one stage of several is open", ({
+			expect,
+			onTestFinished,
+		}) => {
 			expect.assertions(1);
 
 			vi.useFakeTimers();
@@ -475,7 +490,7 @@ describe("createStdoutRunProgress with injected options", () => {
 			expect(writes.length).toBeGreaterThan(settled);
 		});
 
-		it("should time a running stage from when it opened", () => {
+		it("should time a running stage from when it opened", ({ expect }) => {
 			expect.assertions(1);
 
 			const { advance, progress, writes } = createHarness({ live: true });
@@ -489,7 +504,7 @@ describe("createStdoutRunProgress with injected options", () => {
 			expect(writes.at(-1)).toBe(`${ERASE_ONE_ROW} ⠋ run tests    42 projects  2.0s\n`);
 		});
 
-		it("should redraw every row in place as stages progress", () => {
+		it("should redraw every row in place as stages progress", ({ expect }) => {
 			expect.assertions(1);
 
 			const { advance, progress, writes } = createHarness({ live: true });
@@ -506,7 +521,7 @@ describe("createStdoutRunProgress with injected options", () => {
 			]);
 		});
 
-		it("should erase only the rows already on screen when a stage joins", () => {
+		it("should erase only the rows already on screen when a stage joins", ({ expect }) => {
 			expect.assertions(1);
 
 			const { progress, writes } = createHarness({ live: true });
@@ -522,7 +537,7 @@ describe("createStdoutRunProgress with injected options", () => {
 			);
 		});
 
-		it("should clear the block around a foreign line and draw it again after", () => {
+		it("should clear the block around a foreign line and draw it again after", ({ expect }) => {
 			expect.assertions(1);
 
 			const { progress, writeForeignLine, writes } = createHarness({ live: true });
@@ -538,7 +553,10 @@ describe("createStdoutRunProgress with injected options", () => {
 			]);
 		});
 
-		it("should advance the spinner on its own while a stage is still open", () => {
+		it("should advance the spinner on its own while a stage is still open", ({
+			expect,
+			onTestFinished,
+		}) => {
 			expect.assertions(1);
 
 			vi.useFakeTimers();
@@ -554,7 +572,7 @@ describe("createStdoutRunProgress with injected options", () => {
 			expect(writes.at(1)).toBe(`${ERASE_ONE_ROW} ⠙ boot probe   version 88  0ms\n`);
 		});
 
-		it("should redraw the block when a stage reports what it produced", () => {
+		it("should redraw the block when a stage reports what it produced", ({ expect }) => {
 			expect.assertions(1);
 
 			const { progress, writes } = createHarness({ live: true });
@@ -565,7 +583,7 @@ describe("createStdoutRunProgress with injected options", () => {
 			expect(writes.at(-1)).toBe(`${ERASE_ONE_ROW} ⠋ build place  12.4 MB  0ms\n`);
 		});
 
-		it("should hold the frame while no stage is open", () => {
+		it("should hold the frame while no stage is open", ({ expect, onTestFinished }) => {
 			expect.assertions(1);
 
 			vi.useFakeTimers();
@@ -581,7 +599,7 @@ describe("createStdoutRunProgress with injected options", () => {
 			expect(writes).toHaveLength(settled);
 		});
 
-		it("should lift a guarded stream's write clear of the block", () => {
+		it("should lift a guarded stream's write clear of the block", ({ expect }) => {
 			expect.assertions(2);
 
 			const written: Array<string> = [];
@@ -606,7 +624,7 @@ describe("createStdoutRunProgress with injected options", () => {
 			expect(written).toStrictEqual(["Warning: cached place version is gone\n"]);
 		});
 
-		it("should hand a guarded stream its own write back when the run ends", () => {
+		it("should hand a guarded stream its own write back when the run ends", ({ expect }) => {
 			expect.assertions(1);
 
 			const guarded = { write: () => true };
@@ -621,7 +639,7 @@ describe("createStdoutRunProgress with injected options", () => {
 });
 
 describe(createStdoutRunProgress, () => {
-	it("should announce stages on stdout", () => {
+	it("should announce stages on stdout", ({ expect, onTestFinished }) => {
 		expect.assertions(1);
 
 		const stdout = vi.spyOn(process.stdout, "write").mockReturnValue(true);
@@ -637,10 +655,13 @@ describe(createStdoutRunProgress, () => {
 		expect(stdout).toHaveBeenCalledWith(expect.stringContaining("upload"));
 	});
 
-	it("should guard stderr while it shares the terminal with the block", () => {
+	it("should guard stderr while it shares the terminal with the block", ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(2);
 
-		pretendTerminal();
+		pretendTerminal(onTestFinished);
 		const stdout = vi.spyOn(process.stdout, "write").mockReturnValue(true);
 		onTestFinished(() => {
 			stdout.mockRestore();

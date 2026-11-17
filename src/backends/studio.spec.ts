@@ -2,7 +2,7 @@ import { fromPartial } from "@total-typescript/shoehorn";
 
 import { type } from "arktype";
 import { Buffer } from "node:buffer";
-import { assert, describe, expect, it, onTestFinished, vi } from "vitest";
+import { assert, describe, it, type TestContext, vi } from "vitest";
 
 import type { MockWebSocketServer } from "#test/mocks/mock-web-socket-server.ts";
 import {
@@ -80,9 +80,17 @@ function connectPlugin({
 /**
  * Fake the timers the plugin selection runs on, for a test that means to reach
  * the end of a window rather than wait one out.
+ * @param onTestFinished - Restores the real timers after the test.
  */
-function useSelectionTimers(): void {
+function useSelectionTimers(onTestFinished: TestContext["onTestFinished"]): void {
 	vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+	onTestFinished(() => {
+		vi.useRealTimers();
+	});
+}
+
+function useClockTimers(onTestFinished: TestContext["onTestFinished"]): void {
+	vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
 	onTestFinished(() => {
 		vi.useRealTimers();
 	});
@@ -232,7 +240,7 @@ function connectAndReply(wss: MockWebSocketServer, reply: ReplyOptions): MockWeb
 }
 
 describe("protocol version handshake", () => {
-	it("should include protocolVersion in the run_tests payload", async () => {
+	it("should include protocolVersion in the run_tests payload", async ({ expect }) => {
 		expect.assertions(1);
 
 		const backend = new StudioBackend({
@@ -269,10 +277,13 @@ describe("protocol version handshake", () => {
 		expect(captured!.protocolVersion).toBeTypeOf("number");
 	});
 
-	it("should reject a response that omits the protocolVersion echo", async () => {
+	it("should reject a response that omits the protocolVersion echo", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(2);
 
-		useSelectionTimers();
+		useSelectionTimers(onTestFinished);
 
 		// A plugin that announces a protocol it does not actually serve:
 		// selected on its announcement, then answering like a pre-v2 plugin
@@ -293,7 +304,7 @@ describe("protocol version handshake", () => {
 		expect(vi.getTimerCount()).toBe(0);
 	});
 
-	it("should name the Studio backend when the runner defers jobs", async () => {
+	it("should name the Studio backend when the runner defers jobs", async ({ expect }) => {
 		expect.assertions(1);
 
 		const promise = startWithReplyAsync((requestId) => {
@@ -311,7 +322,7 @@ describe("protocol version handshake", () => {
 		);
 	});
 
-	it("should reject an echo from a protocol older than the current one", async () => {
+	it("should reject an echo from a protocol older than the current one", async ({ expect }) => {
 		// A plugin that echoes an older protocol than it announced predates this
 		// CLI and must be rejected so the user upgrades rather than running with
 		// stale runtime semantics.
@@ -330,17 +341,20 @@ describe("protocol version handshake", () => {
 		await expect(promise).rejects.toThrow(/invalid plugin message/i);
 	});
 
-	it("should name every connected plugin when none of them match", async () => {
+	it("should name every connected plugin when none of them match", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(4);
 
 		// Fake timers: the grace window the CLI holds open for announcements is
 		// the only thing this waits on, and it is a real 750ms otherwise.
-		useSelectionTimers();
+		useSelectionTimers(onTestFinished);
 		const backend = new StudioBackend({
 			port: 0,
 			webSocketServerFactory,
 		});
-		const settled = backend.runTestsAsync(singleJobOptions).catch((err: unknown) => err);
+		const settled = backend.runTestsAsync(singleJobOptions).catch((err) => err);
 
 		const wss = getLastCreatedServer()!;
 		connectPlugin({
@@ -362,7 +376,7 @@ describe("protocol version handshake", () => {
 		});
 		await vi.runAllTimersAsync();
 
-		const caught: unknown = await settled;
+		const caught = await settled;
 		assert(caught instanceof Error);
 
 		expect(caught.message).toContain("No compatible jest-roblox Studio plugin");
@@ -375,7 +389,7 @@ describe("protocol version handshake", () => {
 		expect(caught.message).toContain("remove the other copies");
 	});
 
-	it("should throw a clear upgrade error on version_mismatch response", async () => {
+	it("should throw a clear upgrade error on version_mismatch response", async ({ expect }) => {
 		expect.assertions(1);
 
 		const promise = startWithReplyAsync((requestId) => {
@@ -396,7 +410,9 @@ describe("protocol version handshake", () => {
 });
 
 describe(StudioBackend, () => {
-	it("should send one envelope carrying a configs array with one entry per job", async () => {
+	it("should send one envelope carrying a configs array with one entry per job", async ({
+		expect,
+	}) => {
 		expect.assertions(3);
 
 		const backend = new StudioBackend({
@@ -472,7 +488,7 @@ describe(StudioBackend, () => {
 		// The CLI resolves the VM count before the plugin sees it: `"auto"` is
 		// one VM per config, a large count clamps to the config count, and a
 		// single VM leaves the field off (the sequential path).
-		it("should send the run budget the coordinator must finish inside", async () => {
+		it("should send the run budget the coordinator must finish inside", async ({ expect }) => {
 			expect.assertions(1);
 
 			const captured = await captureVmRequestAsync(2, 2);
@@ -480,7 +496,7 @@ describe(StudioBackend, () => {
 			expect(captured.runBudgetMs).toBe(RUN_TIMEOUT);
 		});
 
-		it("should leave the run budget off a sequential run", async () => {
+		it("should leave the run budget off a sequential run", async ({ expect }) => {
 			expect.assertions(1);
 
 			const captured = await captureVmRequestAsync(2, undefined);
@@ -497,7 +513,7 @@ describe(StudioBackend, () => {
 			{ expected: 4, jobCount: 6, requested: "auto" as const },
 		])(
 			"should send vmParallel $expected for $requested over $jobCount jobs",
-			async ({ expected, jobCount, requested }) => {
+			async ({ expected, jobCount, requested }, { expect }) => {
 				expect.assertions(1);
 
 				const captured = await captureVmRequestAsync(jobCount, requested);
@@ -507,7 +523,7 @@ describe(StudioBackend, () => {
 		);
 	});
 
-	it("should send a workspace entries payload when jobs carry pkg", async () => {
+	it("should send a workspace entries payload when jobs carry pkg", async ({ expect }) => {
 		// The same run-mode dispatch lights up workspace in the attached
 		// (WebSocket) studio backend. A workspace run sends `workspace.entries`,
 		// not `configs`. The plugin's run-mode runner dispatches on
@@ -567,7 +583,9 @@ describe(StudioBackend, () => {
 		expect(captured!.workspace.resultBudgetBytes).toBe(Number.MAX_SAFE_INTEGER);
 	});
 
-	it("should tell the workspace runner to stop on the first failing package under --bail", async () => {
+	it("should tell the workspace runner to stop on the first failing package under --bail", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const backend = new StudioBackend({
@@ -588,7 +606,7 @@ describe(StudioBackend, () => {
 		expect(request.workspace.bail).toBeTrue();
 	});
 
-	it("should return rawResults in the same order as the submitted jobs", async () => {
+	it("should return rawResults in the same order as the submitted jobs", async ({ expect }) => {
 		expect.assertions(2);
 
 		const backend = new StudioBackend({
@@ -614,7 +632,10 @@ describe(StudioBackend, () => {
 		expect(rawResults.map((raw) => raw.entry.gameOutput)).toStrictEqual(["11", "22", "33"]);
 	});
 
-	it("should populate timing.executionMs on the BackendResult", async () => {
+	it("should populate timing.executionMs on the BackendResult", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(1);
 
 		const now = vi
@@ -640,10 +661,13 @@ describe(StudioBackend, () => {
 		expect(result.timing.executionMs).toBe(45);
 	});
 
-	it("should close the tests progress stage after results arrive", async () => {
+	it("should close the tests progress stage after results arrive", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(3);
 
-		useSelectionTimers();
+		useSelectionTimers(onTestFinished);
 
 		const done = vi.fn<() => void>();
 		const begin = vi.fn<RunProgress["begin"]>(() => done);
@@ -666,7 +690,7 @@ describe(StudioBackend, () => {
 		expect(vi.getTimerCount()).toBe(0);
 	});
 
-	it("should surface the fallback gameOutput on each rawResult", async () => {
+	it("should surface the fallback gameOutput on each rawResult", async ({ expect }) => {
 		expect.assertions(1);
 
 		const fallback = JSON.stringify([{ message: "fallback", messageType: 0, timestamp: 0 }]);
@@ -685,17 +709,15 @@ describe(StudioBackend, () => {
 		expect(rawResults[0]!.fallbackGameOutput).toBe(fallback);
 	});
 
-	it("should throw on connection timeout", async () => {
+	it("should throw on connection timeout", async ({ expect, onTestFinished }) => {
 		expect.assertions(1);
 
-		useSelectionTimers();
+		useSelectionTimers(onTestFinished);
 		const backend = new StudioBackend({ port: 0, webSocketServerFactory });
 
-		const settled = backend
-			.runTestsAsync(timed(singleJobOptions, 100))
-			.catch((err: unknown) => err);
+		const settled = backend.runTestsAsync(timed(singleJobOptions, 100)).catch((err) => err);
 		await vi.runAllTimersAsync();
-		const caught: unknown = await settled;
+		const caught = await settled;
 
 		assert(caught instanceof Error);
 
@@ -704,38 +726,37 @@ describe(StudioBackend, () => {
 		);
 	});
 
-	it("should throw when the selected plugin never returns results", async () => {
+	it("should throw when the selected plugin never returns results", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		// Distinct from the connection timeout: a plugin was found and asked,
 		// and then went quiet. Saying "waiting for a connection" here would
 		// send the user looking for the wrong fault.
 		expect.assertions(1);
 
-		useSelectionTimers();
+		useSelectionTimers(onTestFinished);
 		const backend = new StudioBackend({ port: 0, webSocketServerFactory });
-		const settled = backend
-			.runTestsAsync(timed(singleJobOptions, 100))
-			.catch((err: unknown) => err);
+		const settled = backend.runTestsAsync(timed(singleJobOptions, 100)).catch((err) => err);
 
 		connectPlugin({ wss: getLastCreatedServer()! });
 		await vi.runAllTimersAsync();
-		const caught: unknown = await settled;
+		const caught = await settled;
 
 		assert(caught instanceof Error);
 
 		expect(caught.message).toBe("Timed out waiting for the Studio plugin to return results");
 	});
 
-	it("should end the run at one timeout, counted from before the plugin connected", async () => {
+	it("should end the run at one timeout, counted from before the plugin connected", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(1);
 
-		vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
-		onTestFinished(() => {
-			vi.useRealTimers();
-		});
+		useClockTimers(onTestFinished);
 		const backend = new StudioBackend({ port: 0, webSocketServerFactory });
-		const settled = backend
-			.runTestsAsync(timed(singleJobOptions, 10_000))
-			.catch((err: unknown) => err);
+		const settled = backend.runTestsAsync(timed(singleJobOptions, 10_000)).catch((err) => err);
 
 		await vi.advanceTimersByTimeAsync(6000);
 		connectPlugin({ wss: getLastCreatedServer()! });
@@ -747,13 +768,13 @@ describe(StudioBackend, () => {
 		);
 	});
 
-	it("should accept results that arrive just before the one timeout ends", async () => {
+	it("should accept results that arrive just before the one timeout ends", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(1);
 
-		vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
-		onTestFinished(() => {
-			vi.useRealTimers();
-		});
+		useClockTimers(onTestFinished);
 		const backend = new StudioBackend({ port: 0, webSocketServerFactory });
 		const settled = backend.runTestsAsync(timed(singleJobOptions, 10_000));
 
@@ -781,10 +802,13 @@ describe(StudioBackend, () => {
 		await expect(settled).resolves.toHaveProperty("rawResults", [expect.anything()]);
 	});
 
-	it("should throw when the plugin disconnects before sending results", async () => {
+	it("should throw when the plugin disconnects before sending results", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(2);
 
-		useSelectionTimers();
+		useSelectionTimers(onTestFinished);
 
 		const promise = startWithSocketAsync((socket) => {
 			socket.emit("close");
@@ -797,7 +821,7 @@ describe(StudioBackend, () => {
 		expect(vi.getTimerCount()).toBe(0);
 	});
 
-	it("should reject when the plugin sends a malformed message", async () => {
+	it("should reject when the plugin sends a malformed message", async ({ expect }) => {
 		expect.assertions(1);
 
 		const promise = startWithSocketAsync((socket) => {
@@ -807,10 +831,10 @@ describe(StudioBackend, () => {
 		await expect(promise).rejects.toThrowWithMessage(Error, /Invalid plugin message/);
 	});
 
-	it("should reject when the websocket emits an error", async () => {
+	it("should reject when the websocket emits an error", async ({ expect, onTestFinished }) => {
 		expect.assertions(2);
 
-		useSelectionTimers();
+		useSelectionTimers(onTestFinished);
 
 		const promise = startWithSocketAsync((socket) => {
 			socket.emit("error", new Error("socket error"));
@@ -820,7 +844,7 @@ describe(StudioBackend, () => {
 		expect(vi.getTimerCount()).toBe(0);
 	});
 
-	it("should reject when the server emits an error", async () => {
+	it("should reject when the server emits an error", async ({ expect }) => {
 		expect.assertions(1);
 
 		const backend = new StudioBackend({
@@ -838,7 +862,7 @@ describe(StudioBackend, () => {
 		await expect(promise).rejects.toThrowWithMessage(Error, "server error");
 	});
 
-	it("should ignore messages whose requestId does not match", async () => {
+	it("should ignore messages whose requestId does not match", async ({ expect }) => {
 		expect.assertions(1);
 
 		const backend = new StudioBackend({
@@ -885,7 +909,9 @@ describe(StudioBackend, () => {
 		expect(rawResults).toHaveLength(1);
 	});
 
-	it("should reuse the same WebSocketServer across successive runTests calls", async () => {
+	it("should reuse the same WebSocketServer across successive runTests calls", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const backend = new StudioBackend({
@@ -907,7 +933,9 @@ describe(StudioBackend, () => {
 		expect(firstWss.close).not.toHaveBeenCalled();
 	});
 
-	it("should surface a top-level whole-run error instead of the count-mismatch guard", async () => {
+	it("should surface a top-level whole-run error instead of the count-mismatch guard", async ({
+		expect,
+	}) => {
 		// Regression: a wholesale failure (e.g. LoadString disabled) returns a
 		// bare {success:false, err} for the whole request, not one entry per job.
 		// The entries-vs-jobs guard used to mask the real cause behind
@@ -934,7 +962,7 @@ describe(StudioBackend, () => {
 		await expect(promise).rejects.not.toThrow(/entries but request had/);
 	});
 
-	it("should terminate the underlying WebSocketServer via close()", async () => {
+	it("should terminate the underlying WebSocketServer via close()", async ({ expect }) => {
 		expect.assertions(2);
 
 		const backend = new StudioBackend({
@@ -956,7 +984,10 @@ describe(StudioBackend, () => {
 		expect(wss.close).toHaveBeenCalledExactlyOnceWith();
 	});
 
-	it("should listen on a real server when given no server factory", async () => {
+	it("should listen on a real server when given no server factory", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(1);
 
 		const backend = new StudioBackend({ port: 0 });
@@ -970,7 +1001,9 @@ describe(StudioBackend, () => {
 		);
 	});
 
-	it("should terminate the connected plugin socket on close so the CLI can exit", async () => {
+	it("should terminate the connected plugin socket on close so the CLI can exit", async ({
+		expect,
+	}) => {
 		// Regression: close() only closed the server, leaving the plugin socket
 		// open. That open handle kept the Node event loop alive and hung the
 		// CLI's process.exitCode-based shutdown whenever a Studio was detected.
@@ -990,7 +1023,10 @@ describe(StudioBackend, () => {
 		expect(socket.terminate).toHaveBeenCalledExactlyOnceWith();
 	});
 
-	it("should stop the pending selection on close so the CLI can exit", async () => {
+	it("should stop the pending selection on close so the CLI can exit", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		// Closing the server does not stop the pool's connect timer. On the
 		// default timeout that handle holds the process open for five minutes
 		// after a failure the caller has already surfaced.
@@ -1005,10 +1041,10 @@ describe(StudioBackend, () => {
 			port: 0,
 			webSocketServerFactory,
 		});
-		const settled = backend.runTestsAsync(singleJobOptions).catch((err: unknown) => err);
+		const settled = backend.runTestsAsync(singleJobOptions).catch((err) => err);
 		backend.closeAsync();
 
-		const caught: unknown = await settled;
+		const caught = await settled;
 		assert(caught instanceof Error);
 
 		expect(vi.getTimerCount()).toBe(0);

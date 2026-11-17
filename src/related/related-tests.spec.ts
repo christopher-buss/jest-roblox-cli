@@ -2,7 +2,7 @@ import { loadLuauParser } from "@isentinel/luau-ast/parser";
 
 import * as path from "node:path";
 import type { Except } from "type-fest";
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import { clockTimingCollector } from "#test/mocks/clock-timing-collector.ts";
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
@@ -115,7 +115,7 @@ function wholeProjectScope(): ChangeScope {
 }
 
 describe(createRelatedFileFilter, () => {
-	it("should select a test file that is itself a related file", () => {
+	it("should select a test file that is itself a related file", ({ expect }) => {
 		expect.assertions(1);
 
 		const selected = selectRelated({
@@ -127,7 +127,9 @@ describe(createRelatedFileFilter, () => {
 		expect(selected).toStrictEqual(["a.spec.luau"]);
 	});
 
-	it("should select a test that reaches a related file through two string requires", () => {
+	it("should select a test that reaches a related file through two string requires", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const selected = selectRelated({
@@ -144,7 +146,7 @@ describe(createRelatedFileFilter, () => {
 		expect(selected).toStrictEqual(["top.spec.luau"]);
 	});
 
-	it("should select every test that reaches a shared module", () => {
+	it("should select every test that reaches a shared module", ({ expect }) => {
 		expect.assertions(1);
 
 		const selected = selectRelated({
@@ -160,7 +162,7 @@ describe(createRelatedFileFilter, () => {
 		expect(selected).toStrictEqual(["a.spec.luau", "b.spec.luau"]);
 	});
 
-	it("should follow a require that resolves to a folder init file", () => {
+	it("should follow a require that resolves to a folder init file", ({ expect }) => {
 		expect.assertions(1);
 
 		const selected = selectRelated({
@@ -178,7 +180,7 @@ describe(createRelatedFileFilter, () => {
 
 	it.for([true, false])(
 		"should select every test that required a deleted related module (scoped: %s)",
-		(scoped) => {
+		(scoped, { expect }) => {
 			expect.assertions(1);
 
 			const selected = selectRelated({
@@ -201,7 +203,7 @@ describe(createRelatedFileFilter, () => {
 
 	it.for([true, false])(
 		"should select every test that required a module renamed to another form (scoped: %s)",
-		(scoped) => {
+		(scoped, { expect }) => {
 			expect.assertions(1);
 
 			const selected = selectRelated({
@@ -222,7 +224,7 @@ describe(createRelatedFileFilter, () => {
 
 	it.for([true, false])(
 		"should keep a deleted alias config from hiding the config beside it (scoped: %s)",
-		(scoped) => {
+		(scoped, { expect }) => {
 			expect.assertions(1);
 
 			const selected = selectRelated({
@@ -251,7 +253,7 @@ describe(createRelatedFileFilter, () => {
 		},
 	);
 
-	it("should select nothing for a related file no test reaches", () => {
+	it("should select nothing for a related file no test reaches", ({ expect }) => {
 		expect.assertions(1);
 
 		const selected = selectRelated({
@@ -268,7 +270,7 @@ describe(createRelatedFileFilter, () => {
 		["a dynamic require", 'local name = "x"\nreturn require(name)'],
 		["an instance-path require", "return require(script.Parent.target)"],
 		["a module it cannot parse", "local = "],
-	])("should select every test when the graph holds %s", ([, source]) => {
+	])("should select every test when the graph holds %s", ([, source], { expect }) => {
 		expect.assertions(1);
 
 		const selected = selectRelated({
@@ -284,7 +286,7 @@ describe(createRelatedFileFilter, () => {
 		expect(selected).toStrictEqual(["open.spec.luau", "other.spec.luau"]);
 	});
 
-	it("should select every test when a test file is not Luau or does not exist", () => {
+	it("should select every test when a test file is not Luau or does not exist", ({ expect }) => {
 		expect.assertions(1);
 
 		const selected = selectRelated({
@@ -296,7 +298,7 @@ describe(createRelatedFileFilter, () => {
 		expect(selected).toStrictEqual(["a.spec.ts", "missing.spec.luau"]);
 	});
 
-	it("should walk from every related file and never widen without a scope", () => {
+	it("should walk from every related file and never widen without a scope", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -312,7 +314,9 @@ describe(createRelatedFileFilter, () => {
 		expect(filter(["a.spec.luau", "b.spec.luau"], PROJECT)).toStrictEqual(["a.spec.luau"]);
 	});
 
-	it("should select nothing from an open graph when no related file is in scope", () => {
+	it("should select nothing from an open graph when no related file is in scope", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const selected = selectRelated({
@@ -328,7 +332,7 @@ describe(createRelatedFileFilter, () => {
 		["a file in the project root outside the Rojo tree", "jest.config.luau"],
 		["a file in the Rojo tree that is not Luau", path.join("src", "data.json")],
 		["a Luau script in the Rojo tree", path.join("src", "boot.server.luau")],
-	])("should select every test for %s", ([, relatedFile]) => {
+	])("should select every test for %s", ([, relatedFile], { expect }) => {
 		expect.assertions(1);
 
 		const selected = selectRelated({
@@ -344,7 +348,9 @@ describe(createRelatedFileFilter, () => {
 		expect(selected).toStrictEqual(["src/a.spec.luau", "src/b.spec.luau"]);
 	});
 
-	it("should select every test for a file in a Rojo mount outside the project root", () => {
+	it("should select every test for a file in a Rojo mount outside the project root", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const selected = selectRelated({
@@ -357,7 +363,9 @@ describe(createRelatedFileFilter, () => {
 		expect(selected).toStrictEqual(["a.spec.luau"]);
 	});
 
-	it("should select every test for a file that matches a trigger relative to the workspace root", () => {
+	it("should select every test for a file that matches a trigger relative to the workspace root", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const selected = selectRelated({
@@ -370,7 +378,9 @@ describe(createRelatedFileFilter, () => {
 		expect(selected).toStrictEqual(["a.spec.luau"]);
 	});
 
-	it("should ignore a file outside the project root, the Rojo tree and the triggers", () => {
+	it("should ignore a file outside the project root, the Rojo tree and the triggers", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const selected = selectRelated({
@@ -383,7 +393,7 @@ describe(createRelatedFileFilter, () => {
 		expect(selected).toStrictEqual([]);
 	});
 
-	it("should follow a module outside the scope that a test reaches", () => {
+	it("should follow a module outside the scope that a test reaches", ({ expect }) => {
 		expect.assertions(1);
 
 		const selected = selectRelated({
@@ -399,7 +409,9 @@ describe(createRelatedFileFilter, () => {
 		expect(selected).toStrictEqual(["a.spec.luau"]);
 	});
 
-	it("should follow a module in the project root outside the Rojo tree that a test reaches", () => {
+	it("should follow a module in the project root outside the Rojo tree that a test reaches", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const selected = selectRelated({
@@ -416,7 +428,7 @@ describe(createRelatedFileFilter, () => {
 		expect(selected).toStrictEqual(["src/a.spec.luau"]);
 	});
 
-	it("should keep selecting through a require cycle", () => {
+	it("should keep selecting through a require cycle", ({ expect }) => {
 		expect.assertions(1);
 
 		const selected = selectRelated({
@@ -432,7 +444,7 @@ describe(createRelatedFileFilter, () => {
 		expect(selected).toStrictEqual(["cycle.spec.luau"]);
 	});
 
-	it("should select across calls with the graph build in a profiled phase", () => {
+	it("should select across calls with the graph build in a profiled phase", ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -458,7 +470,7 @@ describe(createRelatedFileFilter, () => {
 		expect(profile).toHaveBeenCalledWith("buildDependencyGraph", expect.any(Function));
 	});
 
-	it("should keep the requires of a module read in an earlier call", () => {
+	it("should keep the requires of a module read in an earlier call", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem({
@@ -479,7 +491,9 @@ describe(createRelatedFileFilter, () => {
 		expect(filter(["b.spec.luau"], PROJECT)).toStrictEqual([]);
 	});
 
-	it("should select a test that reaches a module through script.Parent requires", () => {
+	it("should select a test that reaches a module through script.Parent requires", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const selected = selectRelated({
@@ -498,7 +512,9 @@ describe(createRelatedFileFilter, () => {
 		expect(selected).toStrictEqual(["src/top.spec.luau"]);
 	});
 
-	it("should select a test that reaches a module through GetService and child lookups", () => {
+	it("should select a test that reaches a module through GetService and child lookups", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const selected = selectRelated({
@@ -517,7 +533,9 @@ describe(createRelatedFileFilter, () => {
 		expect(selected).toStrictEqual(["src/top.spec.luau"]);
 	});
 
-	it("should select the .ts spec whose Luau module reaches a changed .ts file through TS.import", () => {
+	it("should select the .ts spec whose Luau module reaches a changed .ts file through TS.import", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const selected = selectRelated({
@@ -541,7 +559,9 @@ return TS.import(script, script.Parent, "leaf")`,
 		expect(selected).toStrictEqual(["src/top.spec.ts"]);
 	});
 
-	it("should select through the real path of a package module another workspace package compiles", () => {
+	it("should select through the real path of a package module another workspace package compiles", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const selected = selectRelated({
@@ -568,7 +588,9 @@ return TS.import(script, TS.getModule(script, "@scope", "lib").out, "thing")`,
 		expect(selected).toStrictEqual(["src/top.spec.ts"]);
 	});
 
-	it("should select every test for a changed .ts file that matches forceRerunTriggers", () => {
+	it("should select every test for a changed .ts file that matches forceRerunTriggers", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const selected = selectRelated({
@@ -590,7 +612,9 @@ return TS.import(script, TS.getModule(script, "@scope", "lib").out, "thing")`,
 		expect(selected).toStrictEqual(["src/top.spec.ts", "src/other.spec.ts"]);
 	});
 
-	it("should select every test for a changed .ts file in the project with no Luau module", () => {
+	it("should select every test for a changed .ts file in the project with no Luau module", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const selected = selectRelated({
@@ -611,7 +635,7 @@ return TS.import(script, TS.getModule(script, "@scope", "lib").out, "thing")`,
 		expect(selected).toStrictEqual(["src/top.spec.ts", "src/other.spec.ts"]);
 	});
 
-	it("should ignore a changed .ts file outside the project with no Luau module", () => {
+	it("should ignore a changed .ts file outside the project with no Luau module", ({ expect }) => {
 		expect.assertions(1);
 
 		const selected = selectRelated({
@@ -630,7 +654,7 @@ return TS.import(script, TS.getModule(script, "@scope", "lib").out, "thing")`,
 		expect(selected).toStrictEqual([]);
 	});
 
-	it("should keep the Luau module a .ts file mapped to in an earlier call", () => {
+	it("should keep the Luau module a .ts file mapped to in an earlier call", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem(

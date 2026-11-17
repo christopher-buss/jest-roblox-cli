@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import type { FixtureInstance } from "#test/e2e/cli/place-fixture.ts";
 import { buildFixturePlaceAsync, FIXTURE_PACKAGE, modelXml } from "#test/e2e/cli/place-fixture.ts";
@@ -25,7 +25,7 @@ const PROP: FixtureInstance = {
 };
 
 describe.skipIf(!rojoOnPath())("staged plain models", () => {
-	it("should stage a mounted model with its own class and children", async () => {
+	it("should stage a mounted model with its own class and children", async ({ expect }) => {
 		expect.assertions(2);
 
 		const placeFile = await buildFixturePlaceAsync({
@@ -48,7 +48,9 @@ describe.skipIf(!rojoOnPath())("staged plain models", () => {
 		]);
 	});
 
-	it("should leave a plain model alone inside a stand-in it was nested in", async () => {
+	it("should leave a plain model alone inside a stand-in it was nested in", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		// A model mounted on its own never reaches the fold:

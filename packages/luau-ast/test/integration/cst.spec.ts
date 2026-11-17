@@ -2,7 +2,7 @@ import { loadLuauParser, printCst } from "@isentinel/luau-ast";
 import { forEachCstNode, isRecord, isToken, someCstNode, walkCst } from "@isentinel/luau-ast/cst";
 import type { CstNode, CstRoot } from "@isentinel/luau-ast/cst";
 
-import { assert, describe, expect, it } from "vitest";
+import { assert, describe, it } from "vitest";
 
 import { parseCst } from "#test/helpers/integration/parse-cst";
 
@@ -48,7 +48,7 @@ function reverseKeys(value: unknown): unknown {
 }
 
 describe("parseCst", () => {
-	it("should print a zero-edit tree byte-identical to its source", () => {
+	it("should print a zero-edit tree byte-identical to its source", ({ expect }) => {
 		expect.assertions(1);
 
 		const source = "local x = 1 -- note\nreturn x\n";
@@ -56,7 +56,7 @@ describe("parseCst", () => {
 		expect(printCst(parseCst(source))).toBe(source);
 	});
 
-	it("should report parse errors as an error result", () => {
+	it("should report parse errors as an error result", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = loadLuauParser().parseCst({ fileName: "bad.luau", source: "local = =" });
@@ -68,7 +68,7 @@ describe("parseCst", () => {
 });
 
 describe("binding identity", () => {
-	it("should share one binding across a local's declaration and references", () => {
+	it("should share one binding across a local's declaration and references", ({ expect }) => {
 		expect.assertions(1);
 
 		const root = parseCst("local x = 1\nx = x + 1\nprint(x)\n");
@@ -78,7 +78,7 @@ describe("binding identity", () => {
 		expect(references).toStrictEqual([declaration!, declaration!, declaration!]);
 	});
 
-	it("should give a shadowing local a different binding from the outer one", () => {
+	it("should give a shadowing local a different binding from the outer one", ({ expect }) => {
 		expect.assertions(2);
 
 		const root = parseCst("local x = 1\ndo\n\tlocal x = 2\n\tprint(x)\nend\nprint(x)\n");
@@ -89,7 +89,7 @@ describe("binding identity", () => {
 		expect(inner).not.toBe(outer);
 	});
 
-	it("should scope an `if local` binding to its then branch", () => {
+	it("should scope an `if local` binding to its then branch", ({ expect }) => {
 		expect.assertions(2);
 
 		const root = parseCst(
@@ -102,7 +102,7 @@ describe("binding identity", () => {
 		expect(condition).not.toBe(outer);
 	});
 
-	it("should bind a parameter separately from a same-named outer local", () => {
+	it("should bind a parameter separately from a same-named outer local", ({ expect }) => {
 		expect.assertions(2);
 
 		const root = parseCst("local v = 1\nlocal function f(v)\n\treturn v\nend\nreturn v\n");
@@ -113,7 +113,9 @@ describe("binding identity", () => {
 		expect(parameter).not.toBe(outer);
 	});
 
-	it("should bind a local referenced inside a typeof annotation to its declaration", () => {
+	it("should bind a local referenced inside a typeof annotation to its declaration", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const root = parseCst("local v = 1\nlocal w: typeof(v) = v\nreturn w\n");
@@ -137,7 +139,7 @@ function isStringNode(node: CstNode): boolean {
 }
 
 describe(walkCst, () => {
-	it("should visit slots in lexical order whatever the key order", () => {
+	it("should visit slots in lexical order whatever the key order", ({ expect }) => {
 		expect.assertions(1);
 
 		const source = "type T = A | B\nlocal x = f(1, 2)\n";
@@ -145,7 +147,7 @@ describe(walkCst, () => {
 		expect(printCst(reverseKeys(parseCst(source)))).toBe(source);
 	});
 
-	it("should enter nodes before their children and exit after them", () => {
+	it("should enter nodes before their children and exit after them", ({ expect }) => {
 		expect.assertions(1);
 
 		const events: Array<string> = [];
@@ -169,7 +171,7 @@ describe(walkCst, () => {
 		]);
 	});
 
-	it("should skip a claimed node's children, and a slot on request", () => {
+	it("should skip a claimed node's children, and a slot on request", ({ expect }) => {
 		expect.assertions(1);
 
 		const visited: Array<string> = [];
@@ -192,7 +194,7 @@ describe(walkCst, () => {
 		]);
 	});
 
-	it("should name a slot that holds no node, token, or list", () => {
+	it("should name a slot that holds no node, token, or list", ({ expect }) => {
 		expect.assertions(1);
 
 		const root = parseCst("return 1\n");
@@ -205,7 +207,7 @@ describe(walkCst, () => {
 });
 
 describe(someCstNode, () => {
-	it("should stop at the first match", () => {
+	it("should stop at the first match", ({ expect }) => {
 		expect.assertions(2);
 
 		const seen: Array<string> = [];
@@ -218,7 +220,7 @@ describe(someCstNode, () => {
 		expect(seen).toStrictEqual(["Root", "Block", "Local", "LocalDecl", "Number"]);
 	});
 
-	it("should report no match after a full walk", () => {
+	it("should report no match after a full walk", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(someCstNode(parseCst("return 1\n"), isStringNode)).toBeFalse();

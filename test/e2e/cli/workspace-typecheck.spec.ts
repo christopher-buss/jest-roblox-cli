@@ -7,7 +7,7 @@
  * the default `e2e` project (not the rojo/live-gated ones).
  */
 import * as path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import {
 	createFixtureSandbox,
@@ -18,7 +18,7 @@ import {
 const WORKSPACE_FIXTURE = path.resolve(__dirname, "../fixtures/workspace");
 
 describe("workspace --typecheckOnly e2e", () => {
-	it("should run a package's type tests and exit 0 when they pass", async () => {
+	it("should run a package's type tests and exit 0 when they pass", async ({ expect }) => {
 		expect.assertions(2);
 
 		const sandbox = createFixtureSandbox(WORKSPACE_FIXTURE);
@@ -41,7 +41,9 @@ describe("workspace --typecheckOnly e2e", () => {
 	// own used to have a test of its own, but it drives the same tsgo spawn and
 	// prints the same diagnostics; nothing about the failure path is specific
 	// to running the broken package alone.
-	it("should group type tests per package and name the failing one with its TS code", async () => {
+	it("should group type tests per package and name the failing one with its TS code", async ({
+		expect,
+	}) => {
 		expect.assertions(5);
 
 		const sandbox = createFixtureSandbox(WORKSPACE_FIXTURE);
@@ -72,7 +74,9 @@ describe("workspace --typecheckOnly e2e", () => {
 		expect(paths.some((filePath) => filePath.includes("@e2e/typed-broken/"))).toBeTrue();
 	});
 
-	it("should stamp each luau package's type tests with its identity and fail on the broken one", async () => {
+	it("should stamp each luau package's type tests with its identity and fail on the broken one", async ({
+		expect,
+	}) => {
 		expect.assertions(4);
 
 		const sandbox = createFixtureSandbox(WORKSPACE_FIXTURE);
@@ -98,7 +102,7 @@ describe("workspace --typecheckOnly e2e", () => {
 		expect(paths.some((filePath) => filePath.includes("@e2e/luau-typed-broken/"))).toBeTrue();
 	});
 
-	it("should exit 0 when a luau package's type tests pass", async () => {
+	it("should exit 0 when a luau package's type tests pass", async ({ expect }) => {
 		expect.assertions(1);
 
 		const sandbox = createFixtureSandbox(WORKSPACE_FIXTURE);

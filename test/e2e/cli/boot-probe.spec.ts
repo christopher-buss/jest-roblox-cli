@@ -1,6 +1,6 @@
 import { appendFileSync } from "node:fs";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { isTaskCreatePost, startFakeOpenCloudServerAsync } from "#test/harness/fake-open-cloud.ts";
 import {
@@ -31,7 +31,9 @@ function writeStallBudget(sandbox: string): void {
 }
 
 describe("the boot probe gate", () => {
-	it("should stop as boot unverified before any Jest task when both probes stall", async () => {
+	it("should stop as boot unverified before any Jest task when both probes stall", async ({
+		expect,
+	}) => {
 		expect.assertions(4);
 
 		const sandbox = createRbxtsFixtureSandbox(RBXTS_FIXTURE);
@@ -53,7 +55,7 @@ describe("the boot probe gate", () => {
 		expect(server.requests).toHaveLength(0);
 	});
 
-	it("should run the tests once a second probe completes", async () => {
+	it("should run the tests once a second probe completes", async ({ expect }) => {
 		expect.assertions(3);
 
 		const sandbox = createRbxtsFixtureSandbox(RBXTS_FIXTURE);
@@ -74,7 +76,9 @@ describe("the boot probe gate", () => {
 	});
 
 	describe("proof reuse across runs", () => {
-		it("should reuse a proven version without uploading or probing again", async () => {
+		it("should reuse a proven version without uploading or probing again", async ({
+			expect,
+		}) => {
 			expect.assertions(4);
 
 			const sandbox = createRbxtsFixtureSandbox(RBXTS_FIXTURE);
@@ -93,24 +97,27 @@ describe("the boot probe gate", () => {
 
 		// The place is built from `out/` by rojo, so the edit only reaches the
 		// uploaded bytes when rojo can build.
-		it.skipIf(!rojoOnPath())("should probe again when the place bytes change", async () => {
-			expect.assertions(3);
+		it.skipIf(!rojoOnPath())(
+			"should probe again when the place bytes change",
+			async ({ expect }) => {
+				expect.assertions(3);
 
-			const sandbox = createRbxtsFixtureSandbox(RBXTS_FIXTURE);
-			const server = await startFakeOpenCloudServerAsync([PASSING_TASK, PASSING_TASK]);
-			const environment = createOpenCloudEnvironment(server.baseUrl);
+				const sandbox = createRbxtsFixtureSandbox(RBXTS_FIXTURE);
+				const server = await startFakeOpenCloudServerAsync([PASSING_TASK, PASSING_TASK]);
+				const environment = createOpenCloudEnvironment(server.baseUrl);
 
-			await runCliAsync([], { cwd: sandbox, env: environment });
-			appendFileSync(path.join(sandbox, "out", "example.luau"), "\n-- changed\n");
-			const second = await runCliAsync([], { cwd: sandbox, env: environment });
+				await runCliAsync([], { cwd: sandbox, env: environment });
+				appendFileSync(path.join(sandbox, "out", "example.luau"), "\n-- changed\n");
+				const second = await runCliAsync([], { cwd: sandbox, env: environment });
 
-			expect(second.exitCode, `stderr: ${second.stderr}`).toBe(0);
-			expect(server.uploadCount).toBe(2);
-			// A probe and a test task per run.
-			expect(server.calls.filter(isTaskCreatePost)).toHaveLength(4);
-		});
+				expect(second.exitCode, `stderr: ${second.stderr}`).toBe(0);
+				expect(server.uploadCount).toBe(2);
+				// A probe and a test task per run.
+				expect(server.calls.filter(isTaskCreatePost)).toHaveLength(4);
+			},
+		);
 
-		it("should probe again when the target place changes", async () => {
+		it("should probe again when the target place changes", async ({ expect }) => {
 			expect.assertions(3);
 
 			const sandbox = createRbxtsFixtureSandbox(RBXTS_FIXTURE);
@@ -133,7 +140,9 @@ describe("the boot probe gate", () => {
 			]);
 		});
 
-		it("should probe again after a run that left its version unverified", async () => {
+		it("should probe again after a run that left its version unverified", async ({
+			expect,
+		}) => {
 			expect.assertions(4);
 
 			const sandbox = createRbxtsFixtureSandbox(RBXTS_FIXTURE);

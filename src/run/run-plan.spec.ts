@@ -1,7 +1,7 @@
 import { fromAny } from "@total-typescript/shoehorn";
 
 import * as path from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import { clockTimingCollector } from "#test/mocks/clock-timing-collector.ts";
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
@@ -82,7 +82,7 @@ function plan(input: Partial<RunDiscovery> & { fileSystem: FileSystem }): TestPl
 }
 
 describe(buildTestPlan, () => {
-	it("should fail an empty run with exit code 2", () => {
+	it("should fail an empty run with exit code 2", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = plan({ fileSystem: makeVolume([]) });
@@ -101,7 +101,7 @@ describe(buildTestPlan, () => {
 		});
 	});
 
-	it("should pass an empty run under passWithNoTests", () => {
+	it("should pass an empty run under passWithNoTests", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = plan({
@@ -112,7 +112,7 @@ describe(buildTestPlan, () => {
 		expect(result.emptiness).toStrictEqual({});
 	});
 
-	it("should pass an empty related run with a notice", () => {
+	it("should pass an empty related run with a notice", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = plan({
@@ -126,7 +126,7 @@ describe(buildTestPlan, () => {
 		});
 	});
 
-	it("should pass an empty --changed run with a notice that names the ref", () => {
+	it("should pass an empty --changed run with a notice that names the ref", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = plan({
@@ -141,7 +141,9 @@ describe(buildTestPlan, () => {
 		});
 	});
 
-	it("should keep exit code 2 for an empty --changed run without passWithNoTests", () => {
+	it("should keep exit code 2 for an empty --changed run without passWithNoTests", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const result = plan({
@@ -153,7 +155,7 @@ describe(buildTestPlan, () => {
 		expect(result.emptiness).toMatchObject({ validationExitCode: 2 });
 	});
 
-	it("should have the runner report timings when the run is timed", () => {
+	it("should have the runner report timings when the run is timed", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = plan({
@@ -164,7 +166,7 @@ describe(buildTestPlan, () => {
 		expect(result.jobs[0]!.argv.runnerTiming).toBeTrue();
 	});
 
-	it("should plan one job per project with runtime files", () => {
+	it("should plan one job per project with runtime files", ({ expect }) => {
 		expect.assertions(3);
 
 		const result = plan({
@@ -183,7 +185,7 @@ describe(buildTestPlan, () => {
 		]);
 	});
 
-	it("should inject a config only into mounts without a user-authored one", () => {
+	it("should inject a config only into mounts without a user-authored one", ({ expect }) => {
 		expect.assertions(1);
 
 		const fileSystem = makeVolume(["/test/src/a.spec.ts", "/test/user/jest.config.luau"]);
@@ -199,7 +201,7 @@ describe(buildTestPlan, () => {
 		expect(result.jobs[0]!.runtimeInjectionPaths).toStrictEqual(["ReplicatedStorage.src"]);
 	});
 
-	it("should prefer a project's own file subset over the cli files", () => {
+	it("should prefer a project's own file subset over the cli files", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = plan({
@@ -211,7 +213,7 @@ describe(buildTestPlan, () => {
 		expect(result.matchedRuntimeFiles).toStrictEqual([path.resolve("/test", "src/b.spec.ts")]);
 	});
 
-	it("should plan type tests from the derived include when typecheck is on", () => {
+	it("should plan type tests from the derived include when typecheck is on", ({ expect }) => {
 		expect.assertions(2);
 
 		const result = plan({
@@ -229,7 +231,9 @@ describe(buildTestPlan, () => {
 		]);
 	});
 
-	it("should keep only the tests that reach a related file, in a profiled phase", () => {
+	it("should keep only the tests that reach a related file, in a profiled phase", ({
+		expect,
+	}) => {
 		expect.assertions(4);
 
 		const { fileSystem } = createMemoryFileSystem({

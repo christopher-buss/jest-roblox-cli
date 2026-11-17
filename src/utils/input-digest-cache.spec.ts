@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import { ageFile, writeAgedFile } from "#test/mocks/aged-file.ts";
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
@@ -12,7 +12,7 @@ function hashString(text: string): string {
 const CACHE_FILE = "/project/.jest-roblox/input-digests";
 
 describe(openInputDigestCache, () => {
-	it("should report the sha256 of the file's bytes", async () => {
+	it("should report the sha256 of the file's bytes", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -23,7 +23,9 @@ describe(openInputDigestCache, () => {
 		await expect(cache.hashOfAsync("/project/a.lua")).resolves.toBe(hashString("-- v1"));
 	});
 
-	it("should reuse a recorded digest instead of re-reading unchanged bytes", async () => {
+	it("should reuse a recorded digest instead of re-reading unchanged bytes", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -39,7 +41,7 @@ describe(openInputDigestCache, () => {
 		expect(readFile).not.toHaveBeenCalledWith("/project/a.lua");
 	});
 
-	it("should re-read a file whose bytes changed since the last run", async () => {
+	it("should re-read a file whose bytes changed since the last run", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -54,7 +56,7 @@ describe(openInputDigestCache, () => {
 		).resolves.toBe(hashString("-- v2 is longer"));
 	});
 
-	it("should re-read a same-size file whose mtime moved", async () => {
+	it("should re-read a same-size file whose mtime moved", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -71,7 +73,7 @@ describe(openInputDigestCache, () => {
 		).resolves.toBe(hashString("-- v2"));
 	});
 
-	it("should not record a digest for a file written during the run", async () => {
+	it("should not record a digest for a file written during the run", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -90,7 +92,7 @@ describe(openInputDigestCache, () => {
 		expect(readFile).toHaveBeenCalledWith("/project/a.lua");
 	});
 
-	it("should not record a path a line cannot hold", async () => {
+	it("should not record a path a line cannot hold", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -105,7 +107,7 @@ describe(openInputDigestCache, () => {
 		expect(volume.readFileSync(CACHE_FILE, "utf-8")).toBe("v1");
 	});
 
-	it("should forget a file the latest run did not look at", async () => {
+	it("should forget a file the latest run did not look at", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -128,7 +130,7 @@ describe(openInputDigestCache, () => {
 		expect(readFile).toHaveBeenCalledWith("/project/b.lua");
 	});
 
-	it("should ignore a cache written in another format", async () => {
+	it("should ignore a cache written in another format", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -145,7 +147,7 @@ describe(openInputDigestCache, () => {
 		).resolves.toBe(hashString("-- v1"));
 	});
 
-	it("should re-read past a corrupt line rather than trust it", async () => {
+	it("should re-read past a corrupt line rather than trust it", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -160,7 +162,7 @@ describe(openInputDigestCache, () => {
 		).resolves.toBe(hashString("-- v1"));
 	});
 
-	it("should leave the previous record in place when nothing was read", async () => {
+	it("should leave the previous record in place when nothing was read", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -179,7 +181,7 @@ describe(openInputDigestCache, () => {
 		expect(rename).not.toHaveBeenCalled();
 	});
 
-	it("should record a re-read so the run after it can skip one", async () => {
+	it("should record a re-read so the run after it can skip one", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();

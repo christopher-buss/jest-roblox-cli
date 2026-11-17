@@ -1,6 +1,6 @@
 import { writeFileSync } from "node:fs";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { startFakeOpenCloudServerAsync } from "#test/harness/fake-open-cloud.ts";
 import {
@@ -31,7 +31,9 @@ const NO_OPEN_CLOUD_CREDENTIALS = {
 // goes through `seaImport` over real Node resolution (`createRequire`), not
 // Vitest's import runner.
 describe("sea config loading", () => {
-	it("should load a `.ts` config under the SEA loader and run to completion", async () => {
+	it("should load a `.ts` config under the SEA loader and run to completion", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		// The rbxts fixture's `jest.config.ts` imports `defineConfig` from
@@ -53,7 +55,9 @@ describe("sea config loading", () => {
 		expect(result.stdout).toContain("1 passed");
 	});
 
-	it("should enumerate and load every package's `.ts` config in workspace mode", async () => {
+	it("should enumerate and load every package's `.ts` config in workspace mode", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		// The headline failure: workspace mode "breaks on the first package it
@@ -71,7 +75,7 @@ describe("sea config loading", () => {
 		expect(result.stderr).toContain("Missing: apiKey, universeId, placeId");
 	});
 
-	it("should reject typescript type tests before building or dispatching", async () => {
+	it("should reject typescript type tests before building or dispatching", async ({ expect }) => {
 		expect.assertions(3);
 
 		const sandbox = createRbxtsFixtureSandbox(RBXTS_FIXTURE);

@@ -1,7 +1,7 @@
 import { fromAny } from "@total-typescript/shoehorn";
 
 import * as path from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import { createLuteChildProcess } from "#test/mocks/lute-child-process.ts";
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
@@ -19,7 +19,7 @@ function packageConfig(overrides: Partial<ResolvedConfig> = {}): PackageConfig {
 }
 
 describe(loadPackageConfigsAsync, () => {
-	it("should load each package config once under its own span", async () => {
+	it("should load each package config once under its own span", async ({ expect }) => {
 		expect.assertions(3);
 
 		const config = packageConfig();
@@ -51,7 +51,7 @@ describe(loadPackageConfigsAsync, () => {
 });
 
 describe(loadWorkspacePackages, () => {
-	it("should merge the CLI options and build a default descriptor", () => {
+	it("should merge the CLI options and build a default descriptor", ({ expect }) => {
 		expect.assertions(2);
 
 		const config = packageConfig();
@@ -72,7 +72,7 @@ describe(loadWorkspacePackages, () => {
 		expect(loaded!.pkgConfig.verbose).toBeTrue();
 	});
 
-	it("should carry the package Luau roots and Rojo project", () => {
+	it("should carry the package Luau roots and Rojo project", ({ expect }) => {
 		expect.assertions(1);
 
 		const config = packageConfig({

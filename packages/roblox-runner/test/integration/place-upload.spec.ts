@@ -5,9 +5,9 @@ import fs from "node:fs";
 import { createServer } from "node:http";
 import os from "node:os";
 import path from "node:path";
-import { assert, describe, expect, it, onTestFinished } from "vitest";
+import { assert, describe, it, type TestContext } from "vitest";
 
-async function makeUploadServerAsync() {
+async function makeUploadServerAsync(onTestFinished: TestContext["onTestFinished"]) {
 	let requests = 0;
 	const server = createServer((_request, response) => {
 		requests += 1;
@@ -39,7 +39,7 @@ async function makeUploadServerAsync() {
 	return { baseUrl: `http://127.0.0.1:${String(address.port)}`, count: () => requests };
 }
 
-function makePlaceFile(): string {
+function makePlaceFile(onTestFinished: TestContext["onTestFinished"]): string {
 	const directory = fs.mkdtempSync(path.join(os.tmpdir(), "roblox-runner-"));
 	onTestFinished(() => {
 		fs.rmSync(directory, { force: true, recursive: true });
@@ -55,11 +55,14 @@ function makePlaceFile(): string {
 }
 
 describe("native place upload adapters", () => {
-	it("should read a binary place and retry a reset native fetch connection", async () => {
+	it("should read a binary place and retry a reset native fetch connection", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(2);
 
-		const server = await makeUploadServerAsync();
-		const placeFilePath = makePlaceFile();
+		const server = await makeUploadServerAsync(onTestFinished);
+		const placeFilePath = makePlaceFile(onTestFinished);
 		const runner = new OcaleRunner(
 			{ apiKey: "test-key", placeId: "456", universeId: "123" },
 			{ baseUrl: server.baseUrl, sleep: async () => {} },

@@ -1,9 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { isValidBackend } from "./option-values.ts";
 
 describe(isValidBackend, () => {
-	it("should return true for valid backends", () => {
+	it("should return true for valid backends", ({ expect }) => {
 		expect.assertions(4);
 
 		expect(isValidBackend("auto")).toBeTrue();
@@ -12,7 +12,7 @@ describe(isValidBackend, () => {
 		expect(isValidBackend("studio-cli")).toBeTrue();
 	});
 
-	it("should return false for invalid backends", () => {
+	it("should return false for invalid backends", ({ expect }) => {
 		expect.assertions(2);
 
 		expect(isValidBackend("invalid")).toBeFalse();

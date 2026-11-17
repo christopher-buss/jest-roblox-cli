@@ -2,7 +2,7 @@ import { fromAny } from "@total-typescript/shoehorn";
 
 import * as path from "node:path";
 import process from "node:process";
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import { fakeTimingCollector, phaseNamesOf } from "#test/mocks/fake-timing-collector.ts";
 import type { MemoryVolume } from "#test/mocks/memory-file-system.ts";
@@ -112,7 +112,9 @@ function stageTwoPackages(): StagedWorkspace {
 }
 
 describe(stageWorkspaceStubs, () => {
-	it("should stage only live projects and attach coverage roots to their package", () => {
+	it("should stage only live projects and attach coverage roots to their package", ({
+		expect,
+	}) => {
 		expect.assertions(3);
 
 		const { bar, foo, staged, timing } = stageTwoPackages();
@@ -155,7 +157,9 @@ describe(stageWorkspaceStubs, () => {
 		expect(staged.elapsedMs).toBe(24);
 	});
 
-	it("should write a cache stub for each live project and sweep its source leftovers", () => {
+	it("should write a cache stub for each live project and sweep its source leftovers", ({
+		expect,
+	}) => {
 		expect.assertions(5);
 
 		const { bar, foo, volume } = stageTwoPackages();
@@ -171,7 +175,7 @@ describe(stageWorkspaceStubs, () => {
 		expect(volume.existsSync(sourceStub(foo, "src/Dormant"))).toBeTrue();
 	});
 
-	it("should write the stub from the pending entry's resolved project config", () => {
+	it("should write the stub from the pending entry's resolved project config", ({ expect }) => {
 		expect.assertions(1);
 
 		const unresolved = makeProject("server");
@@ -195,7 +199,7 @@ describe(stageWorkspaceStubs, () => {
 		);
 	});
 
-	it("should yield a bare descriptor for a package no pending entry names", () => {
+	it("should yield a bare descriptor for a package no pending entry names", ({ expect }) => {
 		expect.assertions(2);
 
 		const context = makeContext("@halcyon/foo", [makeProject("server")]);
@@ -220,7 +224,7 @@ describe(stageWorkspaceStubs, () => {
 		expect(volume.existsSync(cacheStub(context, "src/Server"))).toBeFalse();
 	});
 
-	it("should mount a cache stub at a mount that holds a user-authored config", () => {
+	it("should mount a cache stub at a mount that holds a user-authored config", ({ expect }) => {
 		expect.assertions(3);
 
 		const server = makeProject("server");
@@ -252,7 +256,7 @@ describe(stageWorkspaceStubs, () => {
 		expect(volume.readFileSync(sourceStub(context, "src/Shared"), "utf8")).toBe(USER_STUB);
 	});
 
-	it("should report every cleaned source stub with package identity", () => {
+	it("should report every cleaned source stub with package identity", ({ expect }) => {
 		expect.assertions(1);
 
 		const project = makeProject("server", ["src/Server", "src/Shared"]);
@@ -286,7 +290,7 @@ describe(stageWorkspaceStubs, () => {
 		);
 	});
 
-	it("should stay silent when cleanup finds no source stubs", () => {
+	it("should stay silent when cleanup finds no source stubs", ({ expect }) => {
 		expect.assertions(1);
 
 		const project = makeProject("server");

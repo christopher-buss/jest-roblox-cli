@@ -1,10 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { createLocationsIndexMap, type FileInfo, mapErrorsToTests } from "./error-mapping.ts";
 import type { RawErrorsMap, TestDefinition } from "./typecheck-types.ts";
 
 describe(createLocationsIndexMap, () => {
-	it("should map line:column pairs to character indices", () => {
+	it("should map line:column pairs to character indices", ({ expect }) => {
 		expect.assertions(3);
 
 		const source = "abc\ndef\n";
@@ -47,7 +47,7 @@ function mapSourceFileError(ignoreSourceErrors: boolean): ReturnType<typeof mapE
 }
 
 describe(mapErrorsToTests, () => {
-	it("should mark all tests as passed when no errors exist", () => {
+	it("should mark all tests as passed when no errors exist", ({ expect }) => {
 		expect.assertions(2);
 
 		const errors: RawErrorsMap = new Map();
@@ -69,7 +69,7 @@ describe(mapErrorsToTests, () => {
 		expect(result.testResults[0]!.testResults[0]!.status).toBe("passed");
 	});
 
-	it("should fail the test containing the error", () => {
+	it("should fail the test containing the error", ({ expect }) => {
 		expect.assertions(4);
 
 		const source =
@@ -105,7 +105,7 @@ describe(mapErrorsToTests, () => {
 		expect(result).toMatchSnapshot();
 	});
 
-	it("should attribute error outside test blocks to file-level failure", () => {
+	it("should attribute error outside test blocks to file-level failure", ({ expect }) => {
 		expect.assertions(3);
 
 		const source = 'const x: number = "bad";\nit("should pass", () => {});';
@@ -138,7 +138,9 @@ describe(mapErrorsToTests, () => {
 		expect(result).toMatchSnapshot();
 	});
 
-	it("should attribute an error after a finished test to the file, not that test", () => {
+	it("should attribute an error after a finished test to the file, not that test", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const source = 'it("should pass", () => {});\nconst x: number = "bad";';
@@ -170,7 +172,7 @@ describe(mapErrorsToTests, () => {
 		expect(test!.status).toBe("passed");
 	});
 
-	it("should collect multiple errors in the same test", () => {
+	it("should collect multiple errors in the same test", ({ expect }) => {
 		expect.assertions(1);
 
 		const source = 'it("should fail", () => {\n  a;\n  b;\n});';
@@ -208,7 +210,7 @@ describe(mapErrorsToTests, () => {
 		expect(result.testResults[0]!.testResults[0]!.failureMessages).toHaveLength(2);
 	});
 
-	it("should handle mixed files with and without errors", () => {
+	it("should handle mixed files with and without errors", ({ expect }) => {
 		expect.assertions(4);
 
 		const errors: RawErrorsMap = new Map([
@@ -258,7 +260,7 @@ describe(mapErrorsToTests, () => {
 		expect(result.numTotalTests).toBe(2);
 	});
 
-	it("should surface errors for non-test source files as source-level failures", () => {
+	it("should surface errors for non-test source files as source-level failures", ({ expect }) => {
 		expect.assertions(5);
 
 		const result = mapSourceFileError(false);
@@ -274,7 +276,9 @@ describe(mapErrorsToTests, () => {
 		expect(result).toMatchSnapshot();
 	});
 
-	it("should suppress non-test source file errors when ignoreSourceErrors is true", () => {
+	it("should suppress non-test source file errors when ignoreSourceErrors is true", ({
+		expect,
+	}) => {
 		expect.assertions(4);
 
 		const result = mapSourceFileError(true);
@@ -287,7 +291,7 @@ describe(mapErrorsToTests, () => {
 		expect(result).toMatchSnapshot();
 	});
 
-	it("should produce correct JestResult counts", () => {
+	it("should produce correct JestResult counts", ({ expect }) => {
 		expect.assertions(4);
 
 		const errors: RawErrorsMap = new Map();
@@ -314,7 +318,7 @@ describe(mapErrorsToTests, () => {
 		expect(result.success).toBeTrue();
 	});
 
-	it("should treat error with out-of-bounds position as file-level failure", () => {
+	it("should treat error with out-of-bounds position as file-level failure", ({ expect }) => {
 		expect.assertions(1);
 
 		const source = 'it("should pass", () => {});';
@@ -350,7 +354,9 @@ describe(mapErrorsToTests, () => {
 		expect(result.numFailedTests).toBe(1);
 	});
 
-	it("should attribute an end-boundary diagnostic to the innermost overlapping test", () => {
+	it("should attribute an end-boundary diagnostic to the innermost overlapping test", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const source = 'it("outer", () => { it("inner", () => { bad; }); });';

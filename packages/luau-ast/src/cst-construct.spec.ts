@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import type { LuauSpan } from "./ast-types.ts";
 import { constructExpression, constructStatements } from "./cst-construct.ts";
@@ -32,7 +32,7 @@ function makeSnippet() {
 }
 
 describe(constructExpression, () => {
-	it("should parse one return value and detach only its origins", () => {
+	it("should parse one return value and detach only its origins", ({ expect }) => {
 		expect.assertions(4);
 
 		const { expression, keyword, parse, requests, token } = makeSnippet();
@@ -44,7 +44,7 @@ describe(constructExpression, () => {
 		expect(keyword.origin).toBeDefined();
 	});
 
-	it("should reject a snippet returning more than one expression", () => {
+	it("should reject a snippet returning more than one expression", ({ expect }) => {
 		expect.assertions(1);
 
 		const { expression, parse, root } = makeSnippet();
@@ -53,7 +53,7 @@ describe(constructExpression, () => {
 		expect(() => constructExpression(parse, "1, 1")).toThrow("snippet is not one expression");
 	});
 
-	it("should preserve parser diagnostics when a snippet is invalid", () => {
+	it("should preserve parser diagnostics when a snippet is invalid", ({ expect }) => {
 		expect.assertions(1);
 
 		function parse(): CstParseResult {
@@ -67,7 +67,9 @@ describe(constructExpression, () => {
 });
 
 describe(constructStatements, () => {
-	it("should detach block tokens while leaving end-of-file trivia outside the snippet", () => {
+	it("should detach block tokens while leaving end-of-file trivia outside the snippet", ({
+		expect,
+	}) => {
 		expect.assertions(5);
 
 		const { keyword, parse, requests, root, token } = makeSnippet();

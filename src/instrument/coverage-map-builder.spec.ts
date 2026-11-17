@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { asciiColumn, asciiSpan } from "#test/mocks/ascii-columns.ts";
 import { COLLECTED_FIXTURES } from "#test/mocks/coverage-collected-fixtures.ts";
@@ -17,7 +17,7 @@ function emptyResult(): CollectorResult {
 
 describe("covmap-builder", () => {
 	describe(buildCoverageMap, () => {
-		it("should return empty maps for empty result", () => {
+		it("should return empty maps for empty result", ({ expect }) => {
 			expect.assertions(1);
 
 			const coverageMap = buildCoverageMap(emptyResult());
@@ -29,7 +29,7 @@ describe("covmap-builder", () => {
 			});
 		});
 
-		it("should build statementMap with 1-based string keys", () => {
+		it("should build statementMap with 1-based string keys", ({ expect }) => {
 			expect.assertions(2);
 
 			const result = {
@@ -68,7 +68,7 @@ describe("covmap-builder", () => {
 			});
 		});
 
-		it("should build functionMap with name and location", () => {
+		it("should build functionMap with name and location", ({ expect }) => {
 			expect.assertions(2);
 
 			const result = {
@@ -101,7 +101,7 @@ describe("covmap-builder", () => {
 			});
 		});
 
-		it("should build branchMap with type and arm locations", () => {
+		it("should build branchMap with type and arm locations", ({ expect }) => {
 			expect.assertions(2);
 
 			const result = {
@@ -169,13 +169,13 @@ describe("coverage maps of collected fixtures", () => {
 		"if-else.luau",
 		"expr-if.luau",
 		"and-or.luau",
-	])("should build the expected cov-map for %s", (name) => {
+	])("should build the expected cov-map for %s", (name, { expect }) => {
 		expect.assertions(1);
 
 		expect(fixtureMap(name)).toMatchSnapshot();
 	});
 
-	it("should name declared, global and anonymous functions", () => {
+	it("should name declared, global and anonymous functions", ({ expect }) => {
 		expect.assertions(1);
 
 		const names = Object.values(fixtureMap("functions.luau").functionMap!).map((entry) => {
@@ -185,7 +185,7 @@ describe("coverage maps of collected fixtures", () => {
 		expect(names).toIncludeAllMembers(["greet", "globalFunc", "(anonymous)"]);
 	});
 
-	it("should record one if branch with three arms for if/elseif/else", () => {
+	it("should record one if branch with three arms for if/elseif/else", ({ expect }) => {
 		expect.assertions(3);
 
 		const { branchMap } = fixtureMap("if-else.luau");
@@ -195,7 +195,7 @@ describe("coverage maps of collected fixtures", () => {
 		expect(branchMap!["1"]!.type).toBe("if");
 	});
 
-	it("should record the implicit else arm of an if without else", () => {
+	it("should record the implicit else arm of an if without else", ({ expect }) => {
 		expect.assertions(2);
 
 		const { branchMap } = fixtureMap("if-only.luau");
@@ -204,7 +204,7 @@ describe("coverage maps of collected fixtures", () => {
 		expect(branchMap!["1"]!.locations).toHaveLength(2);
 	});
 
-	it("should leave the ignored sites out of the cov-map", () => {
+	it("should leave the ignored sites out of the cov-map", ({ expect }) => {
 		expect.assertions(3);
 
 		const covMap = fixtureMap("ignore-directives.luau");
@@ -222,7 +222,7 @@ describe("coverage maps of collected fixtures", () => {
 		).toStrictEqual([1, 3, 7, 8, 10, 14, 22]);
 	});
 
-	it("should record expr-if branches with two and three arms", () => {
+	it("should record expr-if branches with two and three arms", ({ expect }) => {
 		expect.assertions(3);
 
 		const { branchMap } = fixtureMap("expr-if.luau");
@@ -235,7 +235,7 @@ describe("coverage maps of collected fixtures", () => {
 		expect(branchMap!["2"]!.locations).toHaveLength(3);
 	});
 
-	it("should record each and/or as a two-arm binary-expr branch", () => {
+	it("should record each and/or as a two-arm binary-expr branch", ({ expect }) => {
 		expect.assertions(3);
 
 		const entries = Object.values(fixtureMap("and-or.luau").branchMap!);

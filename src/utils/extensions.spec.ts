@@ -1,33 +1,33 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { isTsSource, stripTsExtension } from "./extensions.ts";
 
 describe(stripTsExtension, () => {
-	it("should strip .ts extension", () => {
+	it("should strip .ts extension", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(stripTsExtension("**/*.spec.ts")).toBe("**/*.spec");
 	});
 
-	it("should strip .tsx extension", () => {
+	it("should strip .tsx extension", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(stripTsExtension("**/*.test.tsx")).toBe("**/*.test");
 	});
 
-	it("should strip .luau extension", () => {
+	it("should strip .luau extension", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(stripTsExtension("**/*.spec.luau")).toBe("**/*.spec");
 	});
 
-	it("should not change pattern without known extension", () => {
+	it("should not change pattern without known extension", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(stripTsExtension("**/*.spec")).toBe("**/*.spec");
 	});
 
-	it("should only strip a known extension at the end", () => {
+	it("should only strip a known extension at the end", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(stripTsExtension("src/module.ts.map")).toBe("src/module.ts.map");
@@ -35,7 +35,9 @@ describe(stripTsExtension, () => {
 });
 
 describe(isTsSource, () => {
-	it("should distinguish TypeScript sources from paths that merely contain the extension", () => {
+	it("should distinguish TypeScript sources from paths that merely contain the extension", ({
+		expect,
+	}) => {
 		expect.assertions(3);
 
 		expect(isTsSource("src/module.ts")).toBeTrue();

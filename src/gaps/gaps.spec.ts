@@ -1,6 +1,6 @@
 import { fromPartial } from "@total-typescript/shoehorn";
 
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import type { JestResult, TestCaseResult, TestFileResult } from "../types/jest-result-types.ts";
 import { MissingGapRecordError } from "../utils/infrastructure-failure.ts";
@@ -29,7 +29,7 @@ function gapRecord(
 }
 
 describe(applyGapRecord, () => {
-	it("should block a passing test that caught a gap, and fail the run", () => {
+	it("should block a passing test that caught a gap, and fail the run", ({ expect }) => {
 		expect.assertions(4);
 
 		const jest = result(file([testCase("caught"), testCase("clean")]));
@@ -60,7 +60,7 @@ describe(applyGapRecord, () => {
 		]);
 	});
 
-	it("should block every test in a file with a file-level gap", () => {
+	it("should block every test in a file with a file-level gap", ({ expect }) => {
 		expect.assertions(1);
 
 		const jest = result(file([testCase("first"), testCase("second", "failed")]));
@@ -81,7 +81,7 @@ describe(applyGapRecord, () => {
 		]);
 	});
 
-	it("should keep two tests of one name apart by position", () => {
+	it("should keep two tests of one name apart by position", ({ expect }) => {
 		expect.assertions(2);
 
 		const jest = result(file([testCase("same"), testCase("same", "failed")]));
@@ -100,7 +100,7 @@ describe(applyGapRecord, () => {
 		expect(listBlocked(jest).map((blocked) => blocked.test!.status)).toStrictEqual(["passed"]);
 	});
 
-	it("should refuse a record that names another test at a position", () => {
+	it("should refuse a record that names another test at a position", ({ expect }) => {
 		expect.assertions(1);
 
 		const jest = result(file([testCase("a"), testCase("b")]));
@@ -120,7 +120,7 @@ describe(applyGapRecord, () => {
 		);
 	});
 
-	it("should give a raise outside every test file to every file", () => {
+	it("should give a raise outside every test file to every file", ({ expect }) => {
 		expect.assertions(1);
 
 		const other = "ServerScriptService/PkgLute/other.spec";
@@ -142,7 +142,7 @@ describe(applyGapRecord, () => {
 		]);
 	});
 
-	it("should leave a run with no gap passing", () => {
+	it("should leave a run with no gap passing", ({ expect }) => {
 		expect.assertions(2);
 
 		const jest = result(file([testCase("a"), testCase("skipped", "pending")]));
@@ -152,7 +152,7 @@ describe(applyGapRecord, () => {
 		expect(jest.testResults[0]!.testResults.map((test) => test.gaps)).toStrictEqual([{}, {}]);
 	});
 
-	it("should leave a file of skipped tests and a file with no tests clean", () => {
+	it("should leave a file of skipped tests and a file with no tests clean", ({ expect }) => {
 		expect.assertions(2);
 
 		const other = "ServerScriptService/PkgLute/empty.spec";
@@ -163,7 +163,7 @@ describe(applyGapRecord, () => {
 		expect(jest.success).toBeTrue();
 	});
 
-	it("should refuse a test that ran with no gap record", () => {
+	it("should refuse a test that ran with no gap record", ({ expect }) => {
 		expect.assertions(1);
 
 		const jest = result(file([testCase("a"), testCase("unreported", "failed")]));
@@ -175,7 +175,7 @@ describe(applyGapRecord, () => {
 		);
 	});
 
-	it("should refuse a reported test with no result", () => {
+	it("should refuse a reported test with no result", ({ expect }) => {
 		expect.assertions(1);
 
 		const jest = result(file([testCase("a")]));
@@ -195,7 +195,7 @@ describe(applyGapRecord, () => {
 		);
 	});
 
-	it("should refuse a reported file with no result", () => {
+	it("should refuse a reported file with no result", ({ expect }) => {
 		expect.assertions(1);
 
 		const jest = result();
@@ -205,7 +205,7 @@ describe(applyGapRecord, () => {
 		}).toThrow(new MissingGapRecordError(`The run reported ${FILE}, but has no result for it`));
 	});
 
-	it("should block a file that failed to run with a gap", () => {
+	it("should block a file that failed to run with a gap", ({ expect }) => {
 		expect.assertions(2);
 
 		const failed = fromPartial<TestFileResult>({
@@ -222,7 +222,7 @@ describe(applyGapRecord, () => {
 });
 
 describe(applyFailureGaps, () => {
-	it("should give every gap of a run that produced no result to its files", () => {
+	it("should give every gap of a run that produced no result to its files", ({ expect }) => {
 		expect.assertions(2);
 
 		const failed = fromPartial<TestFileResult>({

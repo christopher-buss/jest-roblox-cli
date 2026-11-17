@@ -2,7 +2,7 @@ import { PLACE_MISMATCH } from "@isentinel/roblox-runner/testing";
 
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { assert, describe, expect, it } from "vitest";
+import { assert, describe, it } from "vitest";
 
 import { descendants, readPlaceTree } from "#test/e2e/cli/place-tree.ts";
 import {
@@ -48,7 +48,9 @@ export default defineConfig({
 const EXACT_VERSION_TASKS = `/places/456/versions/1${TASK_CREATE_SUFFIX}`;
 
 describe.skipIf(!rojoOnPath())("an ordinary Open Cloud run on a Shared Place", () => {
-	it("should upload one complete place and pin the probe and the tests to its version", async () => {
+	it("should upload one complete place and pin the probe and the tests to its version", async ({
+		expect,
+	}) => {
 		expect.assertions(5);
 
 		const sandbox = createRbxtsFixtureSandbox(RBXTS_FIXTURE);
@@ -106,7 +108,7 @@ describe.skipIf(!rojoOnPath())("an ordinary Open Cloud run on a Shared Place", (
 				status: 429,
 			},
 		},
-	])("should create one test task after $cause", async ({ failure }) => {
+	])("should create one test task after $cause", async ({ failure }, { expect }) => {
 		expect.assertions(2);
 
 		const sandbox = createRbxtsFixtureSandbox(RBXTS_FIXTURE);
@@ -124,7 +126,9 @@ describe.skipIf(!rojoOnPath())("an ordinary Open Cloud run on a Shared Place", (
 		expect(server.requests).toHaveLength(1);
 	});
 
-	it("should fail at once as an infrastructure error with the unlock time when a refusal outlasts the minute window", async () => {
+	it("should fail at once as an infrastructure error with the unlock time when a refusal outlasts the minute window", async ({
+		expect,
+	}) => {
 		expect.assertions(5);
 
 		const sandbox = createRbxtsFixtureSandbox(RBXTS_FIXTURE);
@@ -156,7 +160,9 @@ describe.skipIf(!rojoOnPath())("an ordinary Open Cloud run on a Shared Place", (
 		expect(output).toContain("retry-after: 1856");
 	});
 
-	it("should retry a create the edge rate limit refused before dmaas saw it", async () => {
+	it("should retry a create the edge rate limit refused before dmaas saw it", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const sandbox = createRbxtsFixtureSandbox(RBXTS_FIXTURE);

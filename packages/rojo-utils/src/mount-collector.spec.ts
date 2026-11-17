@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import type { PathClassifier, PathKind } from "./mount-collector.ts";
 import { collectMounts, listMounts, pruneAncestors } from "./mount-collector.ts";
@@ -17,7 +17,9 @@ function makeClassifier(kinds: Record<string, PathKind>): PathClassifier {
 }
 
 describe(collectMounts, () => {
-	it("should ignore object metadata while traversing child names ending in a dollar", () => {
+	it("should ignore object metadata while traversing child names ending in a dollar", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const tree = { $properties: { Hidden: { $path: "hidden" } }, Child$: { $path: "visible" } };
@@ -27,7 +29,7 @@ describe(collectMounts, () => {
 		).toStrictEqual([{ dataModelPath: "Child$", fsPath: "visible" }]);
 	});
 
-	it("should return empty array for tree with no $path entries", () => {
+	it("should return empty array for tree with no $path entries", ({ expect }) => {
 		expect.assertions(1);
 
 		const tree = { $className: "DataModel" } satisfies RojoTreeNode;
@@ -37,7 +39,7 @@ describe(collectMounts, () => {
 		).toStrictEqual([]);
 	});
 
-	it("should collect a single directory $path entry", () => {
+	it("should collect a single directory $path entry", ({ expect }) => {
 		expect.assertions(1);
 
 		const tree = {
@@ -52,7 +54,7 @@ describe(collectMounts, () => {
 		).toStrictEqual([{ dataModelPath: "ReplicatedStorage/client", fsPath: "out/client" }]);
 	});
 
-	it("should collect multiple $path entries in nested tree", () => {
+	it("should collect multiple $path entries in nested tree", ({ expect }) => {
 		expect.assertions(1);
 
 		const tree = {
@@ -79,7 +81,7 @@ describe(collectMounts, () => {
 		]);
 	});
 
-	it("should normalize trailing slash in $path", () => {
+	it("should normalize trailing slash in $path", ({ expect }) => {
 		expect.assertions(1);
 
 		const tree = {
@@ -94,7 +96,7 @@ describe(collectMounts, () => {
 		).toStrictEqual([{ dataModelPath: "ReplicatedStorage/client", fsPath: "out/client" }]);
 	});
 
-	it("should skip file-valued $path entries", () => {
+	it("should skip file-valued $path entries", ({ expect }) => {
 		expect.assertions(1);
 
 		const tree = {
@@ -115,7 +117,7 @@ describe(collectMounts, () => {
 		]);
 	});
 
-	it("should skip missing paths silently", () => {
+	it("should skip missing paths silently", ({ expect }) => {
 		expect.assertions(1);
 
 		const tree = {
@@ -137,7 +139,7 @@ describe(collectMounts, () => {
 		]);
 	});
 
-	it("should skip $path entries pointing at .project.json files", () => {
+	it("should skip $path entries pointing at .project.json files", ({ expect }) => {
 		expect.assertions(2);
 
 		const tree = {
@@ -153,7 +155,7 @@ describe(collectMounts, () => {
 		expect(classify).not.toHaveBeenCalled();
 	});
 
-	it("should collect an optional directory $path entry", () => {
+	it("should collect an optional directory $path entry", ({ expect }) => {
 		expect.assertions(1);
 
 		const tree = {
@@ -168,7 +170,7 @@ describe(collectMounts, () => {
 		).toStrictEqual([{ dataModelPath: "ReplicatedStorage/optional", fsPath: "out/maybe" }]);
 	});
 
-	it("should skip keys that start with $", () => {
+	it("should skip keys that start with $", ({ expect }) => {
 		expect.assertions(1);
 
 		const tree = {
@@ -181,7 +183,7 @@ describe(collectMounts, () => {
 		).toStrictEqual([]);
 	});
 
-	it("should skip non-object values", () => {
+	it("should skip non-object values", ({ expect }) => {
 		expect.assertions(1);
 
 		const tree = {
@@ -194,7 +196,7 @@ describe(collectMounts, () => {
 		).toStrictEqual([]);
 	});
 
-	it("should walk deeply nested tree structures", () => {
+	it("should walk deeply nested tree structures", ({ expect }) => {
 		expect.assertions(1);
 
 		const tree = {
@@ -223,7 +225,7 @@ describe(collectMounts, () => {
 		]);
 	});
 
-	it("should build DataModel paths from given current prefix", () => {
+	it("should build DataModel paths from given current prefix", ({ expect }) => {
 		expect.assertions(1);
 
 		const subtree = {
@@ -241,13 +243,13 @@ describe(collectMounts, () => {
 });
 
 describe(pruneAncestors, () => {
-	it("should return empty array for empty input", () => {
+	it("should return empty array for empty input", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(pruneAncestors([])).toStrictEqual([]);
 	});
 
-	it("should pass unrelated paths through unchanged", () => {
+	it("should pass unrelated paths through unchanged", ({ expect }) => {
 		expect.assertions(1);
 
 		const paths = ["ReplicatedStorage/Client", "ServerScriptService/Server"];
@@ -255,7 +257,7 @@ describe(pruneAncestors, () => {
 		expect(pruneAncestors(paths)).toStrictEqual(paths);
 	});
 
-	it("should drop descendant when ancestor is present", () => {
+	it("should drop descendant when ancestor is present", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -263,7 +265,7 @@ describe(pruneAncestors, () => {
 		).toStrictEqual(["ReplicatedStorage/Client"]);
 	});
 
-	it("should drop descendant regardless of input order", () => {
+	it("should drop descendant regardless of input order", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -271,7 +273,7 @@ describe(pruneAncestors, () => {
 		).toStrictEqual(["ReplicatedStorage/Client"]);
 	});
 
-	it("should respect segment boundaries when testing ancestry", () => {
+	it("should respect segment boundaries when testing ancestry", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -279,13 +281,13 @@ describe(pruneAncestors, () => {
 		).toStrictEqual(["ReplicatedStorage/Client", "ReplicatedStorage/ClientExtras"]);
 	});
 
-	it("should keep identical paths unchanged (caller dedupes)", () => {
+	it("should keep identical paths unchanged (caller dedupes)", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(pruneAncestors(["A/B", "A/B"])).toStrictEqual(["A/B", "A/B"]);
 	});
 
-	it("should drop all descendants under a common ancestor", () => {
+	it("should drop all descendants under a common ancestor", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -300,7 +302,7 @@ describe(pruneAncestors, () => {
 });
 
 describe(listMounts, () => {
-	it("should list file and directory mounts as written, parents first", () => {
+	it("should list file and directory mounts as written, parents first", ({ expect }) => {
 		expect.assertions(1);
 
 		const tree = {
@@ -319,7 +321,7 @@ describe(listMounts, () => {
 		]);
 	});
 
-	it("should prefix paths below a given instance path", () => {
+	it("should prefix paths below a given instance path", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(listMounts({ Child: { $path: "child" } }, "Game")).toStrictEqual([

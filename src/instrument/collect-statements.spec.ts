@@ -1,11 +1,13 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { recordingAccumulator } from "#test/mocks/coverage-accumulator.ts";
 import { block, NO_IGNORES, span } from "#test/mocks/coverage-spec-luau-ast.ts";
 import { createStatementCollector } from "./collect-statements.ts";
 
 describe(createStatementCollector, () => {
-	it("should collect every instrumentable statement type and ignore metadata nodes", () => {
+	it("should collect every instrumentable statement type and ignore metadata nodes", ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const accumulator = recordingAccumulator();
@@ -40,7 +42,7 @@ describe(createStatementCollector, () => {
 		);
 	});
 
-	it("should skip a statement the ignores cover", () => {
+	it("should skip a statement the ignores cover", ({ expect }) => {
 		expect.assertions(1);
 
 		const accumulator = recordingAccumulator();

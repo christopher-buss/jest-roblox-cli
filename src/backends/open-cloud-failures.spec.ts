@@ -1,6 +1,6 @@
 import { PermissionError } from "@bedrock-rbx/ocale";
 
-import { assert, describe, expect, it } from "vitest";
+import { assert, describe, it } from "vitest";
 
 import { describeError, isNotFoundError, rethrowOversizedResult } from "./open-cloud-failures.ts";
 
@@ -13,7 +13,7 @@ function caught(rethrow: () => never): unknown {
 }
 
 describe(rethrowOversizedResult, () => {
-	it("should explain an oversized return that splitting cannot fix", () => {
+	it("should explain an oversized return that splitting cannot fix", ({ expect }) => {
 		expect.assertions(2);
 
 		// Open Cloud names neither the cause nor a way out, and it rejects
@@ -41,7 +41,7 @@ describe(rethrowOversizedResult, () => {
 
 	it.for([new Error("open cloud task crashed"), "Return results too large"])(
 		"should leave an unrelated failure untouched: %s",
-		(failure) => {
+		(failure, { expect }) => {
 			expect.assertions(1);
 
 			expect(caught(() => rethrowOversizedResult(failure))).toBe(failure);
@@ -50,7 +50,7 @@ describe(rethrowOversizedResult, () => {
 });
 
 describe(describeError, () => {
-	it("should name the scopes a permission failure is missing", () => {
+	it("should name the scopes a permission failure is missing", ({ expect }) => {
 		expect.assertions(1);
 
 		const err = new Error("forbidden", {
@@ -67,7 +67,7 @@ describe(describeError, () => {
 	it.for([
 		[new Error("network broke"), "network broke"],
 		["string-error", "string-error"],
-	] as const)("should describe %s as %s", ([err, expected]) => {
+	] as const)("should describe %s as %s", ([err, expected], { expect }) => {
 		expect.assertions(1);
 
 		expect(describeError(err)).toBe(expected);
@@ -75,7 +75,7 @@ describe(describeError, () => {
 });
 
 describe(isNotFoundError, () => {
-	it("should find a 404 anywhere in the error chain", () => {
+	it("should find a 404 anywhere in the error chain", ({ expect }) => {
 		expect.assertions(2);
 
 		const notFound = Object.assign(new Error("missing"), { statusCode: 404 });

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { copyIgnoreMatcher } from "#test/mocks/coverage-copy-ignore.ts";
 import { MANIFEST_VERSION } from "#test/mocks/coverage-versions.ts";
@@ -21,7 +21,7 @@ function manifestWith(files: CoverageManifest["files"]): CoverageManifest {
 }
 
 describe(computeIncrementalState, () => {
-	it("should report a change when a cached file's shadow output is gone", () => {
+	it("should report a change when a cached file's shadow output is gone", ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem } = createMemoryFileSystem({ "/source/init.luau": "return nil" });

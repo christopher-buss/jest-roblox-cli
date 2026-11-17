@@ -1,15 +1,15 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { getTerminalWidth, readTerminalColumns } from "./width.ts";
 
 describe(getTerminalWidth, () => {
-	it("should read the stream column count", () => {
+	it("should read the stream column count", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(getTerminalWidth({ columns: 120 })).toBe(120);
 	});
 
-	it("should default to 80 columns when the stream reports none", () => {
+	it("should default to 80 columns when the stream reports none", ({ expect }) => {
 		expect.assertions(2);
 
 		expect(getTerminalWidth({ columns: 0 })).toBe(80);
@@ -18,7 +18,7 @@ describe(getTerminalWidth, () => {
 });
 
 describe(readTerminalColumns, () => {
-	it("should prefer the stream column count", () => {
+	it("should prefer the stream column count", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -26,13 +26,13 @@ describe(readTerminalColumns, () => {
 		).toBe(120);
 	});
 
-	it("should fall back to a positive COLUMNS", () => {
+	it("should fall back to a positive COLUMNS", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(readTerminalColumns({ environment: { COLUMNS: "200" }, stream: {} })).toBe(200);
 	});
 
-	it.for(["", "0", "-5", "abc"])("should ignore COLUMNS %j", (columns) => {
+	it.for(["", "0", "-5", "abc"])("should ignore COLUMNS %j", (columns, { expect }) => {
 		expect.assertions(1);
 
 		expect(

@@ -3,7 +3,7 @@ import type { CstNode, CstNodeKind } from "@isentinel/luau-ast/cst";
 
 import fs from "node:fs";
 import path from "node:path";
-import { describe, expect, expectTypeOf, it } from "vitest";
+import { describe, expectTypeOf, it } from "vitest";
 
 // The serializer names a node kind exactly once, in `begin("Kind", ...)`.
 // Reading the C++ source keeps the TypeScript union from drifting without a
@@ -12,7 +12,7 @@ const WRAPPER_SOURCE = path.join(import.meta.dirname, "..", "..", "wasm", "wrapp
 const BEGIN_CALL = /begin\(\s*"([A-Za-z]+)"/g;
 
 describe("node kinds", () => {
-	it("should list exactly the kinds the serializer emits", () => {
+	it("should list exactly the kinds the serializer emits", ({ expect }) => {
 		expect.assertions(1);
 
 		const emitted = new Set(
@@ -24,7 +24,7 @@ describe("node kinds", () => {
 		expect(emitted).toStrictEqual(new Set(CST_NODE_KINDS));
 	});
 
-	it("should type the union with exactly the listed kinds", () => {
+	it("should type the union with exactly the listed kinds", ({ expect }) => {
 		expect.assertions(0);
 
 		// Checked by the typecheck target: a kind on one side only is a

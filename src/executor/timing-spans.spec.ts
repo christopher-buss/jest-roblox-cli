@@ -1,6 +1,6 @@
 import { fromPartial } from "@total-typescript/shoehorn";
 
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import type { RawBackendEntry } from "../backends/interface.ts";
 import type { TimingCollector } from "../timing/orchestration-collector.ts";
@@ -12,7 +12,7 @@ function runnerOutput(timing: Record<string, number>): string {
 }
 
 describe(calculateTestsMs, () => {
-	it("should sum available durations across every file", () => {
+	it("should sum available durations across every file", ({ expect }) => {
 		expect.assertions(1);
 
 		const files = [
@@ -25,7 +25,7 @@ describe(calculateTestsMs, () => {
 });
 
 describe(recordLuauTimingSpans, () => {
-	it("should record every Luau phase except its redundant total", () => {
+	it("should record every Luau phase except its redundant total", ({ expect }) => {
 		expect.assertions(1);
 
 		const record = vi.fn<TimingCollector["record"]>();
@@ -44,7 +44,7 @@ describe(recordLuauTimingSpans, () => {
 		]);
 	});
 
-	it("should skip an entry whose output carries no Luau timing", () => {
+	it("should skip an entry whose output carries no Luau timing", ({ expect }) => {
 		expect.assertions(1);
 
 		const record = vi.fn<TimingCollector["record"]>();
@@ -57,7 +57,7 @@ describe(recordLuauTimingSpans, () => {
 		expect(record).not.toHaveBeenCalled();
 	});
 
-	it("should avoid parsing output when timing is disabled", () => {
+	it("should avoid parsing output when timing is disabled", ({ expect }) => {
 		expect.assertions(1);
 
 		const entry = { jestOutput: runnerOutput({ findJest: 0.2 }) };

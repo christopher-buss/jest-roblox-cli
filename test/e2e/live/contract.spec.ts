@@ -4,7 +4,7 @@ import { OcaleRunner, TaskStallError } from "@isentinel/roblox-runner";
 import * as path from "node:path";
 import process from "node:process";
 import type { TestContext } from "vitest";
-import { assert, describe, expect, it } from "vitest";
+import { assert, describe, it } from "vitest";
 
 import { taskEnvelopeSchema } from "#src/protocol/envelope.ts";
 import { MAXIMUM_SUBMIT_MS } from "#test/e2e/live/live-budgets.ts";
@@ -50,7 +50,7 @@ describe.for(cases)("open Cloud contract ($name)", ({ settleTaskAsync, testCase 
 	it(
 		"should return a numeric versionNumber from a place upload",
 		{ timeout: MAXIMUM_SUBMIT_MS + 5000 },
-		async () => {
+		async ({ expect }) => {
 			expect.assertions(1);
 
 			const runner = await testCase.createRunnerAsync([{ jestOutput: "" }]);
@@ -63,7 +63,8 @@ describe.for(cases)("open Cloud contract ($name)", ({ settleTaskAsync, testCase 
 	it(
 		"should return an envelope-shaped first output when the script completes",
 		async (context) => {
-			expect.assertions(3);
+			context.expect.assertions(3);
+			const { expect } = context;
 
 			const runner = await testCase.createRunnerAsync([
 				// Fake-only: the fake wraps `jestOutput` into the envelope. Live
@@ -89,7 +90,8 @@ describe.for(cases)("open Cloud contract ($name)", ({ settleTaskAsync, testCase 
 	it(
 		"should reject with the task's failure when the script errors",
 		async (context) => {
-			expect.assertions(1);
+			context.expect.assertions(1);
+			const { expect } = context;
 
 			const runner = await testCase.createRunnerAsync([
 				{ errorMessage: "contract-failure", jestOutput: "", state: "FAILED" },

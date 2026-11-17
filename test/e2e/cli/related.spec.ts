@@ -1,7 +1,7 @@
 import { mkdirSync, symlinkSync, writeFileSync } from "node:fs";
 import * as path from "node:path";
 import { stripVTControlCharacters } from "node:util";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { initGitRepository } from "#test/e2e/cli/git-repository.ts";
 import type { PartialRunResult } from "#test/e2e/cli/partial-run.ts";
@@ -93,7 +93,7 @@ async function runRbxtsRelatedAsync(files: Array<string>): Promise<PartialRunRes
 describe.skipIf(!rojoOnPath())("related", () => {
 	it(
 		"should dispatch only the spec that reaches a module two string requires below it",
-		async () => {
+		async ({ expect }) => {
 			expect.assertions(5);
 
 			const run = await runRelatedAsync(["src/leaf.luau"]);
@@ -111,7 +111,7 @@ describe.skipIf(!rojoOnPath())("related", () => {
 
 	it(
 		"should dispatch a given spec file on its own",
-		async () => {
+		async ({ expect }) => {
 			expect.assertions(3);
 
 			const run = await runRelatedAsync(["src/other.spec.luau"]);
@@ -125,7 +125,7 @@ describe.skipIf(!rojoOnPath())("related", () => {
 
 	it(
 		"should pass and dispatch nothing when no spec reaches the given file",
-		async () => {
+		async ({ expect }) => {
 			expect.assertions(3);
 
 			const run = await runRelatedAsync(["src/unused.luau"]);
@@ -142,7 +142,7 @@ describe.skipIf(!rojoOnPath())("related", () => {
 	it.for(WIDENING_CASES)(
 		"should dispatch every spec for $description",
 		{ timeout: RUN_TIMEOUT_MS * 2 },
-		async ({ changes, file }) => {
+		async ({ changes, file }, { expect }) => {
 			expect.assertions(3);
 
 			const run = await runRelatedAsync([file], changes);
@@ -159,7 +159,7 @@ describe.skipIf(!rojoOnPath())("related", () => {
 
 	it(
 		"should ignore a change outside the project root, the Rojo tree and the triggers",
-		async () => {
+		async ({ expect }) => {
 			expect.assertions(3);
 
 			const run = await runRelatedAsync(["../docs/notes.md"], { "../docs/notes.md": "" });
@@ -176,7 +176,7 @@ describe.skipIf(!rojoOnPath())("related", () => {
 	describe("in a roblox-ts project", () => {
 		it(
 			"should dispatch only the .ts spec whose Luau reaches a changed .ts file through TS.import",
-			async () => {
+			async ({ expect }) => {
 				expect.assertions(4);
 
 				const run = await runRbxtsRelatedAsync(["src/leaf.ts"]);
@@ -197,7 +197,7 @@ stdout: ${run.stdout}`,
 
 		it(
 			"should dispatch the spec that imports a changed .ts file of another workspace package",
-			async () => {
+			async ({ expect }) => {
 				expect.assertions(3);
 
 				const run = await runRbxtsRelatedAsync(["../lib/src/thing.ts"]);
@@ -215,7 +215,7 @@ stdout: ${run.stdout}`,
 
 		it(
 			"should dispatch every spec for a changed .ts file with no Luau module",
-			async () => {
+			async ({ expect }) => {
 				expect.assertions(3);
 
 				const run = await runRbxtsRelatedAsync(["src/types.d.ts"]);

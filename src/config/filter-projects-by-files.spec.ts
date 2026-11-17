@@ -1,6 +1,6 @@
 import { fromAny } from "@total-typescript/shoehorn";
 
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { matchFilesToProjects } from "./filter-projects-by-files.ts";
 import type { ResolvedProjectConfig } from "./projects.ts";
@@ -54,7 +54,7 @@ function filterClientServerAcrossFiles(): ReturnType<typeof filterProjectsByFile
 }
 
 describe(filterProjectsByFiles, () => {
-	it("should return only the project whose include root contains the file", () => {
+	it("should return only the project whose include root contains the file", ({ expect }) => {
 		expect.assertions(2);
 
 		const client = makeProject({
@@ -76,7 +76,7 @@ describe(filterProjectsByFiles, () => {
 		expect(result[0]!.project.displayName).toBe("client");
 	});
 
-	it("should return projects matching across multiple positional files", () => {
+	it("should return projects matching across multiple positional files", ({ expect }) => {
 		expect.assertions(2);
 
 		const result = filterClientServerAcrossFiles();
@@ -88,7 +88,7 @@ describe(filterProjectsByFiles, () => {
 		]);
 	});
 
-	it("should pair each project with only the cli files its roots contain", () => {
+	it("should pair each project with only the cli files its roots contain", ({ expect }) => {
 		expect.assertions(2);
 
 		const result = filterClientServerAcrossFiles();
@@ -97,7 +97,7 @@ describe(filterProjectsByFiles, () => {
 		expect(result[1]!.matchingFiles).toStrictEqual(["src/server/b.spec.ts"]);
 	});
 
-	it("should give overlapping projects each only their owning files", () => {
+	it("should give overlapping projects each only their owning files", ({ expect }) => {
 		expect.assertions(2);
 
 		const wide = makeProject({
@@ -124,7 +124,7 @@ describe(filterProjectsByFiles, () => {
 		expect(result[1]!.matchingFiles).toStrictEqual(["src/client/a.spec.ts"]);
 	});
 
-	it("should return projects in the same order as the input list", () => {
+	it("should return projects in the same order as the input list", ({ expect }) => {
 		expect.assertions(1);
 
 		const client = makeProject({
@@ -148,7 +148,7 @@ describe(filterProjectsByFiles, () => {
 		]);
 	});
 
-	it("should include a project once when multiple files match its roots", () => {
+	it("should include a project once when multiple files match its roots", ({ expect }) => {
 		expect.assertions(2);
 
 		const client = makeProject({
@@ -169,7 +169,9 @@ describe(filterProjectsByFiles, () => {
 		]);
 	});
 
-	it("should include a project when one of its multiple include roots contains the file", () => {
+	it("should include a project when one of its multiple include roots contains the file", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const shared = makeProject({
@@ -186,7 +188,9 @@ describe(filterProjectsByFiles, () => {
 		expect(result).toHaveLength(1);
 	});
 
-	it("should include all projects whose roots contain the file (overlapping mounts)", () => {
+	it("should include all projects whose roots contain the file (overlapping mounts)", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const wide = makeProject({
@@ -207,7 +211,7 @@ describe(filterProjectsByFiles, () => {
 		expect(result.map((match) => match.project.displayName)).toStrictEqual(["wide", "narrow"]);
 	});
 
-	it("should normalize Windows backslash paths when matching", () => {
+	it("should normalize Windows backslash paths when matching", ({ expect }) => {
 		expect.assertions(1);
 
 		const client = makeProject({
@@ -224,7 +228,7 @@ describe(filterProjectsByFiles, () => {
 		expect(result).toHaveLength(1);
 	});
 
-	it("should normalize Windows backslashes inside include patterns", () => {
+	it("should normalize Windows backslashes inside include patterns", ({ expect }) => {
 		expect.assertions(1);
 
 		const client = makeProject({
@@ -241,7 +245,7 @@ describe(filterProjectsByFiles, () => {
 		expect(result).toHaveLength(1);
 	});
 
-	it("should resolve relative cli files against rootDirectory before matching", () => {
+	it("should resolve relative cli files against rootDirectory before matching", ({ expect }) => {
 		expect.assertions(1);
 
 		const client = makeProject({
@@ -260,7 +264,7 @@ describe(filterProjectsByFiles, () => {
 		expect(result).toHaveLength(1);
 	});
 
-	it("should select a project when the requested path is its include root", () => {
+	it("should select a project when the requested path is its include root", ({ expect }) => {
 		expect.assertions(1);
 
 		const client = makeProject({
@@ -277,7 +281,7 @@ describe(filterProjectsByFiles, () => {
 		expect(result).toHaveLength(1);
 	});
 
-	it("should accept absolute POSIX cli file paths under rootDirectory", () => {
+	it("should accept absolute POSIX cli file paths under rootDirectory", ({ expect }) => {
 		expect.assertions(1);
 
 		const client = makeProject({
@@ -294,7 +298,7 @@ describe(filterProjectsByFiles, () => {
 		expect(result).toHaveLength(1);
 	});
 
-	it("should accept absolute Windows cli file paths under rootDirectory", () => {
+	it("should accept absolute Windows cli file paths under rootDirectory", ({ expect }) => {
 		expect.assertions(1);
 
 		const client = makeProject({
@@ -311,7 +315,9 @@ describe(filterProjectsByFiles, () => {
 		expect(result).toHaveLength(1);
 	});
 
-	it("should throw with a clear message listing every file and root when nothing matches", () => {
+	it("should throw with a clear message listing every file and root when nothing matches", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const client = makeProject({
@@ -342,7 +348,7 @@ describe(filterProjectsByFiles, () => {
 		);
 	});
 
-	it("should report no roots when no projects are supplied", () => {
+	it("should report no roots when no projects are supplied", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(() => {
@@ -356,7 +362,7 @@ describe(filterProjectsByFiles, () => {
 		);
 	});
 
-	it("should not assign files to a project with no include patterns", () => {
+	it("should not assign files to a project with no include patterns", ({ expect }) => {
 		expect.assertions(1);
 
 		const empty = makeProject({ include: [] });
@@ -371,7 +377,9 @@ describe(filterProjectsByFiles, () => {
 		).toStrictEqual([{ matchingFiles: ["src/client/a.spec.ts"], project: client }]);
 	});
 
-	it("should resolve includes without a static prefix against the project directory", () => {
+	it("should resolve includes without a static prefix against the project directory", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const wildcard = makeProject({ displayName: "wildcard", include: ["**/*.spec.ts"] });

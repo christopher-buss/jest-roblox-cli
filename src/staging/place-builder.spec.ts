@@ -6,7 +6,7 @@ import { createHash } from "node:crypto";
 import * as path from "node:path";
 import process from "node:process";
 import type { Mock } from "vitest";
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import { ageFile } from "#test/mocks/aged-file.ts";
 import type { MemoryFileSystem } from "#test/mocks/memory-file-system.ts";
@@ -103,7 +103,7 @@ function seedSharedPackages(mounted: Record<string, string>, bytes?: string): Ha
 }
 
 describe(buildPlaceAsync, () => {
-	it("should return the built place path and its content hash", async () => {
+	it("should return the built place path and its content hash", async ({ expect }) => {
 		expect.assertions(1);
 
 		const rojo = seed({ [PACKAGE_PROJECT]: NO_WRAP_PROJECT });
@@ -126,7 +126,9 @@ describe(buildPlaceAsync, () => {
 		});
 	});
 
-	it("should stamp the content id into the place and record it on the artifact", async () => {
+	it("should stamp the content id into the place and record it on the artifact", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const rojo = seed({ [PACKAGE_PROJECT]: NO_WRAP_PROJECT });
@@ -153,7 +155,9 @@ describe(buildPlaceAsync, () => {
 		expect(result.artifact.contentId).toBe("deadbeef");
 	});
 
-	it("should write the synthesized project to projectFile and build from it", async () => {
+	it("should write the synthesized project to projectFile and build from it", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const rojo = seed({ [PACKAGE_PROJECT]: NO_WRAP_PROJECT });
@@ -176,7 +180,7 @@ describe(buildPlaceAsync, () => {
 		);
 	});
 
-	it("should write $path entries relative to the project file", async () => {
+	it("should write $path entries relative to the project file", async ({ expect }) => {
 		expect.assertions(1);
 
 		const rojo = seed({ [PACKAGE_PROJECT]: NO_WRAP_PROJECT });
@@ -197,7 +201,7 @@ describe(buildPlaceAsync, () => {
 		});
 	});
 
-	it("should forward wrap and loadStringEnabled to synthesize", async () => {
+	it("should forward wrap and loadStringEnabled to synthesize", async ({ expect }) => {
 		expect.assertions(2);
 
 		const rojo = seed({ [PACKAGE_PROJECT]: NO_WRAP_PROJECT });
@@ -220,7 +224,7 @@ describe(buildPlaceAsync, () => {
 		expect(project.tree).not.toHaveProperty("ServerStorage");
 	});
 
-	it("should create the place file's parent directory before building", async () => {
+	it("should create the place file's parent directory before building", async ({ expect }) => {
 		expect.assertions(1);
 
 		const rojo = seed({ [PACKAGE_PROJECT]: NO_WRAP_PROJECT });
@@ -237,7 +241,9 @@ describe(buildPlaceAsync, () => {
 		expect(rojo.volume.existsSync("/fresh/nested/game.rbxl")).toBeTrue();
 	});
 
-	it("should build a mount two packages share once, under the shared pool", async () => {
+	it("should build a mount two packages share once, under the shared pool", async ({
+		expect,
+	}) => {
 		expect.assertions(3);
 
 		const rojo = seedSharedPackages({ [`${STAGE_DIR}/shared.luau`]: "return {}" });
@@ -260,7 +266,7 @@ describe(buildPlaceAsync, () => {
 		expect(poolKeyOf(staged(project, "b", "Staged"))).toBe(keys[0]!);
 	});
 
-	it("should demote a pinned mount two packages share for both of them", async () => {
+	it("should demote a pinned mount two packages share for both of them", async ({ expect }) => {
 		expect.assertions(1);
 
 		// The pool runs first, so the pinned-mount pass meets one node rather
@@ -319,7 +325,7 @@ describe("place reuse", () => {
 			: buildPlaceAsync({ ...options, packages: [makeUnwrappedDescriptor()], wrap });
 	}
 
-	it("should not re-read an unchanged mount to decide on reuse", async () => {
+	it("should not re-read an unchanged mount to decide on reuse", async ({ expect }) => {
 		expect.assertions(1);
 
 		const rojo = seedBuild();
@@ -331,7 +337,7 @@ describe("place reuse", () => {
 		expect(readFile).not.toHaveBeenCalledWith(`${MOUNT_DIR}/init.luau`);
 	});
 
-	it("should skip the rojo build when nothing changed", async () => {
+	it("should skip the rojo build when nothing changed", async ({ expect }) => {
 		expect.assertions(4);
 
 		const rojo = seedBuild();
@@ -356,7 +362,7 @@ describe("place reuse", () => {
 		expect(second).toStrictEqual({ ...first, rebuilt: false });
 	});
 
-	it("should rebuild when a mounted input changed", async () => {
+	it("should rebuild when a mounted input changed", async ({ expect }) => {
 		expect.assertions(1);
 
 		const rojo = seedBuild();
@@ -367,7 +373,7 @@ describe("place reuse", () => {
 		expect(rojo.execFile).toHaveBeenCalledTimes(2);
 	});
 
-	it("should rebuild when the place file is gone", async () => {
+	it("should rebuild when the place file is gone", async ({ expect }) => {
 		expect.assertions(1);
 
 		const rojo = seedBuild();
@@ -378,7 +384,7 @@ describe("place reuse", () => {
 		expect(rojo.execFile).toHaveBeenCalledTimes(2);
 	});
 
-	it("should rebuild when the place no longer matches its recorded hash", async () => {
+	it("should rebuild when the place no longer matches its recorded hash", async ({ expect }) => {
 		expect.assertions(1);
 
 		const rojo = seedBuild();
@@ -391,7 +397,7 @@ describe("place reuse", () => {
 		expect(rojo.execFile).toHaveBeenCalledTimes(2);
 	});
 
-	it("should rebuild when the inputs cannot be hashed", async () => {
+	it("should rebuild when the inputs cannot be hashed", async ({ expect }) => {
 		expect.assertions(2);
 
 		const write = vi.spyOn(process.stderr, "write").mockReturnValue(true);
@@ -405,7 +411,7 @@ describe("place reuse", () => {
 		expect(rojo.execFile).toHaveBeenCalledTimes(2);
 	});
 
-	it("should skip the pinned-mount pass when nothing changed", async () => {
+	it("should skip the pinned-mount pass when nothing changed", async ({ expect }) => {
 		expect.assertions(2);
 
 		// A staged mount carrying a class the engine pins: the pinned-mount
@@ -428,7 +434,7 @@ describe("place reuse", () => {
 		expect(rojo.execFile).toHaveBeenCalledTimes(2);
 	});
 
-	it("should fold the shared-pool pass version into the key", async () => {
+	it("should fold the shared-pool pass version into the key", async ({ expect }) => {
 		expect.assertions(1);
 
 		const rojo = seedBuild();
@@ -464,7 +470,7 @@ describe("place reuse", () => {
 		});
 	});
 
-	it("should build every time when no reuse cache is configured", async () => {
+	it("should build every time when no reuse cache is configured", async ({ expect }) => {
 		expect.assertions(1);
 
 		const rojo = seedBuild();

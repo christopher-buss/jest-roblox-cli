@@ -2,7 +2,7 @@ import { fromAny } from "@total-typescript/shoehorn";
 
 import type { LoadConfigOptions } from "c12";
 import * as path from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import { createConfigFixture } from "#test/mocks/config-fixture.ts";
 import { createLuteChildProcess } from "#test/mocks/lute-child-process.ts";
@@ -28,7 +28,7 @@ async function extendFixture(
 }
 
 describe(processExtends, () => {
-	it("should merge a shared base reached by two branches", async () => {
+	it("should merge a shared base reached by two branches", async ({ expect }) => {
 		expect.assertions(4);
 
 		const result = await extendFixture({
@@ -45,7 +45,7 @@ describe(processExtends, () => {
 		expect(result.test!.setupFiles).toStrictEqual(["shared.luau", "shared.luau"]);
 	});
 
-	it("should resolve an absolute extends path", async () => {
+	it("should resolve an absolute extends path", async ({ expect }) => {
 		expect.assertions(1);
 
 		const parent = path.resolve("parent.mjs");
@@ -57,7 +57,9 @@ describe(processExtends, () => {
 		expect(result.timeout).toBe(1234);
 	});
 
-	it("should reject circular inheritance and retain missing-parent context", async () => {
+	it("should reject circular inheritance and retain missing-parent context", async ({
+		expect,
+	}) => {
 		expect.assertions(3);
 
 		await expect(
@@ -76,7 +78,7 @@ describe(processExtends, () => {
 		).rejects.toHaveProperty("cause.message");
 	});
 
-	it("should anchor a relative workspace.root to the declaring file", async () => {
+	it("should anchor a relative workspace.root to the declaring file", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { rootDirectory } = createConfigFixture();
@@ -87,7 +89,7 @@ describe(processExtends, () => {
 		expect(result.workspace!.root).toBe(rootDirectory);
 	});
 
-	it("should anchor an extended layer's relative rootDir to its file", async () => {
+	it("should anchor an extended layer's relative rootDir to its file", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { rootDirectory } = createConfigFixture();
@@ -99,7 +101,7 @@ describe(processExtends, () => {
 		expect(result.rootDir).toBe(path.join(rootDirectory, "shared", "src"));
 	});
 
-	it("should keep the entry's relative rootDir as written", async () => {
+	it("should keep the entry's relative rootDir as written", async ({ expect }) => {
 		expect.assertions(1);
 
 		const result = await extendFixture({
@@ -110,7 +112,7 @@ describe(processExtends, () => {
 		expect(result.rootDir).toBe("own");
 	});
 
-	it("should keep an extended layer's absolute rootDir as written", async () => {
+	it("should keep an extended layer's absolute rootDir as written", async ({ expect }) => {
 		expect.assertions(1);
 
 		const absoluteRoot = path.resolve("/absolute-root");
@@ -122,7 +124,7 @@ describe(processExtends, () => {
 		expect(result.rootDir).toBe(absoluteRoot);
 	});
 
-	it("should keep an extended layer's drive-letter rootDir as written", async () => {
+	it("should keep an extended layer's drive-letter rootDir as written", async ({ expect }) => {
 		expect.assertions(1);
 
 		const result = await extendFixture({
@@ -133,7 +135,7 @@ describe(processExtends, () => {
 		expect(result.rootDir).toBe("C:/drive-root");
 	});
 
-	it("should keep the rootDir of an extended layer that names no file", async () => {
+	it("should keep the rootDir of an extended layer that names no file", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, rootDirectory } = createConfigFixture({
@@ -155,7 +157,9 @@ describe(processExtends, () => {
 });
 
 describe(invokeC12, () => {
-	it("should import a JSON config through the supplied filesystem in SEA mode", async () => {
+	it("should import a JSON config through the supplied filesystem in SEA mode", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		vi.stubEnv("JEST_ROBLOX_SEA", "true");
@@ -176,7 +180,7 @@ describe(invokeC12, () => {
 		expect(result.config).toStrictEqual({ test: { verbose: true } });
 	});
 
-	it("should import an ESM config through the native SEA loader", async () => {
+	it("should import an ESM config through the native SEA loader", async ({ expect }) => {
 		expect.assertions(1);
 
 		vi.stubEnv("JEST_ROBLOX_SEA", "true");

@@ -1,5 +1,5 @@
 import * as path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
@@ -43,7 +43,7 @@ function readLayout(volume: ReturnType<typeof luauPackage>["volume"]) {
 }
 
 describe(resolveRojoProject, () => {
-	it("should prefer default.project.json over other project files", () => {
+	it("should prefer default.project.json over other project files", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -57,7 +57,7 @@ describe(resolveRojoProject, () => {
 		);
 	});
 
-	it("should find an alternate project file but reject similar suffixes", () => {
+	it("should find an alternate project file but reject similar suffixes", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -72,7 +72,7 @@ describe(resolveRojoProject, () => {
 		);
 	});
 
-	it("should return undefined when no project file exists", () => {
+	it("should return undefined when no project file exists", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -83,7 +83,7 @@ describe(resolveRojoProject, () => {
 		expect(resolveRojoProject({ config: { rootDir: ROOT }, fileSystem })).toBeUndefined();
 	});
 
-	it("should resolve a configured project against rootDir", () => {
+	it("should resolve a configured project against rootDir", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -96,7 +96,7 @@ describe(resolveRojoProject, () => {
 		).toBe(path.join(ROOT, "build", "game.project.json"));
 	});
 
-	it("should keep an absolute configured project as written", () => {
+	it("should keep an absolute configured project as written", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -107,7 +107,7 @@ describe(resolveRojoProject, () => {
 		).toBe(absolute);
 	});
 
-	it("should point rojoProject at a project built from the file layout", () => {
+	it("should point rojoProject at a project built from the file layout", ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = luauPackage();
@@ -139,7 +139,7 @@ describe(resolveRojoProject, () => {
 		});
 	});
 
-	it("should mount the nearest generated @rbxts-js project as node_modules", () => {
+	it("should mount the nearest generated @rbxts-js project as node_modules", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = luauPackage({
@@ -163,7 +163,7 @@ describe(resolveRojoProject, () => {
 		});
 	});
 
-	it("should use a package's own Rojo project, test.project.json included", () => {
+	it("should use a package's own Rojo project, test.project.json included", ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = luauPackage({ "/repo/pkg/test.project.json": "{}" });
@@ -174,7 +174,7 @@ describe(resolveRojoProject, () => {
 		expect(volume.existsSync(LAYOUT_PATH)).toBeFalse();
 	});
 
-	it("should take a configured rojoProject over the file layout", () => {
+	it("should take a configured rojoProject over the file layout", ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = luauPackage();
@@ -188,7 +188,7 @@ describe(resolveRojoProject, () => {
 		expect(volume.existsSync(LAYOUT_PATH)).toBeFalse();
 	});
 
-	it("should leave a roblox-ts package alone", () => {
+	it("should leave a roblox-ts package alone", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = luauPackage({ "/repo/pkg/tsconfig.json": "{}" });
@@ -198,7 +198,7 @@ describe(resolveRojoProject, () => {
 		expect(rojoProject).toBeUndefined();
 	});
 
-	it("should rebuild a layout project left by an earlier run", () => {
+	it("should rebuild a layout project left by an earlier run", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = luauPackage({ [LAYOUT_PATH]: "{}" });
@@ -208,7 +208,7 @@ describe(resolveRojoProject, () => {
 		expect(readLayout(volume)).toMatchObject({ name: "pkg" });
 	});
 
-	it("should take the default file as configured when the config names none", () => {
+	it("should take the default file as configured when the config names none", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = luauPackage({ "/repo/pkg/default.project.json": "{}" });
@@ -222,7 +222,7 @@ describe(resolveRojoProject, () => {
 		).toBe(path.resolve("/repo/pkg", "test.project.json"));
 	});
 
-	it("should find nothing under a rootDir that does not exist", () => {
+	it("should find nothing under a rootDir that does not exist", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -232,7 +232,7 @@ describe(resolveRojoProject, () => {
 });
 
 describe(withRojoProject, () => {
-	it("should settle rojoProject on the config and keep its other fields", () => {
+	it("should settle rojoProject on the config and keep its other fields", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -247,7 +247,7 @@ describe(withRojoProject, () => {
 });
 
 describe(resolveLayoutProject, () => {
-	it("should point a Luau-only package at its layout project", () => {
+	it("should point a Luau-only package at its layout project", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = luauPackage();
@@ -262,7 +262,7 @@ describe(resolveLayoutProject, () => {
 });
 
 describe(requireRojoProject, () => {
-	it("should return a settled project and refuse a config without one", () => {
+	it("should return a settled project and refuse a config without one", ({ expect }) => {
 		expect.assertions(2);
 
 		expect(requireRojoProject({ rojoProject: "/repo/a.project.json" })).toBe(

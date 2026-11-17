@@ -1,6 +1,6 @@
 import * as path from "node:path";
 import { stripVTControlCharacters } from "node:util";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { startFakeOpenCloudServerAsync } from "#test/harness/fake-open-cloud.ts";
 import {
@@ -17,7 +17,7 @@ const FIXTURE = path.resolve(__dirname, "../fixtures/workspace");
 describe.skipIf(!rojoOnPath())("workspace related summary", () => {
 	it.for(["foo", "bar"])(
 		"should print the workspace-relative path for %s with two packages",
-		async (name) => {
+		async (name, { expect }) => {
 			expect.assertions(2);
 
 			const cwd = createFixtureSandbox(FIXTURE);

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import type { MemoryVolume } from "#test/mocks/memory-file-system.ts";
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
@@ -55,7 +55,7 @@ function seedCachedVersion(contents = "place-bytes") {
 }
 
 describe(hashPlaceFile, () => {
-	it("should return undefined when the place file cannot be read", () => {
+	it("should return undefined when the place file cannot be read", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -63,7 +63,7 @@ describe(hashPlaceFile, () => {
 		expect(hashPlaceFile("/repo/missing.rbxl", fileSystem)).toBeUndefined();
 	});
 
-	it("should return a different hash when the bytes change", () => {
+	it("should return a different hash when the bytes change", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -76,7 +76,7 @@ describe(hashPlaceFile, () => {
 });
 
 describe("upload cache", () => {
-	it("should return undefined when nothing was ever cached", () => {
+	it("should return undefined when nothing was ever cached", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -88,7 +88,7 @@ describe("upload cache", () => {
 		).toBeUndefined();
 	});
 
-	it("should return the recorded version for the same bytes", () => {
+	it("should return the recorded version for the same bytes", ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem, hash, volume } = seedCachedVersion();
@@ -110,7 +110,7 @@ describe("upload cache", () => {
 		);
 	});
 
-	it("should miss when the bytes changed", () => {
+	it("should miss when the bytes changed", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = seedCachedVersion("one");
@@ -125,7 +125,7 @@ describe("upload cache", () => {
 		).toBeUndefined();
 	});
 
-	it("should miss when the same bytes target a different place", () => {
+	it("should miss when the same bytes target a different place", ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem, hash } = seedCachedVersion();
@@ -148,7 +148,7 @@ describe("upload cache", () => {
 		).toBeUndefined();
 	});
 
-	it("should replace the entry for a place file rather than adding one", () => {
+	it("should replace the entry for a place file rather than adding one", ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -185,7 +185,7 @@ describe("upload cache", () => {
 		).toBe(43);
 	});
 
-	it("should keep entries for different place files side by side", () => {
+	it("should keep entries for different place files side by side", ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -213,7 +213,7 @@ describe("upload cache", () => {
 		);
 	});
 
-	it("should drop the entry on invalidate", () => {
+	it("should drop the entry on invalidate", ({ expect }) => {
 		expect.assertions(3);
 
 		const { fileSystem, hash, volume } = seedCachedVersion();
@@ -234,13 +234,13 @@ describe("upload cache", () => {
 	 * the next run reads. The caller says so out loud rather than promising a
 	 * re-upload that will not happen.
 	 */
-	it("should report a stale entry as surviving when the cache cannot be written", async () => {
+	it("should report a stale entry as surviving when the cache cannot be written", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const { fileSystem, hash } = seedCachedVersion();
-		vi.spyOn(fileSystem, "writeFileSync").mockImplementation(() => {
-			throw new Error("EROFS: read-only file system");
-		});
+		vi.spyOn(fileSystem, "writeFileSync").mockThrow(new Error("EROFS: read-only file system"));
 
 		expect(
 			invalidateCachedVersion({ fileSystem, rootDirectory: ROOT, target: TARGET }),
@@ -250,7 +250,7 @@ describe("upload cache", () => {
 		);
 	});
 
-	it("should tolerate invalidating when no cache file exists", () => {
+	it("should tolerate invalidating when no cache file exists", ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -264,7 +264,7 @@ describe("upload cache", () => {
 		expect(volume.existsSync(CACHE_PATH)).toBeFalse();
 	});
 
-	it("should degrade to a miss when the cache file is malformed", () => {
+	it("should degrade to a miss when the cache file is malformed", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -278,7 +278,7 @@ describe("upload cache", () => {
 		).toBeUndefined();
 	});
 
-	it("should degrade to a miss when the cache file has a newer format version", () => {
+	it("should degrade to a miss when the cache file has a newer format version", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -303,7 +303,7 @@ describe("upload cache", () => {
 	 * file written before the probe existed makes no such claim, so serving it
 	 * would skip the probe on a version nothing ever started.
 	 */
-	it("should degrade to a miss when the cache file predates boot verification", () => {
+	it("should degrade to a miss when the cache file predates boot verification", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -323,7 +323,7 @@ describe("upload cache", () => {
 		).toBeUndefined();
 	});
 
-	it("should degrade to a miss when entries is not an object", () => {
+	it("should degrade to a miss when entries is not an object", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -340,7 +340,7 @@ describe("upload cache", () => {
 		).toBeUndefined();
 	});
 
-	it("should skip an entry whose shape is junk", () => {
+	it("should skip an entry whose shape is junk", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -357,7 +357,7 @@ describe("upload cache", () => {
 		).toBeUndefined();
 	});
 
-	it("should retain valid entries alongside a junk entry", () => {
+	it("should retain valid entries alongside a junk entry", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();

@@ -1,6 +1,6 @@
 import { writeFileSync } from "node:fs";
 import * as path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { createFixtureSandbox, runCliAsync } from "#test/harness/helpers.ts";
 
@@ -18,7 +18,7 @@ function createLibrarySandbox(fixture: string): string {
 }
 
 describe("shipped luau library --typecheckOnly e2e", () => {
-	it("should pass every matcher case in the fixture suite", async () => {
+	it("should pass every matcher case in the fixture suite", async ({ expect }) => {
 		expect.assertions(2);
 
 		const sandbox = createLibrarySandbox(LIBRARY_FIXTURE);
@@ -29,7 +29,7 @@ describe("shipped luau library --typecheckOnly e2e", () => {
 		expect(result.stdout + result.stderr).toContain("116 passed");
 	});
 
-	it("should report a failing equality as expected and received types", async () => {
+	it("should report a failing equality as expected and received types", async ({ expect }) => {
 		expect.assertions(4);
 
 		const sandbox = createLibrarySandbox(LIBRARY_BROKEN_FIXTURE);

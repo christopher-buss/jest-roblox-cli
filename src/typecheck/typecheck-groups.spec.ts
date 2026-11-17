@@ -1,5 +1,5 @@
 import { performance } from "node:perf_hooks";
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import type { JestResult } from "../types/jest-result-types.ts";
 import type { RunTypecheck } from "./runner.ts";
@@ -81,7 +81,7 @@ async function passResultAsync(
 }
 
 describe("runPolicyTypecheckPassAsync grouping", () => {
-	it("should run one pass for a single project entry", async () => {
+	it("should run one pass for a single project entry", async ({ expect }) => {
 		expect.assertions(2);
 
 		const run = vi.fn<RunTypecheckGroup>(async () => {
@@ -101,7 +101,7 @@ describe("runPolicyTypecheckPassAsync grouping", () => {
 		expect(result).toStrictEqual(makeResult({ numPassedTests: 1, numTotalTests: 1 }));
 	});
 
-	it("should check projects with distinct tsconfigs against their own", async () => {
+	it("should check projects with distinct tsconfigs against their own", async ({ expect }) => {
 		expect.assertions(3);
 
 		const run = vi.fn<RunTypecheckGroup>(async (group) => resultForTsconfig(group.tsconfig));
@@ -126,7 +126,9 @@ describe("runPolicyTypecheckPassAsync grouping", () => {
 		);
 	});
 
-	it("should collapse projects sharing a tsconfig into one pass with deduped files", async () => {
+	it("should collapse projects sharing a tsconfig into one pass with deduped files", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const run = vi.fn<RunTypecheckGroup>(async () => makeResult());
@@ -146,7 +148,9 @@ describe("runPolicyTypecheckPassAsync grouping", () => {
 		});
 	});
 
-	it("should run separate passes for the same tsconfig under different roots", async () => {
+	it("should run separate passes for the same tsconfig under different roots", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const run = vi.fn<RunTypecheckGroup>(async () => makeResult());
@@ -162,7 +166,9 @@ describe("runPolicyTypecheckPassAsync grouping", () => {
 		expect(run).toHaveBeenCalledTimes(2);
 	});
 
-	it("should not collide a cwd and tsconfig that share a boundary substring", async () => {
+	it("should not collide a cwd and tsconfig that share a boundary substring", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const run = vi.fn<RunTypecheckGroup>(async () => makeResult());
@@ -178,7 +184,7 @@ describe("runPolicyTypecheckPassAsync grouping", () => {
 		expect(run).toHaveBeenCalledTimes(2);
 	});
 
-	it("should omit tsconfig when unset and take the earliest start time", async () => {
+	it("should omit tsconfig when unset and take the earliest start time", async ({ expect }) => {
 		expect.assertions(2);
 
 		const run = vi.fn<RunTypecheckGroup>(async (group) => {
@@ -197,7 +203,7 @@ describe("runPolicyTypecheckPassAsync grouping", () => {
 		expect(result!.startTime).toBe(20);
 	});
 
-	it("should group luau files by cwd alone across distinct tsconfigs", async () => {
+	it("should group luau files by cwd alone across distinct tsconfigs", async ({ expect }) => {
 		expect.assertions(1);
 
 		const run = vi.fn<RunTypecheckGroup>(async () => makeResult());
@@ -217,7 +223,9 @@ describe("runPolicyTypecheckPassAsync grouping", () => {
 		});
 	});
 
-	it("should run luau and typescript files of one entry as separate groups", async () => {
+	it("should run luau and typescript files of one entry as separate groups", async ({
+		expect,
+	}) => {
 		expect.assertions(3);
 
 		const run = vi.fn<RunTypecheckGroup>(async () => makeResult());
@@ -236,7 +244,7 @@ describe("runPolicyTypecheckPassAsync grouping", () => {
 		});
 	});
 
-	it("should run separate luau groups under different roots", async () => {
+	it("should run separate luau groups under different roots", async ({ expect }) => {
 		expect.assertions(1);
 
 		const run = vi.fn<RunTypecheckGroup>(async () => makeResult());
@@ -252,7 +260,7 @@ describe("runPolicyTypecheckPassAsync grouping", () => {
 		expect(run).toHaveBeenCalledTimes(2);
 	});
 
-	it("should return undefined when no entry carries files", async () => {
+	it("should return undefined when no entry carries files", async ({ expect }) => {
 		expect.assertions(2);
 
 		const run = vi.fn<RunTypecheckGroup>(async () => makeResult());
@@ -263,7 +271,7 @@ describe("runPolicyTypecheckPassAsync grouping", () => {
 		expect(run).not.toHaveBeenCalled();
 	});
 
-	it("should skip entries that carry no files", async () => {
+	it("should skip entries that carry no files", async ({ expect }) => {
 		expect.assertions(1);
 
 		const run = vi.fn<RunTypecheckGroup>(async () => makeResult());
@@ -283,7 +291,7 @@ describe("runPolicyTypecheckPassAsync grouping", () => {
 		});
 	});
 
-	it("should run multiple tsconfig groups concurrently", async () => {
+	it("should run multiple tsconfig groups concurrently", async ({ expect }) => {
 		expect.assertions(2);
 
 		const first = deferred();
@@ -315,7 +323,7 @@ describe("runPolicyTypecheckPassAsync grouping", () => {
 });
 
 describe("runPolicyTypecheckPassAsync timing", () => {
-	it("should skip the clock and runner when no entries exist", async () => {
+	it("should skip the clock and runner when no entries exist", async ({ expect }) => {
 		expect.assertions(3);
 
 		const run = vi.fn<RunTypecheckGroup>();
@@ -326,7 +334,7 @@ describe("runPolicyTypecheckPassAsync timing", () => {
 		expect(now).not.toHaveBeenCalled();
 	});
 
-	it("should return the exact elapsed time and merged result", async () => {
+	it("should return the exact elapsed time and merged result", async ({ expect }) => {
 		expect.assertions(2);
 
 		vi.spyOn(performance, "now").mockReturnValueOnce(10).mockReturnValueOnce(25);
@@ -346,18 +354,21 @@ describe(assertTypecheckAvailable, () => {
 	it.for<[string, Array<Array<string>>]>([
 		["a later entry", [["a.spec-d.luau"], ["b.spec-d.ts"]]],
 		["a later file", [["a.spec-d.luau", "b.spec-d.ts"]]],
-	])("should reject TypeScript Type Tests in %s under the standalone binary", ([, groups]) => {
-		expect.assertions(1);
+	])(
+		"should reject TypeScript Type Tests in %s under the standalone binary",
+		([, groups], { expect }) => {
+			expect.assertions(1);
 
-		vi.stubEnv("JEST_ROBLOX_SEA", "true");
-		const entries = groups.map((files) => ({ cwd: "/project", files }));
+			vi.stubEnv("JEST_ROBLOX_SEA", "true");
+			const entries = groups.map((files) => ({ cwd: "/project", files }));
 
-		expect(() => {
-			assertTypecheckAvailable(entries);
-		}).toThrow("--typecheck is not available in the standalone binary");
-	});
+			expect(() => {
+				assertTypecheckAvailable(entries);
+			}).toThrow("--typecheck is not available in the standalone binary");
+		},
+	);
 
-	it("should allow Luau Type Tests under the standalone binary", () => {
+	it("should allow Luau Type Tests under the standalone binary", ({ expect }) => {
 		expect.assertions(1);
 
 		vi.stubEnv("JEST_ROBLOX_SEA", "true");
@@ -369,7 +380,7 @@ describe(assertTypecheckAvailable, () => {
 });
 
 describe(runPolicyTypecheckPassAsync, () => {
-	it("should check each group under the policy of its cwd and finish it", async () => {
+	it("should check each group under the policy of its cwd and finish it", async ({ expect }) => {
 		expect.assertions(2);
 
 		const runTypecheck = vi.fn<RunTypecheck>(async () => makeResult({ numTotalTests: 1 }));
@@ -393,7 +404,7 @@ describe(runPolicyTypecheckPassAsync, () => {
 		expect(outcome.result!.numTotalTests).toBe(1234);
 	});
 
-	it("should pass a group's result through when no finisher is given", async () => {
+	it("should pass a group's result through when no finisher is given", async ({ expect }) => {
 		expect.assertions(1);
 
 		const result = makeResult({ numTotalTests: 4 });
@@ -407,7 +418,7 @@ describe(runPolicyTypecheckPassAsync, () => {
 		expect(outcome.result!.numTotalTests).toBe(4);
 	});
 
-	it("should reject a group whose cwd has no policy", async () => {
+	it("should reject a group whose cwd has no policy", async ({ expect }) => {
 		expect.assertions(1);
 
 		await expect(

@@ -1,5 +1,5 @@
 import * as path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { readingVolume } from "#test/mocks/volume-tsconfig-reader.ts";
@@ -31,7 +31,7 @@ function outputOf({
 const TSCONFIG = JSON.stringify({ compilerOptions: { outDir: "out", rootDir: "src" } });
 
 describe(createLuauOutputResolver, () => {
-	it("should map a source file to the module its tsconfig compiles it to", () => {
+	it("should map a source file to the module its tsconfig compiles it to", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = outputOf({
@@ -46,7 +46,7 @@ describe(createLuauOutputResolver, () => {
 		expect(output).toBe(at("app/out/shared/util.luau"));
 	});
 
-	it("should map an index file to its init module", () => {
+	it("should map an index file to its init module", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = outputOf({
@@ -61,7 +61,7 @@ describe(createLuauOutputResolver, () => {
 		expect(output).toBe(at("app/out/feature/init.luau"));
 	});
 
-	it("should map through the tsconfig nearest the file, not the run root", () => {
+	it("should map through the tsconfig nearest the file, not the run root", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = outputOf({
@@ -79,7 +79,7 @@ describe(createLuauOutputResolver, () => {
 		expect(output).toBe(at("packages/lib/build/thing.luau"));
 	});
 
-	it("should skip a tsconfig whose output holds no Luau module", () => {
+	it("should skip a tsconfig whose output holds no Luau module", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = outputOf({
@@ -97,7 +97,7 @@ describe(createLuauOutputResolver, () => {
 		expect(output).toBe(at("app/out/util.luau"));
 	});
 
-	it("should map a file with no compiled module to nothing", () => {
+	it("should map a file with no compiled module to nothing", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = outputOf({
@@ -108,7 +108,7 @@ describe(createLuauOutputResolver, () => {
 		expect(output).toBeUndefined();
 	});
 
-	it("should map a file outside the tsconfig root to nothing", () => {
+	it("should map a file outside the tsconfig root to nothing", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = outputOf({
@@ -123,7 +123,7 @@ describe(createLuauOutputResolver, () => {
 		expect(output).toBeUndefined();
 	});
 
-	it("should map a file with no tsconfig above it to nothing", () => {
+	it("should map a file with no tsconfig above it to nothing", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = outputOf({

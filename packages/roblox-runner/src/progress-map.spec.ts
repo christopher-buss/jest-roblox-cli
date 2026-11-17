@@ -2,7 +2,7 @@ import { createFakeHttpClient, type FakeHttpClient } from "@bedrock-rbx/ocale/te
 import { fromAny } from "@total-typescript/shoehorn";
 
 import { type } from "arktype";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { ProgressMap } from "./progress-map.ts";
 
@@ -44,7 +44,7 @@ function validItemBody(id: string, value: Tally): SortedMapItemBody {
 }
 
 describe(ProgressMap, () => {
-	it("should list and decode every per-task counter value", async () => {
+	it("should list and decode every per-task counter value", async ({ expect }) => {
 		expect.assertions(2);
 
 		const http = createFakeHttpClient();
@@ -67,7 +67,7 @@ describe(ProgressMap, () => {
 		);
 	});
 
-	it("should page through the continuation token until exhausted", async () => {
+	it("should page through the continuation token until exhausted", async ({ expect }) => {
 		expect.assertions(3);
 
 		const http = createFakeHttpClient();
@@ -88,7 +88,7 @@ describe(ProgressMap, () => {
 		expect(http.requests[1]!.request.url).toContain("pageToken=page-2");
 	});
 
-	it("should decode each value through the injected decoder", async () => {
+	it("should decode each value through the injected decoder", async ({ expect }) => {
 		expect.assertions(1);
 
 		const http = createFakeHttpClient();
@@ -105,7 +105,7 @@ describe(ProgressMap, () => {
 		expect(tallies).toStrictEqual([{ tested: 70 }]);
 	});
 
-	it("should throw when the list call returns an API error", async () => {
+	it("should throw when the list call returns an API error", async ({ expect }) => {
 		expect.assertions(1);
 
 		const http = createFakeHttpClient();
@@ -117,7 +117,7 @@ describe(ProgressMap, () => {
 	});
 
 	describe("construction", () => {
-		it("should construct with the default http client when none is provided", () => {
+		it("should construct with the default http client when none is provided", ({ expect }) => {
 			expect.assertions(1);
 
 			const map = new ProgressMap<Tally>({
@@ -130,7 +130,7 @@ describe(ProgressMap, () => {
 			expect(map).toBeInstanceOf(ProgressMap);
 		});
 
-		it("should accept an injected sleep function", () => {
+		it("should accept an injected sleep function", ({ expect }) => {
 			expect.assertions(1);
 
 			async function sleepAsync(): Promise<void> {}
@@ -146,7 +146,7 @@ describe(ProgressMap, () => {
 			expect(map).toBeInstanceOf(ProgressMap);
 		});
 
-		it("should route traffic through a custom baseUrl when supplied", async () => {
+		it("should route traffic through a custom baseUrl when supplied", async ({ expect }) => {
 			expect.assertions(1);
 
 			const http = createFakeHttpClient();

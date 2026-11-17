@@ -20,12 +20,10 @@ export interface EnvelopeEntry {
 
 export function captureStderr(): StderrCapture {
 	const writes: Array<string> = [];
-	const spy = vi
-		.spyOn(process.stderr, "write")
-		.mockImplementation((chunk: Parameters<typeof process.stderr.write>[0]) => {
-			writes.push(String(chunk));
-			return true;
-		});
+	const spy = vi.spyOn(process.stderr, "write").mockImplementation((chunk) => {
+		writes.push(String(chunk));
+		return true;
+	});
 
 	return {
 		restore: () => {

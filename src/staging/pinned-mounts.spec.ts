@@ -4,7 +4,7 @@ import { type } from "arktype";
 import * as crypto from "node:crypto";
 import * as path from "node:path";
 import type { Mock } from "vitest";
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import type { MemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { writingRojoExec } from "#test/mocks/rojo-exec.ts";
@@ -127,7 +127,7 @@ async function demotedScriptsShadowAsync(): Promise<string> {
 }
 
 describe(demotePinnedMountsAsync, () => {
-	it("should leave a project with no stage untouched", async () => {
+	it("should leave a project with no stage untouched", async ({ expect }) => {
 		expect.assertions(1);
 
 		const rojo = seed();
@@ -142,7 +142,7 @@ describe(demotePinnedMountsAsync, () => {
 		["a project with no tree", '{"name":"p"}'],
 		["a project whose ServerStorage is not a node", '{"tree":{"ServerStorage":7}}'],
 		["a project with no stage", '{"tree":{"ServerStorage":{}}}'],
-	] as const)("should leave %s untouched", async ([, projectJson]) => {
+	] as const)("should leave %s untouched", async ([, projectJson], { expect }) => {
 		expect.assertions(1);
 
 		const rojo = seed();
@@ -150,7 +150,9 @@ describe(demotePinnedMountsAsync, () => {
 		await expect(runAsync(rojo, projectJson)).resolves.toBe(projectJson);
 	});
 
-	it("should leave a stage whose mounts declare no pinned class untouched", async () => {
+	it("should leave a stage whose mounts declare no pinned class untouched", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const rojo = seed({ [path.join(ASSETS, "src/init.luau")]: "" });
@@ -161,7 +163,7 @@ describe(demotePinnedMountsAsync, () => {
 		await expect(runAsync(rojo, projectJson)).resolves.toBe(projectJson);
 	});
 
-	it("should point a mount that is itself a pinned model at the stand-in", async () => {
+	it("should point a mount that is itself a pinned model at the stand-in", async ({ expect }) => {
 		expect.assertions(2);
 
 		const model = path.join(ASSETS, "StarterPlayerScripts.rbxmx");
@@ -187,7 +189,9 @@ describe(demotePinnedMountsAsync, () => {
 		expect(project.globIgnorePaths).toStrictEqual([]);
 	});
 
-	it("should build an own-mount stand-in from the exact stable shadow contract", async () => {
+	it("should build an own-mount stand-in from the exact stable shadow contract", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const model = path.join(ASSETS, "StarterPlayerScripts.rbxmx");
@@ -225,7 +229,9 @@ describe(demotePinnedMountsAsync, () => {
 		});
 	});
 
-	it("should declare a stand-in child and ignore the original it replaces", async () => {
+	it("should declare a stand-in child and ignore the original it replaces", async ({
+		expect,
+	}) => {
 		expect.assertions(3);
 
 		const rojo = seed({
@@ -245,7 +251,7 @@ describe(demotePinnedMountsAsync, () => {
 
 	it.for(["aaa.luau", "aaa/init.luau"])(
 		"should read pinned metadata after sibling %s",
-		async (sibling) => {
+		async (sibling, { expect }) => {
 			expect.assertions(1);
 
 			const rojo = seed({
@@ -262,7 +268,9 @@ describe(demotePinnedMountsAsync, () => {
 		},
 	);
 
-	it("should point a mount whose own init.meta.json declares the class at the stand-in", async () => {
+	it("should point a mount whose own init.meta.json declares the class at the stand-in", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const rojo = seed({
@@ -294,7 +302,9 @@ describe(demotePinnedMountsAsync, () => {
 		).toBeUndefined();
 	});
 
-	it("should fold the pinned class to Folder and drop the properties it carried", async () => {
+	it("should fold the pinned class to Folder and drop the properties it carried", async ({
+		expect,
+	}) => {
 		expect.assertions(5);
 
 		const shadow = await demotedScriptsShadowAsync();
@@ -311,7 +321,9 @@ describe(demotePinnedMountsAsync, () => {
 		expect(shadow).toContain('<Item class="ModuleScript" referent="2">');
 	});
 
-	it("should leave a Folder the consumer authored holding its own properties", async () => {
+	it("should leave a Folder the consumer authored holding its own properties", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const shadow = await demotedScriptsShadowAsync();
@@ -321,7 +333,7 @@ describe(demotePinnedMountsAsync, () => {
 		expect(shadow).toContain('<int64 name="SourceAssetId">99</int64>');
 	});
 
-	it("should discard non-string globIgnorePaths entries", async () => {
+	it("should discard non-string globIgnorePaths entries", async ({ expect }) => {
 		expect.assertions(1);
 
 		const model = path.join(ASSETS, "Workspace/Terrain.rbxmx");
@@ -344,7 +356,7 @@ describe(demotePinnedMountsAsync, () => {
 		["Scripts/init.meta.json", '{"className":"StarterPlayerScripts"}', "Scripts"],
 	] as const)(
 		"should name the stand-in for %s after the instance rojo would build",
-		async ([fileName, contents, instanceName]) => {
+		async ([fileName, contents, instanceName], { expect }) => {
 			expect.assertions(1);
 
 			const rojo = seed({

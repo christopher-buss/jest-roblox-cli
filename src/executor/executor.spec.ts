@@ -1,6 +1,6 @@
 import { fromAny } from "@total-typescript/shoehorn";
 
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { fakeTimingCollector } from "#test/mocks/fake-timing-collector.ts";
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
@@ -26,7 +26,7 @@ function backendAnswering(jobIndices: Array<number>): Backend {
 }
 
 describe(executeJobsAsync, () => {
-	it("should refuse a backend result that names a job twice", async () => {
+	it("should refuse a backend result that names a job twice", async ({ expect }) => {
 		expect.assertions(1);
 
 		await expect(

@@ -1,5 +1,5 @@
 import process from "node:process";
-import { assert, describe, expect, it, vi } from "vitest";
+import { assert, describe, it, type TestContext, vi } from "vitest";
 
 import { writeAgedFile } from "#test/mocks/aged-file.ts";
 import type { MemoryFileSystem } from "#test/mocks/memory-file-system.ts";
@@ -49,7 +49,10 @@ async function hashOfAsync(
 	return hash;
 }
 
-async function warningOfAsync(fileSystem: FileSystem): Promise<string> {
+async function warningOfAsync(
+	fileSystem: FileSystem,
+	expect: TestContext["expect"],
+): Promise<string> {
 	const write = vi.spyOn(process.stderr, "write").mockReturnValue(true);
 	try {
 		await expect(
@@ -100,7 +103,7 @@ async function hashWithDelayedReadAsync(delayedPath: string): Promise<string> {
 }
 
 describe(tryComputeRojoInputsHashAsync, () => {
-	it("should not probe mount paths when the project declares none", async () => {
+	it("should not probe mount paths when the project declares none", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = writeProject({ $className: "DataModel" });
@@ -111,7 +114,9 @@ describe(tryComputeRojoInputsHashAsync, () => {
 		expect(stat).not.toHaveBeenCalled();
 	});
 
-	it("should reuse recorded digests rather than re-read an unchanged mount", async () => {
+	it("should reuse recorded digests rather than re-read an unchanged mount", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = writeProject({
@@ -128,7 +133,7 @@ describe(tryComputeRojoInputsHashAsync, () => {
 		expect(readFile).not.toHaveBeenCalledWith("/project/include/a.lua");
 	});
 
-	it("should still move when a file changes under a warm digest cache", async () => {
+	it("should still move when a file changes under a warm digest cache", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = writeProject({
@@ -144,7 +149,7 @@ describe(tryComputeRojoInputsHashAsync, () => {
 		await expect(hashOfAsync(fileSystem)).resolves.not.toBe(before);
 	});
 
-	it("should hash the same tree the same wherever the root sits", async () => {
+	it("should hash the same tree the same wherever the root sits", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -173,7 +178,9 @@ describe(tryComputeRojoInputsHashAsync, () => {
 		).resolves.toBe(await hashOfAsync(fileSystem));
 	});
 
-	it("should hash the project text the caller holds rather than the file on disk", async () => {
+	it("should hash the project text the caller holds rather than the file on disk", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -197,7 +204,7 @@ describe(tryComputeRojoInputsHashAsync, () => {
 		).resolves.not.toBe(first);
 	});
 
-	it("should return a sha256 digest", async () => {
+	it("should return a sha256 digest", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = writeProject({ $className: "DataModel" });
@@ -205,7 +212,7 @@ describe(tryComputeRojoInputsHashAsync, () => {
 		await expect(hashOfAsync(fileSystem)).resolves.toMatch(/^[a-f0-9]{64}$/);
 	});
 
-	it("should keep the digest of a fixed tree across releases", async () => {
+	it("should keep the digest of a fixed tree across releases", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = writeProject({
@@ -221,7 +228,7 @@ describe(tryComputeRojoInputsHashAsync, () => {
 		);
 	});
 
-	it("should not depend on the order a directory lists its entries in", async () => {
+	it("should not depend on the order a directory lists its entries in", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = writeProject({
@@ -241,7 +248,7 @@ describe(tryComputeRojoInputsHashAsync, () => {
 		await expect(hashOfAsync(fileSystem)).resolves.toBe(listed);
 	});
 
-	it("should be stable when nothing changes", async () => {
+	it("should be stable when nothing changes", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = writeProject({
@@ -254,7 +261,7 @@ describe(tryComputeRojoInputsHashAsync, () => {
 		await expect(hashOfAsync(fileSystem)).resolves.toBe(await hashOfAsync(fileSystem));
 	});
 
-	it("should be stable when input reads finish in different orders", async () => {
+	it("should be stable when input reads finish in different orders", async ({ expect }) => {
 		expect.assertions(1);
 
 		await expect(hashWithDelayedReadAsync("/project/include/a.lua")).resolves.toBe(
@@ -262,7 +269,7 @@ describe(tryComputeRojoInputsHashAsync, () => {
 		);
 	});
 
-	it("should change when a mounted directory's file content changes", async () => {
+	it("should change when a mounted directory's file content changes", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = writeProject({
@@ -278,7 +285,7 @@ describe(tryComputeRojoInputsHashAsync, () => {
 		await expect(hashOfAsync(fileSystem)).resolves.not.toBe(before);
 	});
 
-	it("should change when a file under an optional mount changes", async () => {
+	it("should change when a file under an optional mount changes", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = writeProject({
@@ -294,7 +301,7 @@ describe(tryComputeRojoInputsHashAsync, () => {
 		await expect(hashOfAsync(fileSystem)).resolves.not.toBe(before);
 	});
 
-	it("should change when a directly mounted file changes", async () => {
+	it("should change when a directly mounted file changes", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = writeProject({
@@ -310,7 +317,9 @@ describe(tryComputeRojoInputsHashAsync, () => {
 		await expect(hashOfAsync(fileSystem)).resolves.not.toBe(before);
 	});
 
-	it("should read ordinary file stats once while walking a mounted directory", async () => {
+	it("should read ordinary file stats once while walking a mounted directory", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = writeProject({
@@ -330,7 +339,7 @@ describe(tryComputeRojoInputsHashAsync, () => {
 		expect(fileStats).toHaveLength(1);
 	});
 
-	it("should change when the rojo project file itself changes", async () => {
+	it("should change when the rojo project file itself changes", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = writeProject({ $className: "DataModel" });
@@ -347,7 +356,7 @@ describe(tryComputeRojoInputsHashAsync, () => {
 		await expect(hashOfAsync(fileSystem)).resolves.not.toBe(before);
 	});
 
-	it("should change when an inlined nested project file changes", async () => {
+	it("should change when an inlined nested project file changes", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = writeProject({
@@ -370,7 +379,7 @@ describe(tryComputeRojoInputsHashAsync, () => {
 		await expect(hashOfAsync(fileSystem)).resolves.not.toBe(before);
 	});
 
-	it("should change when a file under an absolute mount changes", async () => {
+	it("should change when a file under an absolute mount changes", async ({ expect }) => {
 		expect.assertions(1);
 
 		// Rojo mounts an absolute `$path` as written, so the walk reaches it
@@ -388,7 +397,7 @@ describe(tryComputeRojoInputsHashAsync, () => {
 		await expect(hashOfAsync(fileSystem)).resolves.not.toBe(before);
 	});
 
-	it("should exclude mounts that are or are nested under a luauRoot", async () => {
+	it("should exclude mounts that are or are nested under a luauRoot", async ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = writeProject({
@@ -415,7 +424,7 @@ describe(tryComputeRojoInputsHashAsync, () => {
 		expect(afterIncludeEdit).not.toBe(before);
 	});
 
-	it("should skip dot-prefixed entries inside a mount", async () => {
+	it("should skip dot-prefixed entries inside a mount", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = writeProject({
@@ -432,7 +441,7 @@ describe(tryComputeRojoInputsHashAsync, () => {
 		await expect(hashOfAsync(fileSystem)).resolves.toBe(before);
 	});
 
-	it("should drop mounts that do not exist on disk", async () => {
+	it("should drop mounts that do not exist on disk", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = writeProject({ $className: "DataModel", Ghost: { $path: "ghost" } });
@@ -440,7 +449,7 @@ describe(tryComputeRojoInputsHashAsync, () => {
 		await expect(hashOfAsync(fileSystem)).resolves.toMatch(/^[a-f0-9]{64}$/);
 	});
 
-	it("should change when a file is moved with identical content", async () => {
+	it("should change when a file is moved with identical content", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = writeProject({
@@ -457,7 +466,7 @@ describe(tryComputeRojoInputsHashAsync, () => {
 		await expect(hashOfAsync(fileSystem)).resolves.not.toBe(before);
 	});
 
-	it("should hash a file reached through a symlinked directory", async () => {
+	it("should hash a file reached through a symlinked directory", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = writeProject({
@@ -475,7 +484,7 @@ describe(tryComputeRojoInputsHashAsync, () => {
 		await expect(hashOfAsync(fileSystem)).resolves.not.toBe(before);
 	});
 
-	it("should hash a file a mount reaches only by following a symlink", async () => {
+	it("should hash a file a mount reaches only by following a symlink", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = writeProject({
@@ -493,7 +502,7 @@ describe(tryComputeRojoInputsHashAsync, () => {
 		await expect(hashOfAsync(fileSystem)).resolves.not.toBe(before);
 	});
 
-	it("should terminate on a symlink cycle", async () => {
+	it("should terminate on a symlink cycle", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = writeProject({
@@ -508,58 +517,58 @@ describe(tryComputeRojoInputsHashAsync, () => {
 	});
 
 	describe("when the project file has no tree object", () => {
-		it("should throw when the project is not a JSON object", async () => {
+		it("should throw when the project is not a JSON object", async ({ expect }) => {
 			expect.assertions(2);
 
 			const { fileSystem } = writeRawProject('"just a string"');
 
-			await expect(warningOfAsync(fileSystem)).resolves.toMatch(
+			await expect(warningOfAsync(fileSystem, expect)).resolves.toMatch(
 				/^Warning: could not hash rojo build inputs: Invalid Rojo project \/project\/default\.project\.json: /,
 			);
 		});
 
-		it("should throw when the project is JSON null", async () => {
+		it("should throw when the project is JSON null", async ({ expect }) => {
 			expect.assertions(2);
 
 			const { fileSystem } = writeRawProject("null");
 
-			await expect(warningOfAsync(fileSystem)).resolves.toMatch(
+			await expect(warningOfAsync(fileSystem, expect)).resolves.toMatch(
 				/^Warning: could not hash rojo build inputs: Invalid Rojo project \/project\/default\.project\.json: /,
 			);
 		});
 
-		it("should throw when the project is a JSON array", async () => {
+		it("should throw when the project is a JSON array", async ({ expect }) => {
 			expect.assertions(2);
 
 			const { fileSystem } = writeRawProject("[]");
 
-			await expect(warningOfAsync(fileSystem)).resolves.toMatch(
+			await expect(warningOfAsync(fileSystem, expect)).resolves.toMatch(
 				/^Warning: could not hash rojo build inputs: Invalid Rojo project \/project\/default\.project\.json: /,
 			);
 		});
 
-		it("should throw when tree is missing", async () => {
+		it("should throw when tree is missing", async ({ expect }) => {
 			expect.assertions(2);
 
 			const { fileSystem } = writeRawProject('{ "name": "test" }');
 
-			await expect(warningOfAsync(fileSystem)).resolves.toMatch(
+			await expect(warningOfAsync(fileSystem, expect)).resolves.toMatch(
 				/^Warning: could not hash rojo build inputs: Invalid Rojo project \/project\/default\.project\.json: /,
 			);
 		});
 
-		it("should throw when tree is an array", async () => {
+		it("should throw when tree is an array", async ({ expect }) => {
 			expect.assertions(2);
 
 			const { fileSystem } = writeRawProject('{ "name": "test", "tree": [] }');
 
-			await expect(warningOfAsync(fileSystem)).resolves.toMatch(
+			await expect(warningOfAsync(fileSystem, expect)).resolves.toMatch(
 				/^Warning: could not hash rojo build inputs: Invalid Rojo project \/project\/default\.project\.json: /,
 			);
 		});
 	});
 
-	it("should pass over a luauRoot nested inside a mounted directory", async () => {
+	it("should pass over a luauRoot nested inside a mounted directory", async ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = writeProject({

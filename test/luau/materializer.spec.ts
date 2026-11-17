@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import {
 	fillPlaceholders,
@@ -18,7 +18,7 @@ const MODULE_SOURCE = readLuauModule("staging/materializer.luau").replace(
 const HARNESS = readHarness("materializer");
 
 describe("workspace materializer under lute", () => {
-	it("should pass the materializer harness assertions", () => {
+	it("should pass the materializer harness assertions", ({ expect }) => {
 		expect.assertions(1);
 
 		const script = fillPlaceholders(HARNESS, {

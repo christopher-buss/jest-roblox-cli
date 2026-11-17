@@ -1,4 +1,4 @@
-import { assert, describe, expect, it } from "vitest";
+import { assert, describe, it } from "vitest";
 
 import rawCst from "#test/fixtures/trees/raw-cst.json" with { type: "json" };
 import { cstTree, rawTree } from "#test/helpers/unit/trees";
@@ -6,7 +6,7 @@ import { materializeCst } from "./cst-materialize.ts";
 import type { Trivia } from "./cst-token.ts";
 
 describe(materializeCst, () => {
-	it("should preserve whitespace in an empty block's end token", () => {
+	it("should preserve whitespace in an empty block's end token", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = materializeCst({
@@ -26,7 +26,7 @@ function emptyTreePayload(location: JSONValue = [0, 0, 0, 0]): string {
 }
 
 describe("materialization", () => {
-	it.for(Object.keys(rawCst))("should materialize recorded source %#", (source) => {
+	it.for(Object.keys(rawCst))("should materialize recorded source %#", (source, { expect }) => {
 		expect.assertions(1);
 
 		expect(materializeCst({ json: rawTree(source, "cst"), source })).toStrictEqual({
@@ -37,7 +37,7 @@ describe("materialization", () => {
 
 	it.for([null, [], [0, 0, 0], [0, 0, 0, "x"]])(
 		"should reject invalid locations %#",
-		(location) => {
+		(location, { expect }) => {
 			expect.assertions(1);
 
 			expect(() => materializeCst({ json: emptyTreePayload(location), source: "" })).toThrow(
@@ -48,7 +48,7 @@ describe("materialization", () => {
 
 	it.for(["null", "[]", "{}", '{"type":"Number"}'])(
 		"should reject an invalid root %s",
-		(json) => {
+		(json, { expect }) => {
 			expect.assertions(1);
 
 			expect(() => materializeCst({ json, source: "" })).toThrow("unrecognized CST shape");
@@ -74,7 +74,7 @@ describe("materialization", () => {
 		},
 	] satisfies Array<{ source: string; trivia: Array<Trivia> }>)(
 		"should retain a trivia-only source $source",
-		({ source, trivia }) => {
+		({ source, trivia }, { expect }) => {
 			expect.assertions(1);
 
 			const result = materializeCst({ json: emptyTreePayload(), source });
@@ -107,7 +107,7 @@ describe("materialization", () => {
 			error: 'bytes "--[[unterminated" between the start of the file and token "" at 1:17 are not whitespace or a comment',
 			source: "--[[unterminated",
 		},
-	])("should diagnose the first invalid trivia run $source", ({ error, source }) => {
+	])("should diagnose the first invalid trivia run $source", ({ error, source }, { expect }) => {
 		expect.assertions(1);
 
 		expect(materializeCst({ json: emptyTreePayload(), source })).toStrictEqual({

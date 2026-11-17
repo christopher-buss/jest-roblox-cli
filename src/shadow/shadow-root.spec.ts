@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import { copyIgnoreMatcher } from "#test/mocks/coverage-copy-ignore.ts";
 import { MANIFEST_VERSION } from "#test/mocks/coverage-versions.ts";
@@ -21,7 +21,7 @@ function manifestFrom(result: ReturnType<typeof prepareShadowRoot>): CoverageMan
 }
 
 describe(prepareShadowRoot, () => {
-	it("should avoid an eager source scan when coverage is not narrowed", () => {
+	it("should avoid an eager source scan when coverage is not narrowed", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -44,7 +44,9 @@ describe(prepareShadowRoot, () => {
 	// The incremental gate reads the manifest back by this key. Under a root of
 	// `.`, `path.join` drops the segment while a pasted `${root}/` keeps it, and
 	// a mismatched key re-instruments the file on every warm run.
-	it("should key an instrumented file and a mirrored one alike under a current-directory root", () => {
+	it("should key an instrumented file and a mirrored one alike under a current-directory root", ({
+		expect,
+	}) => {
 		expect.assertions(3);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -65,7 +67,9 @@ describe(prepareShadowRoot, () => {
 		expect(result.changed).toBeTrue();
 	});
 
-	it("should carry cached records forward when a new source appears without a universe", () => {
+	it("should carry cached records forward when a new source appears without a universe", ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = createMemoryFileSystem({
@@ -90,7 +94,7 @@ describe(prepareShadowRoot, () => {
 		expect(second.changed).toBeTrue();
 	});
 
-	it("should report an unchanged full-cache mirror as unchanged", () => {
+	it("should report an unchanged full-cache mirror as unchanged", ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -117,7 +121,7 @@ describe(prepareShadowRoot, () => {
 		expect(second.changed).toBeFalse();
 	});
 
-	it("should report an edited mirrored file in a full-cache run as changed", () => {
+	it("should report an edited mirrored file in a full-cache run as changed", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem({
@@ -142,7 +146,9 @@ describe(prepareShadowRoot, () => {
 		expect(second.changed).toBeTrue();
 	});
 
-	it("should report a deleted source when its shadow artifacts are already absent", () => {
+	it("should report a deleted source when its shadow artifacts are already absent", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem({ "init.luau": "local x = 1\n" });

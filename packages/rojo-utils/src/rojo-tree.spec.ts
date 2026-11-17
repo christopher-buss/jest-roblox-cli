@@ -1,5 +1,5 @@
 import * as path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { captureError } from "#test/helpers/unit/errors";
 import { makeFileSystem } from "#test/helpers/unit/file-system";
@@ -13,7 +13,7 @@ function makeNestedDirectoryProject(): ReturnType<typeof makeFileSystem> {
 }
 
 describe(resolveNestedProjects, () => {
-	it("should preserve metadata while resolving optional-looking child nodes", () => {
+	it("should preserve metadata while resolving optional-looking child nodes", ({ expect }) => {
 		expect.assertions(1);
 
 		const tree = {
@@ -32,7 +32,7 @@ describe(resolveNestedProjects, () => {
 		);
 	});
 
-	it("should preserve read and parse failures on nested project errors", () => {
+	it("should preserve read and parse failures on nested project errors", ({ expect }) => {
 		expect.assertions(3);
 
 		const { directory, fileSystem, fs } = makeFileSystem({
@@ -73,7 +73,7 @@ describe(resolveNestedProjects, () => {
 		expect(readError.cause).toBeInstanceOf(Error);
 	});
 
-	it("should return tree unchanged when no $path references .project.json", () => {
+	it("should return tree unchanged when no $path references .project.json", ({ expect }) => {
 		expect.assertions(1);
 
 		const tree: RojoTreeNode = {
@@ -92,7 +92,9 @@ describe(resolveNestedProjects, () => {
 		expect(result).toStrictEqual(tree);
 	});
 
-	it("should resolve $path pointing to a .project.json into its inner tree's $path", () => {
+	it("should resolve $path pointing to a .project.json into its inner tree's $path", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { directory: temporaryDirectory, fileSystem, fs } = makeFileSystem();
@@ -121,7 +123,7 @@ describe(resolveNestedProjects, () => {
 		});
 	});
 
-	it("should merge children from the nested project's tree into the node", () => {
+	it("should merge children from the nested project's tree into the node", ({ expect }) => {
 		expect.assertions(1);
 
 		const { directory: temporaryDirectory, fileSystem, fs } = makeFileSystem();
@@ -161,7 +163,7 @@ describe(resolveNestedProjects, () => {
 		});
 	});
 
-	it("should resolve chained project references recursively", () => {
+	it("should resolve chained project references recursively", ({ expect }) => {
 		expect.assertions(1);
 
 		const { directory: temporaryDirectory, fileSystem, fs } = makeFileSystem();
@@ -190,7 +192,7 @@ describe(resolveNestedProjects, () => {
 		});
 	});
 
-	it("should throw with file path when nested project has malformed JSON", () => {
+	it("should throw with file path when nested project has malformed JSON", ({ expect }) => {
 		expect.assertions(1);
 
 		const { directory: temporaryDirectory, fileSystem, fs } = makeFileSystem();
@@ -208,7 +210,7 @@ describe(resolveNestedProjects, () => {
 		}).toThrow("bad.project.json");
 	});
 
-	it("should throw with file path when a nested project has no tree", () => {
+	it("should throw with file path when a nested project has no tree", ({ expect }) => {
 		expect.assertions(1);
 
 		const { directory: temporaryDirectory, fileSystem, fs } = makeFileSystem();
@@ -229,7 +231,7 @@ describe(resolveNestedProjects, () => {
 		}).toThrow("Failed to parse nested Rojo project: treeless.project.json");
 	});
 
-	it("should throw with file path when a nested project's tree is an array", () => {
+	it("should throw with file path when a nested project's tree is an array", ({ expect }) => {
 		expect.assertions(1);
 
 		const { directory: temporaryDirectory, fileSystem, fs } = makeFileSystem();
@@ -250,7 +252,7 @@ describe(resolveNestedProjects, () => {
 		}).toThrow("Failed to parse nested Rojo project: array.project.json");
 	});
 
-	it("should throw when a referenced .project.json does not exist", () => {
+	it("should throw when a referenced .project.json does not exist", ({ expect }) => {
 		expect.assertions(1);
 
 		const { directory: temporaryDirectory, fileSystem } = makeFileSystem();
@@ -266,7 +268,7 @@ describe(resolveNestedProjects, () => {
 		}).toThrow("Could not read nested Rojo project: nonexistent.project.json");
 	});
 
-	it("should throw on circular project references", () => {
+	it("should throw on circular project references", ({ expect }) => {
 		expect.assertions(1);
 
 		const { directory: temporaryDirectory, fileSystem, fs } = makeFileSystem();
@@ -291,7 +293,7 @@ describe(resolveNestedProjects, () => {
 		}).toThrow("Circular project reference");
 	});
 
-	it("should leave non-string $path values unchanged", () => {
+	it("should leave non-string $path values unchanged", ({ expect }) => {
 		expect.assertions(1);
 
 		const tree: RojoTreeNode = {
@@ -308,7 +310,7 @@ describe(resolveNestedProjects, () => {
 		expect(result).toStrictEqual(tree);
 	});
 
-	it("should rebase an optional $path inside a nested project", () => {
+	it("should rebase an optional $path inside a nested project", ({ expect }) => {
 		expect.assertions(1);
 
 		const { directory: temporaryDirectory, fileSystem, fs } = makeFileSystem();
@@ -334,7 +336,7 @@ describe(resolveNestedProjects, () => {
 		});
 	});
 
-	it("should allow the same project file referenced from different branches", () => {
+	it("should allow the same project file referenced from different branches", ({ expect }) => {
 		expect.assertions(1);
 
 		const { directory: temporaryDirectory, fileSystem, fs } = makeFileSystem();
@@ -369,7 +371,9 @@ describe(resolveNestedProjects, () => {
 		});
 	});
 
-	it("should resolve nested project paths relative to the project file's directory", () => {
+	it("should resolve nested project paths relative to the project file's directory", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { directory: temporaryDirectory, fileSystem, fs } = makeFileSystem();
@@ -400,7 +404,7 @@ describe(resolveNestedProjects, () => {
 		});
 	});
 
-	it("should inline a $path directory that contains a default.project.json", () => {
+	it("should inline a $path directory that contains a default.project.json", ({ expect }) => {
 		expect.assertions(1);
 
 		const { directory: temporaryDirectory, fileSystem } = makeNestedDirectoryProject();
@@ -425,7 +429,7 @@ describe(resolveNestedProjects, () => {
 		});
 	});
 
-	it("should follow $path '..' into a parent directory's default.project.json", () => {
+	it("should follow $path '..' into a parent directory's default.project.json", ({ expect }) => {
 		expect.assertions(1);
 
 		const { directory: temporaryDirectory, fileSystem, fs } = makeFileSystem();
@@ -453,7 +457,7 @@ describe(resolveNestedProjects, () => {
 		});
 	});
 
-	it("should leave a $path directory without default.project.json unchanged", () => {
+	it("should leave a $path directory without default.project.json unchanged", ({ expect }) => {
 		expect.assertions(1);
 
 		const { directory: temporaryDirectory, fileSystem, fs } = makeFileSystem();
@@ -479,7 +483,7 @@ describe(resolveNestedProjects, () => {
 		});
 	});
 
-	it("should leave an absolute $path as written", () => {
+	it("should leave an absolute $path as written", ({ expect }) => {
 		expect.assertions(1);
 
 		const { directory: temporaryDirectory, fileSystem } = makeFileSystem();
@@ -503,7 +507,7 @@ describe(resolveNestedProjects, () => {
 		});
 	});
 
-	it("should leave a drive-letter $path as written on a host without drives", () => {
+	it("should leave a drive-letter $path as written on a host without drives", ({ expect }) => {
 		expect.assertions(1);
 
 		// `path.isAbsolute` reads this as relative on Linux, which would rebase
@@ -529,7 +533,9 @@ describe(resolveNestedProjects, () => {
 		});
 	});
 
-	it("should leave a backslash-rooted $path as written on a host without drives", () => {
+	it("should leave a backslash-rooted $path as written on a host without drives", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		// A drive-relative root and a UNC share, the two roots a Windows project
@@ -557,7 +563,7 @@ describe(resolveNestedProjects, () => {
 		});
 	});
 
-	it("should leave an absolute $path inside a nested project as written", () => {
+	it("should leave an absolute $path inside a nested project as written", ({ expect }) => {
 		expect.assertions(1);
 
 		const { directory: temporaryDirectory, fileSystem, fs } = makeFileSystem();
@@ -600,7 +606,7 @@ describe(resolveNestedProjects, () => {
 		});
 	});
 
-	it("should inline a nested project named by an absolute $path", () => {
+	it("should inline a nested project named by an absolute $path", ({ expect }) => {
 		expect.assertions(1);
 
 		const { directory: temporaryDirectory, fileSystem } = makeNestedDirectoryProject();
@@ -626,7 +632,7 @@ describe(resolveNestedProjects, () => {
 });
 
 describe(resolveNestedProjectSources, () => {
-	it("should report no project files when nothing is inlined", () => {
+	it("should report no project files when nothing is inlined", ({ expect }) => {
 		expect.assertions(2);
 
 		const tree: RojoTreeNode = {
@@ -646,7 +652,7 @@ describe(resolveNestedProjectSources, () => {
 		expect(result.tree).toStrictEqual(tree);
 	});
 
-	it("should report the absolute path of each inlined nested project", () => {
+	it("should report the absolute path of each inlined nested project", ({ expect }) => {
 		expect.assertions(2);
 
 		const { directory: temporaryDirectory, fileSystem, fs } = makeFileSystem();
@@ -674,7 +680,7 @@ describe(resolveNestedProjectSources, () => {
 		});
 	});
 
-	it("should report every project file in a chained reference", () => {
+	it("should report every project file in a chained reference", ({ expect }) => {
 		expect.assertions(1);
 
 		const { directory: temporaryDirectory, fileSystem, fs } = makeFileSystem();
@@ -698,7 +704,7 @@ describe(resolveNestedProjectSources, () => {
 		expect(new Set(result.projectFiles)).toStrictEqual(new Set([inner, outer]));
 	});
 
-	it("should report a project file referenced from two branches once", () => {
+	it("should report a project file referenced from two branches once", ({ expect }) => {
 		expect.assertions(1);
 
 		const { directory: temporaryDirectory, fileSystem, fs } = makeFileSystem();
@@ -726,7 +732,7 @@ describe(resolveNestedProjectSources, () => {
 		expect(result.projectFiles).toStrictEqual([projectFile]);
 	});
 
-	it("should report a directory mount that contains a default.project.json", () => {
+	it("should report a directory mount that contains a default.project.json", ({ expect }) => {
 		expect.assertions(2);
 
 		const { directory: temporaryDirectory, fileSystem, fs } = makeFileSystem();

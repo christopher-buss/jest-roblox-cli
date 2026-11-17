@@ -1,12 +1,12 @@
 import * as path from "node:path";
-import { assert, describe, expect, it, vi } from "vitest";
+import { assert, describe, it, vi } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { ROOT, writeInstalledWorkspace, YAML_PATH } from "#test/mocks/spec-pnpm-workspace.ts";
 import { pnpmPackages } from "./pnpm-packages.ts";
 
 describe(pnpmPackages, () => {
-	it("should answer from the snapshot rather than the filesystem", () => {
+	it("should answer from the snapshot rather than the filesystem", ({ expect }) => {
 		expect.assertions(1);
 
 		const fileSystem = writeInstalledWorkspace(
@@ -21,7 +21,7 @@ describe(pnpmPackages, () => {
 		]);
 	});
 
-	it("should answer from a snapshot that records more than the asked name", () => {
+	it("should answer from a snapshot that records more than the asked name", ({ expect }) => {
 		expect.assertions(1);
 
 		const fileSystem = writeInstalledWorkspace(
@@ -39,7 +39,7 @@ describe(pnpmPackages, () => {
 		).toStrictEqual(["@halcyon/ghost", "@halcyon/shade"]);
 	});
 
-	it("should list from the walk when no snapshot exists", () => {
+	it("should list from the walk when no snapshot exists", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -52,7 +52,7 @@ describe(pnpmPackages, () => {
 		]);
 	});
 
-	it("should walk the workspace root once for several patterns", () => {
+	it("should walk the workspace root once for several patterns", ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -72,7 +72,7 @@ describe(pnpmPackages, () => {
 		).toHaveLength(1);
 	});
 
-	it("should list from the snapshot when no name is asked for", () => {
+	it("should list from the snapshot when no name is asked for", ({ expect }) => {
 		expect.assertions(1);
 
 		const fileSystem = writeInstalledWorkspace(
@@ -85,7 +85,7 @@ describe(pnpmPackages, () => {
 		]);
 	});
 
-	it("should list the dot-directory packages a walk cannot see", () => {
+	it("should list the dot-directory packages a walk cannot see", ({ expect }) => {
 		expect.assertions(1);
 
 		const fileSystem = writeInstalledWorkspace(
@@ -98,7 +98,7 @@ describe(pnpmPackages, () => {
 		]);
 	});
 
-	it("should walk the filesystem when a name misses the snapshot", () => {
+	it("should walk the filesystem when a name misses the snapshot", ({ expect }) => {
 		expect.assertions(1);
 
 		const fileSystem = writeInstalledWorkspace(
@@ -118,7 +118,7 @@ describe(pnpmPackages, () => {
 		).toStrictEqual(["@halcyon/bar", "@halcyon/foo"]);
 	});
 
-	it("should surface the file path when a package.json is malformed JSON", () => {
+	it("should surface the file path when a package.json is malformed JSON", ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -143,7 +143,7 @@ describe(pnpmPackages, () => {
 });
 
 describe("pnpm-workspace.yaml negation semantics", () => {
-	it("should exclude a package one level down from a */** negation", () => {
+	it("should exclude a package one level down from a */** negation", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -155,7 +155,7 @@ describe("pnpm-workspace.yaml negation semantics", () => {
 		expect(pnpmPackages({ fileSystem, names: [], workspaceRoot: ROOT })).toBeEmpty();
 	});
 
-	it("should exclude a package whose own directory is the negated segment", () => {
+	it("should exclude a package whose own directory is the negated segment", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({

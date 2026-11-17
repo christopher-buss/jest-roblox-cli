@@ -1,9 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { findJestJsonCandidate } from "./json-extraction.ts";
 
 describe(findJestJsonCandidate, () => {
-	it("should extract JSON from output with surrounding text", () => {
+	it("should extract JSON from output with surrounding text", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = `
@@ -16,7 +16,7 @@ More logs after
 		expect(json).toBe('{"success":true,"numTotalTests":1}');
 	});
 
-	it("should extract multi-line JSON object", () => {
+	it("should extract multi-line JSON object", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = `
@@ -34,7 +34,7 @@ log line
 		});
 	});
 
-	it("should return undefined when no JSON found", () => {
+	it("should return undefined when no JSON found", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = "Just plain text output";
@@ -43,7 +43,7 @@ log line
 		expect(json).toBeUndefined();
 	});
 
-	it("should skip brace-balanced but invalid JSON", () => {
+	it("should skip brace-balanced but invalid JSON", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = "{foo}\nmore text";
@@ -52,7 +52,7 @@ log line
 		expect(json).toBeUndefined();
 	});
 
-	it("should reset after an invalid candidate and return the next valid object", () => {
+	it("should reset after an invalid candidate and return the next valid object", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = ["prefix", "  {notJson}", "between", '  {"success":true}', "suffix"].join(
@@ -62,7 +62,7 @@ log line
 		expect(findJestJsonCandidate(output)).toBe('{"success":true}');
 	});
 
-	it("should ignore a line that parses as JSON but opens no object", () => {
+	it("should ignore a line that parses as JSON but opens no object", ({ expect }) => {
 		expect.assertions(1);
 
 		// Valid json, and balanced, so only the `{` gate rejects it.
@@ -71,7 +71,9 @@ log line
 		expect(findJestJsonCandidate(output)).toBe('{"a":1}');
 	});
 
-	it("should not restart the scan at a nested object already inside the envelope", () => {
+	it("should not restart the scan at a nested object already inside the envelope", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		// The gate applies only while the scan is idle, or the nested object
@@ -81,7 +83,7 @@ log line
 		expect(findJestJsonCandidate(`log line\n${envelope}`)).toBe(envelope);
 	});
 
-	it("should collect every line until a nested object is balanced", () => {
+	it("should collect every line until a nested object is balanced", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = [
@@ -99,13 +101,13 @@ log line
 		);
 	});
 
-	it("should return the whole trimmed output when it is JSON", () => {
+	it("should return the whole trimmed output when it is JSON", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(findJestJsonCandidate('  {"a":1}\n')).toBe('{"a":1}');
 	});
 
-	it("should scan for a block when output opens with a brace but is not JSON", () => {
+	it("should scan for a block when output opens with a brace but is not JSON", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(findJestJsonCandidate('{oops}\n{"a":1}')).toBe('{"a":1}');

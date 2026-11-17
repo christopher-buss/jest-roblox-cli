@@ -1,4 +1,4 @@
-import { assert, describe, expect, it, onTestFinished, vi } from "vitest";
+import { assert, describe, it, type TestContext, vi } from "vitest";
 
 import {
 	combineSubmitSignals,
@@ -9,13 +9,19 @@ import {
 } from "./submit-budget.ts";
 
 describe("submission wait accounting", () => {
-	it("should exclude overlapping waits once and preserve spent inactivity", async () => {
+	it("should exclude overlapping waits once and preserve spent inactivity", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(3);
 
-		const { budget, cancelSubmitting, observed } = makePendingBudget({
-			budgetMs: 90_000,
-			capacityBudgetMs: 405_000,
-		});
+		const { budget, cancelSubmitting, observed } = makePendingBudget(
+			{
+				budgetMs: 90_000,
+				capacityBudgetMs: 405_000,
+			},
+			onTestFinished,
+		);
 		await vi.advanceTimersByTimeAsync(60_000);
 		const first = budget.pause();
 		assert(first !== undefined);
@@ -37,13 +43,19 @@ describe("submission wait accounting", () => {
 		await expect(observed).resolves.toContain("90s inactivity limit");
 	});
 
-	it("should not refund waiting time before genuine progress renewed inactivity", async () => {
+	it("should not refund waiting time before genuine progress renewed inactivity", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(3);
 
-		const { budget, cancelSubmitting, observed } = makePendingBudget({
-			budgetMs: 90_000,
-			capacityBudgetMs: 405_000,
-		});
+		const { budget, cancelSubmitting, observed } = makePendingBudget(
+			{
+				budgetMs: 90_000,
+				capacityBudgetMs: 405_000,
+			},
+			onTestFinished,
+		);
 		const finish = budget.pause();
 		assert(finish !== undefined);
 		await vi.advanceTimersByTimeAsync(60_000);
@@ -60,13 +72,19 @@ describe("submission wait accounting", () => {
 		await expect(observed).resolves.toContain("90s inactivity limit");
 	});
 
-	it("should keep the absolute deadline active and ignore cleanup after settlement", async () => {
+	it("should keep the absolute deadline active and ignore cleanup after settlement", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(4);
 
-		const { budget, cancelSubmitting, observed } = makePendingBudget({
-			budgetMs: 90_000,
-			capacityBudgetMs: 405_000,
-		});
+		const { budget, cancelSubmitting, observed } = makePendingBudget(
+			{
+				budgetMs: 90_000,
+				capacityBudgetMs: 405_000,
+			},
+			onTestFinished,
+		);
 		const finish = budget.pause();
 		assert(finish !== undefined);
 		await vi.advanceTimersByTimeAsync(495_000);
@@ -81,13 +99,19 @@ describe("submission wait accounting", () => {
 });
 
 describe(createSubmitBudgetController, () => {
-	it("should not renew an inactivity budget for repeated progress", async () => {
+	it("should not renew an inactivity budget for repeated progress", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(2);
 
-		const { budget, cancelSubmitting, observed } = makePendingBudget({
-			budgetMs: 75_000,
-			capacityBudgetMs: 405_000,
-		});
+		const { budget, cancelSubmitting, observed } = makePendingBudget(
+			{
+				budgetMs: 75_000,
+				capacityBudgetMs: 405_000,
+			},
+			onTestFinished,
+		);
 		budget.progress("blockers:a\nb");
 		await vi.advanceTimersByTimeAsync(70_000);
 		budget.progress("blockers:a\nb");
@@ -99,13 +123,19 @@ describe(createSubmitBudgetController, () => {
 		expect(cancelSubmitting).toHaveBeenCalledExactlyOnceWith();
 	});
 
-	it("should stop changing blockers at the absolute capacity bound", async () => {
+	it("should stop changing blockers at the absolute capacity bound", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(2);
 
-		const { budget, cancelSubmitting, observed } = makePendingBudget({
-			budgetMs: 75_000,
-			capacityBudgetMs: 405_000,
-		});
+		const { budget, cancelSubmitting, observed } = makePendingBudget(
+			{
+				budgetMs: 75_000,
+				capacityBudgetMs: 405_000,
+			},
+			onTestFinished,
+		);
 		budget.progress("blockers:0");
 		for (let elapsed = 70_000; elapsed <= 420_000; elapsed += 70_000) {
 			await vi.advanceTimersByTimeAsync(70_000);
@@ -118,10 +148,10 @@ describe(createSubmitBudgetController, () => {
 		expect(cancelSubmitting).toHaveBeenCalledExactlyOnceWith();
 	});
 
-	it("should ignore progress after the submit settles", async () => {
+	it("should ignore progress after the submit settles", async ({ expect, onTestFinished }) => {
 		expect.assertions(2);
 
-		useClock();
+		useClock(onTestFinished);
 		const budget = createSubmitBudgetController({
 			budgetMs: 75_000,
 			cancelSubmitting: vi.fn<() => void>(() => {}),
@@ -136,13 +166,19 @@ describe(createSubmitBudgetController, () => {
 		expect(vi.getTimerCount()).toBe(0);
 	});
 
-	it("should preserve spent inactivity when excluding a quota wait", async () => {
+	it("should preserve spent inactivity when excluding a quota wait", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(3);
 
-		const { budget, cancelSubmitting, observed } = makePendingBudget({
-			budgetMs: 90_000,
-			capacityBudgetMs: 405_000,
-		});
+		const { budget, cancelSubmitting, observed } = makePendingBudget(
+			{
+				budgetMs: 90_000,
+				capacityBudgetMs: 405_000,
+			},
+			onTestFinished,
+		);
 		await vi.advanceTimersByTimeAsync(60_000);
 		budget.defer(60_000);
 		await vi.advanceTimersByTimeAsync(89_999);
@@ -155,13 +191,19 @@ describe(createSubmitBudgetController, () => {
 		await expect(observed).resolves.toContain("90s inactivity limit");
 	});
 
-	it("should cap an enormous quota hint at the absolute deadline", async () => {
+	it("should cap an enormous quota hint at the absolute deadline", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(2);
 
-		const { budget, cancelSubmitting, observed } = makePendingBudget({
-			budgetMs: 90_000,
-			capacityBudgetMs: 405_000,
-		});
+		const { budget, cancelSubmitting, observed } = makePendingBudget(
+			{
+				budgetMs: 90_000,
+				capacityBudgetMs: 405_000,
+			},
+			onTestFinished,
+		);
 		budget.defer(Number.MAX_VALUE);
 		await vi.advanceTimersByTimeAsync(495_000);
 
@@ -169,13 +211,19 @@ describe(createSubmitBudgetController, () => {
 		expect(cancelSubmitting).toHaveBeenCalledExactlyOnceWith();
 	});
 
-	it("should retain the original hard bound without a capacity allowance", async () => {
+	it("should retain the original hard bound without a capacity allowance", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(2);
 
-		const { budget, cancelSubmitting, observed } = makePendingBudget({
-			budgetMs: 90_000,
-			capacityBudgetMs: 0,
-		});
+		const { budget, cancelSubmitting, observed } = makePendingBudget(
+			{
+				budgetMs: 90_000,
+				capacityBudgetMs: 0,
+			},
+			onTestFinished,
+		);
 		budget.defer(60_000);
 		await vi.advanceTimersByTimeAsync(90_000);
 
@@ -184,15 +232,18 @@ describe(createSubmitBudgetController, () => {
 	});
 });
 
-function useClock(): void {
+function useClock(onTestFinished: TestContext["onTestFinished"]): void {
 	vi.useFakeTimers();
 	onTestFinished(() => {
 		vi.useRealTimers();
 	});
 }
 
-function makePendingBudget(options: { budgetMs: number; capacityBudgetMs: number }) {
-	useClock();
+function makePendingBudget(
+	options: { budgetMs: number; capacityBudgetMs: number },
+	onTestFinished: TestContext["onTestFinished"],
+) {
+	useClock(onTestFinished);
 	const cancelSubmitting = vi.fn<() => void>();
 	const budget = createSubmitBudgetController({ ...options, cancelSubmitting });
 	const observed = budget.raceAsync(new Promise<never>(() => {})).catch(String);
@@ -200,7 +251,7 @@ function makePendingBudget(options: { budgetMs: number; capacityBudgetMs: number
 }
 
 describe("submission duration", () => {
-	it("should combine only explicitly bounded submission budgets", () => {
+	it("should combine only explicitly bounded submission budgets", ({ expect }) => {
 		expect.assertions(3);
 
 		expect(maximumSubmitDuration({ submitBudget: 10, submitCapacityBudget: 20 })).toBe(30);
@@ -210,13 +261,19 @@ describe("submission duration", () => {
 });
 
 describe("submission budget boundaries", () => {
-	it("should renew inactivity only for new progress and leave settled timers closed", async () => {
+	it("should renew inactivity only for new progress and leave settled timers closed", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(4);
 
-		const { budget, observed } = makePendingBudget({
-			budgetMs: 90_000,
-			capacityBudgetMs: 405_000,
-		});
+		const { budget, observed } = makePendingBudget(
+			{
+				budgetMs: 90_000,
+				capacityBudgetMs: 405_000,
+			},
+			onTestFinished,
+		);
 		const settled = vi.fn<(value: string) => void>();
 		const complete = observed.then(settled);
 		await vi.advanceTimersByTimeAsync(60_000);
@@ -241,10 +298,16 @@ describe("submission budget boundaries", () => {
 		expect(vi.getTimerCount()).toBe(0);
 	});
 
-	it("should preserve the hard bound when no capacity allowance exists", async () => {
+	it("should preserve the hard bound when no capacity allowance exists", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(2);
 
-		const { budget, observed } = makePendingBudget({ budgetMs: 1234, capacityBudgetMs: 0 });
+		const { budget, observed } = makePendingBudget(
+			{ budgetMs: 1234, capacityBudgetMs: 0 },
+			onTestFinished,
+		);
 
 		expect(budget.pause()).toBeUndefined();
 
@@ -257,10 +320,16 @@ describe("submission budget boundaries", () => {
 		);
 	});
 
-	it("should describe both limits when capacity allowance exists", async () => {
+	it("should describe both limits when capacity allowance exists", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(1);
 
-		const { observed } = makePendingBudget({ budgetMs: 1000, capacityBudgetMs: 2000 });
+		const { observed } = makePendingBudget(
+			{ budgetMs: 1000, capacityBudgetMs: 2000 },
+			onTestFinished,
+		);
 		await vi.advanceTimersByTimeAsync(1000);
 
 		await expect(observed).resolves.toBe(
@@ -270,10 +339,10 @@ describe("submission budget boundaries", () => {
 });
 
 describe(waitForSubmitRetryAsync, () => {
-	it("should resolve on abort and detach the listener", async () => {
+	it("should resolve on abort and detach the listener", async ({ expect, onTestFinished }) => {
 		expect.assertions(3);
 
-		useClock();
+		useClock(onTestFinished);
 		const controller = new AbortController();
 		const remove = vi.spyOn(controller.signal, "removeEventListener");
 		const waiting = waitForSubmitRetryAsync(1000, controller.signal);
@@ -284,10 +353,13 @@ describe(waitForSubmitRetryAsync, () => {
 		expect(vi.getTimerCount()).toBe(0);
 	});
 
-	it("should resolve at the requested time without a signal", async () => {
+	it("should resolve at the requested time without a signal", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(3);
 
-		useClock();
+		useClock(onTestFinished);
 		const settled = vi.fn<(value: void) => void>();
 		const waiting = waitForSubmitRetryAsync(1000).then(settled);
 		await vi.advanceTimersByTimeAsync(999);
@@ -303,7 +375,7 @@ describe(waitForSubmitRetryAsync, () => {
 });
 
 describe(combineSubmitSignals, () => {
-	it("should preserve budget cancellation without a caller signal", () => {
+	it("should preserve budget cancellation without a caller signal", ({ expect }) => {
 		expect.assertions(1);
 
 		const budget = new AbortController();
@@ -311,7 +383,7 @@ describe(combineSubmitSignals, () => {
 		expect(combineSubmitSignals(undefined, budget.signal)).toBe(budget.signal);
 	});
 
-	it.for([0, 1])("should abort when owner %s cancels", (owner) => {
+	it.for([0, 1])("should abort when owner %s cancels", (owner, { expect }) => {
 		expect.assertions(2);
 
 		const caller = new AbortController();
@@ -326,7 +398,7 @@ describe(combineSubmitSignals, () => {
 });
 
 describe(pauseBudgetWhileWaiting, () => {
-	it("should pair admission starts and ends once while charging retry backoff", () => {
+	it("should pair admission starts and ends once while charging retry backoff", ({ expect }) => {
 		expect.assertions(3);
 
 		const resume = vi.fn<() => void>();
@@ -351,7 +423,7 @@ describe(pauseBudgetWhileWaiting, () => {
 		expect(resume).toHaveBeenCalledExactlyOnceWith();
 	});
 
-	it("should tolerate admission without an additional capacity allowance", () => {
+	it("should tolerate admission without an additional capacity allowance", ({ expect }) => {
 		expect.assertions(1);
 
 		const pause = vi.fn<() => undefined>();

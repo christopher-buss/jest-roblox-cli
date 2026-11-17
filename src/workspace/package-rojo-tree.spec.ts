@@ -1,10 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { loadPackageRojoTree } from "./package-rojo-tree.ts";
 
 describe(loadPackageRojoTree, () => {
-	it("should express every $path relative to the package directory", () => {
+	it("should express every $path relative to the package directory", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({

@@ -1,16 +1,16 @@
-import { describe, expect, it, onTestFinished, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import { decodeLuauString } from "./string-literal.ts";
 
 describe(decodeLuauString, () => {
-	it("should strip either quote style", () => {
+	it("should strip either quote style", ({ expect }) => {
 		expect.assertions(2);
 
 		expect(decodeLuauString('"double"')).toBe("double");
 		expect(decodeLuauString("'single'")).toBe("single");
 	});
 
-	it("should resolve character, byte, and codepoint escapes", () => {
+	it("should resolve character, byte, and codepoint escapes", ({ expect }) => {
 		expect.assertions(3);
 
 		expect(decodeLuauString(String.raw`"a\"b\\c\'d"`)).toBe(String.raw`a"b\c'd`);
@@ -18,7 +18,9 @@ describe(decodeLuauString, () => {
 		expect(decodeLuauString(String.raw`"\x41\65\u{1F600}"`)).toBe("AA😀");
 	});
 
-	it("should treat an escaped newline as a newline and \\z as a whitespace skip", () => {
+	it("should treat an escaped newline as a newline and \\z as a whitespace skip", ({
+		expect,
+	}) => {
 		expect.assertions(3);
 
 		expect(decodeLuauString('"a\\\nb"')).toBe("a\nb");
@@ -26,7 +28,7 @@ describe(decodeLuauString, () => {
 		expect(decodeLuauString('"a\\z  \n  b"')).toBe("ab");
 	});
 
-	it("should drop only the first newline of a long bracket", () => {
+	it("should drop only the first newline of a long bracket", ({ expect }) => {
 		expect.assertions(3);
 
 		expect(decodeLuauString("[[plain]]")).toBe("plain");
@@ -34,7 +36,10 @@ describe(decodeLuauString, () => {
 		expect(decodeLuauString("[=[a]]b]=]")).toBe("a]]b");
 	});
 
-	it("should return an unescaped literal without a UTF-8 encode pass", () => {
+	it("should return an unescaped literal without a UTF-8 encode pass", ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(2);
 
 		const encode = vi.spyOn(TextEncoder.prototype, "encode");

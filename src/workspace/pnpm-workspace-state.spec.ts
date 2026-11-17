@@ -1,6 +1,6 @@
 import * as path from "node:path";
 import process from "node:process";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import type { FileSystem } from "../utils/file-system.ts";
@@ -40,7 +40,7 @@ function stateWith(projects: Record<string, unknown>): Record<string, unknown> {
 }
 
 describe(readPnpmWorkspaceProjects, () => {
-	it("should read every project pnpm recorded, root included", () => {
+	it("should read every project pnpm recorded, root included", ({ expect }) => {
 		expect.assertions(1);
 
 		const fileSystem = writeWorkspace(
@@ -56,7 +56,7 @@ describe(readPnpmWorkspaceProjects, () => {
 		]);
 	});
 
-	it("should tolerate the top-level fields pnpm adds between versions", () => {
+	it("should tolerate the top-level fields pnpm adds between versions", ({ expect }) => {
 		expect.assertions(1);
 
 		const fileSystem = writeWorkspace({
@@ -73,7 +73,7 @@ describe(readPnpmWorkspaceProjects, () => {
 		]);
 	});
 
-	it("should return undefined when no state file exists", () => {
+	it("should return undefined when no state file exists", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -83,7 +83,7 @@ describe(readPnpmWorkspaceProjects, () => {
 		expect(readPnpmWorkspaceProjects(ROOT, fileSystem)).toBeUndefined();
 	});
 
-	it("should return undefined when the state file is not valid JSON", () => {
+	it("should return undefined when the state file is not valid JSON", ({ expect }) => {
 		expect.assertions(1);
 
 		const fileSystem = writeWorkspace("{ not valid json");
@@ -91,7 +91,9 @@ describe(readPnpmWorkspaceProjects, () => {
 		expect(readPnpmWorkspaceProjects(ROOT, fileSystem)).toBeUndefined();
 	});
 
-	it("should return undefined when the state file does not match the shape we read", () => {
+	it("should return undefined when the state file does not match the shape we read", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const fileSystem = writeWorkspace({ lastValidatedTimestamp: INSTALLED_AT, projects: [] });
@@ -99,7 +101,7 @@ describe(readPnpmWorkspaceProjects, () => {
 		expect(readPnpmWorkspaceProjects(ROOT, fileSystem)).toBeUndefined();
 	});
 
-	it("should return undefined when the state file has no validation timestamp", () => {
+	it("should return undefined when the state file has no validation timestamp", ({ expect }) => {
 		expect.assertions(1);
 
 		const fileSystem = writeWorkspace({ projects: { [ROOT]: { name: "halcyon" } } });
@@ -107,7 +109,9 @@ describe(readPnpmWorkspaceProjects, () => {
 		expect(readPnpmWorkspaceProjects(ROOT, fileSystem)).toBeUndefined();
 	});
 
-	it("should return undefined when pnpm-workspace.yaml changed after the install", () => {
+	it("should return undefined when pnpm-workspace.yaml changed after the install", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const fileSystem = writeWorkspace(
@@ -118,7 +122,9 @@ describe(readPnpmWorkspaceProjects, () => {
 		expect(readPnpmWorkspaceProjects(ROOT, fileSystem)).toBeUndefined();
 	});
 
-	it("should accept a pnpm-workspace.yaml written in the same millisecond as the install", () => {
+	it("should accept a pnpm-workspace.yaml written in the same millisecond as the install", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const fileSystem = writeWorkspace(
@@ -131,7 +137,7 @@ describe(readPnpmWorkspaceProjects, () => {
 		]);
 	});
 
-	it("should return undefined when pnpm-workspace.yaml is missing", () => {
+	it("should return undefined when pnpm-workspace.yaml is missing", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -145,7 +151,9 @@ describe(readPnpmWorkspaceProjects, () => {
 	// as relative. Rooted at cwd so the relative path resolves *inside* the
 	// workspace: the containment check would pass it, and only the
 	// absoluteness check stands between the run and a directory nobody named.
-	it("should return undefined when a recorded project path is not absolute here", () => {
+	it("should return undefined when a recorded project path is not absolute here", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -167,7 +175,9 @@ describe(readPnpmWorkspaceProjects, () => {
 		expect(readPnpmWorkspaceProjects(cwdRoot, fileSystem)).toBeUndefined();
 	});
 
-	it("should return undefined when a recorded project sits outside the workspace root", () => {
+	it("should return undefined when a recorded project sits outside the workspace root", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const fileSystem = writeWorkspace(
@@ -180,7 +190,7 @@ describe(readPnpmWorkspaceProjects, () => {
 		expect(readPnpmWorkspaceProjects(ROOT, fileSystem)).toBeUndefined();
 	});
 
-	it("should skip a project pnpm recorded without a name", () => {
+	it("should skip a project pnpm recorded without a name", ({ expect }) => {
 		expect.assertions(1);
 
 		const fileSystem = writeWorkspace(

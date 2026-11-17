@@ -3,13 +3,13 @@ import { fromPartial } from "@total-typescript/shoehorn";
 import hljs from "highlight.js/lib/core";
 import { stripVTControlCharacters } from "node:util";
 import color from "tinyrainbow";
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import { highlightCode } from "./highlight.ts";
 
 describe(highlightCode, () => {
 	describe("language detection", () => {
-		it("should return source unchanged for unknown extensions", () => {
+		it("should return source unchanged for unknown extensions", ({ expect }) => {
 			expect.assertions(1);
 
 			const source = "hello world";
@@ -17,7 +17,7 @@ describe(highlightCode, () => {
 			expect(highlightCode("file.txt", source)).toBe(source);
 		});
 
-		it("should return source unchanged when path has no extension", () => {
+		it("should return source unchanged when path has no extension", ({ expect }) => {
 			expect.assertions(1);
 
 			const source = "hello world";
@@ -25,7 +25,7 @@ describe(highlightCode, () => {
 			expect(highlightCode("Makefile", source)).toBe(source);
 		});
 
-		it("should return source unchanged for '..' path", () => {
+		it("should return source unchanged for '..' path", ({ expect }) => {
 			expect.assertions(1);
 
 			const source = "hello world";
@@ -33,7 +33,7 @@ describe(highlightCode, () => {
 			expect(highlightCode("..", source)).toBe(source);
 		});
 
-		it("should not invoke a highlighter for an unknown extension", () => {
+		it("should not invoke a highlighter for an unknown extension", ({ expect }) => {
 			expect.assertions(2);
 
 			const highlight = vi.spyOn(hljs, "highlight");
@@ -46,17 +46,20 @@ describe(highlightCode, () => {
 		it.for([
 			["file.lua", "luau"],
 			["file.ts", "typescript"],
-		] as const)("should select the exact grammar for %s", ([fileName, language]) => {
-			expect.assertions(1);
+		] as const)(
+			"should select the exact grammar for %s",
+			([fileName, language], { expect }) => {
+				expect.assertions(1);
 
-			const highlight = vi
-				.spyOn(hljs, "highlight")
-				.mockReturnValueOnce(fromPartial({ value: "source" }));
+				const highlight = vi
+					.spyOn(hljs, "highlight")
+					.mockReturnValueOnce(fromPartial({ value: "source" }));
 
-			highlightCode(fileName, "source");
+				highlightCode(fileName, "source");
 
-			expect(highlight).toHaveBeenCalledExactlyOnceWith("source", { language });
-		});
+				expect(highlight).toHaveBeenCalledExactlyOnceWith("source", { language });
+			},
+		);
 	});
 
 	describe("typescript highlighting", () => {
@@ -77,7 +80,7 @@ describe(highlightCode, () => {
 		];
 		/* cspell:enable */
 
-		it.for(tsExtensions)("should highlight %s files", (extension) => {
+		it.for(tsExtensions)("should highlight %s files", (extension, { expect }) => {
 			expect.assertions(1);
 
 			const source = "const x = 1;";
@@ -86,7 +89,7 @@ describe(highlightCode, () => {
 			expect(result).not.toBe(source);
 		});
 
-		it("should color-wrap arrow operators in TypeScript", () => {
+		it("should color-wrap arrow operators in TypeScript", ({ expect }) => {
 			expect.assertions(2);
 
 			const source = "() => 1";
@@ -116,19 +119,22 @@ describe(highlightCode, () => {
 			["hljs-title", color.blue],
 			["hljs-type", color.yellow],
 			["hljs-variable", color.white],
-		])("should map the %s token class to its terminal color", ([cssClass, style]) => {
-			expect.assertions(1);
+		])(
+			"should map the %s token class to its terminal color",
+			([cssClass, style], { expect }) => {
+				expect.assertions(1);
 
-			vi.spyOn(hljs, "highlight").mockReturnValueOnce(
-				fromPartial({
-					value: `<span class="${cssClass}">token</span>`,
-				}),
-			);
+				vi.spyOn(hljs, "highlight").mockReturnValueOnce(
+					fromPartial({
+						value: `<span class="${cssClass}">token</span>`,
+					}),
+				);
 
-			expect(highlightCode("file.ts", "token")).toBe(style("token"));
-		});
+				expect(highlightCode("file.ts", "token")).toBe(style("token"));
+			},
+		);
 
-		it("should preserve nested token styles", () => {
+		it("should preserve nested token styles", ({ expect }) => {
 			expect.assertions(1);
 
 			vi.spyOn(hljs, "highlight").mockReturnValueOnce(
@@ -142,7 +148,7 @@ describe(highlightCode, () => {
 	});
 
 	describe("luau highlighting", () => {
-		it("should highlight .luau files", () => {
+		it("should highlight .luau files", ({ expect }) => {
 			expect.assertions(1);
 
 			const source = "local x = 1";
@@ -151,7 +157,7 @@ describe(highlightCode, () => {
 			expect(result).not.toBe(source);
 		});
 
-		it("should highlight .lua files", () => {
+		it("should highlight .lua files", ({ expect }) => {
 			expect.assertions(1);
 
 			const source = "local x = 1";
@@ -162,7 +168,7 @@ describe(highlightCode, () => {
 	});
 
 	describe("html entity decoding", () => {
-		it("should decode HTML entities in highlighted output", () => {
+		it("should decode HTML entities in highlighted output", ({ expect }) => {
 			expect.assertions(4);
 
 			// Use code that will produce HTML entities via highlight.js
@@ -176,7 +182,7 @@ describe(highlightCode, () => {
 			expect(result).not.toContain("&quot;");
 		});
 
-		it("should decode each entity to its exact source character", () => {
+		it("should decode each entity to its exact source character", ({ expect }) => {
 			expect.assertions(1);
 
 			vi.spyOn(hljs, "highlight").mockReturnValueOnce(
@@ -186,7 +192,7 @@ describe(highlightCode, () => {
 			expect(highlightCode("file.ts", "ignored")).toBe("'&><\"");
 		});
 
-		it("should decode single quotes", () => {
+		it("should decode single quotes", ({ expect }) => {
 			expect.assertions(1);
 
 			const source = "local s = 'hello'";
@@ -195,7 +201,7 @@ describe(highlightCode, () => {
 			expect(stripVTControlCharacters(result)).toBe(source);
 		});
 
-		it("should keep entities that the source itself contains", () => {
+		it("should keep entities that the source itself contains", ({ expect }) => {
 			expect.assertions(1);
 
 			// highlight.js escapes the ampersand of each entity, so a second
@@ -208,7 +214,7 @@ describe(highlightCode, () => {
 	});
 
 	describe("windows path handling", () => {
-		it("should detect extension from Windows-style paths", () => {
+		it("should detect extension from Windows-style paths", ({ expect }) => {
 			expect.assertions(1);
 
 			const source = "const x = 1;";
@@ -219,7 +225,7 @@ describe(highlightCode, () => {
 	});
 
 	describe("unmapped hljs class fallback", () => {
-		it("should return plain text when hljs emits an unknown CSS class", () => {
+		it("should return plain text when hljs emits an unknown CSS class", ({ expect }) => {
 			expect.assertions(1);
 
 			vi.spyOn(hljs, "highlight").mockReturnValueOnce(

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import {
 	fillPlaceholders,
@@ -12,7 +12,7 @@ const HARNESS = readHarness("envelope");
 const STUBBED = stubbedModules(HARNESS);
 
 describe("task envelope builder under lute", () => {
-	it("should build the wire shapes the CLI reads", () => {
+	it("should build the wire shapes the CLI reads", ({ expect }) => {
 		expect.assertions(1);
 
 		const script = fillPlaceholders(HARNESS, {

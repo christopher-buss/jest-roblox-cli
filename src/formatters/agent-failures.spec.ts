@@ -1,6 +1,6 @@
 import { fromPartial } from "@total-typescript/shoehorn";
 
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import { createTestCase, FAILING_RESULT } from "#test/mocks/format-results.ts";
 import { createSingleFileResult, failingFileResult } from "#test/mocks/spec-format.ts";
@@ -12,8 +12,6 @@ import {
 	formatFailures,
 	type SourceSnippetReader,
 } from "./agent-failures.ts";
-
-const mockedGetSourceSnippet = vi.fn<SourceSnippetReader>();
 
 /**
  * Snippet stub routed by the requested file's extension: `getSourceSnippet` is
@@ -90,9 +88,12 @@ function stubSourceMapper(
 }
 
 describe(formatFailures, () => {
-	it("should omit an unavailable Luau snippet after a mapped TypeScript snippet", () => {
+	it("should omit an unavailable Luau snippet after a mapped TypeScript snippet", ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
+		const mockedGetSourceSnippet = vi.fn<SourceSnippetReader>();
 		mockedGetSourceSnippet.mockImplementation((options): SourceSnippet | undefined => {
 			return snippetByExtension(options.filePath, {
 				ts: { failureLine: 10, lines: [{ content: "expect(value).toBe(1);", num: 10 }] },
@@ -118,7 +119,7 @@ describe(formatFailures, () => {
 		expect(output).not.toContain("Luau  out/player.spec.luau:15");
 	});
 
-	it("should show TS and Luau snippets when 1-2 failures", () => {
+	it("should show TS and Luau snippets when 1-2 failures", ({ expect }) => {
 		expect.assertions(5);
 
 		const tsSnippet: SourceSnippet = {
@@ -138,6 +139,7 @@ describe(formatFailures, () => {
 			],
 		};
 
+		const mockedGetSourceSnippet = vi.fn<SourceSnippetReader>();
 		mockedGetSourceSnippet.mockImplementation((options): SourceSnippet | undefined => {
 			return snippetByExtension(options.filePath, { luau: luauSnippet, ts: tsSnippet });
 		});
@@ -190,7 +192,9 @@ describe(formatFailures, () => {
 		expect(output).toMatchSnapshot();
 	});
 
-	it("should use relative paths in snippet labels when source mapper returns absolute paths", () => {
+	it("should use relative paths in snippet labels when source mapper returns absolute paths", ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const tsSnippet = X_TS_SNIPPET;
@@ -203,6 +207,7 @@ describe(formatFailures, () => {
 			],
 		};
 
+		const mockedGetSourceSnippet = vi.fn<SourceSnippetReader>();
 		mockedGetSourceSnippet.mockImplementation((options): SourceSnippet | undefined => {
 			return snippetByExtension(options.filePath, { luau: luauSnippet, ts: tsSnippet });
 		});
@@ -235,7 +240,7 @@ describe(formatFailures, () => {
 		expect(output).toContain("Luau  out/test.spec.luau:15");
 	});
 
-	it("should show TS snippet only when 3-5 failures", () => {
+	it("should show TS snippet only when 3-5 failures", ({ expect }) => {
 		expect.assertions(3);
 
 		const tsSnippet = X_TS_SNIPPET;
@@ -244,6 +249,7 @@ describe(formatFailures, () => {
 			lines: [{ content: "expect(x).toBe(2)", num: 15 }],
 		};
 
+		const mockedGetSourceSnippet = vi.fn<SourceSnippetReader>();
 		mockedGetSourceSnippet.mockImplementation((options): SourceSnippet | undefined => {
 			return snippetByExtension(options.filePath, { luau: luauSnippet, ts: tsSnippet });
 		});
@@ -263,11 +269,12 @@ describe(formatFailures, () => {
 		expect(output).toMatchSnapshot();
 	});
 
-	it("should show no snippets when 6+ failures", () => {
+	it("should show no snippets when 6+ failures", ({ expect }) => {
 		expect.assertions(3);
 
 		const tsSnippet = X_TS_SNIPPET;
 
+		const mockedGetSourceSnippet = vi.fn<SourceSnippetReader>();
 		mockedGetSourceSnippet.mockReturnValue(tsSnippet);
 
 		const failures = numberedFailures(6);
@@ -285,7 +292,7 @@ describe(formatFailures, () => {
 		expect(output).toMatchSnapshot();
 	});
 
-	it("should show luau snippet when mapped location has no tsPath", () => {
+	it("should show luau snippet when mapped location has no tsPath", ({ expect }) => {
 		expect.assertions(1);
 
 		const luauSnippet: SourceSnippet = {
@@ -297,6 +304,7 @@ describe(formatFailures, () => {
 			],
 		};
 
+		const mockedGetSourceSnippet = vi.fn<SourceSnippetReader>();
 		mockedGetSourceSnippet.mockReturnValue(luauSnippet);
 
 		const failedTest = createTestCase(HEALTH_FAILURE);
@@ -312,9 +320,10 @@ describe(formatFailures, () => {
 		expect(output).toContain("> 15| expect(health).toBe(100)");
 	});
 
-	it("should show no snippet when luau-only source file is unreadable", () => {
+	it("should show no snippet when luau-only source file is unreadable", ({ expect }) => {
 		expect.assertions(1);
 
+		const mockedGetSourceSnippet = vi.fn<SourceSnippetReader>();
 		mockedGetSourceSnippet.mockReturnValue(undefined);
 
 		const failedTest = createTestCase(HEALTH_FAILURE);
@@ -330,9 +339,10 @@ describe(formatFailures, () => {
 		expect(output).toMatchSnapshot();
 	});
 
-	it("should show no snippet when fallback source file is unreadable", () => {
+	it("should show no snippet when fallback source file is unreadable", ({ expect }) => {
 		expect.assertions(1);
 
+		const mockedGetSourceSnippet = vi.fn<SourceSnippetReader>();
 		mockedGetSourceSnippet.mockReturnValue(undefined);
 
 		const failedTest = createTestCase({
@@ -352,7 +362,7 @@ describe(formatFailures, () => {
 		expect(output).toMatchSnapshot();
 	});
 
-	it("should show snippet from parsed location when no sourceMapper", () => {
+	it("should show snippet from parsed location when no sourceMapper", ({ expect }) => {
 		expect.assertions(2);
 
 		const snippet: SourceSnippet = {
@@ -364,6 +374,7 @@ describe(formatFailures, () => {
 			],
 		};
 
+		const mockedGetSourceSnippet = vi.fn<SourceSnippetReader>();
 		mockedGetSourceSnippet.mockReturnValueOnce(snippet);
 
 		const failedTest = createTestCase({

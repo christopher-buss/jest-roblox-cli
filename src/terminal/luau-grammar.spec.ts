@@ -3,12 +3,12 @@
 import { fromAny } from "@total-typescript/shoehorn";
 
 import type { HLJSApi, Mode } from "highlight.js";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { luauGrammar } from "./luau-grammar.ts";
 
 describe(luauGrammar, () => {
-	it("should describe the complete Luau grammar", () => {
+	it("should describe the complete Luau grammar", ({ expect }) => {
 		expect.assertions(1);
 
 		const hljs = fromAny<HLJSApi, Record<string, unknown>>({

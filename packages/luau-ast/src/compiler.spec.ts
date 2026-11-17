@@ -1,11 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import type { CompilerWasmRuntime } from "./compiler-wasm-runtime.ts";
 import { loadLuauCompiler } from "./compiler.ts";
 import type { LuauCompileFailure, LuauCompileSuccess } from "./compiler.ts";
 
 describe(loadLuauCompiler, () => {
-	it("should omit the bytecode listing by default", () => {
+	it("should omit the bytecode listing by default", ({ expect }) => {
 		expect.assertions(2);
 
 		const requests: Array<Parameters<CompilerWasmRuntime["compileWithStatistics"]>[0]> = [];
@@ -31,7 +31,7 @@ describe("decode of a malformed compiler payload", () => {
 		'{"ok":true,"frames":[{}]}',
 		'{"ok":false}',
 		'{"ok":false,"error":{}}',
-	])("should fail loudly on malformed output %s", (payload) => {
+	])("should fail loudly on malformed output %s", (payload, { expect }) => {
 		expect.assertions(1);
 
 		const compiler = loadLuauCompiler({ compileWithStatistics: ({ source }) => source });
@@ -41,7 +41,9 @@ describe("decode of a malformed compiler payload", () => {
 		}).toThrow("compiler wasm returned an unrecognized JSON shape");
 	});
 
-	it("should reject a successful-looking diagnostic with an invalid discriminator", () => {
+	it("should reject a successful-looking diagnostic with an invalid discriminator", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const payload = {
@@ -78,7 +80,7 @@ function compilerPayload() {
 }
 
 describe("compiler payloads", () => {
-	it("should decode every frame field and preserve the requested bytecode", () => {
+	it("should decode every frame field and preserve the requested bytecode", ({ expect }) => {
 		expect.assertions(1);
 
 		const payload = compilerPayload();
@@ -92,26 +94,32 @@ describe("compiler payloads", () => {
 		).toStrictEqual(payload);
 	});
 
-	it.for([{}, { localName: "variable" }])("should decode failures with local name %s", (name) => {
-		expect.assertions(1);
+	it.for([{}, { localName: "variable" }])(
+		"should decode failures with local name %s",
+		(name, { expect }) => {
+			expect.assertions(1);
 
-		const payload = {
-			error: {
-				...name,
-				location: compilerPayload().frames[0]!.location,
-				message: "register limit",
-			},
-			ok: false,
-		} satisfies LuauCompileFailure;
+			const payload = {
+				error: {
+					...name,
+					location: compilerPayload().frames[0]!.location,
+					message: "register limit",
+				},
+				ok: false,
+			} satisfies LuauCompileFailure;
 
-		expect(
-			payloadCompiler(payload).compile("invalid", { debugLevel: 1, optimizationLevel: 0 }),
-		).toStrictEqual(payload);
-	});
+			expect(
+				payloadCompiler(payload).compile("invalid", {
+					debugLevel: 1,
+					optimizationLevel: 0,
+				}),
+			).toStrictEqual(payload);
+		},
+	);
 
 	it.for(["beginColumn", "beginLine", "endColumn", "endLine"])(
 		"should reject a nonnumeric %s coordinate",
-		(key) => {
+		(key, { expect }) => {
 			expect.assertions(1);
 
 			const payload = compilerPayload();
@@ -128,7 +136,7 @@ describe("compiler payloads", () => {
 
 	it.for(["maxRegisters", "peakLocals", "upvalueCount"])(
 		"should reject a nonnumeric %s statistic",
-		(key) => {
+		(key, { expect }) => {
 			expect.assertions(1);
 
 			const payload = compilerPayload();
@@ -162,7 +170,7 @@ describe("compiler payloads", () => {
 			},
 			ok: false,
 		},
-	])("should reject malformed payload %#", (payload) => {
+	])("should reject malformed payload %#", (payload, { expect }) => {
 		expect.assertions(1);
 
 		expect(() => {
@@ -173,7 +181,7 @@ describe("compiler payloads", () => {
 		}).toThrow("unrecognized JSON shape");
 	});
 
-	it("should cache the default compiler separately from injected instances", () => {
+	it("should cache the default compiler separately from injected instances", ({ expect }) => {
 		expect.assertions(2);
 
 		expect(loadLuauCompiler()).toBe(loadLuauCompiler());

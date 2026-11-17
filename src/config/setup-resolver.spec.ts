@@ -2,7 +2,7 @@ import type { RojoResolver } from "@isentinel/rojo-utils";
 import { fromAny } from "@total-typescript/shoehorn";
 
 import * as path from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
 import type { ResolvedConfig } from "./resolved-config.ts";
@@ -11,19 +11,20 @@ import { createSetupResolver, resolveAllSetupFilePaths } from "./setup-resolver.
 const CONFIG_DIRECTORY = "/project";
 const ROJO_CONFIG_PATH = "/project/default.project.json";
 
-const createResolver = vi.fn<typeof RojoResolver.fromPath>();
-
 function stubRojoResolver(mapping: Record<string, Array<string>>) {
-	createResolver.mockReturnValue(
-		fromAny({
+	return vi.fn<typeof RojoResolver.fromPath>(() => {
+		return fromAny({
 			getRbxPathFromFilePath(filePath: string) {
 				return mapping[filePath];
 			},
-		}),
-	);
+		});
+	});
 }
 
-function makeResolver(overrides: Partial<Parameters<typeof createSetupResolver>[0]> = {}) {
+function makeResolver(
+	createResolver: typeof RojoResolver.fromPath,
+	overrides: Partial<Parameters<typeof createSetupResolver>[0]> = {},
+) {
 	return createSetupResolver({
 		configDirectory: CONFIG_DIRECTORY,
 		createResolver,
@@ -56,80 +57,82 @@ function logicalNodeModulesPath(specifier: string): string {
 
 describe(createSetupResolver, () => {
 	describe("relative paths", () => {
-		it("should resolve a relative path with .ts extension", () => {
+		it("should resolve a relative path with .ts extension", ({ expect }) => {
 			expect.assertions(1);
 
-			stubRojoResolver({
+			const createResolver = stubRojoResolver({
 				[path.resolve(CONFIG_DIRECTORY, "./src/client/test-setup.ts")]: [
 					"ReplicatedStorage",
 					"client",
 					"test-setup",
 				],
 			});
-			const resolve = makeResolver();
+			const resolve = makeResolver(createResolver);
 
 			const result = resolve("./src/client/test-setup.ts");
 
 			expect(result).toBe("ReplicatedStorage/client/test-setup");
 		});
 
-		it("should resolve a relative path without extension", () => {
+		it("should resolve a relative path without extension", ({ expect }) => {
 			expect.assertions(1);
 
-			stubRojoResolver({
+			const createResolver = stubRojoResolver({
 				[path.resolve(CONFIG_DIRECTORY, "./src/client/test-setup")]: [
 					"ReplicatedStorage",
 					"client",
 					"test-setup",
 				],
 			});
-			const resolve = makeResolver();
+			const resolve = makeResolver(createResolver);
 
 			const result = resolve("./src/client/test-setup");
 
 			expect(result).toBe("ReplicatedStorage/client/test-setup");
 		});
 
-		it("should resolve ../ relative paths", () => {
+		it("should resolve ../ relative paths", ({ expect }) => {
 			expect.assertions(1);
 
 			const nestedConfigDirectory = "/project/config";
-			stubRojoResolver({
+			const createResolver = stubRojoResolver({
 				[path.resolve(nestedConfigDirectory, "../src/client/test-setup")]: [
 					"ReplicatedStorage",
 					"client",
 					"test-setup",
 				],
 			});
-			const resolve = makeResolver({ configDirectory: nestedConfigDirectory });
+			const resolve = makeResolver(createResolver, {
+				configDirectory: nestedConfigDirectory,
+			});
 
 			const result = resolve("../src/client/test-setup");
 
 			expect(result).toBe("ReplicatedStorage/client/test-setup");
 		});
 
-		it("should resolve paths in server directory", () => {
+		it("should resolve paths in server directory", ({ expect }) => {
 			expect.assertions(1);
 
-			stubRojoResolver({
+			const createResolver = stubRojoResolver({
 				[path.resolve(CONFIG_DIRECTORY, "./src/server/bootstrap")]: [
 					"ServerScriptService",
 					"server",
 					"bootstrap",
 				],
 			});
-			const resolve = makeResolver();
+			const resolve = makeResolver(createResolver);
 
 			const result = resolve("./src/server/bootstrap");
 
 			expect(result).toBe("ServerScriptService/server/bootstrap");
 		});
 
-		it("should throw when relative path has no rojo tree match", () => {
+		it("should throw when relative path has no rojo tree match", ({ expect }) => {
 			expect.assertions(1);
 
-			stubRojoResolver({});
-			const resolve = makeResolver();
+			const createResolver = stubRojoResolver({});
+			const resolve = makeResolver(createResolver);
 
 			expect(() => resolve("./src/unknown/test-setup")).toThrowWithMessage(
 				Error,
@@ -139,10 +142,10 @@ describe(createSetupResolver, () => {
 	});
 
 	describe("package specifiers", () => {
-		it("should resolve a scoped package specifier", () => {
+		it("should resolve a scoped package specifier", ({ expect }) => {
 			expect.assertions(1);
 
-			stubRojoResolver({
+			const createResolver = stubRojoResolver({
 				[logicalNodeModulesPath("@rbxts/test-utils/out/setup")]: [
 					"ReplicatedStorage",
 					"rbxts_include",
@@ -152,7 +155,7 @@ describe(createSetupResolver, () => {
 					"setup",
 				],
 			});
-			const resolve = makeResolver({
+			const resolve = makeResolver(createResolver, {
 				resolveModule: fakeModuleResolver({
 					"@rbxts/test-utils/out/setup": "/resolved/path/irrelevant.lua",
 				}),
@@ -165,10 +168,10 @@ describe(createSetupResolver, () => {
 			);
 		});
 
-		it("should resolve package specifier with extension probing", () => {
+		it("should resolve package specifier with extension probing", ({ expect }) => {
 			expect.assertions(1);
 
-			stubRojoResolver({
+			const createResolver = stubRojoResolver({
 				[logicalNodeModulesPath("@shared/test-utils/out/setup")]: [
 					"ReplicatedStorage",
 					"rbxts_include",
@@ -178,7 +181,7 @@ describe(createSetupResolver, () => {
 					"setup",
 				],
 			});
-			const resolve = makeResolver({
+			const resolve = makeResolver(createResolver, {
 				resolveModule: fakeModuleResolver({
 					"@shared/test-utils/out/setup.luau": "/resolved/path/irrelevant.luau",
 				}),
@@ -191,11 +194,11 @@ describe(createSetupResolver, () => {
 			);
 		});
 
-		it("should throw when package cannot be resolved", () => {
+		it("should throw when package cannot be resolved", ({ expect }) => {
 			expect.assertions(1);
 
-			stubRojoResolver({});
-			const resolve = makeResolver({
+			const createResolver = stubRojoResolver({});
+			const resolve = makeResolver(createResolver, {
 				resolveModule: fakeModuleResolver({}),
 			});
 
@@ -205,11 +208,11 @@ describe(createSetupResolver, () => {
 			);
 		});
 
-		it("should throw when resolved package path has no rojo tree match", () => {
+		it("should throw when resolved package path has no rojo tree match", ({ expect }) => {
 			expect.assertions(1);
 
-			stubRojoResolver({});
-			const resolve = makeResolver({
+			const createResolver = stubRojoResolver({});
+			const resolve = makeResolver(createResolver, {
 				resolveModule: fakeModuleResolver({
 					"@some/unknown-pkg/setup": "/resolved/path/irrelevant.lua",
 				}),
@@ -224,48 +227,48 @@ describe(createSetupResolver, () => {
 });
 
 describe("resolver caching", () => {
-	it("should build one resolver per rojo config path when a cache is shared", () => {
+	it("should build one resolver per rojo config path when a cache is shared", ({ expect }) => {
 		expect.assertions(3);
 
-		stubRojoResolver({
+		const createResolver = stubRojoResolver({
 			[path.resolve(CONFIG_DIRECTORY, "./setup.luau")]: ["ReplicatedStorage", "setup"],
 		});
 		const cache = new Map<string, RojoResolver>();
 
-		const first = makeResolver({ cache });
-		const second = makeResolver({ cache });
+		const first = makeResolver(createResolver, { cache });
+		const second = makeResolver(createResolver, { cache });
 
 		expect(createResolver).toHaveBeenCalledExactlyOnceWith(ROJO_CONFIG_PATH);
 		expect(first("./setup.luau")).toBe("ReplicatedStorage/setup");
 		expect(second("./setup.luau")).toBe("ReplicatedStorage/setup");
 	});
 
-	it("should build a resolver per call when no cache is given", () => {
+	it("should build a resolver per call when no cache is given", ({ expect }) => {
 		expect.assertions(1);
 
-		stubRojoResolver({});
+		const createResolver = stubRojoResolver({});
 
-		makeResolver();
-		makeResolver();
+		makeResolver(createResolver);
+		makeResolver(createResolver);
 
 		expect(createResolver).toHaveBeenCalledTimes(2);
 	});
 
-	it("should key the cache by rojo config path", () => {
+	it("should key the cache by rojo config path", ({ expect }) => {
 		expect.assertions(1);
 
-		stubRojoResolver({});
+		const createResolver = stubRojoResolver({});
 		const cache = new Map<string, RojoResolver>();
 
-		makeResolver({ cache });
-		makeResolver({ cache, rojoConfigPath: "/project/other.project.json" });
+		makeResolver(createResolver, { cache });
+		makeResolver(createResolver, { cache, rojoConfigPath: "/project/other.project.json" });
 
 		expect(createResolver).toHaveBeenCalledTimes(2);
 	});
 });
 
 describe("native resolver", () => {
-	it("should resolve a committed project through the default factory", () => {
+	it("should resolve a committed project through the default factory", ({ expect }) => {
 		expect.assertions(1);
 
 		const directory = path.resolve(import.meta.dirname, "../../test/fixtures/setup-resolver");
@@ -279,11 +282,11 @@ describe("native resolver", () => {
 });
 
 describe("native package resolver", () => {
-	it("should resolve packages relative to the config directory by default", () => {
+	it("should resolve packages relative to the config directory by default", ({ expect }) => {
 		expect.assertions(1);
 
 		const directory = path.resolve(import.meta.dirname, "../../test/e2e/fixtures/live-place");
-		stubRojoResolver({
+		const createResolver = stubRojoResolver({
 			[path.join(directory, "node_modules", "@rbxts/jest-globals")]: [
 				"ReplicatedStorage",
 				"@rbxts/jest-globals",
@@ -329,13 +332,13 @@ describe(resolveAllSetupFilePaths, () => {
 		});
 	}
 
-	it("should build no resolver when no config declares setup files", () => {
+	it("should build no resolver when no config declares setup files", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(resolveAll([setupConfig(), setupConfig()])).toStrictEqual([]);
 	});
 
-	it("should rewrite both setup lists of every config that declares them", () => {
+	it("should rewrite both setup lists of every config that declares them", ({ expect }) => {
 		expect.assertions(2);
 
 		const empty = setupConfig();
@@ -354,7 +357,7 @@ describe(resolveAllSetupFilePaths, () => {
 		]);
 	});
 
-	it("should build one resolver per distinct source", () => {
+	it("should build one resolver per distinct source", ({ expect }) => {
 		expect.assertions(1);
 
 		const one = setupConfig({ rojoProject: "one.project.json", setupFiles: ["./a.ts"] });

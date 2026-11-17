@@ -1,7 +1,7 @@
 import { fromAny } from "@total-typescript/shoehorn";
 
 import * as path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
@@ -19,7 +19,7 @@ function config(overrides: Partial<ResolvedConfig> = {}): ResolvedConfig {
 }
 
 describe(readProjectRojo, () => {
-	it("should answer missing when the config has no project", () => {
+	it("should answer missing when the config has no project", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -28,7 +28,7 @@ describe(readProjectRojo, () => {
 		expect(readProjectRojo(config(), fileSystem)).toStrictEqual({ kind: "missing" });
 	});
 
-	it("should answer missing when the configured project is absent", () => {
+	it("should answer missing when the configured project is absent", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -42,7 +42,7 @@ describe(readProjectRojo, () => {
 		).toStrictEqual({ kind: "missing" });
 	});
 
-	it("should load the project with its directory", () => {
+	it("should load the project with its directory", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -65,7 +65,7 @@ describe(readProjectRojo, () => {
 		});
 	});
 
-	it("should hold the failure of a malformed project with its path", () => {
+	it("should hold the failure of a malformed project with its path", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();

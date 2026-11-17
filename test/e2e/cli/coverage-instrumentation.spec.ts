@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { assert, describe, expect, it } from "vitest";
+import { assert, describe, it } from "vitest";
 
 import { startFakeOpenCloudServerAsync } from "#test/harness/fake-open-cloud.ts";
 import {
@@ -72,7 +72,7 @@ async function instrumentThroughCliAsync(): Promise<string> {
 describe.skipIf(!rojoOnPath())("coverage instrumentation through the CLI", () => {
 	it(
 		"should write instrumented twins that lute runs with branch counts intact",
-		async () => {
+		async ({ expect }) => {
 			expect.assertions(4);
 
 			const sandbox = await instrumentThroughCliAsync();

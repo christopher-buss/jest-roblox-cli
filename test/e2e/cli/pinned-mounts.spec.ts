@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { buildFixturePlaceAsync, FIXTURE_PACKAGE, modelXml } from "#test/e2e/cli/place-fixture.ts";
 import { descendants, nodeAt, readPlaceTree } from "#test/e2e/cli/place-tree.ts";
@@ -67,7 +67,7 @@ async function buildServiceModelPlaceAsync(models: Record<string, string>): Prom
 }
 
 describe.skipIf(!rojoOnPath())("staged pinned classes", () => {
-	it("should build a place with no parent-pinned class inside the stage", async () => {
+	it("should build a place with no parent-pinned class inside the stage", async ({ expect }) => {
 		expect.assertions(2);
 
 		const placeFile = await buildServiceModelPlaceAsync({
@@ -84,7 +84,9 @@ describe.skipIf(!rojoOnPath())("staged pinned classes", () => {
 		expect(stagedClasses).toContain("ModuleScript");
 	});
 
-	it("should keep the instance names the package's own mount would have built", async () => {
+	it("should keep the instance names the package's own mount would have built", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const placeFile = await buildServiceModelPlaceAsync({

@@ -2,7 +2,7 @@ import type { RojoTreeNode } from "@isentinel/rojo-utils";
 
 import * as crypto from "node:crypto";
 import * as path from "node:path";
-import { assert, describe, expect, it } from "vitest";
+import { assert, describe, it } from "vitest";
 
 import { posixPath } from "#test/mocks/posix-path.ts";
 import {
@@ -82,7 +82,7 @@ function twoPackagesStaging(node: RojoTreeNode, key = "Include"): string {
 }
 
 describe(poolSharedMounts, () => {
-	it("should hoist a directory two packages mount into one pooled entry", () => {
+	it("should hoist a directory two packages mount into one pooled entry", ({ expect }) => {
 		expect.assertions(4);
 
 		const { fileSystem } = seed({ [path.join(INCLUDE, "runtime.luau")]: "" });
@@ -100,7 +100,7 @@ describe(poolSharedMounts, () => {
 		expect(staged(project, "a", "ReplicatedStorage")!.$path).toBeUndefined();
 	});
 
-	it("should keep a marker's own children beside the pool key", () => {
+	it("should keep a marker's own children beside the pool key", ({ expect }) => {
 		expect.assertions(3);
 
 		// The `rbxts_include` shape: the dependency tree every package mounts,
@@ -125,7 +125,7 @@ describe(poolSharedMounts, () => {
 		});
 	});
 
-	it("should traverse an ordinary instance name ending in a dollar sign", () => {
+	it("should traverse an ordinary instance name ending in a dollar sign", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = seed({ [path.join(INCLUDE, "runtime.luau")]: "" });
@@ -137,7 +137,7 @@ describe(poolSharedMounts, () => {
 		expect(poolKeyOf(staged(project, "a", "Include", "Cash$"))).toBe(digestOf(INCLUDE));
 	});
 
-	it("should declare a class on both halves of what it writes", () => {
+	it("should declare a class on both halves of what it writes", ({ expect }) => {
 		expect.assertions(2);
 
 		// The pool holds no mount of its own for rojo to infer a class from,
@@ -153,7 +153,7 @@ describe(poolSharedMounts, () => {
 	it.for([
 		["carries a declared class onto the entry", folderMount(INCLUDE), "Folder"],
 		["leaves an entry for an undeclared one classless", { $path: INCLUDE }, undefined],
-	] as const)("should %s", ([, node, expected]) => {
+	] as const)("should %s", ([, node, expected], { expect }) => {
 		expect.assertions(1);
 
 		// Rojo refuses a `$className` unless the `$path` builds a Folder. The
@@ -166,7 +166,7 @@ describe(poolSharedMounts, () => {
 		expect(staged(project, "__shared", digestOf(INCLUDE))!.$className).toBe(expected);
 	});
 
-	it("should preserve Folder when only one duplicate mount declares it", () => {
+	it("should preserve Folder when only one duplicate mount declares it", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = seed({ [path.join(INCLUDE, "runtime.luau")]: "" });
@@ -183,7 +183,7 @@ describe(poolSharedMounts, () => {
 		expect(entry.$className).toBe("Folder");
 	});
 
-	it("should pool a mount that declares no class of its own", () => {
+	it("should pool a mount that declares no class of its own", ({ expect }) => {
 		expect.assertions(1);
 
 		// What a rojo project usually writes: a bare `{ "$path": ... }`, with
@@ -196,7 +196,7 @@ describe(poolSharedMounts, () => {
 		expect(poolKeyOf(staged(project, "a", "Include"))).toBe(digestOf(INCLUDE));
 	});
 
-	it("should pool nothing when a package already holds the pool's name", () => {
+	it("should pool nothing when a package already holds the pool's name", ({ expect }) => {
 		expect.assertions(1);
 
 		// A Luau-only package takes its name from its directory basename, so a
@@ -213,7 +213,7 @@ describe(poolSharedMounts, () => {
 		expect(run(fileSystem, projectJson)).toBe(projectJson);
 	});
 
-	it("should leave a mount only one package references alone", () => {
+	it("should leave a mount only one package references alone", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = seed({ [path.join(INCLUDE, "runtime.luau")]: "" });
@@ -233,7 +233,7 @@ describe(poolSharedMounts, () => {
 		["a project with no tree", '{"name":"p"}'],
 		["a project whose ServerStorage is not a node", '{"tree":{"ServerStorage":7}}'],
 		["a project with no stage", '{"tree":{"ServerStorage":{}}}'],
-	] as const)("should leave %s untouched", ([, projectJson]) => {
+	] as const)("should leave %s untouched", ([, projectJson], { expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = seed();
@@ -241,7 +241,7 @@ describe(poolSharedMounts, () => {
 		expect(run(fileSystem, projectJson)).toBe(projectJson);
 	});
 
-	it("should leave each package's own coverage shadow out of the pool", () => {
+	it("should leave each package's own coverage shadow out of the pool", ({ expect }) => {
 		expect.assertions(3);
 
 		// What a coverage run stages: both packages share `include/`, and each
@@ -268,7 +268,7 @@ describe(poolSharedMounts, () => {
 	it.for([
 		["a mount declaring a class of its own", { $className: "Configuration", $path: INCLUDE }],
 		["a mount carrying properties of its own", { $path: INCLUDE, $properties: { Name: "x" } }],
-	] as const)("should leave %s alone", ([, node]) => {
+	] as const)("should leave %s alone", ([, node], { expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = seed({ [path.join(INCLUDE, "runtime.luau")]: "" });
@@ -280,7 +280,7 @@ describe(poolSharedMounts, () => {
 	it.for([
 		["a ModuleScript", "include/init.luau"],
 		["whatever an init.meta.json names", "include/init.meta.json"],
-	] as const)("should pool a directory rojo mounts as %s", ([, seeded]) => {
+	] as const)("should pool a directory rojo mounts as %s", ([, seeded], { expect }) => {
 		expect.assertions(1);
 
 		// Every `@rbxts/*` package is an `init.luau` directory, so a rule that
@@ -297,7 +297,7 @@ describe(poolSharedMounts, () => {
 		expect(poolKeyOf(staged(project, "a", "Include"))).toBe(digestOf(INCLUDE));
 	});
 
-	it("should leave a mount that is not on disk alone", () => {
+	it("should leave a mount that is not on disk alone", ({ expect }) => {
 		expect.assertions(1);
 
 		// A stub the run has not generated yet, or a project naming a path that
@@ -311,24 +311,30 @@ describe(poolSharedMounts, () => {
 	it.for([
 		["jest.config.luau", "return {}"],
 		["assets.rbxm", "<roblox!"],
-	] as const)("should pool the single file %s two packages mount", ([fileName, contents]) => {
-		expect.assertions(2);
+	] as const)(
+		"should pool the single file %s two packages mount",
+		([fileName, contents], { expect }) => {
+			expect.assertions(2);
 
-		// One rule for a mount, whether it names a directory or a file. A
-		// workspace run generates one `jest.config.luau` stub and mounts it from
-		// every package.
-		const stub = path.join(path.resolve("/repo"), fileName);
-		const { fileSystem } = seed({ [stub]: contents });
+			// One rule for a mount, whether it names a directory or a file. A
+			// workspace run generates one `jest.config.luau` stub and mounts it
+			// from every package.
+			const stub = path.join(path.resolve("/repo"), fileName);
+			const { fileSystem } = seed({ [stub]: contents });
 
-		const project = pooledProject(fileSystem, twoPackagesStaging({ $path: stub }, "Config"));
+			const project = pooledProject(
+				fileSystem,
+				twoPackagesStaging({ $path: stub }, "Config"),
+			);
 
-		expect(poolKeyOf(staged(project, "a", "Config"))).toBe(digestOf(stub));
-		expect(staged(project, "__shared", digestOf(stub))!.$path).toBe(posixPath(stub));
-	});
+			expect(poolKeyOf(staged(project, "a", "Config"))).toBe(digestOf(stub));
+			expect(staged(project, "__shared", digestOf(stub))!.$path).toBe(posixPath(stub));
+		},
+	);
 
 	it.for(["README.md", "init.meta.json"] as const)(
 		"should leave the single file %s alone",
-		(fileName) => {
+		(fileName, { expect }) => {
 			expect.assertions(1);
 
 			// Rojo builds no Instance for either. A marker naming an entry the
@@ -342,7 +348,7 @@ describe(poolSharedMounts, () => {
 		},
 	);
 
-	it("should give every pooled path an entry of its own", () => {
+	it("should give every pooled path an entry of its own", ({ expect }) => {
 		expect.assertions(2);
 
 		const assets = path.resolve("/repo/assets");
@@ -368,7 +374,7 @@ describe(poolSharedMounts, () => {
 		expect(staged(project, "__shared", digestOf(assets))!.$path).toBe(posixPath(assets));
 	});
 
-	it("should key a mount on its path relative to the project directory", () => {
+	it("should key a mount on its path relative to the project directory", ({ expect }) => {
 		expect.assertions(1);
 
 		// The same checkout at two roots: the absolute paths differ, the

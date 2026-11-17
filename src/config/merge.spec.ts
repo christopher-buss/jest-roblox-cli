@@ -1,11 +1,11 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import { expectedDefaultFormatters } from "#test/mocks/config-default-formatters.ts";
 import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
 import { mergeCliWithConfig } from "./merge.ts";
 
 describe(mergeCliWithConfig, () => {
-	it("should preserve explicit falsy CLI overrides", () => {
+	it("should preserve explicit falsy CLI overrides", ({ expect }) => {
 		expect.assertions(5);
 
 		const result = mergeCliWithConfig(
@@ -33,7 +33,7 @@ describe(mergeCliWithConfig, () => {
 		expect(result.updateSnapshot).toBeFalse();
 	});
 
-	it("should prefer explicit truthy CLI overrides", () => {
+	it("should prefer explicit truthy CLI overrides", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = mergeCliWithConfig(
@@ -66,7 +66,7 @@ describe(mergeCliWithConfig, () => {
 		});
 	});
 
-	it("should keep the config hiddenDesktop when the CLI leaves it unset", () => {
+	it("should keep the config hiddenDesktop when the CLI leaves it unset", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -75,7 +75,7 @@ describe(mergeCliWithConfig, () => {
 		).toBeTrue();
 	});
 
-	it("should keep explicit formatters over the environment-detected defaults", () => {
+	it("should keep explicit formatters over the environment-detected defaults", ({ expect }) => {
 		expect.assertions(2);
 
 		expect(
@@ -87,7 +87,7 @@ describe(mergeCliWithConfig, () => {
 		).toStrictEqual(["github-actions"]);
 	});
 
-	it("should fall back to the environment-detected formatter defaults", () => {
+	it("should fall back to the environment-detected formatter defaults", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(mergeCliWithConfig({}, createResolvedConfig()).formatters).toStrictEqual(
@@ -95,7 +95,7 @@ describe(mergeCliWithConfig, () => {
 		);
 	});
 
-	it("should add the GitHub formatter only inside GitHub Actions", () => {
+	it("should add the GitHub formatter only inside GitHub Actions", ({ expect }) => {
 		expect.assertions(2);
 
 		expect(mergeCliWithConfig({}, createResolvedConfig()).formatters).not.toContain(

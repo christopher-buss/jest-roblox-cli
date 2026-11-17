@@ -1,6 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { startFakeOpenCloudServerAsync } from "#test/harness/fake-open-cloud.ts";
 import {
@@ -65,7 +65,7 @@ async function runCoverageAsync(
 describe("sea bundle coverage reporters", () => {
 	it.skipIf(!rojoOnPath())(
 		"should render the text table and write a summary the bundle carries no reporter file for",
-		async () => {
+		async ({ expect }) => {
 			expect.assertions(3);
 
 			const { result, sandbox } = await runCoverageAsync(["text", "json-summary"]);
@@ -79,7 +79,7 @@ describe("sea bundle coverage reporters", () => {
 
 	it.skipIf(!rojoOnPath())(
 		"should write the default lcov report with the html assets it copies off disk",
-		async () => {
+		async ({ expect }) => {
 			expect.assertions(4);
 
 			// `lcov` is half of the default reporter set and builds an

@@ -1,5 +1,5 @@
 import process from "node:process";
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import { NOOP_PROGRESS } from "#test/mocks/noop-progress.ts";
 import type { RunHeaderInput } from "./run-header.ts";
@@ -19,7 +19,7 @@ function baseInput(overrides: Partial<RunHeaderInput> = {}): RunHeaderInput {
 }
 
 describe(emitRunHeader, () => {
-	it("should write the run header to stdout for the default human formatter", () => {
+	it("should write the run header to stdout for the default human formatter", ({ expect }) => {
 		expect.assertions(1);
 
 		const stdout = vi.spyOn(process.stdout, "write").mockReturnValue(true);
@@ -28,7 +28,7 @@ describe(emitRunHeader, () => {
 		expect(stdout).toHaveBeenCalledWith(expect.stringContaining(" RUN  v1.2.3 /project"));
 	});
 
-	it("should write the run header when no formatter is configured", () => {
+	it("should write the run header when no formatter is configured", ({ expect }) => {
 		expect.assertions(1);
 
 		const stdout = vi.spyOn(process.stdout, "write").mockReturnValue(true);
@@ -37,7 +37,7 @@ describe(emitRunHeader, () => {
 		expect(stdout).toHaveBeenCalledWith(expect.stringContaining(" RUN  v1.2.3 /project"));
 	});
 
-	it("should emit nothing when silent", () => {
+	it("should emit nothing when silent", ({ expect }) => {
 		expect.assertions(1);
 
 		const stdout = vi.spyOn(process.stdout, "write").mockReturnValue(true);
@@ -46,7 +46,7 @@ describe(emitRunHeader, () => {
 		expect(stdout).not.toHaveBeenCalled();
 	});
 
-	it("should emit nothing for the json formatter", () => {
+	it("should emit nothing for the json formatter", ({ expect }) => {
 		expect.assertions(1);
 
 		const stdout = vi.spyOn(process.stdout, "write").mockReturnValue(true);
@@ -55,7 +55,7 @@ describe(emitRunHeader, () => {
 		expect(stdout).not.toHaveBeenCalled();
 	});
 
-	it("should emit nothing for the agent formatter", () => {
+	it("should emit nothing for the agent formatter", ({ expect }) => {
 		expect.assertions(1);
 
 		const stdout = vi.spyOn(process.stdout, "write").mockReturnValue(true);
@@ -64,7 +64,7 @@ describe(emitRunHeader, () => {
 		expect(stdout).not.toHaveBeenCalled();
 	});
 
-	it("should emit for the agent formatter when verbose (human path)", () => {
+	it("should emit for the agent formatter when verbose (human path)", ({ expect }) => {
 		expect.assertions(1);
 
 		const stdout = vi.spyOn(process.stdout, "write").mockReturnValue(true);
@@ -73,7 +73,7 @@ describe(emitRunHeader, () => {
 		expect(stdout).toHaveBeenCalledWith(expect.stringContaining(" RUN  v1.2.3 /project"));
 	});
 
-	it("should show the coverage subtitle when coverage is enabled", () => {
+	it("should show the coverage subtitle when coverage is enabled", ({ expect }) => {
 		expect.assertions(1);
 
 		const stdout = vi.spyOn(process.stdout, "write").mockReturnValue(true);

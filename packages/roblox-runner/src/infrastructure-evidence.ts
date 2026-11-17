@@ -138,7 +138,7 @@ export function collectStallEvidence(
 	context: PollContext,
 	error: PollTimeoutError,
 ): TaskStallEvidence {
-	const lastObserved: unknown = error.lastObservedTask;
+	const lastObserved = error.lastObservedTask;
 	const lastState = readTaskField(lastObserved, "state");
 	return {
 		createTime: readTime(lastObserved, "createdAt"),

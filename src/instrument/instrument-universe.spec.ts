@@ -1,6 +1,6 @@
 import * as path from "node:path";
 import process from "node:process";
-import { assert, describe, expect, it } from "vitest";
+import { assert, describe, it } from "vitest";
 
 import type { MemoryVolume } from "#test/mocks/memory-file-system.ts";
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
@@ -71,7 +71,7 @@ function writeCompiled(
 }
 
 describe(createInstrumentUniverse, () => {
-	it("should leave an explicitly empty include unrestricted", () => {
+	it("should leave an explicitly empty include unrestricted", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -81,7 +81,7 @@ describe(createInstrumentUniverse, () => {
 
 	it.for([{}, { ignore: [] }, { ignore: ["**/generated/**"] }])(
 		"should exclude scripts from the default instrumentation universe %j",
-		(filter) => {
+		(filter, { expect }) => {
 			expect.assertions(1);
 
 			const { fileSystem, volume } = createMemoryFileSystem();
@@ -101,7 +101,7 @@ describe(createInstrumentUniverse, () => {
 		},
 	);
 
-	it("should instrument a file whose source map points at an included source", () => {
+	it("should instrument a file whose source map points at an included source", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -116,7 +116,7 @@ describe(createInstrumentUniverse, () => {
 		).toBeTrue();
 	});
 
-	it("should skip a file whose source map points outside the universe", () => {
+	it("should skip a file whose source map points outside the universe", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -131,7 +131,7 @@ describe(createInstrumentUniverse, () => {
 		).toBeFalse();
 	});
 
-	it("should honor a negated include pattern", () => {
+	it("should honor a negated include pattern", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -147,7 +147,7 @@ describe(createInstrumentUniverse, () => {
 		expect(universe.includes(luauPath)).toBeFalse();
 	});
 
-	it("should apply ignore patterns alongside the include globs", () => {
+	it("should apply ignore patterns alongside the include globs", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -164,7 +164,9 @@ describe(createInstrumentUniverse, () => {
 		expect(universe.includes(luauPath)).toBeFalse();
 	});
 
-	it("should resolve a relative source entry against the source map's directory", () => {
+	it("should resolve a relative source entry against the source map's directory", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -179,7 +181,7 @@ describe(createInstrumentUniverse, () => {
 		).toBeTrue();
 	});
 
-	it("should keep a file when any of its sources is in the universe", () => {
+	it("should keep a file when any of its sources is in the universe", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -194,7 +196,7 @@ describe(createInstrumentUniverse, () => {
 		).toBeTrue();
 	});
 
-	it("should keep the first decision when a source map changes during a run", () => {
+	it("should keep the first decision when a source map changes during a run", ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -218,7 +220,7 @@ describe(createInstrumentUniverse, () => {
 		expect(universe.includes(luauPath)).toBeTrue();
 	});
 
-	it("should match the Luau path itself when no source map exists", () => {
+	it("should match the Luau path itself when no source map exists", ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -233,7 +235,7 @@ describe(createInstrumentUniverse, () => {
 		expect(universe.includes(uncovered)).toBeFalse();
 	});
 
-	it("should instrument a file whose source map cannot be read as JSON", () => {
+	it("should instrument a file whose source map cannot be read as JSON", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -246,7 +248,7 @@ describe(createInstrumentUniverse, () => {
 		).toBeTrue();
 	});
 
-	it("should instrument a file whose source map is not an object", () => {
+	it("should instrument a file whose source map is not an object", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -259,7 +261,7 @@ describe(createInstrumentUniverse, () => {
 		).toBeTrue();
 	});
 
-	it("should instrument a file whose source map declares no usable sources", () => {
+	it("should instrument a file whose source map declares no usable sources", ({ expect }) => {
 		expect.assertions(3);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -286,7 +288,7 @@ describe(createInstrumentUniverse, () => {
 		expect(universe.includes(nonString)).toBeTrue();
 	});
 
-	it("should instrument a file whose source map exists but cannot be read", () => {
+	it("should instrument a file whose source map exists but cannot be read", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -304,7 +306,7 @@ describe(createInstrumentUniverse, () => {
 		).toBeTrue();
 	});
 
-	it("should match include globs against the given rootDir", () => {
+	it("should match include globs against the given rootDir", ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -331,7 +333,7 @@ describe(createInstrumentUniverse, () => {
 		).toBeFalse();
 	});
 
-	it("should digest the same universe however the globs are ordered", () => {
+	it("should digest the same universe however the globs are ordered", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -342,7 +344,7 @@ describe(createInstrumentUniverse, () => {
 		expect(forward.digest).toBe(reversed.digest);
 	});
 
-	it("should digest the patterns that define the universe", () => {
+	it("should digest the patterns that define the universe", ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -355,7 +357,7 @@ describe(createInstrumentUniverse, () => {
 		expect(first.digest).not.toBe(other.digest);
 	});
 
-	it("should digest the ignore patterns too", () => {
+	it("should digest the ignore patterns too", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -369,7 +371,7 @@ describe(createInstrumentUniverse, () => {
 		expect(withIgnore.digest).not.toBe(without.digest);
 	});
 
-	it("should give absent and empty ignore lists the same digest", () => {
+	it("should give absent and empty ignore lists the same digest", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -382,7 +384,7 @@ describe(createInstrumentUniverse, () => {
 		expect(withoutIgnore.digest).toBe(withEmptyIgnore.digest);
 	});
 
-	it("should digest the rootDir the globs are anchored to", () => {
+	it("should digest the rootDir the globs are anchored to", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();

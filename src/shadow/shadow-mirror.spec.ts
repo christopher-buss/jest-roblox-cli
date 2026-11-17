@@ -1,11 +1,13 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { posixRoot } from "#test/mocks/posix-path.ts";
 import { syncNonInstrumentedFiles, syncOneFile } from "./shadow-mirror.ts";
 
 describe(syncOneFile, () => {
-	it("should overwrite a stale target when a matching record names another path", () => {
+	it("should overwrite a stale target when a matching record names another path", ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = createMemoryFileSystem({
@@ -32,7 +34,7 @@ describe(syncOneFile, () => {
 });
 
 describe(syncNonInstrumentedFiles, () => {
-	it("should leave coverage-map sidecars out of the mirrored files", () => {
+	it("should leave coverage-map sidecars out of the mirrored files", ({ expect }) => {
 		expect.assertions(3);
 
 		const { fileSystem, volume } = createMemoryFileSystem({
@@ -68,7 +70,7 @@ describe(syncNonInstrumentedFiles, () => {
 			});
 		}
 
-		it("should be false when the shadow already matches the source", () => {
+		it("should be false when the shadow already matches the source", ({ expect }) => {
 			expect.assertions(1);
 
 			const { fileSystem } = createMemoryFileSystem({ "/source/lib/data.json": "payload" });
@@ -77,7 +79,7 @@ describe(syncNonInstrumentedFiles, () => {
 			expect(sync(fileSystem, first.files).changed).toBeFalse();
 		});
 
-		it("should be true when a file changes under existing shadow directories", () => {
+		it("should be true when a file changes under existing shadow directories", ({ expect }) => {
 			expect.assertions(1);
 
 			const { fileSystem, volume } = createMemoryFileSystem({
@@ -89,7 +91,7 @@ describe(syncNonInstrumentedFiles, () => {
 			expect(sync(fileSystem, first.files).changed).toBeTrue();
 		});
 
-		it("should be true when only a new empty directory appears", () => {
+		it("should be true when only a new empty directory appears", ({ expect }) => {
 			expect.assertions(1);
 
 			const { fileSystem, volume } = createMemoryFileSystem({

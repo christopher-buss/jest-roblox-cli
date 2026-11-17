@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import type { OptionRow } from "./option-row.ts";
 import { isTestKey, JEST_ARGV_KEYS, OPTION_ROWS, STUB_KEYS } from "./options.ts";
@@ -12,7 +12,7 @@ function spellings({ cli }: OptionRow): Array<string> {
 }
 
 describe("option registry", () => {
-	it("should give every flag spelling to one option", () => {
+	it("should give every flag spelling to one option", ({ expect }) => {
 		expect.assertions(1);
 
 		const names = OPTION_ROWS.flatMap(spellings);
@@ -24,7 +24,7 @@ describe("option registry", () => {
 
 	it.for(["testTimeout", "displayName", "testNamePattern"])(
 		"should forward %s to Jest",
-		(key) => {
+		(key, { expect }) => {
 			expect.assertions(1);
 
 			expect(JEST_ARGV_KEYS.has(key)).toBeTrue();
@@ -33,7 +33,7 @@ describe("option registry", () => {
 
 	it.for(["backend", "collectCoverage", "coverage", "projectTimeout", "typecheck"])(
 		"should keep %s from Jest",
-		(key) => {
+		(key, { expect }) => {
 			expect.assertions(1);
 
 			expect(JEST_ARGV_KEYS.has(key)).toBeFalse();
@@ -42,20 +42,20 @@ describe("option registry", () => {
 
 	it.for(["outDir", "root", "typecheck", "projectTimeout", "verbose"])(
 		"should keep %s out of runtime stubs",
-		(key) => {
+		(key, { expect }) => {
 			expect.assertions(1);
 
 			expect(STUB_KEYS.has(key)).toBeFalse();
 		},
 	);
 
-	it("should put setupFiles in runtime stubs", () => {
+	it("should put setupFiles in runtime stubs", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(STUB_KEYS.has("setupFiles")).toBeTrue();
 	});
 
-	it("should place jest options under test", () => {
+	it("should place jest options under test", ({ expect }) => {
 		expect.assertions(3);
 
 		expect(isTestKey("verbose")).toBeTrue();

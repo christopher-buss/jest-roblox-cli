@@ -4,7 +4,7 @@ import { TaskQuotaError, TaskStallError } from "@isentinel/roblox-runner";
 import process from "node:process";
 import { stripVTControlCharacters } from "node:util";
 import type { MockInstance } from "vitest";
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import { printError } from "./cli-errors.ts";
 import { ConfigError } from "./config/errors.ts";
@@ -35,7 +35,7 @@ function renderedStderr(spies: OutputSpies): string {
 }
 
 describe(printError, () => {
-	it("should print the hint inside a ConfigError banner", () => {
+	it("should print the hint inside a ConfigError banner", ({ expect }) => {
 		expect.assertions(2);
 
 		const spies = setupOutputSpies();
@@ -45,7 +45,7 @@ describe(printError, () => {
 		expect(renderedStderr(spies)).toContain("\n  Hint: try this instead\n");
 	});
 
-	it("should return 2 and print banner for ConfigError without hint", () => {
+	it("should return 2 and print banner for ConfigError without hint", ({ expect }) => {
 		expect.assertions(2);
 
 		const spies = setupOutputSpies();
@@ -55,7 +55,9 @@ describe(printError, () => {
 		expect(spies.stderr).not.toHaveBeenCalledWith(expect.stringContaining("Hint:"));
 	});
 
-	it("should return 2 and print hint for LuauScriptError matching a known pattern", () => {
+	it("should return 2 and print hint for LuauScriptError matching a known pattern", ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const spies = setupOutputSpies();
@@ -67,7 +69,7 @@ describe(printError, () => {
 		expect(spies.stderr).toHaveBeenCalledWith(expect.stringContaining("Hint:"));
 	});
 
-	it("should omit Hint section for LuauScriptError with no matching pattern", () => {
+	it("should omit Hint section for LuauScriptError with no matching pattern", ({ expect }) => {
 		expect.assertions(1);
 
 		const spies = setupOutputSpies();
@@ -85,7 +87,9 @@ describe(printError, () => {
 		`);
 	});
 
-	it("should lead the banner with captured banner output when the message is just an exit code", () => {
+	it("should lead the banner with captured banner output when the message is just an exit code", ({
+		expect,
+	}) => {
 		// When Jest exits via process.exit(N), the message "Exited
 		// with code: N" is only a transport; the real error message Jest
 		// printed to stdout lives in `bannerOutput` (the InterceptWriteable
@@ -116,7 +120,9 @@ describe(printError, () => {
 		expect(spies.stderr).not.toHaveBeenCalledWith(expect.stringContaining("Luau Error"));
 	});
 
-	it("should recognize a multi-digit exit code only when it is the complete message", () => {
+	it("should recognize a multi-digit exit code only when it is the complete message", ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const spies = setupOutputSpies();
@@ -133,7 +139,7 @@ describe(printError, () => {
 
 	it.for(["prefix Exited with code: 1", "Exited with code: 1 trailing"] as const)(
 		"should keep captured output as context for non-exact exit message %j",
-		async (message) => {
+		async (message, { expect }) => {
 			expect.assertions(1);
 
 			const spies = setupOutputSpies();
@@ -148,7 +154,9 @@ describe(printError, () => {
 		},
 	);
 
-	it("should print banner output context for LuauScriptError with parseable bannerOutput", () => {
+	it("should print banner output context for LuauScriptError with parseable bannerOutput", ({
+		expect,
+	}) => {
 		// Non-exit-code LuauScriptError (e.g. config / Jest-resolution failure)
 		// keeps the original layout: message as primary, bannerOutput as hint.
 		expect.assertions(2);
@@ -165,7 +173,7 @@ describe(printError, () => {
 		expect(spies.stderr).toHaveBeenCalledWith(expect.stringContaining("Game output:"));
 	});
 
-	it("should omit Game output section when bannerOutput parses to empty array", () => {
+	it("should omit Game output section when bannerOutput parses to empty array", ({ expect }) => {
 		expect.assertions(1);
 
 		const spies = setupOutputSpies();
@@ -177,7 +185,7 @@ describe(printError, () => {
 		expect(spies.stderr).not.toHaveBeenCalledWith(expect.stringContaining("Game output:"));
 	});
 
-	it("should omit Game output section when gameOutput is undefined", () => {
+	it("should omit Game output section when gameOutput is undefined", ({ expect }) => {
 		expect.assertions(1);
 
 		const spies = setupOutputSpies();
@@ -186,7 +194,7 @@ describe(printError, () => {
 		expect(spies.stderr).not.toHaveBeenCalledWith(expect.stringContaining("Game output:"));
 	});
 
-	it("should return 2 and print message for generic Error", () => {
+	it("should return 2 and print message for generic Error", ({ expect }) => {
 		expect.assertions(1);
 
 		const spies = setupOutputSpies();
@@ -195,7 +203,7 @@ describe(printError, () => {
 		expect(spies.consoleError).toHaveBeenCalledWith("Error: something broke");
 	});
 
-	it("should return 2 for unknown error type", () => {
+	it("should return 2 for unknown error type", ({ expect }) => {
 		expect.assertions(1);
 
 		const spies = setupOutputSpies();
@@ -204,7 +212,9 @@ describe(printError, () => {
 		expect(spies.consoleError).toHaveBeenCalledWith("An unknown error occurred");
 	});
 
-	it("should return 3 and report a stalled task as a Roblox infrastructure failure with its evidence", () => {
+	it("should return 3 and report a stalled task as a Roblox infrastructure failure with its evidence", ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const spies = setupOutputSpies();
@@ -238,7 +248,7 @@ describe(printError, () => {
 		);
 	});
 
-	it("should render a missing gap record without evidence", () => {
+	it("should render a missing gap record without evidence", ({ expect }) => {
 		expect.assertions(3);
 
 		const spies = setupOutputSpies();
@@ -249,7 +259,7 @@ describe(printError, () => {
 		expect(renderedStderr(spies)).not.toContain("Evidence:");
 	});
 
-	it("should omit evidence fields Roblox did not report", () => {
+	it("should omit evidence fields Roblox did not report", ({ expect }) => {
 		expect.assertions(1);
 
 		const spies = setupOutputSpies();
@@ -278,7 +288,7 @@ describe(printError, () => {
 		);
 	});
 
-	it("should report a quota-refused create with its evidence and headers", () => {
+	it("should report a quota-refused create with its evidence and headers", ({ expect }) => {
 		expect.assertions(2);
 
 		const spies = setupOutputSpies();
@@ -317,7 +327,9 @@ describe(printError, () => {
 		);
 	});
 
-	it("should return 2 and render a Backend Error banner when error.cause is an OpenCloudError", () => {
+	it("should return 2 and render a Backend Error banner when error.cause is an OpenCloudError", ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const spies = setupOutputSpies();
@@ -332,7 +344,7 @@ describe(printError, () => {
 		);
 	});
 
-	it("should include the cause chain entries inside the Backend Error banner", () => {
+	it("should include the cause chain entries inside the Backend Error banner", ({ expect }) => {
 		expect.assertions(1);
 
 		const spies = setupOutputSpies();
@@ -362,7 +374,9 @@ describe(printError, () => {
 		`);
 	});
 
-	it("should name the failing request, status, and body head for a parse failure", () => {
+	it("should name the failing request, status, and body head for a parse failure", ({
+		expect,
+	}) => {
 		expect.assertions(4);
 
 		const spies = setupOutputSpies();
@@ -394,7 +408,7 @@ describe(printError, () => {
 		);
 	});
 
-	it("should collapse and truncate the body head to keep the banner readable", () => {
+	it("should collapse and truncate the body head to keep the banner readable", ({ expect }) => {
 		expect.assertions(3);
 
 		const spies = setupOutputSpies();
@@ -413,7 +427,7 @@ describe(printError, () => {
 		expect(rendered).not.toContain("x".repeat(200));
 	});
 
-	it("should truncate response bodies only after the preview limit", () => {
+	it("should truncate response bodies only after the preview limit", ({ expect }) => {
 		expect.assertions(2);
 
 		const spies = setupOutputSpies();
@@ -442,7 +456,7 @@ describe(printError, () => {
 		expect(renderedStderr(spies)).toContain(`Body: ${exactLimit}…\n`);
 	});
 
-	it("should collapse a run of mixed whitespace in a response body", () => {
+	it("should collapse a run of mixed whitespace in a response body", ({ expect }) => {
 		expect.assertions(1);
 
 		const spies = setupOutputSpies();
@@ -458,7 +472,7 @@ describe(printError, () => {
 		expect(renderedStderr(spies)).toContain("Body: first second\n");
 	});
 
-	it("should omit the body line when the captured body is blank", () => {
+	it("should omit the body line when the captured body is blank", ({ expect }) => {
 		expect.assertions(1);
 
 		const spies = setupOutputSpies();
@@ -475,7 +489,7 @@ describe(printError, () => {
 		expect(rendered).not.toContain("Body:");
 	});
 
-	it("should render the url alone when the error names no method", () => {
+	it("should render the url alone when the error names no method", ({ expect }) => {
 		expect.assertions(1);
 
 		const spies = setupOutputSpies();
@@ -505,7 +519,9 @@ describe(printError, () => {
 		`);
 	});
 
-	it("should name the missing scope in the Backend Error banner for a PermissionError cause", () => {
+	it("should name the missing scope in the Backend Error banner for a PermissionError cause", ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const spies = setupOutputSpies();
@@ -527,7 +543,9 @@ describe(printError, () => {
 		);
 	});
 
-	it("should fall through to plain console.error when error.cause is not an OpenCloudError", () => {
+	it("should fall through to plain console.error when error.cause is not an OpenCloudError", ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const spies = setupOutputSpies();
@@ -569,7 +587,7 @@ describe("runner error hints", () => {
 			"infinite-yield",
 			"A :WaitForChild() call is waiting for an instance that doesn't exist. Check your DataModel paths and Rojo project configuration.",
 		],
-	])("should hint for code %s", ([code, hint]) => {
+	])("should hint for code %s", ([code, hint], { expect }) => {
 		expect.assertions(1);
 
 		const spies = setupOutputSpies();
@@ -578,7 +596,7 @@ describe("runner error hints", () => {
 		expect(renderedStderr(spies)).toContain(`Hint: ${hint}`);
 	});
 
-	it("should give no hint for a timeout", () => {
+	it("should give no hint for a timeout", ({ expect }) => {
 		expect.assertions(1);
 
 		const spies = setupOutputSpies();
@@ -587,7 +605,7 @@ describe("runner error hints", () => {
 		expect(renderedStderr(spies)).not.toContain("Hint:");
 	});
 
-	it("should not hint on the message alone once the runner sent a code", () => {
+	it("should not hint on the message alone once the runner sent a code", ({ expect }) => {
 		expect.assertions(1);
 
 		const spies = setupOutputSpies();
@@ -598,7 +616,7 @@ describe("runner error hints", () => {
 
 	// Verbatim from a v3 plugin, which is the point: the copy that answers
 	// is a stale one whose wording is already fixed on disk.
-	it("should hint for a plugin version mismatch that carries no code", () => {
+	it("should hint for a plugin version mismatch that carries no code", ({ expect }) => {
 		expect.assertions(1);
 
 		const spies = setupOutputSpies();
@@ -614,7 +632,7 @@ describe("runner error hints", () => {
 		);
 	});
 
-	it("should not reference removed --projects flag in projects hint", () => {
+	it("should not reference removed --projects flag in projects hint", ({ expect }) => {
 		expect.assertions(2);
 
 		const spies = setupOutputSpies();

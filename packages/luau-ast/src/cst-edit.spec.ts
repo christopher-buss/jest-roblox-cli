@@ -1,11 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { numberNode } from "#test/helpers/unit/cst";
 import { createCstEdits, renameBinding, renameBindings } from "./cst-edit.ts";
 import type { CstBlock, CstLocal, CstLocalDeclaration, CstLocalRef } from "./cst.ts";
 
 describe(createCstEdits, () => {
-	it("should reject a second replacement naming both callers", () => {
+	it("should reject a second replacement naming both callers", ({ expect }) => {
 		expect.assertions(1);
 
 		const target = numberNode();
@@ -17,7 +17,7 @@ describe(createCstEdits, () => {
 		}).toThrow("second cannot replace the Number at 1:1: first already replaced it");
 	});
 
-	it("should reject a second token text naming both callers", () => {
+	it("should reject a second token text naming both callers", ({ expect }) => {
 		expect.assertions(1);
 
 		const target = numberNode().token;
@@ -65,7 +65,9 @@ function makeBindings() {
 }
 
 describe("binding renames", () => {
-	it("should rename declarations and references by identity while leaving shadowed names", () => {
+	it("should rename declarations and references by identity while leaving shadowed names", ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const { declaration, reference, root, shadow } = makeBindings();
@@ -89,7 +91,7 @@ describe("binding renames", () => {
 });
 
 describe("replacement ledger", () => {
-	it("should retain token texts by token identity", () => {
+	it("should retain token texts by token identity", ({ expect }) => {
 		expect.assertions(3);
 
 		const target = numberNode().token;
@@ -104,7 +106,7 @@ describe("replacement ledger", () => {
 		expect(edits.tokenTextFor(twin)).toBeUndefined();
 	});
 
-	it("should retain replacements and callers by node identity", () => {
+	it("should retain replacements and callers by node identity", ({ expect }) => {
 		expect.assertions(4);
 
 		const target = numberNode();
@@ -120,7 +122,7 @@ describe("replacement ledger", () => {
 		expect(edits.callerFor(target)).toBe("replace");
 	});
 
-	it.for([false, true])("should retain removal policy %s", (preserveLeading) => {
+	it.for([false, true])("should retain removal policy %s", (preserveLeading, { expect }) => {
 		expect.assertions(2);
 
 		const target = numberNode();
@@ -131,7 +133,7 @@ describe("replacement ledger", () => {
 		expect(edits.callerFor(target)).toBe("remove");
 	});
 
-	it("should stamp generated tokens without assigning an absent host origin", () => {
+	it("should stamp generated tokens without assigning an absent host origin", ({ expect }) => {
 		expect.assertions(2);
 
 		const replacement = numberNode();
@@ -146,7 +148,9 @@ describe("replacement ledger", () => {
 		expect(replacement.token.origin).toBeUndefined();
 	});
 
-	it("should anchor nested replacements while preserving an existing attribution", () => {
+	it("should anchor nested replacements while preserving an existing attribution", ({
+		expect,
+	}) => {
 		expect.assertions(4);
 
 		const edits = createCstEdits();
@@ -164,7 +168,9 @@ describe("replacement ledger", () => {
 		expect(subtree.token.generatedBy).toBe("outer");
 	});
 
-	it("should retain an existing subtree origin and avoid marking parsed tokens as generated", () => {
+	it("should retain an existing subtree origin and avoid marking parsed tokens as generated", ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const target = numberNode();
@@ -178,7 +184,7 @@ describe("replacement ledger", () => {
 		expect(replacement.token.generatedBy).toBeUndefined();
 	});
 
-	it("should retain a nested text replacement without treating it as a subtree", () => {
+	it("should retain a nested text replacement without treating it as a subtree", ({ expect }) => {
 		expect.assertions(2);
 
 		const edits = createCstEdits();

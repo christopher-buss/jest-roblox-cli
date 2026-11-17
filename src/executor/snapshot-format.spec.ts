@@ -1,5 +1,5 @@
 import * as path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
@@ -27,7 +27,7 @@ function resolve(config: ResolvedConfig, testFiles: Array<string>) {
 }
 
 describe(resolveSnapshotFormat, () => {
-	it("should print the basic prototype for a luau project", () => {
+	it("should print the basic prototype for a luau project", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = resolve(configWithRoot(), ["src/a.spec.luau"]);
@@ -35,7 +35,7 @@ describe(resolveSnapshotFormat, () => {
 		expect(result.snapshotFormat!.printBasicPrototype).toBeTrue();
 	});
 
-	it("should omit the basic prototype for a typescript project", () => {
+	it("should omit the basic prototype for a typescript project", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = resolve(configWithRoot(), ["src/a.spec.ts"]);
@@ -43,7 +43,7 @@ describe(resolveSnapshotFormat, () => {
 		expect(result.snapshotFormat!.printBasicPrototype).toBeFalse();
 	});
 
-	it("should preserve an explicit printBasicPrototype", () => {
+	it("should preserve an explicit printBasicPrototype", ({ expect }) => {
 		expect.assertions(1);
 
 		const config = configWithRoot({ snapshotFormat: { printBasicPrototype: true } });
@@ -53,7 +53,7 @@ describe(resolveSnapshotFormat, () => {
 		expect(result.snapshotFormat!.printBasicPrototype).toBeTrue();
 	});
 
-	it("should keep sibling snapshotFormat options", () => {
+	it("should keep sibling snapshotFormat options", ({ expect }) => {
 		expect.assertions(2);
 
 		const config = configWithRoot({ snapshotFormat: { escapeString: true } });
@@ -64,7 +64,7 @@ describe(resolveSnapshotFormat, () => {
 		expect(result.snapshotFormat!.printBasicPrototype).toBeFalse();
 	});
 
-	it("should not mutate the config it is given", () => {
+	it("should not mutate the config it is given", ({ expect }) => {
 		expect.assertions(1);
 
 		const config = configWithRoot();

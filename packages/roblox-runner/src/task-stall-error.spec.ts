@@ -1,12 +1,12 @@
 import { NetworkError, PollTimeoutError } from "@bedrock-rbx/ocale";
 
-import { assert, describe, expect, it, vi } from "vitest";
+import { assert, describe, it, vi } from "vitest";
 
 import { makePollContext } from "#test/helpers/unit/poll-context.ts";
 import { TaskStallError, toExecutionError } from "./task-stall-error.ts";
 
 describe(toExecutionError, () => {
-	it("should retain ordinary poll failures without attempting recovery", () => {
+	it("should retain ordinary poll failures without attempting recovery", ({ expect }) => {
 		expect.assertions(3);
 
 		const error = new NetworkError("offline");
@@ -22,7 +22,9 @@ describe(toExecutionError, () => {
 		expect(readResultAsync).not.toHaveBeenCalled();
 	});
 
-	it("should recover by polling the same task and forwarding the observation signal", async () => {
+	it("should recover by polling the same task and forwarding the observation signal", async ({
+		expect,
+	}) => {
 		expect.assertions(3);
 
 		const error = new PollTimeoutError("timeout", { timeoutMs: 1 });

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import {
 	createIgnoreMatcher,
@@ -8,7 +8,7 @@ import {
 } from "./glob-ignore.ts";
 
 describe(readGlobIgnorePaths, () => {
-	it("should read the declared strings and drop everything else", () => {
+	it("should read the declared strings and drop everything else", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -16,7 +16,7 @@ describe(readGlobIgnorePaths, () => {
 		).toStrictEqual(["out/**", "src/*"]);
 	});
 
-	it("should answer none for a project that declares no list", () => {
+	it("should answer none for a project that declares no list", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(readGlobIgnorePaths({})).toStrictEqual([]);
@@ -24,7 +24,7 @@ describe(readGlobIgnorePaths, () => {
 });
 
 describe(readDeclaredGlobIgnorePaths, () => {
-	it("should tell a declared empty list apart from no list", () => {
+	it("should tell a declared empty list apart from no list", ({ expect }) => {
 		expect.assertions(2);
 
 		expect(readDeclaredGlobIgnorePaths({ globIgnorePaths: [] })).toStrictEqual([]);
@@ -33,7 +33,7 @@ describe(readDeclaredGlobIgnorePaths, () => {
 });
 
 describe(withReplacedConfigs, () => {
-	it("should keep the declared list as is when no config is replaced", () => {
+	it("should keep the declared list as is when no config is replaced", ({ expect }) => {
 		expect.assertions(2);
 
 		const declared = ["**/*.txt"];
@@ -42,7 +42,7 @@ describe(withReplacedConfigs, () => {
 		expect(withReplacedConfigs(undefined, [])).toBeUndefined();
 	});
 
-	it("should append each replaced config once after the declared patterns", () => {
+	it("should append each replaced config once after the declared patterns", ({ expect }) => {
 		expect.assertions(2);
 
 		expect(
@@ -55,7 +55,7 @@ describe(withReplacedConfigs, () => {
 });
 
 describe(createIgnoreMatcher, () => {
-	it("should never build a matcher for a project that drops nothing", () => {
+	it("should never build a matcher for a project that drops nothing", ({ expect }) => {
 		expect.assertions(2);
 
 		const matcher = createIgnoreMatcher([]);
@@ -68,7 +68,7 @@ describe(createIgnoreMatcher, () => {
 		expect(matcher).toBe(createIgnoreMatcher([]));
 	});
 
-	it("should match a declared pattern with and without the drive letter", () => {
+	it("should match a declared pattern with and without the drive letter", ({ expect }) => {
 		expect.assertions(3);
 
 		const matcher = createIgnoreMatcher(["**/out/**"]);
@@ -78,7 +78,7 @@ describe(createIgnoreMatcher, () => {
 		expect(matcher("/repo/src/thing.luau")).toBeFalse();
 	});
 
-	it("should match a path through a dot-directory", () => {
+	it("should match a path through a dot-directory", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(createIgnoreMatcher(["**/out/**"])("/repo/.cache/out/thing.luau")).toBeTrue();

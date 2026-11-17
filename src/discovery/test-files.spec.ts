@@ -1,11 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { classifyTestFiles } from "./test-files.ts";
 
 describe(classifyTestFiles, () => {
 	const files = ["a.spec.ts", "b.spec-d.ts", "c.test-d.ts", "d.test.ts"];
 
-	it("should exclude type test files from runtime even when typecheck is off", () => {
+	it("should exclude type test files from runtime even when typecheck is off", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(classifyTestFiles(files, { enabled: false, only: false })).toStrictEqual({
@@ -14,7 +14,7 @@ describe(classifyTestFiles, () => {
 		});
 	});
 
-	it("should split runtime and type test files when typecheck is on", () => {
+	it("should split runtime and type test files when typecheck is on", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(classifyTestFiles(files, { enabled: true, only: false })).toStrictEqual({
@@ -23,7 +23,7 @@ describe(classifyTestFiles, () => {
 		});
 	});
 
-	it("should classify luau type test files as type tests", () => {
+	it("should classify luau type test files as type tests", ({ expect }) => {
 		expect.assertions(1);
 
 		const luauFiles = ["a.spec.luau", "b.spec-d.luau", "c.test-d.luau"];
@@ -34,7 +34,7 @@ describe(classifyTestFiles, () => {
 		});
 	});
 
-	it("should return no runtime files when typecheckOnly is set", () => {
+	it("should return no runtime files when typecheckOnly is set", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(classifyTestFiles(files, { enabled: true, only: true })).toStrictEqual({

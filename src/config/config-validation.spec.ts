@@ -1,6 +1,6 @@
 // cspell:words bakcend
 import { type } from "arktype";
-import { assert, describe, expect, it } from "vitest";
+import { assert, describe, it } from "vitest";
 
 import type { Config } from "./config-types.ts";
 import { configSchema, projectConfigFileSchema, validateConfig } from "./config-validation.ts";
@@ -11,7 +11,7 @@ function schemaAcceptsBackend(backend: string): boolean {
 
 describe(configSchema, () => {
 	describe("valid configs", () => {
-		it("should accept an empty config", () => {
+		it("should accept an empty config", ({ expect }) => {
 			expect.assertions(1);
 
 			const result = configSchema({});
@@ -19,7 +19,7 @@ describe(configSchema, () => {
 			expect(result).not.toBeInstanceOf(type.errors);
 		});
 
-		it("should accept a config with only jest-roblox keys", () => {
+		it("should accept a config with only jest-roblox keys", ({ expect }) => {
 			expect.assertions(1);
 
 			const result = configSchema({
@@ -36,7 +36,7 @@ describe(configSchema, () => {
 			expect(result).not.toBeInstanceOf(type.errors);
 		});
 
-		it("should accept projectTimeout at test: and per-project", () => {
+		it("should accept projectTimeout at test: and per-project", ({ expect }) => {
 			expect.assertions(1);
 
 			const result = configSchema({
@@ -51,19 +51,19 @@ describe(configSchema, () => {
 			expect(result).not.toBeInstanceOf(type.errors);
 		});
 
-		it("should reject the removed `cache` field as unknown", () => {
+		it("should reject the removed `cache` field as unknown", ({ expect }) => {
 			expect.assertions(1);
 
 			expect(() => validateConfig({ cache: true })).toThrow(/Invalid config/);
 		});
 
-		it("should reject `binaryInput` as unknown", () => {
+		it("should reject `binaryInput` as unknown", ({ expect }) => {
 			expect.assertions(1);
 
 			expect(() => validateConfig({ binaryInput: true })).toThrow(/Invalid config/);
 		});
 
-		it("should accept all valid backend values", () => {
+		it("should accept all valid backend values", ({ expect }) => {
 			expect.assertions(1);
 
 			expect(["auto", "open-cloud", "studio", "studio-cli"]).toSatisfyAll(
@@ -71,7 +71,7 @@ describe(configSchema, () => {
 			);
 		});
 
-		it("should accept a studioPath string", () => {
+		it("should accept a studioPath string", ({ expect }) => {
 			expect.assertions(1);
 
 			expect(
@@ -79,7 +79,7 @@ describe(configSchema, () => {
 			).not.toBeInstanceOf(type.errors);
 		});
 
-		it("should accept a pluginsDirectory string", () => {
+		it("should accept a pluginsDirectory string", ({ expect }) => {
 			expect.assertions(1);
 
 			expect(
@@ -87,7 +87,7 @@ describe(configSchema, () => {
 			).not.toBeInstanceOf(type.errors);
 		});
 
-		it("should accept valid jest passthrough keys under test:", () => {
+		it("should accept valid jest passthrough keys under test:", ({ expect }) => {
 			expect.assertions(1);
 
 			const result = configSchema({
@@ -103,7 +103,7 @@ describe(configSchema, () => {
 			expect(result).not.toBeInstanceOf(type.errors);
 		});
 
-		it("should accept valid projects as string array", () => {
+		it("should accept valid projects as string array", ({ expect }) => {
 			expect.assertions(1);
 
 			const result = configSchema({
@@ -115,7 +115,7 @@ describe(configSchema, () => {
 			expect(result).not.toBeInstanceOf(type.errors);
 		});
 
-		it("should accept valid inline project entries", () => {
+		it("should accept valid inline project entries", ({ expect }) => {
 			expect.assertions(1);
 
 			const result = configSchema({
@@ -134,7 +134,7 @@ describe(configSchema, () => {
 			expect(result).not.toBeInstanceOf(type.errors);
 		});
 
-		it("should accept mixed project entries", () => {
+		it("should accept mixed project entries", ({ expect }) => {
 			expect.assertions(1);
 
 			const result = configSchema({
@@ -154,7 +154,7 @@ describe(configSchema, () => {
 			expect(result).not.toBeInstanceOf(type.errors);
 		});
 
-		it("should accept valid coverageThreshold", () => {
+		it("should accept valid coverageThreshold", ({ expect }) => {
 			expect.assertions(1);
 
 			const result = configSchema({
@@ -171,7 +171,7 @@ describe(configSchema, () => {
 			expect(result).not.toBeInstanceOf(type.errors);
 		});
 
-		it("should accept valid snapshotFormat", () => {
+		it("should accept valid snapshotFormat", ({ expect }) => {
 			expect.assertions(1);
 
 			const result = configSchema({
@@ -187,7 +187,7 @@ describe(configSchema, () => {
 			expect(result).not.toBeInstanceOf(type.errors);
 		});
 
-		it("should accept formatter as string array", () => {
+		it("should accept formatter as string array", ({ expect }) => {
 			expect.assertions(1);
 
 			const result = configSchema({
@@ -197,7 +197,7 @@ describe(configSchema, () => {
 			expect(result).not.toBeInstanceOf(type.errors);
 		});
 
-		it("should accept formatter as tuple with options", () => {
+		it("should accept formatter as tuple with options", ({ expect }) => {
 			expect.assertions(1);
 
 			const result = configSchema({
@@ -207,7 +207,7 @@ describe(configSchema, () => {
 			expect(result).not.toBeInstanceOf(type.errors);
 		});
 
-		it("should accept displayName as object in inline project", () => {
+		it("should accept displayName as object in inline project", ({ expect }) => {
 			expect.assertions(1);
 
 			const result = configSchema({
@@ -226,7 +226,7 @@ describe(configSchema, () => {
 			expect(result).not.toBeInstanceOf(type.errors);
 		});
 
-		it("should accept root field in inline project", () => {
+		it("should accept root field in inline project", ({ expect }) => {
 			expect.assertions(1);
 
 			const result = configSchema({
@@ -246,7 +246,7 @@ describe(configSchema, () => {
 			expect(result).not.toBeInstanceOf(type.errors);
 		});
 
-		it("should accept outDir field in inline project", () => {
+		it("should accept outDir field in inline project", ({ expect }) => {
 			expect.assertions(1);
 
 			const result = configSchema({
@@ -266,7 +266,7 @@ describe(configSchema, () => {
 			expect(result).not.toBeInstanceOf(type.errors);
 		});
 
-		it("should accept testRegex as string", () => {
+		it("should accept testRegex as string", ({ expect }) => {
 			expect.assertions(1);
 
 			const result = configSchema({ test: { testRegex: ".*\\.spec\\.ts$" } });
@@ -274,7 +274,7 @@ describe(configSchema, () => {
 			expect(result).not.toBeInstanceOf(type.errors);
 		});
 
-		it("should accept testRegex as string array", () => {
+		it("should accept testRegex as string array", ({ expect }) => {
 			expect.assertions(1);
 
 			const result = configSchema({
@@ -284,7 +284,7 @@ describe(configSchema, () => {
 			expect(result).not.toBeInstanceOf(type.errors);
 		});
 
-		it("should accept bail as boolean", () => {
+		it("should accept bail as boolean", ({ expect }) => {
 			expect.assertions(1);
 
 			const result = configSchema({ test: { bail: true } });
@@ -292,7 +292,7 @@ describe(configSchema, () => {
 			expect(result).not.toBeInstanceOf(type.errors);
 		});
 
-		it("should accept bail as number", () => {
+		it("should accept bail as number", ({ expect }) => {
 			expect.assertions(1);
 
 			const result = configSchema({ test: { bail: 3 } });
@@ -300,7 +300,7 @@ describe(configSchema, () => {
 			expect(result).not.toBeInstanceOf(type.errors);
 		});
 
-		it("should accept maxWorkers as number", () => {
+		it("should accept maxWorkers as number", ({ expect }) => {
 			expect.assertions(1);
 
 			const result = configSchema({ test: { maxWorkers: 4 } });
@@ -308,7 +308,7 @@ describe(configSchema, () => {
 			expect(result).not.toBeInstanceOf(type.errors);
 		});
 
-		it("should accept maxWorkers as string", () => {
+		it("should accept maxWorkers as string", ({ expect }) => {
 			expect.assertions(1);
 
 			const result = configSchema({ test: { maxWorkers: "50%" } });
@@ -316,7 +316,7 @@ describe(configSchema, () => {
 			expect(result).not.toBeInstanceOf(type.errors);
 		});
 
-		it("should accept testEnvironmentOptions as string", () => {
+		it("should accept testEnvironmentOptions as string", ({ expect }) => {
 			expect.assertions(1);
 
 			const result = configSchema({ test: { testEnvironmentOptions: "{}" } });
@@ -324,7 +324,7 @@ describe(configSchema, () => {
 			expect(result).not.toBeInstanceOf(type.errors);
 		});
 
-		it("should accept passWithNoTests", () => {
+		it("should accept passWithNoTests", ({ expect }) => {
 			expect.assertions(1);
 
 			const result = configSchema({ test: { passWithNoTests: true } });
@@ -332,7 +332,7 @@ describe(configSchema, () => {
 			expect(result).not.toBeInstanceOf(type.errors);
 		});
 
-		it('should accept parallel as "auto"', () => {
+		it('should accept parallel as "auto"', ({ expect }) => {
 			expect.assertions(1);
 
 			const result = configSchema({ parallel: "auto" });
@@ -340,14 +340,14 @@ describe(configSchema, () => {
 			expect(result).not.toBeInstanceOf(type.errors);
 		});
 
-		it("should accept parallel as integer >= 1", () => {
+		it("should accept parallel as integer >= 1", ({ expect }) => {
 			expect.assertions(2);
 
 			expect(configSchema({ parallel: 1 })).not.toBeInstanceOf(type.errors);
 			expect(configSchema({ parallel: 3 })).not.toBeInstanceOf(type.errors);
 		});
 
-		it("should accept omitted parallel", () => {
+		it("should accept omitted parallel", ({ expect }) => {
 			expect.assertions(1);
 
 			const result = configSchema({});
@@ -355,7 +355,7 @@ describe(configSchema, () => {
 			expect(result).not.toBeInstanceOf(type.errors);
 		});
 
-		it("should accept testEnvironmentOptions as object", () => {
+		it("should accept testEnvironmentOptions as object", ({ expect }) => {
 			expect.assertions(1);
 
 			const result = configSchema({
@@ -367,7 +367,7 @@ describe(configSchema, () => {
 	});
 
 	describe("invalid configs", () => {
-		it("should reject invalid backend value", () => {
+		it("should reject invalid backend value", ({ expect }) => {
 			expect.assertions(1);
 
 			const result = configSchema({ backend: "not-a-backend" });
@@ -375,7 +375,7 @@ describe(configSchema, () => {
 			expect(result).toBeInstanceOf(type.errors);
 		});
 
-		it("should reject backend with wrong type", () => {
+		it("should reject backend with wrong type", ({ expect }) => {
 			expect.assertions(1);
 
 			const result = configSchema({ backend: 123 });
@@ -383,7 +383,7 @@ describe(configSchema, () => {
 			expect(result).toBeInstanceOf(type.errors);
 		});
 
-		it("should reject port with wrong type", () => {
+		it("should reject port with wrong type", ({ expect }) => {
 			expect.assertions(1);
 
 			const result = configSchema({ port: "abc" });
@@ -391,7 +391,7 @@ describe(configSchema, () => {
 			expect(result).toBeInstanceOf(type.errors);
 		});
 
-		it("should reject timeout with wrong type", () => {
+		it("should reject timeout with wrong type", ({ expect }) => {
 			expect.assertions(1);
 
 			const result = configSchema({ timeout: "slow" });
@@ -399,7 +399,7 @@ describe(configSchema, () => {
 			expect(result).toBeInstanceOf(type.errors);
 		});
 
-		it("should reject a negative projectTimeout", () => {
+		it("should reject a negative projectTimeout", ({ expect }) => {
 			expect.assertions(1);
 
 			const result = configSchema({ test: { projectTimeout: -1 } });
@@ -407,7 +407,7 @@ describe(configSchema, () => {
 			expect(result).toBeInstanceOf(type.errors);
 		});
 
-		it("should reject testMatch with wrong type", () => {
+		it("should reject testMatch with wrong type", ({ expect }) => {
 			expect.assertions(1);
 
 			const result = configSchema({ test: { testMatch: "not-an-array" } });
@@ -415,7 +415,7 @@ describe(configSchema, () => {
 			expect(result).toBeInstanceOf(type.errors);
 		});
 
-		it("should reject coverageThreshold with string values", () => {
+		it("should reject coverageThreshold with string values", ({ expect }) => {
 			expect.assertions(1);
 
 			const result = configSchema({
@@ -425,7 +425,7 @@ describe(configSchema, () => {
 			expect(result).toBeInstanceOf(type.errors);
 		});
 
-		it("should reject snapshotFormat with wrong indent type", () => {
+		it("should reject snapshotFormat with wrong indent type", ({ expect }) => {
 			expect.assertions(1);
 
 			const result = configSchema({
@@ -435,7 +435,7 @@ describe(configSchema, () => {
 			expect(result).toBeInstanceOf(type.errors);
 		});
 
-		it("should reject undeclared keys (typos)", () => {
+		it("should reject undeclared keys (typos)", ({ expect }) => {
 			expect.assertions(1);
 
 			const result = configSchema({ bakcend: "studio" });
@@ -443,7 +443,7 @@ describe(configSchema, () => {
 			expect(result).toBeInstanceOf(type.errors);
 		});
 
-		it("should reject verbose with wrong type", () => {
+		it("should reject verbose with wrong type", ({ expect }) => {
 			expect.assertions(1);
 
 			const result = configSchema({ test: { verbose: "yes" } });
@@ -451,7 +451,7 @@ describe(configSchema, () => {
 			expect(result).toBeInstanceOf(type.errors);
 		});
 
-		it("should reject projects with wrong element type", () => {
+		it("should reject projects with wrong element type", ({ expect }) => {
 			expect.assertions(1);
 
 			const result = configSchema({ test: { projects: [123] } });
@@ -459,7 +459,7 @@ describe(configSchema, () => {
 			expect(result).toBeInstanceOf(type.errors);
 		});
 
-		it("should reject inline project missing required include", () => {
+		it("should reject inline project missing required include", ({ expect }) => {
 			expect.assertions(1);
 
 			const result = configSchema({
@@ -469,7 +469,7 @@ describe(configSchema, () => {
 			expect(result).toBeInstanceOf(type.errors);
 		});
 
-		it("should reject inline project missing required displayName", () => {
+		it("should reject inline project missing required displayName", ({ expect }) => {
 			expect.assertions(1);
 
 			const result = configSchema({
@@ -479,7 +479,7 @@ describe(configSchema, () => {
 			expect(result).toBeInstanceOf(type.errors);
 		});
 
-		it("should reject tsconfig field in inline project", () => {
+		it("should reject tsconfig field in inline project", ({ expect }) => {
 			expect.assertions(1);
 
 			const result = configSchema({
@@ -499,7 +499,7 @@ describe(configSchema, () => {
 			expect(result).toBeInstanceOf(type.errors);
 		});
 
-		it("should reject global-only key verbose inside an inline project", () => {
+		it("should reject global-only key verbose inside an inline project", ({ expect }) => {
 			expect.assertions(1);
 
 			const result = configSchema({
@@ -521,37 +521,37 @@ describe(configSchema, () => {
 			expect(result.summary).toContain("verbose");
 		});
 
-		it("should reject parallel: 0", () => {
+		it("should reject parallel: 0", ({ expect }) => {
 			expect.assertions(1);
 
 			expect(configSchema({ parallel: 0 })).toBeInstanceOf(type.errors);
 		});
 
-		it("should reject parallel with negative value", () => {
+		it("should reject parallel with negative value", ({ expect }) => {
 			expect.assertions(1);
 
 			expect(configSchema({ parallel: -1 })).toBeInstanceOf(type.errors);
 		});
 
-		it("should reject parallel with non-integer value", () => {
+		it("should reject parallel with non-integer value", ({ expect }) => {
 			expect.assertions(1);
 
 			expect(configSchema({ parallel: 2.5 })).toBeInstanceOf(type.errors);
 		});
 
-		it("should reject parallel with arbitrary string", () => {
+		it("should reject parallel with arbitrary string", ({ expect }) => {
 			expect.assertions(1);
 
 			expect(configSchema({ parallel: "invalid" })).toBeInstanceOf(type.errors);
 		});
 
-		it("should reject parallel with boolean value", () => {
+		it("should reject parallel with boolean value", ({ expect }) => {
 			expect.assertions(1);
 
 			expect(configSchema({ parallel: true })).toBeInstanceOf(type.errors);
 		});
 
-		it("should reject formatters with wrong element type", () => {
+		it("should reject formatters with wrong element type", ({ expect }) => {
 			expect.assertions(1);
 
 			const result = configSchema({ formatters: [123] });
@@ -561,7 +561,7 @@ describe(configSchema, () => {
 	});
 
 	describe("error messages", () => {
-		it("should produce readable error for invalid backend", () => {
+		it("should produce readable error for invalid backend", ({ expect }) => {
 			expect.assertions(1);
 
 			const result = configSchema({ backend: "bad" });
@@ -573,7 +573,7 @@ describe(configSchema, () => {
 			);
 		});
 
-		it("should produce readable error for wrong type", () => {
+		it("should produce readable error for wrong type", ({ expect }) => {
 			expect.assertions(1);
 
 			const result = configSchema({ port: "not-a-number" });
@@ -583,7 +583,7 @@ describe(configSchema, () => {
 			expect(result.summary).toMatchInlineSnapshot('"port must be a number (was a string)"');
 		});
 
-		it("should produce readable error for undeclared key", () => {
+		it("should produce readable error for undeclared key", ({ expect }) => {
 			expect.assertions(1);
 
 			const result = configSchema({ bakcend: "studio" });
@@ -595,7 +595,7 @@ describe(configSchema, () => {
 
 		it.for([String.raw`Roblox\Plugins`, "~/Plugins"])(
 			"should reject a relative pluginsDirectory %s",
-			(pluginsDirectory) => {
+			(pluginsDirectory, { expect }) => {
 				expect.assertions(1);
 
 				const result = configSchema({ pluginsDirectory });
@@ -608,7 +608,7 @@ describe(configSchema, () => {
 			},
 		);
 
-		it("should produce readable error for nested validation", () => {
+		it("should produce readable error for nested validation", ({ expect }) => {
 			expect.assertions(1);
 
 			const result = configSchema({
@@ -625,7 +625,7 @@ describe(configSchema, () => {
 });
 
 describe(validateConfig, () => {
-	it("should return the config when valid", () => {
+	it("should return the config when valid", ({ expect }) => {
 		expect.assertions(1);
 
 		const input = { backend: "studio", test: { verbose: true } } satisfies Config;
@@ -633,25 +633,25 @@ describe(validateConfig, () => {
 		expect(validateConfig(input)).toStrictEqual(input);
 	});
 
-	it("should throw on invalid config", () => {
+	it("should throw on invalid config", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(() => validateConfig({ port: "abc" })).toThrow("Invalid config");
 	});
 
-	it("should include arktype summary in error message", () => {
+	it("should include arktype summary in error message", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(() => validateConfig({ backend: 123 })).toThrow(/must be/);
 	});
 
-	it("should let arktype reject non-object input rather than scanning keys", () => {
+	it("should let arktype reject non-object input rather than scanning keys", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(() => validateConfig(null)).toThrow(/Invalid config/);
 	});
 
-	it("should reject jest passthrough key at root with migration directive", () => {
+	it("should reject jest passthrough key at root with migration directive", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(() => validateConfig({ setupFiles: ["./global.ts"] })).toThrow(
@@ -659,7 +659,7 @@ describe(validateConfig, () => {
 		);
 	});
 
-	it("should accept jest passthrough keys nested under test:", () => {
+	it("should accept jest passthrough keys nested under test:", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(() => {
@@ -669,13 +669,13 @@ describe(validateConfig, () => {
 		}).not.toThrow();
 	});
 
-	it("should validate types inside test: block", () => {
+	it("should validate types inside test: block", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(() => validateConfig({ test: { setupFiles: 123 } })).toThrow(/setupFiles/);
 	});
 
-	it("should list all misplaced jest keys in a single grouped error", () => {
+	it("should list all misplaced jest keys in a single grouped error", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(() => {
@@ -691,7 +691,7 @@ describe(validateConfig, () => {
 		);
 	});
 
-	it("should reject a flat root typecheck key with a migration directive", () => {
+	it("should reject a flat root typecheck key with a migration directive", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(() => validateConfig({ typecheck: true })).toThrow(
@@ -699,7 +699,7 @@ describe(validateConfig, () => {
 		);
 	});
 
-	it("should list all migrated typecheck keys with their targets", () => {
+	it("should list all migrated typecheck keys with their targets", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(() => {
@@ -715,13 +715,13 @@ describe(validateConfig, () => {
 		);
 	});
 
-	it("should not treat Object prototype names as migrated typecheck keys", () => {
+	it("should not treat Object prototype names as migrated typecheck keys", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(() => validateConfig({ constructor: true })).not.toThrow(/typecheck/);
 	});
 
-	it("should accept a typecheck object under test:", () => {
+	it("should accept a typecheck object under test:", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(() => {
@@ -731,7 +731,7 @@ describe(validateConfig, () => {
 		}).not.toThrow();
 	});
 
-	it("should accept ignoreSourceErrors in the typecheck object", () => {
+	it("should accept ignoreSourceErrors in the typecheck object", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(() => {
@@ -741,7 +741,7 @@ describe(validateConfig, () => {
 		}).not.toThrow();
 	});
 
-	it("should accept spawnTimeout in the typecheck object", () => {
+	it("should accept spawnTimeout in the typecheck object", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(() => {
@@ -751,7 +751,7 @@ describe(validateConfig, () => {
 		}).not.toThrow();
 	});
 
-	it("should reject a non-positive spawnTimeout", () => {
+	it("should reject a non-positive spawnTimeout", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(() => validateConfig({ test: { typecheck: { spawnTimeout: 0 } } })).toThrow(
@@ -759,7 +759,7 @@ describe(validateConfig, () => {
 		);
 	});
 
-	it("should reject unknown keys inside the typecheck object", () => {
+	it("should reject unknown keys inside the typecheck object", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(() => validateConfig({ test: { typecheck: { bogus: true } } })).toThrow(
@@ -767,55 +767,55 @@ describe(validateConfig, () => {
 		);
 	});
 
-	it("should accept gameOutput as a string", () => {
+	it("should accept gameOutput as a string", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(() => validateConfig({ gameOutput: "logs.json" })).not.toThrow();
 	});
 
-	it("should accept gameOutput as true", () => {
+	it("should accept gameOutput as true", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(() => validateConfig({ gameOutput: true })).not.toThrow();
 	});
 
-	it("should reject gameOutput as false", () => {
+	it("should reject gameOutput as false", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(() => validateConfig({ gameOutput: false })).toThrow(/Invalid config/);
 	});
 
-	it("should accept outputFile as a string", () => {
+	it("should accept outputFile as a string", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(() => validateConfig({ outputFile: "results.json" })).not.toThrow();
 	});
 
-	it("should accept outputFile as true", () => {
+	it("should accept outputFile as true", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(() => validateConfig({ outputFile: true })).not.toThrow();
 	});
 
-	it("should reject outputFile as false", () => {
+	it("should reject outputFile as false", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(() => validateConfig({ outputFile: false })).toThrow(/Invalid config/);
 	});
 
-	it("should accept workspace.gameOutput as true", () => {
+	it("should accept workspace.gameOutput as true", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(() => validateConfig({ workspace: { gameOutput: true } })).not.toThrow();
 	});
 
-	it("should accept workspace.outputFile as true", () => {
+	it("should accept workspace.outputFile as true", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(() => validateConfig({ workspace: { outputFile: true } })).not.toThrow();
 	});
 
-	it("should reject workspace.outputFile as a string", () => {
+	it("should reject workspace.outputFile as a string", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(() => validateConfig({ workspace: { outputFile: "results.json" } })).toThrow(
@@ -823,7 +823,7 @@ describe(validateConfig, () => {
 		);
 	});
 
-	it("should reject workspace.gameOutput as a string", () => {
+	it("should reject workspace.gameOutput as a string", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(() => validateConfig({ workspace: { gameOutput: "logs.json" } })).toThrow(
@@ -831,7 +831,7 @@ describe(validateConfig, () => {
 		);
 	});
 
-	it("should reject workspace.gameOutput as false", () => {
+	it("should reject workspace.gameOutput as false", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(() => validateConfig({ workspace: { gameOutput: false } })).toThrow(
@@ -839,13 +839,13 @@ describe(validateConfig, () => {
 		);
 	});
 
-	it("should reject unknown keys inside workspace", () => {
+	it("should reject unknown keys inside workspace", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(() => validateConfig({ workspace: { unknown: true } })).toThrow(/Invalid config/);
 	});
 
-	it("should accept workspace.root with workspace.packages", () => {
+	it("should accept workspace.root with workspace.packages", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(() => {
@@ -853,7 +853,7 @@ describe(validateConfig, () => {
 		}).not.toThrow();
 	});
 
-	it("should reject workspace.packages without workspace.root", () => {
+	it("should reject workspace.packages without workspace.root", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(() => validateConfig({ workspace: { packages: ["packages/*"] } })).toThrow(
@@ -861,7 +861,7 @@ describe(validateConfig, () => {
 		);
 	});
 
-	it("should reject workspace.root without workspace.packages", () => {
+	it("should reject workspace.root without workspace.packages", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(() => validateConfig({ workspace: { root: "." } })).toThrow(
@@ -869,7 +869,7 @@ describe(validateConfig, () => {
 		);
 	});
 
-	it("should accept workspace.root/packages alongside gameOutput", () => {
+	it("should accept workspace.root/packages alongside gameOutput", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(() => {
@@ -879,7 +879,7 @@ describe(validateConfig, () => {
 		}).not.toThrow();
 	});
 
-	it("should reject test.slowTestThreshold of 0", () => {
+	it("should reject test.slowTestThreshold of 0", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(() => validateConfig({ test: { slowTestThreshold: 0 } })).toThrow(
@@ -887,7 +887,7 @@ describe(validateConfig, () => {
 		);
 	});
 
-	it("should reject negative test.slowTestThreshold", () => {
+	it("should reject negative test.slowTestThreshold", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(() => validateConfig({ test: { slowTestThreshold: -100 } })).toThrow(
@@ -895,7 +895,7 @@ describe(validateConfig, () => {
 		);
 	});
 
-	it("should reject NaN test.slowTestThreshold", () => {
+	it("should reject NaN test.slowTestThreshold", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(() => validateConfig({ test: { slowTestThreshold: NaN } })).toThrow(
@@ -903,7 +903,7 @@ describe(validateConfig, () => {
 		);
 	});
 
-	it("should accept positive test.slowTestThreshold", () => {
+	it("should accept positive test.slowTestThreshold", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(() => validateConfig({ test: { slowTestThreshold: 500 } })).not.toThrow();
@@ -911,7 +911,7 @@ describe(validateConfig, () => {
 });
 
 describe(projectConfigFileSchema, () => {
-	it("should unwrap a defineProject wrapper to its test block", () => {
+	it("should unwrap a defineProject wrapper to its test block", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(

@@ -5,7 +5,7 @@ import { createHash } from "node:crypto";
 import * as path from "node:path";
 import process from "node:process";
 import type { Except } from "type-fest";
-import { describe, expect, it, onTestFinished, vi } from "vitest";
+import { describe, it, type TestContext, vi } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import {
@@ -43,7 +43,10 @@ function makeCli(overrides: Partial<CliOptions> = {}): CliOptions {
 	return overrides;
 }
 
-function stubPlatform(platform: NodeJS.Platform): void {
+function stubPlatform(
+	platform: NodeJS.Platform,
+	onTestFinished: TestContext["onTestFinished"],
+): void {
 	const original = Object.getOwnPropertyDescriptor(process, "platform")!;
 	Object.defineProperty(process, "platform", { value: platform });
 	onTestFinished(() => {
@@ -79,7 +82,7 @@ function oneJobRequest(config: ResolvedConfig): never {
 }
 
 describe(openBackend, () => {
-	it("should select studio-cli for auto when Studio is installed", async () => {
+	it("should select studio-cli for auto when Studio is installed", async ({ expect }) => {
 		expect.assertions(1);
 
 		vi.spyOn(process.stderr, "write").mockReturnValue(true);
@@ -93,7 +96,7 @@ describe(openBackend, () => {
 		expect(backend.constructor.name).toBe("StudioCliBackend");
 	});
 
-	it("should select open-cloud for auto when Studio is not installed", async () => {
+	it("should select open-cloud for auto when Studio is not installed", async ({ expect }) => {
 		expect.assertions(1);
 
 		stubNoStudioPath();
@@ -109,7 +112,9 @@ describe(openBackend, () => {
 		expect(backend.constructor.name).toBe("OpenCloudBackend");
 	});
 
-	it("should reuse a proven Open Cloud place from the supplied filesystem", async () => {
+	it("should reuse a proven Open Cloud place from the supplied filesystem", async ({
+		expect,
+	}) => {
 		expect.assertions(3);
 
 		stubNoStudioPath();
@@ -158,7 +163,9 @@ describe(openBackend, () => {
 		expect(upload).not.toHaveBeenCalled();
 	});
 
-	it("should name the missing credential when auto has neither Studio nor Open Cloud", async () => {
+	it("should name the missing credential when auto has neither Studio nor Open Cloud", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		stubNoStudioPath();
@@ -174,7 +181,7 @@ describe(openBackend, () => {
 		).rejects.toThrow(/Missing:/);
 	});
 
-	it("should select open-cloud when only JEST_ROBLOX_* env vars are set", async () => {
+	it("should select open-cloud when only JEST_ROBLOX_* env vars are set", async ({ expect }) => {
 		expect.assertions(1);
 
 		stubNoCredentials();
@@ -190,7 +197,7 @@ describe(openBackend, () => {
 		expect(backend.constructor.name).toBe("OpenCloudBackend");
 	});
 
-	it("should return studio backend for explicit studio config", async () => {
+	it("should return studio backend for explicit studio config", async ({ expect }) => {
 		expect.assertions(1);
 
 		const backend = await resolveBackendAsync({
@@ -201,7 +208,9 @@ describe(openBackend, () => {
 		expect(backend.constructor.name).toBe("StudioBackend");
 	});
 
-	it("should open an explicit studio backend's server through the server seam", async () => {
+	it("should open an explicit studio backend's server through the server seam", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const backend = await resolveBackendAsync({
@@ -217,7 +226,7 @@ describe(openBackend, () => {
 		expect(getLastCreatedServer()).toBeInstanceOf(MockWebSocketServer);
 	});
 
-	it("should return studio-cli backend for explicit studio-cli config", async () => {
+	it("should return studio-cli backend for explicit studio-cli config", async ({ expect }) => {
 		expect.assertions(1);
 
 		const backend = await resolveBackendAsync({
@@ -228,10 +237,13 @@ describe(openBackend, () => {
 		expect(backend.constructor.name).toBe("StudioCliBackend");
 	});
 
-	it("should forward the configured hiddenDesktop to the studio-cli backend", async () => {
+	it("should forward the configured hiddenDesktop to the studio-cli backend", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(1);
 
-		stubPlatform("linux");
+		stubPlatform("linux", onTestFinished);
 		const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
 		const config = makeConfig({ backend: "studio-cli", hiddenDesktop: true });
 
@@ -242,7 +254,9 @@ describe(openBackend, () => {
 		);
 	});
 
-	it("should forward the configured Studio path to the studio-cli backend", async () => {
+	it("should forward the configured Studio path to the studio-cli backend", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const rootDirectory = path.resolve("fixture");
@@ -265,13 +279,16 @@ describe(openBackend, () => {
 		);
 	});
 
-	it("should skip the relative env plugins folder when the config key reaches studio-cli", async () => {
+	it("should skip the relative env plugins folder when the config key reaches studio-cli", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(2);
 
 		const rootDirectory = path.resolve("fixture");
 		const studioPath = path.join(rootDirectory, "RobloxStudioBeta.exe");
 		const { fileSystem } = createMemoryFileSystem({ [studioPath]: "" });
-		stubPlatform("darwin");
+		stubPlatform("darwin", onTestFinished);
 		vi.stubEnv("JEST_ROBLOX_PLUGINS_DIR", "environment-plugins");
 		const rojoMissing: ChildProcessRunner = fromAny({
 			execFile: (...execFileArguments: [string, Array<string>, object, RojoCallback]) => {
@@ -316,7 +333,9 @@ describe(openBackend, () => {
 		);
 	});
 
-	it("should accept any --parallel for studio-cli, which runs one session", async () => {
+	it("should accept any --parallel for studio-cli, which runs one session", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const backend = await resolveBackendAsync({
@@ -327,7 +346,7 @@ describe(openBackend, () => {
 		expect(backend.constructor.name).toBe("StudioCliBackend");
 	});
 
-	it("should reject --experimental-vm-parallel on the open-cloud backend", async () => {
+	it("should reject --experimental-vm-parallel on the open-cloud backend", async ({ expect }) => {
 		expect.assertions(1);
 
 		stubCredentials();
@@ -345,7 +364,7 @@ describe(openBackend, () => {
 		);
 	});
 
-	it("should accept --experimental-vm-parallel on the studio backend", async () => {
+	it("should accept --experimental-vm-parallel on the studio backend", async ({ expect }) => {
 		expect.assertions(1);
 
 		const backend = await resolveBackendAsync({
@@ -356,7 +375,9 @@ describe(openBackend, () => {
 		expect(backend.kind).toBe("studio");
 	});
 
-	it("should reject an explicit VM count above the hosts the plugin ships", async () => {
+	it("should reject an explicit VM count above the hosts the plugin ships", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		await expect(
@@ -372,7 +393,7 @@ describe(openBackend, () => {
 		);
 	});
 
-	it("should accept a VM count equal to the host pool", async () => {
+	it("should accept a VM count equal to the host pool", async ({ expect }) => {
 		expect.assertions(1);
 
 		const backend = await resolveBackendAsync({
@@ -383,7 +404,7 @@ describe(openBackend, () => {
 		expect(backend.kind).toBe("studio");
 	});
 
-	it("should return open-cloud backend for explicit open-cloud config", async () => {
+	it("should return open-cloud backend for explicit open-cloud config", async ({ expect }) => {
 		expect.assertions(1);
 
 		stubNoCredentials();
@@ -400,17 +421,20 @@ describe(openBackend, () => {
 		makeCli({ apiKey: "key" }),
 		makeCli({ universeId: "123" }),
 		makeCli({ placeId: "456" }),
-	])("should surface the precise resolver error for a partial CLI override", async (cli) => {
-		expect.assertions(1);
+	])(
+		"should surface the precise resolver error for a partial CLI override",
+		async (cli, { expect }) => {
+			expect.assertions(1);
 
-		stubNoCredentials();
+			stubNoCredentials();
 
-		await expect(
-			resolveBackendAsync({ cli, config: makeConfig({ backend: "open-cloud" }) }),
-		).rejects.toThrow(/Missing:/);
-	});
+			await expect(
+				resolveBackendAsync({ cli, config: makeConfig({ backend: "open-cloud" }) }),
+			).rejects.toThrow(/Missing:/);
+		},
+	);
 
-	it("should open a studio backend for a workspace run", () => {
+	it("should open a studio backend for a workspace run", ({ expect }) => {
 		expect.assertions(1);
 
 		const opened = openBackend({

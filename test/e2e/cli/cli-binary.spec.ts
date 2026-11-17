@@ -1,5 +1,5 @@
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { createFixtureSandbox, patchSandboxConfig, runCli } from "#test/harness/helpers.ts";
 
@@ -7,7 +7,7 @@ const LUAU_FIXTURE = path.resolve(__dirname, "../fixtures/luau-project");
 const RBXTS_FIXTURE = path.resolve(__dirname, "../fixtures/rbxts-project");
 
 describe("cli binary", () => {
-	it("should print help without binary-input flags and exit 0", () => {
+	it("should print help without binary-input flags and exit 0", ({ expect }) => {
 		expect.assertions(3);
 
 		const result = runCli(["--help"]);
@@ -17,7 +17,7 @@ describe("cli binary", () => {
 		expect(result.stdout).not.toContain("binary-input");
 	});
 
-	it("should print version and exit 0", () => {
+	it("should print version and exit 0", ({ expect }) => {
 		expect.assertions(2);
 
 		const result = runCli(["--version"]);
@@ -29,7 +29,7 @@ describe("cli binary", () => {
 	// Discovery runs before backend resolution, so reaching the credential
 	// error is itself the proof that discovery found the spec files. A
 	// discovery failure prints "No test files found" and stops earlier.
-	it("should load luau config and find test files", () => {
+	it("should load luau config and find test files", ({ expect }) => {
 		expect.assertions(3);
 
 		const result = runCli([], LUAU_FIXTURE);
@@ -39,7 +39,7 @@ describe("cli binary", () => {
 		expect(result.stderr).toContain("Open Cloud credentials are required");
 	});
 
-	it("should load rbxts config and find test files", () => {
+	it("should load rbxts config and find test files", ({ expect }) => {
 		expect.assertions(3);
 
 		const result = runCli([], RBXTS_FIXTURE);
@@ -49,7 +49,9 @@ describe("cli binary", () => {
 		expect(result.stderr).toContain("Open Cloud credentials are required");
 	});
 
-	it("should short-circuit --typecheckOnly --passWithNoTests before backend resolution", () => {
+	it("should short-circuit --typecheckOnly --passWithNoTests before backend resolution", ({
+		expect,
+	}) => {
 		expect.assertions(3);
 
 		// `--typecheckOnly` is pure-local tsgo: with no Type Tests to run and
@@ -67,7 +69,7 @@ describe("cli binary", () => {
 	// (`auto`, the equals form, bare, `0`, `-1`, `xyz`) under a 100% branch
 	// threshold. One case survives here, for the only thing a subprocess adds:
 	// a parse throw reaching the exit code and stderr rather than a stack trace.
-	it("should reject --parallel 0 with a clear error", () => {
+	it("should reject --parallel 0 with a clear error", ({ expect }) => {
 		expect.assertions(2);
 
 		const result = runCli(
@@ -81,7 +83,7 @@ describe("cli binary", () => {
 
 	// Which removed flags `parseArgs` rejects is settled in `cli.spec.ts`; one
 	// case here proves the rejection reaches the exit code and stderr.
-	it("should reject --no-binary-input as an unknown option", () => {
+	it("should reject --no-binary-input as an unknown option", ({ expect }) => {
 		expect.assertions(2);
 
 		const result = runCli(
@@ -93,7 +95,7 @@ describe("cli binary", () => {
 		expect(result.stderr).toContain("Unknown option '--no-binary-input'");
 	});
 
-	it("should reject a binaryInput config field as unknown", () => {
+	it("should reject a binaryInput config field as unknown", ({ expect }) => {
 		expect.assertions(2);
 
 		const sandbox = createFixtureSandbox(RBXTS_FIXTURE);

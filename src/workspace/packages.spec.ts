@@ -2,7 +2,7 @@ import { fromAny } from "@total-typescript/shoehorn";
 
 import * as path from "node:path";
 import process from "node:process";
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import type { ChildProcessRunner } from "../utils/child-process.ts";
@@ -19,7 +19,7 @@ function makeDependencies(seed: Record<string, string> = {}) {
 }
 
 describe(resolvePackages, () => {
-	it("should enumerate packages under a declared workspace.packages glob", () => {
+	it("should enumerate packages under a declared workspace.packages glob", ({ expect }) => {
 		expect.assertions(1);
 
 		const resolved = resolvePackages({
@@ -34,7 +34,7 @@ describe(resolvePackages, () => {
 		expect(resolved).toMatchObject({ kind: "selected", packageInfos: [{ name: "a" }] });
 	});
 
-	it("should name the declared glob when it selects nothing", () => {
+	it("should name the declared glob when it selects nothing", ({ expect }) => {
 		expect.assertions(1);
 
 		const resolved = resolvePackages({
@@ -49,7 +49,7 @@ describe(resolvePackages, () => {
 		});
 	});
 
-	it("should name pnpm-workspace.yaml when discovery selects nothing", () => {
+	it("should name pnpm-workspace.yaml when discovery selects nothing", ({ expect }) => {
 		expect.assertions(1);
 
 		vi.spyOn(process, "cwd").mockReturnValue(ROOT);
@@ -67,7 +67,7 @@ describe(resolvePackages, () => {
 		});
 	});
 
-	it("should let a discovery failure propagate", () => {
+	it("should let a discovery failure propagate", ({ expect }) => {
 		expect.assertions(1);
 
 		vi.spyOn(process, "cwd").mockReturnValue(ROOT);

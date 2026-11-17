@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import process from "node:process";
-import { describe, expect, it, onTestFinished } from "vitest";
+import { describe, it, type TestContext } from "vitest";
 
 import { runCliAsync } from "#test/harness/helpers.ts";
 import { createSandboxDirectory } from "#test/harness/sandbox-root.ts";
@@ -11,7 +11,10 @@ import packageJson from "../../../package.json" with { type: "json" };
 const [CHECKER, CHECK] = ["lute", "check"] as const;
 const ALIAS_LINE = `["jest-roblox"] = "~/.jest-roblox/typedefs/${packageJson.version}"`;
 
-function createSetupSandbox(files: Record<string, string> = {}) {
+function createSetupSandbox(
+	onTestFinished: TestContext["onTestFinished"],
+	files: Record<string, string> = {},
+) {
 	const root = createSandboxDirectory();
 	onTestFinished(() => {
 		fs.rmSync(root, { force: true, recursive: true });
@@ -61,10 +64,13 @@ ${stdout}${stderr}`,
 }
 
 describe("jest-roblox setup", () => {
-	it("should write the type module and create .config.luau when neither file exists", async () => {
+	it("should write the type module and create .config.luau when neither file exists", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(3);
 
-		const sandbox = createSetupSandbox();
+		const sandbox = createSetupSandbox(onTestFinished);
 
 		const result = await sandbox.runSetupAsync();
 
@@ -86,10 +92,13 @@ describe("jest-roblox setup", () => {
 		);
 	});
 
-	it("should add the alias to an existing .config.luau and keep its comments", async () => {
+	it("should add the alias to an existing .config.luau and keep its comments", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(2);
 
-		const sandbox = createSetupSandbox({
+		const sandbox = createSetupSandbox(onTestFinished, {
 			".config.luau":
 				'-- project settings\nreturn {\n\tluau = {\n\t\tlanguagemode = "strict", -- everywhere\n\t\taliases = {\n\t\t\tshared = "./shared",\n\t\t},\n\t},\n}\n',
 		});
@@ -102,10 +111,13 @@ describe("jest-roblox setup", () => {
 		);
 	});
 
-	it("should merge the alias into a lone .luaurc and create no .config.luau", async () => {
+	it("should merge the alias into a lone .luaurc and create no .config.luau", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(3);
 
-		const sandbox = createSetupSandbox({
+		const sandbox = createSetupSandbox(onTestFinished, {
 			".luaurc": '{\n\t"languageMode": "strict",\n\t"aliases": { "shared": "./shared" }\n}\n',
 		});
 
@@ -122,11 +134,14 @@ describe("jest-roblox setup", () => {
 		expect(fs.existsSync(path.join(sandbox.project, ".config.luau"))).toBeFalse();
 	});
 
-	it("should leave a .luaurc with a trailing comma unchanged and name the entry to add", async () => {
+	it("should leave a .luaurc with a trailing comma unchanged and name the entry to add", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(3);
 
 		const source = '{\n\t"languageMode": "strict",\n}\n';
-		const sandbox = createSetupSandbox({ ".luaurc": source });
+		const sandbox = createSetupSandbox(onTestFinished, { ".luaurc": source });
 
 		const result = await sandbox.runSetupAsync();
 
@@ -137,11 +152,14 @@ describe("jest-roblox setup", () => {
 		expect(sandbox.read(".luaurc")).toBe(source);
 	});
 
-	it("should print the alias entry and succeed when luau.aliases is built by code", async () => {
+	it("should print the alias entry and succeed when luau.aliases is built by code", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(3);
 
 		const source = "local aliases = {}\nreturn { luau = { aliases = aliases } }\n";
-		const sandbox = createSetupSandbox({ ".config.luau": source });
+		const sandbox = createSetupSandbox(onTestFinished, { ".config.luau": source });
 
 		const result = await sandbox.runSetupAsync();
 
@@ -150,11 +168,14 @@ describe("jest-roblox setup", () => {
 		expect(sandbox.read(".config.luau")).toBe(source);
 	});
 
-	it("should warn on a run when the alias names another version and keep the exit code", async () => {
+	it("should warn on a run when the alias names another version and keep the exit code", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(3);
 
-		const plain = createSetupSandbox();
-		const stale = createSetupSandbox({
+		const plain = createSetupSandbox(onTestFinished);
+		const stale = createSetupSandbox(onTestFinished, {
 			".luaurc": '{ "aliases": { "jest-roblox": "~/.jest-roblox/typedefs/0.0.1" } }',
 		});
 
@@ -171,10 +192,13 @@ describe("jest-roblox setup", () => {
 		);
 	});
 
-	it("should let lute check resolve the config type through the alias", async () => {
+	it("should let lute check resolve the config type through the alias", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(2);
 
-		const sandbox = createSetupSandbox({
+		const sandbox = createSetupSandbox(onTestFinished, {
 			"jest.config.luau":
 				'local jest = require("@jest-roblox/config")\n\nreturn jest.defineConfig({\n\ttest = { verbose = true },\n})\n',
 		});

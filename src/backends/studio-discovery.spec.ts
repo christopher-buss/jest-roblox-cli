@@ -1,5 +1,5 @@
 // cspell:ignore LOCALAPPDATA mtime mtimes
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import type { MemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
@@ -24,7 +24,7 @@ function versionExe(version: string): string {
 }
 
 describe(discoverStudioPath, () => {
-	it("should return the override when the file exists", () => {
+	it("should return the override when the file exists", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = seed({ "C:/custom/RobloxStudioBeta.exe": "binary" });
@@ -34,7 +34,7 @@ describe(discoverStudioPath, () => {
 		);
 	});
 
-	it("should throw a clear error when the override does not exist", () => {
+	it("should throw a clear error when the override does not exist", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = seed();
@@ -44,7 +44,7 @@ describe(discoverStudioPath, () => {
 		}).toThrow(/studioPath override: C:\/missing\/RobloxStudioBeta\.exe/);
 	});
 
-	it("should throw when the override points at a directory, not a file", () => {
+	it("should throw when the override points at a directory, not a file", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = seed({ "C:/studio-dir/placeholder": "x" });
@@ -54,7 +54,7 @@ describe(discoverStudioPath, () => {
 		);
 	});
 
-	it("should find RobloxStudioBeta.exe under the Windows Versions directory", () => {
+	it("should find RobloxStudioBeta.exe under the Windows Versions directory", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = seed({ [versionExe("version-abc")]: "binary" });
@@ -64,7 +64,7 @@ describe(discoverStudioPath, () => {
 		);
 	});
 
-	it("should pick the newest Studio executable by mtime across versions", () => {
+	it("should pick the newest Studio executable by mtime across versions", ({ expect }) => {
 		expect.assertions(1);
 
 		// readdir returns entries alphabetically. The mtimes are arranged so the
@@ -84,7 +84,7 @@ describe(discoverStudioPath, () => {
 		);
 	});
 
-	it("should keep the first Studio executable when mtimes are equal", () => {
+	it("should keep the first Studio executable when mtimes are equal", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = seed({
@@ -99,7 +99,9 @@ describe(discoverStudioPath, () => {
 		);
 	});
 
-	it("should skip version entries that are files and those missing the executable", () => {
+	it("should skip version entries that are files and those missing the executable", ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const { fileSystem } = seed({
@@ -117,7 +119,9 @@ describe(discoverStudioPath, () => {
 		});
 	});
 
-	it("should throw a not-found error when no Studio executable exists on Windows", () => {
+	it("should throw a not-found error when no Studio executable exists on Windows", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { fileSystem } = seed({
@@ -129,7 +133,7 @@ describe(discoverStudioPath, () => {
 		}).toThrow(/Roblox Studio not found/);
 	});
 
-	it("should throw a not-found error when the Versions directory is absent", () => {
+	it("should throw a not-found error when the Versions directory is absent", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = seed();
@@ -144,7 +148,7 @@ describe(discoverStudioPath, () => {
 		);
 	});
 
-	it("should throw when LOCALAPPDATA is not set on Windows", () => {
+	it("should throw when LOCALAPPDATA is not set on Windows", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = seed();
@@ -154,7 +158,7 @@ describe(discoverStudioPath, () => {
 		}).toThrow(/LOCALAPPDATA is not set/);
 	});
 
-	it("should throw when LOCALAPPDATA is empty on Windows", () => {
+	it("should throw when LOCALAPPDATA is empty on Windows", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = seed();
@@ -168,7 +172,7 @@ describe(discoverStudioPath, () => {
 		}).toThrow(/LOCALAPPDATA is not set/);
 	});
 
-	it("should return the macOS app-bundle executable when present", () => {
+	it("should return the macOS app-bundle executable when present", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = seed({ [MACOS_EXE]: "binary" });
@@ -178,7 +182,9 @@ describe(discoverStudioPath, () => {
 		);
 	});
 
-	it("should prefer RobloxStudio over RobloxStudioBeta when both exist on macOS", () => {
+	it("should prefer RobloxStudio over RobloxStudioBeta when both exist on macOS", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { fileSystem } = seed({ [MACOS_BETA_EXE]: "old", [MACOS_EXE]: "binary" });
@@ -188,7 +194,7 @@ describe(discoverStudioPath, () => {
 		);
 	});
 
-	it("should fall back to RobloxStudioBeta when only it exists on macOS", () => {
+	it("should fall back to RobloxStudioBeta when only it exists on macOS", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = seed({ [MACOS_BETA_EXE]: "binary" });
@@ -198,7 +204,7 @@ describe(discoverStudioPath, () => {
 		);
 	});
 
-	it("should throw a not-found error when Studio is absent on macOS", () => {
+	it("should throw a not-found error when Studio is absent on macOS", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = seed();
@@ -214,7 +220,7 @@ describe(discoverStudioPath, () => {
 		{ files: {}, platform: "linux" },
 	] as const)(
 		"should find no Studio on $platform when discovery is off",
-		({ files, platform }) => {
+		({ files, platform }, { expect }) => {
 			expect.assertions(1);
 
 			const { fileSystem } = seed(files);
@@ -232,7 +238,7 @@ describe(discoverStudioPath, () => {
 		},
 	);
 
-	it("should keep the override when discovery is off", () => {
+	it("should keep the override when discovery is off", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = seed({ "C:/custom/RobloxStudioBeta.exe": "binary" });
@@ -246,21 +252,24 @@ describe(discoverStudioPath, () => {
 		).toBe("C:/custom/RobloxStudioBeta.exe");
 	});
 
-	it.for(["on", ""])("should discover when JEST_ROBLOX_STUDIO_DISCOVERY is %j", (value) => {
-		expect.assertions(1);
+	it.for(["on", ""])(
+		"should discover when JEST_ROBLOX_STUDIO_DISCOVERY is %j",
+		(value, { expect }) => {
+			expect.assertions(1);
 
-		const { fileSystem } = seed({ [MACOS_EXE]: "binary" });
+			const { fileSystem } = seed({ [MACOS_EXE]: "binary" });
 
-		expect(
-			discoverStudioPath({
-				environment: { JEST_ROBLOX_STUDIO_DISCOVERY: value },
-				fileSystem,
-				platform: "darwin",
-			}),
-		).toBe(MACOS_EXE);
-	});
+			expect(
+				discoverStudioPath({
+					environment: { JEST_ROBLOX_STUDIO_DISCOVERY: value },
+					fileSystem,
+					platform: "darwin",
+				}),
+			).toBe(MACOS_EXE);
+		},
+	);
 
-	it("should reject an unknown JEST_ROBLOX_STUDIO_DISCOVERY value", () => {
+	it("should reject an unknown JEST_ROBLOX_STUDIO_DISCOVERY value", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = seed({ [MACOS_EXE]: "binary" });
@@ -277,7 +286,7 @@ describe(discoverStudioPath, () => {
 		);
 	});
 
-	it("should throw an unsupported-platform error on Linux", () => {
+	it("should throw an unsupported-platform error on Linux", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -294,7 +303,7 @@ describe(discoverStudioPath, () => {
 });
 
 describe(discoverUserDirectories, () => {
-	it("should find the plugins and state folders under LOCALAPPDATA on Windows", () => {
+	it("should find the plugins and state folders under LOCALAPPDATA on Windows", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(discoverUserDirectories({ environment: WIN_ENV, platform: "win32" })).toStrictEqual({
@@ -303,7 +312,9 @@ describe(discoverUserDirectories, () => {
 		});
 	});
 
-	it("should find the plugins folder under Documents and state under Library/Caches on macOS", () => {
+	it("should find the plugins folder under Documents and state under Library/Caches on macOS", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		expect(
@@ -318,7 +329,7 @@ describe(discoverUserDirectories, () => {
 		});
 	});
 
-	it("should normalize a configured plugins folder on Windows", () => {
+	it("should normalize a configured plugins folder on Windows", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -333,7 +344,7 @@ describe(discoverUserDirectories, () => {
 		});
 	});
 
-	it("should prefer the pluginsDirectory setting over JEST_ROBLOX_PLUGINS_DIR", () => {
+	it("should prefer the pluginsDirectory setting over JEST_ROBLOX_PLUGINS_DIR", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -357,23 +368,29 @@ describe(discoverUserDirectories, () => {
 			platform: "win32",
 		},
 		{ environment: { JEST_ROBLOX_PLUGINS_DIR: "Roblox/Plugins" }, platform: "linux" },
-	] as const)("should reject a relative JEST_ROBLOX_PLUGINS_DIR on $platform", (input) => {
-		expect.assertions(1);
+	] as const)(
+		"should reject a relative JEST_ROBLOX_PLUGINS_DIR on $platform",
+		(input, { expect }) => {
+			expect.assertions(1);
 
-		expect(() => discoverUserDirectories(input)).toThrowWithMessage(
-			Error,
-			/^JEST_ROBLOX_PLUGINS_DIR must be an absolute path \(was "/,
-		);
-	});
+			expect(() => discoverUserDirectories(input)).toThrowWithMessage(
+				Error,
+				/^JEST_ROBLOX_PLUGINS_DIR must be an absolute path \(was "/,
+			);
+		},
+	);
 
 	it.for([
 		{ environment: {}, platform: "win32" },
 		{ environment: { LOCALAPPDATA: "" }, platform: "win32" },
 		{ environment: WIN_ENV, platform: "linux" },
 		{ environment: { JEST_ROBLOX_PLUGINS_DIR: "/plugins" }, platform: "linux" },
-	] as const)("should find no folders on $platform without a known location", (input) => {
-		expect.assertions(1);
+	] as const)(
+		"should find no folders on $platform without a known location",
+		(input, { expect }) => {
+			expect.assertions(1);
 
-		expect(discoverUserDirectories(input)).toBeUndefined();
-	});
+			expect(discoverUserDirectories(input)).toBeUndefined();
+		},
+	);
 });

@@ -1,5 +1,5 @@
 import * as path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { posixRoot } from "#test/mocks/posix-path.ts";
 import { toPathRedirects } from "./coverage-root.ts";
@@ -7,7 +7,7 @@ import { toPathRedirects } from "./coverage-root.ts";
 const PACKAGE = path.resolve("/repo/packages/foo");
 
 describe(toPathRedirects, () => {
-	it("should resolve each root against the package directory", () => {
+	it("should resolve each root against the package directory", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -17,7 +17,7 @@ describe(toPathRedirects, () => {
 		).toStrictEqual([{ from: posixRoot(path.join(PACKAGE, "out")), to: "C:/shadow/out" }]);
 	});
 
-	it("should drop a trailing separator from the resolved root", () => {
+	it("should drop a trailing separator from the resolved root", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(

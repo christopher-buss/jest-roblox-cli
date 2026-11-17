@@ -1,6 +1,6 @@
 import type { RojoTreeNode } from "@isentinel/rojo-utils";
 
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { configErrorLike } from "#test/mocks/run-config-error.ts";
 import type { HoistedService, PackageHoist } from "./service-hoist.ts";
@@ -21,7 +21,7 @@ function hoist(packageName: string, ...services: Array<HoistedService>): Package
 }
 
 describe(mergeHoistedServices, () => {
-	it("should merge agreeing properties from different packages", () => {
+	it("should merge agreeing properties from different packages", ({ expect }) => {
 		expect.assertions(1);
 
 		const merged = mergeHoistedServices([
@@ -37,7 +37,9 @@ describe(mergeHoistedServices, () => {
 		]);
 	});
 
-	it("should keep the first class when packages alias one hoisted path differently", () => {
+	it("should keep the first class when packages alias one hoisted path differently", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const merged = mergeHoistedServices([
@@ -48,7 +50,7 @@ describe(mergeHoistedServices, () => {
 		expect(merged).toStrictEqual([service([["Shared", "Workspace"]], { Name: "shared" })]);
 	});
 
-	it("should keep distinct service paths whose segments concatenate alike", () => {
+	it("should keep distinct service paths whose segments concatenate alike", ({ expect }) => {
 		expect.assertions(1);
 
 		const merged = mergeHoistedServices([
@@ -74,7 +76,7 @@ describe(mergeHoistedServices, () => {
 		expect(merged).toHaveLength(2);
 	});
 
-	it("should throw ConfigError when packages disagree on a hoisted property", () => {
+	it("should throw ConfigError when packages disagree on a hoisted property", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(() => {
@@ -100,7 +102,7 @@ describe(mergeHoistedServices, () => {
 		);
 	});
 
-	it("should label a root property conflict against DataModel", () => {
+	it("should label a root property conflict against DataModel", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(() => {
@@ -113,7 +115,7 @@ describe(mergeHoistedServices, () => {
 });
 
 describe(applyHoistedServices, () => {
-	it("should create each service node on the way down", () => {
+	it("should create each service node on the way down", ({ expect }) => {
 		expect.assertions(1);
 
 		const tree: RojoTreeNode = { $className: "DataModel" };
@@ -140,7 +142,7 @@ describe(applyHoistedServices, () => {
 		});
 	});
 
-	it("should keep an existing node and its class", () => {
+	it("should keep an existing node and its class", ({ expect }) => {
 		expect.assertions(1);
 
 		const tree: RojoTreeNode = {
@@ -158,7 +160,7 @@ describe(applyHoistedServices, () => {
 		});
 	});
 
-	it("should write root properties onto the place itself", () => {
+	it("should write root properties onto the place itself", ({ expect }) => {
 		expect.assertions(1);
 
 		const tree: RojoTreeNode = { $className: "DataModel" };
@@ -170,7 +172,7 @@ describe(applyHoistedServices, () => {
 });
 
 describe(isSameValue, () => {
-	it("should compare JSON values structurally", () => {
+	it("should compare JSON values structurally", ({ expect }) => {
 		expect.assertions(2);
 
 		expect(isSameValue(["a", 1], ["a", 1])).toBeTrue();

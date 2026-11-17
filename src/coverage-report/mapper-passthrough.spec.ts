@@ -1,6 +1,6 @@
 import { fromAny } from "@total-typescript/shoehorn";
 
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { emptyPending, pendingResult } from "#test/mocks/coverage-instr-pending.ts";
 import { createCoverageMap } from "#test/mocks/coverage-spec-mapper.ts";
@@ -46,7 +46,7 @@ function mapNativeFile(
 }
 
 describe(passthroughFile, () => {
-	it("should report statement coverage against the original Luau path", () => {
+	it("should report statement coverage against the original Luau path", ({ expect }) => {
 		expect.assertions(3);
 
 		const coverageMap = createCoverageMap({
@@ -67,7 +67,7 @@ describe(passthroughFile, () => {
 		});
 	});
 
-	it("should passthrough function coverage for native Luau files", () => {
+	it("should passthrough function coverage for native Luau files", ({ expect }) => {
 		expect.assertions(3);
 
 		const coverageMap = createCoverageMap(
@@ -100,7 +100,7 @@ describe(passthroughFile, () => {
 		});
 	});
 
-	it("should passthrough branch coverage for native Luau files", () => {
+	it("should passthrough branch coverage for native Luau files", ({ expect }) => {
 		expect.assertions(3);
 
 		const coverageMap = twoArmIfMap();
@@ -115,37 +115,28 @@ describe(passthroughFile, () => {
 		]);
 	});
 
-	it("should skip function passthrough when functionMap is undefined", () => {
-		expect.assertions(1);
+	it.for([
+		{ field: "fnMap", kind: "function", source: "functionMap" },
+		{ field: "branchMap", kind: "branch", source: "branchMap" },
+	] as const)(
+		"should skip $kind passthrough when $source is undefined",
+		({ field }, { expect }) => {
+			expect.assertions(1);
 
-		const coverageMap = createCoverageMap({
-			"0": {
-				end: { column: 10, line: 1 },
-				start: { column: 1, line: 1 },
-			},
-		});
+			const coverageMap = createCoverageMap({
+				"0": {
+					end: { column: 10, line: 1 },
+					start: { column: 1, line: 1 },
+				},
+			});
 
-		const file = mapNativeFile(coverageMap, { s: { "0": 1 } });
+			const file = mapNativeFile(coverageMap, { s: { "0": 1 } });
 
-		expect(file.fnMap).toBeEmptyObject();
-	});
+			expect(file[field]).toBeEmptyObject();
+		},
+	);
 
-	it("should skip branch passthrough when branchMap is undefined", () => {
-		expect.assertions(1);
-
-		const coverageMap = createCoverageMap({
-			"0": {
-				end: { column: 10, line: 1 },
-				start: { column: 1, line: 1 },
-			},
-		});
-
-		const file = mapNativeFile(coverageMap, { s: { "0": 1 } });
-
-		expect(file.branchMap).toBeEmptyObject();
-	});
-
-	it("should skip branch passthrough entries with empty locations array", () => {
+	it("should skip branch passthrough entries with empty locations array", ({ expect }) => {
 		expect.assertions(1);
 
 		const coverageMap = createCoverageMap(
@@ -162,7 +153,7 @@ describe(passthroughFile, () => {
 		expect(file.branchMap).toBeEmptyObject();
 	});
 
-	it("should default function hit count to zero when not in raw data", () => {
+	it("should default function hit count to zero when not in raw data", ({ expect }) => {
 		expect.assertions(1);
 
 		const coverageMap = createCoverageMap(
@@ -190,7 +181,7 @@ describe(passthroughFile, () => {
 		expect(file.f["0"]).toBe(0);
 	});
 
-	it("should default branch arm hit counts to zero when not in raw data", () => {
+	it("should default branch arm hit counts to zero when not in raw data", ({ expect }) => {
 		expect.assertions(1);
 
 		const coverageMap = twoArmIfMap();
@@ -200,7 +191,9 @@ describe(passthroughFile, () => {
 		expect(file.b["0"]).toStrictEqual([0, 0]);
 	});
 
-	it("should default statement hit count to zero when ID is absent from raw data", () => {
+	it("should default statement hit count to zero when ID is absent from raw data", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const coverageMap = createCoverageMap({

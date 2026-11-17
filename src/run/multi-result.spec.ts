@@ -1,7 +1,7 @@
 import { fromAny } from "@total-typescript/shoehorn";
 
 import * as path from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
 import { createRunSeams } from "#test/mocks/run-seams.ts";
@@ -45,7 +45,9 @@ function input({
 }
 
 describe(buildMultiRunResult, () => {
-	it("should preserve an empty full-run result without adding optional merged fields", () => {
+	it("should preserve an empty full-run result without adding optional merged fields", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		expect(buildMultiRunResult(input({}))).toStrictEqual({
@@ -65,7 +67,7 @@ describe(buildMultiRunResult, () => {
 	it.for<PartialRun>([
 		{ files: ["/repo/src/a.luau"], kind: "changed", since: "HEAD" },
 		{ files: ["/repo/src/a.luau"], kind: "related" },
-	])("should narrow coverage to the files of a $kind Partial Run", (partialRun) => {
+	])("should narrow coverage to the files of a $kind Partial Run", (partialRun, { expect }) => {
 		expect.assertions(2);
 
 		const run = input({ partialRun });
@@ -97,7 +99,9 @@ describe(buildMultiRunResult, () => {
 		]);
 	});
 
-	it("should not narrow display coverage for empty positional or project filters", () => {
+	it("should not narrow display coverage for empty positional or project filters", ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		expect(buildMultiRunResult(input({ cliFiles: [] })).coverageDisplayFilter).toBeUndefined();
@@ -106,7 +110,7 @@ describe(buildMultiRunResult, () => {
 		).toBeUndefined();
 	});
 
-	it("should create a source-twin display filter for positional files", () => {
+	it("should create a source-twin display filter for positional files", ({ expect }) => {
 		expect.assertions(2);
 
 		const { coverageDisplayFilter } = buildMultiRunResult(
@@ -156,7 +160,7 @@ function coverageOf({
 }
 
 describe("buildMultiRunResult coverage", () => {
-	it("should map nothing when coverage is off", () => {
+	it("should map nothing when coverage is off", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -164,7 +168,7 @@ describe("buildMultiRunResult coverage", () => {
 		).toBeUndefined();
 	});
 
-	it("should carry a notice when no coverage data came back", () => {
+	it("should carry a notice when no coverage data came back", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(coverageOf({ config: coverageConfig(), hits: undefined })).toStrictEqual({
@@ -173,7 +177,7 @@ describe("buildMultiRunResult coverage", () => {
 		});
 	});
 
-	it("should carry a notice when the manifest is missing", () => {
+	it("should carry a notice when the manifest is missing", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -187,7 +191,7 @@ describe("buildMultiRunResult coverage", () => {
 		});
 	});
 
-	it("should map the hits through the staged manifest into one unit", () => {
+	it("should map the hits through the staged manifest into one unit", ({ expect }) => {
 		expect.assertions(1);
 
 		const mapCoverage = vi.fn<() => MappedCoverageResult>(() => UNIVERSE);
@@ -216,7 +220,7 @@ describe("buildMultiRunResult coverage", () => {
 		});
 	});
 
-	it("should map the merged hits of every project under the source globs", () => {
+	it("should map the merged hits of every project under the source globs", ({ expect }) => {
 		expect.assertions(2);
 
 		function mapCoverage({

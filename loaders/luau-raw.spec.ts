@@ -1,6 +1,6 @@
 import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import { load, resolve } from "./luau-raw.mjs";
 
@@ -20,7 +20,7 @@ function mockNextLoad() {
 }
 
 describe(resolve, () => {
-	it("should assign luau-raw format when resolved URL ends with .luau", () => {
+	it("should assign luau-raw format when resolved URL ends with .luau", ({ expect }) => {
 		expect.assertions(1);
 
 		const next = mockNextResolve("file:///project/src/runner.luau");
@@ -29,7 +29,7 @@ describe(resolve, () => {
 		expect(result.format).toBe("luau-raw");
 	});
 
-	it("should assign luau-raw format when resolved URL ends with .lua", () => {
+	it("should assign luau-raw format when resolved URL ends with .lua", ({ expect }) => {
 		expect.assertions(1);
 
 		const next = mockNextResolve("file:///node_modules/@rbxts/react-globals/src/init.lua");
@@ -38,7 +38,7 @@ describe(resolve, () => {
 		expect(result.format).toBe("luau-raw");
 	});
 
-	it("should claim the virtual asset module before node resolves it", () => {
+	it("should claim the virtual asset module before node resolves it", ({ expect }) => {
 		expect.assertions(2);
 
 		// Nothing on disk answers the specifier, so it never reaches `next`.
@@ -53,7 +53,7 @@ describe(resolve, () => {
 		expect(next).not.toHaveBeenCalled();
 	});
 
-	it("should claim the virtual plugin sources module before node resolves it", () => {
+	it("should claim the virtual plugin sources module before node resolves it", ({ expect }) => {
 		expect.assertions(2);
 
 		const next = mockNextResolve("file:///unused");
@@ -63,7 +63,7 @@ describe(resolve, () => {
 		expect(next).not.toHaveBeenCalled();
 	});
 
-	it("should pass through non-lua resolved URLs unchanged", () => {
+	it("should pass through non-lua resolved URLs unchanged", ({ expect }) => {
 		expect.assertions(1);
 
 		const next = mockNextResolve("file:///project/src/index.js");
@@ -74,7 +74,7 @@ describe(resolve, () => {
 });
 
 describe(load, () => {
-	it("should export file content as string for .luau files", () => {
+	it("should export file content as string for .luau files", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = load(LUAU_FIXTURE_URL, { format: "luau-raw" }, mockNextLoad());
@@ -86,7 +86,7 @@ describe(load, () => {
 		});
 	});
 
-	it("should export empty object for .lua files", () => {
+	it("should export empty object for .lua files", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = load(
@@ -102,7 +102,7 @@ describe(load, () => {
 		});
 	});
 
-	it("should build the virtual asset module", () => {
+	it("should build the virtual asset module", ({ expect }) => {
 		expect.assertions(2);
 
 		const { source, ...rest } = load(
@@ -115,7 +115,7 @@ describe(load, () => {
 		expect(source).toStartWith('export default {"html":[{"name":"base.css"');
 	});
 
-	it("should build the virtual plugin sources module", () => {
+	it("should build the virtual plugin sources module", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = load("virtual:runner-plugin-sources", { format: "virtual" }, mockNextLoad());
@@ -123,7 +123,7 @@ describe(load, () => {
 		expect(result.source).toStartWith('export default [{"path":"plugin/plugin.project.json"');
 	});
 
-	it("should delegate to nextLoad for other formats", () => {
+	it("should delegate to nextLoad for other formats", ({ expect }) => {
 		expect.assertions(1);
 
 		const next = mockNextLoad();

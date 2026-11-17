@@ -1,7 +1,7 @@
 import { fromAny } from "@total-typescript/shoehorn";
 
 import type { ChildProcess } from "node:child_process";
-import { describe, expect, it, onTestFinished, vi } from "vitest";
+import { describe, it, type TestContext, vi } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { FakeHelper } from "#test/mocks/spec-fake-helper.ts";
@@ -27,7 +27,7 @@ function makeLaunch() {
 	return { errors, fileSystem, helper, killProcess, studio, volume };
 }
 
-function useFakeTimers(): void {
+function useFakeTimers(onTestFinished: TestContext["onTestFinished"]): void {
 	vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "setTimeout", "Date"] });
 	onTestFinished(() => {
 		vi.useRealTimers();
@@ -39,7 +39,7 @@ describe(launchThroughHelper, () => {
 		["1234\r\n", 1234],
 		["  42 \n", 42],
 		["noise\r\n77\r\n", 77],
-	] as const)("should take the PID from stdout %j", ([stdout, expected]) => {
+	] as const)("should take the PID from stdout %j", ([stdout, expected], { expect }) => {
 		expect.assertions(1);
 
 		const { helper, killProcess, studio } = makeLaunch();
@@ -51,7 +51,7 @@ describe(launchThroughHelper, () => {
 
 	it.for(["0\n", "12 34\n", "-5\n", "Exception: boom\n"])(
 		"should not take %j as a PID",
-		(stdout) => {
+		(stdout, { expect }) => {
 			expect.assertions(1);
 
 			const { helper, killProcess, studio } = makeLaunch();
@@ -62,7 +62,7 @@ describe(launchThroughHelper, () => {
 		},
 	);
 
-	it("should take the PID before the helper exits", () => {
+	it("should take the PID before the helper exits", ({ expect }) => {
 		expect.assertions(1);
 
 		const { helper, killProcess, studio } = makeLaunch();
@@ -73,7 +73,7 @@ describe(launchThroughHelper, () => {
 		expect(killProcess).toHaveBeenCalledExactlyOnceWith(123, helper);
 	});
 
-	it("should take the PID only once", () => {
+	it("should take the PID only once", ({ expect }) => {
 		expect.assertions(1);
 
 		const { helper, killProcess, studio } = makeLaunch();
@@ -84,7 +84,7 @@ describe(launchThroughHelper, () => {
 		expect(killProcess).toHaveBeenCalledExactlyOnceWith(5, helper);
 	});
 
-	it("should read the helper output as UTF-8", () => {
+	it("should read the helper output as UTF-8", ({ expect }) => {
 		expect.assertions(2);
 
 		const { helper } = makeLaunch();
@@ -93,7 +93,7 @@ describe(launchThroughHelper, () => {
 		expect(helper.stderr.encoding).toBe("utf8");
 	});
 
-	it("should ignore a helper failure after the PID arrives", () => {
+	it("should ignore a helper failure after the PID arrives", ({ expect }) => {
 		expect.assertions(1);
 
 		const { errors, helper } = makeLaunch();
@@ -104,7 +104,7 @@ describe(launchThroughHelper, () => {
 		expect(errors).toStrictEqual([]);
 	});
 
-	it("should clear the stale place lock before spawning the helper", () => {
+	it("should clear the stale place lock before spawning the helper", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = makeLaunch();
@@ -112,7 +112,7 @@ describe(launchThroughHelper, () => {
 		expect(fileSystem.existsSync(`${PLACE_FILE}.lock`)).toBeFalse();
 	});
 
-	it("should defer a kill requested before the PID arrives", () => {
+	it("should defer a kill requested before the PID arrives", ({ expect }) => {
 		expect.assertions(2);
 
 		const { helper, killProcess, studio } = makeLaunch();
@@ -125,7 +125,7 @@ describe(launchThroughHelper, () => {
 		expect(killProcess).toHaveBeenCalledExactlyOnceWith(77, helper);
 	});
 
-	it("should stop the helper when a kill comes before the PID", () => {
+	it("should stop the helper when a kill comes before the PID", ({ expect }) => {
 		expect.assertions(1);
 
 		const { helper, studio } = makeLaunch();
@@ -134,10 +134,13 @@ describe(launchThroughHelper, () => {
 		expect(helper.kill).toHaveBeenCalledOnce();
 	});
 
-	it("should stop a helper that outlives a kill by the exit cap", () => {
+	it("should stop a helper that outlives a kill by the exit cap", ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(2);
 
-		useFakeTimers();
+		useFakeTimers(onTestFinished);
 		const { helper, studio } = makeLaunch();
 		helper.stdout.emit("data", "5\r\n");
 		studio.kill();
@@ -150,10 +153,10 @@ describe(launchThroughHelper, () => {
 		expect(helper.kill).toHaveBeenCalledOnce();
 	});
 
-	it("should leave a helper that exited within the exit cap", () => {
+	it("should leave a helper that exited within the exit cap", ({ expect, onTestFinished }) => {
 		expect.assertions(1);
 
-		useFakeTimers();
+		useFakeTimers(onTestFinished);
 		const { helper, studio } = makeLaunch();
 		helper.stdout.emit("data", "5\r\n");
 		studio.kill();
@@ -163,10 +166,10 @@ describe(launchThroughHelper, () => {
 		expect(helper.kill).not.toHaveBeenCalled();
 	});
 
-	it("should leave a signalled helper at the exit cap", () => {
+	it("should leave a signalled helper at the exit cap", ({ expect, onTestFinished }) => {
 		expect.assertions(1);
 
-		useFakeTimers();
+		useFakeTimers(onTestFinished);
 		const { helper, studio } = makeLaunch();
 		helper.stdout.emit("data", "5\r\n");
 		studio.kill();
@@ -176,10 +179,10 @@ describe(launchThroughHelper, () => {
 		expect(helper.kill).not.toHaveBeenCalled();
 	});
 
-	it("should kill once the place lock is released", () => {
+	it("should kill once the place lock is released", ({ expect, onTestFinished }) => {
 		expect.assertions(2);
 
-		useFakeTimers();
+		useFakeTimers(onTestFinished);
 		const { fileSystem, helper, killProcess, studio, volume } = makeLaunch();
 		helper.finish({ code: 0, stdout: "5" });
 		fileSystem.writeFileSync(`${PLACE_FILE}.lock`, "");
@@ -194,7 +197,7 @@ describe(launchThroughHelper, () => {
 		expect(killProcess).toHaveBeenCalledExactlyOnceWith(5, helper);
 	});
 
-	it("should report a helper that exits non-zero under its label", () => {
+	it("should report a helper that exits non-zero under its label", ({ expect }) => {
 		expect.assertions(1);
 
 		const { errors, helper } = makeLaunch();
@@ -205,7 +208,7 @@ describe(launchThroughHelper, () => {
 		]);
 	});
 
-	it("should report a helper that prints no PID", () => {
+	it("should report a helper that prints no PID", ({ expect }) => {
 		expect.assertions(1);
 
 		const { errors, helper } = makeLaunch();
@@ -216,7 +219,7 @@ describe(launchThroughHelper, () => {
 		]);
 	});
 
-	it("should report a helper that fails to spawn", () => {
+	it("should report a helper that fails to spawn", ({ expect }) => {
 		expect.assertions(1);
 
 		const { errors, helper } = makeLaunch();

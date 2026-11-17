@@ -1,6 +1,6 @@
 import path from "node:path";
 import process from "node:process";
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import type { JestResult } from "#src/api.ts";
 import { loadConfig } from "#src/api.ts";
@@ -59,7 +59,9 @@ function buildMergedJestResult(): JestResult {
 }
 
 describe("executor multi-root pipeline", () => {
-	it("should drive a single backend invocation that mentions both rojo mounts", async () => {
+	it("should drive a single backend invocation that mentions both rojo mounts", async ({
+		expect,
+	}) => {
 		expect.assertions(4);
 
 		const stdout = vi.spyOn(process.stdout, "write").mockReturnValue(true);

@@ -1,11 +1,11 @@
 import buffer from "node:buffer";
 import path from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import { createPlacePayload, readPlaceFile } from "./file-system.ts";
 
 describe("place file adapter", () => {
-	it("should read a file as raw bytes", () => {
+	it("should read a file as raw bytes", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(readPlaceFile(import.meta.filename)).toBeInstanceOf(buffer.Buffer);
@@ -17,7 +17,7 @@ describe("place file adapter", () => {
 		{ name: "game.other", format: "rbxl" },
 	] satisfies Array<{ format: "rbxl" | "rbxlx"; name: string }>)(
 		"should resolve the path and copy binary bytes using $format",
-		({ name, format }) => {
+		({ name, format }, { expect }) => {
 			expect.assertions(3);
 
 			const data = buffer.Buffer.from([1, 2, 255]);

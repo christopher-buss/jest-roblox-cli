@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import {
 	fillPlaceholders,
@@ -16,7 +16,7 @@ const STUBBED = stubbedModules(HARNESS);
 const MODULE_SOURCE = readLuauTree("infinite-yield.luau", STUBBED);
 
 describe("infinite-yield watchdog under lute", () => {
-	it("should pass the infinite-yield harness assertions", () => {
+	it("should pass the infinite-yield harness assertions", ({ expect }) => {
 		expect.assertions(1);
 
 		const script = fillPlaceholders(HARNESS, { __MODULE__: MODULE_SOURCE });

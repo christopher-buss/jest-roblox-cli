@@ -1,10 +1,10 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { clearDirectoryAtFilePath, createShadowDirectory } from "./shadow-entry.ts";
 
 describe(createShadowDirectory, () => {
-	it("should create an absent directory without attempting to remove it", () => {
+	it("should create an absent directory without attempting to remove it", ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -14,7 +14,7 @@ describe(createShadowDirectory, () => {
 		expect(remove).not.toHaveBeenCalled();
 	});
 
-	it("should tolerate a file disappearing after its type is read", () => {
+	it("should tolerate a file disappearing after its type is read", ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = createMemoryFileSystem({
@@ -33,7 +33,7 @@ describe(createShadowDirectory, () => {
 });
 
 describe(clearDirectoryAtFilePath, () => {
-	it("should preserve a file already at the path", () => {
+	it("should preserve a file already at the path", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem({
@@ -45,7 +45,7 @@ describe(clearDirectoryAtFilePath, () => {
 		expect(volume.readFileSync("/shadow/init.luau", "utf-8")).toBe("return 'current'\n");
 	});
 
-	it("should tolerate a directory disappearing after its type is read", () => {
+	it("should tolerate a directory disappearing after its type is read", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem({

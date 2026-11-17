@@ -2,7 +2,7 @@ import { fromAny } from "@total-typescript/shoehorn";
 
 import * as path from "node:path";
 import process from "node:process";
-import { assert, describe, expect, it, vi } from "vitest";
+import { assert, describe, it, vi } from "vitest";
 
 import { fakeTimingCollector, phaseNamesOf } from "#test/mocks/fake-timing-collector.ts";
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
@@ -22,7 +22,7 @@ const WORKSPACE_ROOT = path.resolve("/repo");
 const PACKAGE_DIRECTORY = path.join(WORKSPACE_ROOT, "packages", "example");
 
 describe(attachCoverageManifests, () => {
-	it("should resolve the coverage directory under the package's rootDir", () => {
+	it("should resolve the coverage directory under the package's rootDir", ({ expect }) => {
 		expect.assertions(1);
 
 		const projectConfig = createResolvedConfig({
@@ -58,7 +58,7 @@ describe(attachCoverageManifests, () => {
 });
 
 describe("attachCoverageManifests pairing", () => {
-	it("should pair each result with the pending entry its jobIndex names", () => {
+	it("should pair each result with the pending entry its jobIndex names", ({ expect }) => {
 		expect.assertions(1);
 
 		const pending: Array<PendingEntry> = ["first", "second"].map((name) => {
@@ -77,7 +77,7 @@ describe("attachCoverageManifests pairing", () => {
 		expect(attached.map((entry) => entry.pkg)).toStrictEqual(["second"]);
 	});
 
-	it("should carry the project's label color", () => {
+	it("should carry the project's label color", ({ expect }) => {
 		expect.assertions(1);
 
 		const [attached] = attachCoverageManifests({
@@ -96,7 +96,9 @@ describe("attachCoverageManifests pairing", () => {
 });
 
 describe(prepareWorkspaceCoverageMap, () => {
-	it("should time opted-in coverage without warning about its enforceable threshold", () => {
+	it("should time opted-in coverage without warning about its enforceable threshold", ({
+		expect,
+	}) => {
 		expect.assertions(3);
 
 		const { fileSystem } = createMemoryFileSystem();

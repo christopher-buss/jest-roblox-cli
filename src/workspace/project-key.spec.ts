@@ -1,21 +1,21 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { projectKey } from "./project-key.ts";
 
 describe(projectKey, () => {
-	it("should give the same key for the same pair", () => {
+	it("should give the same key for the same pair", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(projectKey("core", "shared")).toBe(projectKey("core", "shared"));
 	});
 
-	it("should keep projects of the same name in different packages apart", () => {
+	it("should keep projects of the same name in different packages apart", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(projectKey("core", "shared")).not.toBe(projectKey("ui", "shared"));
 	});
 
-	it("should not let a separator in one segment collide with another pair", () => {
+	it("should not let a separator in one segment collide with another pair", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(projectKey("a,b", "c")).not.toBe(projectKey("a", "b,c"));

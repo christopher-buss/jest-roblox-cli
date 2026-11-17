@@ -3,7 +3,7 @@ import type { PathKind, RojoTreeNode } from "@isentinel/rojo-utils";
 import { fromAny } from "@total-typescript/shoehorn";
 
 import * as path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
@@ -29,7 +29,7 @@ function treePaths(node: unknown): Array<string> {
 		return [];
 	}
 
-	return Object.entries(node).flatMap(([key, value]: [string, unknown]) => {
+	return Object.entries(node).flatMap(([key, value]) => {
 		if (key === "$path") {
 			return [
 				typeof value === "string"
@@ -122,7 +122,7 @@ function makeProject(overrides: Partial<ProjectTestConfig> = {}): ProjectTestCon
 }
 
 describe(extractStaticRoot, () => {
-	it("should split at first glob character *", () => {
+	it("should split at first glob character *", ({ expect }) => {
 		expect.assertions(2);
 
 		const result = extractStaticRoot("src/client/**/*.spec.ts");
@@ -131,7 +131,7 @@ describe(extractStaticRoot, () => {
 		expect(result.glob).toBe("**/*.spec.ts");
 	});
 
-	it("should split at first glob character ?", () => {
+	it("should split at first glob character ?", ({ expect }) => {
 		expect.assertions(2);
 
 		const result = extractStaticRoot("src/client/foo?.spec.ts");
@@ -140,7 +140,7 @@ describe(extractStaticRoot, () => {
 		expect(result.glob).toBe("foo?.spec.ts");
 	});
 
-	it("should split at first glob character {", () => {
+	it("should split at first glob character {", ({ expect }) => {
 		expect.assertions(2);
 
 		const result = extractStaticRoot("src/{a,b}/*.spec.ts");
@@ -149,7 +149,7 @@ describe(extractStaticRoot, () => {
 		expect(result.glob).toBe("{a,b}/*.spec.ts");
 	});
 
-	it("should split at first glob character [", () => {
+	it("should split at first glob character [", ({ expect }) => {
 		expect.assertions(2);
 
 		const result = extractStaticRoot("src/[abc]/*.spec.ts");
@@ -158,7 +158,7 @@ describe(extractStaticRoot, () => {
 		expect(result.glob).toBe("[abc]/*.spec.ts");
 	});
 
-	it("should throw when pattern has no static directory prefix", () => {
+	it("should throw when pattern has no static directory prefix", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(() => extractStaticRoot("**/*.spec.ts")).toThrow(
@@ -166,7 +166,7 @@ describe(extractStaticRoot, () => {
 		);
 	});
 
-	it("should throw when glob starts immediately with no slash", () => {
+	it("should throw when glob starts immediately with no slash", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(() => extractStaticRoot("*.spec.ts")).toThrow(
@@ -174,7 +174,7 @@ describe(extractStaticRoot, () => {
 		);
 	});
 
-	it("should handle pattern with no glob characters", () => {
+	it("should handle pattern with no glob characters", ({ expect }) => {
 		expect.assertions(2);
 
 		const result = extractStaticRoot("src/client/foo.spec.ts");
@@ -183,7 +183,7 @@ describe(extractStaticRoot, () => {
 		expect(result.glob).toBe("foo.spec.ts");
 	});
 
-	it("should handle a filename-only pattern with no glob characters", () => {
+	it("should handle a filename-only pattern with no glob characters", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(extractStaticRoot("foo.spec.ts")).toStrictEqual({
@@ -220,7 +220,7 @@ describe("include roots", () => {
 		["**/*.spec.luau", "**/*.spec"],
 		["**/*.spec", "**/*.spec"],
 		["**/*.spec.js", "**/*.spec.js"],
-	] as const)("should derive testMatch %s as %s", async ([glob, testMatch]) => {
+	] as const)("should derive testMatch %s as %s", async ([glob, testMatch], { expect }) => {
 		expect.assertions(1);
 
 		const result = await resolveInclude([`src/${glob}`], "src");
@@ -228,7 +228,7 @@ describe("include roots", () => {
 		expect(result.testMatch).toStrictEqual([testMatch]);
 	});
 
-	it("should extract single root with single pattern", async () => {
+	it("should extract single root with single pattern", async ({ expect }) => {
 		expect.assertions(2);
 
 		const result = await resolveInclude(["src/client/**/*.spec.ts"], "src/client");
@@ -237,7 +237,7 @@ describe("include roots", () => {
 		expect(result.rojoMounts).toStrictEqual([{ dataModelPath: "Root0", fsPath: "src/client" }]);
 	});
 
-	it("should group multiple patterns under same root", async () => {
+	it("should group multiple patterns under same root", async ({ expect }) => {
 		expect.assertions(2);
 
 		const result = await resolveInclude(
@@ -249,7 +249,7 @@ describe("include roots", () => {
 		expect(result.rojoMounts).toStrictEqual([{ dataModelPath: "Root0", fsPath: "src/client" }]);
 	});
 
-	it("should separate different roots", async () => {
+	it("should separate different roots", async ({ expect }) => {
 		expect.assertions(2);
 
 		const result = await resolveInclude(
@@ -265,7 +265,7 @@ describe("include roots", () => {
 		]);
 	});
 
-	it("should prepend **/ to testMatch without path separator", async () => {
+	it("should prepend **/ to testMatch without path separator", async ({ expect }) => {
 		expect.assertions(1);
 
 		const result = await resolveInclude(["src/*.spec.ts"], "src");
@@ -273,7 +273,7 @@ describe("include roots", () => {
 		expect(result.testMatch).toStrictEqual(["**/*.spec"]);
 	});
 
-	it("should not prepend **/ to testMatch with path separator", async () => {
+	it("should not prepend **/ to testMatch with path separator", async ({ expect }) => {
 		expect.assertions(1);
 
 		const result = await resolveInclude(["src/**/*.spec.ts"], "src");
@@ -281,7 +281,7 @@ describe("include roots", () => {
 		expect(result.testMatch).toStrictEqual(["**/*.spec"]);
 	});
 
-	it("should handle mixed roots and patterns", async () => {
+	it("should handle mixed roots and patterns", async ({ expect }) => {
 		expect.assertions(2);
 
 		const result = await resolveInclude(
@@ -309,7 +309,7 @@ describe("project validation", () => {
 		return makeProject({ outDir: "out/client", ...overrides });
 	}
 
-	it("should accept valid projects", async () => {
+	it("should accept valid projects", async ({ expect }) => {
 		expect.assertions(1);
 
 		await expect(
@@ -317,7 +317,7 @@ describe("project validation", () => {
 		).resolves.toHaveLength(2);
 	});
 
-	it("should throw on empty displayName string", async () => {
+	it("should throw on empty displayName string", async ({ expect }) => {
 		expect.assertions(1);
 
 		await expect(validate([mappable({ displayName: "" })])).rejects.toThrow(
@@ -325,7 +325,7 @@ describe("project validation", () => {
 		);
 	});
 
-	it("should throw on empty displayName object", async () => {
+	it("should throw on empty displayName object", async ({ expect }) => {
 		expect.assertions(1);
 
 		await expect(
@@ -333,7 +333,7 @@ describe("project validation", () => {
 		).rejects.toThrow("Project must have a non-empty displayName");
 	});
 
-	it("should throw on duplicate displayName", async () => {
+	it("should throw on duplicate displayName", async ({ expect }) => {
 		expect.assertions(1);
 
 		await expect(
@@ -341,7 +341,7 @@ describe("project validation", () => {
 		).rejects.toThrow("Duplicate project displayName: client");
 	});
 
-	it("should throw on empty include array", async () => {
+	it("should throw on empty include array", async ({ expect }) => {
 		expect.assertions(1);
 
 		await expect(validate([mappable({ displayName: "client", include: [] })])).rejects.toThrow(
@@ -349,7 +349,7 @@ describe("project validation", () => {
 		);
 	});
 
-	it("should throw when include was never derived", async () => {
+	it("should throw when include was never derived", async ({ expect }) => {
 		expect.assertions(1);
 
 		await expect(validate([fromAny({ displayName: "client" })])).rejects.toThrow(
@@ -387,7 +387,7 @@ describe("project resolution", () => {
 		});
 	}
 
-	it("should resolve DataModel path from outDir", async () => {
+	it("should resolve DataModel path from outDir", async ({ expect }) => {
 		expect.assertions(1);
 
 		const project = makeProject({
@@ -405,7 +405,9 @@ describe("project resolution", () => {
 		expect(result.projects).toStrictEqual(["ReplicatedStorage/client"]);
 	});
 
-	it("should fall back to static root from include when outDir is not set", async () => {
+	it("should fall back to static root from include when outDir is not set", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const tree: RojoTreeNode = {
@@ -429,7 +431,7 @@ describe("project resolution", () => {
 		expect(result.projects).toStrictEqual(["ReplicatedStorage/shared"]);
 	});
 
-	it("should combine root and outDir for DataModel lookup", async () => {
+	it("should combine root and outDir for DataModel lookup", async ({ expect }) => {
 		expect.assertions(1);
 
 		const result = await resolveCoreClient();
@@ -437,7 +439,7 @@ describe("project resolution", () => {
 		expect(result.projects).toStrictEqual(["ReplicatedStorage/client"]);
 	});
 
-	it("should store resolved outDir on result", async () => {
+	it("should store resolved outDir on result", async ({ expect }) => {
 		expect.assertions(1);
 
 		const project = makeProject({
@@ -455,7 +457,7 @@ describe("project resolution", () => {
 		expect(result.outDir).toBe("out/client");
 	});
 
-	it("should store resolved outDir with root prefix", async () => {
+	it("should store resolved outDir with root prefix", async ({ expect }) => {
 		expect.assertions(1);
 
 		const result = await resolveCoreClient();
@@ -463,7 +465,9 @@ describe("project resolution", () => {
 		expect(result.outDir).toBe("packages/core/out/client");
 	});
 
-	it("should extract testMatch from include patterns with stripped extensions", async () => {
+	it("should extract testMatch from include patterns with stripped extensions", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const project = makeProject({
@@ -481,7 +485,7 @@ describe("project resolution", () => {
 		expect(result.testMatch).toStrictEqual(["**/*.spec", "**/*.test"]);
 	});
 
-	it("should inherit non-ROOT_ONLY fields from root config", async () => {
+	it("should inherit non-ROOT_ONLY fields from root config", async ({ expect }) => {
 		expect.assertions(2);
 
 		const project = makeProject({ displayName: "client", outDir: "out/client" });
@@ -496,7 +500,7 @@ describe("project resolution", () => {
 		expect(result.config.silent).toBeFalse();
 	});
 
-	it("should keep ROOT_ONLY keys from root config", async () => {
+	it("should keep ROOT_ONLY keys from root config", async ({ expect }) => {
 		expect.assertions(2);
 
 		const project = makeProject({ displayName: "client", outDir: "out/client" });
@@ -511,7 +515,7 @@ describe("project resolution", () => {
 		expect(result.config.rootDir).toBe(rootConfig.rootDir);
 	});
 
-	it("should allow project to override non-ROOT_ONLY fields", async () => {
+	it("should allow project to override non-ROOT_ONLY fields", async ({ expect }) => {
 		expect.assertions(1);
 
 		const project = makeProject({
@@ -529,7 +533,9 @@ describe("project resolution", () => {
 		expect(result.config.testTimeout).toBe(5000);
 	});
 
-	it("should keep every project-structural field out of the runtime config", async () => {
+	it("should keep every project-structural field out of the runtime config", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const project = makeProject({
@@ -564,7 +570,7 @@ describe("project resolution", () => {
 		});
 	});
 
-	it("should skip undefined project override values", async () => {
+	it("should skip undefined project override values", async ({ expect }) => {
 		expect.assertions(1);
 
 		// `testTimeout: undefined` cannot be expressed under
@@ -584,7 +590,7 @@ describe("project resolution", () => {
 		expect(result.config.testTimeout).toBe(12_345);
 	});
 
-	it("should extract displayName string from DisplayName object", async () => {
+	it("should extract displayName string from DisplayName object", async ({ expect }) => {
 		expect.assertions(1);
 
 		const project = makeProject({
@@ -601,7 +607,9 @@ describe("project resolution", () => {
 		expect(result.displayName).toBe("client-tests");
 	});
 
-	it("should prepend root to resolved include patterns for filesystem discovery", async () => {
+	it("should prepend root to resolved include patterns for filesystem discovery", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const result = await resolveCoreClient();
@@ -609,7 +617,9 @@ describe("project resolution", () => {
 		expect(result.include).toStrictEqual(["packages/core/src/client/**/*.spec.ts"]);
 	});
 
-	it("should prepend root to resolved exclude patterns for filesystem discovery", async () => {
+	it("should prepend root to resolved exclude patterns for filesystem discovery", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const result = await resolveCoreClient({ exclude: ["src/client/**/*.gen.spec.ts"] });
@@ -617,7 +627,7 @@ describe("project resolution", () => {
 		expect(result.exclude).toStrictEqual(["packages/core/src/client/**/*.gen.spec.ts"]);
 	});
 
-	it("should populate rojoMounts with a single mount when outDir is set", async () => {
+	it("should populate rojoMounts with a single mount when outDir is set", async ({ expect }) => {
 		expect.assertions(2);
 
 		const project = makeProject({
@@ -638,7 +648,7 @@ describe("project resolution", () => {
 		expect(result.outDir).toBe("out/client");
 	});
 
-	it("should auto-expand multi-root includes via tree walk", async () => {
+	it("should auto-expand multi-root includes via tree walk", async ({ expect }) => {
 		expect.assertions(4);
 
 		const tree = {
@@ -677,7 +687,7 @@ describe("project resolution", () => {
 		expect(result.exclude).toStrictEqual([]);
 	});
 
-	it("should respect segment boundaries during auto-expand", async () => {
+	it("should respect segment boundaries during auto-expand", async ({ expect }) => {
 		expect.assertions(1);
 
 		const tree = {
@@ -707,7 +717,7 @@ describe("project resolution", () => {
 		});
 	});
 
-	it("should map an include root under an optional $path", async () => {
+	it("should map an include root under an optional $path", async ({ expect }) => {
 		expect.assertions(1);
 
 		const tree = {
@@ -733,7 +743,7 @@ describe("project resolution", () => {
 		]);
 	});
 
-	it("should skip file-valued $path entries during auto-expand", async () => {
+	it("should skip file-valued $path entries during auto-expand", async ({ expect }) => {
 		expect.assertions(1);
 
 		const tree = {
@@ -763,7 +773,7 @@ describe("project resolution", () => {
 		]);
 	});
 
-	it("should skip missing paths during auto-expand without throwing", async () => {
+	it("should skip missing paths during auto-expand without throwing", async ({ expect }) => {
 		expect.assertions(1);
 
 		const tree = {
@@ -790,7 +800,7 @@ describe("project resolution", () => {
 		]);
 	});
 
-	it("should prune descendant mounts when ancestor is present", async () => {
+	it("should prune descendant mounts when ancestor is present", async ({ expect }) => {
 		expect.assertions(1);
 
 		const tree = {
@@ -819,7 +829,9 @@ describe("project resolution", () => {
 		]);
 	});
 
-	it("should dedupe mounts when two include roots expand to the same mount", async () => {
+	it("should dedupe mounts when two include roots expand to the same mount", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const tree = {
@@ -846,7 +858,9 @@ describe("project resolution", () => {
 		]);
 	});
 
-	it("should produce deterministic order across roots that expand to disjoint mounts", async () => {
+	it("should produce deterministic order across roots that expand to disjoint mounts", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const tree = {
@@ -871,7 +885,9 @@ describe("project resolution", () => {
 		expect(result.projects).toStrictEqual(["ReplicatedStorage/A", "ReplicatedStorage/B"]);
 	});
 
-	it("should use exact lookup when outDir is set even with multiple include roots", async () => {
+	it("should use exact lookup when outDir is set even with multiple include roots", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const project = makeProject({
@@ -892,7 +908,7 @@ describe("project resolution", () => {
 		]);
 	});
 
-	it("should throw when outDir is set but maps to no DataModel path", async () => {
+	it("should throw when outDir is set but maps to no DataModel path", async ({ expect }) => {
 		expect.assertions(1);
 
 		const project = makeProject({
@@ -913,7 +929,7 @@ describe("project resolution", () => {
 		});
 	});
 
-	it("should apply project root before extracting include roots", async () => {
+	it("should apply project root before extracting include roots", async ({ expect }) => {
 		expect.assertions(1);
 
 		const tree = {
@@ -943,7 +959,9 @@ describe("project resolution", () => {
 		]);
 	});
 
-	it("should throw with nearby $path suggestions when include root is unmappable", async () => {
+	it("should throw with nearby $path suggestions when include root is unmappable", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const tree = {
@@ -971,7 +989,9 @@ describe("project resolution", () => {
 		});
 	});
 
-	it("should omit available-entries line when rojo tree has no $path entries", async () => {
+	it("should omit available-entries line when rojo tree has no $path entries", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const emptyTree = { $className: "DataModel" } satisfies RojoTreeNode;
@@ -995,7 +1015,7 @@ describe("project resolution", () => {
 		);
 	});
 
-	it("should hint about outDir when unmappable root starts with src/", async () => {
+	it("should hint about outDir when unmappable root starts with src/", async ({ expect }) => {
 		expect.assertions(1);
 
 		const tree = {
@@ -1020,7 +1040,7 @@ describe("project resolution", () => {
 		);
 	});
 
-	it("should omit the outDir hint when an unmappable root is outside src", async () => {
+	it("should omit the outDir hint when an unmappable root is outside src", async ({ expect }) => {
 		expect.assertions(1);
 
 		const project = makeProject({
@@ -1039,7 +1059,7 @@ describe("project resolution", () => {
 		expect(caught).toHaveProperty("hint", undefined);
 	});
 
-	it("should resolve includes from cwd when root is not set", async () => {
+	it("should resolve includes from cwd when root is not set", async ({ expect }) => {
 		expect.assertions(1);
 
 		const project = makeProject({
@@ -1101,7 +1121,7 @@ describe("multi-root layouts", () => {
 		},
 	} satisfies RojoTreeNode;
 
-	it("should resolve rojoMounts for every touched service branch", async () => {
+	it("should resolve rojoMounts for every touched service branch", async ({ expect }) => {
 		expect.assertions(2);
 
 		const resolved = await resolveProject({
@@ -1151,7 +1171,9 @@ describe("multi-root layouts", () => {
 		]);
 	});
 
-	it("should pin a multi-root include to a single mount when outDir is set", async () => {
+	it("should pin a multi-root include to a single mount when outDir is set", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const resolved = await resolveProject({
@@ -1172,7 +1194,7 @@ describe("multi-root layouts", () => {
 		]);
 	});
 
-	it("should resolve exact-match roots when no mount exists on disk", async () => {
+	it("should resolve exact-match roots when no mount exists on disk", async ({ expect }) => {
 		expect.assertions(1);
 
 		const resolved = await resolveProject({
@@ -1193,7 +1215,9 @@ describe("multi-root layouts", () => {
 		]);
 	});
 
-	it("should span services, mirror mounts in projects and leave outDir unset", async () => {
+	it("should span services, mirror mounts in projects and leave outDir unset", async ({
+		expect,
+	}) => {
 		expect.assertions(3);
 
 		const resolved = await resolveProjects({
@@ -1215,7 +1239,7 @@ describe("multi-root layouts", () => {
 		expect(resolved[0]!.outDir).toBeUndefined();
 	});
 
-	it("should pin a service-spanning include to the outDir mount", async () => {
+	it("should pin a service-spanning include to the outDir mount", async ({ expect }) => {
 		expect.assertions(1);
 
 		const resolved = await resolveProject({
@@ -1235,7 +1259,7 @@ describe("multi-root layouts", () => {
 });
 
 describe(resolveAllProjects, () => {
-	it("should resolve inline project entries", async () => {
+	it("should resolve inline project entries", async ({ expect }) => {
 		expect.assertions(2);
 
 		const entries = [
@@ -1260,7 +1284,7 @@ describe(resolveAllProjects, () => {
 		expect(result[0]!.displayName).toBe("client");
 	});
 
-	it("should load string entries via c12", async () => {
+	it("should load string entries via c12", async ({ expect }) => {
 		expect.assertions(2);
 
 		const { configLoader, seams } = createProjectSeams();
@@ -1289,7 +1313,7 @@ describe(resolveAllProjects, () => {
 		expect(result[0]!.displayName).toBe("server");
 	});
 
-	it("should handle mixed inline and string entries", async () => {
+	it("should handle mixed inline and string entries", async ({ expect }) => {
 		expect.assertions(3);
 
 		const { configLoader, seams } = createProjectSeams();
@@ -1328,7 +1352,9 @@ describe(resolveAllProjects, () => {
 		expect(result[1]!.displayName).toBe("server");
 	});
 
-	it("should dedupe testMatch when multiple include roots strip to identical patterns", async () => {
+	it("should dedupe testMatch when multiple include roots strip to identical patterns", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const tree = {
@@ -1359,7 +1385,7 @@ describe(resolveAllProjects, () => {
 		expect(result[0]!.testMatch).toStrictEqual(["**/*.spec"]);
 	});
 
-	it("should throw when projects have duplicate names", async () => {
+	it("should throw when projects have duplicate names", async ({ expect }) => {
 		expect.assertions(1);
 
 		const entries = [

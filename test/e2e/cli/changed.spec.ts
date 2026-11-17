@@ -2,7 +2,7 @@ import { type } from "arktype";
 import { writeFileSync } from "node:fs";
 import * as path from "node:path";
 import { stripVTControlCharacters } from "node:util";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import type { GitRepository } from "#test/e2e/cli/git-repository.ts";
 import { initGitRepository } from "#test/e2e/cli/git-repository.ts";
@@ -93,7 +93,7 @@ function createChangedRepository(config: string): GitRepository & { sandbox: str
 describe.skipIf(!rojoOnPath())("--changed", () => {
 	it(
 		"should dispatch the specs that reach a staged or untracked change, with their setup files",
-		async () => {
+		async ({ expect }) => {
 			expect.assertions(7);
 
 			const repository = createChangedRepository(CONFIG_WITH_SETUP);
@@ -116,7 +116,7 @@ describe.skipIf(!rojoOnPath())("--changed", () => {
 
 	it(
 		"should dispatch every spec that required a deleted module",
-		async () => {
+		async ({ expect }) => {
 			expect.assertions(3);
 
 			const repository = createChangedRepository(CONFIG_WITH_SETUP);
@@ -133,7 +133,7 @@ describe.skipIf(!rojoOnPath())("--changed", () => {
 
 	it(
 		"should dispatch the specs that reach a change committed since the ref",
-		async () => {
+		async ({ expect }) => {
 			expect.assertions(3);
 
 			const repository = createChangedRepository(CONFIG_WITH_SETUP);
@@ -152,7 +152,7 @@ describe.skipIf(!rojoOnPath())("--changed", () => {
 
 	it(
 		"should report and gate coverage on the changed source files alone",
-		async () => {
+		async ({ expect }) => {
 			expect.assertions(4);
 
 			const repository = createChangedRepository(CONFIG_WITH_THRESHOLD);
@@ -173,7 +173,7 @@ describe.skipIf(!rojoOnPath())("--changed", () => {
 
 	it(
 		"should fail the threshold on a changed source file below it",
-		async () => {
+		async ({ expect }) => {
 			expect.assertions(2);
 
 			const repository = createChangedRepository(CONFIG_WITH_THRESHOLD);
@@ -192,7 +192,7 @@ describe.skipIf(!rojoOnPath())("--changed", () => {
 
 	it(
 		"should gate every source file on a full run",
-		async () => {
+		async ({ expect }) => {
 			expect.assertions(2);
 
 			const repository = createChangedRepository(CONFIG_WITH_THRESHOLD);
@@ -207,7 +207,7 @@ describe.skipIf(!rojoOnPath())("--changed", () => {
 
 	it(
 		"should pass and dispatch nothing when no spec reaches an uncommitted change",
-		async () => {
+		async ({ expect }) => {
 			expect.assertions(3);
 
 			const repository = createChangedRepository(CONFIG_WITH_SETUP);

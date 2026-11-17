@@ -1,6 +1,6 @@
 import { fromAny } from "@total-typescript/shoehorn";
 
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
@@ -42,7 +42,7 @@ function generateClientStub(overrides: Partial<ResolvedConfig>): string {
 }
 
 describe("stub writing", () => {
-	it("should write the stub at the mount path", () => {
+	it("should write the stub at the mount path", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -54,7 +54,7 @@ describe("stub writing", () => {
 		expect(content).toContain('\tdisplayName = "client",');
 	});
 
-	it("should create parent directories if they don't exist", () => {
+	it("should create parent directories if they don't exist", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -64,7 +64,9 @@ describe("stub writing", () => {
 		expect(volume.existsSync("/root/deep/nested/dir/jest.config.luau")).toBeTrue();
 	});
 
-	it("should skip writing when jest.config.luau already exists at the output directory", () => {
+	it("should skip writing when jest.config.luau already exists at the output directory", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem({
@@ -76,7 +78,7 @@ describe("stub writing", () => {
 		expect(volume.readFileSync("/cache/out/client/jest.config.luau", "utf8")).toBe("return {}");
 	});
 
-	it("should write a stub at every mount of a project", () => {
+	it("should write a stub at every mount of a project", ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -90,7 +92,7 @@ describe("stub writing", () => {
 		expect(volume.existsSync("/root/out/server/jest.config.luau")).toBeTrue();
 	});
 
-	it("should write a stub for every project", () => {
+	it("should write a stub for every project", ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -110,7 +112,7 @@ describe("stub writing", () => {
 });
 
 describe(generateProjectStubs, () => {
-	it("should support a mount at the project root", () => {
+	it("should support a mount at the project root", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -129,7 +131,7 @@ describe(generateProjectStubs, () => {
 		expect(volume.existsSync("/cache/workspace/jest.config.luau")).toBeTrue();
 	});
 
-	it("should reject a mount in a sibling directory sharing the root prefix", () => {
+	it("should reject a mount in a sibling directory sharing the root prefix", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -148,7 +150,7 @@ describe(generateProjectStubs, () => {
 		}).toThrow("mount fsPath escapes root directory");
 	});
 
-	it("should not emit CLI/runner default fields into the generated stub", () => {
+	it("should not emit CLI/runner default fields into the generated stub", ({ expect }) => {
 		expect.assertions(3);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -173,7 +175,7 @@ describe(generateProjectStubs, () => {
 		expect(content).not.toContain("passWithNoTests =");
 	});
 
-	it("should not emit root CLI/runner keys when explicitly set", () => {
+	it("should not emit root CLI/runner keys when explicitly set", ({ expect }) => {
 		expect.assertions(4);
 
 		const content = generateClientStub({
@@ -189,7 +191,7 @@ describe(generateProjectStubs, () => {
 		expect(content).not.toContain("rojoProject =");
 	});
 
-	it("should not emit global-only test keys when set", () => {
+	it("should not emit global-only test keys when set", ({ expect }) => {
 		expect.assertions(3);
 
 		const content = generateClientStub({
@@ -204,7 +206,7 @@ describe(generateProjectStubs, () => {
 		expect(content).not.toContain("updateSnapshot =");
 	});
 
-	it("should not emit mount or host-only project values", () => {
+	it("should not emit mount or host-only project values", ({ expect }) => {
 		expect.assertions(3);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -236,7 +238,7 @@ describe(generateProjectStubs, () => {
 		expect(content).not.toContain("typecheck");
 	});
 
-	it("should not emit projectTimeout, which Jest does not know", () => {
+	it("should not emit projectTimeout, which Jest does not know", ({ expect }) => {
 		expect.assertions(1);
 
 		const content = generateClientStub({
@@ -246,7 +248,7 @@ describe(generateProjectStubs, () => {
 		expect(content).not.toContain("projectTimeout");
 	});
 
-	it("should emit shared jest-passthrough keys when set", () => {
+	it("should emit shared jest-passthrough keys when set", ({ expect }) => {
 		expect.assertions(3);
 
 		const content = generateClientStub({
@@ -261,7 +263,7 @@ describe(generateProjectStubs, () => {
 		expect(content).toContain("testTimeout = 9000");
 	});
 
-	it("should route stubs to outputRoot when provided", () => {
+	it("should route stubs to outputRoot when provided", ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -286,7 +288,7 @@ describe(generateProjectStubs, () => {
 		expect(volume.existsSync("/root/out/Client/jest.config.luau")).toBeFalse();
 	});
 
-	it("should reject absolute mount fsPath when outputRoot is provided", () => {
+	it("should reject absolute mount fsPath when outputRoot is provided", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -306,7 +308,9 @@ describe(generateProjectStubs, () => {
 		}).toThrow("mount fsPath must be relative");
 	});
 
-	it("should write a stub at every mount when only some mounts hold a user config", () => {
+	it("should write a stub at every mount when only some mounts hold a user config", ({
+		expect,
+	}) => {
 		expect.assertions(3);
 
 		const { fileSystem, volume } = createMemoryFileSystem({
@@ -348,7 +352,7 @@ describe(generateProjectStubs, () => {
 describe("stub writing with multi-mount projects", () => {
 	const friendsMounts = mountsAt("src/Client", "src/Server", "src/Shared");
 
-	it("should write identical stubs at every mount", () => {
+	it("should write identical stubs at every mount", ({ expect }) => {
 		expect.assertions(3);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -367,7 +371,9 @@ describe("stub writing with multi-mount projects", () => {
 		expect(clientContent).toContain('\tdisplayName = "friends",');
 	});
 
-	it("should skip writing when a user jest.config.lua exists at the output directory", () => {
+	it("should skip writing when a user jest.config.lua exists at the output directory", ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = createMemoryFileSystem({
@@ -382,7 +388,7 @@ describe("stub writing with multi-mount projects", () => {
 		expect(volume.existsSync("/cache/src/Client/jest.config.luau")).toBeFalse();
 	});
 
-	it("should overwrite our own previously-generated stub on re-gen", () => {
+	it("should overwrite our own previously-generated stub on re-gen", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem({
@@ -398,7 +404,9 @@ describe("stub writing with multi-mount projects", () => {
 		);
 	});
 
-	it("should delete a HEADER-prefixed legacy jest.config.lua sibling when writing the .luau stub", () => {
+	it("should delete a HEADER-prefixed legacy jest.config.lua sibling when writing the .luau stub", ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = createMemoryFileSystem({
@@ -411,7 +419,9 @@ describe("stub writing with multi-mount projects", () => {
 		expect(volume.existsSync("/root/src/Client/jest.config.lua")).toBeFalse();
 	});
 
-	it("should preserve a user-authored jest.config.lua when no .luau stub is written", () => {
+	it("should preserve a user-authored jest.config.lua when no .luau stub is written", ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = createMemoryFileSystem({
@@ -428,7 +438,7 @@ describe("stub writing with multi-mount projects", () => {
 });
 
 describe("cleanLeftoverStubs containment guard", () => {
-	it("should throw when mount fsPath is absolute (escape via root)", () => {
+	it("should throw when mount fsPath is absolute (escape via root)", ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = createMemoryFileSystem({
@@ -446,7 +456,7 @@ describe("cleanLeftoverStubs containment guard", () => {
 		expect(volume.existsSync("/tmp/outside/jest.config.luau")).toBeTrue();
 	});
 
-	it("should throw when mount fsPath escapes root via parent segments", () => {
+	it("should throw when mount fsPath escapes root via parent segments", ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = createMemoryFileSystem({
@@ -466,7 +476,9 @@ describe("cleanLeftoverStubs containment guard", () => {
 });
 
 describe(cleanLeftoverStubs, () => {
-	it("should delete only marker-bearing files at known mount paths, leave user files alone", () => {
+	it("should delete only marker-bearing files at known mount paths, leave user files alone", ({
+		expect,
+	}) => {
 		expect.assertions(4);
 
 		const { fileSystem, volume } = createMemoryFileSystem({
@@ -503,7 +515,9 @@ describe(cleanLeftoverStubs, () => {
 		expect(volume.existsSync("/root/out/Shared/jest.config.luau")).toBeTrue();
 	});
 
-	it("should reuse the resolved real root across multiple marker-bearing mounts", () => {
+	it("should reuse the resolved real root across multiple marker-bearing mounts", ({
+		expect,
+	}) => {
 		// Two marker-bearing leftover stubs in one call exercise the
 		// `realRoot` lazy-init's cached-return branch.
 		expect.assertions(3);
@@ -534,7 +548,7 @@ describe(cleanLeftoverStubs, () => {
 });
 
 describe("generateProjectStubs with a user-authored config at a mount", () => {
-	it("should write the evaluated project values in place of the user config", () => {
+	it("should write the evaluated project values in place of the user config", ({ expect }) => {
 		expect.assertions(4);
 
 		const userConfig = "return { displayName = 'user-authored', placeId = '1' }\n";
@@ -565,7 +579,7 @@ describe("generateProjectStubs with a user-authored config at a mount", () => {
 });
 
 describe("cleanLeftoverStubs symlink-escape guard", () => {
-	it("should throw when a mount directory is a symlink pointing outside root", () => {
+	it("should throw when a mount directory is a symlink pointing outside root", ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = createMemoryFileSystem();

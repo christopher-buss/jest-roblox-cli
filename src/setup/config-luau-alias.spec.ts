@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { addConfigLuauAlias, readConfigLuauAlias } from "./config-luau-alias.ts";
 
@@ -9,7 +9,9 @@ function edit(source: string) {
 }
 
 describe(addConfigLuauAlias, () => {
-	it("should append the alias to a multi-line aliases table and keep its comments", () => {
+	it("should append the alias to a multi-line aliases table and keep its comments", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const source = [
@@ -43,7 +45,7 @@ describe(addConfigLuauAlias, () => {
 		});
 	});
 
-	it("should add a separator after a last entry that has none", () => {
+	it("should add a separator after a last entry that has none", ({ expect }) => {
 		expect.assertions(1);
 
 		const source =
@@ -55,7 +57,7 @@ describe(addConfigLuauAlias, () => {
 		});
 	});
 
-	it("should keep CRLF line endings", () => {
+	it("should keep CRLF line endings", ({ expect }) => {
 		expect.assertions(1);
 
 		const source =
@@ -67,7 +69,7 @@ describe(addConfigLuauAlias, () => {
 		});
 	});
 
-	it("should append to a single-line aliases table", () => {
+	it("should append to a single-line aliases table", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(edit('return { luau = { aliases = { shared = "./shared" } } }\n')).toStrictEqual({
@@ -76,7 +78,7 @@ describe(addConfigLuauAlias, () => {
 		});
 	});
 
-	it("should fill an empty aliases table", () => {
+	it("should fill an empty aliases table", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(edit("return { luau = { aliases = {} } }\n")).toStrictEqual({
@@ -85,7 +87,7 @@ describe(addConfigLuauAlias, () => {
 		});
 	});
 
-	it("should fill an empty aliases table that holds a space", () => {
+	it("should fill an empty aliases table that holds a space", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(edit("return { luau = { aliases = { } } }\n")).toStrictEqual({
@@ -94,7 +96,7 @@ describe(addConfigLuauAlias, () => {
 		});
 	});
 
-	it("should not indent the entry when the last entry has no indentation", () => {
+	it("should not indent the entry when the last entry has no indentation", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(edit('return { luau = { aliases = {shared = "./shared",\n} } }\n')).toStrictEqual({
@@ -103,7 +105,7 @@ describe(addConfigLuauAlias, () => {
 		});
 	});
 
-	it("should read the return after other statements", () => {
+	it("should read the return after other statements", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(edit("local unused = 1\nreturn { luau = { aliases = {} } }\n")).toStrictEqual({
@@ -112,7 +114,7 @@ describe(addConfigLuauAlias, () => {
 		});
 	});
 
-	it("should keep a block comment after the last single-line entry once", () => {
+	it("should keep a block comment after the last single-line entry once", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -123,7 +125,7 @@ describe(addConfigLuauAlias, () => {
 		});
 	});
 
-	it("should not copy a blank line above the last entry", () => {
+	it("should not copy a blank line above the last entry", ({ expect }) => {
 		expect.assertions(1);
 
 		const source = 'return {\nluau = {\naliases = {\na = "./a",\n\nb = "./b",\n},\n},\n}\n';
@@ -134,7 +136,7 @@ describe(addConfigLuauAlias, () => {
 		});
 	});
 
-	it("should fill an empty multi-line aliases table after a comment", () => {
+	it("should fill an empty multi-line aliases table after a comment", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -145,7 +147,7 @@ describe(addConfigLuauAlias, () => {
 		});
 	});
 
-	it("should fill an empty multi-line aliases table", () => {
+	it("should fill an empty multi-line aliases table", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(edit("return {\n\tluau = {\n\t\taliases = {\n\t\t},\n\t},\n}\n")).toStrictEqual({
@@ -154,7 +156,7 @@ describe(addConfigLuauAlias, () => {
 		});
 	});
 
-	it("should add an aliases table to a luau table without one", () => {
+	it("should add an aliases table to a luau table without one", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(edit('return {\n\tluau = {\n\t\tlanguagemode = "strict",\n\t},\n}\n')).toStrictEqual(
@@ -165,7 +167,7 @@ describe(addConfigLuauAlias, () => {
 		);
 	});
 
-	it("should add a luau table to a config without one", () => {
+	it("should add a luau table to a config without one", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(edit("return {}\n")).toStrictEqual({
@@ -174,7 +176,7 @@ describe(addConfigLuauAlias, () => {
 		});
 	});
 
-	it("should point an existing alias at the new folder", () => {
+	it("should point an existing alias at the new folder", ({ expect }) => {
 		expect.assertions(1);
 
 		const source =
@@ -186,7 +188,7 @@ describe(addConfigLuauAlias, () => {
 		});
 	});
 
-	it("should skip entries whose key is not a string literal", () => {
+	it("should skip entries whose key is not a string literal", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -206,13 +208,13 @@ describe(addConfigLuauAlias, () => {
 			'return { luau = { aliases = { ["jest-roblox"] = home .. "/x" } } }\n',
 		],
 		["the file returns nothing", "local x = 1\n"],
-	])("should report a computed table when %s", ([, source]) => {
+	])("should report a computed table when %s", ([, source], { expect }) => {
 		expect.assertions(1);
 
 		expect(edit(source)).toStrictEqual({ kind: "computed" });
 	});
 
-	it("should name the file when it does not parse", () => {
+	it("should name the file when it does not parse", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(() => edit("local = 1\nlocal = 2\nreturn {}")).toThrow(
@@ -229,7 +231,7 @@ describe(readConfigLuauAlias, () => {
 	it.for([
 		['return { luau = { aliases = { ["jest-roblox"] = "~/a" } } }', "~/a"],
 		["local x = 1\nreturn { Luau = { Aliases = { ['Jest-Roblox'] = '~/\\x62' } } }", "~/b"],
-	] as const)("should read the alias from %j", ([source, value]) => {
+	] as const)("should read the alias from %j", ([source, value], { expect }) => {
 		expect.assertions(1);
 
 		expect(read(source)).toBe(value);
@@ -246,7 +248,7 @@ describe(readConfigLuauAlias, () => {
 			"the alias value is computed",
 			'return { luau = { aliases = { ["jest-roblox"] = h .. "/x" } } }',
 		],
-	] as const)("should read nothing when %s", ([, source]) => {
+	] as const)("should read nothing when %s", ([, source], { expect }) => {
 		expect.assertions(1);
 
 		expect(read(source)).toBeUndefined();

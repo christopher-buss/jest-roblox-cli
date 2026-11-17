@@ -1,5 +1,5 @@
 import { Buffer } from "node:buffer";
-import { describe, expect, it, onTestFinished, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import type { LuauSpan } from "./ast-types.ts";
 import { indexSourceBytes } from "./source-bytes.ts";
@@ -15,7 +15,7 @@ function span(overrides: Partial<LuauSpan>): LuauSpan {
 }
 
 describe(indexSourceBytes, () => {
-	it("should convert spans on the first line to byte ranges", () => {
+	it("should convert spans on the first line to byte ranges", ({ expect }) => {
 		expect.assertions(1);
 
 		const bytes = indexSourceBytes("local x = 1\n");
@@ -24,7 +24,7 @@ describe(indexSourceBytes, () => {
 		expect(bytes.slice(range.start, range.end)).toBe("x");
 	});
 
-	it("should convert spans on later lines using byte line starts", () => {
+	it("should convert spans on later lines using byte line starts", ({ expect }) => {
 		expect.assertions(1);
 
 		const bytes = indexSourceBytes("local a = 1\nlocal bc = 2\n");
@@ -35,7 +35,7 @@ describe(indexSourceBytes, () => {
 		expect(bytes.slice(range.start, range.end)).toBe("bc");
 	});
 
-	it("should count multi-byte characters as multiple bytes", () => {
+	it("should count multi-byte characters as multiple bytes", ({ expect }) => {
 		expect.assertions(2);
 
 		// "∞" is three UTF-8 bytes but one UTF-16 unit; the identifier after it
@@ -52,7 +52,7 @@ describe(indexSourceBytes, () => {
 		expect(bytes.slice(range.start, range.end)).toBe("y");
 	});
 
-	it("should slice a span back to its text", () => {
+	it("should slice a span back to its text", ({ expect }) => {
 		expect.assertions(1);
 
 		const bytes = indexSourceBytes("line1\nlocal x = a >= b\nline3");
@@ -64,7 +64,7 @@ describe(indexSourceBytes, () => {
 
 	// "∞" is three bytes and one UTF-16 unit, so `x` starts at byte column 20
 	// but UTF-16 column 18.
-	it("should slice a span past a multi-byte character by bytes", () => {
+	it("should slice a span past a multi-byte character by bytes", ({ expect }) => {
 		expect.assertions(1);
 
 		const bytes = indexSourceBytes('local a = "\u{221E}" .. x');
@@ -72,7 +72,7 @@ describe(indexSourceBytes, () => {
 		expect(bytes.sliceSpan(span({ beginColumn: 20, endColumn: 21 }))).toBe("x");
 	});
 
-	it("should report line ends as the start of the next line", () => {
+	it("should report line ends as the start of the next line", ({ expect }) => {
 		expect.assertions(2);
 
 		const bytes = indexSourceBytes("ab\ncd");
@@ -82,7 +82,7 @@ describe(indexSourceBytes, () => {
 		expect(bytes.lineEndOffset(2)).toBe(5);
 	});
 
-	it("should expose bytes by offset and undefined past the end", () => {
+	it("should expose bytes by offset and undefined past the end", ({ expect }) => {
 		expect.assertions(2);
 
 		const bytes = indexSourceBytes("a");
@@ -91,13 +91,13 @@ describe(indexSourceBytes, () => {
 		expect(bytes.byteAt(1)).toBeUndefined();
 	});
 
-	it("should keep the text it was built from", () => {
+	it("should keep the text it was built from", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(indexSourceBytes("local x = 1").text).toBe("local x = 1");
 	});
 
-	it("should throw when a span names a line outside the source", () => {
+	it("should throw when a span names a line outside the source", ({ expect }) => {
 		expect.assertions(1);
 
 		const bytes = indexSourceBytes("ab");
@@ -109,7 +109,7 @@ describe(indexSourceBytes, () => {
 });
 
 describe("byte columns as UTF-16 columns", () => {
-	it("should leave the columns of an all-ASCII line alone", () => {
+	it("should leave the columns of an all-ASCII line alone", ({ expect }) => {
 		expect.assertions(1);
 
 		const bytes = indexSourceBytes("local x = 1\n");
@@ -119,7 +119,7 @@ describe("byte columns as UTF-16 columns", () => {
 
 	// `local a = "∞" 1`: the closing quote is byte column 15 and UTF-16
 	// column 13, because U+221E is three bytes and one UTF-16 unit.
-	it("should subtract the extra bytes of a preceding character", () => {
+	it("should subtract the extra bytes of a preceding character", ({ expect }) => {
 		expect.assertions(2);
 
 		const bytes = indexSourceBytes('local a = "\u{221E}" 1\n');
@@ -130,7 +130,7 @@ describe("byte columns as UTF-16 columns", () => {
 
 	// An astral character is four bytes but two UTF-16 units, so a column past
 	// it drifts by two rather than by three.
-	it("should count an astral character as two UTF-16 units", () => {
+	it("should count an astral character as two UTF-16 units", ({ expect }) => {
 		expect.assertions(1);
 
 		const bytes = indexSourceBytes('local a = "\u{1F389}"\n');
@@ -140,7 +140,7 @@ describe("byte columns as UTF-16 columns", () => {
 
 	// A span that ends the line ends one byte past it, which is one UTF-16
 	// unit past it too.
-	it("should convert an end column that sits past the last byte", () => {
+	it("should convert an end column that sits past the last byte", ({ expect }) => {
 		expect.assertions(1);
 
 		const bytes = indexSourceBytes('local a = "\u{221E}"\n');
@@ -148,7 +148,7 @@ describe("byte columns as UTF-16 columns", () => {
 		expect<number>(bytes.toUtf16Column(1, 16)).toBe(14);
 	});
 
-	it("should count a carriage return as part of the line it ends", () => {
+	it("should count a carriage return as part of the line it ends", ({ expect }) => {
 		expect.assertions(1);
 
 		const bytes = indexSourceBytes('local a = "\u{221E}"\r\nlocal b = 2\r\n');
@@ -156,7 +156,7 @@ describe("byte columns as UTF-16 columns", () => {
 		expect<number>(bytes.toUtf16Column(1, 15)).toBe(13);
 	});
 
-	it("should convert each line against its own bytes", () => {
+	it("should convert each line against its own bytes", ({ expect }) => {
 		expect.assertions(2);
 
 		const bytes = indexSourceBytes('local a = "\u{221E}"\nlocal b = "yes"\n');
@@ -165,7 +165,7 @@ describe("byte columns as UTF-16 columns", () => {
 		expect<number>(bytes.toUtf16Column(2, 16)).toBe(16);
 	});
 
-	it("should convert each end of a span against its own line", () => {
+	it("should convert each end of a span against its own line", ({ expect }) => {
 		expect.assertions(1);
 
 		const bytes = indexSourceBytes('local a = "\u{221E}" .. f(\n"\u{1F389}" .. b)\n');
@@ -175,7 +175,7 @@ describe("byte columns as UTF-16 columns", () => {
 		).toStrictEqual(span({ beginColumn: 13, beginLine: 1, endColumn: 10, endLine: 2 }));
 	});
 
-	it("should leave every column of an all-ASCII source alone", () => {
+	it("should leave every column of an all-ASCII source alone", ({ expect }) => {
 		expect.assertions(1);
 
 		const bytes = indexSourceBytes("local x = a + b\n");
@@ -185,7 +185,7 @@ describe("byte columns as UTF-16 columns", () => {
 		);
 	});
 
-	it("should convert a byte range on the first line back to a span", () => {
+	it("should convert a byte range on the first line back to a span", ({ expect }) => {
 		expect.assertions(1);
 
 		const bytes = indexSourceBytes("local x = 1\nlocal y = 2\n");
@@ -195,7 +195,7 @@ describe("byte columns as UTF-16 columns", () => {
 		);
 	});
 
-	it("should convert a byte range on a later line back to a span", () => {
+	it("should convert a byte range on a later line back to a span", ({ expect }) => {
 		expect.assertions(1);
 
 		const bytes = indexSourceBytes("local a = 1\nlocal b = 2\nlocal cd = 3\n");
@@ -205,7 +205,7 @@ describe("byte columns as UTF-16 columns", () => {
 		);
 	});
 
-	it("should convert a byte range that crosses a line back to a span", () => {
+	it("should convert a byte range that crosses a line back to a span", ({ expect }) => {
 		expect.assertions(1);
 
 		const bytes = indexSourceBytes("ab\ncd\nef\n");
@@ -215,7 +215,7 @@ describe("byte columns as UTF-16 columns", () => {
 		);
 	});
 
-	it("should answer column 1 for an offset that sits on a line start", () => {
+	it("should answer column 1 for an offset that sits on a line start", ({ expect }) => {
 		expect.assertions(1);
 
 		const bytes = indexSourceBytes("ab\ncd\n");
@@ -225,7 +225,7 @@ describe("byte columns as UTF-16 columns", () => {
 		);
 	});
 
-	it("should round-trip a span through byte offsets", () => {
+	it("should round-trip a span through byte offsets", ({ expect }) => {
 		expect.assertions(1);
 
 		// Multi-byte characters shift byte columns away from UTF-16 ones, so a
@@ -238,7 +238,7 @@ describe("byte columns as UTF-16 columns", () => {
 });
 
 describe("buffer work", () => {
-	it("should slice ASCII source without decoding a buffer", () => {
+	it("should slice ASCII source without decoding a buffer", ({ expect, onTestFinished }) => {
 		expect.assertions(2);
 
 		const bytes = indexSourceBytes("first\nsecond");
@@ -253,7 +253,10 @@ describe("buffer work", () => {
 		expect(calls).toBe(0);
 	});
 
-	it("should convert an all-ASCII source without measuring a line", () => {
+	it("should convert an all-ASCII source without measuring a line", ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(1);
 
 		const bytes = indexSourceBytes("first\n");
@@ -273,7 +276,7 @@ describe("buffer work", () => {
 		{ columns: [3, 5], expectedCalls: 2, source: "éé\n" },
 	])(
 		"should build one cached column converter for $source",
-		({ columns, expectedCalls, source }) => {
+		({ columns, expectedCalls, source }, { expect, onTestFinished }) => {
 			expect.assertions(1);
 
 			const bytes = indexSourceBytes(source);

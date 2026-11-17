@@ -1,6 +1,6 @@
 import { TaskStallError } from "@isentinel/roblox-runner";
 
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { isInfrastructureFailure, MissingGapRecordError } from "./infrastructure-failure.ts";
 
@@ -21,7 +21,7 @@ function createStall(): TaskStallError {
 }
 
 describe(isInfrastructureFailure, () => {
-	it("should accept each infrastructure failure and reject any other error", () => {
+	it("should accept each infrastructure failure and reject any other error", ({ expect }) => {
 		expect.assertions(3);
 
 		expect(isInfrastructureFailure(createStall())).toBeTrue();

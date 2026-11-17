@@ -3,7 +3,7 @@ import { fromAny } from "@total-typescript/shoehorn";
 import * as path from "node:path";
 import process from "node:process";
 import type { Except } from "type-fest";
-import { assert, describe, expect, it, vi } from "vitest";
+import { assert, describe, it, type Mock, vi } from "vitest";
 
 import { clockTimingCollector } from "#test/mocks/clock-timing-collector.ts";
 import { createLuteChildProcess } from "#test/mocks/lute-child-process.ts";
@@ -21,7 +21,7 @@ import type { BackendResult } from "../backends/interface.ts";
 import type { OpenCloudDispatch, OpenCloudSharding } from "../backends/open-cloud-dispatch.ts";
 import type { StudioDispatch } from "../backends/plugin-payload.ts";
 import type { ProjectEntry } from "../config/config-types.ts";
-import type { ConfigLoadRequest, loadConfig } from "../config/loader.ts";
+import type { loadConfig } from "../config/loader.ts";
 import type { CliOptions, ResolvedConfig, WorkspaceRunOptions } from "../config/resolved-config.ts";
 import type { EnvelopeEntry } from "../protocol/envelope.ts";
 import { nodeRunSeams, type RunSeams } from "../run/seams.ts";
@@ -155,7 +155,7 @@ function createStubBackend(
 	const captured: Partial<Record<"options", OpenCloudDispatch>> = {};
 	const backend: Backend = {
 		kind: "open-cloud",
-		runTestsAsync: async (options: OpenCloudDispatch): Promise<BackendResult> => {
+		runTestsAsync: async (options): Promise<BackendResult> => {
 			captured.options = options;
 			return {
 				...backendOverrides,
@@ -242,15 +242,28 @@ function buildManifestAt(
 	return fromAny(JSON.parse(fileSystem.readFileSync(buildManifestPath(manifestPath), "utf-8")));
 }
 
-const loadPackageConfig = vi.fn<typeof loadConfig>(async ({ cwd }: ConfigLoadRequest = {}) => {
-	return createResolvedConfig(cwd === undefined ? {} : { rootDir: cwd });
-});
-
-const runTypecheck = vi.fn<typeof runTypecheckAsync>();
+const stagedConfigs = new WeakMap<FileSystem, Readonly<Record<string, PreResolutionConfig>>>();
 
 type StagedRunOptions = Partial<RunWorkspaceOptions> & { backend?: Backend } & {
 	packageInfos: Array<PackageInfo>;
 };
+
+function packageConfigLoader(fileSystem: FileSystem): typeof loadConfig {
+	const configs = stagedConfigs.get(fileSystem);
+	return async (request) => {
+		const cwd = request?.cwd;
+		if (configs === undefined) {
+			return createResolvedConfig(cwd === undefined ? {} : { rootDir: cwd });
+		}
+
+		const config = configs[cwd ?? ""];
+		if (config === undefined) {
+			throw new Error(`No mocked config for cwd: ${cwd ?? "<undefined>"}`);
+		}
+
+		return fromAny<ResolvedConfig, PreResolutionConfig>(config);
+	};
+}
 
 /**
  * Drives the stages in the order the run pipeline does, so these specs read
@@ -311,6 +324,7 @@ async function runStagedWorkspaceAsync({
 	}
 
 	const seams = nodeRunSeams();
+	const loadPackageConfig = packageConfigLoader(fileSystem);
 	return runWorkspaceAsync(
 		{
 			childProcess,
@@ -322,7 +336,7 @@ async function runStagedWorkspaceAsync({
 			progress: NOOP_PROGRESS,
 			runOptions: makeRunOptions(),
 			runProjects: seams.runProjects,
-			runTypecheck,
+			runTypecheck: vi.fn<typeof runTypecheckAsync>(),
 			timing: clockTimingCollector(),
 			tsconfigReader: seams.tsconfigReader,
 			workspaceRoot: ROOT,
@@ -384,15 +398,11 @@ function makeProjectEntries(entries: Array<ProjectEntry>): Array<ProjectEntry> {
 	return entries;
 }
 
-function setLoadedConfigPerPackage(map: Readonly<Record<string, PreResolutionConfig>>): void {
-	loadPackageConfig.mockImplementation(async ({ cwd }: ConfigLoadRequest = {}) => {
-		const config = map[cwd ?? ""];
-		if (config === undefined) {
-			throw new Error(`No mocked config for cwd: ${cwd ?? "<undefined>"}`);
-		}
-
-		return fromAny<ResolvedConfig, PreResolutionConfig>(config);
-	});
+function setLoadedConfigPerPackage(
+	fileSystem: FileSystem,
+	map: Readonly<Record<string, PreResolutionConfig>>,
+): void {
+	stagedConfigs.set(fileSystem, map);
 }
 
 function seedPackage(
@@ -504,7 +514,7 @@ function stageWorkspace(
 ): MemoryFileSystem {
 	const memory = createMemoryFileSystem();
 	memory.volume.fromJSON({ ...files, ...WORKSPACE_YAML });
-	setLoadedConfigPerPackage(configs);
+	setLoadedConfigPerPackage(memory.fileSystem, configs);
 	return memory;
 }
 
@@ -565,7 +575,10 @@ async function runCoverageFooAsync(config: Partial<PreResolutionConfig> = {}) {
 	return { ...scenario, entry, prepareCoverage };
 }
 
-function stagePassingTypecheckFoo(): MemoryFileSystem {
+function stagePassingTypecheckFoo(): MemoryFileSystem & {
+	runTypecheck: Mock<typeof runTypecheckAsync>;
+} {
+	const runTypecheck = vi.fn<typeof runTypecheckAsync>();
 	const memory = stageWorkspace(seedSpec(FOO_INFO, "src/foo.spec-d.ts", "src/foo.spec.ts"), {
 		[FOO_DIR]: rooted(FOO_DIR, { testMatch: ["**/*.spec.ts"], typecheck: { enabled: true } }),
 	});
@@ -582,25 +595,28 @@ function stagePassingTypecheckFoo(): MemoryFileSystem {
 			],
 		}),
 	);
-	return memory;
+	return { ...memory, runTypecheck };
 }
 
 async function typecheckFooFilesAsync(
 	typecheck: NonNullable<PreResolutionConfig["typecheck"]>,
 	...specFiles: Array<string>
 ): Promise<Array<string>> {
+	const runTypecheck = vi.fn<typeof runTypecheckAsync>();
 	runTypecheck.mockResolvedValue(makeTypeResult());
 	await runScenarioAsync({
 		configs: { [FOO_DIR]: rooted(FOO_DIR, { testMatch: ["**/*.spec.ts"], typecheck }) },
 		entries: [passingProjectEntry("@halcyon/foo", "foo")],
 		files: seedSpec(FOO_INFO, ...specFiles),
-		run: { packageInfos: [FOO_INFO] },
+		run: { packageInfos: [FOO_INFO], runTypecheck },
 	});
 	return runTypecheck.mock.calls[0]![0].files;
 }
 
 describe(createWorkspaceRunStages, () => {
-	it("should load each package's config independently and embed both in the materializer payload", async () => {
+	it("should load each package's config independently and embed both in the materializer payload", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const { captured } = await runScenarioAsync({
@@ -616,7 +632,7 @@ describe(createWorkspaceRunStages, () => {
 		expect(dispatchedScript(captured)).toContain('"testTimeout":5678');
 	});
 
-	it("should hand the backend the VM count the run options carry", async () => {
+	it("should hand the backend the VM count the run options carry", async ({ expect }) => {
 		expect.assertions(1);
 
 		const memory = stageWorkspace(seedSpec(FOO_INFO, "src/foo.spec.luau"), {
@@ -626,7 +642,7 @@ describe(createWorkspaceRunStages, () => {
 		let captured: StudioDispatch | undefined;
 		const backend: Backend = {
 			kind: "studio",
-			runTestsAsync: async (options: StudioDispatch) => {
+			runTestsAsync: async (options) => {
 				captured = options;
 				return stub.backend.runTestsAsync(fromAny(options));
 			},
@@ -641,7 +657,9 @@ describe(createWorkspaceRunStages, () => {
 		expect(captured!.vmParallel).toBe(3);
 	});
 
-	it("should hand the backend run settings from the workspace, not the first package", async () => {
+	it("should hand the backend run settings from the workspace, not the first package", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const memory = stageWorkspace(
@@ -679,7 +697,9 @@ describe(createWorkspaceRunStages, () => {
 	// resolved before dispatch. Left unresolved, Jest-Roblox falls back to its
 	// own default and a roblox-ts package's snapshots come back in `Table {`
 	// form while multi mode writes `{`.
-	it("should resolve printBasicPrototype for a typescript package before dispatch", async () => {
+	it("should resolve printBasicPrototype for a typescript package before dispatch", async ({
+		expect,
+	}) => {
 		expect.assertions(3);
 
 		const { captured } = await runScenarioAsync({
@@ -696,7 +716,9 @@ describe(createWorkspaceRunStages, () => {
 		expect(dispatchedScript(captured)).not.toContain('"testPathPattern":');
 	});
 
-	it("should resolve printBasicPrototype for a luau package before dispatch", async () => {
+	it("should resolve printBasicPrototype for a luau package before dispatch", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const { captured } = await runScenarioAsync({
@@ -712,7 +734,9 @@ describe(createWorkspaceRunStages, () => {
 		expect(dispatchedScript(captured)).not.toContain('"printBasicPrototype":false');
 	});
 
-	it("should forward a basename testPathPattern when --testPathPattern is a filesystem path", async () => {
+	it("should forward a basename testPathPattern when --testPathPattern is a filesystem path", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const { captured } = await runLuauFooAsync(
@@ -727,7 +751,9 @@ describe(createWorkspaceRunStages, () => {
 	// Regression: two specs sharing a basename collapse to the same pattern, so
 	// the namesake in `src/b` would run too. The pattern carries the path below
 	// the package's Rojo mount instead.
-	it("should forward the instance sub-path so a namesake spec is left out", async () => {
+	it("should forward the instance sub-path so a namesake spec is left out", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const { captured } = await runLuauFooAsync(
@@ -742,7 +768,9 @@ describe(createWorkspaceRunStages, () => {
 	// Parity with multi: both modes narrow against `project.rojoMounts`, so an
 	// `outDir`-pinned project resolves the file under its pinned mount rather
 	// than under the widest mount the package's Rojo tree declares.
-	it("should narrow against the project's pinned mount, not the package tree", async () => {
+	it("should narrow against the project's pinned mount, not the package tree", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const projects = makeProjectEntries([
@@ -771,7 +799,9 @@ describe(createWorkspaceRunStages, () => {
 		expect(dispatchedScript(captured)).toContain('"testPathPattern":"(deep/thing\\\\.spec)"');
 	});
 
-	it("should fail a run whose testPathPattern matches no test in any package", async () => {
+	it("should fail a run whose testPathPattern matches no test in any package", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
@@ -787,7 +817,7 @@ describe(createWorkspaceRunStages, () => {
 	// Regression: a positional file was discarded in workspace mode, so
 	// `--workspace path/to/one.spec.ts` staged every package and ran the whole
 	// workspace while reporting nothing about the argument it dropped.
-	it("should dispatch only the package a positional file names", async () => {
+	it("should dispatch only the package a positional file names", async ({ expect }) => {
 		expect.assertions(3);
 
 		const { captured, fileSystem } = await runScenarioAsync({
@@ -812,7 +842,9 @@ describe(createWorkspaceRunStages, () => {
 	// which is a package subdirectory as often as it is the workspace root. The
 	// run takes that directory as an argument rather than reading it, so this
 	// resolves a bare `src/foo.spec.luau` from inside `@halcyon/foo`.
-	it("should resolve a relative positional against the invocation directory", async () => {
+	it("should resolve a relative positional against the invocation directory", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { captured } = await runScenarioAsync({
@@ -832,7 +864,7 @@ describe(createWorkspaceRunStages, () => {
 	// The Luau side matches Instance paths, so a positional narrows through the
 	// same translation `--testPathPattern` does. A namesake in a sibling
 	// directory must not ride along.
-	it("should narrow to the positional file's instance sub-path", async () => {
+	it("should narrow to the positional file's instance sub-path", async ({ expect }) => {
 		expect.assertions(2);
 
 		const { captured } = await runLuauFooAsync(
@@ -847,7 +879,9 @@ describe(createWorkspaceRunStages, () => {
 	// A positional beats a `--testPathPattern` given alongside it, as in multi:
 	// the file set is already resolved, so the raw pattern is dropped rather
 	// than intersected.
-	it("should let a positional file override a testPathPattern given with it", async () => {
+	it("should let a positional file override a testPathPattern given with it", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const { captured } = await runLuauFooAsync(
@@ -864,7 +898,9 @@ describe(createWorkspaceRunStages, () => {
 
 	// A file no package owns is a mistake in the argument, not an empty run:
 	// reporting it as green would hide the typo behind a passing exit.
-	it("should reject a positional file no package owns, naming the roots searched", async () => {
+	it("should reject a positional file no package owns, naming the roots searched", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { fileSystem } = stageWorkspace(
@@ -884,7 +920,9 @@ describe(createWorkspaceRunStages, () => {
 		).rejects.toThrow("No project contains the requested file(s):");
 	});
 
-	it("should synthesize one implicit project named after the package folder when projects: is absent", async () => {
+	it("should synthesize one implicit project named after the package folder when projects: is absent", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const { captured, results } = await runScenarioAsync({
@@ -902,7 +940,7 @@ describe(createWorkspaceRunStages, () => {
 		expect(results![0]!.displayName).toBe("foo");
 	});
 
-	it("should open every host phase", async () => {
+	it("should open every host phase", async ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem } = stageWorkspace(seedSpec(FOO_INFO, "src/foo.spec.luau"), {
@@ -931,7 +969,7 @@ describe(createWorkspaceRunStages, () => {
 		expect(collector.flushTimingReport).not.toHaveBeenCalled();
 	});
 
-	it("should open the host phases before a later phase throws", async () => {
+	it("should open the host phases before a later phase throws", async ({ expect }) => {
 		expect.assertions(3);
 
 		const { fileSystem } = stageWorkspace(seedSpec(FOO_INFO, "src/foo.spec.luau"), {
@@ -956,7 +994,9 @@ describe(createWorkspaceRunStages, () => {
 		expect(paths).not.toContain("runProjects");
 	});
 
-	it("should pass through explicit projects when present, not virtual-wrap", async () => {
+	it("should pass through explicit projects when present, not virtual-wrap", async ({
+		expect,
+	}) => {
 		expect.assertions(3);
 
 		const projects = makeProjectEntries([
@@ -986,7 +1026,7 @@ describe(createWorkspaceRunStages, () => {
 		expect(results!.map((entry) => entry.displayName)).toStrictEqual(["client", "server"]);
 	});
 
-	it("should drop runtime test files matching a per-project exclude glob", async () => {
+	it("should drop runtime test files matching a per-project exclude glob", async ({ expect }) => {
 		expect.assertions(1);
 
 		const projects = makeProjectEntries([
@@ -1012,7 +1052,9 @@ describe(createWorkspaceRunStages, () => {
 		expect(captured.options!.jobs[0].testFiles).toStrictEqual(["src/a.spec.luau"]);
 	});
 
-	it("should drop runtime test files matching a package-level test.exclude glob", async () => {
+	it("should drop runtime test files matching a package-level test.exclude glob", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		// No `projects:`, so the package's global `test.exclude` must flow into
@@ -1033,7 +1075,9 @@ describe(createWorkspaceRunStages, () => {
 		expect(captured.options!.jobs[0].testFiles).toStrictEqual(["src/a.spec.luau"]);
 	});
 
-	it("should pre-flight clean marker-bearing leftover stubs from package source and emit a stderr notice", async () => {
+	it("should pre-flight clean marker-bearing leftover stubs from package source and emit a stderr notice", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -1057,7 +1101,7 @@ describe(createWorkspaceRunStages, () => {
 				test: { displayName: "client", include: ["out/Client/**/*.spec.luau"] },
 			},
 		]);
-		setLoadedConfigPerPackage({
+		setLoadedConfigPerPackage(fileSystem, {
 			[FOO_DIR]: rooted(FOO_DIR, { projects }),
 		});
 
@@ -1077,7 +1121,9 @@ describe(createWorkspaceRunStages, () => {
 		);
 	});
 
-	it("should run a project jest.config.luau that holds code through the run's runner", async () => {
+	it("should run a project jest.config.luau that holds code through the run's runner", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -1094,7 +1140,7 @@ describe(createWorkspaceRunStages, () => {
 				'return { displayName = "client" .. "-luau" }\n',
 			[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
 		});
-		setLoadedConfigPerPackage({
+		setLoadedConfigPerPackage(fileSystem, {
 			[FOO_DIR]: rooted(FOO_DIR, { projects: ["out/Client"] }),
 		});
 
@@ -1110,7 +1156,9 @@ describe(createWorkspaceRunStages, () => {
 		).rejects.toThrow('--version" printed "9.9.9"');
 	});
 
-	it("should write a cache stub for a mount that holds a user-authored config", async () => {
+	it("should write a cache stub for a mount that holds a user-authored config", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -1134,7 +1182,7 @@ describe(createWorkspaceRunStages, () => {
 				test: { displayName: "client", include: ["out/Client/**/*.spec.luau"] },
 			},
 		]);
-		setLoadedConfigPerPackage({
+		setLoadedConfigPerPackage(fileSystem, {
 			[FOO_DIR]: rooted(FOO_DIR, { projects }),
 		});
 
@@ -1160,7 +1208,9 @@ describe(createWorkspaceRunStages, () => {
 		);
 	});
 
-	it("should write stubs into the workspace cache, not into package source", async () => {
+	it("should write stubs into the workspace cache, not into package source", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const projects = makeProjectEntries([
@@ -1198,7 +1248,7 @@ describe(createWorkspaceRunStages, () => {
 		expect(volume.existsSync(sourceStub)).toBeFalse();
 	});
 
-	it("should fan out (P × N) jobs, one per (package, project) pair", async () => {
+	it("should fan out (P × N) jobs, one per (package, project) pair", async ({ expect }) => {
 		expect.assertions(2);
 
 		const projects = makeProjectEntries([
@@ -1255,7 +1305,9 @@ describe(createWorkspaceRunStages, () => {
 		expect(results).toHaveLength(4);
 	});
 
-	it("should keep only filtered project displayNames when --project is set", async () => {
+	it("should keep only filtered project displayNames when --project is set", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const projects = makeProjectEntries([
@@ -1295,7 +1347,9 @@ describe(createWorkspaceRunStages, () => {
 		expect(results![0]!.displayName).toBe("client");
 	});
 
-	it("should throw when --project filter names match no project across packages", async () => {
+	it("should throw when --project filter names match no project across packages", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { fileSystem } = stageWorkspace(seedSpec(FOO_INFO, "src/foo.spec.luau"), {
@@ -1314,7 +1368,9 @@ describe(createWorkspaceRunStages, () => {
 		).rejects.toThrow(/Unknown project name/);
 	});
 
-	it("should resolve per-project setupFiles and setupFilesAfterEnv against the package's rojo tree", async () => {
+	it("should resolve per-project setupFiles and setupFilesAfterEnv against the package's rojo tree", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const { captured } = await runSetupFooAsync({
@@ -1334,7 +1390,7 @@ describe(createWorkspaceRunStages, () => {
 		);
 	});
 
-	it("should not build a rojo resolver for packages without setup files", async () => {
+	it("should not build a rojo resolver for packages without setup files", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = stageWorkspace(seedSpec(FOO_INFO, "src/foo.spec.luau"), {
@@ -1358,7 +1414,7 @@ describe(createWorkspaceRunStages, () => {
 		expect(createSetupResolver).not.toHaveBeenCalled();
 	});
 
-	it("should resolve a project that declares only setupFiles", async () => {
+	it("should resolve a project that declares only setupFiles", async ({ expect }) => {
 		expect.assertions(2);
 
 		const { captured } = await runSetupFooAsync({ setupFiles: SETUP });
@@ -1369,7 +1425,7 @@ describe(createWorkspaceRunStages, () => {
 		expect(dispatchedScript(captured)).not.toContain('"setupFilesAfterEnv"');
 	});
 
-	it("should resolve a project that declares only setupFilesAfterEnv", async () => {
+	it("should resolve a project that declares only setupFilesAfterEnv", async ({ expect }) => {
 		expect.assertions(2);
 
 		const { captured } = await runSetupFooAsync({ setupFilesAfterEnv: SETUP });
@@ -1380,7 +1436,9 @@ describe(createWorkspaceRunStages, () => {
 		expect(dispatchedScript(captured)).not.toContain('"setupFiles":');
 	});
 
-	it("should honor per-package rojoProject from each package's own jest.config", async () => {
+	it("should honor per-package rojoProject from each package's own jest.config", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const { fileSystem } = stageWorkspace(
@@ -1431,7 +1489,9 @@ describe(createWorkspaceRunStages, () => {
 		expect(results!.map((entry) => entry.pkg)).toStrictEqual(["@halcyon/foo", "@halcyon/bar"]);
 	});
 
-	it("should resolve a Nevermore-style subdir rojoProject that mounts the package via '..'", async () => {
+	it("should resolve a Nevermore-style subdir rojoProject that mounts the package via '..'", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const projects = makeProjectEntries([
@@ -1485,7 +1545,9 @@ describe(createWorkspaceRunStages, () => {
 	// rojoProject (directly or via extends); the workspace-root config
 	// silently dropping a custom value into per-pkg lookups was the same
 	// "workspace-root vs per-pkg" leak as the other A2 sites.
-	it("should NOT fall back to workspace-root config.rojoProject when the package config omits it", async () => {
+	it("should NOT fall back to workspace-root config.rojoProject when the package config omits it", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		// Bar's per-pkg config has no rojoProject. Previously the middle
@@ -1518,7 +1580,9 @@ describe(createWorkspaceRunStages, () => {
 		expect(results).toBeUndefined();
 	});
 
-	it("should drop empty packages from the materializer payload while keeping packages with specs", async () => {
+	it("should drop empty packages from the materializer payload while keeping packages with specs", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const { captured, results } = await runScenarioAsync({
@@ -1547,7 +1611,9 @@ describe(createWorkspaceRunStages, () => {
 		expect(results!.map((entry) => entry.pkg)).toStrictEqual(["@halcyon/foo"]);
 	});
 
-	it("should pass with no tests when passWithNoTests is true and zero specs are discovered", async () => {
+	it("should pass with no tests when passWithNoTests is true and zero specs are discovered", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const { fileSystem } = stageWorkspace(
@@ -1576,7 +1642,9 @@ describe(createWorkspaceRunStages, () => {
 		);
 	});
 
-	it("should honor per-package passWithNoTests when the workspace config does not set it", async () => {
+	it("should honor per-package passWithNoTests when the workspace config does not set it", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		// Package opts in to passWithNoTests via its OWN jest.config; the
@@ -1601,7 +1669,9 @@ describe(createWorkspaceRunStages, () => {
 		expect(results).toStrictEqual([]);
 	});
 
-	it("should error when one package has zero tests and its own passWithNoTests is false even if another package opts in", async () => {
+	it("should error when one package has zero tests and its own passWithNoTests is false even if another package opts in", async ({
+		expect,
+	}) => {
 		expect.assertions(3);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -1617,7 +1687,7 @@ describe(createWorkspaceRunStages, () => {
 			...WORKSPACE_YAML,
 		});
 
-		setLoadedConfigPerPackage({
+		setLoadedConfigPerPackage(fileSystem, {
 			[BAR_DIR]: rooted(BAR_DIR),
 			[FOO_DIR]: rooted(FOO_DIR, {
 				passWithNoTests: true,
@@ -1637,7 +1707,9 @@ describe(createWorkspaceRunStages, () => {
 		expect(stderr).not.toHaveBeenCalledWith(expect.stringMatching(/@halcyon\/foo/));
 	});
 
-	it("should map each backend result to a WorkspaceProjectResult preserving pkg + project axes", async () => {
+	it("should map each backend result to a WorkspaceProjectResult preserving pkg + project axes", async ({
+		expect,
+	}) => {
 		expect.assertions(4);
 
 		const { results } = await runScenarioAsync({
@@ -1675,7 +1747,9 @@ describe(createWorkspaceRunStages, () => {
 		expect(results![2]!.result.exitCode).toBe(0);
 	});
 
-	it("should auto-create $path directories that have child entries even with extension", async () => {
+	it("should auto-create $path directories that have child entries even with extension", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const projects = makeProjectEntries([
@@ -1720,7 +1794,7 @@ describe(createWorkspaceRunStages, () => {
 		expect(volume.statSync(path.join(FOO_DIR, "src/init.luau")).isFile()).toBeTrue();
 	});
 
-	it("should include dotted-name directories as virtual-wrap mounts", async () => {
+	it("should include dotted-name directories as virtual-wrap mounts", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { captured } = await runScenarioAsync({
@@ -1754,7 +1828,9 @@ describe(createWorkspaceRunStages, () => {
 	});
 
 	describe("coverage", () => {
-		it("should embed runnerCoverage in the materializer config when collectCoverage is set", async () => {
+		it("should embed runnerCoverage in the materializer config when collectCoverage is set", async ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			const { fileSystem } = stageWorkspace(seedSpec(FOO_INFO, "src/foo.spec.luau"), {
@@ -1797,7 +1873,9 @@ describe(createWorkspaceRunStages, () => {
 			expect(dispatchedScript(captured)).toContain('"runnerCoverage":true');
 		});
 
-		it("should expose per-package coverage descriptors on the workspace result", async () => {
+		it("should expose per-package coverage descriptors on the workspace result", async ({
+			expect,
+		}) => {
 			expect.assertions(2);
 
 			const { fileSystem } = stageWorkspace(seedSpec(FOO_INFO, "src/foo.spec.luau"), {
@@ -1842,7 +1920,9 @@ describe(createWorkspaceRunStages, () => {
 			expect(results![0]!.pkg).toBe("@halcyon/foo");
 		});
 
-		it("should carry the package's own coverage report settings onto the workspace result", async () => {
+		it("should carry the package's own coverage report settings onto the workspace result", async ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			const { fileSystem } = stageWorkspace(seedSpec(FOO_INFO, "src/foo.spec.luau"), {
@@ -1885,7 +1965,9 @@ describe(createWorkspaceRunStages, () => {
 			});
 		});
 
-		it("should warn when a package declares coverageThreshold without collectCoverage", async () => {
+		it("should warn when a package declares coverageThreshold without collectCoverage", async ({
+			expect,
+		}) => {
 			expect.assertions(2);
 
 			// foo's threshold can never be enforced (no instrumentation without
@@ -1923,7 +2005,9 @@ describe(createWorkspaceRunStages, () => {
 			expect(warnings[0]).not.toContain("@halcyon/bar");
 		});
 
-		it("should not call prepareWorkspaceCoverage when collectCoverage is false", async () => {
+		it("should not call prepareWorkspaceCoverage when collectCoverage is false", async ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			const { fileSystem } = stageWorkspace(seedSpec(FOO_INFO, "src/foo.spec.luau"), {
@@ -1943,7 +2027,9 @@ describe(createWorkspaceRunStages, () => {
 			expect(prepareCoverage).not.toHaveBeenCalled();
 		});
 
-		it("should emit per-package build manifests over the built place after a coverage run", async () => {
+		it("should emit per-package build manifests over the built place after a coverage run", async ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			const { entry, fileSystem } = await runCoverageFooAsync();
@@ -1953,7 +2039,9 @@ describe(createWorkspaceRunStages, () => {
 			);
 		});
 
-		it("should not emit a build manifest when the shared place build fails", async () => {
+		it("should not emit a build manifest when the shared place build fails", async ({
+			expect,
+		}) => {
 			expect.assertions(2);
 
 			const { fileSystem } = stageWorkspace(seedSpec(FOO_INFO, "src/foo.spec.luau"), {
@@ -1981,7 +2069,7 @@ describe(createWorkspaceRunStages, () => {
 			expect(fileSystem.existsSync(buildManifestPath(entry.manifestPath))).toBeFalse();
 		});
 
-		it("should not emit a build manifest when coverage is disabled", async () => {
+		it("should not emit a build manifest when coverage is disabled", async ({ expect }) => {
 			expect.assertions(1);
 
 			const { fileSystem } = await runScenarioAsync({
@@ -2003,7 +2091,7 @@ describe(createWorkspaceRunStages, () => {
 		});
 	});
 
-	it("should measure the place staging as stagingMs", async () => {
+	it("should measure the place staging as stagingMs", async ({ expect }) => {
 		expect.assertions(3);
 
 		const { fileSystem } = stageWorkspace(seedSpec(FOO_INFO, "src/foo.spec.luau"), {
@@ -2038,7 +2126,7 @@ describe(createWorkspaceRunStages, () => {
 		expect(output!.results[0]!.result.timing.startTime).toBe(1_900);
 	});
 
-	it("should report the coverage bake apart from the staging around it", async () => {
+	it("should report the coverage bake apart from the staging around it", async ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem } = stageWorkspace(seedSpec(FOO_INFO, "src/foo.spec.luau"), {
@@ -2080,7 +2168,7 @@ describe(createWorkspaceRunStages, () => {
 			});
 		}
 
-		it("should ask an Open Cloud backend to work-steal when parallel>1", async () => {
+		it("should ask an Open Cloud backend to work-steal when parallel>1", async ({ expect }) => {
 			expect.assertions(3);
 
 			const { captured } = await runStealingFooAsync({
@@ -2092,7 +2180,9 @@ describe(createWorkspaceRunStages, () => {
 			expect(stealingOf(captured).onPackageResult).toBeUndefined();
 		});
 
-		it("should shard on parallel auto rather than falling back to one task", async () => {
+		it("should shard on parallel auto rather than falling back to one task", async ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			const { captured } = await runStealingFooAsync({
@@ -2102,7 +2192,7 @@ describe(createWorkspaceRunStages, () => {
 			expect(stealingOf(captured).parallel).toBe("auto");
 		});
 
-		it("should keep the deferrable path when parallel is unset", async () => {
+		it("should keep the deferrable path when parallel is unset", async ({ expect }) => {
 			expect.assertions(1);
 
 			const { captured } = await runStealingFooAsync({ runOptions: makeRunOptions() });
@@ -2110,7 +2200,9 @@ describe(createWorkspaceRunStages, () => {
 			expect(captured.options!.sharding.kind).toBe("deferrable");
 		});
 
-		it("should route each streamed entry once through the supplied onStreamingResult", async () => {
+		it("should route each streamed entry once through the supplied onStreamingResult", async ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			const seen: Array<string> = [];
@@ -2129,7 +2221,7 @@ describe(createWorkspaceRunStages, () => {
 			const { backend } = createStubBackend(passingEntries("@halcyon/foo"));
 			const wrappedBackend: Backend = {
 				kind: "open-cloud",
-				runTestsAsync: async (options: OpenCloudDispatch) => {
+				runTestsAsync: async (options) => {
 					const { onPackageResult } = stealingOf({ options });
 					onPackageResult!(streamedEntry);
 					onPackageResult!(streamedEntry);
@@ -2155,7 +2247,7 @@ describe(createWorkspaceRunStages, () => {
 		// A bailed run comes back short by design. The packages it never reached
 		// must drop out of the results rather than pair with a sibling's entry,
 		// and they must be named so the report can say the run stopped early.
-		it("should drop the packages a bailed run never reached", async () => {
+		it("should drop the packages a bailed run never reached", async ({ expect }) => {
 			expect.assertions(3);
 
 			const { fileSystem } = stageWorkspace(fooBarFiles(), {
@@ -2184,7 +2276,7 @@ describe(createWorkspaceRunStages, () => {
 		// A package with several projects is one package. When a bail stops it
 		// part-way, the package RAN. Naming it as not-run too would report the
 		// same package on both sides of the count.
-		it("should not report a partly-run package as one the bail skipped", async () => {
+		it("should not report a partly-run package as one the bail skipped", async ({ expect }) => {
 			expect.assertions(2);
 
 			const { fileSystem } = stageWorkspace(
@@ -2240,10 +2332,12 @@ describe(createWorkspaceRunStages, () => {
 	});
 
 	describe("type test units", () => {
-		it("should file the package's Type Test result under its type-test project", async () => {
+		it("should file the package's Type Test result under its type-test project", async ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
-			const { fileSystem } = stagePassingTypecheckFoo();
+			const { fileSystem, runTypecheck } = stagePassingTypecheckFoo();
 			const { backend } = createStubBackend([]);
 
 			const output = await runStagedWorkspaceAsync({
@@ -2251,6 +2345,7 @@ describe(createWorkspaceRunStages, () => {
 				cli: makeCli({ typecheckOnly: true }),
 				fileSystem,
 				packageInfos: [FOO_INFO],
+				runTypecheck,
 			});
 
 			expect(output!.typecheckUnits).toStrictEqual([
@@ -2270,7 +2365,9 @@ describe(createWorkspaceRunStages, () => {
 	});
 
 	describe("snapshot writeback", () => {
-		it("should route each package's envelope snapshotWrites to its own package directory without cross-package leak", async () => {
+		it("should route each package's envelope snapshotWrites to its own package directory without cross-package leak", async ({
+			expect,
+		}) => {
 			expect.assertions(4);
 
 			const { volume } = await runScenarioAsync({
@@ -2317,7 +2414,9 @@ describe(createWorkspaceRunStages, () => {
 			).toBeFalse();
 		});
 
-		it("should still write sibling snapshots and collect every result when one entry's envelope is a failure", async () => {
+		it("should still write sibling snapshots and collect every result when one entry's envelope is a failure", async ({
+			expect,
+		}) => {
 			expect.assertions(3);
 
 			const { fileSystem, volume } = stageWorkspace(fooBarFiles(), {
@@ -2385,15 +2484,19 @@ function makeTypeResult(overrides: Partial<JestResult> = {}): JestResult {
 }
 
 describe("workspace type tests", () => {
-	it("should check default type patterns when enabled and keep them out of Roblox Jest", async () => {
+	it("should check default type patterns when enabled and keep them out of Roblox Jest", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
+
+		const runTypecheck = vi.fn<typeof runTypecheckAsync>();
 
 		runTypecheck.mockResolvedValue(makeTypeResult());
 		const { captured } = await runScenarioAsync({
 			configs: { [FOO_DIR]: rooted(FOO_DIR) },
 			entries: [passingProjectEntry("@halcyon/foo", "foo")],
 			files: seedSpec(FOO_INFO, "src/foo.spec-d.ts", "src/foo.spec.ts"),
-			run: { cli: makeCli({ typecheck: true }), packageInfos: [FOO_INFO] },
+			run: { cli: makeCli({ typecheck: true }), packageInfos: [FOO_INFO], runTypecheck },
 		});
 
 		expect(runTypecheck).toHaveBeenCalledWith(
@@ -2404,8 +2507,12 @@ describe("workspace type tests", () => {
 		expect(dispatchedScript(captured)).toContain('"testMatch":["**/*.spec","**/*.test"]');
 	});
 
-	it("should discover a package's -d type tests via the derived include and return a typecheckResult", async () => {
+	it("should discover a package's -d type tests via the derived include and return a typecheckResult", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
+
+		const runTypecheck = vi.fn<typeof runTypecheckAsync>();
 
 		const { fileSystem } = stageWorkspace(
 			seedSpec(FOO_INFO, "src/foo.spec-d.ts", "src/foo.spec.ts"),
@@ -2429,6 +2536,7 @@ describe("workspace type tests", () => {
 			backend,
 			fileSystem,
 			packageInfos: [FOO_INFO],
+			runTypecheck,
 		});
 
 		expect(runTypecheck).toHaveBeenCalledWith(
@@ -2441,8 +2549,12 @@ describe("workspace type tests", () => {
 		expect(result!.typecheckResult).toBeDefined();
 	});
 
-	it("should skip discovered type test files when typechecking is disabled", async () => {
+	it("should skip discovered type test files when typechecking is disabled", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
+
+		const runTypecheck = vi.fn<typeof runTypecheckAsync>();
 
 		const { fileSystem } = stageWorkspace(
 			seedSpec(FOO_INFO, "src/foo.spec-d.ts", "src/foo.spec.ts"),
@@ -2462,6 +2574,7 @@ describe("workspace type tests", () => {
 			backend,
 			fileSystem,
 			packageInfos: [FOO_INFO],
+			runTypecheck,
 		});
 
 		assert(result !== undefined);
@@ -2473,8 +2586,10 @@ describe("workspace type tests", () => {
 
 	// The positional selects the type pass as well, so naming one type test
 	// checks that file rather than every `-d` file in the package it lives in.
-	it("should check only the type test a positional file names", async () => {
+	it("should check only the type test a positional file names", async ({ expect }) => {
 		expect.assertions(1);
+
+		const runTypecheck = vi.fn<typeof runTypecheckAsync>();
 
 		const { fileSystem } = stageWorkspace(
 			seedSpec(FOO_INFO, "src/other.spec-d.ts", "src/wanted.spec-d.ts"),
@@ -2495,6 +2610,7 @@ describe("workspace type tests", () => {
 			cli: makeCli({ files: [path.join(FOO_DIR, "src/wanted.spec-d.ts")] }),
 			fileSystem,
 			packageInfos: [FOO_INFO],
+			runTypecheck,
 		});
 
 		const { files } = runTypecheck.mock.calls[0]![0];
@@ -2508,8 +2624,12 @@ describe("workspace type tests", () => {
 	// The mirror of the case above: a runtime positional leaves the package's
 	// type tests out entirely, rather than checking them alongside the one file
 	// the user named.
-	it("should skip the type pass when a positional file names a runtime spec", async () => {
+	it("should skip the type pass when a positional file names a runtime spec", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
+
+		const runTypecheck = vi.fn<typeof runTypecheckAsync>();
 
 		await runScenarioAsync({
 			configs: {
@@ -2523,13 +2643,16 @@ describe("workspace type tests", () => {
 			run: {
 				cli: makeCli({ files: [path.join(FOO_DIR, "src/foo.spec.ts")] }),
 				packageInfos: [FOO_INFO],
+				runTypecheck,
 			},
 		});
 
 		expect(runTypecheck).not.toHaveBeenCalled();
 	});
 
-	it("should use an explicit test.typecheck.include instead of deriving from the runtime include", async () => {
+	it("should use an explicit test.typecheck.include instead of deriving from the runtime include", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const files = await typecheckFooFilesAsync(
@@ -2543,7 +2666,9 @@ describe("workspace type tests", () => {
 		expect(files.some((file) => file.endsWith("foo.spec-d.ts"))).toBeFalse();
 	});
 
-	it("should subtract test.typecheck.exclude from the discovered type tests", async () => {
+	it("should subtract test.typecheck.exclude from the discovered type tests", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const files = await typecheckFooFilesAsync(
@@ -2557,8 +2682,12 @@ describe("workspace type tests", () => {
 		expect(files.some((file) => file.endsWith("a.gen.spec-d.ts"))).toBeFalse();
 	});
 
-	it("should collapse multi-project packages sharing a tsconfig into one tsgo group at the package directory", async () => {
+	it("should collapse multi-project packages sharing a tsconfig into one tsgo group at the package directory", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
+
+		const runTypecheck = vi.fn<typeof runTypecheckAsync>();
 
 		const projects = makeProjectEntries([
 			{ test: { displayName: "client", include: ["out/Client/**/*.spec.ts"] } },
@@ -2600,6 +2729,7 @@ describe("workspace type tests", () => {
 			backend,
 			fileSystem,
 			packageInfos: [FOO_INFO],
+			runTypecheck,
 		});
 
 		expect(runTypecheck).toHaveBeenCalledExactlyOnceWith(
@@ -2610,8 +2740,12 @@ describe("workspace type tests", () => {
 		);
 	});
 
-	it("should form distinct groups per package even when they share the same relative tsconfig name", async () => {
+	it("should form distinct groups per package even when they share the same relative tsconfig name", async ({
+		expect,
+	}) => {
 		expect.assertions(3);
+
+		const runTypecheck = vi.fn<typeof runTypecheckAsync>();
 
 		const { fileSystem } = stageWorkspace(
 			{
@@ -2641,6 +2775,7 @@ describe("workspace type tests", () => {
 			backend,
 			fileSystem,
 			packageInfos: [FOO_INFO, BAR_INFO],
+			runTypecheck,
 		});
 
 		expect(runTypecheck).toHaveBeenCalledTimes(2);
@@ -2653,8 +2788,12 @@ describe("workspace type tests", () => {
 		).toBeTrue();
 	});
 
-	it("should compose package identity onto each merged type test file result", async () => {
+	it("should compose package identity onto each merged type test file result", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
+
+		const runTypecheck = vi.fn<typeof runTypecheckAsync>();
 
 		const { fileSystem } = stageWorkspace(
 			{
@@ -2698,6 +2837,7 @@ describe("workspace type tests", () => {
 			backend,
 			fileSystem,
 			packageInfos: [FOO_INFO, BAR_INFO],
+			runTypecheck,
 		});
 
 		const paths = result!.typecheckResult!.testResults.map((file) => file.testFilePath);
@@ -2706,8 +2846,10 @@ describe("workspace type tests", () => {
 		expect(paths).toContain("@halcyon/bar/src/index.spec-d.ts");
 	});
 
-	it("should run the type pass concurrently with the Open Cloud run", async () => {
+	it("should run the type pass concurrently with the Open Cloud run", async ({ expect }) => {
 		expect.assertions(1);
+
+		const runTypecheck = vi.fn<typeof runTypecheckAsync>();
 
 		const { fileSystem } = stageWorkspace(
 			seedSpec(FOO_INFO, "src/foo.spec-d.ts", "src/foo.spec.ts"),
@@ -2756,13 +2898,18 @@ describe("workspace type tests", () => {
 			backend,
 			fileSystem,
 			packageInfos: [FOO_INFO],
+			runTypecheck,
 		});
 
 		expect(result!.typecheckResult).toBeDefined();
 	});
 
-	it("should short-circuit --typecheckOnly: no place build, no backend dispatch, only the type pass", async () => {
+	it("should short-circuit --typecheckOnly: no place build, no backend dispatch, only the type pass", async ({
+		expect,
+	}) => {
 		expect.assertions(4);
+
+		const runTypecheck = vi.fn<typeof runTypecheckAsync>();
 
 		const { fileSystem } = stageWorkspace(
 			seedSpec(FOO_INFO, "src/foo.spec-d.ts", "src/foo.spec.ts"),
@@ -2782,6 +2929,7 @@ describe("workspace type tests", () => {
 			cli: makeCli({ typecheckOnly: true }),
 			fileSystem,
 			packageInfos: [FOO_INFO],
+			runTypecheck,
 		});
 
 		expect(captured.options).toBeUndefined();
@@ -2790,8 +2938,12 @@ describe("workspace type tests", () => {
 		expect(result!.results).toHaveLength(0);
 	});
 
-	it("should open no backend when every project is type-only through its config", async () => {
+	it("should open no backend when every project is type-only through its config", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
+
+		const runTypecheck = vi.fn<typeof runTypecheckAsync>();
 
 		const { fileSystem } = stageWorkspace(
 			seedSpec(FOO_INFO, "src/foo.spec-d.ts", "src/foo.spec.ts"),
@@ -2804,13 +2956,17 @@ describe("workspace type tests", () => {
 		);
 		runTypecheck.mockResolvedValue(makeTypeResult());
 
-		const result = await runStagedWorkspaceAsync({ fileSystem, packageInfos: [FOO_INFO] });
+		const result = await runStagedWorkspaceAsync({
+			fileSystem,
+			packageInfos: [FOO_INFO],
+			runTypecheck,
+		});
 
 		expect(result!.results).toStrictEqual([]);
 		expect(result!.typecheckResult).toBeDefined();
 	});
 
-	it("should close the backend it opened when the dispatch fails", async () => {
+	it("should close the backend it opened when the dispatch fails", async ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem } = stageWorkspace(seedSpec(FOO_INFO, "src/foo.spec.luau"), {
@@ -2832,8 +2988,12 @@ describe("workspace type tests", () => {
 		expect(closeAsync).toHaveBeenCalledOnce();
 	});
 
-	it("should report results for a type-test-only package rather than erroring on no runtime specs", async () => {
+	it("should report results for a type-test-only package rather than erroring on no runtime specs", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
+
+		const runTypecheck = vi.fn<typeof runTypecheckAsync>();
 
 		// passWithNoTests defaults false; only a `.spec-d.ts` exists, so runtime
 		// discovery finds nothing. The package must not error; its type tests
@@ -2858,6 +3018,7 @@ describe("workspace type tests", () => {
 			backend,
 			fileSystem,
 			packageInfos: [FOO_INFO],
+			runTypecheck,
 		});
 
 		expect(result).toBeDefined();

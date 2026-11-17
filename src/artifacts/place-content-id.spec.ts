@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import type { PlaceCoveringSet } from "./place-content-id.ts";
 import { computePlaceContentId } from "./place-content-id.ts";
@@ -17,7 +17,7 @@ function covering(): PlaceCoveringSet {
 }
 
 describe(computePlaceContentId, () => {
-	it("should digest the covering set to a stable literal", () => {
+	it("should digest the covering set to a stable literal", ({ expect }) => {
 		expect.assertions(1);
 
 		// Pinned to the literal: the id is stamped into a place and compared
@@ -26,7 +26,7 @@ describe(computePlaceContentId, () => {
 		expect(computePlaceContentId(covering())).toBe(DIGEST);
 	});
 
-	it("should not depend on the order the records were recorded in", () => {
+	it("should not depend on the order the records were recorded in", ({ expect }) => {
 		expect.assertions(1);
 
 		// The maps' key order is the order the instrumenter walked in, which two
@@ -38,7 +38,7 @@ describe(computePlaceContentId, () => {
 		expect(computePlaceContentId({ ...covering(), files })).toBe(DIGEST);
 	});
 
-	it("should move when only an unprobed file moves", () => {
+	it("should move when only an unprobed file moves", ({ expect }) => {
 		expect.assertions(1);
 
 		// The specs the place carries decide every verdict, and no probed file

@@ -2,7 +2,7 @@ import { loadLuauParser } from "@isentinel/luau-ast/parser";
 
 import { type } from "arktype";
 import process from "node:process";
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import { clockTimingCollector } from "#test/mocks/clock-timing-collector.ts";
 import { copyIgnoreMatcher } from "#test/mocks/coverage-copy-ignore.ts";
@@ -62,7 +62,9 @@ describe(nodeInstrumenter, () => {
 	// `_G.__jest_roblox_cov[__cov_file_key]` with it. If the two writers diverge,
 	// coverage maps to the wrong lines across machines with no type error.
 	describe("cross-machine join key", () => {
-		it("should bake the manifest file key verbatim into the instrumented preamble", () => {
+		it("should bake the manifest file key verbatim into the instrumented preamble", ({
+			expect,
+		}) => {
 			expect.assertions(2);
 
 			const { fileSystem, volume } = setupFilesystem({
@@ -90,7 +92,7 @@ describe(nodeInstrumenter, () => {
 	// leaves them behind because every reader opens the one in `outDir`. This
 	// pins the coverage half of that; the stack mapper's half holds because a
 	// coverage run swaps only `placeFile`, never `rojoProject`.
-	it("should record each source map against the source root, not the shadow", () => {
+	it("should record each source map against the source root, not the shadow", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = setupFilesystem({ files: { "init.luau": "local x = 1\n" } });
@@ -106,7 +108,7 @@ describe(nodeInstrumenter, () => {
 	// reads those names back from the disk. If the root keeps a leading `./`,
 	// each name loses two characters and the read fails with an ENOENT for a
 	// file that does not exist.
-	it("should instrument a root written with a ./ prefix", () => {
+	it("should instrument a root written with a ./ prefix", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = setupFilesystem({
@@ -124,7 +126,7 @@ describe(nodeInstrumenter, () => {
 	});
 
 	describe("when copy-ignored paths are provided", () => {
-		it("should never instrument a path the shadow will not carry", () => {
+		it("should never instrument a path the shadow will not carry", ({ expect }) => {
 			expect.assertions(1);
 
 			const { fileSystem } = setupFilesystem({
@@ -143,7 +145,7 @@ describe(nodeInstrumenter, () => {
 	});
 
 	describe("when skipFiles is provided", () => {
-		it("should skip files listed in skipFiles", () => {
+		it("should skip files listed in skipFiles", ({ expect }) => {
 			expect.assertions(2);
 
 			const { fileSystem } = setupFilesystem({
@@ -163,7 +165,7 @@ describe(nodeInstrumenter, () => {
 			expect(keys).not.toContain("/luau-root/shared/player.luau");
 		});
 
-		it("should not parse a skipped file at all", () => {
+		it("should not parse a skipped file at all", ({ expect }) => {
 			expect.assertions(1);
 
 			// The skipped file does not even parse, proven by it being
@@ -183,7 +185,7 @@ describe(nodeInstrumenter, () => {
 		});
 	});
 
-	it("should throw a contextual error for an unparseable file", () => {
+	it("should throw a contextual error for an unparseable file", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = setupFilesystem({ files: { "init.luau": "local =\nlocal =\n" } });
@@ -205,7 +207,7 @@ describe(nodeInstrumenter, () => {
 	});
 
 	describe("when the root includes spec, test, and snapshot files", () => {
-		it("should exclude them from instrumentation", () => {
+		it("should exclude them from instrumentation", ({ expect }) => {
 			expect.assertions(1);
 
 			const { fileSystem } = setupFilesystem({
@@ -231,7 +233,7 @@ describe(nodeInstrumenter, () => {
 	// directory per file spends a recursive stat/mkdir chain to make something
 	// the previous sibling already made, thousands of them over a real root.
 	describe("when several files share a shadow directory", () => {
-		it("should create each directory once for the twin, not once per file", () => {
+		it("should create each directory once for the twin, not once per file", ({ expect }) => {
 			expect.assertions(3);
 
 			const { fileSystem, volume } = setupFilesystem({
@@ -291,7 +293,7 @@ describe(nodeInstrumenter, () => {
 	});
 
 	describe("when instrumenting a single root", () => {
-		it("should return file records without writing a manifest", () => {
+		it("should return file records without writing a manifest", ({ expect }) => {
 			expect.assertions(2);
 
 			const { fileSystem, volume } = setupFilesystem();
@@ -308,7 +310,7 @@ describe(nodeInstrumenter, () => {
 	});
 
 	describe("when a timing profiler is supplied", () => {
-		it("should record every step of the per-file pass", () => {
+		it("should record every step of the per-file pass", ({ expect }) => {
 			expect.assertions(1);
 
 			const { fileSystem } = setupFilesystem();
@@ -346,7 +348,7 @@ describe(nodeInstrumenter, () => {
 		// Neither clash reaches the mirror walk's `createShadowDirectory`:
 		// `prepareShadowRoot` instruments before it mirrors, so the
 		// instrumenter is the pass that has to survive both.
-		it("should replace a directory sitting on a twin's own path", () => {
+		it("should replace a directory sitting on a twin's own path", ({ expect }) => {
 			expect.assertions(1);
 
 			const { fileSystem, volume } = setupFilesystem();
@@ -358,7 +360,7 @@ describe(nodeInstrumenter, () => {
 			expect(volume.readFileSync("/shadow/init.luau", "utf-8")).toContain("__cov_file_key");
 		});
 
-		it("should replace a file sitting on a directory above a twin", () => {
+		it("should replace a file sitting on a directory above a twin", ({ expect }) => {
 			expect.assertions(1);
 
 			const { fileSystem, volume } = setupFilesystem({
@@ -378,7 +380,7 @@ describe(nodeInstrumenter, () => {
 
 describe("nodeInstrumenter output", () => {
 	describe("when processing discovered files", () => {
-		it("should create file records for each discovered file", () => {
+		it("should create file records for each discovered file", ({ expect }) => {
 			expect.assertions(3);
 
 			const { fileSystem } = setupFilesystem({
@@ -396,7 +398,7 @@ describe("nodeInstrumenter output", () => {
 	});
 
 	describe("when writing output", () => {
-		it("should write instrumented files to shadowDir preserving structure", () => {
+		it("should write instrumented files to shadowDir preserving structure", ({ expect }) => {
 			expect.assertions(1);
 
 			const { fileSystem, volume } = setupFilesystem({
@@ -408,7 +410,7 @@ describe("nodeInstrumenter output", () => {
 			expect(volume.existsSync("/shadow/shared/player.luau")).toBeTrue();
 		});
 
-		it("should include sourceHash in each file record", () => {
+		it("should include sourceHash in each file record", ({ expect }) => {
 			expect.assertions(1);
 
 			const { fileSystem } = setupFilesystem();
@@ -420,7 +422,7 @@ describe("nodeInstrumenter output", () => {
 			expect(record!.sourceHash).toMatch(/^[a-f0-9]{64}$/);
 		});
 
-		it("should emit manifest file records with correct metadata", () => {
+		it("should emit manifest file records with correct metadata", ({ expect }) => {
 			expect.assertions(3);
 
 			const { fileSystem } = setupFilesystem({ files: { "init.luau": "local x = 1\n" } });
@@ -432,7 +434,7 @@ describe("nodeInstrumenter output", () => {
 			expect(result.files["/luau-root/init.luau"]!.key).toBe("/luau-root/init.luau");
 		});
 
-		it("should write covmap sidecar for each file", () => {
+		it("should write covmap sidecar for each file", ({ expect }) => {
 			expect.assertions(2);
 
 			const { fileSystem, volume } = setupFilesystem({
@@ -450,7 +452,7 @@ describe("nodeInstrumenter output", () => {
 		// `.luau$` left the cov-map path identical to the instrumented source
 		// path, so the JSON write clobbered the Lua text. Every `require`
 		// through RuntimeLib then failed at load.
-		it("should write covmap sidecar without clobbering .lua source", () => {
+		it("should write covmap sidecar without clobbering .lua source", ({ expect }) => {
 			expect.assertions(2);
 
 			const { fileSystem, volume } = setupFilesystem({
@@ -465,7 +467,7 @@ describe("nodeInstrumenter output", () => {
 	});
 
 	describe("when normalizing paths", () => {
-		it("should normalize paths to POSIX format", () => {
+		it("should normalize paths to POSIX format", ({ expect }) => {
 			expect.assertions(3);
 
 			const { fileSystem } = setupFilesystem({
@@ -487,7 +489,7 @@ describe("nodeInstrumenter output", () => {
 });
 
 describe("nodeInstrumenter on a luau project", () => {
-	it("should instrument the source module and leave its spec alone", () => {
+	it("should instrument the source module and leave its spec alone", ({ expect }) => {
 		expect.assertions(3);
 
 		const { fileSystem, volume } = setupFilesystem({
@@ -543,7 +545,7 @@ function instrumentSource(source: string) {
 }
 
 describe("instrumented luau syntax", () => {
-	it("should emit parseable luau for an else body holding only a comment", () => {
+	it("should emit parseable luau for an else body holding only a comment", ({ expect }) => {
 		expect.assertions(2);
 
 		const result = instrumentSource(
@@ -562,7 +564,9 @@ describe("instrumented luau syntax", () => {
 		expect(result.branchArmCounts).toStrictEqual([2]);
 	});
 
-	it("should emit parseable luau for an if/elseif chain ending in a comment-only else", () => {
+	it("should emit parseable luau for an if/elseif chain ending in a comment-only else", ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const result = instrumentSource(
@@ -585,7 +589,7 @@ describe("instrumented luau syntax", () => {
 		expect(result.branchArmCounts).toStrictEqual([4]);
 	});
 
-	it("should emit parseable luau for an else body with nothing in it", () => {
+	it("should emit parseable luau for an else body with nothing in it", ({ expect }) => {
 		expect.assertions(2);
 
 		const result = instrumentSource(
@@ -598,7 +602,7 @@ describe("instrumented luau syntax", () => {
 		expect(result.branchArmCounts).toStrictEqual([2]);
 	});
 
-	it("should emit parseable luau for empty function and loop bodies", () => {
+	it("should emit parseable luau for empty function and loop bodies", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = instrumentSource(
@@ -616,7 +620,7 @@ describe("instrumented luau syntax", () => {
 		expect(result.parseFailure).toBeUndefined();
 	});
 
-	it("should keep the arm counter inside an else body that has statements", () => {
+	it("should keep the arm counter inside an else body that has statements", ({ expect }) => {
 		expect.assertions(4);
 
 		const result = instrumentSource(

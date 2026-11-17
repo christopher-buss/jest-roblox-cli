@@ -1,6 +1,6 @@
 import { fromAny } from "@total-typescript/shoehorn";
 
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import type { ChildProcessRunner } from "./child-process.ts";
 import { buildWithRojoAsync } from "./rojo-builder.ts";
@@ -26,7 +26,7 @@ function answeringWith(cause: Error | null, stderr = ""): ChildProcessRunner {
 }
 
 describe(buildWithRojoAsync, () => {
-	it("should invoke rojo build with the project path and output path", async () => {
+	it("should invoke rojo build with the project path and output path", async ({ expect }) => {
 		expect.assertions(1);
 
 		const childProcess = answeringWith(null);
@@ -45,7 +45,7 @@ describe(buildWithRojoAsync, () => {
 		);
 	});
 
-	it("should throw a friendly error when rojo is not found on PATH", async () => {
+	it("should throw a friendly error when rojo is not found on PATH", async ({ expect }) => {
 		expect.assertions(1);
 
 		const childProcess = answeringWith(
@@ -61,7 +61,7 @@ describe(buildWithRojoAsync, () => {
 		).rejects.toThrowWithMessage(Error, "rojo was not found on PATH");
 	});
 
-	it("should report what the failed child wrote to stderr", async () => {
+	it("should report what the failed child wrote to stderr", async ({ expect }) => {
 		expect.assertions(1);
 
 		const childProcess = answeringWith(
@@ -81,7 +81,7 @@ describe(buildWithRojoAsync, () => {
 		);
 	});
 
-	it("should use the generic message when the child wrote no stderr", async () => {
+	it("should use the generic message when the child wrote no stderr", async ({ expect }) => {
 		expect.assertions(1);
 
 		const childProcess = answeringWith(new Error("rojo exited with code 1"));
@@ -95,7 +95,7 @@ describe(buildWithRojoAsync, () => {
 		).rejects.toThrowWithMessage(Error, "rojo build failed");
 	});
 
-	it("should propagate other rojo errors with context", async () => {
+	it("should propagate other rojo errors with context", async ({ expect }) => {
 		expect.assertions(2);
 
 		const originalError = new Error("rojo exited with code 1");

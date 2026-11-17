@@ -1,10 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { STAGE_KEY } from "../protocol/staged-place.ts";
 import { findStage } from "./stage.ts";
 
 describe(findStage, () => {
-	it("should find the stage under ServerStorage", () => {
+	it("should find the stage under ServerStorage", ({ expect }) => {
 		expect.assertions(1);
 
 		const stage = { $className: "Folder" };
@@ -12,19 +12,19 @@ describe(findStage, () => {
 		expect(findStage({ tree: { ServerStorage: { [STAGE_KEY]: stage } } })).toBe(stage);
 	});
 
-	it("should report no stage when the tree is missing", () => {
+	it("should report no stage when the tree is missing", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(findStage({})).toBeUndefined();
 	});
 
-	it("should report no stage when ServerStorage is missing", () => {
+	it("should report no stage when ServerStorage is missing", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(findStage({ tree: { ReplicatedStorage: {} } })).toBeUndefined();
 	});
 
-	it("should report no stage when ServerStorage holds none", () => {
+	it("should report no stage when ServerStorage holds none", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(findStage({ tree: { ServerStorage: { Other: {} } } })).toBeUndefined();

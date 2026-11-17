@@ -1,12 +1,14 @@
 import * as path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { buildCoverageMap } from "./istanbul-coverage-map.ts";
 
 const LOC = { end: { column: 1, line: 5 }, start: { column: 0, line: 2 } };
 
 describe(buildCoverageMap, () => {
-	it("should key each file by its absolute path and add the line and decl istanbul expects", () => {
+	it("should key each file by its absolute path and add the line and decl istanbul expects", ({
+		expect,
+	}) => {
 		expect.assertions(3);
 
 		const coverageMap = buildCoverageMap({

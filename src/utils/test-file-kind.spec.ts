@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import {
 	isLuauTestFile,
@@ -23,7 +23,7 @@ describe(isTypeTestFile, () => {
 		["foo.spec-d.lua", false],
 		["foo_spec-d.ts", false],
 		["foo.spec-d/ts", false],
-	] as const)("should classify %s as %s", ([file, expected]) => {
+	] as const)("should classify %s as %s", ([file, expected], { expect }) => {
 		expect.assertions(1);
 
 		expect(isTypeTestFile(file)).toBe(expected);
@@ -38,7 +38,7 @@ describe(isLuauTypeTestFile, () => {
 		["foo.spec.luau", false],
 		["foo_spec-d.luau", false],
 		["foo.spec-d/luau", false],
-	] as const)("should classify %s as %s", ([file, expected]) => {
+	] as const)("should classify %s as %s", ([file, expected], { expect }) => {
 		expect.assertions(1);
 
 		expect(isLuauTypeTestFile(file)).toBe(expected);
@@ -52,7 +52,7 @@ describe(toTypeTestPattern, () => {
 		["src/**/*.spec.tsx", "src/**/*.spec.tsx"],
 		["src/**/*_spec.ts", "src/**/*_spec.ts"],
 		["src/**/*.spec/ts", "src/**/*.spec/ts"],
-	] as const)("should turn %s into %s", ([pattern, expected]) => {
+	] as const)("should turn %s into %s", ([pattern, expected], { expect }) => {
 		expect.assertions(1);
 
 		expect(toTypeTestPattern(pattern)).toBe(expected);
@@ -60,7 +60,7 @@ describe(toTypeTestPattern, () => {
 });
 
 describe(toRobloxTestMatch, () => {
-	it("should strip .ts and drop the type-test globs", () => {
+	it("should strip .ts and drop the type-test globs", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -70,7 +70,7 @@ describe(toRobloxTestMatch, () => {
 });
 
 describe(toRobloxTestPathIgnorePatterns, () => {
-	it("should add the type-test pattern once", () => {
+	it("should add the type-test pattern once", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -86,7 +86,7 @@ describe(sourceTwinOf, () => {
 		["/r/src/a.spec-d.ts", "/r/src/a.ts"],
 		["/r/src/a.ts", "/r/src/a.ts"],
 		["/r/src/a.spec.d/b.ts", "/r/src/a.spec.d/b.ts"],
-	] as const)("should map %s to %s", ([file, twin]) => {
+	] as const)("should map %s to %s", ([file, twin], { expect }) => {
 		expect.assertions(1);
 
 		expect(sourceTwinOf(file)).toBe(twin);
@@ -96,7 +96,7 @@ describe(sourceTwinOf, () => {
 describe(isLuauTestFile, () => {
 	it.for(["a.spec.luau", "a.test.luau", "a.spec.lua", "a.test.lua"])(
 		"should accept %s",
-		(file) => {
+		(file, { expect }) => {
 			expect.assertions(1);
 
 			expect(isLuauTestFile(file)).toBeTrue();
@@ -105,7 +105,7 @@ describe(isLuauTestFile, () => {
 
 	it.for(["a.luau", "a.spec.ts", "a.spec-d.luau", "a.snap.luau", "a.spec.luau.bak"])(
 		"should reject %s",
-		(file) => {
+		(file, { expect }) => {
 			expect.assertions(1);
 
 			expect(isLuauTestFile(file)).toBeFalse();

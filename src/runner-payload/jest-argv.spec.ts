@@ -1,6 +1,6 @@
 import { fromAny } from "@total-typescript/shoehorn";
 
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
 import type { ResolvedConfig } from "../config/resolved-config.ts";
@@ -15,7 +15,7 @@ function createOptions(overrides?: { config?: Partial<ResolvedConfig> }): JestAr
 }
 
 describe(buildJestArgv, () => {
-	it("should strip .tsx?, .lua, and .luau from testMatch patterns", () => {
+	it("should strip .tsx?, .lua, and .luau from testMatch patterns", ({ expect }) => {
 		expect.assertions(1);
 
 		const argv = buildJestArgv(
@@ -29,7 +29,7 @@ describe(buildJestArgv, () => {
 		expect(argv.testMatch).toStrictEqual(["**/*.spec", "**/*.test", "**/*.spec", "**/*.test"]);
 	});
 
-	it("should strip only a source extension at the end of a testMatch pattern", () => {
+	it("should strip only a source extension at the end of a testMatch pattern", ({ expect }) => {
 		expect.assertions(1);
 
 		const argv = buildJestArgv(
@@ -39,7 +39,7 @@ describe(buildJestArgv, () => {
 		expect(argv.testMatch).toStrictEqual(["**/*.spec.ts.backup", "**/*.spec"]);
 	});
 
-	it("should drop Type Test patterns from the Roblox testMatch", () => {
+	it("should drop Type Test patterns from the Roblox testMatch", ({ expect }) => {
 		expect.assertions(1);
 
 		const argv = buildJestArgv(
@@ -58,7 +58,7 @@ describe(buildJestArgv, () => {
 		expect(argv.testMatch).toStrictEqual(["**/*.spec", "**/*.test"]);
 	});
 
-	it("should ignore Type Test modules on top of the configured ignore patterns", () => {
+	it("should ignore Type Test modules on top of the configured ignore patterns", ({ expect }) => {
 		expect.assertions(1);
 
 		const argv = buildJestArgv(
@@ -68,7 +68,7 @@ describe(buildJestArgv, () => {
 		expect(argv.testPathIgnorePatterns).toStrictEqual(["/node_modules/", "\\.(spec|test)-d$"]);
 	});
 
-	it("should pass through bail when set", () => {
+	it("should pass through bail when set", ({ expect }) => {
 		expect.assertions(1);
 
 		const argv = buildJestArgv(createOptions({ config: { bail: 3 } }));
@@ -76,7 +76,7 @@ describe(buildJestArgv, () => {
 		expect(argv.bail).toBe(3);
 	});
 
-	it("should omit undefined passthrough values", () => {
+	it("should omit undefined passthrough values", ({ expect }) => {
 		expect.assertions(1);
 
 		const argv = buildJestArgv(createOptions({ config: { bail: undefined } }));
@@ -84,7 +84,7 @@ describe(buildJestArgv, () => {
 		expect(Object.hasOwn(argv, "bail")).toBeFalse();
 	});
 
-	it("should pass through clearMocks/resetMocks/restoreMocks", () => {
+	it("should pass through clearMocks/resetMocks/restoreMocks", ({ expect }) => {
 		expect.assertions(3);
 
 		const argv = buildJestArgv(
@@ -102,7 +102,7 @@ describe(buildJestArgv, () => {
 		expect(argv.restoreMocks).toBeTrue();
 	});
 
-	it("should pass through testTimeout", () => {
+	it("should pass through testTimeout", ({ expect }) => {
 		expect.assertions(1);
 
 		const argv = buildJestArgv(createOptions({ config: { testTimeout: 5000 } }));
@@ -110,7 +110,7 @@ describe(buildJestArgv, () => {
 		expect(argv.testTimeout).toBe(5000);
 	});
 
-	it("should pass through testNamePattern from config", () => {
+	it("should pass through testNamePattern from config", ({ expect }) => {
 		expect.assertions(1);
 
 		const argv = buildJestArgv(createOptions({ config: { testNamePattern: "my test" } }));
@@ -118,7 +118,7 @@ describe(buildJestArgv, () => {
 		expect(argv.testNamePattern).toBe("my test");
 	});
 
-	it("should pass through testPathPattern from config", () => {
+	it("should pass through testPathPattern from config", ({ expect }) => {
 		expect.assertions(1);
 
 		const argv = buildJestArgv(
@@ -130,7 +130,7 @@ describe(buildJestArgv, () => {
 		expect(argv).toHaveProperty(["testPathPattern"], "cleanup-destroyed");
 	});
 
-	it("should default reporters to empty array", () => {
+	it("should default reporters to empty array", ({ expect }) => {
 		expect.assertions(1);
 
 		const argv = buildJestArgv(createOptions());
@@ -138,7 +138,7 @@ describe(buildJestArgv, () => {
 		expect(argv.reporters).toBeEmpty();
 	});
 
-	it("should allocate the default reporters array independently", () => {
+	it("should allocate the default reporters array independently", ({ expect }) => {
 		expect.assertions(2);
 
 		const first = buildJestArgv(createOptions({ config: { reporters: undefined } }));
@@ -149,7 +149,7 @@ describe(buildJestArgv, () => {
 		expect(second.reporters).toStrictEqual([]);
 	});
 
-	it("should preserve user-supplied reporters", () => {
+	it("should preserve user-supplied reporters", ({ expect }) => {
 		expect.assertions(1);
 
 		const argv = buildJestArgv(createOptions({ config: { reporters: ["custom-reporter"] } }));
@@ -157,7 +157,7 @@ describe(buildJestArgv, () => {
 		expect(argv.reporters).toStrictEqual(["custom-reporter"]);
 	});
 
-	it("should inject runnerTiming when the run asks for it", () => {
+	it("should inject runnerTiming when the run asks for it", ({ expect }) => {
 		expect.assertions(1);
 
 		const argv = buildJestArgv({ ...createOptions(), runnerTiming: true });
@@ -165,7 +165,7 @@ describe(buildJestArgv, () => {
 		expect(argv).toHaveProperty("runnerTiming", true);
 	});
 
-	it("should not read runnerTiming from the TIMING env var", () => {
+	it("should not read runnerTiming from the TIMING env var", ({ expect }) => {
 		expect.assertions(1);
 
 		vi.stubEnv("TIMING", "1");
@@ -174,7 +174,7 @@ describe(buildJestArgv, () => {
 		expect(argv).not.toHaveProperty("runnerTiming");
 	});
 
-	it("should inject runnerTimeoutMs from projectTimeout", () => {
+	it("should inject runnerTimeoutMs from projectTimeout", ({ expect }) => {
 		expect.assertions(2);
 
 		const argv = buildJestArgv(createOptions({ config: { projectTimeout: 30_000 } }));
@@ -183,7 +183,7 @@ describe(buildJestArgv, () => {
 		expect(argv).not.toHaveProperty("projectTimeout");
 	});
 
-	it("should not inject runnerTimeoutMs when the budget is zero", () => {
+	it("should not inject runnerTimeoutMs when the budget is zero", ({ expect }) => {
 		expect.assertions(1);
 
 		const argv = buildJestArgv(createOptions({ config: { projectTimeout: 0 } }));
@@ -191,7 +191,7 @@ describe(buildJestArgv, () => {
 		expect(argv).not.toHaveProperty("runnerTimeoutMs");
 	});
 
-	it("should pass through snapshotFormat", () => {
+	it("should pass through snapshotFormat", ({ expect }) => {
 		expect.assertions(1);
 
 		const argv = buildJestArgv(
@@ -203,7 +203,7 @@ describe(buildJestArgv, () => {
 		expect(argv.snapshotFormat).toStrictEqual({ printBasicPrototype: false });
 	});
 
-	it("should not pass collectCoverage to Jest argv", () => {
+	it("should not pass collectCoverage to Jest argv", ({ expect }) => {
 		expect.assertions(1);
 
 		const argv = buildJestArgv(createOptions({ config: { collectCoverage: true } }));
@@ -211,7 +211,7 @@ describe(buildJestArgv, () => {
 		expect(argv).not.toHaveProperty("collectCoverage");
 	});
 
-	it("should inject runnerCoverage when collectCoverage is true", () => {
+	it("should inject runnerCoverage when collectCoverage is true", ({ expect }) => {
 		expect.assertions(1);
 
 		const argv = buildJestArgv(createOptions({ config: { collectCoverage: true } }));
@@ -219,7 +219,7 @@ describe(buildJestArgv, () => {
 		expect(argv).toHaveProperty("runnerCoverage", true);
 	});
 
-	it("should not inject runnerCoverage when collectCoverage is false", () => {
+	it("should not inject runnerCoverage when collectCoverage is false", ({ expect }) => {
 		expect.assertions(1);
 
 		const argv = buildJestArgv(createOptions({ config: { collectCoverage: false } }));
@@ -227,7 +227,7 @@ describe(buildJestArgv, () => {
 		expect(argv).not.toHaveProperty("runnerCoverage");
 	});
 
-	it("should inject runnerPerTestCoverage when collectPerTestCoverage is true", () => {
+	it("should inject runnerPerTestCoverage when collectPerTestCoverage is true", ({ expect }) => {
 		expect.assertions(1);
 
 		const argv = buildJestArgv(createOptions({ config: { collectPerTestCoverage: true } }));
@@ -235,7 +235,9 @@ describe(buildJestArgv, () => {
 		expect(argv).toHaveProperty("runnerPerTestCoverage", true);
 	});
 
-	it("should not inject runnerPerTestCoverage when collectPerTestCoverage is false", () => {
+	it("should not inject runnerPerTestCoverage when collectPerTestCoverage is false", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const argv = buildJestArgv(createOptions({ config: { collectPerTestCoverage: false } }));
@@ -243,7 +245,7 @@ describe(buildJestArgv, () => {
 		expect(argv).not.toHaveProperty("runnerPerTestCoverage");
 	});
 
-	it("should ask Jest for test locations when collectPerTestCoverage is true", () => {
+	it("should ask Jest for test locations when collectPerTestCoverage is true", ({ expect }) => {
 		expect.assertions(2);
 
 		expect(
@@ -254,7 +256,7 @@ describe(buildJestArgv, () => {
 		).not.toHaveProperty("testLocationInResults");
 	});
 
-	it("should not pass collectPerTestCoverage to Jest argv", () => {
+	it("should not pass collectPerTestCoverage to Jest argv", ({ expect }) => {
 		expect.assertions(1);
 
 		const argv = buildJestArgv(createOptions({ config: { collectPerTestCoverage: true } }));
@@ -262,7 +264,7 @@ describe(buildJestArgv, () => {
 		expect(argv).not.toHaveProperty("collectPerTestCoverage");
 	});
 
-	it("should not pass experimentalVmParallel to Jest argv", () => {
+	it("should not pass experimentalVmParallel to Jest argv", ({ expect }) => {
 		expect.assertions(1);
 
 		const argv = buildJestArgv(createOptions({ config: { experimentalVmParallel: 2 } }));
@@ -270,7 +272,7 @@ describe(buildJestArgv, () => {
 		expect(argv).not.toHaveProperty("experimentalVmParallel");
 	});
 
-	it("should not pass coverageDirectory to Jest argv", () => {
+	it("should not pass coverageDirectory to Jest argv", ({ expect }) => {
 		expect.assertions(1);
 
 		const argv = buildJestArgv(createOptions({ config: { coverageDirectory: "my-cov" } }));
@@ -278,7 +280,7 @@ describe(buildJestArgv, () => {
 		expect(argv).not.toHaveProperty("coverageDirectory");
 	});
 
-	it("should not pass coverageCopyIgnorePatterns to Jest argv", () => {
+	it("should not pass coverageCopyIgnorePatterns to Jest argv", ({ expect }) => {
 		expect.assertions(1);
 
 		const argv = buildJestArgv(
@@ -288,7 +290,7 @@ describe(buildJestArgv, () => {
 		expect(argv).not.toHaveProperty("coverageCopyIgnorePatterns");
 	});
 
-	it("should not pass coveragePathIgnorePatterns to Jest argv", () => {
+	it("should not pass coveragePathIgnorePatterns to Jest argv", ({ expect }) => {
 		expect.assertions(1);
 
 		const argv = buildJestArgv(
@@ -298,7 +300,7 @@ describe(buildJestArgv, () => {
 		expect(argv).not.toHaveProperty("coveragePathIgnorePatterns");
 	});
 
-	it("should not pass coverageReporters to Jest argv", () => {
+	it("should not pass coverageReporters to Jest argv", ({ expect }) => {
 		expect.assertions(1);
 
 		const argv = buildJestArgv(createOptions({ config: { coverageReporters: ["text"] } }));
@@ -306,7 +308,7 @@ describe(buildJestArgv, () => {
 		expect(argv).not.toHaveProperty("coverageReporters");
 	});
 
-	it("should not pass coverageThreshold to Jest argv", () => {
+	it("should not pass coverageThreshold to Jest argv", ({ expect }) => {
 		expect.assertions(1);
 
 		const argv = buildJestArgv(
@@ -316,7 +318,7 @@ describe(buildJestArgv, () => {
 		expect(argv).not.toHaveProperty("coverageThreshold");
 	});
 
-	it("should not pass collectCoverageFrom to Jest argv", () => {
+	it("should not pass collectCoverageFrom to Jest argv", ({ expect }) => {
 		expect.assertions(1);
 
 		const argv = buildJestArgv(
@@ -326,7 +328,7 @@ describe(buildJestArgv, () => {
 		expect(argv).not.toHaveProperty("collectCoverageFrom");
 	});
 
-	it("should not pass the typecheck object to Jest argv", () => {
+	it("should not pass the typecheck object to Jest argv", ({ expect }) => {
 		expect.assertions(1);
 
 		const argv = buildJestArgv(
@@ -338,7 +340,7 @@ describe(buildJestArgv, () => {
 		expect(argv).not.toHaveProperty("typecheck");
 	});
 
-	it("should not pass formatters to Jest argv", () => {
+	it("should not pass formatters to Jest argv", ({ expect }) => {
 		expect.assertions(1);
 
 		const argv = buildJestArgv(createOptions({ config: { formatters: ["default"] } }));
@@ -346,7 +348,7 @@ describe(buildJestArgv, () => {
 		expect(argv).not.toHaveProperty("formatters");
 	});
 
-	it("should not pass luauRoots to Jest argv", () => {
+	it("should not pass luauRoots to Jest argv", ({ expect }) => {
 		expect.assertions(1);
 
 		const argv = buildJestArgv(createOptions({ config: { luauRoots: ["out"] } }));
@@ -354,7 +356,7 @@ describe(buildJestArgv, () => {
 		expect(argv).not.toHaveProperty("luauRoots");
 	});
 
-	it("should forward only Jest options", () => {
+	it("should forward only Jest options", ({ expect }) => {
 		expect.assertions(2);
 
 		const argv = buildJestArgv(
@@ -365,7 +367,7 @@ describe(buildJestArgv, () => {
 		expect(argv).not.toHaveProperty("notAnOption");
 	});
 
-	it("should pass jestPath despite being a root-only key", () => {
+	it("should pass jestPath despite being a root-only key", ({ expect }) => {
 		expect.assertions(1);
 
 		const argv = buildJestArgv(createOptions({ config: { jestPath: "custom/jest" } }));
@@ -375,7 +377,7 @@ describe(buildJestArgv, () => {
 });
 
 describe(indexArgv, () => {
-	it("should name the job index and leave the argv it was given alone", () => {
+	it("should name the job index and leave the argv it was given alone", ({ expect }) => {
 		expect.assertions(2);
 
 		const argv = { testMatch: ["**/*.spec"] };

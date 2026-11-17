@@ -1,6 +1,6 @@
 import { fromAny } from "@total-typescript/shoehorn";
 
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
 import type { ResolvedConfig } from "../config/resolved-config.ts";
@@ -31,7 +31,7 @@ function pendingEntry(name: string): PendingEntry {
 }
 
 describe(buildWorkspaceCoveragePlan, () => {
-	it("should instrument only loaded packages with pending jobs that opted in", () => {
+	it("should instrument only loaded packages with pending jobs that opted in", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = buildWorkspaceCoveragePlan({
@@ -53,7 +53,7 @@ describe(buildWorkspaceCoveragePlan, () => {
 		expect(result.packages.map((entry) => entry.name)).toStrictEqual(["selected"]);
 	});
 
-	it("should retain descriptor roots and resolved coverage defaults", () => {
+	it("should retain descriptor roots and resolved coverage defaults", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = buildWorkspaceCoveragePlan({
@@ -84,7 +84,9 @@ describe(buildWorkspaceCoveragePlan, () => {
 		]);
 	});
 
-	it("should carry explicit coverage settings without changing the loaded package", () => {
+	it("should carry explicit coverage settings without changing the loaded package", ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const loaded = loadedPackage("selected", {

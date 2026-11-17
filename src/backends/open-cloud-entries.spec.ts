@@ -1,6 +1,6 @@
 import type { ScriptResult } from "@isentinel/roblox-runner";
 
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import type { WireEnvelopeEntry } from "../protocol/envelope.ts";
 import {
@@ -21,7 +21,7 @@ function task(entries: Array<WireEnvelopeEntry>, gameOutput = "[]") {
 }
 
 describe(aggregateEntriesByJob, () => {
-	it("should keep the first entry of a job that fault recovery ran twice", () => {
+	it("should keep the first entry of a job that fault recovery ran twice", ({ expect }) => {
 		expect.assertions(1);
 
 		const collected = aggregateEntriesByJob([
@@ -34,7 +34,7 @@ describe(aggregateEntriesByJob, () => {
 		).toStrictEqual(["1", "2"]);
 	});
 
-	it("should key every entry by the job index it names", () => {
+	it("should key every entry by the job index it names", ({ expect }) => {
 		expect.assertions(1);
 
 		const collected = aggregateEntriesByJob([task([entry(3), entry(1)])]);
@@ -44,7 +44,9 @@ describe(aggregateEntriesByJob, () => {
 });
 
 describe(toDispatchOutcome, () => {
-	it("should pair each entry with its job index and the game output its task returned", () => {
+	it("should pair each entry with its job index and the game output its task returned", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const outcome = toDispatchOutcome(true, aggregateEntriesByJob([task([entry(2)], "game")]));
@@ -63,7 +65,7 @@ describe(toDispatchOutcome, () => {
 });
 
 describe(parseStealingEnvelope, () => {
-	it("should decode the envelope and keep the task's game output", () => {
+	it("should decode the envelope and keep the task's game output", ({ expect }) => {
 		expect.assertions(1);
 
 		const result: ScriptResult = {
@@ -78,7 +80,7 @@ describe(parseStealingEnvelope, () => {
 		});
 	});
 
-	it("should throw when the task returned no outputs", () => {
+	it("should throw when the task returned no outputs", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(() => parseStealingEnvelope({ durationMs: 0, outputs: [] })).toThrow(

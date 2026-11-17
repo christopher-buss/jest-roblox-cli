@@ -8,7 +8,7 @@ import type {
 } from "@bedrock-rbx/ocale/storage";
 import { StorageClient } from "@bedrock-rbx/ocale/storage";
 
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import type { StreamingResultEntry } from "../protocol/streaming-summary.ts";
 import { StreamingResultClient } from "./sorted-map-client.ts";
@@ -79,7 +79,7 @@ function createSortedMapStub(behavior: StubBehavior = {}): SortedMapStub {
 		return { data: page, success: true };
 	});
 
-	const storage: StorageClient = Object.create(StorageClient.prototype);
+	const storage = Object.create(StorageClient.prototype);
 	Object.defineProperty(storage, "sortedMaps", {
 		value: { create, delete: remove, list },
 	});
@@ -116,7 +116,7 @@ function makeItem(overrides: Partial<SortedMapItem> & { id: string }): SortedMap
 
 describe(StreamingResultClient, () => {
 	describe("readAll", () => {
-		it("should return an empty array when the map has no items", async () => {
+		it("should return an empty array when the map has no items", async ({ expect }) => {
 			expect.assertions(1);
 
 			const stub = createSortedMapStub();
@@ -131,7 +131,7 @@ describe(StreamingResultClient, () => {
 			expect(results).toStrictEqual([]);
 		});
 
-		it("should request a maxPageSize of 100 when listing", async () => {
+		it("should request a maxPageSize of 100 when listing", async ({ expect }) => {
 			expect.assertions(1);
 
 			const stub = createSortedMapStub();
@@ -146,7 +146,7 @@ describe(StreamingResultClient, () => {
 			expect(stub.listCalls[0]!.maxPageSize).toBe(100);
 		});
 
-		it("should decode each item's value into a StreamingResultEntry", async () => {
+		it("should decode each item's value into a StreamingResultEntry", async ({ expect }) => {
 			expect.assertions(1);
 
 			const decoded = makeEntry({
@@ -174,7 +174,7 @@ describe(StreamingResultClient, () => {
 			expect(results).toStrictEqual([{ id: "a::p", value: decoded }]);
 		});
 
-		it("should follow nextPageToken through every page", async () => {
+		it("should follow nextPageToken through every page", async ({ expect }) => {
 			expect.assertions(2);
 
 			const stub = createSortedMapStub({
@@ -219,7 +219,7 @@ describe(StreamingResultClient, () => {
 			]);
 		});
 
-		it("should throw when sortedMaps.list returns a failure Result", async () => {
+		it("should throw when sortedMaps.list returns a failure Result", async ({ expect }) => {
 			expect.assertions(1);
 
 			const cause = new OpenCloudError("auth failed");
@@ -238,7 +238,7 @@ describe(StreamingResultClient, () => {
 			);
 		});
 
-		it("should throw when an item's value fails decoding", async () => {
+		it("should throw when an item's value fails decoding", async ({ expect }) => {
 			expect.assertions(1);
 
 			const stub = createSortedMapStub({
@@ -260,7 +260,7 @@ describe(StreamingResultClient, () => {
 	});
 
 	describe("delete", () => {
-		it("should call sortedMaps.delete with the map id and item id", async () => {
+		it("should call sortedMaps.delete with the map id and item id", async ({ expect }) => {
 			expect.assertions(1);
 
 			const stub = createSortedMapStub();
@@ -279,7 +279,7 @@ describe(StreamingResultClient, () => {
 			});
 		});
 
-		it("should throw when sortedMaps.delete returns a failure Result", async () => {
+		it("should throw when sortedMaps.delete returns a failure Result", async ({ expect }) => {
 			expect.assertions(1);
 
 			const cause = new OpenCloudError("not found");
@@ -300,7 +300,7 @@ describe(StreamingResultClient, () => {
 	});
 
 	describe("default storage factory", () => {
-		it("should construct a real StorageClient when no factory is provided", () => {
+		it("should construct a real StorageClient when no factory is provided", ({ expect }) => {
 			expect.assertions(1);
 
 			const client = new StreamingResultClient({
@@ -311,7 +311,9 @@ describe(StreamingResultClient, () => {
 			expect(client).toBeInstanceOf(StreamingResultClient);
 		});
 
-		it("should construct a real StorageClient with a custom baseUrl when provided", () => {
+		it("should construct a real StorageClient with a custom baseUrl when provided", ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			const client = new StreamingResultClient({
@@ -338,7 +340,7 @@ describe("streaming result decoding", () => {
 		return client.readAllAsync();
 	}
 
-	it("should throw when wire payload is missing required fields", async () => {
+	it("should throw when wire payload is missing required fields", async ({ expect }) => {
 		expect.assertions(1);
 
 		await expect(readOneAsync({ elapsedMs: 0, pkg: "a", project: "b" })).rejects.toThrow(
@@ -346,7 +348,7 @@ describe("streaming result decoding", () => {
 		);
 	});
 
-	it("should throw when wire payload field has wrong type", async () => {
+	it("should throw when wire payload field has wrong type", async ({ expect }) => {
 		expect.assertions(1);
 
 		await expect(
@@ -362,7 +364,7 @@ describe("streaming result decoding", () => {
 		).rejects.toThrow("elapsedMs must be a number");
 	});
 
-	it("should throw when wire payload is not an object", async () => {
+	it("should throw when wire payload is not an object", async ({ expect }) => {
 		expect.assertions(1);
 
 		await expect(readOneAsync("not-an-object")).rejects.toThrow("must be an object");

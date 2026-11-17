@@ -1,6 +1,6 @@
 import type { ScriptResult } from "@isentinel/roblox-runner";
 
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import { projectJob } from "#test/mocks/project-job.ts";
 import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
@@ -166,7 +166,9 @@ function stepExecute(steps: Array<ExecuteStep>): ExecuteHandler {
 }
 
 describe(dispatchJobsAsync, () => {
-	it("should pin every task to the run's version and the run config's timeout", async () => {
+	it("should pin every task to the run's version and the run config's timeout", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const stub = createExecuteStub(() => scriptResult(envelope([success(0)])));
@@ -180,7 +182,9 @@ describe(dispatchJobsAsync, () => {
 		]);
 	});
 
-	it("should give each static bucket's entries their job index and task game output", async () => {
+	it("should give each static bucket's entries their job index and task game output", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const stub = createExecuteStub(
@@ -207,7 +211,7 @@ describe(dispatchJobsAsync, () => {
 		).toStrictEqual([['"runnerJobIndex":0', '"runnerJobIndex":2'], ['"runnerJobIndex":1']]);
 	});
 
-	it("should throw when a static bucket returns no outputs", async () => {
+	it("should throw when a static bucket returns no outputs", async ({ expect }) => {
 		expect.assertions(1);
 
 		const stub = createExecuteStub(() => ({ durationMs: 0, outputs: [] }));
@@ -217,7 +221,7 @@ describe(dispatchJobsAsync, () => {
 		);
 	});
 
-	it("should fan one work-stealing script out and collect every package", async () => {
+	it("should fan one work-stealing script out and collect every package", async ({ expect }) => {
 		expect.assertions(2);
 
 		const stub = createExecuteStub(() => scriptResult(envelope([packageEntry("alpha")])));
@@ -231,7 +235,9 @@ describe(dispatchJobsAsync, () => {
 		expect(rawResults).toHaveLength(1);
 	});
 
-	it("should fall back to a deferrable run when the queue cannot be set up", async () => {
+	it("should fall back to a deferrable run when the queue cannot be set up", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const stub = createExecuteStub(() => scriptResult(envelope([packageEntry("alpha")])));
@@ -245,7 +251,7 @@ describe(dispatchJobsAsync, () => {
 		expect(requestedNames(stub.executeCalls[0]!)).toStrictEqual(["alpha"]);
 	});
 
-	it("should ask for the queue with every job and the task deadline", async () => {
+	it("should ask for the queue with every job and the task deadline", async ({ expect }) => {
 		expect.assertions(1);
 
 		const prepareStealingAsync = vi.fn<(request: StealingRequest) => Promise<PreparedStealing>>(
@@ -278,7 +284,7 @@ describe(dispatchJobsAsync, () => {
 		});
 	});
 
-	it("should re-send a deferring bucket's leftovers to that bucket alone", async () => {
+	it("should re-send a deferring bucket's leftovers to that bucket alone", async ({ expect }) => {
 		expect.assertions(2);
 
 		// Each bucket owns its own deferral chain: the one that filled its
@@ -305,7 +311,7 @@ describe(dispatchJobsAsync, () => {
 		]);
 	});
 
-	it("should keep a sibling bucket's results when one bucket bails", async () => {
+	it("should keep a sibling bucket's results when one bucket bails", async ({ expect }) => {
 		expect.assertions(2);
 
 		// A bail is task-local on this path (there is no signal map to
@@ -333,7 +339,7 @@ describe(dispatchJobsAsync, () => {
 		).toStrictEqual([0, 1, 3]);
 	});
 
-	it("should re-send the entries a deferring task left behind", async () => {
+	it("should re-send the entries a deferring task left behind", async ({ expect }) => {
 		expect.assertions(3);
 
 		/**
@@ -359,7 +365,7 @@ describe(dispatchJobsAsync, () => {
 		expect(requestedNames(stub.executeCalls[1]!)).toStrictEqual(["beta", "gamma"]);
 	});
 
-	it("should stop after a non-deferred workspace envelope", async () => {
+	it("should stop after a non-deferred workspace envelope", async ({ expect }) => {
 		expect.assertions(2);
 
 		const stub = createExecuteStub(() => {
@@ -375,7 +381,7 @@ describe(dispatchJobsAsync, () => {
 		expect(result.rawResults).toHaveLength(2);
 	});
 
-	it("should stop when a deferred workspace envelope covered every job", async () => {
+	it("should stop when a deferred workspace envelope covered every job", async ({ expect }) => {
 		expect.assertions(2);
 
 		const stub = createExecuteStub(() => {
@@ -393,7 +399,7 @@ describe(dispatchJobsAsync, () => {
 		expect(result.rawResults).toHaveLength(2);
 	});
 
-	it("should preserve bail evidence across deferred workspace envelopes", async () => {
+	it("should preserve bail evidence across deferred workspace envelopes", async ({ expect }) => {
 		expect.assertions(2);
 
 		const stub = createExecuteStub(
@@ -419,7 +425,7 @@ describe(dispatchJobsAsync, () => {
 		});
 	});
 
-	it("should stop re-sending when a task covers nothing new", async () => {
+	it("should stop re-sending when a task covers nothing new", async ({ expect }) => {
 		expect.assertions(2);
 
 		/**
@@ -443,7 +449,7 @@ describe(dispatchJobsAsync, () => {
 		expect(stub.executeCalls).toHaveLength(2);
 	});
 
-	it("should fail a workspace task that returns no output at all", async () => {
+	it("should fail a workspace task that returns no output at all", async ({ expect }) => {
 		expect.assertions(1);
 
 		const stub = createExecuteStub(() => ({ durationMs: 1, outputs: [] }));

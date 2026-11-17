@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import { createWasmRuntime, DEFECT_MARKER } from "./wasm-runtime.ts";
 
@@ -18,7 +18,7 @@ function parserExports() {
 }
 
 describe(createWasmRuntime, () => {
-	it("should return a guarded serializer fault and recover on the next call", () => {
+	it("should return a guarded serializer fault and recover on the next call", ({ expect }) => {
 		expect.assertions(2);
 
 		const runtime = createWasmRuntime();
@@ -39,7 +39,7 @@ describe(createWasmRuntime, () => {
 		"memory",
 		"parse_to_cst_json",
 		"parse_to_json",
-	])("should reject an invalid %s export", (key) => {
+	])("should reject an invalid %s export", (key, { expect }) => {
 		expect.assertions(1);
 
 		const { exports } = parserExports();
@@ -50,7 +50,7 @@ describe(createWasmRuntime, () => {
 		);
 	});
 
-	it("should return AST payloads across repeated calls", () => {
+	it("should return AST payloads across repeated calls", ({ expect }) => {
 		expect.assertions(3);
 
 		const runtime = createWasmRuntime();
@@ -60,7 +60,7 @@ describe(createWasmRuntime, () => {
 		expect(runtime.parseToJson("return 4")).toContain('"value":4');
 	});
 
-	it("should initialize an injected backend once", () => {
+	it("should initialize an injected backend once", ({ expect }) => {
 		expect.assertions(1);
 
 		const { exports, initialize } = parserExports();

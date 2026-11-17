@@ -1,10 +1,10 @@
 import { type } from "arktype";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { objectDefinition, rowsOf } from "./option-row.ts";
 
 describe(rowsOf, () => {
-	it("should attach each key and the location", () => {
+	it("should attach each key and the location", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(rowsOf("root", { port: { jest: true } })).toStrictEqual([
@@ -14,7 +14,7 @@ describe(rowsOf, () => {
 });
 
 describe(objectDefinition, () => {
-	it("should build a rejecting object with optional keys by default", () => {
+	it("should build a rejecting object with optional keys by default", ({ expect }) => {
 		expect.assertions(3);
 
 		const schema = type(objectDefinition(rowsOf("root", { port: { schema: type("number") } })));
@@ -24,7 +24,7 @@ describe(objectDefinition, () => {
 		expect(schema({ other: 1 })).toBeInstanceOf(type.errors);
 	});
 
-	it("should require the keys the predicate names", () => {
+	it("should require the keys the predicate names", ({ expect }) => {
 		expect.assertions(1);
 
 		const schema = type(

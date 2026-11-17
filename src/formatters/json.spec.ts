@@ -1,5 +1,5 @@
 import * as path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { MINIMAL_RESULT } from "#test/mocks/format-results.ts";
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
@@ -7,7 +7,7 @@ import type { JestResult } from "../types/jest-result-types.ts";
 import { formatJson, writeJsonFileAsync } from "./json.ts";
 
 describe(formatJson, () => {
-	it("should return formatted JSON string", () => {
+	it("should return formatted JSON string", ({ expect }) => {
 		expect.assertions(1);
 
 		const result: JestResult = {
@@ -27,7 +27,7 @@ describe(formatJson, () => {
 });
 
 describe("formatJson with a root", () => {
-	it("should show each test file path relative to the root", () => {
+	it("should show each test file path relative to the root", ({ expect }) => {
 		expect.assertions(2);
 
 		const result: JestResult = {
@@ -46,7 +46,7 @@ describe("formatJson with a root", () => {
 });
 
 describe(writeJsonFileAsync, () => {
-	it("should write JSON to file", async () => {
+	it("should write JSON to file", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -70,7 +70,7 @@ describe(writeJsonFileAsync, () => {
 		expect(content).toBe(formatJson(result, temporaryDirectory));
 	});
 
-	it("should create parent directories if needed", async () => {
+	it("should create parent directories if needed", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -94,7 +94,7 @@ describe(writeJsonFileAsync, () => {
 });
 
 describe("formatJson snapshots", () => {
-	it("should format result as JSON", () => {
+	it("should format result as JSON", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = formatJson(MINIMAL_RESULT);

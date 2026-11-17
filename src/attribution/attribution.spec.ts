@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { MANIFEST_VERSION } from "#test/mocks/coverage-versions.ts";
 import type { CoverageManifest } from "../coverage-data/manifest.ts";
@@ -44,7 +44,9 @@ function warmManifest(): CoverageManifest {
 }
 
 describe(harvestAttribution, () => {
-	it("should record a test's location and range hash when its source resolves to them", () => {
+	it("should record a test's location and range hash when its source resolves to them", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const result = harvestAttribution({
@@ -77,7 +79,7 @@ describe(harvestAttribution, () => {
 		]);
 	});
 
-	it("should attribute a covered statement to the single test that hit it", () => {
+	it("should attribute a covered statement to the single test that hit it", ({ expect }) => {
 		expect.assertions(2);
 
 		const result = harvestAttribution({
@@ -105,7 +107,7 @@ describe(harvestAttribution, () => {
 		});
 	});
 
-	it("should attribute every statement a multi-statement test covered", () => {
+	it("should attribute every statement a multi-statement test covered", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = harvestAttribution({
@@ -128,7 +130,7 @@ describe(harvestAttribution, () => {
 		});
 	});
 
-	it("should list both tests that overlap on one statement", () => {
+	it("should list both tests that overlap on one statement", ({ expect }) => {
 		expect.assertions(2);
 
 		const result = harvestAttribution({
@@ -157,7 +159,7 @@ describe(harvestAttribution, () => {
 		});
 	});
 
-	it("should record a test that covered no statements without crediting it", () => {
+	it("should record a test that covered no statements without crediting it", ({ expect }) => {
 		expect.assertions(2);
 
 		const result = harvestAttribution({
@@ -180,7 +182,7 @@ describe(harvestAttribution, () => {
 		expect(result.coveringTestIds).toStrictEqual({});
 	});
 
-	it("should record the partial coverage of a test that errored mid-run", () => {
+	it("should record the partial coverage of a test that errored mid-run", ({ expect }) => {
 		expect.assertions(2);
 
 		// The runner diffs on failure too, so a test that threw after covering
@@ -203,7 +205,7 @@ describe(harvestAttribution, () => {
 		});
 	});
 
-	it("should mark statements hit at load but credited to no test as static", () => {
+	it("should mark statements hit at load but credited to no test as static", ({ expect }) => {
 		expect.assertions(1);
 
 		// Cumulative: statements 0, 1, 2 were all hit during the run. The test
@@ -223,7 +225,7 @@ describe(harvestAttribution, () => {
 		expect(result.staticStatementIds).toStrictEqual({ "out/m.luau": ["0", "1"] });
 	});
 
-	it("should treat every hit in a file with no covering test as static", () => {
+	it("should treat every hit in a file with no covering test as static", ({ expect }) => {
 		expect.assertions(1);
 
 		// No per-test deltas, so nothing is credited; statement 1 was never hit
@@ -241,7 +243,7 @@ describe(harvestAttribution, () => {
 		expect(result.staticStatementIds).toStrictEqual({ "out/m.luau": ["0"] });
 	});
 
-	it("should produce no static entry for a file whose every hit is credited", () => {
+	it("should produce no static entry for a file whose every hit is credited", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = harvestAttribution({
@@ -259,7 +261,7 @@ describe(harvestAttribution, () => {
 		expect(result.staticStatementIds).toStrictEqual({});
 	});
 
-	it("should record an empty source hash when the test file cannot be resolved", () => {
+	it("should record an empty source hash when the test file cannot be resolved", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = harvestAttribution({
@@ -279,7 +281,7 @@ describe(harvestAttribution, () => {
 });
 
 describe(applyAttribution, () => {
-	it("should write tests[] and distribute coveringTestIds into file records", () => {
+	it("should write tests[] and distribute coveringTestIds into file records", ({ expect }) => {
 		expect.assertions(2);
 
 		const result = applyAttribution(exampleManifest(), {
@@ -310,7 +312,7 @@ describe(applyAttribution, () => {
 		});
 	});
 
-	it("should distribute a static-statement set onto its file record", () => {
+	it("should distribute a static-statement set onto its file record", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = applyAttribution(exampleManifest(), {
@@ -322,7 +324,9 @@ describe(applyAttribution, () => {
 		expect(result.files["out/m.luau"]!.staticStatementIds).toStrictEqual(["0", "1"]);
 	});
 
-	it("should ignore covering and static attribution for files absent from the manifest", () => {
+	it("should ignore covering and static attribution for files absent from the manifest", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const result = applyAttribution(exampleManifest(), {
@@ -334,7 +338,9 @@ describe(applyAttribution, () => {
 		expect(result.files["out/ghost.luau"]).toBeUndefined();
 	});
 
-	it("should drop a carried-forward coveringTestIds when this run has only static ids", () => {
+	it("should drop a carried-forward coveringTestIds when this run has only static ids", ({
+		expect,
+	}) => {
 		expect.assertions(3);
 
 		// The detector-regression case: every statement of the file became
@@ -350,7 +356,9 @@ describe(applyAttribution, () => {
 		expect(result.files["out/m.luau"]!.statementCount).toBe(3);
 	});
 
-	it("should drop a carried-forward staticStatementIds when this run has only covering ids", () => {
+	it("should drop a carried-forward staticStatementIds when this run has only covering ids", ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const result = applyAttribution(warmManifest(), {
@@ -363,7 +371,9 @@ describe(applyAttribution, () => {
 		expect(result.files["out/m.luau"]!.coveringTestIds).toStrictEqual({ "0": ["t1"] });
 	});
 
-	it("should drop both carried-forward fields when this run attributes the file nothing", () => {
+	it("should drop both carried-forward fields when this run attributes the file nothing", ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const result = applyAttribution(warmManifest(), {
@@ -378,7 +388,7 @@ describe(applyAttribution, () => {
 });
 
 describe(mergeAttribution, () => {
-	it("should concatenate tests and union per-statement covering ids", () => {
+	it("should concatenate tests and union per-statement covering ids", ({ expect }) => {
 		expect.assertions(1);
 
 		const merged = mergeAttribution(
@@ -428,7 +438,7 @@ describe(mergeAttribution, () => {
 		});
 	});
 
-	it("should union static sets but drop any id credited in another project", () => {
+	it("should union static sets but drop any id credited in another project", ({ expect }) => {
 		expect.assertions(1);
 
 		// Statement 5 is static in A but credited to a test in B, so it is not
@@ -449,7 +459,9 @@ describe(mergeAttribution, () => {
 		expect(merged.staticStatementIds).toStrictEqual({ "out/m.luau": ["9"] });
 	});
 
-	it("should union per-file static sets across projects, sorted and credited-filtered", () => {
+	it("should union per-file static sets across projects, sorted and credited-filtered", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const merged = mergeAttribution(

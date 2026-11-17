@@ -214,7 +214,7 @@ function createRequestListener(state: FakeOpenCloudState): RequestListener {
 			url: request.url ?? "",
 		});
 
-		void handleRequestAsync({ request, response, state }).catch((err: unknown) => {
+		void handleRequestAsync({ request, response, state }).catch((err) => {
 			response.writeHead(500, { "content-type": JSON_CONTENT_TYPE });
 			response.end(JSON.stringify({ error: { message: String(err) } }));
 		});

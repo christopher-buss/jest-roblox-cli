@@ -1,5 +1,5 @@
 import * as path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { createLuteChildProcess } from "#test/mocks/lute-child-process.ts";
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
@@ -25,7 +25,7 @@ function seedConfig(source: string, filePath = "/project/jest.config.luau"): See
 }
 
 describe(loadLuauConfig, () => {
-	it("should preserve a nonempty record for normal schema validation", async () => {
+	it("should preserve a nonempty record for normal schema validation", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { filePath, fileSystem } = seedConfig(
@@ -37,7 +37,7 @@ describe(loadLuauConfig, () => {
 		});
 	});
 
-	it("should use empty tables for lists according to the config schema", async () => {
+	it("should use empty tables for lists according to the config schema", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { filePath, fileSystem } = seedConfig(`return {
@@ -65,7 +65,7 @@ describe(loadLuauConfig, () => {
 		});
 	});
 
-	it("should normalize empty lists in a flat project config", async () => {
+	it("should normalize empty lists in a flat project config", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { filePath, fileSystem } = seedConfig(
@@ -79,7 +79,7 @@ describe(loadLuauConfig, () => {
 		});
 	});
 
-	it("should evaluate the config's return table", async () => {
+	it("should evaluate the config's return table", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { filePath, fileSystem } = seedConfig(
@@ -92,7 +92,7 @@ describe(loadLuauConfig, () => {
 		});
 	});
 
-	it("should throw a contextual error when the config does not parse", async () => {
+	it("should throw a contextual error when the config does not parse", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { filePath, fileSystem } = seedConfig("return { = }");
@@ -103,7 +103,7 @@ describe(loadLuauConfig, () => {
 		);
 	});
 
-	it("should separate every parser error in the contextual message", async () => {
+	it("should separate every parser error in the contextual message", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { filePath, fileSystem } = seedConfig("return { foo =, bar = }");
@@ -114,7 +114,9 @@ describe(loadLuauConfig, () => {
 		);
 	});
 
-	it("should run a config that holds code with lute and normalize its empty lists", async () => {
+	it("should run a config that holds code with lute and normalize its empty lists", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { filePath, fileSystem } = seedConfig(CODE_CONFIG);
@@ -133,7 +135,9 @@ describe(loadLuauConfig, () => {
 		).resolves.toStrictEqual({ displayName: "a", setupFiles: [], snapshotFormat: {} });
 	});
 
-	it("should name the file and line of syntax it cannot read when lute is missing", async () => {
+	it("should name the file and line of syntax it cannot read when lute is missing", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { filePath, fileSystem } = seedConfig(CODE_CONFIG);
@@ -148,7 +152,7 @@ describe(loadLuauConfig, () => {
 		);
 	});
 
-	it("should throw when config returns a non-table value", async () => {
+	it("should throw when config returns a non-table value", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { filePath, fileSystem } = seedConfig("return 42");
@@ -159,7 +163,7 @@ describe(loadLuauConfig, () => {
 		);
 	});
 
-	it("should throw when config returns a list rather than a record", async () => {
+	it("should throw when config returns a list rather than a record", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { filePath, fileSystem } = seedConfig('return { "a", "b" }');
@@ -170,7 +174,7 @@ describe(loadLuauConfig, () => {
 		);
 	});
 
-	it("should throw when the config file does not exist", async () => {
+	it("should throw when the config file does not exist", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -182,7 +186,7 @@ describe(loadLuauConfig, () => {
 });
 
 describe(findLuauConfigFile, () => {
-	it("should return resolved path when jest.config.luau exists", () => {
+	it("should return resolved path when jest.config.luau exists", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = seedConfig("return {}", "/cwd/project/jest.config.luau");
@@ -192,7 +196,7 @@ describe(findLuauConfigFile, () => {
 		);
 	});
 
-	it("should return undefined when jest.config.luau does not exist", () => {
+	it("should return undefined when jest.config.luau does not exist", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -204,7 +208,7 @@ describe(findLuauConfigFile, () => {
 });
 
 describe("loadLuauConfig lute integration", () => {
-	it("should preserve string-valued config fields end-to-end", async () => {
+	it("should preserve string-valued config fields end-to-end", async ({ expect }) => {
 		expect.assertions(1);
 
 		const filePath = path.resolve("config-fixture/jest.config.luau");

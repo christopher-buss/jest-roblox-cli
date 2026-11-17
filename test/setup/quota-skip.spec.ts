@@ -3,7 +3,7 @@ import { TaskQuotaError } from "@isentinel/roblox-runner";
 import { fromPartial } from "@total-typescript/shoehorn";
 
 import type { TestContext } from "vitest";
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import { quotaSkipNote, skipOnQuotaAsync } from "./quota-skip.ts";
 
@@ -19,7 +19,7 @@ function fakeContext() {
 }
 
 describe(quotaSkipNote, () => {
-	it("should name the unlock time of a quota-refused run", () => {
+	it("should name the unlock time of a quota-refused run", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(quotaSkipNote({ exitCode: 3, stderr: QUOTA_STDERR, stdout: "" })).toBe(
@@ -27,7 +27,7 @@ describe(quotaSkipNote, () => {
 		);
 	});
 
-	it("should ignore a stalled task, which is also exit 3", () => {
+	it("should ignore a stalled task, which is also exit 3", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -35,13 +35,13 @@ describe(quotaSkipNote, () => {
 		).toBeUndefined();
 	});
 
-	it("should ignore a failed run that mentions the quota", () => {
+	it("should ignore a failed run that mentions the quota", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(quotaSkipNote({ exitCode: 1, stderr: QUOTA_STDERR, stdout: "" })).toBeUndefined();
 	});
 
-	it("should fall back to an unknown unlock time", () => {
+	it("should fall back to an unknown unlock time", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(quotaSkipNote({ exitCode: 3, stderr: "    kind: create-quota", stdout: "" })).toBe(
@@ -51,7 +51,7 @@ describe(quotaSkipNote, () => {
 });
 
 describe(skipOnQuotaAsync, () => {
-	it("should return the value of a call that succeeds", async () => {
+	it("should return the value of a call that succeeds", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { context } = fakeContext();
@@ -59,7 +59,7 @@ describe(skipOnQuotaAsync, () => {
 		await expect(skipOnQuotaAsync(context, Promise.resolve("done"))).resolves.toBe("done");
 	});
 
-	it("should skip on a quota refusal from the runner", async () => {
+	it("should skip on a quota refusal from the runner", async ({ expect }) => {
 		expect.assertions(2);
 
 		const { context, skip } = fakeContext();
@@ -84,7 +84,7 @@ describe(skipOnQuotaAsync, () => {
 		);
 	});
 
-	it("should rethrow without skipping on any other failure", async () => {
+	it("should rethrow without skipping on any other failure", async ({ expect }) => {
 		expect.assertions(2);
 
 		const { context, skip } = fakeContext();

@@ -1,7 +1,7 @@
 import { fromAny, fromPartial } from "@total-typescript/shoehorn";
 
 import { Buffer } from "node:buffer";
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 import type { WebSocketServer } from "ws";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
@@ -59,7 +59,7 @@ function pendingServer(boundPort: number | undefined): WebSocketServer {
 }
 
 describe(buildBackendResult, () => {
-	it("should pair the decoded entries with the jobs and keep the timing", () => {
+	it("should pair the decoded entries with the jobs and keep the timing", ({ expect }) => {
 		expect.assertions(2);
 
 		const backendResult = readResult(result({ protocolVersion: 12 }));
@@ -68,7 +68,9 @@ describe(buildBackendResult, () => {
 		expect(backendResult.timing).toStrictEqual({ executionMs: 5 });
 	});
 
-	it("should surface a version-mismatch error when the plugin omits the protocolVersion echo", () => {
+	it("should surface a version-mismatch error when the plugin omits the protocolVersion echo", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		expect(() => readResult(result({}))).toThrowWithMessage(
@@ -79,7 +81,9 @@ describe(buildBackendResult, () => {
 		);
 	});
 
-	it("should surface a version-mismatch error when the plugin echoes a different protocolVersion", () => {
+	it("should surface a version-mismatch error when the plugin echoes a different protocolVersion", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		expect(() => readResult(result({ protocolVersion: 2 }))).toThrowWithMessage(
@@ -90,7 +94,7 @@ describe(buildBackendResult, () => {
 		);
 	});
 
-	it("should name the release the answering plugin came from", () => {
+	it("should name the release the answering plugin came from", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(() => {
@@ -103,7 +107,9 @@ describe(buildBackendResult, () => {
 		);
 	});
 
-	it("should name the manual plugins that can answer in place of the managed one", () => {
+	it("should name the manual plugins that can answer in place of the managed one", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		expect(() => {
@@ -122,13 +128,13 @@ describe(buildBackendResult, () => {
 });
 
 describe(serverPortAsync, () => {
-	it("should wait for `listening` and read the assigned ephemeral port", async () => {
+	it("should wait for `listening` and read the assigned ephemeral port", async ({ expect }) => {
 		expect.assertions(1);
 
 		await expect(serverPortAsync(pendingServer(54_321))).resolves.toBe(54_321);
 	});
 
-	it("should throw when the result server never reports a bound port", async () => {
+	it("should throw when the result server never reports a bound port", async ({ expect }) => {
 		expect.assertions(1);
 
 		await expect(serverPortAsync(pendingServer(undefined))).rejects.toThrow(
@@ -138,7 +144,7 @@ describe(serverPortAsync, () => {
 });
 
 describe(waitForResultAsync, () => {
-	it("should resolve with the result for its own request only", async () => {
+	it("should resolve with the result for its own request only", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();

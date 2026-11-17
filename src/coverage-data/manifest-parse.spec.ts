@@ -1,5 +1,5 @@
 import { type } from "arktype";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { parseVersionedManifest } from "./manifest-parse.ts";
@@ -22,13 +22,13 @@ function parseContents(contents?: string) {
 }
 
 describe(parseVersionedManifest, () => {
-	it("should report a missing file", () => {
+	it("should report a missing file", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(parseContents()).toStrictEqual({ kind: "missing" });
 	});
 
-	it("should rethrow an IO error other than a missing file", () => {
+	it("should rethrow an IO error other than a missing file", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -44,13 +44,13 @@ describe(parseVersionedManifest, () => {
 		}).toThrow("EISDIR");
 	});
 
-	it("should report malformed JSON", () => {
+	it("should report malformed JSON", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(parseContents("not json")).toStrictEqual({ kind: "malformed-json" });
 	});
 
-	it.for(["[]", "null", "3"])("should reject the non-object %s", (contents) => {
+	it.for(["[]", "null", "3"])("should reject the non-object %s", (contents, { expect }) => {
 		expect.assertions(1);
 
 		expect(parseContents(contents)).toStrictEqual({
@@ -59,7 +59,7 @@ describe(parseVersionedManifest, () => {
 		});
 	});
 
-	it("should report a version mismatch before validating the schema", () => {
+	it("should report a version mismatch before validating the schema", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(parseContents(JSON.stringify({ version: 1 }))).toStrictEqual({
@@ -69,7 +69,7 @@ describe(parseVersionedManifest, () => {
 		});
 	});
 
-	it("should report a schema failure with its summary", () => {
+	it("should report a schema failure with its summary", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(parseContents(JSON.stringify({ version: 2 }))).toStrictEqual({
@@ -78,7 +78,7 @@ describe(parseVersionedManifest, () => {
 		});
 	});
 
-	it("should return the validated manifest", () => {
+	it("should return the validated manifest", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(parseContents(JSON.stringify({ name: "a", version: 2 }))).toStrictEqual({

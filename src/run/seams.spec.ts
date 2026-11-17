@@ -1,9 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { nodeRunSeams } from "./seams.ts";
 
 describe(nodeRunSeams, () => {
-	it("should bind every member to its real stage", () => {
+	it("should bind every member to its real stage", ({ expect }) => {
 		expect.assertions(4);
 
 		const seams = nodeRunSeams();

@@ -3,7 +3,7 @@ import { loadConfig, runJestRobloxAsync } from "@isentinel/jest-roblox/api";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import path from "node:path";
-import { describe, expect, it, onTestFinished, vi } from "vitest";
+import { describe, it, type TestContext, vi } from "vitest";
 
 import { createLuteChildProcess } from "#test/mocks/lute-child-process.ts";
 import packageJson from "../../../package.json" with { type: "json" };
@@ -16,7 +16,10 @@ const ROJO_TREE = {
 	},
 };
 
-function createTemporaryDirectory(prefix: string): string {
+function createTemporaryDirectory(
+	prefix: string,
+	onTestFinished: TestContext["onTestFinished"],
+): string {
 	const directory = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), prefix)));
 	onTestFinished(() => {
 		fs.rmSync(directory, { force: true, recursive: true });
@@ -24,11 +27,14 @@ function createTemporaryDirectory(prefix: string): string {
 	return directory;
 }
 
-function createProject(files: Record<string, string>): string {
-	const home = createTemporaryDirectory("luau-config-home-");
+function createProject(
+	files: Record<string, string>,
+	onTestFinished: TestContext["onTestFinished"],
+): string {
+	const home = createTemporaryDirectory("luau-config-home-", onTestFinished);
 	vi.stubEnv("HOME", home);
 	vi.stubEnv("USERPROFILE", home);
-	const directory = createTemporaryDirectory("luau-config-");
+	const directory = createTemporaryDirectory("luau-config-", onTestFinished);
 	for (const [relativePath, source] of Object.entries(files)) {
 		const filePath = path.join(directory, relativePath);
 		fs.mkdirSync(path.dirname(filePath), { recursive: true });
@@ -39,26 +45,38 @@ function createProject(files: Record<string, string>): string {
 }
 
 describe("luau configs through loadConfig", () => {
-	it("should clear default ignore patterns with an empty luau table", async () => {
+	it("should clear default ignore patterns with an empty luau table", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(2);
 
-		const directory = createProject({
-			"jest.config.luau":
-				"do end\nreturn { test = { testPathIgnorePatterns = {}, snapshotFormat = {} } }",
-		});
+		const directory = createProject(
+			{
+				"jest.config.luau":
+					"do end\nreturn { test = { testPathIgnorePatterns = {}, snapshotFormat = {} } }",
+			},
+			onTestFinished,
+		);
 		const config = await loadConfig({ cwd: directory });
 
 		expect(config.testPathIgnorePatterns).toStrictEqual([]);
 		expect(config.snapshotFormat).toStrictEqual({});
 	});
 
-	it("should name both configs before evaluating a conflicting script", async () => {
+	it("should name both configs before evaluating a conflicting script", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(1);
 
-		const directory = createProject({
-			"jest.config.luau": "return {}",
-			"jest.config.mjs": 'throw new Error("must not run");',
-		});
+		const directory = createProject(
+			{
+				"jest.config.luau": "return {}",
+				"jest.config.mjs": 'throw new Error("must not run");',
+			},
+			onTestFinished,
+		);
 
 		await expect(loadConfig({ cwd: directory })).rejects.toThrow(
 			`Found two jest configs: ${path.join(directory, "jest.config.mjs")} and ${path.join(directory, "jest.config.luau")}. Keep one.`,
@@ -67,10 +85,13 @@ describe("luau configs through loadConfig", () => {
 
 	it.for(["42", '"config"', "true", "nil"])(
 		"should name a config returning %s instead of a table",
-		async (value) => {
+		async (value, { expect, onTestFinished }) => {
 			expect.assertions(1);
 
-			const directory = createProject({ "jest.config.luau": `return ${value}` });
+			const directory = createProject(
+				{ "jest.config.luau": `return ${value}` },
+				onTestFinished,
+			);
 
 			await expect(loadConfig({ cwd: directory })).rejects.toThrow(
 				`Luau config ${path.join(directory, "jest.config.luau")} must return a table`,
@@ -78,25 +99,31 @@ describe("luau configs through loadConfig", () => {
 		},
 	);
 
-	it("should read a typed plain-data top-level config without running it", async () => {
+	it("should read a typed plain-data top-level config without running it", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(3);
 
 		vi.stubEnv("PATH", "");
 		vi.stubEnv("JEST_ROBLOX_LUTE_PATH", undefined);
-		const directory = createProject({
-			"jest.config.luau": [
-				'local jest = require("@jest-roblox/config")',
-				"",
-				"return jest.defineConfig({",
-				'\tplaceFile = "luau.rbxl" :: string,',
-				'\trootDir = ".",',
-				"\ttest = {",
-				'\t\ttestMatch = { "**/*.spec" },',
-				"\t},",
-				"}) :: jest.Config",
-				"",
-			].join("\n"),
-		});
+		const directory = createProject(
+			{
+				"jest.config.luau": [
+					'local jest = require("@jest-roblox/config")',
+					"",
+					"return jest.defineConfig({",
+					'\tplaceFile = "luau.rbxl" :: string,',
+					'\trootDir = ".",',
+					"\ttest = {",
+					'\t\ttestMatch = { "**/*.spec" },',
+					"\t},",
+					"}) :: jest.Config",
+					"",
+				].join("\n"),
+			},
+			onTestFinished,
+		);
 
 		const config = await loadConfig({ cwd: directory });
 
@@ -105,21 +132,28 @@ describe("luau configs through loadConfig", () => {
 		expect(config.testMatch).toStrictEqual(["**/*.spec"]);
 	});
 
-	it("should run a config that requires a sibling module with lute", async () => {
+	it("should run a config that requires a sibling module with lute", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(2);
 
-		const directory = createProject({
-			"jest.config.luau": [
-				'local shared = require("./shared")',
-				"",
-				"return {",
-				"\tplaceFile = shared.placeFile,",
-				"\ttest = { testMatch = shared.testMatch, testTimeout = 5 * 1000, setupFiles = {} },",
-				"}",
-				"",
-			].join("\n"),
-			"shared.luau": 'return { placeFile = "shared.rbxl", testMatch = { "**/*.test" } }\n',
-		});
+		const directory = createProject(
+			{
+				"jest.config.luau": [
+					'local shared = require("./shared")',
+					"",
+					"return {",
+					"\tplaceFile = shared.placeFile,",
+					"\ttest = { testMatch = shared.testMatch, testTimeout = 5 * 1000, setupFiles = {} },",
+					"}",
+					"",
+				].join("\n"),
+				"shared.luau":
+					'return { placeFile = "shared.rbxl", testMatch = { "**/*.test" } }\n',
+			},
+			onTestFinished,
+		);
 
 		const config = await loadConfig({ cwd: directory });
 
@@ -135,43 +169,55 @@ describe("luau configs through loadConfig", () => {
 	it.for([
 		["yes", "ci.rbxl"],
 		["", "local.rbxl"],
-	] as const)("should load the branch for JEST_ROBLOX_BRANCH=%j", async ([value, placeFile]) => {
-		expect.assertions(1);
+	] as const)(
+		"should load the branch for JEST_ROBLOX_BRANCH=%j",
+		async ([value, placeFile], { expect, onTestFinished }) => {
+			expect.assertions(1);
 
-		vi.stubEnv("JEST_ROBLOX_BRANCH", value);
-		const directory = createProject({
-			"jest.config.luau": [
-				'local process = require("@std/process")',
-				"",
-				"return function()",
-				"\tlocal branch = process.env.JEST_ROBLOX_BRANCH",
-				'\treturn { placeFile = if branch and branch ~= "" then "ci.rbxl" else "local.rbxl" }',
-				"end",
-				"",
-			].join("\n"),
-		});
+			vi.stubEnv("JEST_ROBLOX_BRANCH", value);
+			const directory = createProject(
+				{
+					"jest.config.luau": [
+						'local process = require("@std/process")',
+						"",
+						"return function()",
+						"\tlocal branch = process.env.JEST_ROBLOX_BRANCH",
+						'\treturn { placeFile = if branch and branch ~= "" then "ci.rbxl" else "local.rbxl" }',
+						"end",
+						"",
+					].join("\n"),
+				},
+				onTestFinished,
+			);
 
-		const config = await loadConfig({ cwd: directory });
+			const config = await loadConfig({ cwd: directory });
 
-		expect(config.placeFile).toBe(placeFile);
-	});
+			expect(config.placeFile).toBe(placeFile);
+		},
+	);
 
-	it("should write the config type before lute runs a config that requires it", async () => {
+	it("should write the config type before lute runs a config that requires it", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(2);
 
-		const directory = createProject({
-			".luaurc": JSON.stringify({
-				aliases: { "jest-roblox": `~/.jest-roblox/typedefs/${packageJson.version}` },
-			}),
-			"jest.config.luau": [
-				'local jest = require("@jest-roblox/config")',
-				"",
-				"return jest.defineConfig({",
-				"\ttest = { testTimeout = 5 * 1000 },",
-				"})",
-				"",
-			].join("\n"),
-		});
+		const directory = createProject(
+			{
+				".luaurc": JSON.stringify({
+					aliases: { "jest-roblox": `~/.jest-roblox/typedefs/${packageJson.version}` },
+				}),
+				"jest.config.luau": [
+					'local jest = require("@jest-roblox/config")',
+					"",
+					"return jest.defineConfig({",
+					"\ttest = { testTimeout = 5 * 1000 },",
+					"})",
+					"",
+				].join("\n"),
+			},
+			onTestFinished,
+		);
 
 		const config = await loadConfig({ cwd: directory });
 
@@ -189,12 +235,18 @@ describe("luau configs through loadConfig", () => {
 		).toBeTrue();
 	});
 
-	it("should run a config that holds code through the given child process", async () => {
+	it("should run a config that holds code through the given child process", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(1);
 
-		const directory = createProject({
-			"jest.config.luau": 'return { placeFile = "place" .. ".rbxl" }\n',
-		});
+		const directory = createProject(
+			{
+				"jest.config.luau": 'return { placeFile = "place" .. ".rbxl" }\n',
+			},
+			onTestFinished,
+		);
 
 		const config = await loadConfig({
 			childProcess: createLuteChildProcess({
@@ -207,28 +259,40 @@ describe("luau configs through loadConfig", () => {
 		expect(config.placeFile).toBe("from-child-process.rbxl");
 	});
 
-	it("should read a plain-data config when lute is absent", async () => {
+	it("should read a plain-data config when lute is absent", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(1);
 
 		vi.stubEnv("PATH", "");
 		vi.stubEnv("JEST_ROBLOX_LUTE_PATH", undefined);
-		const directory = createProject({
-			"jest.config.luau": 'return { placeFile = "plain.rbxl" }',
-		});
+		const directory = createProject(
+			{
+				"jest.config.luau": 'return { placeFile = "plain.rbxl" }',
+			},
+			onTestFinished,
+		);
 
 		const config = await loadConfig({ cwd: directory });
 
 		expect(config.placeFile).toBe("plain.rbxl");
 	});
 
-	it("should say lute is needed and name the line when lute is absent", async () => {
+	it("should say lute is needed and name the line when lute is absent", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(1);
 
 		vi.stubEnv("PATH", "");
 		vi.stubEnv("JEST_ROBLOX_LUTE_PATH", undefined);
-		const directory = createProject({
-			"jest.config.luau": 'return {\n\tplaceFile = string.lower("A.rbxl"),\n}\n',
-		});
+		const directory = createProject(
+			{
+				"jest.config.luau": 'return {\n\tplaceFile = string.lower("A.rbxl"),\n}\n',
+			},
+			onTestFinished,
+		);
 
 		await expect(loadConfig({ cwd: directory })).rejects.toThrow(
 			`Luau config ${path.join(directory, "jest.config.luau")}:2 holds a function call, which needs lute to run`,
@@ -242,24 +306,33 @@ describe("luau configs through loadConfig", () => {
 			"return { test = { setupFiles = { tostring } } }\n",
 			"holds a function at test.setupFiles[1], which cannot cross into JSON",
 		],
-	] as const)("should name the file when lute cannot load %j", async ([source, message]) => {
-		expect.assertions(1);
+	] as const)(
+		"should name the file when lute cannot load %j",
+		async ([source, message], { expect, onTestFinished }) => {
+			expect.assertions(1);
 
-		const directory = createProject({ "jest.config.luau": source });
+			const directory = createProject({ "jest.config.luau": source }, onTestFinished);
 
-		await expect(loadConfig({ cwd: directory })).rejects.toThrow(
-			`Luau config ${path.join(directory, "jest.config.luau")} ${message}`,
+			await expect(loadConfig({ cwd: directory })).rejects.toThrow(
+				`Luau config ${path.join(directory, "jest.config.luau")} ${message}`,
+			);
+		},
+	);
+
+	it("should let a script config extend a luau config that holds code", async ({
+		expect,
+		onTestFinished,
+	}) => {
+		expect.assertions(2);
+
+		const directory = createProject(
+			{
+				"base.luau": "return { timeout = 2 * 1000, test = { verbose = true } }\n",
+				"jest.config.mjs":
+					'export default { extends: "./base.luau", test: { verbose: false } };\n',
+			},
+			onTestFinished,
 		);
-	});
-
-	it("should let a script config extend a luau config that holds code", async () => {
-		expect.assertions(2);
-
-		const directory = createProject({
-			"base.luau": "return { timeout = 2 * 1000, test = { verbose = true } }\n",
-			"jest.config.mjs":
-				'export default { extends: "./base.luau", test: { verbose: false } };\n',
-		});
 
 		const config = await loadConfig({ cwd: directory });
 
@@ -267,13 +340,17 @@ describe("luau configs through loadConfig", () => {
 		expect(config.verbose).toBeFalse();
 	});
 
-	it("should let a luau config extend a script config", async () => {
+	it("should let a luau config extend a script config", async ({ expect, onTestFinished }) => {
 		expect.assertions(2);
 
-		const directory = createProject({
-			"base.mjs": "export default { timeout: 2000, test: { verbose: true } };\n",
-			"jest.config.luau": 'return { extends = "./base.mjs", test = { verbose = false } }\n',
-		});
+		const directory = createProject(
+			{
+				"base.mjs": "export default { timeout: 2000, test: { verbose: true } };\n",
+				"jest.config.luau":
+					'return { extends = "./base.mjs", test = { verbose = false } }\n',
+			},
+			onTestFinished,
+		);
 
 		const config = await loadConfig({ cwd: directory });
 
@@ -281,13 +358,17 @@ describe("luau configs through loadConfig", () => {
 		expect(config.verbose).toBeFalse();
 	});
 
-	it("should let a luau config extend a ts config", async () => {
+	it("should let a luau config extend a ts config", async ({ expect, onTestFinished }) => {
 		expect.assertions(2);
 
-		const directory = createProject({
-			"base.ts": "export default { timeout: 2500, test: { verbose: true } };\n",
-			"jest.config.luau": 'return { extends = "./base.ts", test = { verbose = false } }\n',
-		});
+		const directory = createProject(
+			{
+				"base.ts": "export default { timeout: 2500, test: { verbose: true } };\n",
+				"jest.config.luau":
+					'return { extends = "./base.ts", test = { verbose = false } }\n',
+			},
+			onTestFinished,
+		);
 
 		const config = await loadConfig({ cwd: directory });
 
@@ -295,15 +376,21 @@ describe("luau configs through loadConfig", () => {
 		expect(config.verbose).toBeFalse();
 	});
 
-	it("should anchor rootDir on the innermost file of a nested cross-format chain", async () => {
+	it("should anchor rootDir on the innermost file of a nested cross-format chain", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(3);
 
-		const directory = createProject({
-			"app/jest.config.luau": 'return { extends = "../middle/base.ts" }\n',
-			"inner/base.luau": 'return { rootDir = "root", timeout = 4000 }\n',
-			"middle/base.ts":
-				'export default { extends: "../inner/base.luau", test: { verbose: true } };\n',
-		});
+		const directory = createProject(
+			{
+				"app/jest.config.luau": 'return { extends = "../middle/base.ts" }\n',
+				"inner/base.luau": 'return { rootDir = "root", timeout = 4000 }\n',
+				"middle/base.ts":
+					'export default { extends: "../inner/base.luau", test: { verbose: true } };\n',
+			},
+			onTestFinished,
+		);
 
 		const config = await loadConfig({ cwd: path.join(directory, "app") });
 
@@ -312,14 +399,20 @@ describe("luau configs through loadConfig", () => {
 		expect(config.verbose).toBeTrue();
 	});
 
-	it("should let a script config extend a plain-data luau config", async () => {
+	it("should let a script config extend a plain-data luau config", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(2);
 
-		const directory = createProject({
-			"base.luau": "return { timeout = 3000, test = { verbose = true } }\n",
-			"jest.config.ts":
-				'export default { extends: "./base.luau", test: { verbose: false } };\n',
-		});
+		const directory = createProject(
+			{
+				"base.luau": "return { timeout = 3000, test = { verbose = true } }\n",
+				"jest.config.ts":
+					'export default { extends: "./base.luau", test: { verbose: false } };\n',
+			},
+			onTestFinished,
+		);
 
 		const config = await loadConfig({ cwd: directory });
 
@@ -327,46 +420,64 @@ describe("luau configs through loadConfig", () => {
 		expect(config.verbose).toBeFalse();
 	});
 
-	it("should anchor a relative rootDir on the extended luau config's directory", async () => {
+	it("should anchor a relative rootDir on the extended luau config's directory", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(1);
 
-		const directory = createProject({
-			"pkg/jest.config.mjs": 'export default { extends: "../shared/base.luau" };\n',
-			"shared/base.luau": 'return { rootDir = "root" }\n',
-		});
+		const directory = createProject(
+			{
+				"pkg/jest.config.mjs": 'export default { extends: "../shared/base.luau" };\n',
+				"shared/base.luau": 'return { rootDir = "root" }\n',
+			},
+			onTestFinished,
+		);
 
 		const config = await loadConfig({ cwd: path.join(directory, "pkg") });
 
 		expect(config.rootDir).toBe(path.join(directory, "shared", "root"));
 	});
 
-	it("should detect an extends cycle across formats", async () => {
+	it("should detect an extends cycle across formats", async ({ expect, onTestFinished }) => {
 		expect.assertions(1);
 
-		const directory = createProject({
-			"jest.config.luau": 'return { extends = "./middle.mjs" }\n',
-			"middle.mjs": 'export default { extends: "./jest.config.luau" };\n',
-		});
+		const directory = createProject(
+			{
+				"jest.config.luau": 'return { extends = "./middle.mjs" }\n',
+				"middle.mjs": 'export default { extends: "./jest.config.luau" };\n',
+			},
+			onTestFinished,
+		);
 
 		await expect(loadConfig({ cwd: directory })).rejects.toThrow(
 			`Circular extends detected: ${path.join(directory, "jest.config.luau")} -> ${path.join(directory, "middle.mjs")} -> ${path.join(directory, "jest.config.luau")}.`,
 		);
 	});
 
-	it("should load a luau project config a luau top-level config names", async () => {
+	it("should load a luau project config a luau top-level config names", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(1);
 
-		const directory = createProject({
-			"default.project.json": JSON.stringify({ name: "config-integration", tree: ROJO_TREE }),
-			"jest.config.luau": 'return { test = { projects = { "src/b" } } }\n',
-			"src/b/jest.config.luau": [
-				"return {",
-				'\tdisplayName = "b-user",',
-				'\ttestMatch = { "**/*.spec" },',
-				"}",
-				"",
-			].join("\n"),
-		});
+		const directory = createProject(
+			{
+				"default.project.json": JSON.stringify({
+					name: "config-integration",
+					tree: ROJO_TREE,
+				}),
+				"jest.config.luau": 'return { test = { projects = { "src/b" } } }\n',
+				"src/b/jest.config.luau": [
+					"return {",
+					'\tdisplayName = "b-user",',
+					'\ttestMatch = { "**/*.spec" },',
+					"}",
+					"",
+				].join("\n"),
+			},
+			onTestFinished,
+		);
 
 		const config = await loadConfig({ cwd: directory });
 		const result = await runJestRobloxAsync({
@@ -380,23 +491,32 @@ describe("luau configs through loadConfig", () => {
 		});
 	});
 
-	it("should run a luau project config that holds code with lute", async () => {
+	it("should run a luau project config that holds code with lute", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(1);
 
-		const directory = createProject({
-			"default.project.json": JSON.stringify({ name: "config-integration", tree: ROJO_TREE }),
-			"jest.config.luau": 'return { test = { projects = { "src/b" } } }\n',
-			"src/b/jest.config.luau": [
-				'local shared = require("./shared")',
-				"",
-				"return {",
-				'\tdisplayName = "b-" .. shared.suffix,',
-				"\ttestTimeout = 5 * 1000,",
-				"}",
-				"",
-			].join("\n"),
-			"src/b/shared.luau": 'return { suffix = "user" }\n',
-		});
+		const directory = createProject(
+			{
+				"default.project.json": JSON.stringify({
+					name: "config-integration",
+					tree: ROJO_TREE,
+				}),
+				"jest.config.luau": 'return { test = { projects = { "src/b" } } }\n',
+				"src/b/jest.config.luau": [
+					'local shared = require("./shared")',
+					"",
+					"return {",
+					'\tdisplayName = "b-" .. shared.suffix,',
+					"\ttestTimeout = 5 * 1000,",
+					"}",
+					"",
+				].join("\n"),
+				"src/b/shared.luau": 'return { suffix = "user" }\n',
+			},
+			onTestFinished,
+		);
 
 		const config = await loadConfig({ cwd: directory });
 		const result = await runJestRobloxAsync({

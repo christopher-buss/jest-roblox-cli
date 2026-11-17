@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { hashFile, hashString } from "#test/mocks/coverage-hash.ts";
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
@@ -55,7 +55,9 @@ function mapperFor(diskPath: string | undefined, lineShift = 0) {
 }
 
 describe(createTestSourceResolver, () => {
-	it("should close each test's range at the next test's start and the last at end of file", () => {
+	it("should close each test's range at the next test's start and the last at end of file", ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -78,7 +80,7 @@ describe(createTestSourceResolver, () => {
 		);
 	});
 
-	it("should hash from the first line when a test starts there", () => {
+	it("should hash from the first line when a test starts there", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -96,7 +98,7 @@ describe(createTestSourceResolver, () => {
 		expect(resolve("ReplicatedStorage/m.spec", "a").testSourceHash).toBe(hashString("a\nb"));
 	});
 
-	it("should record the mapped line and the range hash of a located test", () => {
+	it("should record the mapped line and the range hash of a located test", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -119,7 +121,7 @@ describe(createTestSourceResolver, () => {
 		});
 	});
 
-	it("should join a Jest file named by its disk path, as Studio reports it", () => {
+	it("should join a Jest file named by its disk path, as Studio reports it", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -146,7 +148,7 @@ describe(createTestSourceResolver, () => {
 		});
 	});
 
-	it("should give each-table rows on one line the same range hash", () => {
+	it("should give each-table rows on one line the same range hash", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -170,7 +172,7 @@ describe(createTestSourceResolver, () => {
 		);
 	});
 
-	it("should keep a file's first source decision for the whole result", () => {
+	it("should keep a file's first source decision for the whole result", ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -193,7 +195,9 @@ describe(createTestSourceResolver, () => {
 		expect(resolve("ReplicatedStorage/m.spec", "a")).toStrictEqual(first);
 	});
 
-	it("should fall back to the file hash alone when the line has no source mapping", () => {
+	it("should fall back to the file hash alone when the line has no source mapping", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -216,7 +220,7 @@ describe(createTestSourceResolver, () => {
 		});
 	});
 
-	it("should fall back to the file hash alone for a test without a location", () => {
+	it("should fall back to the file hash alone for a test without a location", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -236,7 +240,7 @@ describe(createTestSourceResolver, () => {
 		});
 	});
 
-	it("should use the file hash alone when the Jest result has no matching file", () => {
+	it("should use the file hash alone when the Jest result has no matching file", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -262,7 +266,7 @@ describe(createTestSourceResolver, () => {
 		});
 	});
 
-	it("should record an empty file hash when the test file is not on disk", () => {
+	it("should record an empty file hash when the test file is not on disk", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -276,7 +280,9 @@ describe(createTestSourceResolver, () => {
 		expect(resolve("ReplicatedStorage/m.spec", "a")).toStrictEqual({ testFileSourceHash: "" });
 	});
 
-	it("should record an empty file hash when the mapper cannot resolve the test file", () => {
+	it("should record an empty file hash when the mapper cannot resolve the test file", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -290,7 +296,7 @@ describe(createTestSourceResolver, () => {
 		expect(resolve("ReplicatedStorage/m.spec", "a")).toStrictEqual({ testFileSourceHash: "" });
 	});
 
-	it("should record an empty file hash when there is no source mapper", () => {
+	it("should record an empty file hash when there is no source mapper", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();

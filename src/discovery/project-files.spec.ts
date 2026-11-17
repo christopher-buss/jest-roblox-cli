@@ -1,7 +1,7 @@
 import { fromAny } from "@total-typescript/shoehorn";
 
 import * as path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
@@ -49,7 +49,7 @@ function select(
 }
 
 describe(selectProjectFiles, () => {
-	it("should apply the project exclude to discovered files", () => {
+	it("should apply the project exclude to discovered files", ({ expect }) => {
 		expect.assertions(1);
 
 		const selection = select(
@@ -60,7 +60,7 @@ describe(selectProjectFiles, () => {
 		expect(selection.runtimeFiles).toStrictEqual(["src/a.spec.ts"]);
 	});
 
-	it("should keep positional files past the project exclude", () => {
+	it("should keep positional files past the project exclude", ({ expect }) => {
 		expect.assertions(1);
 
 		const selection = select(
@@ -74,7 +74,7 @@ describe(selectProjectFiles, () => {
 		expect(selection.runtimeFiles).toStrictEqual([path.resolve("/test", "src/b.spec.ts")]);
 	});
 
-	it("should honor the typecheck include and exclude", () => {
+	it("should honor the typecheck include and exclude", ({ expect }) => {
 		expect.assertions(1);
 
 		const selection = select(
@@ -91,7 +91,7 @@ describe(selectProjectFiles, () => {
 		expect(selection.typeTestFiles).toStrictEqual(["types/a.spec-d.ts"]);
 	});
 
-	it("should keep positional type tests past the typecheck exclude", () => {
+	it("should keep positional type tests past the typecheck exclude", ({ expect }) => {
 		expect.assertions(1);
 
 		const selection = select(
@@ -105,7 +105,7 @@ describe(selectProjectFiles, () => {
 		expect(selection.typeTestFiles).toStrictEqual([path.resolve("/test", "types/b.spec-d.ts")]);
 	});
 
-	it("should leave the Luau pattern undefined on a bare run", () => {
+	it("should leave the Luau pattern undefined on a bare run", ({ expect }) => {
 		expect.assertions(1);
 
 		const selection = select({ "src/a.spec.ts": "" });
@@ -113,7 +113,7 @@ describe(selectProjectFiles, () => {
 		expect(selection.config.testPathPattern).toBeUndefined();
 	});
 
-	it("should keep only the related tests and narrow to them", () => {
+	it("should keep only the related tests and narrow to them", ({ expect }) => {
 		expect.assertions(1);
 
 		const rojoProject = path.resolve("/test", "default.project.json");

@@ -1,5 +1,5 @@
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { startFakeOpenCloudServerAsync } from "#test/harness/fake-open-cloud.ts";
 import type { JestEnvelopePayload } from "#test/harness/helpers.ts";
@@ -16,7 +16,7 @@ const RBXTS_FIXTURE = path.resolve(__dirname, "../fixtures/rbxts-project");
 
 describe("cli error paths", () => {
 	describe("exit codes", () => {
-		it("should exit 1 when the Jest payload reports failed tests", async () => {
+		it("should exit 1 when the Jest payload reports failed tests", async ({ expect }) => {
 			expect.assertions(2);
 
 			const sandbox = createRbxtsFixtureSandbox(RBXTS_FIXTURE);
@@ -37,7 +37,9 @@ describe("cli error paths", () => {
 			expect(result.stdout).toContain("1 failed");
 		});
 
-		it("should exit non-zero with an env-var hint when --backend open-cloud is missing credentials", async () => {
+		it("should exit non-zero with an env-var hint when --backend open-cloud is missing credentials", async ({
+			expect,
+		}) => {
 			expect.assertions(3);
 
 			const sandbox = createFixtureSandbox(RBXTS_FIXTURE);
@@ -67,7 +69,9 @@ describe("cli error paths", () => {
 		// with an exhausted observer budget, in
 		// integration/executor/cli-recovery.spec.ts.
 
-		it("should surface the Roblox error code and log tail when a task fails", async () => {
+		it("should surface the Roblox error code and log tail when a task fails", async ({
+			expect,
+		}) => {
 			expect.assertions(3);
 
 			const sandbox = createRbxtsFixtureSandbox(RBXTS_FIXTURE);
@@ -97,7 +101,7 @@ describe("cli error paths", () => {
 	});
 
 	describe("unreachable backend", () => {
-		it("should build the place then exit non-zero with an upload error", async () => {
+		it("should build the place then exit non-zero with an upload error", async ({ expect }) => {
 			expect.assertions(2);
 
 			// A no-`projects` config collapses into the multi pipeline, which

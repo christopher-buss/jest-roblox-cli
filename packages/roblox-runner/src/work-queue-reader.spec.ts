@@ -6,7 +6,7 @@ import {
 } from "@bedrock-rbx/ocale/testing";
 import { fromAny } from "@total-typescript/shoehorn";
 
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { createWorkQueueReader, type WorkQueueReader } from "./work-queue-reader.ts";
 
@@ -30,7 +30,7 @@ function makeReader(
 
 describe("work queue reader", () => {
 	describe("claim + commit", () => {
-		it("should dequeue and return decoded items + commit handle", async () => {
+		it("should dequeue and return decoded items + commit handle", async ({ expect }) => {
 			expect.assertions(3);
 
 			const http = createFakeHttpClient();
@@ -59,7 +59,7 @@ describe("work queue reader", () => {
 			expect(captured.url).toContain("invisibilityWindow=30s");
 		});
 
-		it("should call decode for each dequeued item", async () => {
+		it("should call decode for each dequeued item", async ({ expect }) => {
 			expect.assertions(1);
 
 			const http = createFakeHttpClient();
@@ -76,7 +76,7 @@ describe("work queue reader", () => {
 			expect(batch.items).toStrictEqual([{ name: "a", priority: 7 }]);
 		});
 
-		it("should POST discard with readId on commit", async () => {
+		it("should POST discard with readId on commit", async ({ expect }) => {
 			expect.assertions(2);
 
 			const http = createFakeHttpClient();
@@ -99,7 +99,7 @@ describe("work queue reader", () => {
 			expect(discardRequest.body).toStrictEqual({ readId: "read-xyz" });
 		});
 
-		it("should round sub-second invisibilityMs up to 1 second", async () => {
+		it("should round sub-second invisibilityMs up to 1 second", async ({ expect }) => {
 			expect.assertions(1);
 
 			const http = createFakeHttpClient();
@@ -116,7 +116,9 @@ describe("work queue reader", () => {
 			expect(captured.url).toContain("invisibilityWindow=1s");
 		});
 
-		it("should hand back an empty batch, with nothing to discard, on an empty read", async () => {
+		it("should hand back an empty batch, with nothing to discard, on an empty read", async ({
+			expect,
+		}) => {
 			expect.assertions(2);
 
 			const http = createFakeHttpClient();
@@ -133,7 +135,7 @@ describe("work queue reader", () => {
 			expect(http.requests).toHaveLength(1);
 		});
 
-		it("should throw when claim returns API error", async () => {
+		it("should throw when claim returns API error", async ({ expect }) => {
 			expect.assertions(1);
 
 			const http = createFakeHttpClient();
@@ -144,7 +146,7 @@ describe("work queue reader", () => {
 			await expect(queue.claimAsync(1, 30_000)).rejects.toThrow(/Forbidden/);
 		});
 
-		it("should throw when commit (discard) returns API error", async () => {
+		it("should throw when commit (discard) returns API error", async ({ expect }) => {
 			expect.assertions(1);
 
 			const http = createFakeHttpClient();
@@ -166,7 +168,7 @@ describe("work queue reader", () => {
 });
 
 describe("reader construction", () => {
-	it("should claim without configuring an encoder", async () => {
+	it("should claim without configuring an encoder", async ({ expect }) => {
 		expect.assertions(1);
 
 		const http = createFakeHttpClient();
@@ -190,7 +192,7 @@ describe("reader construction", () => {
 		expect(batch.items).toStrictEqual([{ name: "a", priority: 1 }]);
 	});
 
-	it("should accept an injected sleep function", () => {
+	it("should accept an injected sleep function", ({ expect }) => {
 		expect.assertions(1);
 
 		async function sleepAsync(): Promise<void> {}

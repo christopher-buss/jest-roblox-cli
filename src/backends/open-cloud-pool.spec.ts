@@ -1,7 +1,7 @@
 import type { ScriptResult } from "@isentinel/roblox-runner";
 import { fromAny } from "@total-typescript/shoehorn";
 
-import { describe, expect, it, onTestFinished, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import {
 	captureStderr,
@@ -100,7 +100,7 @@ function settled(...packageNames: Array<string>): ExecuteStep {
 }
 
 describe(drainStealingPoolAsync, () => {
-	it("should launch a replacement task when a worker defers queued work", async () => {
+	it("should launch a replacement task when a worker defers queued work", async ({ expect }) => {
 		expect.assertions(1);
 
 		// Open Cloud rejects a task returning over 4 MiB, so a worker whose
@@ -119,7 +119,7 @@ describe(drainStealingPoolAsync, () => {
 		expect(runTask).toHaveBeenCalledTimes(3);
 	});
 
-	it("should stop relaunching once every deferral has been answered", async () => {
+	it("should stop relaunching once every deferral has been answered", async ({ expect }) => {
 		expect.assertions(1);
 
 		// A replacement that drains the queue ends the chain. Without the
@@ -137,7 +137,7 @@ describe(drainStealingPoolAsync, () => {
 		expect(runTask).toHaveBeenCalledTimes(3);
 	});
 
-	it("should bound the replacement chain when every task keeps deferring", async () => {
+	it("should bound the replacement chain when every task keeps deferring", async ({ expect }) => {
 		expect.assertions(1);
 
 		// A worker always takes at least one item, so a run can never need
@@ -155,7 +155,9 @@ describe(drainStealingPoolAsync, () => {
 		expect(results).toHaveLength(4);
 	});
 
-	it("should fail when a task errors even if a sibling covers every package", async () => {
+	it("should fail when a task errors even if a sibling covers every package", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		/**
@@ -180,7 +182,9 @@ describe(drainStealingPoolAsync, () => {
 		).rejects.toThrow(/open cloud task crashed/);
 	});
 
-	it("should deliver streaming entries to onPackageResult and delete each one", async () => {
+	it("should deliver streaming entries to onPackageResult and delete each one", async ({
+		expect,
+	}) => {
 		expect.assertions(3);
 
 		const reader = createStreamReader([
@@ -231,7 +235,7 @@ describe(drainStealingPoolAsync, () => {
 		expect(reader.readCalls).toBeGreaterThanOrEqual(1);
 	});
 
-	it("should poll on its own cadence under fake timers", async () => {
+	it("should poll on its own cadence under fake timers", async ({ expect, onTestFinished }) => {
 		expect.assertions(2);
 
 		vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
@@ -276,7 +280,9 @@ describe(drainStealingPoolAsync, () => {
 		expect(reader.deleted).toContain("alpha::alpha");
 	});
 
-	it("should emit a one-shot stderr warning when the streaming reader returns a PermissionError", async () => {
+	it("should emit a one-shot stderr warning when the streaming reader returns a PermissionError", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const { PermissionError } = await import("@bedrock-rbx/ocale");
@@ -298,7 +304,9 @@ describe(drainStealingPoolAsync, () => {
 		expect(writes.filter((line) => line.includes("streaming disabled"))).toHaveLength(1);
 	});
 
-	it("should pluralize the scope hint when the PermissionError carries multiple scopes", async () => {
+	it("should pluralize the scope hint when the PermissionError carries multiple scopes", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { PermissionError } = await import("@bedrock-rbx/ocale");
@@ -315,7 +323,7 @@ describe(drainStealingPoolAsync, () => {
 		expect(writes.join("")).toContain("missing scopes scope-a, scope-b");
 	});
 
-	it("should stringify a non-Error thrown by the streaming reader", async () => {
+	it("should stringify a non-Error thrown by the streaming reader", async ({ expect }) => {
 		expect.assertions(1);
 
 		const writes = await drainWithFailingReaderAsync(() => {
@@ -326,7 +334,9 @@ describe(drainStealingPoolAsync, () => {
 		expect(writes.join("")).toContain("string-error");
 	});
 
-	it("should emit a one-shot stderr warning for non-permission streaming reader errors", async () => {
+	it("should emit a one-shot stderr warning for non-permission streaming reader errors", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const { restore, writes } = captureStderr();
@@ -363,7 +373,7 @@ describe(drainStealingPoolAsync, () => {
 		]);
 	});
 
-	it("should swallow streaming reader errors so they don't fail the run", async () => {
+	it("should swallow streaming reader errors so they don't fail the run", async ({ expect }) => {
 		expect.assertions(1);
 
 		const reader = {
@@ -393,7 +403,7 @@ describe(drainStealingPoolAsync, () => {
 		expect(results).toHaveLength(1);
 	});
 
-	it("should swallow streaming delete errors after forwarding the entry", async () => {
+	it("should swallow streaming delete errors after forwarding the entry", async ({ expect }) => {
 		expect.assertions(4);
 
 		const seen: Array<string> = [];
@@ -449,7 +459,7 @@ describe(drainStealingPoolAsync, () => {
 });
 
 describe(drainDeferralsAsync, () => {
-	it("should keep bail on the script it re-sends for deferred entries", async () => {
+	it("should keep bail on the script it re-sends for deferred entries", async ({ expect }) => {
 		expect.assertions(2);
 
 		const scripts: Array<string> = [];
@@ -470,7 +480,7 @@ describe(drainDeferralsAsync, () => {
 		expect(scripts[1]).toContain('"bail":true');
 	});
 
-	it("should not mark the drain bailed when no task bails", async () => {
+	it("should not mark the drain bailed when no task bails", async ({ expect }) => {
 		expect.assertions(1);
 
 		const result = await drainDeferralsAsync({

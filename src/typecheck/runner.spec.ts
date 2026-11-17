@@ -3,7 +3,7 @@ import { fromAny } from "@total-typescript/shoehorn";
 import type * as childProcess from "node:child_process";
 import * as path from "node:path";
 import process from "node:process";
-import { assert, describe, expect, it, onTestFinished, vi } from "vitest";
+import { assert, describe, it, vi } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { posixPath } from "#test/mocks/posix-path.ts";
@@ -164,7 +164,7 @@ describe(runTypecheckAsync, () => {
 		});
 	}
 
-	it("should pass tsconfig option to tsgo for non-composite project", async () => {
+	it("should pass tsconfig option to tsgo for non-composite project", async ({ expect }) => {
 		expect.assertions(4);
 
 		const { childProcess, invocations } = stubTsgo((callback) => {
@@ -203,7 +203,7 @@ describe(runTypecheckAsync, () => {
 		});
 	});
 
-	it("should use --noEmit for non-composite projects", async () => {
+	it("should use --noEmit for non-composite projects", async ({ expect }) => {
 		expect.assertions(2);
 
 		const { childProcess, invocations } = stubTsgo((callback) => {
@@ -227,7 +227,7 @@ describe(runTypecheckAsync, () => {
 		expect(callArgs).toContain("--noEmit");
 	});
 
-	it("should use --build --emitDeclarationOnly for composite projects", async () => {
+	it("should use --build --emitDeclarationOnly for composite projects", async ({ expect }) => {
 		expect.assertions(2);
 
 		const { childProcess, invocations } = stubTsgo((callback) => {
@@ -251,7 +251,7 @@ describe(runTypecheckAsync, () => {
 		expect(callArgs).toStrictEqual(["--build", "--emitDeclarationOnly", "--pretty", "false"]);
 	});
 
-	it("should pass tsconfig as positional arg for composite --build", async () => {
+	it("should pass tsconfig as positional arg for composite --build", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { childProcess, invocations } = stubTsgo((callback) => {
@@ -281,7 +281,7 @@ describe(runTypecheckAsync, () => {
 		]);
 	});
 
-	it("should store testFilePath as relative to rootDir", async () => {
+	it("should store testFilePath as relative to rootDir", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { childProcess } = stubTsgo((callback) => {
@@ -304,7 +304,7 @@ describe(runTypecheckAsync, () => {
 		);
 	});
 
-	it("should bound the tsgo compile with the default run timeout", async () => {
+	it("should bound the tsgo compile with the default run timeout", async ({ expect }) => {
 		expect.assertions(1);
 
 		const invocations = await compileAsync();
@@ -312,7 +312,7 @@ describe(runTypecheckAsync, () => {
 		expect(invocations[0]!.options.timeout).toBe(300_000);
 	});
 
-	it("should bound the tsgo compile with a custom run timeout", async () => {
+	it("should bound the tsgo compile with a custom run timeout", async ({ expect }) => {
 		expect.assertions(1);
 
 		const invocations = await compileAsync({ timeout: 250 });
@@ -320,7 +320,7 @@ describe(runTypecheckAsync, () => {
 		expect(invocations[0]!.options.timeout).toBe(250);
 	});
 
-	it("should throw when the tsgo compile exceeds the run timeout", async () => {
+	it("should throw when the tsgo compile exceeds the run timeout", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { childProcess } = stubTsgo((callback) => {
@@ -346,7 +346,9 @@ describe(runTypecheckAsync, () => {
 		).rejects.toThrow(/timed out after 250ms \(timeout\)/);
 	});
 
-	it("should throw and kill tsgo when it does not launch within spawnTimeout", async () => {
+	it("should throw and kill tsgo when it does not launch within spawnTimeout", async ({
+		expect,
+	}) => {
 		expect.assertions(3);
 
 		// Capture but never invoke the callback, and never emit `spawn`: the
@@ -380,7 +382,7 @@ describe(runTypecheckAsync, () => {
 		}).not.toThrow();
 	});
 
-	it("should clear the launch timer once tsgo spawns", async () => {
+	it("should clear the launch timer once tsgo spawns", async ({ expect }) => {
 		expect.assertions(2);
 
 		// Defer the exit callback past the synchronous setup so the launch timer
@@ -410,7 +412,10 @@ describe(runTypecheckAsync, () => {
 		expect(kill).not.toHaveBeenCalled();
 	});
 
-	it("should cancel the launch deadline when execution completes before spawn", async () => {
+	it("should cancel the launch deadline when execution completes before spawn", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(2);
 
 		vi.useFakeTimers();
@@ -447,7 +452,10 @@ describe(runTypecheckAsync, () => {
 		expect(kill).not.toHaveBeenCalled();
 	});
 
-	it("should register the spawn listener and keep a launched process alive past its launch deadline", async () => {
+	it("should register the spawn listener and keep a launched process alive past its launch deadline", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(3);
 
 		vi.useFakeTimers();
@@ -470,7 +478,7 @@ describe(runTypecheckAsync, () => {
 			fileSystem,
 			rootDir: "/project",
 			spawnTimeout: 5,
-		}).catch((err: unknown) => err);
+		}).catch((err) => err);
 		emitSpawn();
 		await vi.advanceTimersByTimeAsync(10);
 
@@ -483,7 +491,10 @@ describe(runTypecheckAsync, () => {
 		expect(result).toMatchObject({ success: true });
 	});
 
-	it("should not arm the launch timer after a synchronous completion", async () => {
+	it("should not arm the launch timer after a synchronous completion", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(1);
 
 		vi.useFakeTimers();
@@ -511,7 +522,7 @@ describe(runTypecheckAsync, () => {
 		expect(kill).not.toHaveBeenCalled();
 	});
 
-	it("should rethrow when the tsgo spawn fails to start", async () => {
+	it("should rethrow when the tsgo spawn fails to start", async ({ expect }) => {
 		expect.assertions(2);
 
 		const spawnFailure = Object.assign(new Error("spawn failed"), { code: "ENOENT" });
@@ -523,30 +534,32 @@ describe(runTypecheckAsync, () => {
 			'it("should pass", () => {});',
 		);
 
-		const error: unknown = await runTypecheckAsync({
+		const error = await runTypecheckAsync({
 			childProcess,
 			files: ["src/test.spec.ts"],
 			fileSystem,
 			rootDir: "/project",
-		}).catch((err: unknown) => err);
+		}).catch((err) => err);
 
 		expect(error).toBeInstanceOf(Error);
 		expect(error).toMatchObject({ cause: spawnFailure });
 	});
 
 	// The guard throws before `executeTsgo`, so this test needs no spawn stub.
-	it("should name the optional peer dependency when tsgo is not installed", async () => {
+	it("should name the optional peer dependency when tsgo is not installed", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		function resolveModule(): string {
 			throw Object.assign(new Error("Cannot find module"), { code: "MODULE_NOT_FOUND" });
 		}
 
-		const error: unknown = await runTypecheckAsync({
+		const error = await runTypecheckAsync({
 			files: ["src/test.spec.ts"],
 			resolveModule,
 			rootDir: "/project",
-		}).catch((err: unknown) => err);
+		}).catch((err) => err);
 
 		assert(error instanceof ConfigError, "expected a ConfigError");
 
@@ -575,7 +588,7 @@ describe(runTypecheckAsync, () => {
 		};
 	}
 
-	it("should prefer '@typescript/native' over 'typescript'", async () => {
+	it("should prefer '@typescript/native' over 'typescript'", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { childProcess, invocations } = stubTsgo((callback) => {
@@ -602,7 +615,7 @@ describe(runTypecheckAsync, () => {
 		expect(posixPath(invocations[0]!.arguments[0]!)).toBe("/native/bin/tsc");
 	});
 
-	it("should fall back to 'typescript' when it is TypeScript 7", async () => {
+	it("should fall back to 'typescript' when it is TypeScript 7", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { childProcess, invocations } = stubTsgo((callback) => {
@@ -630,7 +643,7 @@ describe(runTypecheckAsync, () => {
 		expect(posixPath(invocations[0]!.arguments[0]!)).toBe("/typescript/bin/tsc");
 	});
 
-	it("should fall back to '@typescript/native-preview'", async () => {
+	it("should fall back to '@typescript/native-preview'", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { childProcess, invocations } = stubTsgo((callback) => {
@@ -663,7 +676,7 @@ describe(runTypecheckAsync, () => {
 		expect(posixPath(invocations[0]!.arguments[0]!)).toBe("/preview/bin/tsgo");
 	});
 
-	it("should not run a 'typescript' older than 7", async () => {
+	it("should not run a 'typescript' older than 7", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -694,7 +707,7 @@ describe(runTypecheckAsync, () => {
 	// Only a missing module means "not installed". Relabelling every failure
 	// would tell someone whose install is present but unreadable to install it
 	// again.
-	it("should rethrow a resolution failure that is not a missing module", async () => {
+	it("should rethrow a resolution failure that is not a missing module", async ({ expect }) => {
 		expect.assertions(1);
 
 		function resolveModule(): string {
@@ -710,7 +723,7 @@ describe(runTypecheckAsync, () => {
 		).rejects.toThrow("permission denied");
 	});
 
-	it("should parse tsgo diagnostics from stdout on a non-zero exit", async () => {
+	it("should parse tsgo diagnostics from stdout on a non-zero exit", async ({ expect }) => {
 		expect.assertions(1);
 
 		const filePath = "src/test.spec.ts";
@@ -740,7 +753,7 @@ describe(runTypecheckAsync, () => {
 		expect(result.numFailedTests).toBePositive();
 	});
 
-	it("should fall back to stderr diagnostics when stdout is empty", async () => {
+	it("should fall back to stderr diagnostics when stdout is empty", async ({ expect }) => {
 		expect.assertions(1);
 
 		const filePath = "src/test.spec.ts";
@@ -770,7 +783,7 @@ describe(runTypecheckAsync, () => {
 		expect(result.numFailedTests).toBePositive();
 	});
 
-	it("should treat a non-zero exit with empty output as success", async () => {
+	it("should treat a non-zero exit with empty output as success", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { childProcess } = stubTsgo((callback) => {
@@ -791,7 +804,7 @@ describe(runTypecheckAsync, () => {
 		expect(result.success).toBeTrue();
 	});
 
-	it("should surface tsgo errors in non-test source files by default", async () => {
+	it("should surface tsgo errors in non-test source files by default", async ({ expect }) => {
 		expect.assertions(2);
 
 		const result = await typecheckWithSourceErrorAsync();
@@ -802,7 +815,9 @@ describe(runTypecheckAsync, () => {
 		expect(sourceResult).toBeDefined();
 	});
 
-	it("should suppress non-test source file errors when ignoreSourceErrors is true", async () => {
+	it("should suppress non-test source file errors when ignoreSourceErrors is true", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const result = await typecheckWithSourceErrorAsync({ ignoreSourceErrors: true });
@@ -812,7 +827,7 @@ describe(runTypecheckAsync, () => {
 
 	it.for(["a.spec-d.ts", "a.test-d.ts"])(
 		"should check %s with tsgo and report its diagnostic",
-		async (fileName) => {
+		async (fileName, { expect }) => {
 			expect.assertions(2);
 
 			const resolvedFile = path.resolve("src", fileName);
@@ -838,7 +853,7 @@ describe(runTypecheckAsync, () => {
 		},
 	);
 
-	it("should check a file no checker claims with tsgo", async () => {
+	it("should check a file no checker claims with tsgo", async ({ expect }) => {
 		expect.assertions(2);
 
 		const { childProcess, invocations } = stubTsgo((callback) => {
@@ -860,7 +875,7 @@ describe(runTypecheckAsync, () => {
 		expect(result.testResults[0]!.testFilePath).toBe("src/a.spec.ts");
 	});
 
-	it("should run tsgo once when given no files", async () => {
+	it("should run tsgo once when given no files", async ({ expect }) => {
 		expect.assertions(2);
 
 		const { childProcess, invocations } = stubTsgo((callback) => {
@@ -921,7 +936,7 @@ describe("runTypecheckAsync with Luau Type Tests", () => {
 		});
 	}
 
-	it("should attribute a lute diagnostic in byte columns to its it", async () => {
+	it("should attribute a lute diagnostic in byte columns to its it", async ({ expect }) => {
 		expect.assertions(3);
 
 		const { childProcess, commands } = runnerByCommand({
@@ -947,7 +962,7 @@ describe("runTypecheckAsync with Luau Type Tests", () => {
 		]);
 	});
 
-	it("should fail the file when the spec lacks --!strict", async () => {
+	it("should fail the file when the spec lacks --!strict", async ({ expect }) => {
 		expect.assertions(2);
 
 		const { childProcess } = runnerByCommand({ luau: "" });
@@ -967,7 +982,9 @@ describe("runTypecheckAsync with Luau Type Tests", () => {
 		expect(fileCase!.failureMessages[0]).toContain("--!strict");
 	});
 
-	it("should replace lute diagnostics with the parser message when the spec does not parse", async () => {
+	it("should replace lute diagnostics with the parser message when the spec does not parse", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { childProcess } = runnerByCommand({
@@ -986,7 +1003,7 @@ describe("runTypecheckAsync with Luau Type Tests", () => {
 		]);
 	});
 
-	it("should merge diagnostics two checkers report against the same file", async () => {
+	it("should merge diagnostics two checkers report against the same file", async ({ expect }) => {
 		expect.assertions(2);
 
 		const tsSpec = path.resolve("/project/src/b.spec-d.ts");

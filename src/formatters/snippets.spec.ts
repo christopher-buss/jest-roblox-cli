@@ -1,6 +1,6 @@
 import * as path from "node:path";
 import process from "node:process";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { createTaggedStyles } from "#test/mocks/format-tagged-styles.ts";
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
@@ -28,7 +28,7 @@ function makeSourceFile(extension: "luau" | "ts", content = "return true\n") {
 }
 
 describe(resolveSourceSnippets, () => {
-	it("should return no mapped snippet when the mapped source is unavailable", () => {
+	it("should return no mapped snippet when the mapped source is unavailable", ({ expect }) => {
 		expect.assertions(2);
 
 		expect(
@@ -37,7 +37,7 @@ describe(resolveSourceSnippets, () => {
 		expect(resolve([{ luauLine: 5, luauPath: "missing.luau" }])).toStrictEqual([]);
 	});
 
-	it("should put one blank line before a mapped TypeScript or Luau snippet", () => {
+	it("should put one blank line before a mapped TypeScript or Luau snippet", ({ expect }) => {
 		expect.assertions(3);
 
 		const { filePath: luauPath, fileSystem } = makeSourceFile("luau");
@@ -60,7 +60,7 @@ describe(resolveSourceSnippets, () => {
 		expect(luau[0]).toBe("");
 	});
 
-	it("should append Luau only when requested for a mapped TypeScript location", () => {
+	it("should append Luau only when requested for a mapped TypeScript location", ({ expect }) => {
 		expect.assertions(2);
 
 		const { filePath: luauPath, fileSystem } = makeSourceFile("luau");
@@ -78,7 +78,7 @@ describe(resolveSourceSnippets, () => {
 		expect(resolve(mappedLocations, { fileSystem, showLuau: true })).toHaveLength(4);
 	});
 
-	it("should return no fallback snippet when its source is unavailable", () => {
+	it("should return no fallback snippet when its source is unavailable", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -86,7 +86,7 @@ describe(resolveSourceSnippets, () => {
 		).toStrictEqual([]);
 	});
 
-	it("should put one blank line before a fallback snippet", () => {
+	it("should put one blank line before a fallback snippet", ({ expect }) => {
 		expect.assertions(1);
 
 		const { filePath, fileSystem } = makeSourceFile("ts", "throw new Error();\n");
@@ -100,7 +100,7 @@ describe(resolveSourceSnippets, () => {
 		).toBe("");
 	});
 
-	it("should skip snapshot lookup when the file is unavailable", () => {
+	it("should skip snapshot lookup when the file is unavailable", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -110,7 +110,9 @@ describe(resolveSourceSnippets, () => {
 		).toStrictEqual([]);
 	});
 
-	it("should not fall back to the snapshot call when a mapped source is unavailable", () => {
+	it("should not fall back to the snapshot call when a mapped source is unavailable", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -126,7 +128,7 @@ describe(resolveSourceSnippets, () => {
 		).toStrictEqual([]);
 	});
 
-	it("should require exactly one snapshot call", () => {
+	it("should require exactly one snapshot call", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -138,7 +140,7 @@ describe(resolveSourceSnippets, () => {
 		).toStrictEqual([]);
 	});
 
-	it("should preserve styles and color choice for a snapshot-call snippet", () => {
+	it("should preserve styles and color choice for a snapshot-call snippet", ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem } = createMemoryFileSystem({

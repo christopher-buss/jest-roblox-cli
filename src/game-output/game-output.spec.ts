@@ -1,5 +1,5 @@
 import * as path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import type { GameOutputEntry } from "../protocol/game-output.ts";
@@ -14,7 +14,7 @@ import {
 } from "./game-output.ts";
 
 describe(parseGameOutput, () => {
-	it("should parse valid JSON array of log entries", () => {
+	it("should parse valid JSON array of log entries", ({ expect }) => {
 		expect.assertions(2);
 
 		const entries: Array<GameOutputEntry> = [
@@ -28,7 +28,7 @@ describe(parseGameOutput, () => {
 		expect(result[0]!.message).toBe("Hello");
 	});
 
-	it("should return empty array for undefined input", () => {
+	it("should return empty array for undefined input", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = parseGameOutput(undefined);
@@ -36,13 +36,13 @@ describe(parseGameOutput, () => {
 		expect(result).toBeEmpty();
 	});
 
-	it("should throw on output that is not JSON", () => {
+	it("should throw on output that is not JSON", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(() => parseGameOutput("[][]")).toThrow(SyntaxError);
 	});
 
-	it("should return empty array for empty array JSON", () => {
+	it("should return empty array for empty array JSON", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = parseGameOutput("[]");
@@ -50,7 +50,9 @@ describe(parseGameOutput, () => {
 		expect(result).toBeEmpty();
 	});
 
-	it("should return empty array when JSON is parseable but does not match schema", () => {
+	it("should return empty array when JSON is parseable but does not match schema", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const result = parseGameOutput(JSON.stringify([{ wrong: "shape" }]));
@@ -60,7 +62,7 @@ describe(parseGameOutput, () => {
 });
 
 describe(writeGameOutput, () => {
-	it("should write entries to file as JSON", () => {
+	it("should write entries to file as JSON", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -76,7 +78,7 @@ describe(writeGameOutput, () => {
 		expect(written).toStrictEqual(entries);
 	});
 
-	it("should write to existing directory without creating it", () => {
+	it("should write to existing directory without creating it", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -93,7 +95,7 @@ describe(writeGameOutput, () => {
 		expect(written).toStrictEqual(entries);
 	});
 
-	it("should create parent directories", () => {
+	it("should create parent directories", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -105,7 +107,7 @@ describe(writeGameOutput, () => {
 });
 
 describe(buildGroupedGameOutput, () => {
-	it("should build one group per source in order, parsing each raw payload", () => {
+	it("should build one group per source in order, parsing each raw payload", ({ expect }) => {
 		expect.assertions(1);
 
 		const raw = JSON.stringify([{ message: "hi", messageType: 0, timestamp: 1 }]);
@@ -124,7 +126,7 @@ describe(buildGroupedGameOutput, () => {
 		]);
 	});
 
-	it("should omit the package field when the source has none (multi mode)", () => {
+	it("should omit the package field when the source has none (multi mode)", ({ expect }) => {
 		expect.assertions(1);
 
 		const groups = buildGroupedGameOutput([{ project: "client", raw: undefined }]);
@@ -134,7 +136,7 @@ describe(buildGroupedGameOutput, () => {
 });
 
 describe(buildBatchGameOutput, () => {
-	it("should build one batch-scoped group holding the whole run's output", () => {
+	it("should build one batch-scoped group holding the whole run's output", ({ expect }) => {
 		expect.assertions(1);
 
 		const raw = JSON.stringify([{ message: "hi", messageType: 0, timestamp: 1 }]);
@@ -150,7 +152,7 @@ describe(buildBatchGameOutput, () => {
 		]);
 	});
 
-	it("should still name the scope when the run captured nothing", () => {
+	it("should still name the scope when the run captured nothing", ({ expect }) => {
 		expect.assertions(1);
 
 		const groups = buildBatchGameOutput(undefined);
@@ -160,7 +162,7 @@ describe(buildBatchGameOutput, () => {
 });
 
 describe(countGroupedEntries, () => {
-	it("should sum entry counts across groups", () => {
+	it("should sum entry counts across groups", ({ expect }) => {
 		expect.assertions(1);
 
 		const count = countGroupedEntries([
@@ -180,7 +182,7 @@ describe(countGroupedEntries, () => {
 });
 
 describe(writeGroupedGameOutput, () => {
-	it("should write grouped entries to file as JSON, creating parent dirs", () => {
+	it("should write grouped entries to file as JSON, creating parent dirs", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -202,7 +204,7 @@ describe(writeGroupedGameOutput, () => {
 });
 
 describe(formatGameOutputNotice, () => {
-	it("should return notice with file path and entry count", () => {
+	it("should return notice with file path and entry count", ({ expect }) => {
 		expect.assertions(2);
 
 		const notice = formatGameOutputNotice("/tmp/output.json", 5);
@@ -211,7 +213,7 @@ describe(formatGameOutputNotice, () => {
 		expect(notice).toContain("5");
 	});
 
-	it("should return empty string for zero entries", () => {
+	it("should return empty string for zero entries", ({ expect }) => {
 		expect.assertions(1);
 
 		const notice = formatGameOutputNotice("/tmp/output.json", 0);

@@ -1,9 +1,9 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import { resolveOpenCloudBaseUrl, resolveRunnerOptions } from "./open-cloud-environment.ts";
 
 describe(resolveOpenCloudBaseUrl, () => {
-	it("should return undefined when the env var is unset", () => {
+	it("should return undefined when the env var is unset", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(resolveOpenCloudBaseUrl()).toBeUndefined();
@@ -15,7 +15,7 @@ describe(resolveOpenCloudBaseUrl, () => {
 		["///", ""],
 		["https://apis.example.test", "https://apis.example.test"],
 		["  https://apis.example.test/path///  ", "https://apis.example.test/path"],
-	] as const)("should normalize %j to %j", ([raw, expected]) => {
+	] as const)("should normalize %j to %j", ([raw, expected], { expect }) => {
 		expect.assertions(1);
 
 		vi.stubEnv("JEST_ROBLOX_OPEN_CLOUD_BASE_URL", raw);
@@ -25,13 +25,13 @@ describe(resolveOpenCloudBaseUrl, () => {
 });
 
 describe("the retry override", () => {
-	it("should return undefined when the env var is unset", () => {
+	it("should return undefined when the env var is unset", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(resolveRunnerOptions().maxRetries).toBeUndefined();
 	});
 
-	it("should return undefined for an empty/whitespace value", () => {
+	it("should return undefined for an empty/whitespace value", ({ expect }) => {
 		expect.assertions(1);
 
 		vi.stubEnv("JEST_ROBLOX_OCALE_MAX_RETRIES", " ".repeat(3));
@@ -39,7 +39,7 @@ describe("the retry override", () => {
 		expect(resolveRunnerOptions().maxRetries).toBeUndefined();
 	});
 
-	it("should parse a valid non-negative integer", () => {
+	it("should parse a valid non-negative integer", ({ expect }) => {
 		expect.assertions(2);
 
 		vi.stubEnv("JEST_ROBLOX_OCALE_MAX_RETRIES", "8");
@@ -51,7 +51,7 @@ describe("the retry override", () => {
 		expect(resolveRunnerOptions().maxRetries).toBe(0);
 	});
 
-	it("should return undefined for a partial-numeric value (parseInt trap)", () => {
+	it("should return undefined for a partial-numeric value (parseInt trap)", ({ expect }) => {
 		expect.assertions(1);
 
 		// Number.parseInt("8abc") would truncate to 8; Number() rejects it.
@@ -60,7 +60,7 @@ describe("the retry override", () => {
 		expect(resolveRunnerOptions().maxRetries).toBeUndefined();
 	});
 
-	it("should return undefined for a decimal value", () => {
+	it("should return undefined for a decimal value", ({ expect }) => {
 		expect.assertions(1);
 
 		vi.stubEnv("JEST_ROBLOX_OCALE_MAX_RETRIES", "8.5");
@@ -68,7 +68,7 @@ describe("the retry override", () => {
 		expect(resolveRunnerOptions().maxRetries).toBeUndefined();
 	});
 
-	it("should return undefined for a negative value", () => {
+	it("should return undefined for a negative value", ({ expect }) => {
 		expect.assertions(1);
 
 		vi.stubEnv("JEST_ROBLOX_OCALE_MAX_RETRIES", "-1");
@@ -78,7 +78,7 @@ describe("the retry override", () => {
 });
 
 describe(resolveRunnerOptions, () => {
-	it("should carry the base URL and retry overrides", () => {
+	it("should carry the base URL and retry overrides", ({ expect }) => {
 		expect.assertions(1);
 
 		vi.stubEnv("JEST_ROBLOX_OPEN_CLOUD_BASE_URL", "https://apis.example.test/");

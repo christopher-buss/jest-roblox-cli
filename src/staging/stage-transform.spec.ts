@@ -2,7 +2,7 @@ import { isRojoTreeNode } from "@isentinel/rojo-utils";
 import type { RojoTreeNode } from "@isentinel/rojo-utils";
 import { fromAny } from "@total-typescript/shoehorn";
 
-import { assert, describe, expect, it } from "vitest";
+import { assert, describe, it } from "vitest";
 
 import type { HoistedService } from "./service-hoist.ts";
 import { transformToFolder } from "./stage-transform.ts";
@@ -13,7 +13,9 @@ function transform(node: RojoTreeNode): { folder: RojoTreeNode; hoisted: Array<H
 }
 
 describe(transformToFolder, () => {
-	it("should demote every place-root service to a Folder and hoist its properties", () => {
+	it("should demote every place-root service to a Folder and hoist its properties", ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const { folder, hoisted } = transform({
@@ -35,7 +37,7 @@ describe(transformToFolder, () => {
 		]);
 	});
 
-	it("should name the hoisted service after the node when it declares no class", () => {
+	it("should name the hoisted service after the node when it declares no class", ({ expect }) => {
 		expect.assertions(1);
 
 		const { hoisted } = transform({
@@ -48,7 +50,7 @@ describe(transformToFolder, () => {
 		]);
 	});
 
-	it("should hoist a nested pinned service with its parent path", () => {
+	it("should hoist a nested pinned service with its parent path", ({ expect }) => {
 		expect.assertions(2);
 
 		const { folder, hoisted } = transform({
@@ -72,18 +74,21 @@ describe(transformToFolder, () => {
 		]);
 	});
 
-	it.for([{}, [], null, "not-an-object"])("should hoist nothing for $properties %o", (value) => {
-		expect.assertions(1);
+	it.for([{}, [], null, "not-an-object"])(
+		"should hoist nothing for $properties %o",
+		(value, { expect }) => {
+			expect.assertions(1);
 
-		const { hoisted } = transform({
-			$className: "DataModel",
-			Workspace: { $className: "Workspace", $properties: fromAny(value) },
-		});
+			const { hoisted } = transform({
+				$className: "DataModel",
+				Workspace: { $className: "Workspace", $properties: fromAny(value) },
+			});
 
-		expect(hoisted).toStrictEqual([]);
-	});
+			expect(hoisted).toStrictEqual([]);
+		},
+	);
 
-	it("should drop root $properties for a project whose root is not a place", () => {
+	it("should drop root $properties for a project whose root is not a place", ({ expect }) => {
 		expect.assertions(2);
 
 		const { folder, hoisted } = transform({
@@ -99,7 +104,7 @@ describe(transformToFolder, () => {
 		});
 	});
 
-	it("should recover a bare or malformed node as a Folder", () => {
+	it("should recover a bare or malformed node as a Folder", ({ expect }) => {
 		expect.assertions(3);
 
 		const broken: RojoTreeNode = fromAny({ $className: 42 });

@@ -4,7 +4,7 @@ import * as fs from "node:fs";
 import { createRequire } from "node:module";
 import * as path from "node:path";
 import istanbulHtmlAssets from "virtual:istanbul-html-assets";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 type HtmlAssetGroup = keyof typeof istanbulHtmlAssets;
 
@@ -56,7 +56,7 @@ function digestBundledAssets(group: HtmlAssetGroup): Map<string, string> {
 describe("bundled istanbul html assets", () => {
 	it.for<HtmlAssetGroup>(["html", "html-spa"])(
 		"should carry the %s assets byte-identical to istanbul's own",
-		(group) => {
+		(group, { expect }) => {
 			expect.assertions(1);
 
 			// Names as well as bytes: an istanbul upgrade that adds an asset

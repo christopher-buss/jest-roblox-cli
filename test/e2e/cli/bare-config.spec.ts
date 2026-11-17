@@ -1,6 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { startFakeOpenCloudServerAsync } from "#test/harness/fake-open-cloud.ts";
 import {
@@ -33,7 +33,7 @@ async function runPassingOpenCloudAsync(sandbox: string) {
 describe("bare no-projects config", () => {
 	it.skipIf(!rojoOnPath())(
 		"should synthesize a project from the rojo tree and give it a generated stub",
-		async () => {
+		async ({ expect }) => {
 			expect.assertions(11);
 
 			const sandbox = createFixtureSandbox(LUAU_FIXTURE_PATH);
@@ -97,7 +97,7 @@ describe("bare no-projects config", () => {
 	// the tree does not mount, which is the error it exists to raise.
 	it.skipIf(!rojoOnPath())(
 		"should synthesize from an explicit luauRoots rather than the rojo tree",
-		async () => {
+		async ({ expect }) => {
 			expect.assertions(3);
 
 			const sandbox = createFixtureSandbox(LUAU_FIXTURE_PATH);

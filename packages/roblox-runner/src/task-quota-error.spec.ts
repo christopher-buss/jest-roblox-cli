@@ -1,12 +1,12 @@
 import { RateLimitError } from "@bedrock-rbx/ocale";
 
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import type { CreateQuotaEvidence } from "./infrastructure-evidence.ts";
 import { TaskQuotaError } from "./task-quota-error.ts";
 
 describe(TaskQuotaError, () => {
-	it("should carry the refused create evidence and original cause", () => {
+	it("should carry the refused create evidence and original cause", ({ expect }) => {
 		expect.assertions(4);
 
 		const cause = new RateLimitError("quota", { remaining: 0, retryAfterSeconds: 70 });

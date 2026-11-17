@@ -1,7 +1,7 @@
 import { loadLuauParser } from "@isentinel/luau-ast/parser";
 
 import assert from "node:assert/strict";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { applyLuauExpectErrors } from "./luau-expect-error.ts";
 import type { TypeTestDiagnostic } from "./typecheck-types.ts";
@@ -38,7 +38,7 @@ function unused(line: number, column = 1): TypeTestDiagnostic {
 }
 
 describe(applyLuauExpectErrors, () => {
-	it("should consume a diagnostic on the statement after the directive", () => {
+	it("should consume a diagnostic on the statement after the directive", ({ expect }) => {
 		expect.assertions(1);
 
 		const source = ["--!strict", "-- @expect-error", 'local _x: number = "a"'].join("\n");
@@ -46,7 +46,7 @@ describe(applyLuauExpectErrors, () => {
 		expect(apply({ diagnostics: [diagnostic(3)], filePath: FILE, source })).toStrictEqual([]);
 	});
 
-	it("should report a directive that consumes nothing at its own position", () => {
+	it("should report a directive that consumes nothing at its own position", ({ expect }) => {
 		expect.assertions(1);
 
 		const source = [
@@ -60,7 +60,7 @@ describe(applyLuauExpectErrors, () => {
 		expect(apply({ diagnostics: [], filePath: FILE, source })).toStrictEqual([unused(3, 2)]);
 	});
 
-	it("should not let a trailing directive cross into the next block", () => {
+	it("should not let a trailing directive cross into the next block", ({ expect }) => {
 		expect.assertions(1);
 
 		const source = [
@@ -80,7 +80,7 @@ describe(applyLuauExpectErrors, () => {
 		]);
 	});
 
-	it("should report a directive after the last statement of the file", () => {
+	it("should report a directive after the last statement of the file", ({ expect }) => {
 		expect.assertions(1);
 
 		const source = ["--!strict", "local _x: number = 1", "-- @expect-error"].join("\n");
@@ -88,7 +88,7 @@ describe(applyLuauExpectErrors, () => {
 		expect(apply({ diagnostics: [], filePath: FILE, source })).toStrictEqual([unused(3)]);
 	});
 
-	it("should consume a diagnostic inside a multi-line target", () => {
+	it("should consume a diagnostic inside a multi-line target", ({ expect }) => {
 		expect.assertions(1);
 
 		const source = [
@@ -106,7 +106,7 @@ describe(applyLuauExpectErrors, () => {
 		);
 	});
 
-	it("should consume every diagnostic under one directive", () => {
+	it("should consume every diagnostic under one directive", ({ expect }) => {
 		expect.assertions(1);
 
 		const source = [
@@ -124,7 +124,7 @@ describe(applyLuauExpectErrors, () => {
 		).toStrictEqual([]);
 	});
 
-	it("should report an unused directive at file level", () => {
+	it("should report an unused directive at file level", ({ expect }) => {
 		expect.assertions(1);
 
 		const source = ["--!strict", "-- @expect-error", "local _x = 1"].join("\n");
@@ -132,7 +132,7 @@ describe(applyLuauExpectErrors, () => {
 		expect(apply({ diagnostics: [], filePath: FILE, source })).toStrictEqual([unused(2)]);
 	});
 
-	it("should keep a diagnostic with no directive", () => {
+	it("should keep a diagnostic with no directive", ({ expect }) => {
 		expect.assertions(1);
 
 		const source = ["--!strict", "local _x = 1", 'local _y: number = "a"'].join("\n");
@@ -142,7 +142,7 @@ describe(applyLuauExpectErrors, () => {
 		]);
 	});
 
-	it("should ignore @expect-error inside a string", () => {
+	it("should ignore @expect-error inside a string", ({ expect }) => {
 		expect.assertions(1);
 
 		const source = [
@@ -156,7 +156,9 @@ describe(applyLuauExpectErrors, () => {
 		]);
 	});
 
-	it("should keep diagnostics outside the target and report a directive with no statement", () => {
+	it("should keep diagnostics outside the target and report a directive with no statement", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const source = ["--!strict", 'local _x: number = "a"', "-- @expect-error"].join("\n");
@@ -167,7 +169,7 @@ describe(applyLuauExpectErrors, () => {
 		]);
 	});
 
-	it("should target the next statement for a directive trailing code", () => {
+	it("should target the next statement for a directive trailing code", ({ expect }) => {
 		expect.assertions(1);
 
 		const source = [
@@ -179,7 +181,7 @@ describe(applyLuauExpectErrors, () => {
 		expect(apply({ diagnostics: [diagnostic(3)], filePath: FILE, source })).toStrictEqual([]);
 	});
 
-	it("should consume a diagnostic only inside the target statement", () => {
+	it("should consume a diagnostic only inside the target statement", ({ expect }) => {
 		expect.assertions(1);
 
 		const source = [

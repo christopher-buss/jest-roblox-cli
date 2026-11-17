@@ -1,7 +1,7 @@
 import { ApiError, NetworkError, PollTimeoutError, RateLimitError } from "@bedrock-rbx/ocale";
 import type { FailedTask } from "@bedrock-rbx/ocale/luau-execution";
 
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { makePollContext } from "#test/helpers/unit/poll-context.ts";
 import {
@@ -50,7 +50,7 @@ describe(resolveBudgets, () => {
 		},
 	])(
 		"should preserve explicit budgets and cap the server deadline: $timeout",
-		({ expected, pollBudget, timeout }) => {
+		({ expected, pollBudget, timeout }, { expect }) => {
 			expect.assertions(1);
 
 			expect(resolveBudgets(timeout, pollBudget)).toStrictEqual(expected);
@@ -59,7 +59,9 @@ describe(resolveBudgets, () => {
 });
 
 describe("poll diagnostics", () => {
-	it("should format the complete resource path and read absent task fields safely", () => {
+	it("should format the complete resource path and read absent task fields safely", ({
+		expect,
+	}) => {
 		expect.assertions(4);
 
 		expect(describeTaskRef(makePollContext().ref)).toBe(
@@ -70,7 +72,7 @@ describe("poll diagnostics", () => {
 		expect(FAILURE_LOG_TAIL).toBe(20);
 	});
 
-	it("should preserve ordinary poll errors as causes", () => {
+	it("should preserve ordinary poll errors as causes", ({ expect }) => {
 		expect.assertions(2);
 
 		const cause = new NetworkError("offline");
@@ -80,7 +82,9 @@ describe("poll diagnostics", () => {
 		expect(error.cause).toBe(cause);
 	});
 
-	it("should describe an inconclusive timeout with its default budget and observed state", () => {
+	it("should describe an inconclusive timeout with its default budget and observed state", ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const cause = new PollTimeoutError("late", {
@@ -95,7 +99,7 @@ describe("poll diagnostics", () => {
 		);
 	});
 
-	it("should keep a custom budget and a successful boot probe inconclusive", () => {
+	it("should keep a custom budget and a successful boot probe inconclusive", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -108,7 +112,7 @@ describe("poll diagnostics", () => {
 		);
 	});
 
-	it("should distinguish API statuses from transport errors", () => {
+	it("should distinguish API statuses from transport errors", ({ expect }) => {
 		expect.assertions(2);
 
 		expect(describeStatus(new ApiError("denied", { statusCode: 403 }))).toBe(" (HTTP 403)");
@@ -131,7 +135,7 @@ describe("poll diagnostics", () => {
 			expected: "reset on PUT https://example.test/place",
 		},
 		{ error: new RateLimitError("quota", { retryAfterSeconds: 5 }), expected: "quota" },
-	])("should retain upload request context: $expected", ({ error, expected }) => {
+	])("should retain upload request context: $expected", ({ error, expected }, { expect }) => {
 		expect.assertions(1);
 
 		expect(describeUploadFailure(error)).toBe(expected);
@@ -141,7 +145,7 @@ describe("poll diagnostics", () => {
 		{ expected: "x".repeat(399), length: 399 },
 		{ expected: "x".repeat(400), length: 400 },
 		{ expected: `${"x".repeat(400)}…`, length: 401 },
-	])("should cap log messages only past the boundary: %i", ({ expected, length }) => {
+	])("should cap log messages only past the boundary: %i", ({ expected, length }, { expect }) => {
 		expect.assertions(1);
 
 		expect(formatLogMessage({ message: "x".repeat(length), messageType: "ERROR" })).toBe(
@@ -155,18 +159,21 @@ describe("poll diagnostics", () => {
 			logTail: ["[ERROR] traceback", "[OUTPUT] tail"],
 			suffix: "\n  Roblox output before the failure:\n    [ERROR] traceback\n    [OUTPUT] tail",
 		},
-	])("should retain the failure code and ordered log tail: %j", ({ logTail, suffix }) => {
-		expect.assertions(1);
+	])(
+		"should retain the failure code and ordered log tail: %j",
+		({ logTail, suffix }, { expect }) => {
+			expect.assertions(1);
 
-		const task = {
-			error: { code: "SCRIPT_ERROR", message: "boom" },
-			ref: makePollContext().ref,
-			state: "FAILED",
-			user: "users/1",
-		} satisfies FailedTask;
-		const headline =
-			"Roblox task failed (SCRIPT_ERROR): boom\n  task: universes/1/places/2/versions/7/luau-execution-sessions/session/tasks/task";
+			const task = {
+				error: { code: "SCRIPT_ERROR", message: "boom" },
+				ref: makePollContext().ref,
+				state: "FAILED",
+				user: "users/1",
+			} satisfies FailedTask;
+			const headline =
+				"Roblox task failed (SCRIPT_ERROR): boom\n  task: universes/1/places/2/versions/7/luau-execution-sessions/session/tasks/task";
 
-		expect(describeTaskFailure(task, logTail)).toBe(headline + suffix);
-	});
+			expect(describeTaskFailure(task, logTail)).toBe(headline + suffix);
+		},
+	);
 });

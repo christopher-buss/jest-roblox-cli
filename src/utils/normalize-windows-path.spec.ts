@@ -1,5 +1,5 @@
 import * as path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import {
 	dropDriveLetter,
@@ -13,7 +13,7 @@ import {
 } from "./normalize-windows-path.ts";
 
 describe(dropDriveLetter, () => {
-	it("should only drop a drive letter at the start", () => {
+	it("should only drop a drive letter at the start", ({ expect }) => {
 		expect.assertions(2);
 
 		expect(dropDriveLetter("D:/repo/file.ts")).toBe("/repo/file.ts");
@@ -22,7 +22,7 @@ describe(dropDriveLetter, () => {
 });
 
 describe(isAbsolutePath, () => {
-	it("should only recognize drive roots at the start", () => {
+	it("should only recognize drive roots at the start", ({ expect }) => {
 		expect.assertions(3);
 
 		expect(isAbsolutePath("D:/repo/file.ts")).toBeTrue();
@@ -32,14 +32,14 @@ describe(isAbsolutePath, () => {
 });
 
 describe(isPathInside, () => {
-	it("should hold a directory and the paths below it", () => {
+	it("should hold a directory and the paths below it", ({ expect }) => {
 		expect.assertions(2);
 
 		expect(isPathInside(path.resolve("/repo"), path.resolve("/repo"))).toBeTrue();
 		expect(isPathInside(path.resolve("/repo"), path.resolve("/repo/src/file.ts"))).toBeTrue();
 	});
 
-	it("should leave out a sibling and a parent", () => {
+	it("should leave out a sibling and a parent", ({ expect }) => {
 		expect.assertions(2);
 
 		expect(
@@ -50,43 +50,43 @@ describe(isPathInside, () => {
 });
 
 describe(normalizeWindowsPath, () => {
-	it("should return empty string when called with no arguments", () => {
+	it("should return empty string when called with no arguments", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(normalizeWindowsPath()).toBe("");
 	});
 
-	it("should return empty string for empty input", () => {
+	it("should return empty string for empty input", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(normalizeWindowsPath("")).toBe("");
 	});
 
-	it("should convert backslashes to forward slashes", () => {
+	it("should convert backslashes to forward slashes", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(normalizeWindowsPath("src\\utils\\file.ts")).toBe("src/utils/file.ts");
 	});
 
-	it("should uppercase the drive letter", () => {
+	it("should uppercase the drive letter", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(normalizeWindowsPath("c:/Users/foo")).toBe("C:/Users/foo");
 	});
 
-	it("should convert backslashes and uppercase drive letter together", () => {
+	it("should convert backslashes and uppercase drive letter together", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(normalizeWindowsPath("d:\\roblox\\project")).toBe("D:/roblox/project");
 	});
 
-	it("should leave already-normalized paths unchanged", () => {
+	it("should leave already-normalized paths unchanged", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(normalizeWindowsPath("D:/roblox/project")).toBe("D:/roblox/project");
 	});
 
-	it("should only convert slashes for paths without drive letters", () => {
+	it("should only convert slashes for paths without drive letters", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(normalizeWindowsPath("src\\components\\App.tsx")).toBe("src/components/App.tsx");
@@ -103,13 +103,13 @@ describe(toPosixRoot, () => {
 		return toPosixRoot(spelling);
 	}
 
-	it("should remove a trailing separator", () => {
+	it("should remove a trailing separator", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(root("out/")).toBe("out");
 	});
 
-	it("should remove a leading current-directory prefix", () => {
+	it("should remove a leading current-directory prefix", ({ expect }) => {
 		expect.assertions(2);
 
 		expect(root("./out")).toBe("out");
@@ -118,14 +118,14 @@ describe(toPosixRoot, () => {
 
 	it.for(["out/./nested", "out//nested", "out\\.\\nested\\", "out/nested/../nested"])(
 		"should reduce the root spelled %s to one directory name",
-		(spelling) => {
+		(spelling, { expect }) => {
 			expect.assertions(1);
 
 			expect(root(spelling)).toBe("out/nested");
 		},
 	);
 
-	it("should resolve a parent segment against the directory it climbs from", () => {
+	it("should resolve a parent segment against the directory it climbs from", ({ expect }) => {
 		expect.assertions(3);
 
 		expect(root("out/../out")).toBe("out");
@@ -133,7 +133,7 @@ describe(toPosixRoot, () => {
 		expect(root("D:/repo/./out/")).toBe("D:/repo/out");
 	});
 
-	it("should spell the current directory as a single dot", () => {
+	it("should spell the current directory as a single dot", ({ expect }) => {
 		expect.assertions(3);
 
 		expect(root("")).toBe(".");
@@ -144,7 +144,7 @@ describe(toPosixRoot, () => {
 	// Emptying it would leave a root that `isAbsolutePath` and `path.join` both
 	// read as the current directory, so the check that refuses absolute roots
 	// would wave it through.
-	it("should keep the separator a file-system root is made of", () => {
+	it("should keep the separator a file-system root is made of", ({ expect }) => {
 		expect.assertions(2);
 
 		expect(root("/")).toBe("/");
@@ -154,7 +154,7 @@ describe(toPosixRoot, () => {
 	// `path.posix.normalize` reads `D:` as an ordinary segment, so a climb past
 	// it eats the drive and leaves a relative path: one the check that refuses
 	// absolute roots waves through, and the walk then leaves the project.
-	it("should keep a drive root a parent segment climbs past", () => {
+	it("should keep a drive root a parent segment climbs past", ({ expect }) => {
 		expect.assertions(3);
 
 		expect(root("D:/../../out")).toBe("D:/out");
@@ -164,7 +164,7 @@ describe(toPosixRoot, () => {
 
 	// Same reason the file-system root keeps its separator: `D:` alone is not a
 	// drive root to `isAbsolutePath`, and `path.join` reads it as relative.
-	it("should keep the separator a drive root is made of", () => {
+	it("should keep the separator a drive root is made of", ({ expect }) => {
 		expect.assertions(2);
 
 		expect(root("D:/")).toBe("D:/");
@@ -173,7 +173,7 @@ describe(toPosixRoot, () => {
 
 	// A UNC share root is two separators wide. Folded to one it names a
 	// directory on this host rather than the share.
-	it("should keep a unc share root whole", () => {
+	it("should keep a unc share root whole", ({ expect }) => {
 		expect.assertions(3);
 
 		expect(root("//server/share/out/")).toBe("//server/share/out");
@@ -183,7 +183,7 @@ describe(toPosixRoot, () => {
 		);
 	});
 
-	it("should keep a root that climbs above its base", () => {
+	it("should keep a root that climbs above its base", ({ expect }) => {
 		expect.assertions(2);
 
 		expect(root("../out")).toBe("../out");
@@ -192,19 +192,19 @@ describe(toPosixRoot, () => {
 });
 
 describe(underRoot, () => {
-	it("should join a relative name onto an ordinary root", () => {
+	it("should join a relative name onto an ordinary root", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(underRoot(toPosixRoot("out"), "shared/player.luau")).toBe("out/shared/player.luau");
 	});
 
-	it("should name a file under the current directory by itself", () => {
+	it("should name a file under the current directory by itself", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(underRoot(toPosixRoot("."), "shared/player.luau")).toBe("shared/player.luau");
 	});
 
-	it("should write one separator under a file-system root", () => {
+	it("should write one separator under a file-system root", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(underRoot(toPosixRoot("/"), "shared/player.luau")).toBe("/shared/player.luau");
@@ -212,7 +212,7 @@ describe(underRoot, () => {
 });
 
 describe(relativeToRoot, () => {
-	it("should undo the join for every root spelling", () => {
+	it("should undo the join for every root spelling", ({ expect }) => {
 		expect.assertions(3);
 
 		expect(relativeToRoot(toPosixRoot("out"), "out/player.luau")).toBe("player.luau");
@@ -223,14 +223,14 @@ describe(relativeToRoot, () => {
 	// The current directory holds every relative name and nothing else. Its
 	// prefix is empty, so a boundary test that only strips a prefix claims
 	// every key there is, including one named in another frame entirely.
-	it("should refuse an absolute key under the current directory", () => {
+	it("should refuse an absolute key under the current directory", ({ expect }) => {
 		expect.assertions(2);
 
 		expect(relativeToRoot(toPosixRoot("."), "/abs/player.luau")).toBeUndefined();
 		expect(relativeToRoot(toPosixRoot("."), "D:/abs/player.luau")).toBeUndefined();
 	});
 
-	it("should refuse a key outside the root", () => {
+	it("should refuse a key outside the root", ({ expect }) => {
 		expect.assertions(2);
 
 		// The `/` boundary: a sibling whose name starts with the root's is not
@@ -246,7 +246,7 @@ describe(isWithinRoot, () => {
 		["out/shared/a.luau", true],
 		["out-tsc", false],
 		["other/out", false],
-	])("should place %s inside out: %s", ([target, expected]) => {
+	])("should place %s inside out: %s", ([target, expected], { expect }) => {
 		expect.assertions(1);
 
 		expect(isWithinRoot(target, "out")).toBe(expected);

@@ -1,6 +1,6 @@
 import * as path from "node:path";
 import process from "node:process";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { posixPath } from "#test/mocks/posix-path.ts";
 import {
@@ -36,7 +36,7 @@ function createResult(paths: Array<string>): MappedCoverageResult {
 }
 
 describe(sourceTwinFilter, () => {
-	it("should keep the source twin of a .test.ts file", () => {
+	it("should keep the source twin of a .test.ts file", ({ expect }) => {
 		expect.assertions(2);
 
 		const keep = sourceTwinFilter(["src/foo.test.ts"], "/repo");
@@ -45,7 +45,7 @@ describe(sourceTwinFilter, () => {
 		expect(keep(abs("src/bar.ts"))).toBeFalse();
 	});
 
-	it("should keep the source twin of a .spec.tsx file preserving the extension", () => {
+	it("should keep the source twin of a .spec.tsx file preserving the extension", ({ expect }) => {
 		expect.assertions(2);
 
 		const keep = sourceTwinFilter(["src/widget.spec.tsx"], "/repo");
@@ -54,7 +54,7 @@ describe(sourceTwinFilter, () => {
 		expect(keep(abs("src/widget.ts"))).toBeFalse();
 	});
 
-	it("should strip the -d type-test marker", () => {
+	it("should strip the -d type-test marker", ({ expect }) => {
 		expect.assertions(1);
 
 		const keep = sourceTwinFilter(["src/types.test-d.ts"], "/repo");
@@ -62,7 +62,7 @@ describe(sourceTwinFilter, () => {
 		expect(keep(abs("src/types.ts"))).toBeTrue();
 	});
 
-	it("should map a .test.luau file to its .luau twin", () => {
+	it("should map a .test.luau file to its .luau twin", ({ expect }) => {
 		expect.assertions(1);
 
 		const keep = sourceTwinFilter(["src/init.test.luau"], "/repo");
@@ -70,7 +70,7 @@ describe(sourceTwinFilter, () => {
 		expect(keep(abs("src/init.luau"))).toBeTrue();
 	});
 
-	it("should match route-group directories with glob metacharacters literally", () => {
+	it("should match route-group directories with glob metacharacters literally", ({ expect }) => {
 		expect.assertions(2);
 
 		const keep = sourceTwinFilter(["src/(routes)/page.test.ts"], "/repo");
@@ -79,7 +79,7 @@ describe(sourceTwinFilter, () => {
 		expect(keep(abs("src/x/page.ts"))).toBeFalse();
 	});
 
-	it("should resolve absolute positional paths against their own location", () => {
+	it("should resolve absolute positional paths against their own location", ({ expect }) => {
 		expect.assertions(1);
 
 		const keep = sourceTwinFilter([abs("src/foo.test.ts")], "/repo");
@@ -87,7 +87,7 @@ describe(sourceTwinFilter, () => {
 		expect(keep(abs("src/foo.ts"))).toBeTrue();
 	});
 
-	it("should keep a file with no test marker as its own twin", () => {
+	it("should keep a file with no test marker as its own twin", ({ expect }) => {
 		expect.assertions(1);
 
 		const keep = sourceTwinFilter(["src/plain.ts"], "/repo");
@@ -97,7 +97,7 @@ describe(sourceTwinFilter, () => {
 });
 
 describe(projectRootFilter, () => {
-	it("should keep files under a project root", () => {
+	it("should keep files under a project root", ({ expect }) => {
 		expect.assertions(2);
 
 		const keep = projectRootFilter([abs("src/shared")]);
@@ -106,7 +106,7 @@ describe(projectRootFilter, () => {
 		expect(keep(abs("src/server/boot.ts"))).toBeFalse();
 	});
 
-	it("should match the root directory itself", () => {
+	it("should match the root directory itself", ({ expect }) => {
 		expect.assertions(1);
 
 		const keep = projectRootFilter([abs("src/shared")]);
@@ -114,7 +114,7 @@ describe(projectRootFilter, () => {
 		expect(keep(abs("src/shared"))).toBeTrue();
 	});
 
-	it("should not match a sibling sharing a name prefix", () => {
+	it("should not match a sibling sharing a name prefix", ({ expect }) => {
 		expect.assertions(1);
 
 		const keep = projectRootFilter([abs("src/shared")]);
@@ -122,7 +122,7 @@ describe(projectRootFilter, () => {
 		expect(keep(abs("src/shared-extra/util.ts"))).toBeFalse();
 	});
 
-	it("should accept any of several roots", () => {
+	it("should accept any of several roots", ({ expect }) => {
 		expect.assertions(2);
 
 		const keep = projectRootFilter([abs("src/shared"), abs("src/client")]);
@@ -133,7 +133,7 @@ describe(projectRootFilter, () => {
 });
 
 describe(narrowMappedForAgentTable, () => {
-	it("should drop universe files the predicate rejects", () => {
+	it("should drop universe files the predicate rejects", ({ expect }) => {
 		expect.assertions(2);
 
 		const result = createResult([abs("src/foo.ts"), abs("src/bar.ts")]);
@@ -146,7 +146,7 @@ describe(narrowMappedForAgentTable, () => {
 		expect(narrowed.files[abs("src/bar.ts")]).toBeUndefined();
 	});
 
-	it("should resolve relative universe keys before testing the predicate", () => {
+	it("should resolve relative universe keys before testing the predicate", ({ expect }) => {
 		expect.assertions(1);
 
 		const relativeKey = "src/foo.ts";
@@ -161,7 +161,7 @@ describe(narrowMappedForAgentTable, () => {
 		expect(Object.keys(narrowed.files)).toStrictEqual([relativeKey]);
 	});
 
-	it("should return an empty universe when nothing matches", () => {
+	it("should return an empty universe when nothing matches", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = createResult([abs("src/foo.ts")]);
@@ -170,7 +170,7 @@ describe(narrowMappedForAgentTable, () => {
 		expect(narrowed.files).toStrictEqual({});
 	});
 
-	it("should keep the full universe when everything matches", () => {
+	it("should keep the full universe when everything matches", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = createResult([abs("src/foo.ts"), abs("src/bar.ts")]);

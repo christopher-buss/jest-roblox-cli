@@ -1,6 +1,6 @@
 import { originalPositionFor, TraceMap } from "@jridgewell/trace-mapping";
 
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { buildSourceMap } from "./source-map.ts";
 
@@ -9,7 +9,7 @@ import { buildSourceMap } from "./source-map.ts";
 // (it would quietly move where a frame resolves to), so the round trip through
 // a real consumer is what holds it honest.
 describe(buildSourceMap, () => {
-	it("should round-trip a segment through the encoder and the tracer", () => {
+	it("should round-trip a segment through the encoder and the tracer", ({ expect }) => {
 		expect.assertions(2);
 
 		const map = buildSourceMap({

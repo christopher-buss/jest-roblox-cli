@@ -1,9 +1,9 @@
 import { loadLuauParser, visitBlock } from "@isentinel/luau-ast";
 
-import { assert, describe, expect, it } from "vitest";
+import { assert, describe, it } from "vitest";
 
 describe("parser and visitor", () => {
-	it("should traverse parsed expressions in lexical order", () => {
+	it("should traverse parsed expressions in lexical order", ({ expect }) => {
 		expect.assertions(1);
 
 		const parsed = loadLuauParser().parse("local x = 1 + 2\nreturn x");

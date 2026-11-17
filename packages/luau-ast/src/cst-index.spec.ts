@@ -1,4 +1,4 @@
-import { assert, describe, expect, it } from "vitest";
+import { assert, describe, it } from "vitest";
 
 import { numberNode } from "#test/helpers/unit/cst";
 import { cstTree } from "#test/helpers/unit/trees";
@@ -22,7 +22,7 @@ function walkEvents(walk: (walker: Required<Pick<CstWalker, "onExit" | "onNode">
 }
 
 describe(indexCst, () => {
-	it("should list nodes in pre-order and the tree's own tokens", () => {
+	it("should list nodes in pre-order and the tree's own tokens", ({ expect }) => {
 		expect.assertions(2);
 
 		const root = cstTree("return 1\n");
@@ -35,7 +35,7 @@ describe(indexCst, () => {
 		expect(index.tokens.map(({ text }) => text)).toStrictEqual(["exit", "1", ""]);
 	});
 
-	it("should bound each node by its first and last token", () => {
+	it("should bound each node by its first and last token", ({ expect }) => {
 		expect.assertions(2);
 
 		const root = cstTree(NESTED);
@@ -55,7 +55,7 @@ describe(indexCst, () => {
 		expect(indexCst(empty).boundsOf(empty)).toBeUndefined();
 	});
 
-	it("should give each node the token positions it fills", () => {
+	it("should give each node the token positions it fills", ({ expect }) => {
 		expect.assertions(2);
 
 		const root = cstTree(NESTED);
@@ -70,7 +70,7 @@ describe(indexCst, () => {
 		expect(indexCst(empty).tokenRangeOf(empty)).toStrictEqual({ end: 0, start: 0 });
 	});
 
-	it("should list the nodes of one kind in pre-order", () => {
+	it("should list the nodes of one kind in pre-order", ({ expect }) => {
 		expect.assertions(3);
 
 		const index = indexCst(cstTree(NESTED));
@@ -82,7 +82,7 @@ describe(indexCst, () => {
 		expect(index.ofKind("While")).toStrictEqual([]);
 	});
 
-	it("should give each node its ordinal and parent", () => {
+	it("should give each node its ordinal and parent", ({ expect }) => {
 		expect.assertions(4);
 
 		const root = cstTree("return 1\n");
@@ -95,7 +95,7 @@ describe(indexCst, () => {
 		expect(index.parentOf(root)).toBeUndefined();
 	});
 
-	it("should map each node but the root to its parent, built once", () => {
+	it("should map each node but the root to its parent, built once", ({ expect }) => {
 		expect.assertions(2);
 
 		const root = cstTree(NESTED);
@@ -108,7 +108,7 @@ describe(indexCst, () => {
 		expect(index.parentMap()).toBe(index.parentMap());
 	});
 
-	it("should name a node the index does not hold", () => {
+	it("should name a node the index does not hold", ({ expect }) => {
 		expect.assertions(4);
 
 		const index = indexCst(cstTree("return 1\n"));
@@ -122,7 +122,7 @@ describe(indexCst, () => {
 		}).toThrow("the index holds no Number at 1:1");
 	});
 
-	it("should walk a subtree in pre-order, skipping claimed nodes", () => {
+	it("should walk a subtree in pre-order, skipping claimed nodes", ({ expect }) => {
 		expect.assertions(1);
 
 		const root = cstTree(NESTED);

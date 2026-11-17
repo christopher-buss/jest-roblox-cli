@@ -1,5 +1,5 @@
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { runTypecheckAsync } from "#src/api.ts";
 
@@ -14,7 +14,7 @@ async function checkAsync(fileName: string, fixture = "luau-config-type") {
 }
 
 describe("luau config type checks", () => {
-	it("should accept valid configs", async () => {
+	it("should accept valid configs", async ({ expect }) => {
 		expect.assertions(2);
 
 		const result = await checkAsync("valid.spec-d.luau");
@@ -23,7 +23,7 @@ describe("luau config type checks", () => {
 		expect(result.numPassedTests).toBe(3);
 	});
 
-	it("should reject unknown keys and wrong value shapes", async () => {
+	it("should reject unknown keys and wrong value shapes", async ({ expect }) => {
 		expect.assertions(2);
 
 		const result = await checkAsync("invalid.spec-d.luau");
@@ -40,7 +40,7 @@ describe("luau config type checks", () => {
 		]);
 	});
 
-	it("should resolve the alias from a .config.luau", async () => {
+	it("should resolve the alias from a .config.luau", async ({ expect }) => {
 		expect.assertions(2);
 
 		const result = await checkAsync("alias.spec-d.luau", "luau-config-type-config-luau");

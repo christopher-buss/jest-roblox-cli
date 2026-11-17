@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import { buildTaskParameters, completedResult } from "./task-envelope.ts";
 
@@ -13,7 +13,7 @@ describe(buildTaskParameters, () => {
 		{ binaryInput: "", expected: { binaryInput: "", versionId: "17" }, placeVersion: 17 },
 	])(
 		"should preserve optional request keys without sending undefined: %j",
-		({ binaryInput, expected, placeVersion }) => {
+		({ binaryInput, expected, placeVersion }, { expect }) => {
 			expect.assertions(1);
 
 			expect(
@@ -36,7 +36,9 @@ describe(buildTaskParameters, () => {
 });
 
 describe(completedResult, () => {
-	it("should serialize non-string outputs and retain terminal identity and host elapsed time", () => {
+	it("should serialize non-string outputs and retain terminal identity and host elapsed time", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		vi.spyOn(Date, "now").mockReturnValue(123);

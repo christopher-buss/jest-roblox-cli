@@ -1,12 +1,12 @@
 import { createFakeHttpClient } from "@bedrock-rbx/ocale/testing";
 import { fromAny } from "@total-typescript/shoehorn";
 
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import { flushMemoryStoreAsync } from "./memory-store-flush.ts";
 
 describe("memory store flush", () => {
-	it("should POST the universe-wide flush endpoint", async () => {
+	it("should POST the universe-wide flush endpoint", async ({ expect }) => {
 		expect.assertions(3);
 
 		const http = createFakeHttpClient();
@@ -21,7 +21,7 @@ describe("memory store flush", () => {
 		);
 	});
 
-	it("should route through a custom baseUrl when supplied", async () => {
+	it("should route through a custom baseUrl when supplied", async ({ expect }) => {
 		expect.assertions(1);
 
 		const http = createFakeHttpClient();
@@ -37,7 +37,9 @@ describe("memory store flush", () => {
 		expect(http.requests[0]!.config.baseUrl).toBe("http://127.0.0.1:4010");
 	});
 
-	it("should reach Open Cloud over the real transport when no client is injected", async () => {
+	it("should reach Open Cloud over the real transport when no client is injected", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const fetchMock = vi
@@ -52,7 +54,7 @@ describe("memory store flush", () => {
 		);
 	});
 
-	it("should throw when the flush returns an API error", async () => {
+	it("should throw when the flush returns an API error", async ({ expect }) => {
 		expect.assertions(1);
 
 		const http = createFakeHttpClient();

@@ -1,6 +1,6 @@
 import { fromAny } from "@total-typescript/shoehorn";
 
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import { NOOP_PROGRESS } from "#test/mocks/noop-progress.ts";
 import { projectJob } from "#test/mocks/project-job.ts";
@@ -28,7 +28,7 @@ function capture(kind: Backend["kind"]) {
 }
 
 describe(dispatchAsync, () => {
-	it("should reject a plan with no jobs", async () => {
+	it("should reject a plan with no jobs", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { backend } = capture("studio");
@@ -38,7 +38,7 @@ describe(dispatchAsync, () => {
 		);
 	});
 
-	it("should hand Open Cloud static buckets and the run settings", async () => {
+	it("should hand Open Cloud static buckets and the run settings", async ({ expect }) => {
 		expect.assertions(2);
 
 		const { backend, runTestsAsync } = capture("open-cloud");
@@ -61,7 +61,7 @@ describe(dispatchAsync, () => {
 		});
 	});
 
-	it("should ask Open Cloud to work-steal a sharded workspace run", async () => {
+	it("should ask Open Cloud to work-steal a sharded workspace run", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { backend, runTestsAsync } = capture("open-cloud");
@@ -83,7 +83,9 @@ describe(dispatchAsync, () => {
 		});
 	});
 
-	it("should not bail a work-stealing Open Cloud run the plan did not ask to bail", async () => {
+	it("should not bail a work-stealing Open Cloud run the plan did not ask to bail", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { backend, runTestsAsync } = capture("open-cloud");
@@ -103,7 +105,7 @@ describe(dispatchAsync, () => {
 		});
 	});
 
-	it("should keep a workspace run on one Open Cloud session deferrable", async () => {
+	it("should keep a workspace run on one Open Cloud session deferrable", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { backend, runTestsAsync } = capture("open-cloud");
@@ -123,7 +125,9 @@ describe(dispatchAsync, () => {
 		});
 	});
 
-	it("should not bail a deferrable Open Cloud run the plan did not ask to bail", async () => {
+	it("should not bail a deferrable Open Cloud run the plan did not ask to bail", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { backend, runTestsAsync } = capture("open-cloud");
@@ -143,7 +147,7 @@ describe(dispatchAsync, () => {
 
 	it.for<[Backend["kind"]]>([["studio"], ["studio-cli"]])(
 		"should hand %s the bail flag, the VM count and the run shape",
-		async ([kind]) => {
+		async ([kind], { expect }) => {
 			expect.assertions(2);
 
 			const first = capture(kind);

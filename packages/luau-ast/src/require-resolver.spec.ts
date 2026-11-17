@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { memoryFileSystem } from "#test/helpers/unit/file-system";
 import { fixtureCstParser } from "#test/helpers/unit/trees";
@@ -37,7 +37,7 @@ describe(createStringRequireResolver, () => {
 		["/luau/surface/init.luau", "@self/realm", "/luau/surface/realm.luau"],
 		["/luau/surface/init.luau", "@self/nested", "/luau/surface/nested/init.luau"],
 		["/luau/surface/init.lua", "../helper", "/helper.luau"],
-	])("should resolve %s requiring %j", ([from, request, target]) => {
+	])("should resolve %s requiring %j", ([from, request, target], { expect }) => {
 		expect.assertions(1);
 
 		const resolve = existing(
@@ -59,7 +59,7 @@ describe(createStringRequireResolver, () => {
 		["@Deep-Lib", "/project/lib/deep/init.luau"],
 		["@abs/x", "/abs/root/x.luau"],
 		["@pkg/x", "/packages/pkg/x.luau"],
-	])("should resolve the alias require %j", ([request, target]) => {
+	])("should resolve the alias require %j", ([request, target], { expect }) => {
 		expect.assertions(1);
 
 		const { resolve } = resolverOver({
@@ -107,7 +107,7 @@ describe(createStringRequireResolver, () => {
 			"./both",
 			'cannot resolve require("./both") from /luau/runner.luau: ambiguous between /luau/both.luau and /luau/both.lua',
 		],
-	])("should not resolve %j", ([request, reason]) => {
+	])("should not resolve %j", ([request, reason], { expect }) => {
 		expect.assertions(1);
 
 		const resolve = existing(
@@ -124,7 +124,7 @@ describe(createStringRequireResolver, () => {
 	it.for<[string, string]>([
 		["/luau/surface/init.luau", "@self/../helper"],
 		["/project/src/a.luau", "@shared/../helper"],
-	])("should not walk out of where %s starts %j", ([from, request]) => {
+	])("should not walk out of where %s starts %j", ([from, request], { expect }) => {
 		expect.assertions(1);
 
 		const { resolve } = resolverOver({
@@ -138,7 +138,7 @@ describe(createStringRequireResolver, () => {
 		);
 	});
 
-	it("should pass on why an alias configuration cannot be read", () => {
+	it("should pass on why an alias configuration cannot be read", ({ expect }) => {
 		expect.assertions(1);
 
 		const { resolve } = resolverOver({ "/luau/.luaurc": "[" });
@@ -149,7 +149,7 @@ describe(createStringRequireResolver, () => {
 		});
 	});
 
-	it("should cache a probe even when the missing module appears later", () => {
+	it("should cache a probe even when the missing module appears later", ({ expect }) => {
 		expect.assertions(2);
 
 		const { resolve, volume } = resolverOver({ "/luau/runner.luau": "" });

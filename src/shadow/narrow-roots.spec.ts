@@ -1,6 +1,6 @@
 import * as path from "node:path";
 import type { Except } from "type-fest";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { copyIgnoreMatcher } from "#test/mocks/coverage-copy-ignore.ts";
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
@@ -69,7 +69,7 @@ function narrowRootToUniverse(
 }
 
 describe("narrowRootToUniverse", () => {
-	it("should keep the mount whole when the run narrows nothing", () => {
+	it("should keep the mount whole when the run narrows nothing", ({ expect }) => {
 		expect.assertions(1);
 
 		const fileSystem = seed("modules/ecs/world.luau");
@@ -83,7 +83,7 @@ describe("narrowRootToUniverse", () => {
 		).toStrictEqual([""]);
 	});
 
-	it("should drop a mount the universe never reaches", () => {
+	it("should drop a mount the universe never reaches", ({ expect }) => {
 		expect.assertions(1);
 
 		const fileSystem = seed("modules/ecs/world.luau");
@@ -97,7 +97,7 @@ describe("narrowRootToUniverse", () => {
 		).toStrictEqual([]);
 	});
 
-	it("should keep the mount whole when the ignore list is what emptied it", () => {
+	it("should keep the mount whole when the ignore list is what emptied it", ({ expect }) => {
 		expect.assertions(1);
 
 		const fileSystem = seed("modules/ecs/world.luau");
@@ -115,7 +115,7 @@ describe("narrowRootToUniverse", () => {
 		).toStrictEqual([""]);
 	});
 
-	it("should still narrow when ignored paths leave a probe elsewhere", () => {
+	it("should still narrow when ignored paths leave a probe elsewhere", ({ expect }) => {
 		expect.assertions(1);
 
 		const fileSystem = seed(
@@ -134,7 +134,7 @@ describe("narrowRootToUniverse", () => {
 		).toStrictEqual(["modules/ecs"]);
 	});
 
-	it("should read a mount written with a trailing separator", () => {
+	it("should read a mount written with a trailing separator", ({ expect }) => {
 		expect.assertions(1);
 
 		// Wide enough that narrowing pays: a mount whose probed directory holds
@@ -159,7 +159,7 @@ describe("narrowRootToUniverse", () => {
 		).toStrictEqual(["modules/ecs"]);
 	});
 
-	it("should narrow to the directory the probed files live in", () => {
+	it("should narrow to the directory the probed files live in", ({ expect }) => {
 		expect.assertions(1);
 
 		const fileSystem = seed(
@@ -180,7 +180,7 @@ describe("narrowRootToUniverse", () => {
 		).toStrictEqual(["modules/ecs"]);
 	});
 
-	it("should collapse a probed directory nested inside another", () => {
+	it("should collapse a probed directory nested inside another", ({ expect }) => {
 		expect.assertions(1);
 
 		const fileSystem = seed(
@@ -206,7 +206,7 @@ describe("narrowRootToUniverse", () => {
 		).toStrictEqual(["modules/ecs"]);
 	});
 
-	it("should keep one root per probed branch", () => {
+	it("should keep one root per probed branch", ({ expect }) => {
 		expect.assertions(1);
 
 		const fileSystem = seed(
@@ -227,7 +227,7 @@ describe("narrowRootToUniverse", () => {
 		).toStrictEqual(["modules/ecs", "react/hooks/ecs"]);
 	});
 
-	it("should keep the mount whole when a probed file sits directly in it", () => {
+	it("should keep the mount whole when a probed file sits directly in it", ({ expect }) => {
 		expect.assertions(1);
 
 		// A second probe two directories down, so the answer cannot come from
@@ -251,7 +251,7 @@ describe("narrowRootToUniverse", () => {
 		).toStrictEqual([""]);
 	});
 
-	it("should keep the mount whole when narrowing would shed almost nothing", () => {
+	it("should keep the mount whole when narrowing would shed almost nothing", ({ expect }) => {
 		expect.assertions(1);
 
 		// Ten of eleven files stay, so the roots buy a project node per sibling
@@ -279,7 +279,7 @@ describe("narrowRootToUniverse", () => {
 		).toStrictEqual([""]);
 	});
 
-	it("should narrow when the retained share lands exactly on the line", () => {
+	it("should narrow when the retained share lands exactly on the line", ({ expect }) => {
 		expect.assertions(1);
 
 		// Nine of ten files stay, which is the share itself rather than more
@@ -306,7 +306,7 @@ describe("narrowRootToUniverse", () => {
 		).toStrictEqual(["a"]);
 	});
 
-	it("should count a file kept by any one root, not by all of them", () => {
+	it("should count a file kept by any one root, not by all of them", ({ expect }) => {
 		expect.assertions(1);
 
 		// Ten of eleven files stay, split across two roots. Counting only the
@@ -334,7 +334,7 @@ describe("narrowRootToUniverse", () => {
 		).toStrictEqual([""]);
 	});
 
-	it("should judge the share against the files the shadow would carry", () => {
+	it("should judge the share against the files the shadow would carry", ({ expect }) => {
 		expect.assertions(1);
 
 		// The copy-ignored siblings never reach the shadow either way, so
@@ -353,7 +353,7 @@ describe("narrowRootToUniverse", () => {
 });
 
 describe(narrowRootsInFrame, () => {
-	it("should carry a mount through whole when nothing narrows it", () => {
+	it("should carry a mount through whole when nothing narrows it", ({ expect }) => {
 		expect.assertions(1);
 
 		const fileSystem = seed("world.luau");
@@ -368,7 +368,7 @@ describe(narrowRootsInFrame, () => {
 		).toStrictEqual([{ luauRoot: MOUNT, roots: [MOUNT], spine: [] }]);
 	});
 
-	it("should name the roots and the way down to them", () => {
+	it("should name the roots and the way down to them", ({ expect }) => {
 		expect.assertions(1);
 
 		const fileSystem = seed(
@@ -395,7 +395,7 @@ describe(narrowRootsInFrame, () => {
 		]);
 	});
 
-	it("should keep a mount the universe never reaches out of the shadow", () => {
+	it("should keep a mount the universe never reaches out of the shadow", ({ expect }) => {
 		expect.assertions(1);
 
 		const fileSystem = seed("client/a.luau");
@@ -410,7 +410,7 @@ describe(narrowRootsInFrame, () => {
 		).toStrictEqual([{ luauRoot: MOUNT, roots: [], spine: [] }]);
 	});
 
-	it("should read a mount written with a trailing slash as the same directory", () => {
+	it("should read a mount written with a trailing slash as the same directory", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -423,7 +423,9 @@ describe(narrowRootsInFrame, () => {
 		).toStrictEqual([{ luauRoot: MOUNT, roots: [MOUNT], spine: [] }]);
 	});
 
-	it("should keep the mount whole when the mounts reach past the narrowed roots", () => {
+	it("should keep the mount whole when the mounts reach past the narrowed roots", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const fileSystem = seed(
@@ -446,7 +448,9 @@ describe(narrowRootsInFrame, () => {
 		).toStrictEqual([{ luauRoot: MOUNT, roots: [MOUNT], spine: [] }]);
 	});
 
-	it("should keep the mount whole when no rojo mount can reach the narrowed roots", () => {
+	it("should keep the mount whole when no rojo mount can reach the narrowed roots", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const fileSystem = seed(
@@ -470,7 +474,7 @@ describe(narrowRootsInFrame, () => {
 		).toStrictEqual([{ luauRoot: MOUNT, roots: [MOUNT], spine: [] }]);
 	});
 
-	it("should hang the spine off the rojo mount, not the luauRoot above it", () => {
+	it("should hang the spine off the rojo mount, not the luauRoot above it", ({ expect }) => {
 		expect.assertions(1);
 
 		const fileSystem = seed(

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import {
 	inlineModule,
@@ -11,7 +11,7 @@ const MODULE_SOURCE = readLuauModule("circus-state-release.luau");
 const HARNESS = readHarness("circus-state-release");
 
 describe("circus state release under lute", () => {
-	it("should pass the circus-state-release harness assertions", () => {
+	it("should pass the circus-state-release harness assertions", ({ expect }) => {
 		expect.assertions(1);
 
 		const script = HARNESS.replace("__MODULE__", () => {

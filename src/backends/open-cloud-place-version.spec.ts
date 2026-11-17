@@ -2,7 +2,7 @@ import { PollTimeoutError } from "@bedrock-rbx/ocale";
 import type { ExecuteScriptOptions, RemoteRunner, ScriptResult } from "@isentinel/roblox-runner";
 
 import * as path from "node:path";
-import { assert, describe, expect, it, vi } from "vitest";
+import { assert, describe, it, vi } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { NOOP_PROGRESS } from "#test/mocks/noop-progress.ts";
@@ -91,7 +91,9 @@ function setup() {
 
 describe(PlaceVersionGate, () => {
 	describe("upload cache", () => {
-		it("should upload on the first run and reuse the version on the second", async () => {
+		it("should upload on the first run and reuse the version on the second", async ({
+			expect,
+		}) => {
 			expect.assertions(3);
 
 			const { runAsync, uploadPlaceAsync } = setup();
@@ -104,7 +106,9 @@ describe(PlaceVersionGate, () => {
 			expect(second.isBootProven).toBeFalse();
 		});
 
-		it("should announce the cached version without opening an upload stage", async () => {
+		it("should announce the cached version without opening an upload stage", async ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			const { runAsync } = setup();
@@ -123,7 +127,7 @@ describe(PlaceVersionGate, () => {
 			expect(notes).toStrictEqual([{ id: "upload", detail: "cache hit, version 42" }]);
 		});
 
-		it("should upload again when the place bytes change", async () => {
+		it("should upload again when the place bytes change", async ({ expect }) => {
 			expect.assertions(1);
 
 			const { fileSystem, placeFilePath, runAsync, uploadPlaceAsync } = setup();
@@ -134,7 +138,9 @@ describe(PlaceVersionGate, () => {
 			expect(uploadPlaceAsync).toHaveBeenCalledTimes(2);
 		});
 
-		it("should always upload, and write no cache file, when the cache is disabled", async () => {
+		it("should always upload, and write no cache file, when the cache is disabled", async ({
+			expect,
+		}) => {
 			expect.assertions(2);
 
 			const { fileSystem, rootDirectory, runAsync, uploadPlaceAsync } = setup();
@@ -152,7 +158,7 @@ describe(PlaceVersionGate, () => {
 	});
 
 	describe("boot probe", () => {
-		it("should prove the uploaded version with a probe pinned to it", async () => {
+		it("should prove the uploaded version with a probe pinned to it", async ({ expect }) => {
 			expect.assertions(2);
 
 			const { executeScriptAsync, runAsync } = setup();
@@ -173,13 +179,13 @@ describe(PlaceVersionGate, () => {
 			{ message: 'reported ""', outputs: [] },
 		])(
 			"should stop when the probe reports $outputs and cache nothing",
-			async ({ message, outputs }) => {
+			async ({ message, outputs }, { expect }) => {
 				expect.assertions(3);
 
 				const { executeScriptAsync, runAsync, setProbe, uploadPlaceAsync } = setup();
 				setProbe(() => ({ durationMs: 0, outputs }));
 
-				const caught = await runAsync().catch((err: unknown) => err);
+				const caught = await runAsync().catch((err) => err);
 				setProbe(passingProbe);
 				await runAsync();
 
@@ -193,7 +199,7 @@ describe(PlaceVersionGate, () => {
 		);
 
 		/** A lost probe says nothing about the place. */
-		it("should send one more probe when the first is lost", async () => {
+		it("should send one more probe when the first is lost", async ({ expect }) => {
 			expect.assertions(2);
 
 			const { executeScriptAsync, runAsync, setProbe } = setup();
@@ -206,7 +212,9 @@ describe(PlaceVersionGate, () => {
 			expect(executeScriptAsync).toHaveBeenCalledTimes(2);
 		});
 
-		it("should stop as boot unverified, sending no third probe, when both are lost", async () => {
+		it("should stop as boot unverified, sending no third probe, when both are lost", async ({
+			expect,
+		}) => {
 			expect.assertions(3);
 
 			const { executeScriptAsync, runAsync, setProbe, uploadPlaceAsync } = setup();
@@ -225,7 +233,7 @@ describe(PlaceVersionGate, () => {
 			expect(uploadPlaceAsync).toHaveBeenCalledTimes(2);
 		});
 
-		it("should name the probe budget in whole seconds", async () => {
+		it("should name the probe budget in whole seconds", async ({ expect }) => {
 			expect.assertions(1);
 
 			const { runAsync, setProbe } = setup();
@@ -238,7 +246,7 @@ describe(PlaceVersionGate, () => {
 			);
 		});
 
-		it("should close the boot stage once the probe passes", async () => {
+		it("should close the boot stage once the probe passes", async ({ expect }) => {
 			expect.assertions(1);
 
 			const completed: Array<{
@@ -267,7 +275,9 @@ describe(PlaceVersionGate, () => {
 		 * Zero is the off switch. The version then earns no cache entry: an
 		 * entry means "these bytes boot", and nothing proved it.
 		 */
-		it("should skip the probe, and cache nothing, when the budget is zero", async () => {
+		it("should skip the probe, and cache nothing, when the budget is zero", async ({
+			expect,
+		}) => {
 			expect.assertions(3);
 
 			const { executeScriptAsync, runAsync, uploadPlaceAsync } = setup();
@@ -284,7 +294,9 @@ describe(PlaceVersionGate, () => {
 		 * A throttle or a bad key says something about the request, not about
 		 * the place, and must not be reported as one.
 		 */
-		it("should pass a probe failure that is not a timeout through untouched", async () => {
+		it("should pass a probe failure that is not a timeout through untouched", async ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			const { runAsync, setProbe } = setup();
@@ -300,7 +312,7 @@ describe(PlaceVersionGate, () => {
 			{ budget: 1000, timeout: 1000 },
 		])(
 			"should give a $budget ms probe budget a $timeout ms deadline",
-			async ({ budget, timeout }) => {
+			async ({ budget, timeout }, { expect }) => {
 				expect.assertions(1);
 
 				const { executeScriptAsync, runAsync } = setup();
@@ -329,12 +341,12 @@ describe(PlaceVersionGate, () => {
 				.executeWithCachedUploadAsync({ rootDirectory, target, upload }, async () => {
 					throw failure;
 				})
-				.catch((err: unknown) => err);
+				.catch((err) => err);
 			await runAsync();
 			return { ...context, caught };
 		}
 
-		it("should hand back what the attempt produced", async () => {
+		it("should hand back what the attempt produced", async ({ expect }) => {
 			expect.assertions(1);
 
 			const { gate, rootDirectory, target } = setup();
@@ -353,7 +365,7 @@ describe(PlaceVersionGate, () => {
 			).resolves.toBe("ok");
 		});
 
-		it("should clear a suspect cache entry on a 404 and rethrow", async () => {
+		it("should clear a suspect cache entry on a 404 and rethrow", async ({ expect }) => {
 			expect.assertions(3);
 
 			const writes = captureStderr();
@@ -367,7 +379,9 @@ describe(PlaceVersionGate, () => {
 			expect(uploadPlaceAsync).toHaveBeenCalledTimes(2);
 		});
 
-		it("should keep the cache entry for a failure that is not a missing version", async () => {
+		it("should keep the cache entry for a failure that is not a missing version", async ({
+			expect,
+		}) => {
 			expect.assertions(2);
 
 			const failure = apiError(500);

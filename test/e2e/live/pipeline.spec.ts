@@ -8,7 +8,7 @@ import { type } from "arktype";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import process from "node:process";
-import { assert, describe, expect, it, onTestFinished } from "vitest";
+import { assert, describe, it } from "vitest";
 
 import { LIVE_STARTUP_BUDGET_MS, MAXIMUM_SUBMIT_MS } from "#test/e2e/live/live-budgets.ts";
 import { IS_LIVE, liveEnvironment } from "#test/e2e/live/live-gate.ts";
@@ -99,7 +99,7 @@ describe("live pipeline", () => {
 	// fixture sources, recompile the fixture as its README says.
 	it.runIf(IS_LIVE)(
 		"should run both mounts, capture game output, and report coverage in one run",
-		async (context) => {
+		async ({ expect, skip }) => {
 			expect.assertions(11);
 
 			const sandbox = createFixtureSandbox(LIVE_FIXTURE_PATH);
@@ -124,7 +124,7 @@ describe("live pipeline", () => {
 			);
 
 			const quotaNote = quotaSkipNote(result);
-			context.skip(quotaNote !== undefined, quotaNote);
+			skip(quotaNote !== undefined, quotaNote);
 
 			expect(result.exitCode, `stderr: ${result.stderr}\nstdout: ${result.stdout}`).toBe(0);
 			// Four shared tests (one bare `it`, one nested, two `each` rows) plus
@@ -189,12 +189,13 @@ describe("live pipeline", () => {
 	it.runIf(IS_LIVE)(
 		"should record each test's own it( line and range hash, whichever way it was declared",
 		async (context) => {
-			expect.assertions(7);
+			context.expect.assertions(7);
+			const { expect } = context;
 
 			const sandbox = createFixtureSandbox(LIVE_FIXTURE_PATH);
 			const previousCwd = process.cwd();
 			process.chdir(sandbox);
-			onTestFinished(() => {
+			context.onTestFinished(() => {
 				process.chdir(previousCwd);
 			});
 
@@ -254,7 +255,7 @@ describe("live pipeline", () => {
 	// live check of the FS to Instance normalization.
 	it.runIf(IS_LIVE)(
 		"should run only the named file when a namesake shares its basename",
-		async (context) => {
+		async ({ expect, skip }) => {
 			expect.assertions(4);
 
 			const sandbox = createFixtureSandbox(LIVE_FIXTURE_PATH);
@@ -274,7 +275,7 @@ describe("live pipeline", () => {
 			);
 
 			const quotaNote = quotaSkipNote(result);
-			context.skip(quotaNote !== undefined, quotaNote);
+			skip(quotaNote !== undefined, quotaNote);
 
 			expect(result.exitCode, `stderr: ${result.stderr}\nstdout: ${result.stdout}`).toBe(0);
 			expect(result.stdout).toContain("1 passed");

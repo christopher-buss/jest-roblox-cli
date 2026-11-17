@@ -1,6 +1,6 @@
 import { fromPartial } from "@total-typescript/shoehorn";
 
-import { assert, describe, expect, it } from "vitest";
+import { assert, describe, it } from "vitest";
 
 import { EXEC_ERROR_RESULT, TIMED_OUT_RESULT } from "#test/mocks/format-error-results.ts";
 import { FAILING_RESULT, MIXED_RESULT, PASSING_RESULT } from "#test/mocks/format-results.ts";
@@ -100,7 +100,7 @@ function singleFailure({
 }
 
 describe("formatAnnotations workflow commands", () => {
-	it("should percent-encode percent, CR and LF in the message", () => {
+	it("should percent-encode percent, CR and LF in the message", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -115,7 +115,7 @@ describe("formatAnnotations workflow commands", () => {
 		).toBe("::error file=src/test.ts,title=t::100%25 done%0D%0ANext line");
 	});
 
-	it("should percent-encode percent, CR, LF, colon and comma in properties", () => {
+	it("should percent-encode percent, CR, LF, colon and comma in properties", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -130,7 +130,7 @@ describe("formatAnnotations workflow commands", () => {
 		).toBe("::error file=a%25b%0D%0Ac%3Ad%2Ce,title=a%25b%0D%0Ac%3Ad%2Ce::x");
 	});
 
-	it("should pass normal text through unchanged", () => {
+	it("should pass normal text through unchanged", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -145,7 +145,7 @@ describe("formatAnnotations workflow commands", () => {
 		).toBe("::error file=src/test.ts,title=hello world::hello world");
 	});
 
-	it("should produce ::error workflow command with file, line, col, and title", () => {
+	it("should produce ::error workflow command with file, line, col, and title", ({ expect }) => {
 		expect.assertions(1);
 
 		const sourceMapper: SourceMapper = fromPartial({
@@ -179,7 +179,7 @@ describe("formatAnnotations workflow commands", () => {
 		);
 	});
 
-	it("should omit col when only a line is known", () => {
+	it("should omit col when only a line is known", ({ expect }) => {
 		expect.assertions(1);
 
 		const sourceMapper: SourceMapper = fromPartial({
@@ -207,7 +207,7 @@ describe("formatAnnotations workflow commands", () => {
 });
 
 describe("formatAnnotations annotations", () => {
-	it("should return empty array for passing results", () => {
+	it("should return empty array for passing results", ({ expect }) => {
 		expect.assertions(1);
 
 		const annotations = collectAnnotations(PASSING_RESULT, {});
@@ -215,7 +215,7 @@ describe("formatAnnotations annotations", () => {
 		expect(annotations).toStrictEqual([]);
 	});
 
-	it("should create annotation for failed test with mapped TS location", () => {
+	it("should create annotation for failed test with mapped TS location", ({ expect }) => {
 		expect.assertions(3);
 
 		const sourceMapper: SourceMapper = fromPartial({
@@ -250,7 +250,7 @@ describe("formatAnnotations annotations", () => {
 		});
 	});
 
-	it("should fall back to testFilePath when no sourceMapper", () => {
+	it("should fall back to testFilePath when no sourceMapper", ({ expect }) => {
 		expect.assertions(2);
 
 		const annotations = collectAnnotations(FAILING_RESULT, {});
@@ -262,7 +262,7 @@ describe("formatAnnotations annotations", () => {
 		});
 	});
 
-	it("should create annotation for exec-error file", () => {
+	it("should create annotation for exec-error file", ({ expect }) => {
 		expect.assertions(2);
 
 		const annotations = collectAnnotations(EXEC_ERROR_RESULT, {});
@@ -274,7 +274,7 @@ describe("formatAnnotations annotations", () => {
 		});
 	});
 
-	it("should title a timed-out annotation after the budget", () => {
+	it("should title a timed-out annotation after the budget", ({ expect }) => {
 		expect.assertions(1);
 
 		const annotations = collectAnnotations(TIMED_OUT_RESULT, {});
@@ -282,7 +282,7 @@ describe("formatAnnotations annotations", () => {
 		expect(annotations[0]).toMatchObject({ title: "Test suite timed out" });
 	});
 
-	it("should title a timed-out job-summary failure after the budget", () => {
+	it("should title a timed-out job-summary failure after the budget", ({ expect }) => {
 		expect.assertions(2);
 
 		const summary = formatJobSummary(TIMED_OUT_RESULT, {});
@@ -291,7 +291,9 @@ describe("formatAnnotations annotations", () => {
 		expect(summary).not.toContain("Test suite failed to run");
 	});
 
-	it("should handle failed test with empty failureMessages and skip sourceMapper", () => {
+	it("should handle failed test with empty failureMessages and skip sourceMapper", ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const sourceMapper: SourceMapper = fromPartial({
@@ -336,7 +338,7 @@ describe("formatAnnotations annotations", () => {
 		expect(annotations[0]).toMatchObject({ file: "src/test.spec.ts", message: "" });
 	});
 
-	it("should fall back to testFilePath when mapper returns empty locations", () => {
+	it("should fall back to testFilePath when mapper returns empty locations", ({ expect }) => {
 		expect.assertions(1);
 
 		const sourceMapper: SourceMapper = fromPartial({
@@ -348,7 +350,7 @@ describe("formatAnnotations annotations", () => {
 		expect(annotations[0]).toMatchObject({ file: "src/player.spec.ts" });
 	});
 
-	it("should use Luau location when mapper returns no TS path", () => {
+	it("should use Luau location when mapper returns no TS path", ({ expect }) => {
 		expect.assertions(2);
 
 		const sourceMapper: SourceMapper = fromPartial({
@@ -369,7 +371,7 @@ describe("formatAnnotations annotations", () => {
 		expect(annotations[0]!.col).toBeUndefined();
 	});
 
-	it("should make paths relative to GITHUB_WORKSPACE", () => {
+	it("should make paths relative to GITHUB_WORKSPACE", ({ expect }) => {
 		expect.assertions(1);
 
 		const result: JestResult = {
@@ -408,7 +410,7 @@ describe("formatAnnotations annotations", () => {
 	// The workspace is canonicalized where the options are resolved, so a
 	// trailing slash is answered once for every annotation rather than per
 	// call.
-	it("should normalize a trailing slash in GITHUB_WORKSPACE", () => {
+	it("should normalize a trailing slash in GITHUB_WORKSPACE", ({ expect }) => {
 		expect.assertions(1);
 
 		const result: JestResult = {
@@ -442,23 +444,26 @@ describe("formatAnnotations annotations", () => {
 			testFilePath: "/a/repo/src/test.spec.ts",
 			workspace: "D:\\a\\repo",
 		},
-	])("should make a Windows path relative across $name", ({ testFilePath, workspace }) => {
-		expect.assertions(1);
+	])(
+		"should make a Windows path relative across $name",
+		({ testFilePath, workspace }, { expect }) => {
+			expect.assertions(1);
 
-		const result: JestResult = {
-			...FAILING_RESULT,
-			testResults: [{ ...FAILING_RESULT.testResults[0]!, testFilePath }],
-		};
-		const options = resolveContext({
-			environment: { GITHUB_WORKSPACE: workspace },
-			sourceMapper: undefined,
-			userOptions: {},
-		});
+			const result: JestResult = {
+				...FAILING_RESULT,
+				testResults: [{ ...FAILING_RESULT.testResults[0]!, testFilePath }],
+			};
+			const options = resolveContext({
+				environment: { GITHUB_WORKSPACE: workspace },
+				sourceMapper: undefined,
+				userOptions: {},
+			});
 
-		expect(collectAnnotations(result, options)[0]!.file).toBe("src/test.spec.ts");
-	});
+			expect(collectAnnotations(result, options)[0]!.file).toBe("src/test.spec.ts");
+		},
+	);
 
-	it("should preserve an absolute path when GITHUB_WORKSPACE is unavailable", () => {
+	it("should preserve an absolute path when GITHUB_WORKSPACE is unavailable", ({ expect }) => {
 		expect.assertions(1);
 
 		const result: JestResult = {
@@ -478,7 +483,7 @@ describe("formatAnnotations annotations", () => {
 });
 
 describe(formatAnnotations, () => {
-	it("should join all annotations as workflow commands", () => {
+	it("should join all annotations as workflow commands", ({ expect }) => {
 		expect.assertions(2);
 
 		const output = formatAnnotations(FAILING_RESULT, {});
@@ -487,7 +492,7 @@ describe(formatAnnotations, () => {
 		expect(output.split("\n").filter((line) => line.startsWith("::error"))).toHaveLength(2);
 	});
 
-	it("should return empty string for passing results", () => {
+	it("should return empty string for passing results", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(formatAnnotations(PASSING_RESULT, {})).toBe("");
@@ -495,7 +500,7 @@ describe(formatAnnotations, () => {
 });
 
 describe(formatJobSummary, () => {
-	it("should pluralize file and skipped-test counts", () => {
+	it("should pluralize file and skipped-test counts", ({ expect }) => {
 		expect.assertions(1);
 
 		const summary = formatJobSummary(
@@ -514,7 +519,7 @@ describe(formatJobSummary, () => {
 		);
 	});
 
-	it("should count an all-skipped file as skipped, not passed", () => {
+	it("should count an all-skipped file as skipped, not passed", ({ expect }) => {
 		expect.assertions(1);
 
 		const summary = formatJobSummary(
@@ -534,7 +539,7 @@ describe(formatJobSummary, () => {
 		expect(summary).toContain("- **Test Files**: ✅ **1 pass** · 1 skip · 2 total\n");
 	});
 
-	it("should pluralize skipped file counts", () => {
+	it("should pluralize skipped file counts", ({ expect }) => {
 		expect.assertions(1);
 
 		const skippedFile = {
@@ -557,7 +562,7 @@ describe(formatJobSummary, () => {
 		expect(summary).toContain("- **Test Files**: 2 skips · 2 total\n");
 	});
 
-	it("should render pass/fail/skip counts in stats section", () => {
+	it("should render pass/fail/skip counts in stats section", ({ expect }) => {
 		expect.assertions(3);
 
 		const summary = formatJobSummary(PASSING_RESULT, {});
@@ -567,7 +572,7 @@ describe(formatJobSummary, () => {
 		expect(summary).toContain("Test Results");
 	});
 
-	it("should list failures with test names", () => {
+	it("should list failures with test names", ({ expect }) => {
 		expect.assertions(2);
 
 		const summary = formatJobSummary(FAILING_RESULT, {});
@@ -576,7 +581,7 @@ describe(formatJobSummary, () => {
 		expect(summary).toContain("Player should be alive");
 	});
 
-	it("should include file links when server/repo/sha available", () => {
+	it("should include file links when server/repo/sha available", ({ expect }) => {
 		expect.assertions(1);
 
 		const summary = formatJobSummary(FAILING_RESULT, {
@@ -589,7 +594,7 @@ describe(formatJobSummary, () => {
 		expect(summary).toContain("https://github.com/owner/repo/blob/abc123/src/player.spec.ts");
 	});
 
-	it("should work without file links", () => {
+	it("should work without file links", ({ expect }) => {
 		expect.assertions(3);
 
 		const summary = formatJobSummary(FAILING_RESULT, {});
@@ -603,7 +608,7 @@ describe(formatJobSummary, () => {
 		{ repository: "owner/repo", serverUrl: "https://github.com" },
 		{ repository: "owner/repo", sha: "abc123" },
 		{ serverUrl: "https://github.com", sha: "abc123" },
-	])("should omit file links when any permalink field is missing", (options) => {
+	])("should omit file links when any permalink field is missing", (options, { expect }) => {
 		expect.assertions(1);
 
 		expect(formatJobSummary(FAILING_RESULT, options)).toContain(
@@ -611,7 +616,7 @@ describe(formatJobSummary, () => {
 		);
 	});
 
-	it("should include exec-error files in failure list", () => {
+	it("should include exec-error files in failure list", ({ expect }) => {
 		expect.assertions(1);
 
 		const summary = formatJobSummary(EXEC_ERROR_RESULT, {});
@@ -619,7 +624,7 @@ describe(formatJobSummary, () => {
 		expect(summary).toContain("Test suite failed to run");
 	});
 
-	it("should show pending count when present", () => {
+	it("should show pending count when present", ({ expect }) => {
 		expect.assertions(1);
 
 		const summary = formatJobSummary(MIXED_RESULT, {});
@@ -627,7 +632,7 @@ describe(formatJobSummary, () => {
 		expect(summary).toContain("1 skip");
 	});
 
-	it("should show todo count in other section", () => {
+	it("should show todo count in other section", ({ expect }) => {
 		expect.assertions(2);
 
 		const result: JestResult = {
@@ -641,7 +646,7 @@ describe(formatJobSummary, () => {
 		expect(summary).toContain("**Other**");
 	});
 
-	it("should combine pending and todo in other section", () => {
+	it("should combine pending and todo in other section", ({ expect }) => {
 		expect.assertions(1);
 
 		const result: JestResult = {
@@ -654,7 +659,7 @@ describe(formatJobSummary, () => {
 		expect(summary).toContain("1 skip · 3 todos · 4 total");
 	});
 
-	it("should omit an explicit zero todo count", () => {
+	it("should omit an explicit zero todo count", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(formatJobSummary({ ...PASSING_RESULT, numTodoTests: 0 }, {})).toBe(
@@ -664,7 +669,7 @@ describe(formatJobSummary, () => {
 });
 
 describe("formatAnnotations snapshots", () => {
-	it("should format failing result annotations", () => {
+	it("should format failing result annotations", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(formatAnnotations(FAILING_RESULT, {})).toMatchInlineSnapshot(`
@@ -673,7 +678,7 @@ describe("formatAnnotations snapshots", () => {
 		`);
 	});
 
-	it("should format exec-error annotations", () => {
+	it("should format exec-error annotations", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(formatAnnotations(EXEC_ERROR_RESULT, {})).toMatchInlineSnapshot(
@@ -683,7 +688,7 @@ describe("formatAnnotations snapshots", () => {
 });
 
 describe("formatJobSummary snapshots", () => {
-	it("should format passing result summary", () => {
+	it("should format passing result summary", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(formatJobSummary(PASSING_RESULT, {})).toMatchInlineSnapshot(`
@@ -697,7 +702,7 @@ describe("formatJobSummary snapshots", () => {
 		`);
 	});
 
-	it("should format failing result summary", () => {
+	it("should format failing result summary", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(formatJobSummary(FAILING_RESULT, {})).toMatchInlineSnapshot(`
@@ -716,7 +721,7 @@ describe("formatJobSummary snapshots", () => {
 		`);
 	});
 
-	it("should format mixed result summary", () => {
+	it("should format mixed result summary", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(formatJobSummary(MIXED_RESULT, {})).toMatchInlineSnapshot(`
@@ -735,7 +740,7 @@ describe("formatJobSummary snapshots", () => {
 		`);
 	});
 
-	it("should format failing result with file links", () => {
+	it("should format failing result with file links", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -760,7 +765,7 @@ describe("formatJobSummary snapshots", () => {
 		`);
 	});
 
-	it("should format exec-error summary", () => {
+	it("should format exec-error summary", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(formatJobSummary(EXEC_ERROR_RESULT, {})).toMatchInlineSnapshot(`
@@ -780,7 +785,9 @@ describe("formatJobSummary snapshots", () => {
 });
 
 describe(resolveGitHubActions, () => {
-	it("should write annotations and the summary to GITHUB_STEP_SUMMARY by default", () => {
+	it("should write annotations and the summary to GITHUB_STEP_SUMMARY by default", ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const result = resolveGitHubActions({
@@ -793,7 +800,7 @@ describe(resolveGitHubActions, () => {
 		expect(result.jobSummaryPath).toBe("/tmp/summary.md");
 	});
 
-	it("should prefer the configured summary path over the environment", () => {
+	it("should prefer the configured summary path over the environment", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = resolveGitHubActions({
@@ -805,7 +812,7 @@ describe(resolveGitHubActions, () => {
 		expect(result.jobSummaryPath).toBe("/out.md");
 	});
 
-	it("should write neither when both are turned off", () => {
+	it("should write neither when both are turned off", ({ expect }) => {
 		expect.assertions(2);
 
 		const result = resolveGitHubActions({
@@ -820,7 +827,7 @@ describe(resolveGitHubActions, () => {
 });
 
 describe("resolveGitHubActions context", () => {
-	it("should use env var defaults when no user options provided", () => {
+	it("should use env var defaults when no user options provided", ({ expect }) => {
 		expect.assertions(4);
 
 		const result = resolveContext({
@@ -841,7 +848,7 @@ describe("resolveGitHubActions context", () => {
 		expect(result.workspace).toBe(posixRoot("/home/runner/work"));
 	});
 
-	it("should override env vars with user options", () => {
+	it("should override env vars with user options", ({ expect }) => {
 		expect.assertions(2);
 
 		const result = resolveContext({
@@ -864,7 +871,7 @@ describe("resolveGitHubActions context", () => {
 		expect(result.workspace).toBe(posixRoot("/custom/path"));
 	});
 
-	it("should pass through sourceMapper", () => {
+	it("should pass through sourceMapper", ({ expect }) => {
 		expect.assertions(1);
 
 		const sourceMapper: SourceMapper = fromPartial({

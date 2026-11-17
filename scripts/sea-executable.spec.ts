@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import type { MemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
@@ -28,13 +28,13 @@ function options(
 }
 
 describe(resolveSeaExecutable, () => {
-	it("should build from the running node off linux", () => {
+	it("should build from the running node off linux", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(resolveSeaExecutable(options(seed(), { platform: "win32" }))).toBe(NODE);
 	});
 
-	it("should strip a copy of node on linux", () => {
+	it("should strip a copy of node on linux", ({ expect }) => {
 		expect.assertions(3);
 
 		const memory = seed();
@@ -49,7 +49,7 @@ describe(resolveSeaExecutable, () => {
 		expect(memory.volume.readFileSync(NODE, "utf8")).toBe("symbols+code");
 	});
 
-	it("should create a cache directory whose parents are missing", () => {
+	it("should create a cache directory whose parents are missing", ({ expect }) => {
 		expect.assertions(1);
 
 		const executable = resolveSeaExecutable(
@@ -59,7 +59,7 @@ describe(resolveSeaExecutable, () => {
 		expect(executable).toBe("/cache/sea/node/node-v26.5.0-linux-stripped");
 	});
 
-	it("should reuse a copy stripped by an earlier build", () => {
+	it("should reuse a copy stripped by an earlier build", ({ expect }) => {
 		expect.assertions(1);
 
 		const memory = seed();
@@ -71,7 +71,7 @@ describe(resolveSeaExecutable, () => {
 		expect(strip).toHaveBeenCalledExactlyOnceWith("/cache/node-v26.5.0-linux-stripped.pending");
 	});
 
-	it("should not publish a copy whose strip failed", () => {
+	it("should not publish a copy whose strip failed", ({ expect }) => {
 		// An interrupted strip must not leave a half-written binary where the
 		// next build would take it as finished.
 		expect.assertions(2);

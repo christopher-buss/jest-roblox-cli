@@ -1,6 +1,6 @@
 import istanbulCoverage from "istanbul-lib-coverage";
 import * as path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { createMemoryReportEnvironment } from "#test/mocks/memory-report-context.ts";
 import type { CoverageReporter } from "../config/config-types.ts";
@@ -27,7 +27,7 @@ const ALL_REPORTERS = Object.keys(REPORTER_NAMES).filter((name): name is Coverag
 });
 
 describe(createReporter, () => {
-	it("should cover every reporter a config may name", () => {
+	it("should cover every reporter a config may name", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(ALL_REPORTERS).toHaveLength(13);
@@ -36,7 +36,7 @@ describe(createReporter, () => {
 	// Construction is where the bundled build used to fail, and it fails per
 	// reporter, so every name a config may carry is built here rather than only
 	// the two the defaults reach.
-	it.for(ALL_REPORTERS)("should construct the %s reporter", (name) => {
+	it.for(ALL_REPORTERS)("should construct the %s reporter", (name, { expect }) => {
 		expect.assertions(1);
 
 		expect(createReporter(name, {})).toBeDefined();
@@ -51,7 +51,7 @@ describe("report execution", () => {
 		["html", "."],
 		["html-spa", "."],
 		["lcov", "lcov-report"],
-	])("should write the %s report with its assets", ([name, subdirectory]) => {
+	])("should write the %s report with its assets", ([name, subdirectory], { expect }) => {
 		expect.assertions(1);
 
 		const { createContext, directory, fileSystem } = createMemoryReportEnvironment();

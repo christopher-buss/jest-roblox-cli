@@ -3,7 +3,7 @@ import { resolveCredentials } from "@isentinel/roblox-runner";
 
 import { writeFileSync } from "node:fs";
 import path from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import { createFixtureSandbox } from "#test/harness/helpers.ts";
 
@@ -62,7 +62,9 @@ async function resolveFromSandboxAsync(
 }
 
 describe("cli / jest.config.ts credential precedence", () => {
-	it("should resolve universeId/placeId from jest.config.ts and apiKey from CLI", async () => {
+	it("should resolve universeId/placeId from jest.config.ts and apiKey from CLI", async ({
+		expect,
+	}) => {
 		expect.assertions(3);
 
 		const sandbox = createFixtureSandbox(RBXTS_FIXTURE);
@@ -77,7 +79,7 @@ describe("cli / jest.config.ts credential precedence", () => {
 		expect(credentials.placeId).toBe("777");
 	});
 
-	it("should let CLI flags override jest.config.ts values", async () => {
+	it("should let CLI flags override jest.config.ts values", async ({ expect }) => {
 		expect.assertions(3);
 
 		const sandbox = createFixtureSandbox(RBXTS_FIXTURE);

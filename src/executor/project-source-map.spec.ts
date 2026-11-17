@@ -1,6 +1,6 @@
 import * as path from "node:path";
 import process from "node:process";
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import { createPassingResult } from "#test/mocks/executor-spec-results.ts";
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
@@ -35,13 +35,15 @@ function resolveMappedPath(mount: string): string {
 }
 
 describe(resolveTestFilePaths, () => {
-	it("should resolve a mount relative to the Rojo project into an absolute path", () => {
+	it("should resolve a mount relative to the Rojo project into an absolute path", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		expect(resolveMappedPath("../src")).toBe(`${POSIX_ROOT}/src/__tests__/init.spec.luau`);
 	});
 
-	it("should keep a path from an absolute mount as it is", () => {
+	it("should keep a path from an absolute mount as it is", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(resolveMappedPath(`${POSIX_ROOT}/src`)).toBe(
@@ -51,7 +53,9 @@ describe(resolveTestFilePaths, () => {
 });
 
 describe(buildProjectSourceMap, () => {
-	it("should map a failure frame under a relative mount to an absolute Luau path", () => {
+	it("should map a failure frame under a relative mount to an absolute Luau path", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -78,7 +82,7 @@ describe(buildProjectSourceMap, () => {
 		expect(locations[0]!.luauPath).toBe(`${POSIX_ROOT}/src/__tests__/fail.spec.lua`);
 	});
 
-	it("should warn and map nothing when the Rojo project is invalid", () => {
+	it("should warn and map nothing when the Rojo project is invalid", ({ expect }) => {
 		expect.assertions(2);
 
 		const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);

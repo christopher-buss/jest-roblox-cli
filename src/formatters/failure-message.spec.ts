@@ -1,9 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { cleanExecErrorMessage, getExecErrorHint, parseErrorMessage } from "./failure-message.ts";
 
 describe(parseErrorMessage, () => {
-	it("should distinguish snapshots, expected values, and received values exactly", () => {
+	it("should distinguish snapshots, expected values, and received values exactly", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		expect([
@@ -23,7 +25,7 @@ describe(parseErrorMessage, () => {
 });
 
 describe(cleanExecErrorMessage, () => {
-	it("should strip only the complete Roblox path chain after the suite header", () => {
+	it("should strip only the complete Roblox path chain after the suite header", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -33,7 +35,7 @@ describe(cleanExecErrorMessage, () => {
 		).toBe("actual failure");
 	});
 
-	it("should trim a message without a suite header", () => {
+	it("should trim a message without a suite header", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(cleanExecErrorMessage("  direct failure  ")).toBe("direct failure");
@@ -41,7 +43,7 @@ describe(cleanExecErrorMessage, () => {
 });
 
 describe(parseErrorMessage, () => {
-	it("should extract expected and received values", () => {
+	it("should extract expected and received values", ({ expect }) => {
 		expect.assertions(3);
 
 		const message = `expect(received).toBe(expected) -- Object.is equality
@@ -56,7 +58,7 @@ Received: 4`;
 		expect(parsed.received).toBe("4");
 	});
 
-	it("should handle messages without expected/received", () => {
+	it("should handle messages without expected/received", ({ expect }) => {
 		expect.assertions(3);
 
 		const message = "Some generic error occurred";
@@ -68,7 +70,7 @@ Received: 4`;
 		expect(parsed.received).toBeUndefined();
 	});
 
-	it("should extract complex expected/received values", () => {
+	it("should extract complex expected/received values", ({ expect }) => {
 		expect.assertions(2);
 
 		const message = `Expected: {"name": "test"}
@@ -80,7 +82,7 @@ Received: {"name": "other"}`;
 		expect(parsed.received).toBe('{"name": "other"}');
 	});
 
-	it("should extract snapshot diff from failure message", () => {
+	it("should extract snapshot diff from failure message", ({ expect }) => {
 		expect.assertions(1);
 
 		const message = [
@@ -120,7 +122,7 @@ Received: {"name": "other"}`;
 		);
 	});
 
-	it("should not set expected/received for snapshot failures", () => {
+	it("should not set expected/received for snapshot failures", ({ expect }) => {
 		expect.assertions(2);
 
 		const message = [
@@ -139,7 +141,7 @@ Received: {"name": "other"}`;
 		expect(parsed.received).toBeUndefined();
 	});
 
-	it("should extract values from toThrow with labeled expected/received", () => {
+	it("should extract values from toThrow with labeled expected/received", ({ expect }) => {
 		expect.assertions(1);
 
 		const message = `expect(received).toThrow(expected)
@@ -158,7 +160,7 @@ Received value:     "some error message"`;
 });
 
 describe(cleanExecErrorMessage, () => {
-	it("should extract error from Jest failureMessage with path chain", () => {
+	it("should extract error from Jest failureMessage with path chain", ({ expect }) => {
 		expect.assertions(1);
 
 		const raw =
@@ -169,7 +171,7 @@ describe(cleanExecErrorMessage, () => {
 		);
 	});
 
-	it("should extract error from simple failureMessage", () => {
+	it("should extract error from simple failureMessage", ({ expect }) => {
 		expect.assertions(1);
 
 		const raw =
@@ -180,13 +182,13 @@ describe(cleanExecErrorMessage, () => {
 		);
 	});
 
-	it("should return trimmed message when no pattern matches", () => {
+	it("should return trimmed message when no pattern matches", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(cleanExecErrorMessage("Some unexpected error")).toBe("Some unexpected error");
 	});
 
-	it("should handle empty string", () => {
+	it("should handle empty string", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(cleanExecErrorMessage("")).toBe("");
@@ -194,7 +196,7 @@ describe(cleanExecErrorMessage, () => {
 });
 
 describe(getExecErrorHint, () => {
-	it("should return hint for loadstring error", () => {
+	it("should return hint for loadstring error", ({ expect }) => {
 		expect.assertions(1);
 
 		const hint = getExecErrorHint("loadstring() is not available");
@@ -202,7 +204,7 @@ describe(getExecErrorHint, () => {
 		expect(hint).toContain("LoadStringEnabled");
 	});
 
-	it("should return undefined for unrecognized errors", () => {
+	it("should return undefined for unrecognized errors", ({ expect }) => {
 		expect.assertions(1);
 
 		const hint = getExecErrorHint("some other error");

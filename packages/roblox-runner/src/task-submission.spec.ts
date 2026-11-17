@@ -9,7 +9,7 @@ import {
 import { fromAny } from "@total-typescript/shoehorn";
 
 import { type } from "arktype";
-import { assert, describe, expect, it, onTestFinished, vi } from "vitest";
+import { assert, describe, it, type TestContext, vi } from "vitest";
 
 import type { ExecuteScriptOptions } from "./runner-types.ts";
 import type { TaskQuotaError } from "./task-quota-error.ts";
@@ -71,7 +71,7 @@ function acceptTask(http: FakeHttpClient): void {
 	http.mockResponse({ body: ACCEPTED, status: 200 });
 }
 
-function useClock(): void {
+function useClock(onTestFinished: TestContext["onTestFinished"]): void {
 	vi.useFakeTimers();
 	onTestFinished(() => {
 		vi.useRealTimers();
@@ -154,15 +154,18 @@ async function submitThroughCapacityAsync(http: FakeHttpClient): Promise<unknown
 		submitBudget: 90_000,
 		submitCapacityBudget: 405_000,
 		timeout: 15_000,
-	}).catch((err: unknown) => err);
+	}).catch((err) => err);
 }
 
 function countPosts(http: FakeHttpClient): number {
 	return http.requests.filter(({ request }) => request.method === "POST").length;
 }
 
-function makeRespondingSubmission(): { http: FakeHttpClient; submission: TaskSubmission } {
-	useClock();
+function makeRespondingSubmission(onTestFinished: TestContext["onTestFinished"]): {
+	http: FakeHttpClient;
+	submission: TaskSubmission;
+} {
+	useClock(onTestFinished);
 	const http = createFakeHttpClient();
 	const send = http.request.bind(http);
 	vi.spyOn(http, "request").mockImplementation(async (request, config) => {
@@ -172,8 +175,11 @@ function makeRespondingSubmission(): { http: FakeHttpClient; submission: TaskSub
 	return { http, submission: makeSubmission(http, { sleep: sleepAsync }) };
 }
 
-function makeQuotaGatedSubmission(): { http: FakeHttpClient; submission: TaskSubmission } {
-	useClock();
+function makeQuotaGatedSubmission(onTestFinished: TestContext["onTestFinished"]): {
+	http: FakeHttpClient;
+	submission: TaskSubmission;
+} {
+	useClock(onTestFinished);
 	const http = createFakeHttpClient();
 	http.mockResponse({
 		body: ACCEPTED,
@@ -183,7 +189,10 @@ function makeQuotaGatedSubmission(): { http: FakeHttpClient; submission: TaskSub
 	return { http, submission: makeSubmission(http, { sleep: sleepAsync }) };
 }
 
-async function expectInactivityExpiryAsync(submission: TaskSubmission): Promise<void> {
+async function expectInactivityExpiryAsync(
+	submission: TaskSubmission,
+	expect: TestContext["expect"],
+): Promise<void> {
 	const settled = vi.fn<(value: unknown) => void>();
 	const observed = submitScriptAsync(submission, BUDGETED).catch(settled);
 	await vi.advanceTimersByTimeAsync(149_999);
@@ -199,7 +208,9 @@ async function expectInactivityExpiryAsync(submission: TaskSubmission): Promise<
 }
 
 describe(TaskSubmission, () => {
-	it("should submit the pinned version with its binary input and task timeout", async () => {
+	it("should submit the pinned version with its binary input and task timeout", async ({
+		expect,
+	}) => {
 		expect.assertions(3);
 
 		const http = createFakeHttpClient();
@@ -222,7 +233,9 @@ describe(TaskSubmission, () => {
 		});
 	});
 
-	it("should submit against head with no binary input when the caller names neither", async () => {
+	it("should submit against head with no binary input when the caller names neither", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const http = createFakeHttpClient();
@@ -235,7 +248,9 @@ describe(TaskSubmission, () => {
 		expect(submitBodySchema.assert(request.body)).not.toHaveProperty("binaryInput");
 	});
 
-	it("should fail rather than resubmit when the submit body arrives short", async () => {
+	it("should fail rather than resubmit when the submit body arrives short", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const http = createFakeHttpClient();
@@ -252,15 +267,13 @@ describe(TaskSubmission, () => {
 		expect(http.requests).toHaveLength(1);
 	});
 
-	it("should throw when submit returns API error", async () => {
+	it("should throw when submit returns API error", async ({ expect }) => {
 		expect.assertions(3);
 
 		const http = createFakeHttpClient();
 		http.mockApiError({ message: "Bad request", statusCode: 400 });
 
-		const caught: unknown = await submitScriptAsync(makeSubmission(http)).catch(
-			(err: unknown) => err,
-		);
+		const caught = await submitScriptAsync(makeSubmission(http)).catch((err) => err);
 		assert(caught instanceof Error);
 
 		expect(caught).toMatchObject({ name: "TaskSubmitError" });
@@ -270,7 +283,7 @@ describe(TaskSubmission, () => {
 });
 
 describe("unbudgeted creates", () => {
-	it("should not retry a task submit server failure by default", async () => {
+	it("should not retry a task submit server failure by default", async ({ expect }) => {
 		expect.assertions(2);
 
 		const http = createFakeHttpClient();
@@ -309,7 +322,7 @@ describe("unbudgeted creates", () => {
 		},
 	])(
 		"should not retry or wait out a create dmaas refused with a $body code",
-		async ({ error }) => {
+		async ({ error }, { expect }) => {
 			expect.assertions(2);
 
 			const http = createFakeHttpClient();
@@ -323,10 +336,13 @@ describe("unbudgeted creates", () => {
 		},
 	);
 
-	it("should retry a task create the edge rate limit refused after its retry-after", async () => {
+	it("should retry a task create the edge rate limit refused after its retry-after", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(3);
 
-		useClock();
+		useClock(onTestFinished);
 		const http = createFakeHttpClient();
 		http.mockError(
 			new RateLimitError("Rate limited", {
@@ -350,10 +366,13 @@ describe("unbudgeted creates", () => {
 		expect(http.requests).toHaveLength(2);
 	});
 
-	it("should stop waiting out an edge refusal when the caller aborts", async () => {
+	it("should stop waiting out an edge refusal when the caller aborts", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(3);
 
-		useClock();
+		useClock(onTestFinished);
 		const http = createFakeHttpClient();
 		http.mockError(
 			new RateLimitError("Rate limited", {
@@ -365,7 +384,7 @@ describe("unbudgeted creates", () => {
 		const observation = new AbortController();
 		const submitted = submitScriptAsync(makeSubmission(http, {}), {
 			observationSignal: observation.signal,
-		}).catch((err: unknown) => err);
+		}).catch((err) => err);
 		await vi.advanceTimersByTimeAsync(1000);
 		observation.abort(new Error("superseded"));
 
@@ -374,10 +393,13 @@ describe("unbudgeted creates", () => {
 		expect(vi.getTimerCount()).toBe(0);
 	});
 
-	it("should refuse at once an edge retry-after the task deadline cannot fit", async () => {
+	it("should refuse at once an edge retry-after the task deadline cannot fit", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(2);
 
-		useClock();
+		useClock(onTestFinished);
 		const http = createFakeHttpClient();
 		http.mockError(
 			new RateLimitError("Rate limited", {
@@ -388,7 +410,7 @@ describe("unbudgeted creates", () => {
 			}),
 		);
 		let settled: unknown;
-		void submitScriptAsync(makeSubmission(http, {})).catch((err: unknown) => {
+		void submitScriptAsync(makeSubmission(http, {})).catch((err) => {
 			settled = err;
 		});
 		await vi.advanceTimersByTimeAsync(0);
@@ -399,7 +421,9 @@ describe("unbudgeted creates", () => {
 		expect(http.requests).toHaveLength(1);
 	});
 
-	it("should retry a task submit server failure when explicitly idempotent", async () => {
+	it("should retry a task submit server failure when explicitly idempotent", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const http = createFakeHttpClient();
@@ -412,19 +436,22 @@ describe("unbudgeted creates", () => {
 		expect(http.requests).toHaveLength(2);
 	});
 
-	it("should abort an idempotent task submit while waiting to retry", async () => {
+	it("should abort an idempotent task submit while waiting to retry", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(3);
 
 		const controller = new AbortController();
 		const http = createFakeHttpClient();
 		http.mockError(new ApiError("HTTP 503: unavailable", { statusCode: 503 }));
 		const submission = makeSubmission(http, {});
-		useClock();
+		useClock(onTestFinished);
 
 		const submitted = submitScriptAsync(submission, {
 			isSubmitIdempotent: true,
 			observationSignal: controller.signal,
-		}).catch((err: unknown) => err);
+		}).catch((err) => err);
 		await vi.advanceTimersByTimeAsync(0);
 
 		expect(http.requests).toHaveLength(1);
@@ -437,7 +464,7 @@ describe("unbudgeted creates", () => {
 		expect(http.requests).toHaveLength(1);
 	});
 
-	it("should retry luau task submit on transient ECONNRESET", async () => {
+	it("should retry luau task submit on transient ECONNRESET", async ({ expect }) => {
 		expect.assertions(2);
 
 		const http = createFakeHttpClient();
@@ -451,7 +478,9 @@ describe("unbudgeted creates", () => {
 		expect(http.requests).toHaveLength(2);
 	});
 
-	it("should surface one ambiguous submit transport failure when retries are disabled", async () => {
+	it("should surface one ambiguous submit transport failure when retries are disabled", async ({
+		expect,
+	}) => {
 		expect.assertions(4);
 
 		const http = createFakeHttpClient();
@@ -459,9 +488,9 @@ describe("unbudgeted creates", () => {
 		http.mockNetworkError({ cause: reset });
 		acceptTask(http);
 
-		const caught: unknown = await submitScriptAsync(makeSubmission(http), {
+		const caught = await submitScriptAsync(makeSubmission(http), {
 			retrySubmitTransportErrors: false,
-		}).catch((err: unknown) => err);
+		}).catch((err) => err);
 		assert(caught instanceof Error);
 
 		expect(caught).toMatchObject({ name: "TaskSubmitError" });
@@ -470,7 +499,7 @@ describe("unbudgeted creates", () => {
 		expect(http.requests).toHaveLength(1);
 	});
 
-	it("should stop resending edge refusals at the configured retry count", async () => {
+	it("should stop resending edge refusals at the configured retry count", async ({ expect }) => {
 		expect.assertions(3);
 
 		const http = createFakeHttpClient();
@@ -493,7 +522,9 @@ describe("unbudgeted creates", () => {
 		expect(sleep.waits).toStrictEqual([1000, 1000]);
 	});
 
-	it("should retain the SDK retry count for an unbudgeted idempotent create", async () => {
+	it("should retain the SDK retry count for an unbudgeted idempotent create", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const http = createFakeHttpClient();
@@ -511,7 +542,9 @@ describe("unbudgeted creates", () => {
 });
 
 describe("quota refusals", () => {
-	it("should preserve the server diagnosis when active tasks exhaust the place", async () => {
+	it("should preserve the server diagnosis when active tasks exhaust the place", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const http = createFakeHttpClient();
@@ -527,9 +560,7 @@ describe("quota refusals", () => {
 			http.mockError(exhausted);
 		}
 
-		const caught: unknown = await submitScriptAsync(makeSubmission(http)).catch(
-			(err: unknown) => err,
-		);
+		const caught = await submitScriptAsync(makeSubmission(http)).catch((err) => err);
 		assert(caught instanceof Error);
 
 		expect(caught.message).toBe(
@@ -538,7 +569,9 @@ describe("quota refusals", () => {
 		expect(caught.cause).toBe(exhausted);
 	});
 
-	it("should name the 429's code and rate-limit headers when dmaas refuses a create", async () => {
+	it("should name the 429's code and rate-limit headers when dmaas refuses a create", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const http = createFakeHttpClient();
@@ -567,7 +600,10 @@ describe("quota refusals", () => {
 		);
 	});
 
-	it("should name the unlock time when a refusal outlasts the minute window", async () => {
+	it("should name the unlock time when a refusal outlasts the minute window", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(2);
 
 		vi.useFakeTimers({ now: new Date("2026-09-22T12:00:51Z") });
@@ -586,9 +622,7 @@ describe("quota refusals", () => {
 			}),
 		);
 
-		const caught: unknown = await submitScriptAsync(makeSubmission(http)).catch(
-			(err: unknown) => err,
-		);
+		const caught = await submitScriptAsync(makeSubmission(http)).catch((err) => err);
 		assert(caught instanceof Error);
 
 		expect(caught.message).toContain(
@@ -598,7 +632,7 @@ describe("quota refusals", () => {
 		expect(http.requests).toHaveLength(1);
 	});
 
-	it("should not observe capacity blockers when retries are disabled", async () => {
+	it("should not observe capacity blockers when retries are disabled", async ({ expect }) => {
 		expect.assertions(2);
 
 		const http = createFakeHttpClient();
@@ -619,7 +653,10 @@ describe("quota refusals", () => {
 		expect(http.requests).toHaveLength(1);
 	});
 
-	it("should classify a create the quota refused, with its unlock time and 429 evidence", async () => {
+	it("should classify a create the quota refused, with its unlock time and 429 evidence", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(1);
 
 		vi.useFakeTimers({ now: new Date("2026-09-22T12:00:51Z") });
@@ -637,9 +674,9 @@ describe("quota refusals", () => {
 			}),
 		);
 
-		const caught: unknown = await submitScriptAsync(makeSubmission(http), {
+		const caught = await submitScriptAsync(makeSubmission(http), {
 			placeVersion: 7,
-		}).catch((err: unknown) => err);
+		}).catch((err) => err);
 		assert(caught instanceof Error);
 
 		expect(fromAny<TaskQuotaError, typeof caught>(caught).evidence).toStrictEqual({
@@ -653,7 +690,10 @@ describe("quota refusals", () => {
 		});
 	});
 
-	it("should classify a refused long 429 wait on an idempotent submit as a quota error", async () => {
+	it("should classify a refused long 429 wait on an idempotent submit as a quota error", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(2);
 
 		vi.useFakeTimers({ now: new Date("2026-09-22T12:00:51Z") });
@@ -671,10 +711,10 @@ describe("quota refusals", () => {
 			}),
 		);
 
-		const caught: unknown = await submitScriptAsync(makeSubmission(http), {
+		const caught = await submitScriptAsync(makeSubmission(http), {
 			isSubmitIdempotent: true,
 			placeVersion: 7,
-		}).catch((err: unknown) => err);
+		}).catch((err) => err);
 		assert(caught instanceof Error);
 
 		expect(fromAny<TaskQuotaError, typeof caught>(caught).evidence).toStrictEqual({
@@ -689,7 +729,9 @@ describe("quota refusals", () => {
 		expect(http.requests).toHaveLength(1);
 	});
 
-	it("should remove the API key from a quota refusal's evidence and message", async () => {
+	it("should remove the API key from a quota refusal's evidence and message", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const http = createFakeHttpClient();
@@ -702,9 +744,7 @@ describe("quota refusals", () => {
 			}),
 		);
 
-		const caught: unknown = await submitScriptAsync(makeSubmission(http)).catch(
-			(err: unknown) => err,
-		);
+		const caught = await submitScriptAsync(makeSubmission(http)).catch((err) => err);
 		assert(caught instanceof Error);
 
 		expect(fromAny<TaskQuotaError, typeof caught>(caught).evidence.headers).toStrictEqual({
@@ -716,19 +756,19 @@ describe("quota refusals", () => {
 });
 
 describe("budgeted creates", () => {
-	it("should fail a budgeted submit that never answers", async () => {
+	it("should fail a budgeted submit that never answers", async ({ expect, onTestFinished }) => {
 		expect.assertions(2);
 
 		// Nothing queued and nothing returned: the shape of a submit parked
 		// in rate-limit backoff, which is what the budget exists to end.
-		useClock();
+		useClock(onTestFinished);
 		const stalled = createFakeHttpClient();
 		const submit = vi
 			.spyOn(stalled, "request")
 			.mockImplementation(async () => new Promise(() => {}));
 
 		const submitted = submitScriptAsync(makeSubmission(stalled), { submitBudget: 1000 }).catch(
-			(err: unknown) => err,
+			(err) => err,
 		);
 		await vi.advanceTimersByTimeAsync(1000);
 
@@ -738,7 +778,7 @@ describe("budgeted creates", () => {
 		expect(submit.mock.calls[0]![1].signal!.reason).toBe("submit budget expired");
 	});
 
-	it("should report capacity-aware inactivity and maximum bounds", async () => {
+	it("should report capacity-aware inactivity and maximum bounds", async ({ expect }) => {
 		expect.assertions(1);
 
 		const stalled = createFakeHttpClient();
@@ -754,7 +794,7 @@ describe("budgeted creates", () => {
 
 	it.for([false, true])(
 		"should retry rate limits with idempotent=%s when submit transport retries are disabled",
-		async (isSubmitIdempotent) => {
+		async (isSubmitIdempotent, { expect }) => {
 			expect.assertions(1);
 
 			const http = createFakeHttpClient();
@@ -776,7 +816,9 @@ describe("budgeted creates", () => {
 		},
 	);
 
-	it("should keep budgeted creates on the raw transport when the caller disables capacity retries", async () => {
+	it("should keep budgeted creates on the raw transport when the caller disables capacity retries", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const http = createFakeHttpClient();
@@ -796,10 +838,13 @@ describe("budgeted creates", () => {
 });
 
 describe("capacity admission", () => {
-	it("should admit after ten unchanged occupants complete their 300 second runtime", async () => {
+	it("should admit after ten unchanged occupants complete their 300 second runtime", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(3);
 
-		useClock();
+		useClock(onTestFinished);
 
 		const http = createFakeHttpClient();
 		for (let cycle = 0; cycle < 4; cycle += 1) {
@@ -817,10 +862,13 @@ describe("capacity admission", () => {
 		expect(vi.getTimerCount()).toBe(0);
 	});
 
-	it("should stop permanently occupied capacity at the 495 second absolute cap", async () => {
+	it("should stop permanently occupied capacity at the 495 second absolute cap", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(3);
 
-		useClock();
+		useClock(onTestFinished);
 
 		const http = createFakeHttpClient();
 		for (let cycle = 0; cycle < 8; cycle += 1) {
@@ -837,8 +885,9 @@ describe("capacity admission", () => {
 		expect(vi.getTimerCount()).toBe(0);
 	});
 
-	it("should isolate concurrent capacity submit cancellation on one submission", async () => {
-		// eslint-disable-next-line flawless/prefer-expect-assertions-count -- waitFor may retry its assertions
+	it("should isolate concurrent capacity submit cancellation on one submission", async ({
+		expect,
+	}) => {
 		expect.hasAssertions();
 
 		const http = createFakeHttpClient();
@@ -864,7 +913,7 @@ describe("capacity admission", () => {
 			observationSignal: firstController.signal,
 			submitBudget: 75_000,
 			submitCapacityBudget: 405_000,
-		}).catch((err: unknown) => err);
+		}).catch((err) => err);
 		await vi.waitFor(() => {
 			expect(http.requests.filter(({ request }) => request.method === "GET")).toHaveLength(1);
 		});
@@ -880,7 +929,7 @@ describe("capacity admission", () => {
 				isSecondSettled = true;
 				return value;
 			})
-			.catch((err: unknown) => {
+			.catch((err) => {
 				isSecondSettled = true;
 				return err;
 			});
@@ -901,7 +950,7 @@ describe("capacity admission", () => {
 		});
 	});
 
-	it("should admit after a validated capacity blocker completes", async () => {
+	it("should admit after a validated capacity blocker completes", async ({ expect }) => {
 		expect.assertions(2);
 
 		const http = createFakeHttpClient();
@@ -927,10 +976,13 @@ describe("capacity admission", () => {
 		).resolves.toMatchObject({ ref: { taskId: "task-1" } });
 	});
 
-	it("should preserve a progressing capacity submit past its inactivity budget", async () => {
+	it("should preserve a progressing capacity submit past its inactivity budget", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(2);
 
-		useClock();
+		useClock(onTestFinished);
 
 		const http = createFakeHttpClient();
 		http.mockError(capacityError());
@@ -960,7 +1012,7 @@ describe("capacity admission", () => {
 				isSettled = true;
 				return { outcome: "fulfilled" as const, task };
 			})
-			.catch((err: unknown) => {
+			.catch((err) => {
 				isSettled = true;
 				return { err, outcome: "rejected" as const };
 			});
@@ -983,10 +1035,13 @@ describe("capacity admission", () => {
 		});
 	});
 
-	it("should renew inactivity after a slow blocker read before SDK retry delay", async () => {
+	it("should renew inactivity after a slow blocker read before SDK retry delay", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(2);
 
-		useClock();
+		useClock(onTestFinished);
 		const http = createFakeHttpClient();
 		http.mockError(
 			new RateLimitError("occupied", {
@@ -1010,7 +1065,7 @@ describe("capacity admission", () => {
 		const submitted = submitScriptAsync(makeSubmission(http, { sleep: sleepAsync }), {
 			submitBudget: 2000,
 			submitCapacityBudget: 5000,
-		}).catch((err: unknown) => err);
+		}).catch((err) => err);
 		await vi.advanceTimersByTimeAsync(3000);
 
 		await expect(submitted).resolves.toMatchObject({ ref: { taskId: "task-1" } });
@@ -1019,12 +1074,15 @@ describe("capacity admission", () => {
 });
 
 describe("the SDK admission waits", () => {
-	it("should exclude time behind other submissions in the static create queue", async () => {
+	it("should exclude time behind other submissions in the static create queue", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(3);
 
-		const { http, submission } = makeRespondingSubmission();
+		const { http, submission } = makeRespondingSubmission(onTestFinished);
 		const submitted = Array.from({ length: 14 }, async () => {
-			return submitScriptAsync(submission, BUDGETED).catch((err: unknown) => err);
+			return submitScriptAsync(submission, BUDGETED).catch((err) => err);
 		});
 		await vi.advanceTimersByTimeAsync(110_000);
 
@@ -1035,10 +1093,13 @@ describe("the SDK admission waits", () => {
 		expect(vi.getTimerCount()).toBe(0);
 	});
 
-	it("should cancel a queued caller without consuming a later submit slot", async () => {
+	it("should cancel a queued caller without consuming a later submit slot", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(4);
 
-		const { http, submission } = makeRespondingSubmission();
+		const { http, submission } = makeRespondingSubmission(onTestFinished);
 		const active = Array.from({ length: 13 }, async () => {
 			return submitScriptAsync(submission, BUDGETED);
 		});
@@ -1046,7 +1107,7 @@ describe("the SDK admission waits", () => {
 		const canceled = submitScriptAsync(submission, {
 			...BUDGETED,
 			observationSignal: controller.signal,
-		}).catch((err: unknown) => err);
+		}).catch((err) => err);
 		await vi.advanceTimersByTimeAsync(1000);
 		controller.abort("no longer needed");
 
@@ -1059,10 +1120,13 @@ describe("the SDK admission waits", () => {
 		expect(vi.getTimerCount()).toBe(0);
 	});
 
-	it("should exclude a successful response's quota wait before the next HTTP request", async () => {
+	it("should exclude a successful response's quota wait before the next HTTP request", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(3);
 
-		useClock();
+		useClock(onTestFinished);
 		const http = createFakeHttpClient();
 		http.mockResponse({
 			body: ACCEPTED,
@@ -1079,7 +1143,7 @@ describe("the SDK admission waits", () => {
 			});
 		const submission = makeSubmission(http, { sleep: sleepAsync });
 		await submitScriptAsync(submission, BUDGETED);
-		const submitted = submitScriptAsync(submission, BUDGETED).catch((err: unknown) => err);
+		const submitted = submitScriptAsync(submission, BUDGETED).catch((err) => err);
 		await vi.advanceTimersByTimeAsync(59_999);
 
 		expect(http.requests).toHaveLength(1);
@@ -1090,10 +1154,13 @@ describe("the SDK admission waits", () => {
 		expect(http.requests).toHaveLength(2);
 	});
 
-	it("should charge a stalled HTTP request after a quota gate against inactivity", async () => {
+	it("should charge a stalled HTTP request after a quota gate against inactivity", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(3);
 
-		useClock();
+		useClock(onTestFinished);
 		const http = createFakeHttpClient();
 		http.mockResponse({
 			body: ACCEPTED,
@@ -1106,26 +1173,29 @@ describe("the SDK admission waits", () => {
 			.mockImplementationOnce(async () => new Promise(() => {}));
 		const submission = makeSubmission(http, { sleep: sleepAsync });
 		await submitScriptAsync(submission, BUDGETED);
-		await expectInactivityExpiryAsync(submission);
+		await expectInactivityExpiryAsync(submission, expect);
 
 		expect(vi.getTimerCount()).toBe(0);
 	});
 
-	it("should cancel both a sleeping quota gate and its queued follower immediately", async () => {
+	it("should cancel both a sleeping quota gate and its queued follower immediately", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(4);
 
-		const { http, submission } = makeQuotaGatedSubmission();
+		const { http, submission } = makeQuotaGatedSubmission(onTestFinished);
 		await submitScriptAsync(submission, BUDGETED);
 		const first = new AbortController();
 		const second = new AbortController();
 		const firstResult = submitScriptAsync(submission, {
 			...BUDGETED,
 			observationSignal: first.signal,
-		}).catch((err: unknown) => err);
+		}).catch((err) => err);
 		const secondResult = submitScriptAsync(submission, {
 			...BUDGETED,
 			observationSignal: second.signal,
-		}).catch((err: unknown) => err);
+		}).catch((err) => err);
 		await vi.advanceTimersByTimeAsync(1000);
 		second.abort("follower stopped");
 
@@ -1140,10 +1210,13 @@ describe("the SDK admission waits", () => {
 		expect(vi.getTimerCount()).toBe(0);
 	});
 
-	it("should not excuse an SDK wait when no capacity budget was granted", async () => {
+	it("should not excuse an SDK wait when no capacity budget was granted", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(3);
 
-		const { http, submission } = makeQuotaGatedSubmission();
+		const { http, submission } = makeQuotaGatedSubmission(onTestFinished);
 		const { submitCapacityBudget, ...inactivityOnly } = BUDGETED;
 		await submitScriptAsync(submission, inactivityOnly);
 		const settled = vi.fn<(value: unknown) => void>();
@@ -1163,17 +1236,20 @@ describe("the SDK admission waits", () => {
 		expect(http.requests).toHaveLength(1);
 	});
 
-	it("should not credit a quota retry again when it crosses the SDK gate", async () => {
+	it("should not credit a quota retry again when it crosses the SDK gate", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(3);
 
-		useClock();
+		useClock(onTestFinished);
 		const http = createFakeHttpClient();
 		http.mockError(new RateLimitError("quota", { remaining: 0, retryAfterSeconds: 60 }));
 		const send = http.request.bind(http);
 		vi.spyOn(http, "request")
 			.mockImplementationOnce(send)
 			.mockImplementationOnce(async () => new Promise(() => {}));
-		await expectInactivityExpiryAsync(makeSubmission(http, { sleep: sleepAsync }));
+		await expectInactivityExpiryAsync(makeSubmission(http, { sleep: sleepAsync }), expect);
 
 		expect(vi.getTimerCount()).toBe(0);
 	});

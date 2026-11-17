@@ -1,10 +1,12 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { parseTscOutput } from "./parse.ts";
 import type { TypeTestDiagnostic } from "./typecheck-types.ts";
 
 describe(parseTscOutput, () => {
-	it("should preserve exact paths, positions, codes, messages, and continuations", () => {
+	it("should preserve exact paths, positions, codes, messages, and continuations", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const output = [
@@ -42,7 +44,7 @@ describe(parseTscOutput, () => {
 		]);
 	});
 
-	it("should attach a continuation across an empty output line", () => {
+	it("should attach a continuation across an empty output line", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = ["src/a.ts(1,2): error TS1000: First.", "", "  Continued."].join("\n");
@@ -68,13 +70,13 @@ describe(parseTscOutput, () => {
 		"src/a.ts(1,): error TS1000: Missing column.",
 		"src/a.ts(): error TS1000: Missing position.",
 		"src/a.ts: error TS1000: Missing parentheses.",
-	])("should reject malformed position in %s", (output) => {
+	])("should reject malformed position in %s", (output, { expect }) => {
 		expect.assertions(1);
 
 		expect([...parseTscOutput(output)]).toStrictEqual([]);
 	});
 
-	it("should parse a single error line", () => {
+	it("should parse a single error line", ({ expect }) => {
 		expect.assertions(3);
 
 		const output =
@@ -95,7 +97,7 @@ describe(parseTscOutput, () => {
 		} satisfies TypeTestDiagnostic);
 	});
 
-	it("should group multiple errors for the same file", () => {
+	it("should group multiple errors for the same file", ({ expect }) => {
 		expect.assertions(2);
 
 		const output = [
@@ -108,7 +110,7 @@ describe(parseTscOutput, () => {
 		expect(result.get("src/index.ts")).toHaveLength(2);
 	});
 
-	it("should separate errors across multiple files", () => {
+	it("should separate errors across multiple files", ({ expect }) => {
 		expect.assertions(3);
 
 		const output = [
@@ -122,7 +124,7 @@ describe(parseTscOutput, () => {
 		expect(result.get("src/b.ts")).toHaveLength(1);
 	});
 
-	it("should merge indented continuation lines with parent", () => {
+	it("should merge indented continuation lines with parent", ({ expect }) => {
 		expect.assertions(2);
 
 		const output = [
@@ -137,13 +139,13 @@ describe(parseTscOutput, () => {
 		expect(errors![0]!.message).toContain("has no call signatures");
 	});
 
-	it("should return empty map for empty output", () => {
+	it("should return empty map for empty output", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(parseTscOutput("").size).toBe(0);
 	});
 
-	it("should skip malformed lines", () => {
+	it("should skip malformed lines", ({ expect }) => {
 		expect.assertions(2);
 
 		const output = [
@@ -157,7 +159,7 @@ describe(parseTscOutput, () => {
 		expect(result.get("src/index.ts")).toHaveLength(1);
 	});
 
-	it("should handle Windows absolute paths", () => {
+	it("should handle Windows absolute paths", ({ expect }) => {
 		expect.assertions(3);
 
 		const output = "D:\\projects\\src\\index.ts(10,5): error TS2322: Type mismatch.";
@@ -171,7 +173,7 @@ describe(parseTscOutput, () => {
 		expect(errors![0]!.line).toBe(10);
 	});
 
-	it("should parse a diagnostic for a one-character path", () => {
+	it("should parse a diagnostic for a one-character path", ({ expect }) => {
 		expect.assertions(1);
 
 		expect([...parseTscOutput("a(1,2): error TS1000: Message.")]).toStrictEqual([
@@ -190,7 +192,7 @@ describe(parseTscOutput, () => {
 		]);
 	});
 
-	it("should trim whitespace around the diagnostic message", () => {
+	it("should trim whitespace around the diagnostic message", ({ expect }) => {
 		expect.assertions(1);
 
 		expect([...parseTscOutput("src/a.ts(1,2): error TS1000:   Message.   ")]).toStrictEqual([
@@ -209,7 +211,7 @@ describe(parseTscOutput, () => {
 		]);
 	});
 
-	it("should skip line with open paren but no close paren", () => {
+	it("should skip line with open paren but no close paren", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = "src/index.ts(10,5: error TS2322: Missing close paren.";
@@ -218,7 +220,7 @@ describe(parseTscOutput, () => {
 		expect(result.size).toBe(0);
 	});
 
-	it("should skip line with position missing comma", () => {
+	it("should skip line with position missing comma", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = "src/index.ts(10): error TS2322: No column.";
@@ -227,7 +229,7 @@ describe(parseTscOutput, () => {
 		expect(result.size).toBe(0);
 	});
 
-	it("should ignore leading continuation line with no parent", () => {
+	it("should ignore leading continuation line with no parent", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = "  orphaned continuation line\nsrc/a.ts(1,1): error TS2322: Real.";
@@ -236,7 +238,7 @@ describe(parseTscOutput, () => {
 		expect(result.size).toBe(1);
 	});
 
-	it("should skip line with valid position but no error code", () => {
+	it("should skip line with valid position but no error code", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = "src/index.ts(10,5): some other message without TS code.";
@@ -245,7 +247,7 @@ describe(parseTscOutput, () => {
 		expect(result.size).toBe(0);
 	});
 
-	it("should skip line with valid position but malformed TS error code", () => {
+	it("should skip line with valid position but malformed TS error code", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = "src/index.ts(10,5): error TS: no digits after TS.";

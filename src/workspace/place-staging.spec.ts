@@ -2,7 +2,7 @@ import { fromAny } from "@total-typescript/shoehorn";
 
 import * as path from "node:path";
 import type { Mock } from "vitest";
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import { fakeTimingCollector } from "#test/mocks/fake-timing-collector.ts";
 import type { MemoryFileSystem } from "#test/mocks/memory-file-system.ts";
@@ -134,7 +134,9 @@ function seed(): Harness {
 }
 
 describe(stageWorkspacePlaceAsync, () => {
-	it("should build the shared place with stable cache paths and publish its manifests", async () => {
+	it("should build the shared place with stable cache paths and publish its manifests", async ({
+		expect,
+	}) => {
 		expect.assertions(5);
 
 		const { childProcess, execFile, fileSystem, volume } = seed();
@@ -189,7 +191,7 @@ describe(stageWorkspacePlaceAsync, () => {
 		});
 	});
 
-	it("should report no coverage when no package opts in", async () => {
+	it("should report no coverage when no package opts in", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { childProcess, fileSystem } = seed();
@@ -211,7 +213,7 @@ describe(stageWorkspacePlaceAsync, () => {
 		expect(result.collectsCoverage).toBeFalse();
 	});
 
-	it("should rebuild the place when an instrumented source changes", async () => {
+	it("should rebuild the place when an instrumented source changes", async ({ expect }) => {
 		expect.assertions(2);
 
 		const { childProcess, execFile, fileSystem } = seed();

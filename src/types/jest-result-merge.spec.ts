@@ -1,6 +1,6 @@
 import { fromAny, fromPartial } from "@total-typescript/shoehorn";
 
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { makeJestResult } from "#test/mocks/spec-results.ts";
 import { mergeJestResults, mergeResults } from "./jest-result-merge.ts";
@@ -13,7 +13,7 @@ function mergeSnapshotSummaries(
 }
 
 describe("mergeJestResults snapshots", () => {
-	it("should aggregate didUpdate as true if any project ran in update mode", () => {
+	it("should aggregate didUpdate as true if any project ran in update mode", ({ expect }) => {
 		expect.assertions(1);
 
 		const merged = mergeSnapshotSummaries([
@@ -31,7 +31,7 @@ describe("mergeJestResults snapshots", () => {
 		});
 	});
 
-	it("should aggregate didUpdate as false when no project ran in update mode", () => {
+	it("should aggregate didUpdate as false when no project ran in update mode", ({ expect }) => {
 		expect.assertions(1);
 
 		const merged = mergeSnapshotSummaries([
@@ -49,7 +49,7 @@ describe("mergeJestResults snapshots", () => {
 		});
 	});
 
-	it("should sum unchecked across all projects", () => {
+	it("should sum unchecked across all projects", ({ expect }) => {
 		expect.assertions(1);
 
 		const merged = mergeSnapshotSummaries([
@@ -68,7 +68,7 @@ describe("mergeJestResults snapshots", () => {
 		});
 	});
 
-	it("should sum filesRemoved across projects so JSON consumers see it", () => {
+	it("should sum filesRemoved across projects so JSON consumers see it", ({ expect }) => {
 		expect.assertions(1);
 
 		const merged = mergeSnapshotSummaries([
@@ -86,7 +86,7 @@ describe("mergeJestResults snapshots", () => {
 		});
 	});
 
-	it("should return undefined when no snapshots provided", () => {
+	it("should return undefined when no snapshots provided", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(mergeSnapshotSummaries([])).toBeUndefined();
@@ -94,7 +94,7 @@ describe("mergeJestResults snapshots", () => {
 });
 
 describe(mergeJestResults, () => {
-	it("should merge the complete Jest result contract exactly", () => {
+	it("should merge the complete Jest result contract exactly", ({ expect }) => {
 		expect.assertions(1);
 
 		const firstFile = fromPartial<TestFileResult>({ testFilePath: "first.spec.ts" });
@@ -136,7 +136,7 @@ describe(mergeJestResults, () => {
 });
 
 describe(mergeResults, () => {
-	it("should reject when neither result dimension is present", () => {
+	it("should reject when neither result dimension is present", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(() => mergeResults(undefined, undefined)).toThrow(
@@ -144,7 +144,7 @@ describe(mergeResults, () => {
 		);
 	});
 
-	it("should combine every aggregate field and preserve runtime snapshots", () => {
+	it("should combine every aggregate field and preserve runtime snapshots", ({ expect }) => {
 		expect.assertions(1);
 
 		const typecheckFile = fromAny<TestFileResult, { testFilePath: string }>({
@@ -194,7 +194,7 @@ describe(mergeResults, () => {
 		});
 	});
 
-	it("should count a runtime result with no todo count as zero todos", () => {
+	it("should count a runtime result with no todo count as zero todos", ({ expect }) => {
 		expect.assertions(1);
 
 		const merged = mergeResults(

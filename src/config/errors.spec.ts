@@ -1,9 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { ConfigError } from "./errors.ts";
 
 describe(ConfigError, () => {
-	it("should store message and hint", () => {
+	it("should store message and hint", ({ expect }) => {
 		expect.assertions(2);
 
 		const err = new ConfigError("bad config", "try setting outDir");
@@ -12,7 +12,7 @@ describe(ConfigError, () => {
 		expect(err.hint).toBe("try setting outDir");
 	});
 
-	it("should allow omitting hint", () => {
+	it("should allow omitting hint", ({ expect }) => {
 		expect.assertions(2);
 
 		const err = new ConfigError("bad config");
@@ -21,7 +21,7 @@ describe(ConfigError, () => {
 		expect(err.hint).toBeUndefined();
 	});
 
-	it("should be an instance of Error", () => {
+	it("should be an instance of Error", ({ expect }) => {
 		expect.assertions(1);
 
 		const err = new ConfigError("bad config");

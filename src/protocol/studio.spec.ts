@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import {
 	encodeNilRelayFrame,
@@ -9,7 +9,7 @@ import {
 } from "./studio.ts";
 
 describe(encodeNilRelayFrame, () => {
-	it("should name the run it relays", () => {
+	it("should name the run it relays", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(JSON.parse(encodeNilRelayFrame("request-1"))).toStrictEqual({
@@ -20,7 +20,7 @@ describe(encodeNilRelayFrame, () => {
 });
 
 describe("nil-return wait ordering", () => {
-	it("should give a takeover time between the plugin's two waits", () => {
+	it("should give a takeover time between the plugin's two waits", ({ expect }) => {
 		expect.assertions(2);
 
 		expect(NIL_RETURN_PLUGIN_WAIT_MS).toBeGreaterThan(RUNNING_WAIT_SECONDS * 1000);

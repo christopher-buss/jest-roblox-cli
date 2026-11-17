@@ -2,7 +2,7 @@ import { fromAny } from "@total-typescript/shoehorn";
 
 import type * as childProcess from "node:child_process";
 import * as path from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import type { ChildProcessRunner } from "../utils/child-process.ts";
 import { spawnLuauCheckAsync } from "./luau-check.ts";
@@ -50,7 +50,7 @@ async function checkAsync(runner: ChildProcessRunner, files: Array<string>) {
 }
 
 describe(spawnLuauCheckAsync, () => {
-	it("should run the checker on absolute paths with the run timeout", async () => {
+	it("should run the checker on absolute paths with the run timeout", async ({ expect }) => {
 		expect.assertions(4);
 
 		const { invocations, runner } = fakeRunner((callback) => {
@@ -71,7 +71,7 @@ describe(spawnLuauCheckAsync, () => {
 		expect(invocation!.options.cwd).toBe("/project");
 	});
 
-	it("should resolve diagnostics from stdout on a non-zero exit", async () => {
+	it("should resolve diagnostics from stdout on a non-zero exit", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { runner } = fakeRunner((callback) => {
@@ -81,16 +81,16 @@ describe(spawnLuauCheckAsync, () => {
 		await expect(checkAsync(runner, ["/a.spec-d.luau"])).resolves.toBe("diagnostics");
 	});
 
-	it("should raise a ConfigError with an install hint when the checker is missing", async () => {
+	it("should raise a ConfigError with an install hint when the checker is missing", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const { runner } = fakeRunner((callback) => {
 			callback(Object.assign(new Error("spawn ENOENT"), { code: "ENOENT" }), "", "");
 		});
 
-		const error: unknown = await checkAsync(runner, ["/a.spec-d.luau"]).catch(
-			(err: unknown) => err,
-		);
+		const error = await checkAsync(runner, ["/a.spec-d.luau"]).catch((err) => err);
 
 		expect(error).toBeInstanceOf(Error);
 		expect(error).toMatchObject({
@@ -99,7 +99,7 @@ describe(spawnLuauCheckAsync, () => {
 		});
 	});
 
-	it("should rethrow any other spawn failure", async () => {
+	it("should rethrow any other spawn failure", async ({ expect }) => {
 		expect.assertions(2);
 
 		const failure = Object.assign(new Error("spawn EACCES"), { code: "EACCES" });
@@ -107,15 +107,13 @@ describe(spawnLuauCheckAsync, () => {
 			callback(failure, "", "");
 		});
 
-		const error: unknown = await checkAsync(runner, ["/a.spec-d.luau"]).catch(
-			(err: unknown) => err,
-		);
+		const error = await checkAsync(runner, ["/a.spec-d.luau"]).catch((err) => err);
 
 		expect(error).not.toHaveProperty("hint");
 		expect(error).toMatchObject({ cause: failure });
 	});
 
-	it("should report the checker by name when the run times out", async () => {
+	it("should report the checker by name when the run times out", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { runner } = fakeRunner((callback) => {

@@ -1,12 +1,12 @@
 import { execFileSync } from "node:child_process";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 const PACKAGE_DIR = path.resolve(__dirname, "..", "..");
 const [CHECKER, CHECK] = ["lute", "check"] as const;
 
 describe("shipped luau type test library", () => {
-	it("should pass lute check with no diagnostics", () => {
+	it("should pass lute check with no diagnostics", ({ expect }) => {
 		expect.assertions(1);
 
 		const stdout = execFileSync(

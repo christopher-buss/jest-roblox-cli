@@ -2,7 +2,7 @@ import { NetworkError } from "@bedrock-rbx/ocale";
 import { LuauExecutionClient } from "@bedrock-rbx/ocale/luau-execution";
 import { createFakeHttpClient } from "@bedrock-rbx/ocale/testing";
 
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import { TaskReads } from "./task-reads.ts";
 
@@ -39,7 +39,9 @@ function logsBody(count: number) {
 }
 
 describe(TaskReads, () => {
-	it("should poll only the accepted task and retain the observation signal", async () => {
+	it("should poll only the accepted task and retain the observation signal", async ({
+		expect,
+	}) => {
 		expect.assertions(3);
 
 		const { http, reads } = makeReads();
@@ -71,7 +73,7 @@ describe(TaskReads, () => {
 		expect(http.requests[0]!.config.signal!.reason).toBe("caller stopped observing");
 	});
 
-	it("should return only the newest twenty terminal log messages", async () => {
+	it("should return only the newest twenty terminal log messages", async ({ expect }) => {
 		expect.assertions(2);
 
 		const { http, reads } = makeReads();
@@ -86,7 +88,7 @@ describe(TaskReads, () => {
 		expect(http.requests[0]!.config.signal).toBe(observation.signal);
 	});
 
-	it("should retain an empty terminal log page", async () => {
+	it("should retain an empty terminal log page", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { http, reads } = makeReads();
@@ -97,7 +99,9 @@ describe(TaskReads, () => {
 		).resolves.toStrictEqual([]);
 	});
 
-	it("should tolerate rejected log requests without masking the task failure", async () => {
+	it("should tolerate rejected log requests without masking the task failure", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { http, reads } = makeReads();
@@ -108,7 +112,9 @@ describe(TaskReads, () => {
 		).resolves.toStrictEqual([]);
 	});
 
-	it("should tolerate a throwing transport without masking the task failure", async () => {
+	it("should tolerate a throwing transport without masking the task failure", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { http, reads } = makeReads();
@@ -121,7 +127,7 @@ describe(TaskReads, () => {
 });
 
 describe("recovery request shape", () => {
-	it("should omit absent deadlines and signals from SDK recovery options", async () => {
+	it("should omit absent deadlines and signals from SDK recovery options", async ({ expect }) => {
 		expect.assertions(3);
 
 		const { client, reads } = makeReads();

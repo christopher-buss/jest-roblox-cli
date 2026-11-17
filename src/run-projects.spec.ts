@@ -3,7 +3,7 @@ import { fromAny } from "@total-typescript/shoehorn";
 import * as path from "node:path";
 import process from "node:process";
 import { stripVTControlCharacters } from "node:util";
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import {
 	createFailingResult,
@@ -321,31 +321,32 @@ function createTemporaryDirectory(volume: MemoryVolume, prefix: string): string 
 	return directory;
 }
 
+async function executeWithDefaultConfigAsync(
+	jestResult: JestResult,
+): ReturnType<typeof executeSingleAsync> {
+	const { fileSystem } = memoryFileSystem();
+
+	return executeSingleAsync({
+		backend: createMockBackend(jestResult),
+		config: createResolvedConfig(),
+		fileSystem,
+		testFiles: ["src/test.spec.ts"],
+		version: "0.0.0-test",
+	});
+}
+
 describe("execute single-project helper", () => {
-	it("should return exit code 0 when all tests pass", async () => {
+	it("should return exit code 0 when all tests pass", async ({ expect }) => {
 		expect.assertions(2);
 
-		const { fileSystem } = memoryFileSystem();
-
-		const backend = createMockBackend(createPassingResult());
-		const options: ExecuteOptions = {
-			backend,
-			config: createResolvedConfig(),
-			fileSystem,
-			testFiles: ["src/test.spec.ts"],
-			version: "0.0.0-test",
-		};
-
-		const result = await executeSingleAsync(options);
+		const result = await executeWithDefaultConfigAsync(createPassingResult());
 
 		expect(result.exitCode).toBe(0);
 		expect(result.result.success).toBeTrue();
 	});
 
-	it("should handle test results without duration", async () => {
+	it("should handle test results without duration", async ({ expect }) => {
 		expect.assertions(1);
-
-		const { fileSystem } = memoryFileSystem();
 
 		const resultWithoutDuration: JestResult = {
 			numFailedTests: 0,
@@ -373,41 +374,21 @@ describe("execute single-project helper", () => {
 			],
 		};
 
-		const backend = createMockBackend(resultWithoutDuration);
-		const options: ExecuteOptions = {
-			backend,
-			config: createResolvedConfig(),
-			fileSystem,
-			testFiles: ["src/test.spec.ts"],
-			version: "0.0.0-test",
-		};
-
-		const result = await executeSingleAsync(options);
+		const result = await executeWithDefaultConfigAsync(resultWithoutDuration);
 
 		expect(result.exitCode).toBe(0);
 	});
 
-	it("should return exit code 1 when tests fail", async () => {
+	it("should return exit code 1 when tests fail", async ({ expect }) => {
 		expect.assertions(2);
 
-		const { fileSystem } = memoryFileSystem();
-
-		const backend = createMockBackend(createFailingResult());
-		const options: ExecuteOptions = {
-			backend,
-			config: createResolvedConfig(),
-			fileSystem,
-			testFiles: ["src/test.spec.ts"],
-			version: "0.0.0-test",
-		};
-
-		const result = await executeSingleAsync(options);
+		const result = await executeWithDefaultConfigAsync(createFailingResult());
 
 		expect(result.exitCode).toBe(1);
 		expect(result.result.success).toBeFalse();
 	});
 
-	it("should pass test name pattern to backend", async () => {
+	it("should pass test name pattern to backend", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = memoryFileSystem();
@@ -415,7 +396,7 @@ describe("execute single-project helper", () => {
 		let capturedOptions: StudioDispatch | undefined;
 		const backend: Backend = {
 			kind: "studio",
-			runTestsAsync: async (runOptions: StudioDispatch): Promise<BackendResult> => {
+			runTestsAsync: async (runOptions): Promise<BackendResult> => {
 				capturedOptions = runOptions;
 				return singleEntryResult({ result: createPassingResult() });
 			},
@@ -438,27 +419,16 @@ describe("execute single-project helper", () => {
 		expect(capturedOptions!.jobs[0].argv.testNamePattern).toBe("should pass");
 	});
 
-	it("should format output as human-readable by default", async () => {
+	it("should format output as human-readable by default", async ({ expect }) => {
 		expect.assertions(2);
 
-		const { fileSystem } = memoryFileSystem();
-
-		const backend = createMockBackend(createPassingResult());
-		const options: ExecuteOptions = {
-			backend,
-			config: createResolvedConfig(),
-			fileSystem,
-			testFiles: ["src/test.spec.ts"],
-			version: "0.0.0-test",
-		};
-
-		const result = await executeSingleAsync(options);
+		const result = await executeWithDefaultConfigAsync(createPassingResult());
 
 		expect(result.output).toContain("✓");
 		expect(result.output).toContain("2 passed");
 	});
 
-	it("should format output as JSON when json formatter is enabled", async () => {
+	it("should format output as JSON when json formatter is enabled", async ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem } = memoryFileSystem();
@@ -481,27 +451,25 @@ describe("execute single-project helper", () => {
 		expect(parsed.numTotalTests).toBe(2);
 	});
 
-	it("should pass through gameOutput from backend", async () => {
+	it("should pass through gameOutput from backend", async ({ expect }) => {
 		expect.assertions(1);
 
-		const { fileSystem } = memoryFileSystem();
-
 		const rawGameOutput = '[{"message":"hello","messageType":0,"timestamp":1000}]';
-		const backend = createMockBackend(createPassingResult(), rawGameOutput);
-		const options: ExecuteOptions = {
-			backend,
+		const { fileSystem } = memoryFileSystem();
+		const result = await executeSingleAsync({
+			backend: createMockBackend(createPassingResult(), rawGameOutput),
 			config: createResolvedConfig(),
 			fileSystem,
 			testFiles: ["src/test.spec.ts"],
 			version: "0.0.0-test",
-		};
-
-		const result = await executeSingleAsync(options);
+		});
 
 		expect(result.gameOutput).toBe(rawGameOutput);
 	});
 
-	it("should fall through to default formatter when agent and verbose are both set", async () => {
+	it("should fall through to default formatter when agent and verbose are both set", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const { fileSystem } = memoryFileSystem();
@@ -527,7 +495,7 @@ describe("execute single-project helper", () => {
 		expect(result.output).toContain("Test Files");
 	});
 
-	it("should resolve outputFile and gameOutput paths when configured", async () => {
+	it("should resolve outputFile and gameOutput paths when configured", async ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem } = memoryFileSystem();
@@ -552,7 +520,7 @@ describe("execute single-project helper", () => {
 		expect(result.output).not.toBeEmpty();
 	});
 
-	it("should return empty output when silent", async () => {
+	it("should return empty output when silent", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = memoryFileSystem();
@@ -572,21 +540,10 @@ describe("execute single-project helper", () => {
 		expect(result.output).toBe("");
 	});
 
-	it("should return timing in result", async () => {
+	it("should return timing in result", async ({ expect }) => {
 		expect.assertions(4);
 
-		const { fileSystem } = memoryFileSystem();
-
-		const backend = createMockBackend(createPassingResult());
-		const options: ExecuteOptions = {
-			backend,
-			config: createResolvedConfig(),
-			fileSystem,
-			testFiles: ["src/test.spec.ts"],
-			version: "0.0.0-test",
-		};
-
-		const result = await executeSingleAsync(options);
+		const result = await executeWithDefaultConfigAsync(createPassingResult());
 
 		expect(result.timing.executionMs).toBe(100);
 		expect(result.timing.uploadMs).toBe(50);
@@ -594,7 +551,7 @@ describe("execute single-project helper", () => {
 		expect(result.timing.testsMs).toBeGreaterThanOrEqual(0);
 	});
 
-	it("should calculate total timing from the supplied start time", async () => {
+	it("should calculate total timing from the supplied start time", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = memoryFileSystem();
@@ -618,7 +575,7 @@ describe("execute single-project helper", () => {
 		expect(results[0]!.timing.totalMs).toBe(500);
 	});
 
-	it("should profile each orchestration boundary by its stable name", async () => {
+	it("should profile each orchestration boundary by its stable name", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = memoryFileSystem();
@@ -669,7 +626,9 @@ describe("execute single-project helper", () => {
 		);
 	});
 
-	it("should record uploadMs / executionMs spans under backend.runTests when timing is provided", async () => {
+	it("should record uploadMs / executionMs spans under backend.runTests when timing is provided", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const { fileSystem } = memoryFileSystem();
@@ -685,7 +644,7 @@ describe("execute single-project helper", () => {
 		expect(timing.record).toHaveBeenCalledWith("executionMs", 100);
 	});
 
-	it("should skip uploadMs span when backend did not measure an upload", async () => {
+	it("should skip uploadMs span when backend did not measure an upload", async ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem } = memoryFileSystem();
@@ -716,7 +675,7 @@ describe("execute single-project helper", () => {
 		expect(phaseNamesOf(timing.record)).not.toContain("uploadMs");
 	});
 
-	it("should record luau phase timings nested under backend.runTests", async () => {
+	it("should record luau phase timings nested under backend.runTests", async ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem } = memoryFileSystem();
@@ -738,7 +697,7 @@ describe("execute single-project helper", () => {
 		expect(timing.record).toHaveBeenCalledWith("luau.jestRunCLI", 2500);
 	});
 
-	it("should skip the raw luau total phase to avoid a second host total", async () => {
+	it("should skip the raw luau total phase to avoid a second host total", async ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem } = memoryFileSystem();
@@ -760,7 +719,7 @@ describe("execute single-project helper", () => {
 		expect(phaseNamesOf(timing.record)).not.toContain("luau.total");
 	});
 
-	it("should accumulate luau phase timings across multiple projects", async () => {
+	it("should accumulate luau phase timings across multiple projects", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = memoryFileSystem();
@@ -800,7 +759,9 @@ describe("execute single-project helper", () => {
 		).toStrictEqual([0.10025 * 1000, 0.20035 * 1000]);
 	});
 
-	it("should skip luau timing extraction entirely when the collector is disabled", async () => {
+	it("should skip luau timing extraction entirely when the collector is disabled", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const { fileSystem } = memoryFileSystem();
@@ -820,7 +781,7 @@ describe("execute single-project helper", () => {
 		expect(phaseNamesOf(timing.record).filter((name) => name.startsWith("luau."))).toBeEmpty();
 	});
 
-	it("should return coverageData when backend provides it", async () => {
+	it("should return coverageData when backend provides it", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = memoryFileSystem();
@@ -847,7 +808,7 @@ describe("execute single-project helper", () => {
 		});
 	});
 
-	it("should pass through coverageData regardless of collectCoverage", async () => {
+	it("should pass through coverageData regardless of collectCoverage", async ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem } = memoryFileSystem();
@@ -874,7 +835,7 @@ describe("execute single-project helper", () => {
 		expect(result.attribution).toBeUndefined();
 	});
 
-	it("should not create attribution without coverage or per-test deltas", async () => {
+	it("should not create attribution without coverage or per-test deltas", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = memoryFileSystem();
@@ -890,7 +851,7 @@ describe("execute single-project helper", () => {
 		expect(result.attribution).toBeUndefined();
 	});
 
-	it("should harvest per-test attribution when the backend provides it", async () => {
+	it("should harvest per-test attribution when the backend provides it", async ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem } = memoryFileSystem();
@@ -931,7 +892,9 @@ describe("execute single-project helper", () => {
 		});
 	});
 
-	it("should derive the static set from the cumulative coverage and the deltas", async () => {
+	it("should derive the static set from the cumulative coverage and the deltas", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { fileSystem } = memoryFileSystem();
@@ -967,7 +930,9 @@ describe("execute single-project helper", () => {
 		expect(result.attribution!.staticStatementIds).toStrictEqual({ "out/m.luau": ["0"] });
 	});
 
-	it("should derive an all-static set when per-test collection ran but credited nothing", async () => {
+	it("should derive an all-static set when per-test collection ran but credited nothing", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { fileSystem } = memoryFileSystem();
@@ -997,7 +962,7 @@ describe("execute single-project helper", () => {
 		expect(result.attribution!.staticStatementIds).toStrictEqual({ "out/m.luau": ["0", "1"] });
 	});
 
-	it("should not factor coverage into exit code", async () => {
+	it("should not factor coverage into exit code", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = memoryFileSystem();
@@ -1024,7 +989,7 @@ describe("execute single-project helper", () => {
 		expect(result.exitCode).toBe(0);
 	});
 
-	it("should skip source mapper when sourceMap is false", async () => {
+	it("should skip source mapper when sourceMap is false", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = memoryFileSystem();
@@ -1044,7 +1009,7 @@ describe("execute single-project helper", () => {
 		expect(result.exitCode).toBe(0);
 	});
 
-	it("should use agent formatter when agent is in formatters", async () => {
+	it("should use agent formatter when agent is in formatters", async ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem } = memoryFileSystem();
@@ -1066,7 +1031,7 @@ describe("execute single-project helper", () => {
 		expect(result.output).not.toContain("Duration");
 	});
 
-	it("should respect maxFailures from agent formatter options tuple", async () => {
+	it("should respect maxFailures from agent formatter options tuple", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = memoryFileSystem();
@@ -1089,7 +1054,7 @@ describe("execute single-project helper", () => {
 		expect(result.output).toContain("FAIL");
 	});
 
-	it("should handle backend providing luau timing", async () => {
+	it("should handle backend providing luau timing", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = memoryFileSystem();
@@ -1118,7 +1083,7 @@ describe("execute single-project helper", () => {
 		expect(result.exitCode).toBe(0);
 	});
 
-	it("should resolve DataModel testFilePaths to filesystem paths", async () => {
+	it("should resolve DataModel testFilePaths to filesystem paths", async ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = memoryFileSystem();
@@ -1183,7 +1148,9 @@ describe("execute single-project helper", () => {
 		);
 	});
 
-	it("should exit non-zero when rojo project missing causes snapshot writes to fail", async () => {
+	it("should exit non-zero when rojo project missing causes snapshot writes to fail", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const { fileSystem } = memoryFileSystem();
@@ -1206,7 +1173,7 @@ describe("execute single-project helper", () => {
 		expect(result.snapshotWriteFailures).toBe(1);
 	});
 
-	it("should write multiple snapshots and use plural message", async () => {
+	it("should write multiple snapshots and use plural message", async ({ expect }) => {
 		expect.assertions(3);
 
 		const { fileSystem, volume } = memoryFileSystem();
@@ -1240,7 +1207,7 @@ describe("execute single-project helper", () => {
 		expect(fileSystem.existsSync(snapshotB)).toBeTrue();
 	});
 
-	it("should report partial success in stderr when some writes fail", async () => {
+	it("should report partial success in stderr when some writes fail", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = memoryFileSystem();
@@ -1269,7 +1236,7 @@ describe("execute single-project helper", () => {
 		expect(output).toMatch(/Wrote 1 of 2 snapshot files/);
 	});
 
-	it("should suppress success message when config.silent is true", async () => {
+	it("should suppress success message when config.silent is true", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = memoryFileSystem();
@@ -1308,7 +1275,7 @@ describe("execute single-project helper", () => {
 		expect(output).not.toMatch(/Wrote \d+ snapshot/);
 	});
 
-	it("should find non-default rojo project file", async () => {
+	it("should find non-default rojo project file", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = memoryFileSystem();
@@ -1336,7 +1303,9 @@ describe("execute single-project helper", () => {
 		expect(result.exitCode).toBe(0);
 	});
 
-	it("should resolve relative config.rojoProject against rootDir, not CWD", async () => {
+	it("should resolve relative config.rojoProject against rootDir, not CWD", async ({
+		expect,
+	}) => {
 		// In workspace mode a relative `rojoProject` must resolve under each
 		// package's `rootDir`, not the CWD. The CWD sentinel is NOT a parent of
 		// rootDir, so a CWD-relative resolve misses every package.
@@ -1392,7 +1361,7 @@ describe("execute single-project helper", () => {
 		expect(fileSystem.existsSync(snapshotPath)).toBeTrue();
 	});
 
-	it("should warn when snapshot path cannot be resolved", async () => {
+	it("should warn when snapshot path cannot be resolved", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = memoryFileSystem();
@@ -1420,7 +1389,7 @@ describe("execute single-project helper", () => {
 		);
 	});
 
-	it("should warn when rojo project has invalid schema for snapshots", async () => {
+	it("should warn when rojo project has invalid schema for snapshots", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = memoryFileSystem();
@@ -1440,7 +1409,7 @@ describe("execute single-project helper", () => {
 		expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining("Invalid Rojo project"));
 	});
 
-	it("should warn distinctly when rojo project cannot be read", async () => {
+	it("should warn distinctly when rojo project cannot be read", async ({ expect }) => {
 		expect.assertions(3);
 
 		const { fileSystem, volume } = memoryFileSystem();
@@ -1467,7 +1436,9 @@ describe("execute single-project helper", () => {
 		expect(output).not.toContain("Failed to parse Rojo project");
 	});
 
-	it("should warn when resolveNestedProjects throws on a missing nested project", async () => {
+	it("should warn when resolveNestedProjects throws on a missing nested project", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = memoryFileSystem();
@@ -1502,7 +1473,7 @@ describe("execute single-project helper", () => {
 		expect(result.snapshotWriteFailures).toBe(1);
 	});
 
-	it("should warn with banner when rojo project JSON is invalid", async () => {
+	it("should warn with banner when rojo project JSON is invalid", async ({ expect }) => {
 		expect.assertions(3);
 
 		const { fileSystem, volume } = memoryFileSystem();
@@ -1530,7 +1501,7 @@ describe("execute single-project helper", () => {
 		expect(output).toContain("default.project.json");
 	});
 
-	it("should warn generically when snapshot write throws non-SyntaxError", async () => {
+	it("should warn generically when snapshot write throws non-SyntaxError", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = memoryFileSystem();
@@ -1575,7 +1546,7 @@ describe("execute single-project helper", () => {
 		);
 	});
 
-	it("should expose snapshot write failures in Snapshot Write line", async () => {
+	it("should expose snapshot write failures in Snapshot Write line", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = memoryFileSystem();
@@ -1602,7 +1573,7 @@ describe("execute single-project helper", () => {
 		expect(stripVTControlCharacters(result.output)).toMatch(/Snapshot Write\s+1 failed/);
 	});
 
-	it("should resolve tsconfig outDir for snapshot source rewriting", async () => {
+	it("should resolve tsconfig outDir for snapshot source rewriting", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = memoryFileSystem();
@@ -1625,7 +1596,7 @@ describe("execute single-project helper", () => {
 		expect(fileSystem.existsSync(sourceSnapshot)).toBeTrue();
 	});
 
-	it("should dual-write snapshots to both source and out directories", async () => {
+	it("should dual-write snapshots to both source and out directories", async ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = memoryFileSystem();
@@ -1654,7 +1625,9 @@ describe("execute single-project helper", () => {
 	});
 
 	// cspell:ignore rootdirs testrc
-	it("should dual-write snapshots correctly when tsconfig uses rootDirs (rootDir collapses to '.')", async () => {
+	it("should dual-write snapshots correctly when tsconfig uses rootDirs (rootDir collapses to '.')", async ({
+		expect,
+	}) => {
 		expect.assertions(3);
 
 		const { fileSystem, volume } = memoryFileSystem();
@@ -1705,7 +1678,7 @@ describe("execute single-project helper", () => {
 		expect(fileSystem.existsSync(corruptedSnapshot)).toBeFalse();
 	});
 
-	it("should fall back to rojo-resolved path when no tsconfig exists", async () => {
+	it("should fall back to rojo-resolved path when no tsconfig exists", async ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = memoryFileSystem();
@@ -1740,7 +1713,7 @@ describe("execute single-project helper", () => {
 		expect(fileSystem.existsSync(sourceSnapshot)).toBeFalse();
 	});
 
-	it("should build source mapper when rojo project exists", async () => {
+	it("should build source mapper when rojo project exists", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = memoryFileSystem();
@@ -1776,7 +1749,7 @@ describe("execute single-project helper", () => {
 		expect(result.exitCode).toBe(1);
 	});
 
-	it("should resolve test file paths through nested rojo projects", async () => {
+	it("should resolve test file paths through nested rojo projects", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = memoryFileSystem();
@@ -1810,7 +1783,7 @@ describe("execute single-project helper", () => {
 		);
 	});
 
-	it("should write snapshots through nested rojo projects", async () => {
+	it("should write snapshots through nested rojo projects", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = memoryFileSystem();
@@ -1840,7 +1813,9 @@ describe("execute single-project helper", () => {
 		expect(fileSystem.existsSync(snapshotPath)).toBeTrue();
 	});
 
-	it("should return undefined source mapper when rojo project has invalid schema", async () => {
+	it("should return undefined source mapper when rojo project has invalid schema", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = memoryFileSystem();
@@ -1870,7 +1845,7 @@ describe("execute single-project helper", () => {
 });
 
 describe(runProjectsAsync, () => {
-	it("should return one processed result for a single project", async () => {
+	it("should return one processed result for a single project", async ({ expect }) => {
 		expect.assertions(3);
 
 		const { fileSystem } = memoryFileSystem();
@@ -1892,7 +1867,7 @@ describe(runProjectsAsync, () => {
 		expect(backendTiming.executionMs).toBe(100);
 	});
 
-	it("should return one ExecuteResult per project in input order", async () => {
+	it("should return one ExecuteResult per project in input order", async ({ expect }) => {
 		expect.assertions(3);
 
 		const { fileSystem } = memoryFileSystem();
@@ -1911,7 +1886,7 @@ describe(runProjectsAsync, () => {
 		expect(results[1]!.exitCode).toBe(1);
 	});
 
-	it("should forward parallel to backend.runTests", async () => {
+	it("should forward parallel to backend.runTests", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = memoryFileSystem();
@@ -1919,7 +1894,7 @@ describe(runProjectsAsync, () => {
 		let captured: OpenCloudDispatch | undefined;
 		const backend: Backend = {
 			kind: "open-cloud",
-			runTestsAsync: async (runOptions: OpenCloudDispatch) => {
+			runTestsAsync: async (runOptions) => {
 				captured = runOptions;
 				return singleEntryResult({ result: createPassingResult() });
 			},
@@ -1939,7 +1914,7 @@ describe(runProjectsAsync, () => {
 		expect(captured!.sharding).toStrictEqual({ kind: "static", parallel: 3 });
 	});
 
-	it("should forward the workspace sharding", async () => {
+	it("should forward the workspace sharding", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = memoryFileSystem();
@@ -1947,7 +1922,7 @@ describe(runProjectsAsync, () => {
 		let captured: OpenCloudDispatch | undefined;
 		const backend: Backend = {
 			kind: "open-cloud",
-			runTestsAsync: async (runOptions: OpenCloudDispatch) => {
+			runTestsAsync: async (runOptions) => {
 				captured = runOptions;
 				return singleEntryResult({ result: createPassingResult() });
 			},
@@ -1975,7 +1950,7 @@ describe(runProjectsAsync, () => {
 		});
 	});
 
-	it("should forward --bail to the backend", async () => {
+	it("should forward --bail to the backend", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = memoryFileSystem();
@@ -1983,7 +1958,7 @@ describe(runProjectsAsync, () => {
 		let captured: StudioDispatch | undefined;
 		const backend: Backend = {
 			kind: "studio",
-			runTestsAsync: async (runOptions: StudioDispatch) => {
+			runTestsAsync: async (runOptions) => {
 				captured = runOptions;
 				return singleEntryResult({ result: createPassingResult() });
 			},
@@ -2003,7 +1978,7 @@ describe(runProjectsAsync, () => {
 		expect(captured!.bail).toBeTrue();
 	});
 
-	it("should post-process each result with its own project config", async () => {
+	it("should post-process each result with its own project config", async ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem } = memoryFileSystem();
@@ -2040,7 +2015,7 @@ describe(runProjectsAsync, () => {
 		expect(results[1]!.output).not.toBe("");
 	});
 
-	it("should share backend timing across every project result", async () => {
+	it("should share backend timing across every project result", async ({ expect }) => {
 		expect.assertions(3);
 
 		const { fileSystem } = memoryFileSystem();
@@ -2093,7 +2068,7 @@ describe(runProjectsAsync, () => {
 			jobIndices: [1, 1],
 			message: "Backend returned two results for job 1 (beta)",
 		},
-	])("should throw when $name", async ({ bailed, jobIndices, message }) => {
+	])("should throw when $name", async ({ bailed, jobIndices, message }, { expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = memoryFileSystem();
@@ -2142,7 +2117,9 @@ describe(runProjectsAsync, () => {
 		await expect(promise).rejects.toThrow(message);
 	});
 
-	it("should give results in job order whatever order the backend returned them", async () => {
+	it("should give results in job order whatever order the backend returned them", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { fileSystem } = memoryFileSystem();
@@ -2185,7 +2162,7 @@ describe(runProjectsAsync, () => {
 	// A bailing backend returns fewer entries than jobs on purpose; each
 	// result names its job so the caller can line it up with its own
 	// per-package state.
-	it("should process only the jobs a bailing backend ran", async () => {
+	it("should process only the jobs a bailing backend ran", async ({ expect }) => {
 		expect.assertions(3);
 
 		const { fileSystem, volume } = memoryFileSystem();
@@ -2234,7 +2211,7 @@ describe(runProjectsAsync, () => {
 		expect(results[0]!.sourceMapper).toBeDefined();
 	});
 
-	it("should surface backend errors", async () => {
+	it("should surface backend errors", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = memoryFileSystem();
@@ -2259,7 +2236,9 @@ describe(runProjectsAsync, () => {
 		await expect(promise).rejects.toThrow("backend exploded");
 	});
 
-	it("should preserve displayColor, displayName, and pkg on jobs sent to the backend", async () => {
+	it("should preserve displayColor, displayName, and pkg on jobs sent to the backend", async ({
+		expect,
+	}) => {
 		expect.assertions(3);
 
 		const { fileSystem } = memoryFileSystem();
@@ -2267,7 +2246,7 @@ describe(runProjectsAsync, () => {
 		let captured: StudioDispatch | undefined;
 		const backend: Backend = {
 			kind: "studio",
-			runTestsAsync: async (runOptions: StudioDispatch) => {
+			runTestsAsync: async (runOptions) => {
 				captured = runOptions;
 				return singleEntryResult({ result: createPassingResult() });
 			},
@@ -2296,7 +2275,7 @@ describe(runProjectsAsync, () => {
 		expect(captured!.jobs[0].pkg).toBe("@halcyon/client");
 	});
 
-	it("should normalize a missing display name to an empty runtime label", async () => {
+	it("should normalize a missing display name to an empty runtime label", async ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem } = memoryFileSystem();
@@ -2304,7 +2283,7 @@ describe(runProjectsAsync, () => {
 		let captured: StudioDispatch | undefined;
 		const backend: Backend = {
 			kind: "studio",
-			runTestsAsync: async (runOptions: StudioDispatch) => {
+			runTestsAsync: async (runOptions) => {
 				captured = runOptions;
 				return singleEntryResult({ result: createPassingResult() });
 			},
@@ -2324,7 +2303,9 @@ describe(runProjectsAsync, () => {
 		expect(results[0]!.snapshotWriteFailures).toBeUndefined();
 	});
 
-	it("should apply per-project snapshotFormat defaults before backend dispatch", async () => {
+	it("should apply per-project snapshotFormat defaults before backend dispatch", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const { fileSystem } = memoryFileSystem();
@@ -2332,7 +2313,7 @@ describe(runProjectsAsync, () => {
 		let captured: StudioDispatch | undefined;
 		const backend: Backend = {
 			kind: "studio",
-			runTestsAsync: async (runOptions: StudioDispatch) => {
+			runTestsAsync: async (runOptions) => {
 				captured = runOptions;
 				return multiEntryResult([
 					{ result: createPassingResult() },
@@ -2385,7 +2366,9 @@ describe(runProjectsAsync, () => {
 			};
 		}
 
-		it("should keep processing siblings and emit a failed ExecuteResult for the bad entry", async () => {
+		it("should keep processing siblings and emit a failed ExecuteResult for the bad entry", async ({
+			expect,
+		}) => {
 			expect.assertions(3);
 
 			const { fileSystem } = memoryFileSystem();

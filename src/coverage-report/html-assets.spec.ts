@@ -3,7 +3,7 @@ import { Buffer } from "node:buffer";
 import { createHash } from "node:crypto";
 import * as path from "node:path";
 import istanbulHtmlAssets from "virtual:istanbul-html-assets";
-import { assert, describe, expect, it, vi } from "vitest";
+import { assert, describe, it, vi } from "vitest";
 
 import { createMemoryReportEnvironment } from "#test/mocks/memory-report-context.ts";
 import type { FileSystem } from "../utils/file-system.ts";
@@ -52,7 +52,7 @@ function digestAssets(assets: Map<string, Buffer>): Map<string, string> {
 describe(writeIstanbulHtmlAssets, () => {
 	it.for<HtmlAssetGroup>(["html", "html-spa"])(
 		"should write every bundled %s asset with istanbul's js header",
-		(group) => {
+		(group, { expect }) => {
 			expect.assertions(1);
 
 			const { createContext, directory, fileSystem } = createMemoryReportEnvironment();
@@ -71,7 +71,7 @@ describe(writeIstanbulHtmlAssets, () => {
 		},
 	);
 
-	it("should close every asset writer after publishing", () => {
+	it("should close every asset writer after publishing", ({ expect }) => {
 		expect.assertions(1);
 
 		const { createContext, directory } = createMemoryReportEnvironment();

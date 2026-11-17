@@ -4,8 +4,7 @@ import istanbulReports from "istanbul-reports";
 import * as path from "node:path";
 import process from "node:process";
 import { stripVTControlCharacters } from "node:util";
-import type { Mock } from "vitest";
-import { describe, expect, it, onTestFinished, vi } from "vitest";
+import { describe, it, type Mock, type TestContext, vi } from "vitest";
 
 import { createMemoryReportEnvironment } from "#test/mocks/memory-report-context.ts";
 import { posixPath } from "#test/mocks/posix-path.ts";
@@ -13,7 +12,7 @@ import type { MappedCoverageResult, MappedFileCoverage } from "./mapper-types.ts
 import type { createReporter as registryReporter } from "./reporter-registry.ts";
 import { checkThresholds, generateReports, printCoverageHeader } from "./reporter.ts";
 
-function stubTerminalColumns(columns: number): void {
+function stubTerminalColumns(columns: number, onTestFinished: TestContext["onTestFinished"]): void {
 	const original = Object.getOwnPropertyDescriptor(process.stdout, "columns");
 	onTestFinished(() => {
 		if (original === undefined) {
@@ -126,7 +125,7 @@ function underDirectory(directory: string): (candidate: string) => boolean {
 
 describe(generateReports, () => {
 	describe("with text reporter", () => {
-		it("should write coverage summary to stdout", () => {
+		it("should write coverage summary to stdout", ({ expect }) => {
 			expect.assertions(1);
 
 			const output = textReportOutput(
@@ -140,7 +139,7 @@ describe(generateReports, () => {
 	});
 
 	describe("with text-summary reporter", () => {
-		it("should write summary to stdout", () => {
+		it("should write summary to stdout", ({ expect }) => {
 			expect.assertions(1);
 
 			vi.spyOn(process.stdout, "write").mockReturnValue(true);
@@ -165,7 +164,7 @@ describe(generateReports, () => {
 	});
 
 	describe("with lcov reporter", () => {
-		it("should generate lcov.info file", () => {
+		it("should generate lcov.info file", ({ expect }) => {
 			expect.assertions(1);
 
 			const {
@@ -191,7 +190,7 @@ describe(generateReports, () => {
 	});
 
 	describe("with json reporter", () => {
-		it("should generate coverage-final.json file", () => {
+		it("should generate coverage-final.json file", ({ expect }) => {
 			expect.assertions(1);
 
 			const {
@@ -215,7 +214,7 @@ describe(generateReports, () => {
 			expect(fs.existsSync(jsonPath)).toBeTrue();
 		});
 
-		it("should generate json when the agent text filter matches no file", () => {
+		it("should generate json when the agent text filter matches no file", ({ expect }) => {
 			expect.assertions(1);
 
 			const {
@@ -239,7 +238,7 @@ describe(generateReports, () => {
 	});
 
 	describe("text reporter snapshot", () => {
-		it("should match coverage table output", () => {
+		it("should match coverage table output", ({ expect }) => {
 			expect.assertions(1);
 
 			const output = textReportOutput(
@@ -264,7 +263,9 @@ describe(generateReports, () => {
 			`);
 		});
 
-		it("should disambiguate files with identical names via flat paths in agent mode", () => {
+		it("should disambiguate files with identical names via flat paths in agent mode", ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			vi.spyOn(process.stdout, "write").mockReturnValue(true);
@@ -302,7 +303,7 @@ describe(generateReports, () => {
 			`);
 		});
 
-		it("should omit fully-covered files from text output in agent mode", () => {
+		it("should omit fully-covered files from text output in agent mode", ({ expect }) => {
 			expect.assertions(2);
 
 			vi.spyOn(process.stdout, "write").mockReturnValue(true);
@@ -320,7 +321,9 @@ describe(generateReports, () => {
 			expect(output).toContain("player.ts");
 		});
 
-		it("should print compact summary when all files have full coverage in agent mode", () => {
+		it("should print compact summary when all files have full coverage in agent mode", ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			vi.spyOn(process.stdout, "write").mockReturnValue(true);
@@ -341,7 +344,7 @@ describe(generateReports, () => {
 			expect(stdoutOutput()).toBe("Coverage: 100% (1 file)\n");
 		});
 
-		it("should pluralize file count in compact summary", () => {
+		it("should pluralize file count in compact summary", ({ expect }) => {
 			expect.assertions(1);
 
 			vi.spyOn(process.stdout, "write").mockReturnValue(true);
@@ -395,7 +398,7 @@ describe(generateReports, () => {
 			["functions", { f: { "0": 0 } }],
 		] satisfies Array<readonly [string, Partial<MappedFileCoverage>]>)(
 			"should not collapse a file with partial %s coverage",
-			([, overrides]) => {
+			([, overrides], { expect }) => {
 				expect.assertions(1);
 
 				vi.spyOn(process.stdout, "write").mockReturnValue(true);
@@ -418,7 +421,7 @@ describe(generateReports, () => {
 			},
 		);
 
-		it("should show table when coverage map is empty in agent mode", () => {
+		it("should show table when coverage map is empty in agent mode", ({ expect }) => {
 			expect.assertions(2);
 
 			vi.spyOn(process.stdout, "write").mockReturnValue(true);
@@ -438,7 +441,7 @@ describe(generateReports, () => {
 			expect(output).not.toContain("Coverage:");
 		});
 
-		it("should show all files including fully-covered when not in agent mode", () => {
+		it("should show all files including fully-covered when not in agent mode", ({ expect }) => {
 			expect.assertions(2);
 
 			vi.spyOn(process.stdout, "write").mockReturnValue(true);
@@ -457,7 +460,7 @@ describe(generateReports, () => {
 	});
 
 	describe("agent mode summary", () => {
-		it("should print totals with raw counts when files are partially covered", () => {
+		it("should print totals with raw counts when files are partially covered", ({ expect }) => {
 			expect.assertions(1);
 
 			vi.spyOn(process.stdout, "write").mockReturnValue(true);
@@ -474,7 +477,7 @@ describe(generateReports, () => {
 			);
 		});
 
-		it("should not print totals when not in agent mode", () => {
+		it("should not print totals when not in agent mode", ({ expect }) => {
 			expect.assertions(1);
 
 			vi.spyOn(process.stdout, "write").mockReturnValue(true);
@@ -488,7 +491,7 @@ describe(generateReports, () => {
 			expect(stdoutOutput()).not.toContain("stmts (");
 		});
 
-		it("should not print totals when no text reporter is present", () => {
+		it("should not print totals when no text reporter is present", ({ expect }) => {
 			expect.assertions(1);
 
 			const { createContext, directory: temporaryDirectory } =
@@ -506,7 +509,9 @@ describe(generateReports, () => {
 			expect(stdoutOutput()).not.toContain("Coverage:");
 		});
 
-		it("should print the compact full-coverage summary once for multiple text reporters", () => {
+		it("should print the compact full-coverage summary once for multiple text reporters", ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			vi.spyOn(process.stdout, "write").mockReturnValue(true);
@@ -525,7 +530,9 @@ describe(generateReports, () => {
 			expect(stdoutOutput()).toBe("Coverage: 100% (1 file)\n");
 		});
 
-		it("should print the compact summary when text is mixed with a file reporter", () => {
+		it("should print the compact summary when text is mixed with a file reporter", ({
+			expect,
+		}) => {
 			expect.assertions(2);
 
 			const {
@@ -575,10 +582,10 @@ describe(generateReports, () => {
 			return createReporter;
 		}
 
-		it("should use stdout.columns when available", () => {
+		it("should use stdout.columns when available", ({ expect, onTestFinished }) => {
 			expect.assertions(2);
 
-			stubTerminalColumns(200);
+			stubTerminalColumns(200, onTestFinished);
 			const createReporter = reportNestedPathsInAgentMode();
 
 			expect(stdoutOutput()).toContain("deeply/nested/path/to/module/index.ts");
@@ -588,7 +595,7 @@ describe(generateReports, () => {
 			});
 		});
 
-		it("should use COLUMNS env var to prevent path truncation", () => {
+		it("should use COLUMNS env var to prevent path truncation", ({ expect }) => {
 			expect.assertions(3);
 
 			vi.stubEnv("COLUMNS", "200");
@@ -606,7 +613,7 @@ describe(generateReports, () => {
 
 		it.for(["auto", "0", "-1", "Infinity"])(
 			"should ignore invalid COLUMNS value %j",
-			(columns) => {
+			(columns, { expect }) => {
 				expect.assertions(2);
 
 				vi.spyOn(process.stdout, "write").mockReturnValue(true);
@@ -648,7 +655,9 @@ describe(generateReports, () => {
 	});
 
 	describe("with branch data", () => {
-		it("should generate report without throwing when file has branch coverage data", () => {
+		it("should generate report without throwing when file has branch coverage data", ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			const {
@@ -704,7 +713,9 @@ describe(generateReports, () => {
 			});
 		}
 
-		it("should narrow the text table to the matched file but total the full universe", () => {
+		it("should narrow the text table to the matched file but total the full universe", ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			vi.spyOn(process.stdout, "write").mockReturnValue(true);
@@ -731,7 +742,7 @@ describe(generateReports, () => {
 			`);
 		});
 
-		it("should restrict the table to a project scope filter", () => {
+		it("should restrict the table to a project scope filter", ({ expect }) => {
 			expect.assertions(1);
 
 			vi.spyOn(process.stdout, "write").mockReturnValue(true);
@@ -765,7 +776,7 @@ describe(generateReports, () => {
 			`);
 		});
 
-		it("should ignore the filter outside agent mode", () => {
+		it("should ignore the filter outside agent mode", ({ expect }) => {
 			expect.assertions(1);
 
 			vi.spyOn(process.stdout, "write").mockReturnValue(true);
@@ -790,7 +801,7 @@ describe(generateReports, () => {
 			`);
 		});
 
-		it("should keep the full table on an agent run with no filter", () => {
+		it("should keep the full table on an agent run with no filter", ({ expect }) => {
 			expect.assertions(1);
 
 			vi.spyOn(process.stdout, "write").mockReturnValue(true);
@@ -816,7 +827,7 @@ describe(generateReports, () => {
 			`);
 		});
 
-		it("should not narrow the text-summary reporter", () => {
+		it("should not narrow the text-summary reporter", ({ expect }) => {
 			expect.assertions(1);
 
 			vi.spyOn(process.stdout, "write").mockReturnValue(true);
@@ -843,7 +854,7 @@ describe(generateReports, () => {
 			`);
 		});
 
-		it("should leave lcov on the full universe when the table is filtered", () => {
+		it("should leave lcov on the full universe when the table is filtered", ({ expect }) => {
 			expect.assertions(2);
 
 			vi.spyOn(process.stdout, "write").mockReturnValue(true);
@@ -868,7 +879,9 @@ describe(generateReports, () => {
 			expect(lcov).toContain("enemy.ts");
 		});
 
-		it("should print only the totals when the filter matches no universe file", () => {
+		it("should print only the totals when the filter matches no universe file", ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			vi.spyOn(process.stdout, "write").mockReturnValue(true);
@@ -890,7 +903,7 @@ describe(generateReports, () => {
 	});
 
 	describe("with unknown reporter", () => {
-		it("should throw for unknown reporter name", () => {
+		it("should throw for unknown reporter name", ({ expect }) => {
 			expect.assertions(1);
 
 			const result = createResult({
@@ -910,7 +923,7 @@ describe(generateReports, () => {
 });
 
 describe(printCoverageHeader, () => {
-	it("should match header output", () => {
+	it("should match header output", ({ expect }) => {
 		expect.assertions(2);
 
 		const stdoutSpy = vi.spyOn(process.stdout, "write").mockReturnValue(true);
@@ -927,7 +940,7 @@ describe(printCoverageHeader, () => {
 		expect(output).not.toBe(stripVTControlCharacters(output));
 	});
 
-	it("should render the header without ANSI color in agent mode", () => {
+	it("should render the header without ANSI color in agent mode", ({ expect }) => {
 		expect.assertions(2);
 
 		const stdoutSpy = vi.spyOn(process.stdout, "write").mockReturnValue(true);
@@ -953,7 +966,7 @@ describe(printCoverageHeader, () => {
 
 describe(checkThresholds, () => {
 	describe("when coverage meets thresholds", () => {
-		it("should pass", () => {
+		it("should pass", ({ expect }) => {
 			expect.assertions(1);
 
 			// 2 of 3 statements hit = 66.7%
@@ -971,7 +984,7 @@ describe(checkThresholds, () => {
 	});
 
 	describe("when coverage is below thresholds", () => {
-		it("should fail", () => {
+		it("should fail", ({ expect }) => {
 			expect.assertions(1);
 
 			const result = createResult({
@@ -988,7 +1001,7 @@ describe(checkThresholds, () => {
 	});
 
 	describe("when multiple thresholds fail", () => {
-		it("should report which metrics failed", () => {
+		it("should report which metrics failed", ({ expect }) => {
 			expect.assertions(3);
 
 			const result = createResult({
@@ -1018,7 +1031,7 @@ describe(checkThresholds, () => {
 	});
 
 	describe("when summary pct is not a number", () => {
-		it("should skip threshold check for metrics with non-numeric pct", () => {
+		it("should skip threshold check for metrics with non-numeric pct", ({ expect }) => {
 			expect.assertions(1);
 
 			// Empty coverage map (no files at all) produces an empty summary
@@ -1044,7 +1057,7 @@ describe(checkThresholds, () => {
 	});
 
 	describe("when summary schema validation fails", () => {
-		it("should return passed with no failures", () => {
+		it("should return passed with no failures", ({ expect }) => {
 			expect.assertions(2);
 
 			// Monkey-patch the coverage map to produce invalid summary JSON.

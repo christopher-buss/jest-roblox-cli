@@ -1,16 +1,16 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { punctuatedSlots } from "./cst-slots.ts";
 
 describe(punctuatedSlots, () => {
-	it("should visit a union separator before its member", () => {
+	it("should visit a union separator before its member", ({ expect }) => {
 		expect.assertions(2);
 
 		expect(punctuatedSlots("TypeUnion")).toStrictEqual(["separator", "node"]);
 		expect(punctuatedSlots("Call")).toStrictEqual(["node", "separator"]);
 	});
 
-	it("should place an intersection separator before its member", () => {
+	it("should place an intersection separator before its member", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(punctuatedSlots("TypeIntersection")).toStrictEqual(["separator", "node"]);

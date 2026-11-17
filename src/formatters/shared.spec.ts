@@ -1,18 +1,18 @@
 import { fromPartial } from "@total-typescript/shoehorn";
 
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import type { SourceMapper } from "../source-mapper/index.ts";
 import { makeRelative, resolveDisplayPath, withPackageRoot } from "./shared.ts";
 
 describe(resolveDisplayPath, () => {
-	it("should return the test file path without a source mapper", () => {
+	it("should return the test file path without a source mapper", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(resolveDisplayPath("out/a.spec.luau", { rootDir: "/repo" })).toBe("out/a.spec.luau");
 	});
 
-	it("should use the source mapper's display path when it has one", () => {
+	it("should use the source mapper's display path when it has one", ({ expect }) => {
 		expect.assertions(1);
 
 		const sourceMapper = fromPartial<SourceMapper>({
@@ -26,7 +26,7 @@ describe(resolveDisplayPath, () => {
 });
 
 describe("resolveDisplayPath under the run root", () => {
-	it("should show an absolute test file path relative to the run root", () => {
+	it("should show an absolute test file path relative to the run root", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(resolveDisplayPath("/repo/modules/app/src/a.spec.luau", { rootDir: "/repo" })).toBe(
@@ -36,7 +36,7 @@ describe("resolveDisplayPath under the run root", () => {
 });
 
 describe(makeRelative, () => {
-	it("should shorten a path under the root", () => {
+	it("should shorten a path under the root", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(makeRelative("/repo/modules/app/src/a.spec.luau", "/repo")).toBe(
@@ -44,7 +44,7 @@ describe(makeRelative, () => {
 		);
 	});
 
-	it("should leave a path in a sibling that shares the root's prefix", () => {
+	it("should leave a path in a sibling that shares the root's prefix", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(makeRelative("/repo-two/src/a.spec.luau", "/repo")).toBe(
@@ -52,13 +52,13 @@ describe(makeRelative, () => {
 		);
 	});
 
-	it("should leave a relative path unchanged", () => {
+	it("should leave a relative path unchanged", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(makeRelative("src/a.spec.luau", "/repo")).toBe("src/a.spec.luau");
 	});
 
-	it("should shorten a drive-less path under a root with a drive letter", () => {
+	it("should shorten a drive-less path under a root with a drive letter", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(makeRelative("/roblox/modules/x.spec.luau", "D:/roblox")).toBe(
@@ -66,7 +66,7 @@ describe(makeRelative, () => {
 		);
 	});
 
-	it("should match a Windows path against a root spelled with backslashes", () => {
+	it("should match a Windows path against a root spelled with backslashes", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(makeRelative("D:/repo/src/a.spec.luau", "D:\\repo\\")).toBe("src/a.spec.luau");
@@ -74,7 +74,7 @@ describe(makeRelative, () => {
 });
 
 describe(withPackageRoot, () => {
-	it("should keep the run root when the project has no package root", () => {
+	it("should keep the run root when the project has no package root", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(withPackageRoot({ color: false, rootDir: "/repo" }, undefined)).toStrictEqual({
@@ -83,7 +83,7 @@ describe(withPackageRoot, () => {
 		});
 	});
 
-	it("should point the options at the package root", () => {
+	it("should point the options at the package root", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(

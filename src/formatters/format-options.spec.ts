@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
 import type { ResolvedConfig } from "../config/resolved-config.ts";
@@ -15,7 +15,7 @@ function makeConfig(overrides: Partial<ResolvedConfig> = {}): ResolvedConfig {
 }
 
 describe(toFormatOptions, () => {
-	it("should copy the render fields from the config and add the version", () => {
+	it("should copy the render fields from the config and add the version", ({ expect }) => {
 		expect.assertions(1);
 
 		const config = makeConfig({

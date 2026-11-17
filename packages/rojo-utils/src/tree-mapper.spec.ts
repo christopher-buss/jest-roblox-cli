@@ -1,10 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import type { RojoTreeNode } from "./rojo-types.ts";
 import { findInTree, matchNodePath } from "./tree-mapper.ts";
 
 describe(matchNodePath, () => {
-	it("should match an optional $path exactly", () => {
+	it("should match an optional $path exactly", ({ expect }) => {
 		expect.assertions(1);
 
 		const node = { $path: { optional: "out/client" } } satisfies RojoTreeNode;
@@ -18,7 +18,7 @@ describe(matchNodePath, () => {
 		).toBe("ReplicatedStorage/client");
 	});
 
-	it("should match a target under an optional $path", () => {
+	it("should match a target under an optional $path", ({ expect }) => {
 		expect.assertions(1);
 
 		const node = { $path: { optional: "out/client" } } satisfies RojoTreeNode;
@@ -32,7 +32,7 @@ describe(matchNodePath, () => {
 		).toBe("ReplicatedStorage/client/ui");
 	});
 
-	it("should return DataModel path on exact match", () => {
+	it("should return DataModel path on exact match", ({ expect }) => {
 		expect.assertions(1);
 
 		const node: RojoTreeNode = { $path: "out/client" };
@@ -46,7 +46,7 @@ describe(matchNodePath, () => {
 		).toBe("ReplicatedStorage/client");
 	});
 
-	it("should strip trailing slash before matching", () => {
+	it("should strip trailing slash before matching", ({ expect }) => {
 		expect.assertions(1);
 
 		const node: RojoTreeNode = { $path: "out/client/" };
@@ -60,7 +60,7 @@ describe(matchNodePath, () => {
 		).toBe("ReplicatedStorage/client");
 	});
 
-	it("should return nested DataModel path when target is under $path", () => {
+	it("should return nested DataModel path when target is under $path", ({ expect }) => {
 		expect.assertions(1);
 
 		const node: RojoTreeNode = { $path: "out/client" };
@@ -74,7 +74,7 @@ describe(matchNodePath, () => {
 		).toBe("ReplicatedStorage/client/ui");
 	});
 
-	it("should return undefined when paths do not match", () => {
+	it("should return undefined when paths do not match", ({ expect }) => {
 		expect.assertions(1);
 
 		const node: RojoTreeNode = { $path: "out/server" };
@@ -88,7 +88,7 @@ describe(matchNodePath, () => {
 		).toBeUndefined();
 	});
 
-	it("should not match partial directory names", () => {
+	it("should not match partial directory names", ({ expect }) => {
 		expect.assertions(1);
 
 		const node: RojoTreeNode = { $path: "out/cli" };
@@ -102,7 +102,7 @@ describe(matchNodePath, () => {
 		).toBeUndefined();
 	});
 
-	it("should return undefined when node has no $path", () => {
+	it("should return undefined when node has no $path", ({ expect }) => {
 		expect.assertions(1);
 
 		const node: RojoTreeNode = { $className: "Folder" };
@@ -128,7 +128,7 @@ const simpleRojoTree: RojoTreeNode = {
 };
 
 describe(findInTree, () => {
-	it("should skip object metadata but search child names ending in a dollar", () => {
+	it("should skip object metadata but search child names ending in a dollar", ({ expect }) => {
 		expect.assertions(2);
 
 		const tree = { $properties: { Hidden: { $path: "source" } }, Child$: { $path: "source" } };
@@ -145,7 +145,7 @@ describe(findInTree, () => {
 		).toBeUndefined();
 	});
 
-	it("should find an optional $path entry", () => {
+	it("should find an optional $path entry", ({ expect }) => {
 		expect.assertions(1);
 
 		const tree = {
@@ -157,7 +157,7 @@ describe(findInTree, () => {
 		);
 	});
 
-	it("should find exact $path match", () => {
+	it("should find exact $path match", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -169,7 +169,7 @@ describe(findInTree, () => {
 		).toBe("ReplicatedStorage/client");
 	});
 
-	it("should find nested path under $path entry", () => {
+	it("should find nested path under $path entry", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -181,7 +181,7 @@ describe(findInTree, () => {
 		).toBe("ReplicatedStorage/client/ui");
 	});
 
-	it("should find deeply nested tree structures", () => {
+	it("should find deeply nested tree structures", ({ expect }) => {
 		expect.assertions(1);
 
 		const nestedTree: RojoTreeNode = {
@@ -202,7 +202,7 @@ describe(findInTree, () => {
 		).toBe("ReplicatedStorage/shared/lib");
 	});
 
-	it("should return undefined when no match", () => {
+	it("should return undefined when no match", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -214,7 +214,7 @@ describe(findInTree, () => {
 		).toBeUndefined();
 	});
 
-	it("should skip $ prefixed keys", () => {
+	it("should skip $ prefixed keys", ({ expect }) => {
 		expect.assertions(1);
 
 		const tree: RojoTreeNode = {
@@ -227,7 +227,7 @@ describe(findInTree, () => {
 		).toBeUndefined();
 	});
 
-	it("should skip non-object values", () => {
+	it("should skip non-object values", ({ expect }) => {
 		expect.assertions(1);
 
 		const tree: RojoTreeNode = {
@@ -240,7 +240,7 @@ describe(findInTree, () => {
 		).toBeUndefined();
 	});
 
-	it("should build DataModel path from current path", () => {
+	it("should build DataModel path from current path", ({ expect }) => {
 		expect.assertions(1);
 
 		const subtree: RojoTreeNode = {

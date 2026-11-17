@@ -1,7 +1,7 @@
 import { loadLuauParser } from "@isentinel/luau-ast";
 import type { LuauParser } from "@isentinel/luau-ast";
 
-import { assert, describe, expect, it } from "vitest";
+import { assert, describe, it } from "vitest";
 
 import ast from "../fixtures/trees/ast.json" with { type: "json" };
 import cst from "../fixtures/trees/cst.json" with { type: "json" };
@@ -43,15 +43,18 @@ describe("unit tree fixtures", () => {
 	it.for([
 		{ kind: "AST", parse: parseAst, payloads: rawAst },
 		{ kind: "CST", parse: parseCst, payloads: rawCst },
-	])("should hold the raw $kind payloads the backend emits", ({ parse, payloads }) => {
-		expect.assertions(1);
+	])(
+		"should hold the raw $kind payloads the backend emits",
+		({ parse, payloads }, { expect }) => {
+			expect.assertions(1);
 
-		const { frozen, live } = replayPayloads(payloads, parse);
+			const { frozen, live } = replayPayloads(payloads, parse);
 
-		expect(frozen).toStrictEqual(live);
-	});
+			expect(frozen).toStrictEqual(live);
+		},
+	);
 
-	it("should hold the AST roots the parser returns", () => {
+	it("should hold the AST roots the parser returns", ({ expect }) => {
 		expect.assertions(1);
 
 		const parser = loadLuauParser();
@@ -65,7 +68,7 @@ describe("unit tree fixtures", () => {
 		expect(roots).toStrictEqual(ast);
 	});
 
-	it("should hold the CST roots the parser returns", () => {
+	it("should hold the CST roots the parser returns", ({ expect }) => {
 		expect.assertions(1);
 
 		const parser = loadLuauParser();

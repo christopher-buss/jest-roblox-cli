@@ -1,11 +1,14 @@
 import { copyFileSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { describe, expect, it, onTestFinished, vi } from "vitest";
+import { describe, it, type TestContext, vi } from "vitest";
 
 import { startFakeOpenCloudServerAsync } from "#test/harness/fake-open-cloud.ts";
 
-function temporaryPlace(): { placeFile: string; rootDir: string } {
+function temporaryPlace(onTestFinished: TestContext["onTestFinished"]): {
+	placeFile: string;
+	rootDir: string;
+} {
 	const rootDirectory = mkdtempSync(path.join(tmpdir(), "jest-roblox-bundle-"));
 	const placeFile = "place.rbxl";
 	copyFileSync(
@@ -18,7 +21,7 @@ function temporaryPlace(): { placeFile: string; rootDir: string } {
 	return { placeFile, rootDir: rootDirectory };
 }
 
-async function builtBackendAsync(baseUrl: string) {
+async function builtBackendAsync(baseUrl: string, onTestFinished: TestContext["onTestFinished"]) {
 	vi.stubEnv("JEST_ROBLOX_OCALE_MAX_RETRIES", undefined);
 	vi.stubEnv("JEST_ROBLOX_OPEN_CLOUD_BASE_URL", baseUrl);
 	const built =
@@ -29,7 +32,7 @@ async function builtBackendAsync(baseUrl: string) {
 		buildJestArgv: built.buildJestArgv,
 		config: {
 			...built.DEFAULT_CONFIG,
-			...temporaryPlace(),
+			...temporaryPlace(onTestFinished),
 			bootProbeTimeout: 0,
 			timeout: 1_000,
 			uploadCache: false,
@@ -42,13 +45,19 @@ function envelope(value: string): string {
 }
 
 describe("published bundle", () => {
-	it("should recover an upload connection reset through the built backend", async () => {
+	it("should recover an upload connection reset through the built backend", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(2);
 
 		const server = await startFakeOpenCloudServerAsync([{ rawOutput: envelope("complete") }], {
 			uploadConnectionResets: 1,
 		});
-		const { backend, buildJestArgv, config } = await builtBackendAsync(server.baseUrl);
+		const { backend, buildJestArgv, config } = await builtBackendAsync(
+			server.baseUrl,
+			onTestFinished,
+		);
 		const result = await backend.runTestsAsync({
 			jobs: [{ argv: buildJestArgv({ config }), displayName: "bundle", testFiles: [] }],
 			runSettings: config,

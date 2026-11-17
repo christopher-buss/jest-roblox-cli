@@ -4,7 +4,7 @@ import { fromAny } from "@total-typescript/shoehorn";
 import * as path from "node:path";
 import process from "node:process";
 import { stripVTControlCharacters } from "node:util";
-import { assert, describe, expect, it, onTestFinished, vi } from "vitest";
+import { assert, describe, it, vi } from "vitest";
 
 import { expectedDefaultFormatters } from "#test/mocks/config-default-formatters.ts";
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
@@ -107,7 +107,7 @@ function renderedStderr(spies: OutputSpies): string {
 }
 
 describe(runAsync, () => {
-	it("should settle the active progress stage when execution throws", async () => {
+	it("should settle the active progress stage when execution throws", async ({ expect }) => {
 		expect.assertions(2);
 
 		const spies = setupOutputSpies();
@@ -127,7 +127,7 @@ describe(runAsync, () => {
 		);
 	});
 
-	it("should return 2 and print banner for ConfigError", async () => {
+	it("should return 2 and print banner for ConfigError", async ({ expect }) => {
 		expect.assertions(2);
 
 		const spies = setupOutputSpies();
@@ -140,7 +140,9 @@ describe(runAsync, () => {
 		expect(spies.stderr).toHaveBeenCalledWith(expect.stringContaining("Config Error"));
 	});
 
-	it("should return 3 and report a stalled task as an infrastructure failure", async () => {
+	it("should return 3 and report a stalled task as an infrastructure failure", async ({
+		expect,
+	}) => {
 		expect.assertions(3);
 
 		const spies = setupOutputSpies();
@@ -170,7 +172,10 @@ describe(runAsync, () => {
 });
 
 describe(main, () => {
-	it("should pass only user arguments and set process.exitCode from the run result", async () => {
+	it("should pass only user arguments and set process.exitCode from the run result", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(2);
 
 		const cli = setupDefaults();
@@ -200,7 +205,7 @@ describe(main, () => {
 });
 
 describe("runInner orchestration", () => {
-	it("should write the run log through the injected file system", async () => {
+	it("should write the run log through the injected file system", async ({ expect }) => {
 		expect.assertions(1);
 
 		setupOutputSpies();
@@ -213,7 +218,7 @@ describe("runInner orchestration", () => {
 		).toBeTrue();
 	});
 
-	it("should move the run log under the root the run resolved", async () => {
+	it("should move the run log under the root the run resolved", async ({ expect }) => {
 		expect.assertions(1);
 
 		setupOutputSpies();
@@ -241,7 +246,7 @@ describe("runInner orchestration", () => {
 		).toBeTrue();
 	});
 
-	it("should print the help and return 0 when --help is passed", async () => {
+	it("should print the help and return 0 when --help is passed", async ({ expect }) => {
 		expect.assertions(3);
 
 		const spies = setupOutputSpies();
@@ -263,7 +268,7 @@ describe("runInner orchestration", () => {
 		"--project",
 		"--setupFiles",
 		"--setupFilesAfterEnv",
-	])("should mark %s as a repeatable flag, not a variadic one", async (flag) => {
+	])("should mark %s as a repeatable flag, not a variadic one", async (flag, { expect }) => {
 		expect.assertions(1);
 
 		const entry = helpEntry(await captureHelpAsync(), flag);
@@ -278,7 +283,7 @@ describe("runInner orchestration", () => {
 		"--hiddenDesktop",
 		"--coverage-cache",
 		"--upload-cache",
-	])("should document %s", async (flag) => {
+	])("should document %s", async (flag, { expect }) => {
 		expect.assertions(1);
 
 		const help = await captureHelpAsync();
@@ -286,7 +291,7 @@ describe("runInner orchestration", () => {
 		expect(help).toMatch(new RegExp(`^ {2}${flag}(?![\\w-])`, "m"));
 	});
 
-	it("should document no binary-input option", async () => {
+	it("should document no binary-input option", async ({ expect }) => {
 		expect.assertions(1);
 
 		const help = await captureHelpAsync();
@@ -294,7 +299,7 @@ describe("runInner orchestration", () => {
 		expect(help).not.toContain("binary-input");
 	});
 
-	it("should document no option value as variadic", async () => {
+	it("should document no option value as variadic", async ({ expect }) => {
 		expect.assertions(1);
 
 		// parseArgs collects a repeated flag; it never takes several values
@@ -305,7 +310,7 @@ describe("runInner orchestration", () => {
 		expect(help).not.toMatch(/<[^>]*\.\.\.>/);
 	});
 
-	it("should print VERSION and return 0 when --version is passed", async () => {
+	it("should print VERSION and return 0 when --version is passed", async ({ expect }) => {
 		expect.assertions(3);
 
 		const spies = setupOutputSpies();
@@ -318,7 +323,7 @@ describe("runInner orchestration", () => {
 		expect(cli.loadConfig).not.toHaveBeenCalled();
 	});
 
-	it("should load config for --typecheck in SEA mode", async () => {
+	it("should load config for --typecheck in SEA mode", async ({ expect }) => {
 		expect.assertions(1);
 
 		setupOutputSpies();
@@ -331,7 +336,7 @@ describe("runInner orchestration", () => {
 		expect(cli.loadConfig).toHaveBeenCalledOnce();
 	});
 
-	it("should allow typechecking outside SEA mode", async () => {
+	it("should allow typechecking outside SEA mode", async ({ expect }) => {
 		expect.assertions(2);
 
 		const spies = setupOutputSpies();
@@ -344,7 +349,7 @@ describe("runInner orchestration", () => {
 		expect(spies.stderr).not.toHaveBeenCalled();
 	});
 
-	it("should allow runtime tests in SEA mode", async () => {
+	it("should allow runtime tests in SEA mode", async ({ expect }) => {
 		expect.assertions(2);
 
 		const spies = setupOutputSpies();
@@ -357,7 +362,7 @@ describe("runInner orchestration", () => {
 		expect(spies.stderr).not.toHaveBeenCalled();
 	});
 
-	it("should call loadConfig with --config path", async () => {
+	it("should call loadConfig with --config path", async ({ expect }) => {
 		expect.assertions(1);
 
 		setupOutputSpies();
@@ -372,7 +377,7 @@ describe("runInner orchestration", () => {
 		});
 	});
 
-	it("should load the bootstrap config from --workspace-root", async () => {
+	it("should load the bootstrap config from --workspace-root", async ({ expect }) => {
 		expect.assertions(1);
 
 		setupOutputSpies();
@@ -390,7 +395,7 @@ describe("runInner orchestration", () => {
 		});
 	});
 
-	it("should pass cli flags into runJestRoblox", async () => {
+	it("should pass cli flags into runJestRoblox", async ({ expect }) => {
 		expect.assertions(1);
 
 		setupOutputSpies();
@@ -408,7 +413,7 @@ describe("runInner orchestration", () => {
 		);
 	});
 
-	it("should propagate a non-zero exit code from outputRun", async () => {
+	it("should propagate a non-zero exit code from outputRun", async ({ expect }) => {
 		expect.assertions(1);
 
 		setupOutputSpies();
@@ -420,7 +425,7 @@ describe("runInner orchestration", () => {
 		expect(code).toBe(1);
 	});
 
-	it("should dispatch a multi result to outputRun", async () => {
+	it("should dispatch a multi result to outputRun", async ({ expect }) => {
 		expect.assertions(2);
 
 		setupOutputSpies();
@@ -439,7 +444,7 @@ describe("runInner orchestration", () => {
 		);
 	});
 
-	it("should dispatch a workspace result to outputRun", async () => {
+	it("should dispatch a workspace result to outputRun", async ({ expect }) => {
 		expect.assertions(2);
 
 		setupOutputSpies();
@@ -458,7 +463,7 @@ describe("runInner orchestration", () => {
 		);
 	});
 
-	it("should print the notice of a passing empty partial run", async () => {
+	it("should print the notice of a passing empty partial run", async ({ expect }) => {
 		expect.assertions(2);
 
 		const spies = setupOutputSpies();
@@ -478,7 +483,9 @@ describe("runInner orchestration", () => {
 		);
 	});
 
-	it("should write validationMessage to stderr and return validationExitCode", async () => {
+	it("should write validationMessage to stderr and return validationExitCode", async ({
+		expect,
+	}) => {
 		expect.assertions(3);
 
 		const spies = setupOutputSpies();
@@ -498,7 +505,7 @@ describe("runInner orchestration", () => {
 		expect(cli.outputRun).not.toHaveBeenCalled();
 	});
 
-	it("should not write to stderr when validationMessage is undefined", async () => {
+	it("should not write to stderr when validationMessage is undefined", async ({ expect }) => {
 		expect.assertions(2);
 
 		const spies = setupOutputSpies();
@@ -513,7 +520,9 @@ describe("runInner orchestration", () => {
 		expect(spies.stderr).not.toHaveBeenCalled();
 	});
 
-	it("should return 0 for workspace with empty projectResults (no validation error)", async () => {
+	it("should return 0 for workspace with empty projectResults (no validation error)", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		setupOutputSpies();
@@ -528,7 +537,9 @@ describe("runInner orchestration", () => {
 		expect(cli.outputRun).not.toHaveBeenCalled();
 	});
 
-	it("should return 0 for multi mode with empty projects and no typecheck", async () => {
+	it("should return 0 for multi mode with empty projects and no typecheck", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		setupOutputSpies();
@@ -543,7 +554,9 @@ describe("runInner orchestration", () => {
 		expect(cli.outputRun).not.toHaveBeenCalled();
 	});
 
-	it("should dispatch multi mode with empty projects but typecheck present", async () => {
+	it("should dispatch multi mode with empty projects but typecheck present", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		setupOutputSpies();
@@ -562,7 +575,7 @@ describe("runInner orchestration", () => {
 		);
 	});
 
-	it("should let --no-coverage override config that enables coverage", async () => {
+	it("should let --no-coverage override config that enables coverage", async ({ expect }) => {
 		expect.assertions(1);
 
 		setupOutputSpies();
@@ -575,7 +588,7 @@ describe("runInner orchestration", () => {
 		expect(config.collectCoverage).toBeFalse();
 	});
 
-	it("should pass explicit --formatters through merge into config", async () => {
+	it("should pass explicit --formatters through merge into config", async ({ expect }) => {
 		expect.assertions(1);
 
 		setupOutputSpies();
@@ -588,7 +601,7 @@ describe("runInner orchestration", () => {
 		expect(config.formatters).toStrictEqual(["json"]);
 	});
 
-	it("should fall back to the default formatters when nothing names one", async () => {
+	it("should fall back to the default formatters when nothing names one", async ({ expect }) => {
 		expect.assertions(1);
 
 		setupOutputSpies();
@@ -601,7 +614,9 @@ describe("runInner orchestration", () => {
 		expect(config.formatters).toStrictEqual(expectedDefaultFormatters());
 	});
 
-	it("should default formatters to github-actions when GITHUB_ACTIONS env is true", async () => {
+	it("should default formatters to github-actions when GITHUB_ACTIONS env is true", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		setupOutputSpies();
@@ -618,7 +633,9 @@ describe("runInner orchestration", () => {
 });
 
 describe("setup subcommand", () => {
-	it("should run setup instead of a test run when setup is the first positional", async () => {
+	it("should run setup instead of a test run when setup is the first positional", async ({
+		expect,
+	}) => {
 		expect.assertions(4);
 
 		const spies = setupOutputSpies();
@@ -647,7 +664,9 @@ describe("setup subcommand", () => {
 		);
 	});
 
-	it("should show a .luaurc that setup cannot read as a Config Error with the entry to add", async () => {
+	it("should show a .luaurc that setup cannot read as a Config Error with the entry to add", async ({
+		expect,
+	}) => {
 		expect.assertions(3);
 
 		const spies = setupOutputSpies();
@@ -671,7 +690,9 @@ describe("setup subcommand", () => {
 		);
 	});
 
-	it("should run tests filtered to setup when the filter is written ./setup", async () => {
+	it("should run tests filtered to setup when the filter is written ./setup", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		setupOutputSpies();
@@ -686,7 +707,9 @@ describe("setup subcommand", () => {
 });
 
 describe("alias version warning", () => {
-	it("should warn about an alias for another version and keep the run's exit code", async () => {
+	it("should warn about an alias for another version and keep the run's exit code", async ({
+		expect,
+	}) => {
 		expect.assertions(3);
 
 		const spies = setupOutputSpies();

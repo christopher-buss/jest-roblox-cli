@@ -77,7 +77,7 @@ export function createPathResolver(
 	const mounts = sortMounts(rojoProject);
 
 	return {
-		resolve(dataModelPath: string): ResolvedPath | undefined {
+		resolve(dataModelPath): ResolvedPath | undefined {
 			const match = matchMount(mounts, { dataModelPath, separator: "." });
 			if (match === undefined) {
 				return undefined;
@@ -88,7 +88,7 @@ export function createPathResolver(
 			return resolveMountedPath(result, { fileSystem, mappings, rootDirectory });
 		},
 
-		resolveSnapshot(virtualPath: string): ResolvedSnapshotPath | undefined {
+		resolveSnapshot(virtualPath): ResolvedSnapshotPath | undefined {
 			// getParent in RobloxShared joins with \ on non-unix paths.
 			const match = matchMount(mounts, {
 				dataModelPath: normalizeWindowsPath(virtualPath),

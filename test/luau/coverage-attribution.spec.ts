@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import {
 	fillPlaceholders,
@@ -15,7 +15,7 @@ const MODULE_SOURCE = readLuauModule("coverage-attribution.luau");
 const HARNESS = readHarness("coverage-attribution");
 
 describe("coverage attribution under lute", () => {
-	it("should pass the attribution harness assertions", () => {
+	it("should pass the attribution harness assertions", ({ expect }) => {
 		expect.assertions(1);
 
 		const script = fillPlaceholders(HARNESS, { __MODULE__: MODULE_SOURCE });

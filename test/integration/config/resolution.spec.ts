@@ -1,7 +1,7 @@
 import { loadConfig } from "@isentinel/jest-roblox/api";
 
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 const LUAU_FIXTURE = path.resolve(__dirname, "../../e2e/fixtures/luau-project");
 const RBXTS_FIXTURE = path.resolve(__dirname, "../../e2e/fixtures/rbxts-project");
@@ -10,7 +10,7 @@ const MULTI_ROOT_FIXTURE = path.resolve(__dirname, "../../e2e/fixtures/multi-roo
 
 describe("config resolution", () => {
 	describe("luau project", () => {
-		it("should load config from jest.config.luau", async () => {
+		it("should load config from jest.config.luau", async ({ expect }) => {
 			expect.assertions(2);
 
 			const config = await loadConfig({ cwd: LUAU_FIXTURE });
@@ -21,7 +21,7 @@ describe("config resolution", () => {
 	});
 
 	describe("roblox-ts project", () => {
-		it("should load config from jest.config.ts", async () => {
+		it("should load config from jest.config.ts", async ({ expect }) => {
 			expect.assertions(2);
 
 			const config = await loadConfig({ cwd: RBXTS_FIXTURE });
@@ -40,7 +40,7 @@ describe("config resolution", () => {
 	});
 
 	describe("multi-root project", () => {
-		it("should load the service-spanning project entry", async () => {
+		it("should load the service-spanning project entry", async ({ expect }) => {
 			expect.assertions(1);
 
 			const config = await loadConfig({ cwd: MULTI_ROOT_FIXTURE });
@@ -57,7 +57,7 @@ describe("config resolution", () => {
 	});
 
 	describe("parallel config", () => {
-		it("should read parallel from jest.config.ts", async () => {
+		it("should read parallel from jest.config.ts", async ({ expect }) => {
 			expect.assertions(1);
 
 			const config = await loadConfig({ cwd: PARALLEL_FIXTURE });

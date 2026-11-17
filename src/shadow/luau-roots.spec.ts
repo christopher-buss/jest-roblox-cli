@@ -2,7 +2,7 @@ import type { RojoProject } from "@isentinel/rojo-utils";
 
 import * as path from "node:path";
 import process from "node:process";
-import { assert, describe, expect, it, vi } from "vitest";
+import { assert, describe, it, vi } from "vitest";
 
 import {
 	makeConfig,
@@ -23,7 +23,9 @@ import { resolveLuauRoots } from "./luau-roots.ts";
 const noTsconfig = readingOutDirectory();
 
 describe(resolveLuauRoots, () => {
-	it("should honor explicit roots when the configured Rojo project is malformed", () => {
+	it("should honor explicit roots when the configured Rojo project is malformed", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = seedFilesystem();
@@ -35,7 +37,9 @@ describe(resolveLuauRoots, () => {
 		);
 	});
 
-	it("should fall back to tsconfig outDir when the configured project is absent", async () => {
+	it("should fall back to tsconfig outDir when the configured project is absent", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { fileSystem } = seedFilesystem();
@@ -46,7 +50,7 @@ describe(resolveLuauRoots, () => {
 		).toStrictEqual(["out"].map(posixRoot));
 	});
 
-	it("should throw when the Rojo project has an invalid schema", async () => {
+	it("should throw when the Rojo project has an invalid schema", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = seedFilesystem();
@@ -65,7 +69,9 @@ describe(resolveLuauRoots, () => {
 		}).toThrow(/Invalid Rojo project/);
 	});
 
-	it("should throw when the Rojo project is invalid and luauRoots is empty", async () => {
+	it("should throw when the Rojo project is invalid and luauRoots is empty", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = seedFilesystem();
@@ -101,7 +107,7 @@ describe(resolveLuauRoots, () => {
 	}
 
 	describe("when config.luauRoots is provided", () => {
-		it("should return the explicit array", async () => {
+		it("should return the explicit array", async ({ expect }) => {
 			expect.assertions(1);
 
 			const { fileSystem } = createMemoryFileSystem();
@@ -118,7 +124,7 @@ describe(resolveLuauRoots, () => {
 
 		// Canonical is not the same as unique: left as two entries, one
 		// directory is instrumented and mirrored into the same shadow twice.
-		it("should reduce two spellings of one root to one entry", async () => {
+		it("should reduce two spellings of one root to one entry", async ({ expect }) => {
 			expect.assertions(1);
 
 			const { fileSystem } = createMemoryFileSystem();
@@ -130,7 +136,7 @@ describe(resolveLuauRoots, () => {
 	});
 
 	describe("when auto-detecting from Rojo project", () => {
-		it("should collect roots from $path entries containing .luau files", async () => {
+		it("should collect roots from $path entries containing .luau files", async ({ expect }) => {
 			expect.assertions(1);
 
 			const { fileSystem, volume } = createMemoryFileSystem();
@@ -167,7 +173,7 @@ describe(resolveLuauRoots, () => {
 			expect(roots).toStrictEqual(["packages/core/out", "packages/test-utils/out"]);
 		});
 
-		it("should auto-detect when luauRoots is an empty array", async () => {
+		it("should auto-detect when luauRoots is an empty array", async ({ expect }) => {
 			expect.assertions(1);
 
 			const { fileSystem, volume } = createMemoryFileSystem();
@@ -198,7 +204,7 @@ describe(resolveLuauRoots, () => {
 			expect(rootsOf(fileSystem, { config })).toStrictEqual(["packages/core/out"]);
 		});
 
-		it("should skip $path entries that do not exist on disk", async () => {
+		it("should skip $path entries that do not exist on disk", async ({ expect }) => {
 			expect.assertions(1);
 
 			const { fileSystem, volume } = createMemoryFileSystem();
@@ -229,7 +235,7 @@ describe(resolveLuauRoots, () => {
 			expect(rootsOf(fileSystem, { config })).toStrictEqual(["packages/core/out"]);
 		});
 
-		it("should skip $path entries that contain no .luau files", async () => {
+		it("should skip $path entries that contain no .luau files", async ({ expect }) => {
 			expect.assertions(1);
 
 			const { fileSystem, volume } = createMemoryFileSystem();
@@ -265,7 +271,9 @@ describe(resolveLuauRoots, () => {
 			expect(rootsOf(fileSystem, { config })).toStrictEqual(["packages/core/out"]);
 		});
 
-		it("should resolve nested .project.json refs before collecting roots", async () => {
+		it("should resolve nested .project.json refs before collecting roots", async ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			const { fileSystem, volume } = createMemoryFileSystem();
@@ -307,7 +315,7 @@ describe(resolveLuauRoots, () => {
 			expect(rootsOf(fileSystem, { config })).toStrictEqual(["src/Client/Systems"]);
 		});
 
-		it("should apply coveragePathIgnorePatterns to filter roots", async () => {
+		it("should apply coveragePathIgnorePatterns to filter roots", async ({ expect }) => {
 			expect.assertions(1);
 
 			const { fileSystem, volume } = createMemoryFileSystem();
@@ -347,7 +355,7 @@ describe(resolveLuauRoots, () => {
 	});
 
 	describe("when Rojo project JSON is malformed", () => {
-		it("should throw with a descriptive error", async () => {
+		it("should throw with a descriptive error", async ({ expect }) => {
 			expect.assertions(2);
 
 			const { fileSystem, volume } = createMemoryFileSystem();
@@ -375,7 +383,7 @@ describe(resolveLuauRoots, () => {
 	});
 
 	describe("when falling back to tsconfig outDir", () => {
-		it("should use tsconfig outDir when no roots found", async () => {
+		it("should use tsconfig outDir when no roots found", async ({ expect }) => {
 			expect.assertions(1);
 
 			const { fileSystem } = seedFilesystem();
@@ -385,7 +393,7 @@ describe(resolveLuauRoots, () => {
 			expect(rootsOf(fileSystem, { config, tsconfigReader })).toStrictEqual(["out-tsc/test"]);
 		});
 
-		it("should normalize a tsconfig outDir written with a ./ prefix", async () => {
+		it("should normalize a tsconfig outDir written with a ./ prefix", async ({ expect }) => {
 			expect.assertions(1);
 
 			const { fileSystem } = seedFilesystem();
@@ -395,7 +403,7 @@ describe(resolveLuauRoots, () => {
 			expect(rootsOf(fileSystem, { config, tsconfigReader })).toStrictEqual(["out"]);
 		});
 
-		it("should fall through to tsconfig when no Rojo project exists", async () => {
+		it("should fall through to tsconfig when no Rojo project exists", async ({ expect }) => {
 			expect.assertions(1);
 
 			const { fileSystem, volume } = createMemoryFileSystem();
@@ -436,7 +444,7 @@ describe("rojo mount detection", () => {
 	const rojoDirectory = PROJECT_DIR;
 
 	describe("when collecting paths from nested tree nodes", () => {
-		it("should find $path values in deeply nested nodes", async () => {
+		it("should find $path values in deeply nested nodes", async ({ expect }) => {
 			expect.assertions(1);
 
 			const { fileSystem, volume } = createMemoryFileSystem();
@@ -473,7 +481,7 @@ describe("rojo mount detection", () => {
 	});
 
 	describe("when $path points to a .luau file instead of a directory", () => {
-		it("should exclude single-file paths from roots", async () => {
+		it("should exclude single-file paths from roots", async ({ expect }) => {
 			expect.assertions(1);
 
 			const { fileSystem, volume } = createMemoryFileSystem();
@@ -509,7 +517,7 @@ describe("rojo mount detection", () => {
 	});
 
 	describe("when .luau files are in subdirectories", () => {
-		it("should detect .luau files nested beside a non-luau sibling", async () => {
+		it("should detect .luau files nested beside a non-luau sibling", async ({ expect }) => {
 			expect.assertions(1);
 
 			const { fileSystem, volume } = createMemoryFileSystem();
@@ -544,7 +552,9 @@ describe("rojo mount detection", () => {
 	});
 
 	describe("when filtering node_modules paths", () => {
-		it("should exclude paths matching default coveragePathIgnorePatterns", async () => {
+		it("should exclude paths matching default coveragePathIgnorePatterns", async ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			const { fileSystem, volume } = createMemoryFileSystem();
@@ -597,7 +607,7 @@ describe("rojo mount detection", () => {
 				shape: "a relative mount that escapes rootDir",
 			},
 			{ mount: ".", roots: ["packages/core/out"], shape: "a mount naming rootDir itself" },
-		])("should answer $roots for $shape", async ({ mount, roots }) => {
+		])("should answer $roots for $shape", async ({ mount, roots }, { expect }) => {
 			expect.assertions(1);
 
 			const { fileSystem, volume } = createMemoryFileSystem();
@@ -632,7 +642,7 @@ describe("rojo mount detection", () => {
 			);
 		});
 
-		it("should keep a mount when the rojo directory is relative", async () => {
+		it("should keep a mount when the rojo directory is relative", async ({ expect }) => {
 			expect.assertions(1);
 
 			const { fileSystem, volume } = createMemoryFileSystem();
@@ -662,7 +672,7 @@ describe("rojo mount detection", () => {
 			).toStrictEqual(["out"]);
 		});
 
-		it("should keep a mount when rootDir is a filesystem root", async () => {
+		it("should keep a mount when rootDir is a filesystem root", async ({ expect }) => {
 			expect.assertions(1);
 
 			const { fileSystem, volume } = createMemoryFileSystem();
@@ -691,7 +701,9 @@ describe("rojo mount detection", () => {
 			).toStrictEqual(["out"]);
 		});
 
-		it("should state a subdirectory project's mount in the rootDir frame", async () => {
+		it("should state a subdirectory project's mount in the rootDir frame", async ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			const { fileSystem, volume } = createMemoryFileSystem();
@@ -724,7 +736,7 @@ describe("rojo mount detection", () => {
 			).toStrictEqual(["sub/out"]);
 		});
 
-		it("should take one root for a $path mounted twice", async () => {
+		it("should take one root for a $path mounted twice", async ({ expect }) => {
 			expect.assertions(2);
 
 			const { fileSystem, volume } = createMemoryFileSystem();
@@ -793,13 +805,13 @@ describe("single-mode $path containment", () => {
 		});
 	}
 
-	it("should keep an absolute mount inside the frame", () => {
+	it("should keep an absolute mount inside the frame", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(resolveForMount(`${packageDirectory}/out`)).toStrictEqual([posixRoot("out")]);
 	});
 
-	it("should find no roots for a relative mount outside the frame", () => {
+	it("should find no roots for a relative mount outside the frame", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(() => resolveForMount("../outside/out")).toThrow("Could not determine luauRoots");

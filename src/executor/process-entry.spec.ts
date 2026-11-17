@@ -3,7 +3,7 @@ import { fromAny, fromPartial } from "@total-typescript/shoehorn";
 import path from "node:path";
 import process from "node:process";
 import type { Except } from "type-fest";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { clockTimingCollector } from "#test/mocks/clock-timing-collector.ts";
 import { createPassingResult } from "#test/mocks/executor-spec-results.ts";
@@ -51,7 +51,7 @@ function failureMessageOf(result: ExecuteResult): string {
 }
 
 describe(processOrRecoverEntry, () => {
-	it("should put a parsed entry's gaps on its tests", () => {
+	it("should put a parsed entry's gaps on its tests", ({ expect }) => {
 		expect.assertions(2);
 
 		const file = "src/test.spec.ts";
@@ -74,7 +74,7 @@ describe(processOrRecoverEntry, () => {
 		expect(result.exitCode).toBe(1);
 	});
 
-	it("should locate each test of a file under a relative Rojo mount", () => {
+	it("should locate each test of a file under a relative Rojo mount", ({ expect }) => {
 		expect.assertions(1);
 
 		const context = createContext();
@@ -123,7 +123,7 @@ describe(processOrRecoverEntry, () => {
 		expect(result.attribution!.tests[0]!.location).toStrictEqual({ column: 0, line: 2 });
 	});
 
-	it("should leave gaps off a parsed entry that reported none", () => {
+	it("should leave gaps off a parsed entry that reported none", ({ expect }) => {
 		expect.assertions(2);
 
 		const result = processEntry({
@@ -134,7 +134,7 @@ describe(processOrRecoverEntry, () => {
 		expect(result.exitCode).toBe(0);
 	});
 
-	it("should put a recovered entry's gaps on its file", () => {
+	it("should put a recovered entry's gaps on its file", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = processEntry({
@@ -145,7 +145,9 @@ describe(processOrRecoverEntry, () => {
 		expect(result.result.testResults[0]!.gaps).toStrictEqual({ script: 2 });
 	});
 
-	it("should use the exec-error result contract on the synthetic failure (failureMessage + empty testResults, counts stay 0)", () => {
+	it("should use the exec-error result contract on the synthetic failure (failureMessage + empty testResults, counts stay 0)", ({
+		expect,
+	}) => {
 		expect.assertions(4);
 
 		const result = processEntry({ entry: { jestOutput: FAILURE_ENVELOPE } });
@@ -158,7 +160,9 @@ describe(processOrRecoverEntry, () => {
 		expect(result.result.testResults[0]!.testResults).toHaveLength(0);
 	});
 
-	it("should keep the raw error message when it is not an exit-code transport error", () => {
+	it("should keep the raw error message when it is not an exit-code transport error", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		// bannerOutput compose only applies to the exit-code-only case
@@ -176,7 +180,9 @@ describe(processOrRecoverEntry, () => {
 		expect(failureMessageOf(result)).toBe("Resolver crashed: invalid jest path");
 	});
 
-	it("should fall back to the host's own report when bannerOutput entries are all blank", () => {
+	it("should fall back to the host's own report when bannerOutput entries are all blank", ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const result = processEntry({
@@ -192,7 +198,9 @@ describe(processOrRecoverEntry, () => {
 		expect(failureMessageOf(result)).toEndWith("Exited with code: 1");
 	});
 
-	it("should name the package, project and selected test files the host dispatched", () => {
+	it("should name the package, project and selected test files the host dispatched", ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const result = processEntry(
@@ -210,7 +218,7 @@ describe(processOrRecoverEntry, () => {
 		expect(failureMessageOf(result)).toContain("Test files   2 selected by the host");
 	});
 
-	it("should carry the runner's phase and capture state into the report", () => {
+	it("should carry the runner's phase and capture state into the report", ({ expect }) => {
 		expect.assertions(2);
 
 		const result = processEntry({
@@ -229,7 +237,9 @@ describe(processOrRecoverEntry, () => {
 		);
 	});
 
-	it("should compose failureMessage from bannerOutput when error is exit-code-only", () => {
+	it("should compose failureMessage from bannerOutput when error is exit-code-only", ({
+		expect,
+	}) => {
 		expect.assertions(3);
 
 		const bannerOutput = JSON.stringify([
@@ -246,7 +256,9 @@ describe(processOrRecoverEntry, () => {
 		);
 	});
 
-	it("should attach the rawResult's fallbackGameOutput to the synthetic failure", () => {
+	it("should attach the rawResult's fallbackGameOutput to the synthetic failure", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const result = processEntry(
@@ -257,7 +269,9 @@ describe(processOrRecoverEntry, () => {
 		expect(result.gameOutput).toBe("[{}]");
 	});
 
-	it("should rethrow non-LuauScriptError failures so unexpected internal errors still surface", () => {
+	it("should rethrow non-LuauScriptError failures so unexpected internal errors still surface", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		// `{}` parses as JSON but fails validateJestResult, which throws a

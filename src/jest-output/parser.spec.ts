@@ -1,4 +1,4 @@
-import { assert, describe, expect, it } from "vitest";
+import { assert, describe, it } from "vitest";
 
 import type { JestResult } from "../types/jest-result-types.ts";
 import { LuauScriptError } from "./luau-script-error.ts";
@@ -25,7 +25,7 @@ function parseLuauCoverage(fileCoverage: object): ParsedFileCoverage {
 }
 
 describe(extractLuauTimingFromOutput, () => {
-	it("should extract the runner.timing phases from a raw jestOutput string", () => {
+	it("should extract the runner.timing phases from a raw jestOutput string", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = JSON.stringify({
@@ -47,13 +47,13 @@ describe(extractLuauTimingFromOutput, () => {
 		});
 	});
 
-	it("should return undefined when no JSON candidate is found", () => {
+	it("should return undefined when no JSON candidate is found", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(extractLuauTimingFromOutput("Just plain text output")).toBeUndefined();
 	});
 
-	it("should return undefined when runner.timing is absent", () => {
+	it("should return undefined when runner.timing is absent", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = JSON.stringify({
@@ -69,7 +69,9 @@ describe(extractLuauTimingFromOutput, () => {
 		expect(extractLuauTimingFromOutput(output)).toBeUndefined();
 	});
 
-	it("should extract timing from complete JSON containing an unmatched brace in a string", () => {
+	it("should extract timing from complete JSON containing an unmatched brace in a string", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const output = JSON.stringify({
@@ -84,7 +86,7 @@ describe(extractLuauTimingFromOutput, () => {
 });
 
 describe(parseJestOutput, () => {
-	it("should use the outer Jest result when the nested result is null", () => {
+	it("should use the outer Jest result when the nested result is null", ({ expect }) => {
 		expect.assertions(1);
 
 		const parsed = parseJestOutput(
@@ -103,7 +105,7 @@ describe(parseJestOutput, () => {
 		expect(parsed.result.success).toBeTrue();
 	});
 
-	it("should parse valid Jest result JSON", () => {
+	it("should parse valid Jest result JSON", ({ expect }) => {
 		expect.assertions(3);
 
 		const output = JSON.stringify({
@@ -123,7 +125,7 @@ describe(parseJestOutput, () => {
 		expect(result.numPassedTests).toBe(3);
 	});
 
-	it("should reject output that is valid JSON but not an object", () => {
+	it("should reject output that is valid JSON but not an object", ({ expect }) => {
 		expect.assertions(1);
 
 		// Without the `{` the fast path would hand this to the schema, which
@@ -133,7 +135,7 @@ describe(parseJestOutput, () => {
 
 	it.for(["{", "}"])(
 		"should parse complete Jest JSON containing an unmatched %j in a failure message",
-		(brace) => {
+		(brace, { expect }) => {
 			expect.assertions(1);
 
 			const output = JSON.stringify({
@@ -150,7 +152,7 @@ describe(parseJestOutput, () => {
 		},
 	);
 
-	it("should parse Jest result with test file results", () => {
+	it("should parse Jest result with test file results", ({ expect }) => {
 		expect.assertions(3);
 
 		const jestResult: JestResult = {
@@ -198,7 +200,7 @@ describe(parseJestOutput, () => {
 		);
 	});
 
-	it("should unwrap Ok result and parse inner value", () => {
+	it("should unwrap Ok result and parse inner value", ({ expect }) => {
 		expect.assertions(2);
 
 		const output = JSON.stringify({
@@ -220,7 +222,7 @@ describe(parseJestOutput, () => {
 		expect(result.numTotalTests).toBe(1);
 	});
 
-	it("should require failure success when unwrapping an err field", () => {
+	it("should require failure success when unwrapping an err field", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = JSON.stringify({
@@ -237,7 +239,7 @@ describe(parseJestOutput, () => {
 		expect(parseJestOutput(output).result.numTotalTests).toBe(1);
 	});
 
-	it("should require successful status when unwrapping a value field", () => {
+	it("should require successful status when unwrapping a value field", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = JSON.stringify({
@@ -254,7 +256,7 @@ describe(parseJestOutput, () => {
 		expect(parseJestOutput(output).result.numFailedTests).toBe(1);
 	});
 
-	it("should ignore a primitive results field on an otherwise valid result", () => {
+	it("should ignore a primitive results field on an otherwise valid result", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = JSON.stringify({
@@ -271,7 +273,7 @@ describe(parseJestOutput, () => {
 		expect(parseJestOutput(output).result.numTotalTests).toBe(1);
 	});
 
-	it("should extract runner.timing from Ok result wrapper", () => {
+	it("should extract runner.timing from Ok result wrapper", ({ expect }) => {
 		expect.assertions(2);
 
 		const output = JSON.stringify({
@@ -304,7 +306,7 @@ describe(parseJestOutput, () => {
 		});
 	});
 
-	it("should return no timing when runner.timing absent", () => {
+	it("should return no timing when runner.timing absent", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = JSON.stringify({
@@ -325,7 +327,7 @@ describe(parseJestOutput, () => {
 		expect(luauTiming).toBeUndefined();
 	});
 
-	it("should throw LuauScriptError on Fail result", () => {
+	it("should throw LuauScriptError on Fail result", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = JSON.stringify({
@@ -339,7 +341,7 @@ describe(parseJestOutput, () => {
 		);
 	});
 
-	it("should extract message from object errors in Fail result", () => {
+	it("should extract message from object errors in Fail result", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = JSON.stringify({
@@ -353,7 +355,7 @@ describe(parseJestOutput, () => {
 		);
 	});
 
-	it("should stringify object errors without message field", () => {
+	it("should stringify object errors without message field", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = JSON.stringify({
@@ -367,7 +369,7 @@ describe(parseJestOutput, () => {
 		);
 	});
 
-	it("should extract root error from ExecutionError in Fail result", () => {
+	it("should extract root error from ExecutionError in Fail result", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = JSON.stringify({
@@ -388,7 +390,7 @@ describe(parseJestOutput, () => {
 		);
 	});
 
-	it("should extract error from ExecutionError without parent in Fail result", () => {
+	it("should extract error from ExecutionError without parent in Fail result", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = JSON.stringify({
@@ -405,7 +407,7 @@ describe(parseJestOutput, () => {
 		);
 	});
 
-	it("should not treat a non-Promise execution error frame as a Promise cause", () => {
+	it("should not treat a non-Promise execution error frame as a Promise cause", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = JSON.stringify({
@@ -419,7 +421,7 @@ describe(parseJestOutput, () => {
 		);
 	});
 
-	it("should not treat an unrelated kind as an execution-error envelope", () => {
+	it("should not treat an unrelated kind as an execution-error envelope", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = JSON.stringify({ err: { detail: 42, kind: "OtherError" }, success: false });
@@ -430,7 +432,9 @@ describe(parseJestOutput, () => {
 		);
 	});
 
-	it("should stop walking the parent chain at null rather than dereferencing it", () => {
+	it("should stop walking the parent chain at null rather than dereferencing it", ({
+		expect,
+	}) => {
 		// `typeof null === "object"` in JS, so a null parent must not be
 		// treated as a traversable level, otherwise the walker
 		// dereferences null and throws a TypeError that swallows the
@@ -452,7 +456,9 @@ describe(parseJestOutput, () => {
 		);
 	});
 
-	it("should extract trailing message from a multi-frame Promise trace in ExecutionError.error", () => {
+	it("should extract trailing message from a multi-frame Promise trace in ExecutionError.error", ({
+		expect,
+	}) => {
 		// Regression: when Jest's process.exit(1) chains through the
 		// Promise machinery, the encoded `err.error` ends up as the upstream
 		// Promise.Error __tostring blob with the actual cause buried in the
@@ -486,7 +492,9 @@ describe(parseJestOutput, () => {
 		);
 	});
 
-	it("should extract trailing message when err is a top-level Promise-trace string", () => {
+	it("should extract trailing message when err is a top-level Promise-trace string", ({
+		expect,
+	}) => {
 		// Regression: workspace materializer (luau/staging/entry.luau) encodes
 		// Jest-side failures as { success: false, err: tostring(promiseError) }
 		// (a *string* err, not the { kind: "ExecutionError" } object shape
@@ -519,7 +527,7 @@ describe(parseJestOutput, () => {
 		);
 	});
 
-	it("should extract a no-space cause line from a Promise trace", () => {
+	it("should extract a no-space cause line from a Promise trace", ({ expect }) => {
 		// Luau `error(msg, 0)` emits `path:N:msg` with no space after the
 		// second colon; the cause regex must accept that shape.
 		expect.assertions(1);
@@ -543,7 +551,9 @@ describe(parseJestOutput, () => {
 		);
 	});
 
-	it("should fall back to raw error text when Promise trace has no recoverable cause line", () => {
+	it("should fall back to raw error text when Promise trace has no recoverable cause line", ({
+		expect,
+	}) => {
 		// Defensive: if every line looks like a trace header/separator, we
 		// keep the raw text so we never silently swallow context.
 		expect.assertions(1);
@@ -564,7 +574,7 @@ describe(parseJestOutput, () => {
 		expect(() => parseJestOutput(output)).toThrowWithMessage(LuauScriptError, headerOnly);
 	});
 
-	it("should strip TaskScript prefix from Fail result error", () => {
+	it("should strip TaskScript prefix from Fail result error", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = JSON.stringify({
@@ -578,7 +588,7 @@ describe(parseJestOutput, () => {
 		);
 	});
 
-	it("should strip a path:line prefix from a single-line top-level err string", () => {
+	it("should strip a path:line prefix from a single-line top-level err string", ({ expect }) => {
 		// promise-error.luau walks to a leaf whose .error is `<path>:<line>:
 		// <msg>`. The CLI banner's exit-code branch (`^Exited with code: \d+$`)
 		// fires only on the bare cause, so stringifyError must surface the
@@ -596,7 +606,7 @@ describe(parseJestOutput, () => {
 		);
 	});
 
-	it("should strip a path:line prefix without a separating space", () => {
+	it("should strip a path:line prefix without a separating space", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = JSON.stringify({
@@ -610,7 +620,7 @@ describe(parseJestOutput, () => {
 		);
 	});
 
-	it("should leave a multi-line top-level err untouched by the path:line strip", () => {
+	it("should leave a multi-line top-level err untouched by the path:line strip", ({ expect }) => {
 		// Multi-line errors carry context worth preserving (e.g. a stack frame
 		// list); the strip only fires for the single-line `<path>:<line>: <msg>`
 		// shape that promise-error.luau emits as a normalized leaf.
@@ -622,7 +632,9 @@ describe(parseJestOutput, () => {
 		expect(() => parseJestOutput(output)).toThrowWithMessage(LuauScriptError, multiLine);
 	});
 
-	it("should fall through unchanged when a top-level err looks like a Promise trace but has no cause line", () => {
+	it("should fall through unchanged when a top-level err looks like a Promise trace but has no cause line", ({
+		expect,
+	}) => {
 		// Defensive branch: a string that matches the `-- Promise.Error(` header
 		// but carries no `:N:` cause line (e.g. a malformed/partial trace from
 		// an unexpected encoder) must return as-is rather than collapse to an
@@ -635,7 +647,9 @@ describe(parseJestOutput, () => {
 		expect(() => parseJestOutput(output)).toThrowWithMessage(LuauScriptError, headerOnly);
 	});
 
-	it("should surface a clean materializer assertion as the LuauScriptError message", () => {
+	it("should surface a clean materializer assertion as the LuauScriptError message", ({
+		expect,
+	}) => {
 		// Regression: when `luau/staging/entry.luau` pcall-wraps the
 		// `Materializer.materialize` hand-off and the staged pkg ServerStorage
 		// folder is missing, the envelope shape is
@@ -655,13 +669,13 @@ describe(parseJestOutput, () => {
 		);
 	});
 
-	it("should throw on invalid JSON", () => {
+	it("should throw on invalid JSON", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(() => parseJestOutput("not json")).toThrow(/No valid Jest result JSON found/);
 	});
 
-	it("should extract JSON from mixed output and parse", () => {
+	it("should extract JSON from mixed output and parse", ({ expect }) => {
 		expect.assertions(1);
 
 		const mixed = `
@@ -674,7 +688,9 @@ End of output
 		expect(result.success).toBeTrue();
 	});
 
-	it("should preserve runner.setup and runner.coverage when extracting mixed output", () => {
+	it("should preserve runner.setup and runner.coverage when extracting mixed output", ({
+		expect,
+	}) => {
 		expect.assertions(3);
 
 		const payload = JSON.stringify({
@@ -710,7 +726,7 @@ End of output
 		expect(coverageData!["shared/player.luau"]!.s["0"]).toBe(1);
 	});
 
-	it("should extract runner.perTestCoverage entries from the envelope", () => {
+	it("should extract runner.perTestCoverage entries from the envelope", ({ expect }) => {
 		expect.assertions(1);
 
 		const payload = JSON.stringify({
@@ -746,7 +762,7 @@ End of output
 		]);
 	});
 
-	it("should leave perTestCoverage undefined when the envelope omits it", () => {
+	it("should leave perTestCoverage undefined when the envelope omits it", ({ expect }) => {
 		expect.assertions(1);
 
 		const payload = JSON.stringify({
@@ -764,7 +780,9 @@ End of output
 		expect(perTestCoverage).toBeUndefined();
 	});
 
-	it("should read an empty delta the runtime encoded as an array as covering nothing", () => {
+	it("should read an empty delta the runtime encoded as an array as covering nothing", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const payload = JSON.stringify({
@@ -792,7 +810,7 @@ End of output
 		]);
 	});
 
-	it("should leave perTestCoverage undefined when the run recorded no test", () => {
+	it("should leave perTestCoverage undefined when the run recorded no test", ({ expect }) => {
 		expect.assertions(1);
 
 		const payload = JSON.stringify({
@@ -813,7 +831,9 @@ End of output
 		expect(perTestCoverage).toBeUndefined();
 	});
 
-	it("should leave perTestCoverage undefined when the envelope shape is malformed", () => {
+	it("should leave perTestCoverage undefined when the envelope shape is malformed", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const payload = JSON.stringify({
@@ -834,7 +854,7 @@ End of output
 		expect(perTestCoverage).toBeUndefined();
 	});
 
-	it("should reject array-shaped runner records", () => {
+	it("should reject array-shaped runner records", ({ expect }) => {
 		expect.assertions(2);
 
 		const payload = JSON.stringify({
@@ -854,7 +874,7 @@ End of output
 		expect(snapshotWrites).toBeUndefined();
 	});
 
-	it("should extract snapshot summary from wrapped results", () => {
+	it("should extract snapshot summary from wrapped results", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = JSON.stringify({
@@ -897,7 +917,7 @@ End of output
 		});
 	});
 
-	it("should extract snapshot summary from unwrapped results", () => {
+	it("should extract snapshot summary from unwrapped results", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = JSON.stringify({
@@ -928,7 +948,7 @@ End of output
 		});
 	});
 
-	it("should coerce missing snapshot numeric fields to 0", () => {
+	it("should coerce missing snapshot numeric fields to 0", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = JSON.stringify({
@@ -958,7 +978,7 @@ End of output
 		});
 	});
 
-	it("should default every absent snapshot count to 0", () => {
+	it("should default every absent snapshot count to 0", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = JSON.stringify({
@@ -988,7 +1008,7 @@ End of output
 		});
 	});
 
-	it("should return undefined snapshot when a numeric field is not a number", () => {
+	it("should return undefined snapshot when a numeric field is not a number", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = JSON.stringify({
@@ -1012,7 +1032,7 @@ End of output
 		expect(result.snapshot).toBeUndefined();
 	});
 
-	it("should return undefined snapshot when summary absent", () => {
+	it("should return undefined snapshot when summary absent", ({ expect }) => {
 		expect.assertions(2);
 
 		const output = JSON.stringify({
@@ -1036,7 +1056,7 @@ End of output
 		expect(result).not.toHaveProperty("snapshot");
 	});
 
-	it("should extract runner.snapshotWrites from result", () => {
+	it("should extract runner.snapshotWrites from result", ({ expect }) => {
 		expect.assertions(2);
 
 		const output = JSON.stringify({
@@ -1067,7 +1087,7 @@ End of output
 		});
 	});
 
-	it("should return no snapshotWrites when absent", () => {
+	it("should return no snapshotWrites when absent", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = JSON.stringify({
@@ -1088,7 +1108,7 @@ End of output
 		expect(snapshotWrites).toBeUndefined();
 	});
 
-	it("should extract runner.coverage from output", () => {
+	it("should extract runner.coverage from output", ({ expect }) => {
 		expect.assertions(2);
 
 		const output = JSON.stringify({
@@ -1117,7 +1137,7 @@ End of output
 		});
 	});
 
-	it("should return undefined coverageData when absent", () => {
+	it("should return undefined coverageData when absent", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = JSON.stringify({
@@ -1138,7 +1158,7 @@ End of output
 		expect(coverageData).toBeUndefined();
 	});
 
-	it("should handle empty runner.coverage", () => {
+	it("should handle empty runner.coverage", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = JSON.stringify({
@@ -1162,7 +1182,7 @@ End of output
 		expect(coverageData).toBeUndefined();
 	});
 
-	it("should normalize array-format coverage hit counts from Luau", () => {
+	it("should normalize array-format coverage hit counts from Luau", ({ expect }) => {
 		expect.assertions(1);
 
 		const fileCoverage = parseLuauCoverage({ s: [1, 0, 3] });
@@ -1170,7 +1190,7 @@ End of output
 		expect(fileCoverage.s).toStrictEqual({ "1": 1, "2": 0, "3": 3 });
 	});
 
-	it("should normalize array-of-arrays branch counts from Luau", () => {
+	it("should normalize array-of-arrays branch counts from Luau", ({ expect }) => {
 		expect.assertions(1);
 
 		const fileCoverage = parseLuauCoverage({
@@ -1187,7 +1207,7 @@ End of output
 		});
 	});
 
-	it("should handle non-array inner branch counts gracefully", () => {
+	it("should handle non-array inner branch counts gracefully", ({ expect }) => {
 		expect.assertions(1);
 
 		const fileCoverage = parseLuauCoverage({ b: ["not-array", null], s: { "1": 1 } });
@@ -1198,7 +1218,7 @@ End of output
 		});
 	});
 
-	it("should normalize array-format function hit counts", () => {
+	it("should normalize array-format function hit counts", ({ expect }) => {
 		expect.assertions(1);
 
 		const fileCoverage = parseLuauCoverage({ f: [5, 0, 2], s: { "1": 1 } });
@@ -1206,7 +1226,7 @@ End of output
 		expect(fileCoverage.f).toStrictEqual({ "1": 5, "2": 0, "3": 2 });
 	});
 
-	it("should filter non-number values from runner.timing", () => {
+	it("should filter non-number values from runner.timing", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = JSON.stringify({
@@ -1233,7 +1253,7 @@ End of output
 		expect(luauTiming).toStrictEqual({ configDecode: 0.1 });
 	});
 
-	it("should return undefined timing when all values are non-number", () => {
+	it("should return undefined timing when all values are non-number", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = JSON.stringify({
@@ -1257,7 +1277,7 @@ End of output
 		expect(luauTiming).toBeUndefined();
 	});
 
-	it("should extract runner.setup seconds from envelope", () => {
+	it("should extract runner.setup seconds from envelope", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = JSON.stringify({
@@ -1281,7 +1301,7 @@ End of output
 		expect(setupSeconds).toBe(0.25);
 	});
 
-	it("should return undefined setupSeconds when runner.setup absent", () => {
+	it("should return undefined setupSeconds when runner.setup absent", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = JSON.stringify({
@@ -1302,7 +1322,7 @@ End of output
 		expect(setupSeconds).toBeUndefined();
 	});
 
-	it("should return undefined setupSeconds when runner.setup is not a number", () => {
+	it("should return undefined setupSeconds when runner.setup is not a number", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = JSON.stringify({
@@ -1326,7 +1346,7 @@ End of output
 		expect(setupSeconds).toBeUndefined();
 	});
 
-	it("should filter non-string values from runner.snapshotWrites", () => {
+	it("should filter non-string values from runner.snapshotWrites", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = JSON.stringify({
@@ -1353,7 +1373,7 @@ End of output
 		expect(snapshotWrites).toStrictEqual({ "file.snap": "content" });
 	});
 
-	it("should throw on ExecutionError kind", () => {
+	it("should throw on ExecutionError kind", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = JSON.stringify({
@@ -1370,7 +1390,9 @@ End of output
 		);
 	});
 
-	it("should throw a LuauScriptError on ExecutionError so backend can attach gameOutput", () => {
+	it("should throw a LuauScriptError on ExecutionError so backend can attach gameOutput", ({
+		expect,
+	}) => {
 		// Regression: this branch previously threw a plain Error, so
 		// open-cloud's `err instanceof LuauScriptError` check skipped attaching
 		// gameOutput and the CLI banner showed nothing about which module
@@ -1396,7 +1418,7 @@ End of output
 		);
 	});
 
-	it("should traverse parent chain in ExecutionError", () => {
+	it("should traverse parent chain in ExecutionError", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = JSON.stringify({
@@ -1415,7 +1437,7 @@ End of output
 		);
 	});
 
-	it("should handle ExecutionError with missing error field", () => {
+	it("should handle ExecutionError with missing error field", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = JSON.stringify({
@@ -1431,7 +1453,7 @@ End of output
 		);
 	});
 
-	it("should throw on invalid Jest result schema", () => {
+	it("should throw on invalid Jest result schema", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = JSON.stringify({
@@ -1442,7 +1464,7 @@ End of output
 		expect(() => parseJestOutput(output)).toThrow(/Invalid Jest result/);
 	});
 
-	it("should unwrap results field from globalConfig wrapper", () => {
+	it("should unwrap results field from globalConfig wrapper", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = JSON.stringify({
@@ -1466,7 +1488,7 @@ End of output
 		expect(result.numTotalTests).toBe(1);
 	});
 
-	it("should return empty record when s is non-array non-object", () => {
+	it("should return empty record when s is non-array non-object", ({ expect }) => {
 		expect.assertions(1);
 
 		const fileCoverage = parseLuauCoverage({ s: "string" });
@@ -1474,7 +1496,7 @@ End of output
 		expect(fileCoverage.s).toBeEmptyObject();
 	});
 
-	it("should return empty record when b is non-array non-object", () => {
+	it("should return empty record when b is non-array non-object", ({ expect }) => {
 		expect.assertions(1);
 
 		const fileCoverage = parseLuauCoverage({ b: 42, s: { "1": 1 } });
@@ -1482,7 +1504,7 @@ End of output
 		expect(fileCoverage.b).toBeEmptyObject();
 	});
 
-	it("should pass through object-format branch counts", () => {
+	it("should pass through object-format branch counts", ({ expect }) => {
 		expect.assertions(1);
 
 		const fileCoverage = parseLuauCoverage({
@@ -1496,7 +1518,7 @@ End of output
 		});
 	});
 
-	it("should coerce non-number elements to 0 in array-format statement counts", () => {
+	it("should coerce non-number elements to 0 in array-format statement counts", ({ expect }) => {
 		expect.assertions(1);
 
 		const fileCoverage = parseLuauCoverage({ s: ["not-a-number", 5] });
@@ -1504,7 +1526,7 @@ End of output
 		expect(fileCoverage.s).toStrictEqual({ "1": 0, "2": 5 });
 	});
 
-	it("should coerce non-number values to 0 inside branch inner arrays", () => {
+	it("should coerce non-number values to 0 inside branch inner arrays", ({ expect }) => {
 		expect.assertions(1);
 
 		const fileCoverage = parseLuauCoverage({ b: [["not-a-number", 1]], s: { "1": 1 } });
@@ -1512,7 +1534,7 @@ End of output
 		expect(fileCoverage.b).toStrictEqual({ "1": [0, 1] });
 	});
 
-	it("should return undefined snapshotWrites when all values are non-strings", () => {
+	it("should return undefined snapshotWrites when all values are non-strings", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = JSON.stringify({
@@ -1536,7 +1558,7 @@ End of output
 		expect(snapshotWrites).toBeUndefined();
 	});
 
-	it("should stringify null error via JSON.stringify", () => {
+	it("should stringify null error via JSON.stringify", ({ expect }) => {
 		expect.assertions(1);
 
 		// null is not a string and not an object with .message, so stringifyError
@@ -1546,7 +1568,7 @@ End of output
 		expect(() => parseJestOutput(rawOutput)).toThrowWithMessage(Error, "null");
 	});
 
-	it("should stringify numeric error via JSON.stringify", () => {
+	it("should stringify numeric error via JSON.stringify", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = JSON.stringify({
@@ -1557,7 +1579,7 @@ End of output
 		expect(() => parseJestOutput(output)).toThrowWithMessage(Error, "42");
 	});
 
-	it("should skip runner.coverage entries without s field", () => {
+	it("should skip runner.coverage entries without s field", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = JSON.stringify({
@@ -1588,7 +1610,7 @@ End of output
 });
 
 describe("promise trace boundaries", () => {
-	it("should select the final cause and trim its surrounding whitespace", () => {
+	it("should select the final cause and trim its surrounding whitespace", ({ expect }) => {
 		expect.assertions(1);
 
 		const trace = [
@@ -1603,7 +1625,7 @@ describe("promise trace boundaries", () => {
 		}).toThrowWithMessage(Error, "final cause");
 	});
 
-	it("should not treat an embedded Promise trace header as a trace", () => {
+	it("should not treat an embedded Promise trace header as a trace", ({ expect }) => {
 		expect.assertions(1);
 
 		const message = "prefix -- Promise.Error(RuntimeError) --\nModule.path:10: cause";
@@ -1633,7 +1655,7 @@ function thrownFrom(output: string): LuauScriptError {
 }
 
 describe("abandon reason", () => {
-	it("should mark a run the runner abandoned at its budget", () => {
+	it("should mark a run the runner abandoned at its budget", ({ expect }) => {
 		expect.assertions(2);
 
 		const error = thrownFrom(
@@ -1650,7 +1672,7 @@ describe("abandon reason", () => {
 		);
 	});
 
-	it("should leave a failure the runner did not abandon unmarked", () => {
+	it("should leave a failure the runner did not abandon unmarked", ({ expect }) => {
 		expect.assertions(1);
 
 		const error = thrownFrom(JSON.stringify({ err: "boom", success: false }));
@@ -1661,7 +1683,7 @@ describe("abandon reason", () => {
 	// The block is read with the same leniency every other runner field gets:
 	// a producer that drifts drops the dimension rather than failing the parse
 	// and losing the cause the report is actually about.
-	it("should ignore an abandon reason it does not know", () => {
+	it("should ignore an abandon reason it does not know", ({ expect }) => {
 		expect.assertions(2);
 
 		const error = thrownFrom(
@@ -1678,19 +1700,22 @@ describe("the phase and capture state a failed run reports", () => {
 		return JSON.stringify({ err: "Exited with code: 1", runner, success: false });
 	}
 
-	it("should carry the error code the runner named", () => {
+	it("should carry the error code the runner named", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(thrownFrom(failureWith({ code: "no-projects" })).code).toBe("no-projects");
 	});
 
-	it.for([undefined, "made-up", 7] as const)("should drop an error code of %j", (code) => {
-		expect.assertions(1);
+	it.for([undefined, "made-up", 7] as const)(
+		"should drop an error code of %j",
+		(code, { expect }) => {
+			expect.assertions(1);
 
-		expect(thrownFrom(failureWith({ code })).code).toBeUndefined();
-	});
+			expect(thrownFrom(failureWith({ code })).code).toBeUndefined();
+		},
+	);
 
-	it("should carry the phase the runner named", () => {
+	it("should carry the phase the runner named", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(thrownFrom(failureWith({ phase: "runCLI" })).phase).toBe("runCLI");
@@ -1698,23 +1723,29 @@ describe("the phase and capture state a failed run reports", () => {
 
 	// Same leniency the abandon reason gets: a producer that drifts drops the
 	// dimension rather than reporting a phase spelled as nothing at all.
-	it.for([undefined, "", 7] as const)("should drop a phase of %j", (phase) => {
+	it.for([undefined, "", 7] as const)("should drop a phase of %j", (phase, { expect }) => {
 		expect.assertions(1);
 
 		expect(thrownFrom(failureWith({ phase })).phase).toBeUndefined();
 	});
 
-	it.for([true, false] as const)("should carry a capture state of %j", (captureInstalled) => {
-		expect.assertions(1);
+	it.for([true, false] as const)(
+		"should carry a capture state of %j",
+		(captureInstalled, { expect }) => {
+			expect.assertions(1);
 
-		expect(thrownFrom(failureWith({ captureInstalled })).captureInstalled).toBe(
-			captureInstalled,
-		);
-	});
+			expect(thrownFrom(failureWith({ captureInstalled })).captureInstalled).toBe(
+				captureInstalled,
+			);
+		},
+	);
 
-	it.for([undefined, "yes"] as const)("should drop a capture state of %j", (captureInstalled) => {
-		expect.assertions(1);
+	it.for([undefined, "yes"] as const)(
+		"should drop a capture state of %j",
+		(captureInstalled, { expect }) => {
+			expect.assertions(1);
 
-		expect(thrownFrom(failureWith({ captureInstalled })).captureInstalled).toBeUndefined();
-	});
+			expect(thrownFrom(failureWith({ captureInstalled })).captureInstalled).toBeUndefined();
+		},
+	);
 });

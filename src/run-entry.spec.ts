@@ -2,7 +2,7 @@ import { fromAny } from "@total-typescript/shoehorn";
 
 import process from "node:process";
 import type { MockInstance } from "vitest";
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { NOOP_PROGRESS } from "#test/mocks/noop-progress.ts";
@@ -66,7 +66,9 @@ function timingLines(stderr: MockInstance<typeof process.stderr.write>): Array<s
 }
 
 describe(runJestRobloxAsync, () => {
-	it("should run a workspace invocation through the real workspace layout", async () => {
+	it("should run a workspace invocation through the real workspace layout", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const result = await runJestRobloxAsync({
@@ -81,7 +83,9 @@ describe(runJestRobloxAsync, () => {
 		});
 	});
 
-	it("should refuse a workspace-only flag without --workspace before any run", async () => {
+	it("should refuse a workspace-only flag without --workspace before any run", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const seams = createRunSeams();
@@ -101,7 +105,7 @@ describe(runJestRobloxAsync, () => {
 		expect(seams.resolveAllProjects).not.toHaveBeenCalled();
 	});
 
-	it("should run a config without projects through the project layout", async () => {
+	it("should run a config without projects through the project layout", async ({ expect }) => {
 		expect.assertions(1);
 
 		const result = await runJestRobloxAsync({
@@ -114,7 +118,7 @@ describe(runJestRobloxAsync, () => {
 		expect(result.projectResults).toBeEmpty();
 	});
 
-	it("should announce the run's stages on the given progress", async () => {
+	it("should announce the run's stages on the given progress", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem({
@@ -162,7 +166,7 @@ describe(runJestRobloxAsync, () => {
 		expect(begin).toHaveBeenCalledWith("build");
 	});
 
-	it("should apply the CLI options over the config it gets", async () => {
+	it("should apply the CLI options over the config it gets", async ({ expect }) => {
 		expect.assertions(1);
 
 		const resolveAllProjects = vi.fn<RunSeams["resolveAllProjects"]>().mockResolvedValue([]);
@@ -176,7 +180,7 @@ describe(runJestRobloxAsync, () => {
 		expect(resolvedVerbose(resolveAllProjects)).toBeTrue();
 	});
 
-	it("should flush timing when the run rejects", async () => {
+	it("should flush timing when the run rejects", async ({ expect }) => {
 		expect.assertions(2);
 
 		const error = new Error("projects failed");
@@ -192,7 +196,7 @@ describe(runJestRobloxAsync, () => {
 		expect(timingLines(stderr).at(-1)).toContain("TOTAL (host)");
 	});
 
-	it("should not emit a build manifest for a non-coverage run", async () => {
+	it("should not emit a build manifest for a non-coverage run", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -209,7 +213,7 @@ describe(runJestRobloxAsync, () => {
 });
 
 describe(runMergedJestRobloxAsync, () => {
-	it("should run on the config as given", async () => {
+	it("should run on the config as given", async ({ expect }) => {
 		expect.assertions(1);
 
 		const resolveAllProjects = vi.fn<RunSeams["resolveAllProjects"]>().mockResolvedValue([]);

@@ -1,9 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { PINNED_PARENT_CLASSES } from "./pinned-parent-classes.ts";
 
 describe("pinned parent classes", () => {
-	it("should contain every class whose parent is fixed by Roblox", () => {
+	it("should contain every class whose parent is fixed by Roblox", ({ expect }) => {
 		expect.assertions(1);
 
 		expect([...PINNED_PARENT_CLASSES].toSorted()).toStrictEqual([

@@ -1,10 +1,10 @@
 import { type } from "arktype";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { perTestCoverageSchema } from "./coverage.ts";
 
 describe("perTestCoverageSchema", () => {
-	it("should accept the records the runner reports", () => {
+	it("should accept the records the runner reports", ({ expect }) => {
 		expect.assertions(1);
 
 		const records = [
@@ -14,7 +14,7 @@ describe("perTestCoverageSchema", () => {
 		expect(perTestCoverageSchema(records)).toStrictEqual(records);
 	});
 
-	it("should reject a delta without statement ids", () => {
+	it("should reject a delta without statement ids", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(

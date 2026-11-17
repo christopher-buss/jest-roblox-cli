@@ -1,7 +1,7 @@
 import { fromAny } from "@total-typescript/shoehorn";
 
 import { Buffer } from "node:buffer";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { callWasm, instantiateWasm } from "./wasm-host.ts";
 import type { WasmHeap } from "./wasm-host.ts";
@@ -13,14 +13,14 @@ function makeHeap() {
 	const bytes = new Uint8Array(memory.buffer);
 	bytes.fill(255);
 	const heap = {
-		free: (pointer: number) => {
+		free: (pointer) => {
 			freed.push(pointer);
 		},
 
-		free_result: (pointer: number) => {
+		free_result: (pointer) => {
 			freed.push(pointer);
 		},
-		malloc: (size: number) => {
+		malloc: (size) => {
 			allocated.push(size);
 			return 16;
 		},
@@ -30,7 +30,7 @@ function makeHeap() {
 }
 
 describe(callWasm, () => {
-	it("should transfer UTF-8 source and release result and source allocations", () => {
+	it("should transfer UTF-8 source and release result and source allocations", ({ expect }) => {
 		expect.assertions(5);
 
 		const { allocated, freed, heap, memory } = makeHeap();
@@ -54,7 +54,7 @@ describe(callWasm, () => {
 		expect(payload).toBe("ok");
 	});
 
-	it("should decode the result after the wrapper grows memory", () => {
+	it("should decode the result after the wrapper grows memory", ({ expect }) => {
 		expect.assertions(1);
 
 		const { heap, memory } = makeHeap();
@@ -73,7 +73,7 @@ describe(callWasm, () => {
 });
 
 describe(instantiateWasm, () => {
-	it("should initialize a module supplied as base64 bytes", () => {
+	it("should initialize a module supplied as base64 bytes", ({ expect }) => {
 		expect.assertions(1);
 
 		const bytes = Buffer.from([0, 97, 115, 109, 1, 0, 0, 0]);
@@ -91,7 +91,9 @@ function wasmName(value: string): Array<number> {
 }
 
 describe("emscripten host imports", () => {
-	it("should accept the memory-growth notification without retaining heap views", () => {
+	it("should accept the memory-growth notification without retaining heap views", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const bytes = Buffer.from([

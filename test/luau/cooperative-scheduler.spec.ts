@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import {
 	fillPlaceholders,
@@ -12,7 +12,9 @@ const MODULE_SOURCE = readLuauModule("cooperative-scheduler.luau");
 const HARNESS = readHarness("cooperative-scheduler");
 
 describe("cooperative scheduling under lute", () => {
-	it("should yield between completed tests while preserving hooks and run ownership", () => {
+	it("should yield between completed tests while preserving hooks and run ownership", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const source = fillPlaceholders(HARNESS, {

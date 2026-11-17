@@ -1,6 +1,6 @@
 import { vi } from "vitest";
 
-import type { TimedPhase, TimingCollector } from "#src/timing/orchestration-collector.ts";
+import type { TimingCollector } from "#src/timing/orchestration-collector.ts";
 
 export interface TimingRecorder {
 	collector: TimingCollector;
@@ -36,7 +36,7 @@ function phaseRunners(
 	}
 
 	return {
-		profileTimed: <T>(name: string, func: () => T): TimedPhase<T> => {
+		profileTimed: (name, func) => {
 			open(name);
 			try {
 				return { elapsedMs: 0, value: func() };
@@ -44,7 +44,7 @@ function phaseRunners(
 				stack.pop();
 			}
 		},
-		profileTimedAsync: async <T>(name: string, func: () => Promise<T>) => {
+		profileTimedAsync: async (name, func) => {
 			open(name);
 			try {
 				return { elapsedMs: 0, value: await func() };

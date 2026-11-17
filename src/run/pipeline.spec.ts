@@ -1,7 +1,7 @@
 import { fromAny } from "@total-typescript/shoehorn";
 
 import process from "node:process";
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import { fakeTimingCollector } from "#test/mocks/fake-timing-collector.ts";
 import { NOOP_PROGRESS } from "#test/mocks/noop-progress.ts";
@@ -61,7 +61,7 @@ function makeLayout(overrides: Partial<RunLayout<LayoutTypes>> = {}) {
 }
 
 describe(runPipelineAsync, () => {
-	it("should return the refusal of unit resolution", async () => {
+	it("should return the refusal of unit resolution", async ({ expect }) => {
 		expect.assertions(2);
 
 		const refused = fromAny<RunResult, unknown>({ validationExitCode: 2 });
@@ -73,7 +73,7 @@ describe(runPipelineAsync, () => {
 		expect(layout.openBackend).not.toHaveBeenCalled();
 	});
 
-	it("should return the refusal of test selection", async () => {
+	it("should return the refusal of test selection", async ({ expect }) => {
 		expect.assertions(1);
 
 		const refused = fromAny<RunResult, unknown>({ validationExitCode: 2 });
@@ -84,7 +84,9 @@ describe(runPipelineAsync, () => {
 		).resolves.toBe(refused);
 	});
 
-	it("should reject TypeScript Type Tests under the standalone binary before staging", async () => {
+	it("should reject TypeScript Type Tests under the standalone binary before staging", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		vi.stubEnv("JEST_ROBLOX_SEA", "true");
@@ -103,7 +105,7 @@ describe(runPipelineAsync, () => {
 		expect(layout.stageAsync).not.toHaveBeenCalled();
 	});
 
-	it("should stop an empty run before any backend or type pass", async () => {
+	it("should stop an empty run before any backend or type pass", async ({ expect }) => {
 		expect.assertions(3);
 
 		const { layout } = makeLayout({
@@ -131,7 +133,7 @@ describe(runPipelineAsync, () => {
 		expect(layout.typecheckAsync).not.toHaveBeenCalled();
 	});
 
-	it("should run only the type pass when no runtime job was selected", async () => {
+	it("should run only the type pass when no runtime job was selected", async ({ expect }) => {
 		expect.assertions(4);
 
 		const timing = fakeTimingCollector();
@@ -154,7 +156,9 @@ describe(runPipelineAsync, () => {
 		);
 	});
 
-	it("should open the backend, stage, announce, dispatch and close in order", async () => {
+	it("should open the backend, stage, announce, dispatch and close in order", async ({
+		expect,
+	}) => {
 		expect.assertions(5);
 
 		const timing = fakeTimingCollector();
@@ -177,7 +181,7 @@ describe(runPipelineAsync, () => {
 
 	it.for<[boolean]>([[true], [false]])(
 		"should announce coverage in the header exactly when staging collects it (%s)",
-		async ([collectsCoverage]) => {
+		async ([collectsCoverage], { expect }) => {
 			expect.assertions(1);
 
 			const { layout } = makeLayout({ stageAsync: async () => ({ collectsCoverage }) });
@@ -194,7 +198,7 @@ describe(runPipelineAsync, () => {
 		},
 	);
 
-	it("should close the backend after the dispatch", async () => {
+	it("should close the backend after the dispatch", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { backend, layout } = makeLayout();
@@ -205,7 +209,7 @@ describe(runPipelineAsync, () => {
 		expect(backend.closeAsync).toHaveBeenCalledOnce();
 	});
 
-	it("should close the backend when staging fails", async () => {
+	it("should close the backend when staging fails", async ({ expect }) => {
 		expect.assertions(2);
 
 		const error = new Error("rojo failed");
@@ -221,7 +225,7 @@ describe(runPipelineAsync, () => {
 		expect(backend.closeAsync).toHaveBeenCalledOnce();
 	});
 
-	it("should tolerate a backend without a close hook", async () => {
+	it("should tolerate a backend without a close hook", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { layout } = makeLayout({

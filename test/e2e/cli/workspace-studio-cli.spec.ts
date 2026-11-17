@@ -1,5 +1,5 @@
 import * as path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { writeRbxtsJsProject } from "#test/e2e/cli/rbxts-js-project.ts";
 import {
@@ -16,7 +16,7 @@ const IS_STUDIO_ON_HOST = isStudioOnHost();
 describe("workspace studio-cli smoke", () => {
 	it.runIf(IS_STUDIO_ON_HOST)(
 		"should run every workspace package in one Studio process under backend studio-cli",
-		async () => {
+		async ({ expect }) => {
 			expect.assertions(3);
 
 			// Two-package workspace fixture (@e2e/studio-foo, @e2e/studio-bar).

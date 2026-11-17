@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { createPlainStyles } from "#test/mocks/format-plain-styles.ts";
 import { createTaggedStyles } from "#test/mocks/format-tagged-styles.ts";
@@ -7,7 +7,7 @@ import type { Styles } from "../terminal/palette.ts";
 import { formatSourceSnippet } from "./snippet-render.ts";
 
 describe(formatSourceSnippet, () => {
-	it("should highlight code through the palette highlighter", () => {
+	it("should highlight code through the palette highlighter", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = formatSourceSnippet({
@@ -21,7 +21,7 @@ describe(formatSourceSnippet, () => {
 		);
 	});
 
-	it("should render padding, tabs, syntax, language, and the caret exactly", () => {
+	it("should render padding, tabs, syntax, language, and the caret exactly", ({ expect }) => {
 		expect.assertions(2);
 
 		const snippet: SourceSnippet = {
@@ -52,7 +52,7 @@ describe(formatSourceSnippet, () => {
 		).toMatchSnapshot("colored");
 	});
 
-	it("should omit the column, caret, and language when they are unavailable", () => {
+	it("should omit the column, caret, and language when they are unavailable", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -64,7 +64,7 @@ describe(formatSourceSnippet, () => {
 		).toBe(" ❯ src/example.luau:1\n\t1| return nil");
 	});
 
-	it("should advance tabs to the next tab stop", () => {
+	it("should advance tabs to the next tab stop", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -78,7 +78,7 @@ describe(formatSourceSnippet, () => {
 });
 
 describe(formatSourceSnippet, () => {
-	it("should format snippet with line numbers and caret", () => {
+	it("should format snippet with line numbers and caret", ({ expect }) => {
 		expect.assertions(4);
 
 		const snippet: SourceSnippet = {
@@ -103,7 +103,7 @@ describe(formatSourceSnippet, () => {
 		expect(formatted).toContain("^");
 	});
 
-	it("should format snippet without column", () => {
+	it("should format snippet without column", ({ expect }) => {
 		expect.assertions(2);
 
 		const snippet: SourceSnippet = {
@@ -123,7 +123,7 @@ describe(formatSourceSnippet, () => {
 });
 
 describe("expandTabs via formatSourceSnippet", () => {
-	it("should expand tab characters to spaces in source snippet content", () => {
+	it("should expand tab characters to spaces in source snippet content", ({ expect }) => {
 		expect.assertions(3);
 
 		const snippet: SourceSnippet = {
@@ -149,7 +149,7 @@ describe("expandTabs via formatSourceSnippet", () => {
 });
 
 describe("complete formatter contracts", () => {
-	it("should render line padding, tabs, a caret, and language exactly", () => {
+	it("should render line padding, tabs, a caret, and language exactly", ({ expect }) => {
 		expect.assertions(1);
 
 		const snippet: SourceSnippet = {
@@ -173,7 +173,7 @@ describe("complete formatter contracts", () => {
 });
 
 describe("formatSourceSnippet root", () => {
-	it("should show the header path relative to the root", () => {
+	it("should show the header path relative to the root", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(

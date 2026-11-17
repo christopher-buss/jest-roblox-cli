@@ -1,5 +1,5 @@
 import * as path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import type { WorkspacePackage } from "#test/e2e/cli/workspace-place.ts";
 import { synthesizeWorkspaceAsync } from "#test/e2e/cli/workspace-place.ts";
@@ -39,7 +39,7 @@ function sharingPackage(name: string): WorkspacePackage {
 }
 
 describe.skipIf(!rojoOnPath())("workspace place shared mounts", () => {
-	it("should build a single file two packages mount into the place once", async () => {
+	it("should build a single file two packages mount into the place once", async ({ expect }) => {
 		expect.assertions(3);
 
 		const { projectPath, root: workspace } = await synthesizeWorkspaceAsync({
@@ -56,7 +56,9 @@ describe.skipIf(!rojoOnPath())("workspace place shared mounts", () => {
 		expect(namedNodes(root, "Config").map((node) => childNames(node))).toStrictEqual([[], []]);
 	});
 
-	it("should build one Instance per directory when a coverage spine nests", async () => {
+	it("should build one Instance per directory when a coverage spine nests", async ({
+		expect,
+	}) => {
 		expect.assertions(4);
 
 		const { projectPath } = await synthesizeWorkspaceAsync({

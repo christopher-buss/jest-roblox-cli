@@ -1,6 +1,6 @@
 import { fromAny } from "@total-typescript/shoehorn";
 
-import { assert, describe, expect, it } from "vitest";
+import { assert, describe, it } from "vitest";
 
 import { emptyPending, pendingResult } from "#test/mocks/coverage-instr-pending.ts";
 import { mapSourceMappedFile } from "./mapper-source-mapped.ts";
@@ -67,7 +67,7 @@ describe(mapSourceMappedFile, () => {
 			"22:26": { column: 20, line: 10, source: "src/shared/player.ts" },
 		};
 
-		it("should record one entry per source statement", () => {
+		it("should record one entry per source statement", ({ expect }) => {
 			expect.assertions(2);
 
 			const file = runFile({
@@ -83,7 +83,7 @@ describe(mapSourceMappedFile, () => {
 			});
 		});
 
-		it("should sum the fragment hit counts rather than splitting them", () => {
+		it("should sum the fragment hit counts rather than splitting them", ({ expect }) => {
 			expect.assertions(1);
 
 			const file = runFile({
@@ -95,7 +95,7 @@ describe(mapSourceMappedFile, () => {
 			expect(file.s["0"]).toBe(9);
 		});
 
-		it("should widen the entry start when a fragment is recorded first", () => {
+		it("should widen the entry start when a fragment is recorded first", ({ expect }) => {
 			expect.assertions(2);
 
 			// A fragment lands before the statement start does. The entry takes
@@ -114,7 +114,7 @@ describe(mapSourceMappedFile, () => {
 			});
 		});
 
-		it("should keep single-line statements that merely share a line apart", () => {
+		it("should keep single-line statements that merely share a line apart", ({ expect }) => {
 			expect.assertions(1);
 
 			// `first(); second();`: two source statements, neither spanning

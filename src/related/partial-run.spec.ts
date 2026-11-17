@@ -1,5 +1,5 @@
 import * as path from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import { clockTimingCollector } from "#test/mocks/clock-timing-collector.ts";
 import type { PartialRunInput } from "./partial-run.ts";
@@ -18,7 +18,7 @@ function gitReplying(stdoutByCommand: Record<string, string>): PartialRunInput["
 }
 
 describe(resolvePartialRun, () => {
-	it("should read the files changed since the ref in a profiled phase", () => {
+	it("should read the files changed since the ref in a profiled phase", ({ expect }) => {
 		expect.assertions(2);
 
 		const timing = clockTimingCollector();
@@ -42,7 +42,7 @@ describe(resolvePartialRun, () => {
 		expect(profile).toHaveBeenCalledWith("readChangedFiles", expect.any(Function));
 	});
 
-	it("should resolve related files against the run root", () => {
+	it("should resolve related files against the run root", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -55,7 +55,7 @@ describe(resolvePartialRun, () => {
 		).toStrictEqual({ files: [path.resolve(ROOT, "src/a.luau")], kind: "related" });
 	});
 
-	it("should leave a full run without a Partial Run", () => {
+	it("should leave a full run without a Partial Run", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(

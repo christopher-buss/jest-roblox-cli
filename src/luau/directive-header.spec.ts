@@ -1,6 +1,6 @@
 import { loadLuauParser } from "@isentinel/luau-ast/parser";
 
-import { assert, describe, expect, it } from "vitest";
+import { assert, describe, it } from "vitest";
 
 import { countLinesThroughLastDirective } from "./directive-header.ts";
 
@@ -55,38 +55,38 @@ function countFor(source: string): number {
 }
 
 describe(countLinesThroughLastDirective, () => {
-	it("should count the directives that open the file", () => {
+	it("should count the directives that open the file", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(countFor("--!strict\n--!native\nlocal x = 1")).toBe(2);
 	});
 
-	it("should count nothing when the file opens on code", () => {
+	it("should count nothing when the file opens on code", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(countFor("local x = 1\n--!native")).toBe(0);
 	});
 
-	it("should count past a blank line, which Luau lexes away", () => {
+	it("should count past a blank line, which Luau lexes away", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(countFor("--!strict\n\n--!native\nlocal x = 1")).toBe(3);
 	});
 
-	it("should count past a comment between two directives", () => {
+	it("should count past a comment between two directives", ({ expect }) => {
 		expect.assertions(2);
 
 		expect(countFor("--!strict\n-- why native\n--!native\nlocal x = 1")).toBe(3);
 		expect(countFor("--!strict\n--[[ why\nnative ]]\n--!native\nlocal x = 1")).toBe(4);
 	});
 
-	it("should count a directive that carries leading whitespace", () => {
+	it("should count a directive that carries leading whitespace", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(countFor("--!strict\n\t--!native\nlocal x = 1")).toBe(2);
 	});
 
-	it("should count no further than the last directive", () => {
+	it("should count no further than the last directive", ({ expect }) => {
 		expect.assertions(2);
 
 		// The trailing comments carry nothing Luau reads, so injected code is
@@ -95,25 +95,25 @@ describe(countLinesThroughLastDirective, () => {
 		expect(countFor("-- plain header\nlocal x = 1")).toBe(0);
 	});
 
-	it("should stop at code that follows a block comment on one line", () => {
+	it("should stop at code that follows a block comment on one line", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(countFor("--!strict\n--[[ note ]] local x = 1")).toBe(1);
 	});
 
-	it("should leave trailing whitespace below the last directive", () => {
+	it("should leave trailing whitespace below the last directive", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(countFor("--!strict\n \t \nlocal x = 1")).toBe(1);
 	});
 
-	it("should scan consecutive block comments before a directive", () => {
+	it("should scan consecutive block comments before a directive", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(countFor("--[[first]] --[=[second]=] --!native\nlocal x = 1")).toBe(1);
 	});
 
-	it("should read a long-bracket comment to its own closer", () => {
+	it("should read a long-bracket comment to its own closer", ({ expect }) => {
 		expect.assertions(2);
 
 		// `]]` closes nothing while the opener asked for `]=]`, so the
@@ -122,13 +122,13 @@ describe(countLinesThroughLastDirective, () => {
 		expect(countFor("--[==[ a ]==]\n--!native\nlocal x = 1")).toBe(2);
 	});
 
-	it("should find no directive inside a block comment that never closes", () => {
+	it("should find no directive inside a block comment that never closes", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(countLinesThroughLastDirective(["--[[ open", "--!native", "local x = 1"])).toBe(0);
 	});
 
-	it("should end a comment on a bare carriage return, as the lexer does", () => {
+	it("should end a comment on a bare carriage return, as the lexer does", ({ expect }) => {
 		expect.assertions(3);
 
 		// The premise, straight from the parser: `\r` closes the comment but
@@ -142,13 +142,13 @@ describe(countLinesThroughLastDirective, () => {
 		expect(countLinesThroughLastDirective(["--!strict\r--!native", "local x = 1"])).toBe(1);
 	});
 
-	it("should count nothing in an empty file", () => {
+	it("should count nothing in an empty file", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(countLinesThroughLastDirective([])).toBe(0);
 	});
 
-	it("should agree with the Luau parser on every shape", () => {
+	it("should agree with the Luau parser on every shape", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(SHAPES.map(countFor)).toStrictEqual(SHAPES.map(parsedDirectiveLines));

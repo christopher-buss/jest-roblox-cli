@@ -1,10 +1,10 @@
 import { once } from "node:events";
-import { assert, describe, expect, it, onTestFinished } from "vitest";
+import { assert, describe, it } from "vitest";
 
 import { nodeWebSocketServerFactory } from "./web-socket-server-factory.ts";
 
 describe(nodeWebSocketServerFactory, () => {
-	it("should open a real server on the loopback address", async () => {
+	it("should open a real server on the loopback address", async ({ expect, onTestFinished }) => {
 		expect.assertions(1);
 
 		const server = nodeWebSocketServerFactory({ host: "127.0.0.1", port: 0 });

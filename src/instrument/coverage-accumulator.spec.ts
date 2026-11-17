@@ -1,6 +1,6 @@
 import type { LuauSpan } from "@isentinel/luau-ast/ast";
 
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { createCoverageAccumulator } from "./coverage-accumulator.ts";
 
@@ -9,7 +9,7 @@ function span(line: number): LuauSpan {
 }
 
 describe(createCoverageAccumulator, () => {
-	it("should start every counter empty", () => {
+	it("should start every counter empty", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(createCoverageAccumulator().result()).toStrictEqual({
@@ -21,7 +21,7 @@ describe(createCoverageAccumulator, () => {
 		});
 	});
 
-	it("should number statements and functions from one and copy their spans", () => {
+	it("should number statements and functions from one and copy their spans", ({ expect }) => {
 		expect.assertions(2);
 
 		const accumulator = createCoverageAccumulator();
@@ -40,7 +40,9 @@ describe(createCoverageAccumulator, () => {
 		]);
 	});
 
-	it("should give every expression arm the wrap sentinel and its own wrap probe", () => {
+	it("should give every expression arm the wrap sentinel and its own wrap probe", ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const accumulator = createCoverageAccumulator();
@@ -62,7 +64,7 @@ describe(createCoverageAccumulator, () => {
 		]);
 	});
 
-	it("should append a synthetic arm and its probe for an implicit else", () => {
+	it("should append a synthetic arm and its probe for an implicit else", ({ expect }) => {
 		expect.assertions(2);
 
 		const accumulator = createCoverageAccumulator();
@@ -89,7 +91,7 @@ describe(createCoverageAccumulator, () => {
 		]);
 	});
 
-	it("should record no probe for a statement branch with a real else", () => {
+	it("should record no probe for a statement branch with a real else", ({ expect }) => {
 		expect.assertions(1);
 
 		const accumulator = createCoverageAccumulator();
@@ -101,7 +103,7 @@ describe(createCoverageAccumulator, () => {
 		expect(accumulator.result().implicitElseProbes).toStrictEqual([]);
 	});
 
-	it("should count functions and statement branches upward", () => {
+	it("should count functions and statement branches upward", ({ expect }) => {
 		expect.assertions(2);
 
 		const accumulator = createCoverageAccumulator();

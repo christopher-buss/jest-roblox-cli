@@ -1,6 +1,6 @@
 import { fromAny } from "@total-typescript/shoehorn";
 
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import type { ProjectTestConfig } from "../config/config-types.ts";
 import { serializeToLuau } from "./stub-serializer.ts";
@@ -14,7 +14,7 @@ function minimalConfig(overrides: Partial<ProjectTestConfig> = {}): ProjectTestC
 }
 
 describe(serializeToLuau, () => {
-	it("should serialize the complete stub contract exactly", () => {
+	it("should serialize the complete stub contract exactly", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -49,7 +49,7 @@ describe(serializeToLuau, () => {
 		);
 	});
 
-	it("should serialize displayName string", () => {
+	it("should serialize displayName string", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = serializeToLuau(minimalConfig({ displayName: "client" }));
@@ -57,7 +57,7 @@ describe(serializeToLuau, () => {
 		expect(result).toContain('\tdisplayName = "client",');
 	});
 
-	it("should serialize displayName object with name and color", () => {
+	it("should serialize displayName object with name and color", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = serializeToLuau(
@@ -69,7 +69,7 @@ describe(serializeToLuau, () => {
 		expect(result).toContain('\tdisplayName = { name = "client", color = "blue" },');
 	});
 
-	it("should serialize testMatch array with stripped extensions", () => {
+	it("should serialize testMatch array with stripped extensions", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = serializeToLuau(
@@ -81,7 +81,7 @@ describe(serializeToLuau, () => {
 		expect(result).toContain('\ttestMatch = { "**/*.spec", "**/*.test", "**/*.spec" },');
 	});
 
-	it("should drop Type Test patterns from the stub testMatch", () => {
+	it("should drop Type Test patterns from the stub testMatch", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = serializeToLuau(
@@ -91,7 +91,7 @@ describe(serializeToLuau, () => {
 		expect(result).toContain('\ttestMatch = { "**/*.spec" },');
 	});
 
-	it("should ignore Type Test modules on top of the configured ignore patterns", () => {
+	it("should ignore Type Test modules on top of the configured ignore patterns", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = serializeToLuau(minimalConfig({ testPathIgnorePatterns: ["/out/"] }));
@@ -99,7 +99,7 @@ describe(serializeToLuau, () => {
 		expect(result).toContain('\ttestPathIgnorePatterns = { "/out/", "\\\\.(spec|test)-d$" },');
 	});
 
-	it("should preserve TypeScript extensions outside testMatch", () => {
+	it("should preserve TypeScript extensions outside testMatch", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = serializeToLuau(
@@ -109,7 +109,7 @@ describe(serializeToLuau, () => {
 		expect(result).toContain('\tsetupFiles = { "ReplicatedStorage/setup.ts" },');
 	});
 
-	it("should serialize boolean fields", () => {
+	it("should serialize boolean fields", ({ expect }) => {
 		expect.assertions(2);
 
 		const result = serializeToLuau(minimalConfig({ clearMocks: true, restoreMocks: false }));
@@ -118,7 +118,7 @@ describe(serializeToLuau, () => {
 		expect(result).toContain("\trestoreMocks = false,");
 	});
 
-	it("should serialize number fields", () => {
+	it("should serialize number fields", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = serializeToLuau(minimalConfig({ slowTestThreshold: 5 }));
@@ -126,7 +126,7 @@ describe(serializeToLuau, () => {
 		expect(result).toContain("\tslowTestThreshold = 5,");
 	});
 
-	it("should serialize snapshotFormat nested object", () => {
+	it("should serialize snapshotFormat nested object", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = serializeToLuau(
@@ -138,7 +138,7 @@ describe(serializeToLuau, () => {
 		expect(result).toContain("\tsnapshotFormat = { indent = 4, printBasicPrototype = false },");
 	});
 
-	it("should omit undefined nested properties", () => {
+	it("should omit undefined nested properties", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = serializeToLuau(
@@ -150,7 +150,7 @@ describe(serializeToLuau, () => {
 		expect(result).toContain("\tsnapshotFormat = { indent = 4 },");
 	});
 
-	it("should skip include and exclude fields", () => {
+	it("should skip include and exclude fields", ({ expect }) => {
 		expect.assertions(2);
 
 		const result = serializeToLuau(
@@ -164,7 +164,7 @@ describe(serializeToLuau, () => {
 		expect(result).not.toContain("exclude");
 	});
 
-	it("should skip undefined values", () => {
+	it("should skip undefined values", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = serializeToLuau({ ...minimalConfig(), setupFiles: undefined });
@@ -172,7 +172,7 @@ describe(serializeToLuau, () => {
 		expect(result).not.toContain("setupFiles");
 	});
 
-	it("should escape quotes in string values", () => {
+	it("should escape quotes in string values", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = serializeToLuau(minimalConfig({ testEnvironment: 'env\\with"quotes' }));
@@ -180,7 +180,7 @@ describe(serializeToLuau, () => {
 		expect(result).toContain('\ttestEnvironment = "env\\\\with\\"quotes",');
 	});
 
-	it("should escape newlines, carriage returns, and tabs in string values", () => {
+	it("should escape newlines, carriage returns, and tabs in string values", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = serializeToLuau(
@@ -190,7 +190,7 @@ describe(serializeToLuau, () => {
 		expect(result).toContain('\ttestEnvironment = "line1\\nline2\\rline3\\twith-tab",');
 	});
 
-	it("should add auto-generated header comment", () => {
+	it("should add auto-generated header comment", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = serializeToLuau(minimalConfig());
@@ -198,7 +198,7 @@ describe(serializeToLuau, () => {
 		expect(result).toStartWith("-- Auto-generated by jest-roblox (do not edit)\n");
 	});
 
-	it("should serialize all project config fields", () => {
+	it("should serialize all project config fields", ({ expect }) => {
 		expect.assertions(4);
 
 		const config: ProjectTestConfig = {
@@ -217,7 +217,7 @@ describe(serializeToLuau, () => {
 		expect(result).toContain("testMatch");
 	});
 
-	it("should serialize null values via String fallback", () => {
+	it("should serialize null values via String fallback", ({ expect }) => {
 		expect.assertions(1);
 
 		// serializeLuauValue falls through to String(null) → "null" for

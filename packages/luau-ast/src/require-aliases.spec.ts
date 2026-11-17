@@ -1,6 +1,6 @@
 import { fromPartial } from "@total-typescript/shoehorn";
 
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { memoryFileSystem } from "#test/helpers/unit/file-system";
 import { fixtureCstParser } from "#test/helpers/unit/trees";
@@ -20,7 +20,7 @@ describe(createAliasLookup, () => {
 		["shared", "/project/shared"],
 		["DEEP-lib", "/project/lib/deep"],
 		["abs", "/abs/root"],
-	])("should find %s in .config.luau relative to its folder", ([name, target]) => {
+	])("should find %s in .config.luau relative to its folder", ([name, target], { expect }) => {
 		expect.assertions(1);
 
 		const { lookup } = lookupOver({ "/project/.config.luau": ALIASES });
@@ -31,7 +31,7 @@ describe(createAliasLookup, () => {
 		});
 	});
 
-	it("should read the table that .config.luau returns after other statements", () => {
+	it("should read the table that .config.luau returns after other statements", ({ expect }) => {
 		expect.assertions(1);
 
 		const { lookup } = lookupOver({
@@ -45,7 +45,7 @@ describe(createAliasLookup, () => {
 		});
 	});
 
-	it("should report a folder that holds both .config.luau and .luaurc", () => {
+	it("should report a folder that holds both .config.luau and .luaurc", ({ expect }) => {
 		expect.assertions(1);
 
 		const { lookup } = lookupOver({
@@ -59,7 +59,7 @@ describe(createAliasLookup, () => {
 		});
 	});
 
-	it("should find an alias before it reaches an ambiguous folder", () => {
+	it("should find an alias before it reaches an ambiguous folder", ({ expect }) => {
 		expect.assertions(1);
 
 		const { lookup } = lookupOver({
@@ -74,7 +74,9 @@ describe(createAliasLookup, () => {
 		});
 	});
 
-	it("should go on to the parent folder when the nearer configuration lacks the alias", () => {
+	it("should go on to the parent folder when the nearer configuration lacks the alias", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { lookup } = lookupOver({
@@ -88,7 +90,7 @@ describe(createAliasLookup, () => {
 		});
 	});
 
-	it("should prefer the nearest folder's configuration", () => {
+	it("should prefer the nearest folder's configuration", ({ expect }) => {
 		expect.assertions(1);
 
 		const { lookup } = lookupOver({
@@ -102,7 +104,7 @@ describe(createAliasLookup, () => {
 		});
 	});
 
-	it("should report an alias that no configuration names", () => {
+	it("should report an alias that no configuration names", ({ expect }) => {
 		expect.assertions(1);
 
 		const { lookup } = lookupOver({ "/project/.luaurc": "{}" });
@@ -114,7 +116,7 @@ describe(createAliasLookup, () => {
 
 	it.for(["return { [1] = 2 }\n", "return { luau = {} }\n"])(
 		"should find no aliases in %j",
-		(source) => {
+		(source, { expect }) => {
 			expect.assertions(1);
 
 			const { lookup } = lookupOver({ "/project/.config.luau": source });
@@ -133,18 +135,21 @@ describe(createAliasLookup, () => {
 		"local x = 1\n",
 		"return 1\n",
 		"return\n",
-	])("should report a .config.luau that builds its aliases with code: %j", (source) => {
-		expect.assertions(1);
+	])(
+		"should report a .config.luau that builds its aliases with code: %j",
+		(source, { expect }) => {
+			expect.assertions(1);
 
-		const { lookup } = lookupOver({ "/project/.config.luau": source });
+			const { lookup } = lookupOver({ "/project/.config.luau": source });
 
-		expect(lookup({ name: "shared", directory: "/project" })).toStrictEqual({
-			kind: "invalid",
-			reason: "/project/.config.luau does not hold luau.aliases as a table of strings",
-		});
-	});
+			expect(lookup({ name: "shared", directory: "/project" })).toStrictEqual({
+				kind: "invalid",
+				reason: "/project/.config.luau does not hold luau.aliases as a table of strings",
+			});
+		},
+	);
 
-	it("should report a .config.luau that does not parse", () => {
+	it("should report a .config.luau that does not parse", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = memoryFileSystem({ "/project/.config.luau": "return {\n" });
@@ -159,7 +164,7 @@ describe(createAliasLookup, () => {
 		});
 	});
 
-	it("should restate a backslash in an alias path as a forward slash", () => {
+	it("should restate a backslash in an alias path as a forward slash", ({ expect }) => {
 		expect.assertions(1);
 
 		const { lookup } = lookupOver({
@@ -174,7 +179,7 @@ describe(createAliasLookup, () => {
 
 	it.for(['{ "aliases": ', '{ "aliases": { "shared": 1 } }'])(
 		"should report a .luaurc it cannot read: %j",
-		(source) => {
+		(source, { expect }) => {
 			expect.assertions(1);
 
 			const { lookup } = lookupOver({ "/project/.luaurc": source });
@@ -186,7 +191,7 @@ describe(createAliasLookup, () => {
 		},
 	);
 
-	it("should report a configuration path that is a folder", () => {
+	it("should report a configuration path that is a folder", ({ expect }) => {
 		expect.assertions(1);
 
 		const { lookup } = lookupOver({ "/project/.luaurc/inner": "" });
@@ -197,7 +202,7 @@ describe(createAliasLookup, () => {
 		});
 	});
 
-	it("should report a read that throws a value other than an Error", () => {
+	it("should report a read that throws a value other than an Error", ({ expect }) => {
 		expect.assertions(1);
 
 		const lookup = createAliasLookup({
@@ -217,7 +222,7 @@ describe(createAliasLookup, () => {
 		});
 	});
 
-	it("should read each configuration file once", () => {
+	it("should read each configuration file once", ({ expect }) => {
 		expect.assertions(1);
 
 		const { lookup, volume } = lookupOver({ "/project/.luaurc": '{ "aliases": {} }' });

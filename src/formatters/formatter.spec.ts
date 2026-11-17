@@ -3,7 +3,7 @@ import { fromPartial } from "@total-typescript/shoehorn";
 import { stripVTControlCharacters } from "node:util";
 import color from "tinyrainbow";
 import type { Except } from "type-fest";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import {
 	EXEC_ERROR_RESULT,
@@ -127,7 +127,7 @@ function renderProjectHeader(entry: FormatterProjectEntry, useColor = true): str
 }
 
 describe(formatResult, () => {
-	it("should format passing file result with check symbol", () => {
+	it("should format passing file result with check symbol", ({ expect }) => {
 		expect.assertions(2);
 
 		const fileResult: TestFileResult = {
@@ -158,7 +158,7 @@ describe(formatResult, () => {
 		expect(formatted).toContain("utils.spec.ts");
 	});
 
-	it("should format failing file result with vitest-style header", () => {
+	it("should format failing file result with vitest-style header", ({ expect }) => {
 		expect.assertions(4);
 
 		const fileResult: TestFileResult = {
@@ -208,7 +208,7 @@ describe(formatResult, () => {
 		expect(formatted).toContain("[1/1]");
 	});
 
-	it("should show individual tests when verbose", () => {
+	it("should show individual tests when verbose", ({ expect }) => {
 		expect.assertions(2);
 
 		const fileResult: TestFileResult = {
@@ -259,7 +259,7 @@ describe(formatResult, () => {
 		expect(formatted).toContain("✓ Utils sub works");
 	});
 
-	it("should strip ANSI codes when color is false", () => {
+	it("should strip ANSI codes when color is false", ({ expect }) => {
 		expect.assertions(2);
 
 		const formatted = formatEmptyPassingFile("test.spec.ts", 1000);
@@ -268,7 +268,7 @@ describe(formatResult, () => {
 		expect(formatted).toContain("✓");
 	});
 
-	it("should format directory path with dim style", () => {
+	it("should format directory path with dim style", ({ expect }) => {
 		expect.assertions(2);
 
 		const formatted = formatEmptyPassingFile("src/components/Button.spec.ts", 1000);
@@ -287,7 +287,7 @@ describe("formatResult failuresOnly", () => {
 		version: "1.0.0",
 	};
 
-	it("should omit passing file summaries in mixed results", () => {
+	it("should omit passing file summaries in mixed results", ({ expect }) => {
 		expect.assertions(2);
 
 		const output = formatResult({ options: baseOptions, result: MIXED_RESULT, timing: TIMING });
@@ -296,7 +296,7 @@ describe("formatResult failuresOnly", () => {
 		expect(output).toContain("game.spec.ts");
 	});
 
-	it("should still show failing file with describe groups", () => {
+	it("should still show failing file with describe groups", ({ expect }) => {
 		expect.assertions(3);
 
 		const output = formatResult({ options: baseOptions, result: MIXED_RESULT, timing: TIMING });
@@ -306,7 +306,7 @@ describe("formatResult failuresOnly", () => {
 		expect(output).toContain("Failed Tests");
 	});
 
-	it("should still show summary footer", () => {
+	it("should still show summary footer", ({ expect }) => {
 		expect.assertions(2);
 
 		const output = formatResult({ options: baseOptions, result: MIXED_RESULT, timing: TIMING });
@@ -315,7 +315,7 @@ describe("formatResult failuresOnly", () => {
 		expect(output).toContain("Tests");
 	});
 
-	it("should show no file summaries when all tests pass", () => {
+	it("should show no file summaries when all tests pass", ({ expect }) => {
 		expect.assertions(2);
 
 		const output = formatResult({
@@ -330,7 +330,7 @@ describe("formatResult failuresOnly", () => {
 });
 
 describe("formatResult log hints", () => {
-	it("should show output file hint on failure", () => {
+	it("should show output file hint on failure", ({ expect }) => {
 		expect.assertions(2);
 
 		const output = formatResult({
@@ -347,7 +347,7 @@ describe("formatResult log hints", () => {
 		expect(output).toContain("\n\n  View /tmp/results.json for full Jest output");
 	});
 
-	it("should show game output hint on failure", () => {
+	it("should show game output hint on failure", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = formatResult({
@@ -363,7 +363,7 @@ describe("formatResult log hints", () => {
 		expect(output).toContain("View /tmp/game.json for Roblox game logs");
 	});
 
-	it("should show both hints when both paths configured", () => {
+	it("should show both hints when both paths configured", ({ expect }) => {
 		expect.assertions(2);
 
 		const output = formatResult({
@@ -381,7 +381,7 @@ describe("formatResult log hints", () => {
 		expect(output).toContain("View /tmp/game.json for Roblox game logs");
 	});
 
-	it("should not show hints on passing results", () => {
+	it("should not show hints on passing results", ({ expect }) => {
 		expect.assertions(2);
 
 		const output = formatResult({
@@ -399,7 +399,7 @@ describe("formatResult log hints", () => {
 		expect(output).not.toContain("View /tmp/game.json");
 	});
 
-	it("should not show hints when no paths configured", () => {
+	it("should not show hints when no paths configured", ({ expect }) => {
 		expect.assertions(2);
 
 		const output = formatResult({
@@ -415,7 +415,7 @@ describe("formatResult log hints", () => {
 		expect(output).not.toContain("for full Jest output");
 	});
 
-	it("should suggest -u when snapshot assertions failed", () => {
+	it("should suggest -u when snapshot assertions failed", ({ expect }) => {
 		expect.assertions(1);
 
 		const result: JestResult = {
@@ -446,7 +446,7 @@ describe("formatResult log hints", () => {
 		expect(output).toMatch(/Inspect your code changes or rerun with `-u` to update snapshots/);
 	});
 
-	it("should not suggest -u when no snapshot mismatches", () => {
+	it("should not suggest -u when no snapshot mismatches", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = formatResult({
@@ -470,7 +470,7 @@ describe("formatResult snapshots", () => {
 		version: "1.0.0",
 	};
 
-	it("should format passing results", () => {
+	it("should format passing results", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = formatResult({
@@ -490,7 +490,7 @@ describe("formatResult snapshots", () => {
 		`);
 	});
 
-	it("should format failing results", () => {
+	it("should format failing results", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = formatResult({
@@ -538,7 +538,7 @@ describe("formatResult snapshots", () => {
 		`);
 	});
 
-	it("should format mixed results", () => {
+	it("should format mixed results", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = formatResult({ options: baseOptions, result: MIXED_RESULT, timing: TIMING });
@@ -573,7 +573,7 @@ describe("formatResult snapshots", () => {
 		`);
 	});
 
-	it("should format skipped file results", () => {
+	it("should format skipped file results", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = formatResult({
@@ -595,7 +595,7 @@ describe("formatResult snapshots", () => {
 		`);
 	});
 
-	it("should render snapshot failure in full output", () => {
+	it("should render snapshot failure in full output", ({ expect }) => {
 		expect.assertions(4);
 
 		const output = formatResult({
@@ -610,7 +610,7 @@ describe("formatResult snapshots", () => {
 		expect(output).toContain('+   "health": 150,');
 	});
 
-	it("should format without upload when timing has no upload", () => {
+	it("should format without upload when timing has no upload", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = formatResult({
@@ -630,7 +630,7 @@ describe("formatResult snapshots", () => {
 		`);
 	});
 
-	it("should format with verbose mode", () => {
+	it("should format with verbose mode", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = formatResult({
@@ -653,7 +653,7 @@ describe("formatResult snapshots", () => {
 		`);
 	});
 
-	it("should format with coverage enabled", () => {
+	it("should format with coverage enabled", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = formatResult({
@@ -676,7 +676,7 @@ describe("formatResult snapshots", () => {
 		`);
 	});
 
-	it("should format with coverage enabled and verbose mode", () => {
+	it("should format with coverage enabled and verbose mode", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = formatResult({
@@ -705,7 +705,7 @@ describe("formatResult snapshots", () => {
 });
 
 describe("formatResult exec errors", () => {
-	it("should show exec-error file with fail symbol and error message", () => {
+	it("should show exec-error file with fail symbol and error message", ({ expect }) => {
 		expect.assertions(3);
 
 		const output = formatResult({
@@ -723,7 +723,7 @@ describe("formatResult exec errors", () => {
 		expect(output).not.toContain("\u2193");
 	});
 
-	it("should show exec-error in detailed failures section", () => {
+	it("should show exec-error in detailed failures section", ({ expect }) => {
 		expect.assertions(2);
 
 		const output = formatResult({
@@ -739,7 +739,7 @@ describe("formatResult exec errors", () => {
 		expect(output).toContain("Require-by-string is not enabled");
 	});
 
-	it("should show log hints for exec-error results", () => {
+	it("should show log hints for exec-error results", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = formatResult({
@@ -755,7 +755,7 @@ describe("formatResult exec errors", () => {
 		expect(output).toContain("View /tmp/results.json for full Jest output");
 	});
 
-	it("should render the exec-error message exactly once", () => {
+	it("should render the exec-error message exactly once", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = formatResult({
@@ -776,7 +776,7 @@ describe("formatResult exec errors", () => {
 });
 
 describe("formatResult timeouts", () => {
-	it("should name the budget rather than a suite that threw", () => {
+	it("should name the budget rather than a suite that threw", ({ expect }) => {
 		expect.assertions(5);
 
 		const output = formatResult({
@@ -795,7 +795,7 @@ describe("formatResult timeouts", () => {
 		expect(output).not.toContain(" FAIL ");
 	});
 
-	it("should keep the test the run was abandoned in", () => {
+	it("should keep the test the run was abandoned in", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = formatResult({
@@ -812,7 +812,7 @@ describe("formatResult timeouts", () => {
 		);
 	});
 
-	it("should paint the timeout badge apart from the fail badge", () => {
+	it("should paint the timeout badge apart from the fail badge", ({ expect }) => {
 		expect.assertions(2);
 
 		const output = formatResult({
@@ -845,7 +845,7 @@ describe("formatResult exec error snapshots", () => {
 		version: "1.0.0",
 	};
 
-	it("should format exec-error-only result", () => {
+	it("should format exec-error-only result", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = formatResult({
@@ -873,7 +873,7 @@ describe("formatResult exec error snapshots", () => {
 		`);
 	});
 
-	it("should format mixed passing + exec-error result", () => {
+	it("should format mixed passing + exec-error result", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = formatResult({
@@ -911,7 +911,7 @@ describe("formatResult with typecheck data", () => {
 		version: "1.0.0",
 	};
 
-	it("should format passing typecheck result", () => {
+	it("should format passing typecheck result", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = formatResult({
@@ -931,7 +931,7 @@ describe("formatResult with typecheck data", () => {
 		`);
 	});
 
-	it("should format failing typecheck result", () => {
+	it("should format failing typecheck result", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = formatResult({
@@ -961,7 +961,7 @@ describe("formatResult with typecheck data", () => {
 		`);
 	});
 
-	it("should format mixed typecheck result", () => {
+	it("should format mixed typecheck result", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = formatResult({
@@ -994,7 +994,7 @@ describe("formatResult with typecheck data", () => {
 });
 
 describe("formatTypecheckReport snapshots", () => {
-	it("should render with the palette it is given", () => {
+	it("should render with the palette it is given", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = formatTypecheckReport(TYPECHECK_PASSING_RESULT, {
@@ -1004,7 +1004,7 @@ describe("formatTypecheckReport snapshots", () => {
 		expect(output).toContain("<summaryPassed>2 passed</summaryPassed>");
 	});
 
-	it("should format passing typecheck summary", () => {
+	it("should format passing typecheck summary", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = formatTypecheckReport(TYPECHECK_PASSING_RESULT, {
@@ -1019,7 +1019,7 @@ describe("formatTypecheckReport snapshots", () => {
 		`);
 	});
 
-	it("should format failing typecheck summary with failures", () => {
+	it("should format failing typecheck summary with failures", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = formatTypecheckReport(TYPECHECK_FAILING_RESULT, {
@@ -1036,7 +1036,7 @@ describe("formatTypecheckReport snapshots", () => {
 		`);
 	});
 
-	it("should format mixed typecheck summary with failure from one file", () => {
+	it("should format mixed typecheck summary with failure from one file", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = formatTypecheckReport(TYPECHECK_MIXED_RESULT, {
@@ -1055,7 +1055,7 @@ describe("formatTypecheckReport snapshots", () => {
 });
 
 describe("formatTypecheckReport without summary rows", () => {
-	it("should return the failure detail alone, newline-terminated", () => {
+	it("should return the failure detail alone, newline-terminated", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = formatTypecheckReport(TYPECHECK_FAILING_RESULT, {
@@ -1070,7 +1070,7 @@ describe("formatTypecheckReport without summary rows", () => {
 		`);
 	});
 
-	it("should return nothing when a clean pass leaves no detail", () => {
+	it("should return nothing when a clean pass leaves no detail", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = formatTypecheckReport(TYPECHECK_PASSING_RESULT, {
@@ -1083,7 +1083,7 @@ describe("formatTypecheckReport without summary rows", () => {
 });
 
 describe("formatDescribeGroup all-passing else branch", () => {
-	it("should render all-passing describe group with check mark and color", () => {
+	it("should render all-passing describe group with check mark and color", ({ expect }) => {
 		expect.assertions(3);
 
 		const fileResult: TestFileResult = {
@@ -1149,7 +1149,7 @@ describe("formatDescribeGroup all-passing else branch", () => {
 });
 
 describe("formatFilePath bare filename", () => {
-	it("should render just the filename when path has no directory", () => {
+	it("should render just the filename when path has no directory", ({ expect }) => {
 		expect.assertions(2);
 
 		const formatted = formatEmptyPassingFile("test.spec.ts", 500);
@@ -1161,7 +1161,9 @@ describe("formatFilePath bare filename", () => {
 });
 
 describe("formatTestInGroup duration undefined", () => {
-	it("should render passed test without duration suffix when duration is undefined", () => {
+	it("should render passed test without duration suffix when duration is undefined", ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const fileResult: TestFileResult = {
@@ -1253,7 +1255,7 @@ describe("formatTestInGroup skipped statuses", () => {
 		};
 	}
 
-	it("should render pending test with yellow ↓ and no ms suffix", () => {
+	it("should render pending test with yellow ↓ and no ms suffix", ({ expect }) => {
 		expect.assertions(4);
 
 		const formatted = formatResult({
@@ -1272,7 +1274,7 @@ describe("formatTestInGroup skipped statuses", () => {
 		expect(formatted).toContain("[33m     ↓ skipped-case[39m");
 	});
 
-	it("should render skipped status with yellow ↓ and no ms suffix", () => {
+	it("should render skipped status with yellow ↓ and no ms suffix", ({ expect }) => {
 		expect.assertions(4);
 
 		const formatted = formatResult({
@@ -1291,7 +1293,7 @@ describe("formatTestInGroup skipped statuses", () => {
 		expect(formatted).toContain("[33m     ↓ skipped-case[39m");
 	});
 
-	it("should render todo status with yellow □ and no ms suffix", () => {
+	it("should render todo status with yellow □ and no ms suffix", ({ expect }) => {
 		expect.assertions(4);
 
 		const formatted = formatResult({
@@ -1310,7 +1312,7 @@ describe("formatTestInGroup skipped statuses", () => {
 		expect(formatted).toContain("[33m     □ skipped-case[39m");
 	});
 
-	it("should render disabled status with yellow ↓ and no ms suffix", () => {
+	it("should render disabled status with yellow ↓ and no ms suffix", ({ expect }) => {
 		expect.assertions(4);
 
 		const formatted = formatResult({
@@ -1329,7 +1331,7 @@ describe("formatTestInGroup skipped statuses", () => {
 		expect(formatted).toContain("[33m     ↓ skipped-case[39m");
 	});
 
-	it("should exclude skipped test duration from group aggregate", () => {
+	it("should exclude skipped test duration from group aggregate", ({ expect }) => {
 		expect.assertions(3);
 
 		// buildResult has failed.duration=5 and skipped.duration=99. The group
@@ -1351,7 +1353,9 @@ describe("formatTestInGroup skipped statuses", () => {
 });
 
 describe("formatPass duration undefined", () => {
-	it("should render passed test without duration in verbose mode when duration is undefined", () => {
+	it("should render passed test without duration in verbose mode when duration is undefined", ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const fileResult: TestFileResult = {
@@ -1398,7 +1402,7 @@ describe("formatPass duration undefined", () => {
 });
 
 describe("formatPassedFileSummary with non-passed test", () => {
-	it("should skip non-passed tests in verbose passed file summary", () => {
+	it("should skip non-passed tests in verbose passed file summary", ({ expect }) => {
 		expect.assertions(3);
 
 		const fileResult: TestFileResult = {
@@ -1456,7 +1460,7 @@ describe("formatPassedFileSummary with non-passed test", () => {
 });
 
 describe("groupByDescribe root fallback", () => {
-	it("should use (root) as group name when ancestorTitles is empty", () => {
+	it("should use (root) as group name when ancestorTitles is empty", ({ expect }) => {
 		expect.assertions(1);
 
 		const fileResult: TestFileResult = {
@@ -1500,7 +1504,9 @@ describe("groupByDescribe root fallback", () => {
 });
 
 describe("formatResult testFilePath resolution", () => {
-	it("should resolve DataModel testFilePath to filesystem path when sourceMapper is provided", () => {
+	it("should resolve DataModel testFilePath to filesystem path when sourceMapper is provided", ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const result: JestResult = {
@@ -1557,7 +1563,7 @@ describe("formatResult testFilePath resolution", () => {
 		expect(output).not.toContain("ReplicatedStorage");
 	});
 
-	it("should display init.spec as index.spec when sourceMapper rewrites it", () => {
+	it("should display init.spec as index.spec when sourceMapper rewrites it", ({ expect }) => {
 		expect.assertions(2);
 
 		const result: JestResult = {
@@ -1611,7 +1617,7 @@ describe("formatResult testFilePath resolution", () => {
 });
 
 describe("formatResult loadstring hint", () => {
-	it("should show hint when loadstring is not available", () => {
+	it("should show hint when loadstring is not available", ({ expect }) => {
 		expect.assertions(2);
 
 		const output = formatResult({
@@ -1631,7 +1637,7 @@ describe("formatResult loadstring hint", () => {
 // --- Multi-project output ---
 
 describe("multi-project header", () => {
-	it("should show project name with pass count and test total", () => {
+	it("should show project name with pass count and test total", ({ expect }) => {
 		expect.assertions(4);
 
 		const output = renderProjectHeader({ displayName: "core", result: PASSING_RESULT });
@@ -1643,7 +1649,7 @@ describe("multi-project header", () => {
 		expect(plain).not.toContain("failed");
 	});
 
-	it("should show failed file count when tests fail", () => {
+	it("should show failed file count when tests fail", ({ expect }) => {
 		expect.assertions(2);
 
 		const output = renderProjectHeader({ displayName: "auth", result: FAILING_RESULT });
@@ -1653,7 +1659,7 @@ describe("multi-project header", () => {
 		expect(plain).toContain("3 tests");
 	});
 
-	it("should show skipped count for skip-only files", () => {
+	it("should show skipped count for skip-only files", ({ expect }) => {
 		expect.assertions(3);
 
 		const output = renderProjectHeader({ displayName: "utils", result: SKIPPED_RESULT });
@@ -1664,7 +1670,7 @@ describe("multi-project header", () => {
 		expect(plain).toContain("12 tests");
 	});
 
-	it("should include duration when tests have timing", () => {
+	it("should include duration when tests have timing", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = renderProjectHeader({ displayName: "core", result: PASSING_RESULT });
@@ -1673,7 +1679,7 @@ describe("multi-project header", () => {
 		expect(plain).toMatch(/\d+ms/);
 	});
 
-	it("should omit the duration suffix when every test has zero duration", () => {
+	it("should omit the duration suffix when every test has zero duration", ({ expect }) => {
 		expect.assertions(1);
 
 		const result: JestResult = {
@@ -1692,7 +1698,7 @@ describe("multi-project header", () => {
 
 	// The header and the trailing `Test Files` row bucket the same files, so
 	// this pins the empty-file case on both sides of the report.
-	it("should count a file that collected no tests as passed", () => {
+	it("should count a file that collected no tests as passed", ({ expect }) => {
 		expect.assertions(2);
 
 		const output = renderProjectHeader({ displayName: "core", result: EMPTY_FILE_RESULT });
@@ -1706,7 +1712,7 @@ describe("multi-project header", () => {
 describe("multi-project section", () => {
 	const noColorOptions: FormatOptions = { ...defaultOptions, color: false };
 
-	it("should show header followed by file summaries", () => {
+	it("should show header followed by file summaries", ({ expect }) => {
 		expect.assertions(3);
 
 		const output = renderProject(
@@ -1722,7 +1728,7 @@ describe("multi-project section", () => {
 		expect(output).toContain("✓");
 	});
 
-	it("should include failure details for failing tests", () => {
+	it("should include failure details for failing tests", ({ expect }) => {
 		expect.assertions(2);
 
 		const output = renderProject(
@@ -1737,7 +1743,7 @@ describe("multi-project section", () => {
 		expect(output).toContain("player.spec.ts");
 	});
 
-	it("should include exec error details", () => {
+	it("should include exec error details", ({ expect }) => {
 		expect.assertions(2);
 
 		const output = renderProject(
@@ -1752,7 +1758,7 @@ describe("multi-project section", () => {
 		expect(output).toContain("unit-menu-app");
 	});
 
-	it("should honor caller-supplied slowTestThreshold for duration coloring", () => {
+	it("should honor caller-supplied slowTestThreshold for duration coloring", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = SLOW_TEST_RESULT;
@@ -1774,7 +1780,7 @@ describe("multi-project section", () => {
 			{ message: "first line\nsecond line", messageType: 3, timestamp: 3 },
 		]);
 
-		it("should render a failing project's game output below its failures", () => {
+		it("should render a failing project's game output below its failures", ({ expect }) => {
 			expect.assertions(5);
 
 			const output = renderProject(
@@ -1793,7 +1799,7 @@ describe("multi-project section", () => {
 			expect(output.indexOf("Game output:")).toBeGreaterThan(output.lastIndexOf("[2/2]"));
 		});
 
-		it("should colour warnings and errors by message type", () => {
+		it("should colour warnings and errors by message type", ({ expect }) => {
 			expect.assertions(3);
 
 			const output = renderProject(
@@ -1812,7 +1818,7 @@ describe("multi-project section", () => {
 			);
 		});
 
-		it("should render game output for a project whose suite never ran", () => {
+		it("should render game output for a project whose suite never ran", ({ expect }) => {
 			expect.assertions(1);
 
 			const output = renderProject(
@@ -1827,7 +1833,7 @@ describe("multi-project section", () => {
 			expect(output).toContain("  Game output:\n    materializing auth");
 		});
 
-		it("should not render game output for a passing project", () => {
+		it("should not render game output for a passing project", ({ expect }) => {
 			expect.assertions(1);
 
 			const output = renderProject(
@@ -1842,7 +1848,7 @@ describe("multi-project section", () => {
 			expect(output).not.toContain("Game output");
 		});
 
-		it("should not render the block when a failing project printed nothing", () => {
+		it("should not render the block when a failing project printed nothing", ({ expect }) => {
 			expect.assertions(1);
 
 			const output = renderProject(
@@ -1863,7 +1869,7 @@ describe(formatMultiProjectResult, () => {
 
 	// --bail stops the run partway, so the report has to say the packages it
 	// shows are not the whole selection.
-	it("should report how far a bailed run got", () => {
+	it("should report how far a bailed run got", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = formatMultiProjectResult({
@@ -1878,7 +1884,7 @@ describe(formatMultiProjectResult, () => {
 		expect(output).toContain("Bailed  after 2 packages, 3 not run");
 	});
 
-	it("should say package, singular, when a bail stopped after one", () => {
+	it("should say package, singular, when a bail stopped after one", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = formatMultiProjectResult({
@@ -1890,7 +1896,7 @@ describe(formatMultiProjectResult, () => {
 		expect(output).toContain("Bailed  after 1 package, 1 not run");
 	});
 
-	it("should leave the bail line out of a run that did not bail", () => {
+	it("should leave the bail line out of a run that did not bail", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = formatMultiProjectResult({
@@ -1902,7 +1908,7 @@ describe(formatMultiProjectResult, () => {
 		expect(output).not.toContain("Bailed");
 	});
 
-	it("should group files under project headers with combined summary", () => {
+	it("should group files under project headers with combined summary", ({ expect }) => {
 		expect.assertions(5);
 
 		const output = formatMultiProjectResult({
@@ -1923,7 +1929,7 @@ describe(formatMultiProjectResult, () => {
 		expect(output).not.toContain("RUN");
 	});
 
-	it("should show failure details within project sections", () => {
+	it("should show failure details within project sections", ({ expect }) => {
 		expect.assertions(4);
 
 		const output = formatMultiProjectResult({
@@ -1941,7 +1947,7 @@ describe(formatMultiProjectResult, () => {
 		expect(output).toContain("Test Files");
 	});
 
-	it("should show failures from multiple projects", () => {
+	it("should show failures from multiple projects", ({ expect }) => {
 		expect.assertions(3);
 
 		const output = formatMultiProjectResult({
@@ -1958,7 +1964,7 @@ describe(formatMultiProjectResult, () => {
 		expect(output).toContain("Tests");
 	});
 
-	it("should aggregate unchecked across projects into a single obsolete count", () => {
+	it("should aggregate unchecked across projects into a single obsolete count", ({ expect }) => {
 		expect.assertions(2);
 
 		const projectA = passingFileResult({
@@ -1993,7 +1999,7 @@ describe(formatMultiProjectResult, () => {
 		expect(snapshotLine).toMatch(/2 passed.*\(2\)/);
 	});
 
-	it("should aggregate snapshot counts across projects including obsolete", () => {
+	it("should aggregate snapshot counts across projects including obsolete", ({ expect }) => {
 		expect.assertions(3);
 
 		const projectA = passingFileResult({
@@ -2027,7 +2033,7 @@ describe(formatMultiProjectResult, () => {
 		expect(snapshotLine).toMatch(/3 passed.*\(4\)/);
 	});
 
-	it("should keep each failing project's game output under its own section", () => {
+	it("should keep each failing project's game output under its own section", ({ expect }) => {
 		expect.assertions(3);
 
 		const output = formatMultiProjectResult({
@@ -2067,7 +2073,7 @@ describe("multi-project output snapshots", () => {
 		version: "1.0.0",
 	};
 
-	it("should format project header for passing result", () => {
+	it("should format project header for passing result", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = renderProjectHeader({ displayName: "core", result: PASSING_RESULT });
@@ -2076,7 +2082,7 @@ describe("multi-project output snapshots", () => {
 		expect(plain).toMatchInlineSnapshot('"▶  core   1 passed (3 tests - 30ms)"');
 	});
 
-	it("should format project header for failing result", () => {
+	it("should format project header for failing result", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = renderProjectHeader({ displayName: "auth", result: FAILING_RESULT });
@@ -2085,7 +2091,7 @@ describe("multi-project output snapshots", () => {
 		expect(plain).toMatchInlineSnapshot('"▶  auth   1 failed (3 tests - 18ms)"');
 	});
 
-	it("should format project header for skipped result", () => {
+	it("should format project header for skipped result", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = renderProjectHeader({ displayName: "utils", result: SKIPPED_RESULT });
@@ -2094,7 +2100,7 @@ describe("multi-project output snapshots", () => {
 		expect(plain).toMatchInlineSnapshot('"▶  utils   1 passed | 2 skipped (12 tests - 50ms)"');
 	});
 
-	it("should order project header buckets failed-first", () => {
+	it("should order project header buckets failed-first", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = renderProjectHeader({ displayName: "game", result: MIXED_RESULT });
@@ -2103,7 +2109,7 @@ describe("multi-project output snapshots", () => {
 		expect(plain).toContain("1 failed | 1 passed");
 	});
 
-	it("should format project section for passing result", () => {
+	it("should format project section for passing result", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = renderProject(
@@ -2120,7 +2126,7 @@ describe("multi-project output snapshots", () => {
 		`);
 	});
 
-	it("should format project section for failing result", () => {
+	it("should format project section for failing result", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = renderProject(
@@ -2163,7 +2169,7 @@ describe("multi-project output snapshots", () => {
 		`);
 	});
 
-	it("should format multi-project result with two passing projects", () => {
+	it("should format multi-project result with two passing projects", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = formatMultiProjectResult({
@@ -2190,7 +2196,7 @@ describe("multi-project output snapshots", () => {
 		`);
 	});
 
-	it("should format multi-project result with passing and failing projects", () => {
+	it("should format multi-project result with passing and failing projects", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = formatMultiProjectResult({
@@ -2243,7 +2249,7 @@ describe("multi-project output snapshots", () => {
 		`);
 	});
 
-	it("should format multi-project result with skipped files in summary", () => {
+	it("should format multi-project result with skipped files in summary", ({ expect }) => {
 		expect.assertions(3);
 
 		const output = formatMultiProjectResult({
@@ -2260,7 +2266,7 @@ describe("multi-project output snapshots", () => {
 		expect(output).toContain("Test Files");
 	});
 
-	it("should aggregate results when projects have todo tests", () => {
+	it("should aggregate results when projects have todo tests", ({ expect }) => {
 		expect.assertions(2);
 
 		const withTodo: JestResult = {
@@ -2281,7 +2287,7 @@ describe("multi-project output snapshots", () => {
 		expect(output).not.toContain("todo");
 	});
 
-	it("should aggregate snapshots across multi-project results", () => {
+	it("should aggregate snapshots across multi-project results", ({ expect }) => {
 		expect.assertions(2);
 
 		const withSnapshot: JestResult = {
@@ -2304,7 +2310,7 @@ describe("multi-project output snapshots", () => {
 });
 
 describe("multi-project slowTestThreshold", () => {
-	it("should honor caller-supplied slowTestThreshold for duration coloring", () => {
+	it("should honor caller-supplied slowTestThreshold for duration coloring", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = SLOW_TEST_RESULT;
@@ -2323,7 +2329,7 @@ describe("multi-project slowTestThreshold", () => {
 });
 
 describe("formatProjectSection failuresOnly", () => {
-	it("should skip passing files when failuresOnly is true", () => {
+	it("should skip passing files when failuresOnly is true", ({ expect }) => {
 		expect.assertions(2);
 
 		const options: FormatOptions = {
@@ -2348,7 +2354,7 @@ describe("formatProjectSection failuresOnly", () => {
 });
 
 describe("multi-project log hints", () => {
-	it("should show log hints when multi-project result has failures", () => {
+	it("should show log hints when multi-project result has failures", ({ expect }) => {
 		expect.assertions(2);
 
 		const options: FormatOptions = {
@@ -2404,7 +2410,7 @@ describe("test duration coloring", () => {
 		};
 	}
 
-	it("should color slow passing test duration yellow when over 300ms threshold", () => {
+	it("should color slow passing test duration yellow when over 300ms threshold", ({ expect }) => {
 		expect.assertions(2);
 
 		const formatted = formatResult({
@@ -2421,7 +2427,7 @@ describe("test duration coloring", () => {
 		expect(formatted).not.toContain("[32m 450");
 	});
 
-	it("should still color exactly 300ms green (strict > comparison)", () => {
+	it("should still color exactly 300ms green (strict > comparison)", ({ expect }) => {
 		expect.assertions(2);
 
 		const formatted = formatResult({
@@ -2438,7 +2444,7 @@ describe("test duration coloring", () => {
 		expect(formatted).not.toContain("[33m 300");
 	});
 
-	it("should omit the group duration when all tests have undefined duration", () => {
+	it("should omit the group duration when all tests have undefined duration", ({ expect }) => {
 		expect.assertions(1);
 
 		const fileResult: TestFileResult = {
@@ -2482,7 +2488,7 @@ describe("test duration coloring", () => {
 		expect(plain).not.toMatch(/❯ Suite \(.*?\) 0ms/);
 	});
 
-	it("should color the passed-file summary total ms", () => {
+	it("should color the passed-file summary total ms", ({ expect }) => {
 		expect.assertions(1);
 
 		const fileResult: TestFileResult = {
@@ -2532,7 +2538,7 @@ describe("test duration coloring", () => {
 		expect(formatted).toContain("[33m 400[2mms[22m[39m");
 	});
 
-	it("should render duration without ANSI coloring when color is disabled", () => {
+	it("should render duration without ANSI coloring when color is disabled", ({ expect }) => {
 		expect.assertions(2);
 
 		const formatted = formatResult({
@@ -2549,7 +2555,7 @@ describe("test duration coloring", () => {
 		expect(formatted).toContain(" 42ms");
 	});
 
-	it("should color durations in failed-suite group lines and the group total", () => {
+	it("should color durations in failed-suite group lines and the group total", ({ expect }) => {
 		expect.assertions(2);
 
 		const fileResult: TestFileResult = {
@@ -2600,7 +2606,7 @@ describe("test duration coloring", () => {
 		expect(formatted).toContain("[33m 550[2mms[22m[39m");
 	});
 
-	it("should color fast passing test duration green with dim ms suffix", () => {
+	it("should color fast passing test duration green with dim ms suffix", ({ expect }) => {
 		expect.assertions(1);
 
 		const formatted = formatResult({
@@ -2616,7 +2622,7 @@ describe("test duration coloring", () => {
 		expect(formatted).toContain("[32m 42[2mms[22m[39m");
 	});
 
-	it("should treat duration above caller-supplied slowTestThreshold as slow", () => {
+	it("should treat duration above caller-supplied slowTestThreshold as slow", ({ expect }) => {
 		expect.assertions(1);
 
 		const formatted = formatResult({
@@ -2633,7 +2639,7 @@ describe("test duration coloring", () => {
 		expect(formatted).toContain("[33m 100[2mms[22m[39m");
 	});
 
-	it("should treat duration below caller-supplied slowTestThreshold as fast", () => {
+	it("should treat duration below caller-supplied slowTestThreshold as fast", ({ expect }) => {
 		expect.assertions(1);
 
 		const formatted = formatResult({
@@ -2652,7 +2658,9 @@ describe("test duration coloring", () => {
 });
 
 describe("complete formatter contracts", () => {
-	it("should render complete pass, skip, failure, and exec-error reports exactly", () => {
+	it("should render complete pass, skip, failure, and exec-error reports exactly", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const reports = [PASSING_RESULT, SKIPPED_RESULT, FAILING_RESULT, EXEC_ERROR_RESULT].map(
@@ -2670,7 +2678,9 @@ describe("complete formatter contracts", () => {
 });
 
 describe("multi-project package-relative failure detail", () => {
-	it("should show file lines against the run root and failures against the package root", () => {
+	it("should show file lines against the run root and failures against the package root", ({
+		expect,
+	}) => {
 		expect.assertions(3);
 
 		const result: JestResult = {

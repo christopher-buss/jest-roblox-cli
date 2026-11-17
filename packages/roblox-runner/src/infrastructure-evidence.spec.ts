@@ -1,6 +1,6 @@
 import { PollTimeoutError, RateLimitError } from "@bedrock-rbx/ocale";
 
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import { makePollContext } from "#test/helpers/unit/poll-context.ts";
 import {
@@ -11,14 +11,16 @@ import {
 } from "./infrastructure-evidence.ts";
 
 describe("infrastructure evidence", () => {
-	it("should redact every occurrence of the secret without changing other text", () => {
+	it("should redact every occurrence of the secret without changing other text", ({ expect }) => {
 		expect.assertions(2);
 
 		expect(redactSecret("key:key:value", "key")).toBe("[REDACTED]:[REDACTED]:value");
 		expect(redactSecret("unchanged", "key")).toBe("unchanged");
 	});
 
-	it("should record the unlock time, task identity and redacted response fields", () => {
+	it("should record the unlock time, task identity and redacted response fields", ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		vi.spyOn(Date, "now").mockReturnValue(Date.UTC(2026, 0, 1));
@@ -42,7 +44,7 @@ describe("infrastructure evidence", () => {
 		});
 	});
 
-	it("should retain missing quota metadata as missing", () => {
+	it("should retain missing quota metadata as missing", ({ expect }) => {
 		expect.assertions(1);
 
 		vi.spyOn(Date, "now").mockReturnValue(0);
@@ -64,7 +66,7 @@ describe("infrastructure evidence", () => {
 		});
 	});
 
-	it("should capture the server's timestamps and a changed observed state", () => {
+	it("should capture the server's timestamps and a changed observed state", ({ expect }) => {
 		expect.assertions(1);
 
 		const error = new PollTimeoutError("timeout", {
@@ -89,7 +91,7 @@ describe("infrastructure evidence", () => {
 
 	it.for([undefined, null, { state: "PROCESSING" }, { createdAt: "not a Date", state: 3 }])(
 		"should preserve the submitted state when observation adds no state: %j",
-		(lastObservedTask) => {
+		(lastObservedTask, { expect }) => {
 			expect.assertions(1);
 
 			expect(

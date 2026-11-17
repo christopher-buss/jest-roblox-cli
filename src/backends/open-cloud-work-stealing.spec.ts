@@ -1,7 +1,7 @@
 import { fromAny } from "@total-typescript/shoehorn";
 
 import process from "node:process";
-import { assert, describe, expect, it, onTestFinished, vi } from "vitest";
+import { assert, describe, it, vi } from "vitest";
 
 import type { prepareWorkStealingQueueAsync } from "../memory-store/work-stealing.ts";
 import type { MaterializerInput } from "../runner-payload/materializer-script.ts";
@@ -73,7 +73,9 @@ async function windowSecondsForAsync(
 }
 
 describe(tryStealingDispatchAsync, () => {
-	it("should surface a script failure instead of reporting a queue setup failure", async () => {
+	it("should surface a script failure instead of reporting a queue setup failure", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		await expect(
@@ -88,7 +90,7 @@ describe(tryStealingDispatchAsync, () => {
 		).rejects.toThrow("uuid boom");
 	});
 
-	it("should return a work-stealing script when queue setup succeeds", async () => {
+	it("should return a work-stealing script when queue setup succeeds", async ({ expect }) => {
 		expect.assertions(2);
 
 		const prepareWorkStealingQueue = stubQueue();
@@ -120,7 +122,9 @@ describe(tryStealingDispatchAsync, () => {
 		});
 	});
 
-	it("should size the invisibility window off the slowest package's budget", async () => {
+	it("should size the invisibility window off the slowest package's budget", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		await expect(
@@ -134,7 +138,7 @@ describe(tryStealingDispatchAsync, () => {
 	// A package with no budget of its own is bounded only by the deadline
 	// Roblox gives the whole task, so that is the window a sibling must wait
 	// out before reclaiming it.
-	it("should fall back to the task deadline for a package with no budget", async () => {
+	it("should fall back to the task deadline for a package with no budget", async ({ expect }) => {
 		expect.assertions(1);
 
 		await expect(
@@ -145,7 +149,7 @@ describe(tryStealingDispatchAsync, () => {
 	// A budget past the task deadline cannot be reached: Roblox ends the task
 	// first. Waiting it out only delays the reclaim of an item whose worker is
 	// already gone.
-	it("should cap a package budget at the task deadline", async () => {
+	it("should cap a package budget at the task deadline", async ({ expect }) => {
 		expect.assertions(1);
 
 		await expect(
@@ -153,13 +157,13 @@ describe(tryStealingDispatchAsync, () => {
 		).resolves.toBe(300);
 	});
 
-	it("should size an empty batch's window at zero", async () => {
+	it("should size an empty batch's window at zero", async ({ expect }) => {
 		expect.assertions(1);
 
 		await expect(windowSecondsForAsync([])).resolves.toBe(0);
 	});
 
-	it("should give a bailing script its own bail map", async () => {
+	it("should give a bailing script its own bail map", async ({ expect }) => {
 		expect.assertions(1);
 
 		const spec = await tryStealingDispatchAsync(makeDispatchInput({ bail: true }));
@@ -168,7 +172,7 @@ describe(tryStealingDispatchAsync, () => {
 		expect(payloadOf(spec.script).bailMapId).toBe("uuid-1");
 	});
 
-	it("should stream results to the consumer when one is given", async () => {
+	it("should stream results to the consumer when one is given", async ({ expect }) => {
 		expect.assertions(2);
 
 		const spec = await tryStealingDispatchAsync(
@@ -180,7 +184,10 @@ describe(tryStealingDispatchAsync, () => {
 		expect(spec.streaming!.onPackageResult).toBeTypeOf("function");
 	});
 
-	it("should warn and return undefined when queue setup fails", async () => {
+	it("should warn and return undefined when queue setup fails", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(2);
 
 		const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);

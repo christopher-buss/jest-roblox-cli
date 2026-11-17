@@ -202,7 +202,7 @@ async function loadEntryLayer({
 		configLoader: context.configLoader,
 		cwd,
 		fileSystem,
-	}).catch((err: unknown) => {
+	}).catch((err) => {
 		if (configPath !== undefined && isC12NotFoundError(err)) {
 			throw new Error(`Config file not found: ${configPath}`, { cause: err });
 		}

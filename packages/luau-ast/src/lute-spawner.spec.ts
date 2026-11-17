@@ -2,12 +2,12 @@ import { fromPartial } from "@total-typescript/shoehorn";
 
 import path from "node:path";
 import process from "node:process";
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import { spawnLute, writeTemporaryLuauScript } from "./lute-spawner.ts";
 
 describe(spawnLute, () => {
-	it("should return stdout on successful execution", () => {
+	it("should return stdout on successful execution", ({ expect }) => {
 		expect.assertions(2);
 
 		const execute = vi
@@ -31,7 +31,7 @@ describe(spawnLute, () => {
 		);
 	});
 
-	it("should throw helpful message when lute is not found (ENOENT)", () => {
+	it("should throw helpful message when lute is not found (ENOENT)", ({ expect }) => {
 		expect.assertions(1);
 
 		const error = Object.assign(new Error("spawn lute ENOENT"), { code: "ENOENT" });
@@ -44,7 +44,7 @@ describe(spawnLute, () => {
 		);
 	});
 
-	it("should re-throw non-ENOENT errors", () => {
+	it("should re-throw non-ENOENT errors", ({ expect }) => {
 		expect.assertions(1);
 
 		const error = new Error("some other error");
@@ -57,7 +57,7 @@ describe(spawnLute, () => {
 		);
 	});
 
-	it("should pass custom maxBuffer and timeout", () => {
+	it("should pass custom maxBuffer and timeout", ({ expect }) => {
 		expect.assertions(1);
 
 		const execute = vi.fn<NonNullable<Parameters<typeof spawnLute>[1]>>().mockReturnValue("");
@@ -79,7 +79,7 @@ describe(spawnLute, () => {
 		});
 	});
 
-	it("should rethrow a non-Error process failure unchanged", () => {
+	it("should rethrow a non-Error process failure unchanged", ({ expect }) => {
 		expect.assertions(1);
 
 		const failure = Object.assign(new Error("process failure"), { code: "ENOENT" });
@@ -93,7 +93,7 @@ describe(spawnLute, () => {
 		);
 	});
 
-	it("should include the install URL in the missing-Lute diagnostic", () => {
+	it("should include the install URL in the missing-Lute diagnostic", ({ expect }) => {
 		expect.assertions(1);
 
 		const execute = vi.fn<NonNullable<Parameters<typeof spawnLute>[1]>>(() => {
@@ -107,7 +107,7 @@ describe(spawnLute, () => {
 });
 
 describe(writeTemporaryLuauScript, () => {
-	it("should write a process-specific script after creating its directory", () => {
+	it("should write a process-specific script after creating its directory", ({ expect }) => {
 		expect.assertions(4);
 
 		const calls: Array<unknown> = [];
@@ -135,14 +135,19 @@ describe(writeTemporaryLuauScript, () => {
 });
 
 describe("process error codes", () => {
-	it.for(["EACCES", "ETIMEDOUT"])("should preserve a process failure with code %s", (code) => {
-		expect.assertions(1);
+	it.for(["EACCES", "ETIMEDOUT"])(
+		"should preserve a process failure with code %s",
+		(code, { expect }) => {
+			expect.assertions(1);
 
-		const failure = Object.assign(new Error("process denied"), { code });
-		const execute = vi.fn<NonNullable<Parameters<typeof spawnLute>[1]>>(() => {
-			throw failure;
-		});
+			const failure = Object.assign(new Error("process denied"), { code });
+			const execute = vi.fn<NonNullable<Parameters<typeof spawnLute>[1]>>(() => {
+				throw failure;
+			});
 
-		expect(() => spawnLute({ args: [], scriptPath: "script.luau" }, execute)).toThrow(failure);
-	});
+			expect(() => spawnLute({ args: [], scriptPath: "script.luau" }, execute)).toThrow(
+				failure,
+			);
+		},
+	);
 });

@@ -1,6 +1,6 @@
 import { fromAny, fromPartial } from "@total-typescript/shoehorn";
 
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import type { CoverageManifest } from "../coverage-data/manifest.ts";
 import type { CoverageMapper } from "../coverage-report/mapper.ts";
@@ -23,7 +23,7 @@ function mapperOver(paths: Array<string>) {
 }
 
 describe(toCoverageUnit, () => {
-	it("should give a notice and no unit when no coverage data came back", () => {
+	it("should give a notice and no unit when no coverage data came back", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -39,7 +39,7 @@ describe(toCoverageUnit, () => {
 		});
 	});
 
-	it("should name the unit's label in a missing-manifest notice", () => {
+	it("should name the unit's label in a missing-manifest notice", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -56,7 +56,7 @@ describe(toCoverageUnit, () => {
 		});
 	});
 
-	it("should match include globs against rootDir, not the working directory", () => {
+	it("should match include globs against rootDir, not the working directory", ({ expect }) => {
 		expect.assertions(1);
 
 		const coverage = toCoverageUnit({
@@ -72,7 +72,7 @@ describe(toCoverageUnit, () => {
 		expect(Object.keys(coverage.units[0]!.universe.files)).toStrictEqual(["/pkg/src/a.ts"]);
 	});
 
-	it("should drop files matching an ignore pattern", () => {
+	it("should drop files matching an ignore pattern", ({ expect }) => {
 		expect.assertions(1);
 
 		const coverage = toCoverageUnit({
@@ -85,7 +85,7 @@ describe(toCoverageUnit, () => {
 		expect(Object.keys(coverage.units[0]!.universe.files)).toStrictEqual(["/pkg/src/a.ts"]);
 	});
 
-	it("should carry the unit's report and gate settings", () => {
+	it("should carry the unit's report and gate settings", ({ expect }) => {
 		expect.assertions(1);
 
 		const coverage = toCoverageUnit({
@@ -111,7 +111,9 @@ describe(toCoverageUnit, () => {
 });
 
 describe("partial runs", () => {
-	it("should scope reports and thresholds to changed files within the configured universe", () => {
+	it("should scope reports and thresholds to changed files within the configured universe", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const result = toCoverageUnit({

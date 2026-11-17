@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import type { IndexedJestArgv } from "./jest-argv.ts";
 import {
@@ -12,7 +12,7 @@ function createArgv(overrides: Partial<IndexedJestArgv> = {}): IndexedJestArgv {
 }
 
 describe(generateMaterializerScript, () => {
-	it("should return an empty JSON array as the task's game output", () => {
+	it("should return an empty JSON array as the task's game output", ({ expect }) => {
 		expect.assertions(1);
 
 		const script = generateMaterializerScript([
@@ -22,7 +22,7 @@ describe(generateMaterializerScript, () => {
 		expect(script).toMatch(/\),\s*"\[\]"\s*--#endregion\s*$/);
 	});
 
-	it("should embed entry pkg and project in the substituted template", () => {
+	it("should embed entry pkg and project in the substituted template", ({ expect }) => {
 		expect.assertions(3);
 
 		const script = generateMaterializerScript([
@@ -38,7 +38,7 @@ describe(generateMaterializerScript, () => {
 		expect(script).toContain("Jest.runCLI");
 	});
 
-	it("should preserve order across same-pkg multi-project entries", () => {
+	it("should preserve order across same-pkg multi-project entries", ({ expect }) => {
 		expect.assertions(2);
 
 		const script = generateMaterializerScript([
@@ -59,7 +59,7 @@ describe(generateMaterializerScript, () => {
 		expect(integrationPosition).toBeLessThan(e2ePosition);
 	});
 
-	it("should preserve order across multi-pkg multi-project entries", () => {
+	it("should preserve order across multi-pkg multi-project entries", ({ expect }) => {
 		expect.assertions(3);
 
 		const script = generateMaterializerScript([
@@ -85,7 +85,7 @@ describe(generateMaterializerScript, () => {
 		expect(lastBarPosition).toBeGreaterThan(firstBarPosition);
 	});
 
-	it("should wrap entries in an entries envelope", () => {
+	it("should wrap entries in an entries envelope", ({ expect }) => {
 		expect.assertions(1);
 
 		const script = generateMaterializerScript([
@@ -95,7 +95,7 @@ describe(generateMaterializerScript, () => {
 		expect(script).toContain('"entries":[');
 	});
 
-	it("should embed the entry's argv", () => {
+	it("should embed the entry's argv", ({ expect }) => {
 		expect.assertions(1);
 
 		const script = generateMaterializerScript([
@@ -109,7 +109,7 @@ describe(generateMaterializerScript, () => {
 		expect(script).toContain('"testMatch":["**/*.spec"]');
 	});
 
-	it("should include jestPath in the substituted Jest argv when set", () => {
+	it("should include jestPath in the substituted Jest argv when set", ({ expect }) => {
 		expect.assertions(1);
 
 		const script = generateMaterializerScript([
@@ -125,7 +125,9 @@ describe(generateMaterializerScript, () => {
 		expect(script).toContain('"jestPath":"ReplicatedStorage/Packages/_Index/Jest"');
 	});
 
-	it("should bundle the setup-paths resolver so Luau converts strings to Instances", () => {
+	it("should bundle the setup-paths resolver so Luau converts strings to Instances", ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const script = generateMaterializerScript([
@@ -145,7 +147,9 @@ describe(generateMaterializerScript, () => {
 		expect(script).toMatch(/config\.setupFiles = \w*resolvePaths\(config\.setupFiles\)/);
 	});
 
-	it("should bundle the per-package coverage reset/capture logic into the materializer template", () => {
+	it("should bundle the per-package coverage reset/capture logic into the materializer template", ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const script = generateMaterializerScript([
@@ -160,7 +164,9 @@ describe(generateMaterializerScript, () => {
 		expect(script).toMatch(/runnerCoverage/);
 	});
 
-	it("should embed a payload holding the long-string terminator above its level", () => {
+	it("should embed a payload holding the long-string terminator above its level", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const script = generateMaterializerScript([
@@ -176,7 +182,7 @@ describe(generateMaterializerScript, () => {
 });
 
 describe(generateWorkStealingScript, () => {
-	it("should embed queueId and invisibilityWindowSeconds alongside the entries", () => {
+	it("should embed queueId and invisibilityWindowSeconds alongside the entries", ({ expect }) => {
 		expect.assertions(3);
 
 		const script = generateWorkStealingScript({
@@ -199,7 +205,7 @@ describe(generateWorkStealingScript, () => {
 	// A worker that drops an entry over budget puts its queue item back, and
 	// the put-back has to name a TTL. Only the CLI knows which one the queue
 	// was seeded with, so it has to travel in the payload.
-	it("should embed the queue TTL only when one is given", () => {
+	it("should embed the queue TTL only when one is given", ({ expect }) => {
 		expect.assertions(2);
 
 		const inputs = [{ config: createArgv(), pkg: "@halcyon/foo", project: "core" }];
@@ -223,7 +229,7 @@ describe(generateWorkStealingScript, () => {
 
 	// The materializer carries its own default, so a run that says nothing
 	// about the budget must not pin one into the payload.
-	it("should embed a result budget only when one is given", () => {
+	it("should embed a result budget only when one is given", ({ expect }) => {
 		expect.assertions(2);
 
 		const inputs = [{ config: createArgv(), pkg: "@halcyon/foo", project: "core" }];
@@ -247,7 +253,7 @@ describe(generateWorkStealingScript, () => {
 		).toContain('"resultBudgetBytes":2048');
 	});
 
-	it("should preserve entries in input order", () => {
+	it("should preserve entries in input order", ({ expect }) => {
 		expect.assertions(1);
 
 		const script = generateWorkStealingScript({
@@ -272,7 +278,9 @@ describe(generateWorkStealingScript, () => {
 		);
 	});
 
-	it("should embed a queueId holding the long-string terminator above its level", () => {
+	it("should embed a queueId holding the long-string terminator above its level", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const script = generateWorkStealingScript({
@@ -290,7 +298,9 @@ describe(generateWorkStealingScript, () => {
 		expect(script).toMatch(/JSONDecode\(\[==\[\{.*queue\]=\]bad.*\}\]==\]\)/);
 	});
 
-	it("should embed sortedMapId and streamingTtlSeconds when streaming is configured", () => {
+	it("should embed sortedMapId and streamingTtlSeconds when streaming is configured", ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const script = generateWorkStealingScript({
@@ -310,7 +320,7 @@ describe(generateWorkStealingScript, () => {
 		expect(script).toContain('"streamingTtlSeconds":300');
 	});
 
-	it("should omit streaming payload fields when streaming is not configured", () => {
+	it("should omit streaming payload fields when streaming is not configured", ({ expect }) => {
 		expect.assertions(2);
 
 		const script = generateWorkStealingScript({
@@ -333,7 +343,7 @@ describe(generateWorkStealingScript, () => {
 });
 
 describe("generateMaterializerScript with streaming", () => {
-	it("should embed sortedMapId when streaming is configured", () => {
+	it("should embed sortedMapId when streaming is configured", ({ expect }) => {
 		expect.assertions(1);
 
 		const script = generateMaterializerScript(
@@ -352,7 +362,7 @@ describe("generateMaterializerScript with streaming", () => {
 });
 
 describe("bail payload", () => {
-	it("should embed bail in the single-task payload when requested", () => {
+	it("should embed bail in the single-task payload when requested", ({ expect }) => {
 		expect.assertions(1);
 
 		const script = generateMaterializerScript(
@@ -369,7 +379,7 @@ describe("bail payload", () => {
 		expect(script).toContain('"bail":true');
 	});
 
-	it("should embed bail in the work-stealing payload when requested", () => {
+	it("should embed bail in the work-stealing payload when requested", ({ expect }) => {
 		expect.assertions(1);
 
 		const script = generateWorkStealingScript({
@@ -388,7 +398,7 @@ describe("bail payload", () => {
 		expect(script).toContain('"bail":true');
 	});
 
-	it("should embed the bail signal map when one is given", () => {
+	it("should embed the bail signal map when one is given", ({ expect }) => {
 		expect.assertions(1);
 
 		const script = generateWorkStealingScript({
@@ -410,7 +420,7 @@ describe("bail payload", () => {
 
 	// The single-task path has no siblings to broadcast to, so it bails
 	// locally and the payload carries no map.
-	it("should omit the bail signal map when none is given", () => {
+	it("should omit the bail signal map when none is given", ({ expect }) => {
 		expect.assertions(1);
 
 		const script = generateMaterializerScript(
@@ -427,7 +437,7 @@ describe("bail payload", () => {
 		expect(script).not.toContain('"bailMapId":');
 	});
 
-	it("should omit bail from the payload when not requested", () => {
+	it("should omit bail from the payload when not requested", ({ expect }) => {
 		expect.assertions(1);
 
 		const script = generateMaterializerScript([
@@ -439,7 +449,7 @@ describe("bail payload", () => {
 });
 
 describe(toMaterializerEntry, () => {
-	it("should name the job's package, project and request index", () => {
+	it("should name the job's package, project and request index", ({ expect }) => {
 		expect.assertions(1);
 
 		const argv = createArgv();
@@ -453,7 +463,7 @@ describe(toMaterializerEntry, () => {
 		});
 	});
 
-	it("should refuse a job with no package", () => {
+	it("should refuse a job with no package", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(() => toMaterializerEntry({ argv: createArgv(), displayName: "core" }, 0)).toThrow(

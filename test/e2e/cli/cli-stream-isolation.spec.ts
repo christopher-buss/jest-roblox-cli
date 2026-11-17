@@ -1,6 +1,6 @@
 import { type } from "arktype";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { startFakeOpenCloudServerAsync } from "#test/harness/fake-open-cloud.ts";
 import {
@@ -21,7 +21,9 @@ const jsonResultSchema = type({
 });
 
 describe("--formatters json stream isolation", () => {
-	it("should emit only JSON on stdout and keep human-facing logs on stderr", async () => {
+	it("should emit only JSON on stdout and keep human-facing logs on stderr", async ({
+		expect,
+	}) => {
 		expect.assertions(5);
 
 		const sandbox = createRbxtsFixtureSandbox(RBXTS_FIXTURE);

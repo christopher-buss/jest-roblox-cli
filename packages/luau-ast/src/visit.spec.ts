@@ -1,13 +1,13 @@
 import { fromAny } from "@total-typescript/shoehorn";
 
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import { astTree as parseBlock } from "#test/helpers/unit/trees";
 import type { AstExpr, LuauVisitor } from "./index.ts";
 import { visitBlock, visitExpression, visitStatement } from "./visit.ts";
 
 describe(visitBlock, () => {
-	it("should call visitStatBlock and visitStatBlockEnd around the root", () => {
+	it("should call visitStatBlock and visitStatBlockEnd around the root", ({ expect }) => {
 		expect.assertions(2);
 
 		const root = parseBlock("local x = 1");
@@ -20,7 +20,7 @@ describe(visitBlock, () => {
 		expect(leave).toHaveBeenCalledExactlyOnceWith(root);
 	});
 
-	it("should skip children when visitStatBlock returns false", () => {
+	it("should skip children when visitStatBlock returns false", ({ expect }) => {
 		expect.assertions(1);
 
 		const root = parseBlock("local x = 1");
@@ -31,7 +31,7 @@ describe(visitBlock, () => {
 		expect(onLocal).not.toHaveBeenCalled();
 	});
 
-	it("should dispatch each statement kind to its callback", () => {
+	it("should dispatch each statement kind to its callback", ({ expect }) => {
 		expect.assertions(1);
 
 		const root = parseBlock(
@@ -100,7 +100,7 @@ describe(visitBlock, () => {
 });
 
 describe(visitExpression, () => {
-	it("should dispatch each expression kind to its callback", () => {
+	it("should dispatch each expression kind to its callback", ({ expect }) => {
 		expect.assertions(1);
 
 		const root = parseBlock(
@@ -179,7 +179,7 @@ describe(visitExpression, () => {
 		]);
 	});
 
-	it("should stop the whole subtree when visitExpr returns false", () => {
+	it("should stop the whole subtree when visitExpr returns false", ({ expect }) => {
 		expect.assertions(2);
 
 		const root = parseBlock("local a = 1 + 2");
@@ -196,7 +196,7 @@ describe(visitExpression, () => {
 		expect(onEnd).not.toHaveBeenCalled();
 	});
 
-	it("should call visitExprEnd after each expression", () => {
+	it("should call visitExprEnd after each expression", ({ expect }) => {
 		expect.assertions(1);
 
 		const root = parseBlock("local a = 1 + 2");
@@ -207,7 +207,7 @@ describe(visitExpression, () => {
 		expect(onEnd).toHaveBeenCalledTimes(3);
 	});
 
-	it("should call visitExprFunctionEnd after the function body", () => {
+	it("should call visitExprFunctionEnd after the function body", ({ expect }) => {
 		expect.assertions(1);
 
 		const root = parseBlock("local fn = function() end");
@@ -225,7 +225,7 @@ describe(visitExpression, () => {
 		expect(order).toStrictEqual(["blockEnd", "functionEnd", "blockEnd"]);
 	});
 
-	it("should ignore an expression kind it does not model", () => {
+	it("should ignore an expression kind it does not model", ({ expect }) => {
 		expect.assertions(1);
 
 		const expression: AstExpr = fromAny({ type: "AstExprError" });
@@ -238,7 +238,7 @@ describe(visitExpression, () => {
 });
 
 describe(visitStatement, () => {
-	it("should ignore a statement kind it does not model", () => {
+	it("should ignore a statement kind it does not model", ({ expect }) => {
 		expect.assertions(1);
 
 		const visitor: LuauVisitor = {};
@@ -298,7 +298,7 @@ describe("skipping children", () => {
 		{ enter: "visitStatWhile", leaf: "visitExprGlobal", source: "while a do end" },
 	] as const)(
 		"should skip children when $enter returns false over `$source`",
-		({ enter, leaf, source }) => {
+		({ enter, leaf, source }, { expect }) => {
 			expect.assertions(1);
 
 			const root = parseBlock(source);
@@ -312,7 +312,7 @@ describe("skipping children", () => {
 });
 
 describe("optional branches", () => {
-	it("should visit the step expression when the numeric for has one", () => {
+	it("should visit the step expression when the numeric for has one", ({ expect }) => {
 		expect.assertions(1);
 
 		const root = parseBlock("for i = 1, 10, 2 do end");
@@ -323,7 +323,7 @@ describe("optional branches", () => {
 		expect(onNumber).toHaveBeenCalledTimes(3);
 	});
 
-	it("should visit computed table keys", () => {
+	it("should visit computed table keys", ({ expect }) => {
 		expect.assertions(1);
 
 		const root = parseBlock("local t = { [a] = 1 }");
@@ -336,7 +336,7 @@ describe("optional branches", () => {
 		);
 	});
 
-	it("should recurse into a plain else block", () => {
+	it("should recurse into a plain else block", ({ expect }) => {
 		expect.assertions(1);
 
 		const root = parseBlock("if a then else b() end");
@@ -352,7 +352,7 @@ describe("optional branches", () => {
 		);
 	});
 
-	it("should recurse through an elseif chain", () => {
+	it("should recurse through an elseif chain", ({ expect }) => {
 		expect.assertions(1);
 
 		const root = parseBlock("if a then elseif b then elseif c then end");
@@ -400,7 +400,7 @@ describe("descent order", () => {
 		{ events: "block Global block", source: "while a do end" },
 		{ events: "block Table Global ConstantNumber", source: "local t = { [a] = 1 }" },
 		{ events: "block Global block block Call Global", source: "if a then else b() end" },
-	])("should visit every child in order for $source", ({ events, source }) => {
+	])("should visit every child in order for $source", ({ events, source }, { expect }) => {
 		expect.assertions(1);
 
 		const visited: Array<string> = [];
@@ -424,7 +424,7 @@ describe("descent order", () => {
 });
 
 describe(visitStatement, () => {
-	it("should descend into a block passed as a statement", () => {
+	it("should descend into a block passed as a statement", ({ expect }) => {
 		expect.assertions(1);
 
 		const visited: Array<number> = [];

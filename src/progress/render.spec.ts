@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { createPlainStyles } from "#test/mocks/format-plain-styles.ts";
 import { formatStage } from "./render.ts";
@@ -10,7 +10,7 @@ const AS_LINE = { frame: undefined, styles: PLAIN };
 const AS_ROW = { frame: "⠹", styles: PLAIN };
 
 describe(formatStage, () => {
-	it("should announce a stage that just started without a duration", () => {
+	it("should announce a stage that just started without a duration", ({ expect }) => {
 		expect.assertions(1);
 
 		const line = formatStage(
@@ -21,7 +21,7 @@ describe(formatStage, () => {
 		expect(line).toBe(" → upload       12.4 MB");
 	});
 
-	it("should report sub-second work in milliseconds", () => {
+	it("should report sub-second work in milliseconds", ({ expect }) => {
 		expect.assertions(1);
 
 		const line = formatStage(
@@ -32,7 +32,7 @@ describe(formatStage, () => {
 		expect(line).toBe(" ✓ upload       340ms");
 	});
 
-	it("should turn over to seconds at exactly one second", () => {
+	it("should turn over to seconds at exactly one second", ({ expect }) => {
 		expect.assertions(2);
 
 		const under = formatStage(
@@ -48,7 +48,7 @@ describe(formatStage, () => {
 		expect(at).toBe(" ✓ upload       1.0s");
 	});
 
-	it("should report longer work in seconds to one decimal", () => {
+	it("should report longer work in seconds to one decimal", ({ expect }) => {
 		expect.assertions(1);
 
 		const line = formatStage(
@@ -59,7 +59,7 @@ describe(formatStage, () => {
 		expect(line).toBe(" ✓ run tests    31.6s");
 	});
 
-	it("should carry the closing detail and duration when a stage completes", () => {
+	it("should carry the closing detail and duration when a stage completes", ({ expect }) => {
 		expect.assertions(1);
 
 		const line = formatStage(
@@ -70,7 +70,7 @@ describe(formatStage, () => {
 		expect(line).toBe(" ✓ upload       cache hit, version 87  220ms");
 	});
 
-	it("should omit the detail column when a stage reports none", () => {
+	it("should omit the detail column when a stage reports none", ({ expect }) => {
 		expect.assertions(1);
 
 		const line = formatStage(
@@ -81,7 +81,7 @@ describe(formatStage, () => {
 		expect(line).toBe(" ✓ instrument   8.4s");
 	});
 
-	it("should mark a stage that never finished", () => {
+	it("should mark a stage that never finished", ({ expect }) => {
 		expect.assertions(1);
 
 		const line = formatStage(
@@ -92,7 +92,9 @@ describe(formatStage, () => {
 		expect(line).toBe(" · boot probe");
 	});
 
-	it("should show the spinner frame and the running duration while a stage works", () => {
+	it("should show the spinner frame and the running duration while a stage works", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const row = formatStage(
@@ -103,7 +105,7 @@ describe(formatStage, () => {
 		expect(row).toBe(" ⠹ upload       12.4 MB  4.7s");
 	});
 
-	it("should drop the duration for a stage the run never finished", () => {
+	it("should drop the duration for a stage the run never finished", ({ expect }) => {
 		expect.assertions(1);
 
 		const row = formatStage(

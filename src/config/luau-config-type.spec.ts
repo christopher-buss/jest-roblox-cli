@@ -1,5 +1,5 @@
 import * as path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import type { FileSystem } from "../utils/file-system.ts";
@@ -9,7 +9,7 @@ const HOME = path.resolve("/home/user");
 const TYPE_MODULE = path.join(HOME, ".jest-roblox", "typedefs", "1.2.3", "config.luau");
 
 describe(writeLuauConfigTypes, () => {
-	it("should replace the type module in the versioned home folder", () => {
+	it("should replace the type module in the versioned home folder", ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = createMemoryFileSystem({ [TYPE_MODULE]: "-- old" });
@@ -24,7 +24,9 @@ describe(writeLuauConfigTypes, () => {
 		expect(volume.readFileSync(TYPE_MODULE, "utf-8")).toContain("export type Config =");
 	});
 
-	it("should move a whole file into place so a parallel run never reads part of it", () => {
+	it("should move a whole file into place so a parallel run never reads part of it", ({
+		expect,
+	}) => {
 		expect.assertions(3);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -46,7 +48,7 @@ describe(writeLuauConfigTypes, () => {
 });
 
 describe(ensureLuauConfigTypes, () => {
-	it("should write the type module when it is missing", () => {
+	it("should write the type module when it is missing", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -56,7 +58,7 @@ describe(ensureLuauConfigTypes, () => {
 		expect(volume.readFileSync(TYPE_MODULE, "utf-8")).toContain("export type Config =");
 	});
 
-	it("should keep a type module that is already there", () => {
+	it("should keep a type module that is already there", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem({ [TYPE_MODULE]: "-- kept" });
@@ -66,7 +68,7 @@ describe(ensureLuauConfigTypes, () => {
 		expect(volume.readFileSync(TYPE_MODULE, "utf-8")).toBe("-- kept");
 	});
 
-	it("should return no failure when it writes the type module", () => {
+	it("should return no failure when it writes the type module", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -76,7 +78,7 @@ describe(ensureLuauConfigTypes, () => {
 		).toBeUndefined();
 	});
 
-	it("should return the failure when the home folder cannot be written", () => {
+	it("should return the failure when the home folder cannot be written", ({ expect }) => {
 		expect.assertions(2);
 
 		const denied = new Error("EACCES: permission denied");

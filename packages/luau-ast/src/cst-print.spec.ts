@@ -1,6 +1,6 @@
 import { fromPartial } from "@total-typescript/shoehorn";
 
-import { assert, describe, expect, it } from "vitest";
+import { assert, describe, it } from "vitest";
 
 import cst from "#test/fixtures/trees/cst.json" with { type: "json" };
 import { numberNode } from "#test/helpers/unit/cst";
@@ -11,7 +11,7 @@ import type { CstIndexName, CstNode, CstRoot, Token } from "./cst.ts";
 import type { SourceBytes } from "./source-bytes.ts";
 
 describe(printCst, () => {
-	it("should print the supplied token spelling and trivia", () => {
+	it("should print the supplied token spelling and trivia", ({ expect }) => {
 		expect.assertions(1);
 
 		const root = numberNode();
@@ -31,11 +31,14 @@ function editFor(target: CstNode, replacement: Replacement): CstEdits {
 }
 
 describe("recorded CST output", () => {
-	it.for(Object.keys(cst))("should preserve every source byte in fixture %#", (source) => {
-		expect.assertions(1);
+	it.for(Object.keys(cst))(
+		"should preserve every source byte in fixture %#",
+		(source, { expect }) => {
+			expect.assertions(1);
 
-		expect(printCst(cstTree(source))).toBe(source);
-	});
+			expect(printCst(cstTree(source))).toBe(source);
+		},
+	);
 
 	it.for([
 		{
@@ -82,7 +85,7 @@ describe("recorded CST output", () => {
 		},
 	])(
 		"should apply removal policy to fixture %#",
-		({ expected, index, preserveLeading, source }) => {
+		({ expected, index, preserveLeading, source }, { expect }) => {
 			expect.assertions(1);
 
 			const root = cstTree(source);
@@ -104,17 +107,23 @@ describe("recorded CST output", () => {
 			expected: "do\n\n\t-- about b\n\treturn 1\nend\n",
 			source: "do\n\n\t-- about b\n\tlocal b = 2\n\treturn 1\nend\n",
 		},
-	])("should remove nested statements with their line indentation %#", ({ expected, source }) => {
-		expect.assertions(1);
+	])(
+		"should remove nested statements with their line indentation %#",
+		({ expected, source }, { expect }) => {
+			expect.assertions(1);
 
-		const root = cstTree(source);
-		const block = root.body.body[0]!;
-		assert(block.type === "Do");
+			const root = cstTree(source);
+			const block = root.body.body[0]!;
+			assert(block.type === "Do");
 
-		expect(
-			printCst(root, editFor(block.body.body[0]!, { preserveLeading: true, remove: true })),
-		).toBe(expected);
-	});
+			expect(
+				printCst(
+					root,
+					editFor(block.body.body[0]!, { preserveLeading: true, remove: true }),
+				),
+			).toBe(expected);
+		},
+	);
 
 	it.for([
 		{
@@ -143,7 +152,7 @@ describe("recorded CST output", () => {
 		},
 	])(
 		"should print replacement text with its requested trivia %#",
-		({ expected, index, replacement, source }) => {
+		({ expected, index, replacement, source }, { expect }) => {
 			expect.assertions(1);
 
 			const root = cstTree(source);
@@ -152,7 +161,7 @@ describe("recorded CST output", () => {
 		},
 	);
 
-	it("should print a replacement subtree with the target's outer trivia", () => {
+	it("should print a replacement subtree with the target's outer trivia", ({ expect }) => {
 		expect.assertions(1);
 
 		const root = cstTree("-- header\nlocal boilerplate = 1\nreturn 2\n");
@@ -164,7 +173,7 @@ describe("recorded CST output", () => {
 		);
 	});
 
-	it("should reject replacing a node with no tokens", () => {
+	it("should reject replacing a node with no tokens", ({ expect }) => {
 		expect.assertions(1);
 
 		const target: CstNode = { body: [], location: numberNode().location, type: "Block" };
@@ -187,7 +196,9 @@ function sourceIndex() {
 }
 
 describe(printCstMapped, () => {
-	it("should map each nonempty token through the supplied byte-column converter", () => {
+	it("should map each nonempty token through the supplied byte-column converter", ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const { columns, source } = sourceIndex();
@@ -218,27 +229,30 @@ describe(printCstMapped, () => {
 	it.for([
 		{ attribution: { generatedBy: "rule" }, caller: "rule" },
 		{ attribution: {}, caller: undefined },
-	])("should map multiline replacement text with caller $caller", ({ attribution, caller }) => {
-		expect.assertions(1);
+	])(
+		"should map multiline replacement text with caller $caller",
+		({ attribution, caller }, { expect }) => {
+			expect.assertions(1);
 
-		const { source } = sourceIndex();
-		const root = cstTree("return 1\n");
-		const edits = editFor(root.body.body[0]!, { text: " \nreplacement\nmore" });
-		edits.callerFor = () => caller;
+			const { source } = sourceIndex();
+			const root = cstTree("return 1\n");
+			const edits = editFor(root.body.body[0]!, { text: " \nreplacement\nmore" });
+			edits.callerFor = () => caller;
 
-		expect(printCstMapped(root, { edits, source })).toStrictEqual({
-			code: " \nreplacement\nmore\n",
-			segments: [
-				{
-					...attribution,
-					generated: { column: 0, line: 2 },
-					original: { column: 10, line: 1 },
-				},
-			],
-		});
-	});
+			expect(printCstMapped(root, { edits, source })).toStrictEqual({
+				code: " \nreplacement\nmore\n",
+				segments: [
+					{
+						...attribution,
+						generated: { column: 0, line: 2 },
+						original: { column: 10, line: 1 },
+					},
+				],
+			});
+		},
+	);
 
-	it("should omit mappings for tokens without source origins and replacements", () => {
+	it("should omit mappings for tokens without source origins and replacements", ({ expect }) => {
 		expect.assertions(2);
 
 		const { source } = sourceIndex();
@@ -275,7 +289,7 @@ function assignedField(root: CstRoot): CstIndexName {
 }
 
 describe("token texts", () => {
-	it("should print a token's text between its own trivia", () => {
+	it("should print a token's text between its own trivia", ({ expect }) => {
 		expect.assertions(2);
 
 		const root = cstTree("_G.cfg.x = 1\n");
@@ -285,7 +299,7 @@ describe("token texts", () => {
 		expect(field.index.text).toBe("x");
 	});
 
-	it("should map a token's text to the token's own origin", () => {
+	it("should map a token's text to the token's own origin", ({ expect }) => {
 		expect.assertions(2);
 
 		const { source } = sourceIndex();
@@ -300,7 +314,7 @@ describe("token texts", () => {
 		expect(segments[5]!.generated).toStrictEqual({ column: 13, line: 1 });
 	});
 
-	it("should print a replaced node over its tokens' texts", () => {
+	it("should print a replaced node over its tokens' texts", ({ expect }) => {
 		expect.assertions(1);
 
 		const root = cstTree("_G.cfg.x = 1\n");
@@ -315,21 +329,24 @@ describe("statement replacement boundaries", () => {
 		{ expected: "  \n(get()).x = 1\n", text: "  " },
 		{ expected: "f();\n(get()).x = 1\n", text: "f();" },
 		{ expected: "f();  \n(get()).x = 1\n", text: "f();  " },
-	])("should separate a statement following replacement $text", ({ expected, text }) => {
-		expect.assertions(1);
+	])(
+		"should separate a statement following replacement $text",
+		({ expected, text }, { expect }) => {
+			expect.assertions(1);
 
-		const root = cstTree("f()\n_G.cfg.x = 1\n");
-		const replacements = new Map<CstNode, Replacement>([
-			[root.body.body[0]!, { text }],
-			[root.body.body[1]!, { text: "(get()).x = 1" }],
-		]);
-		const edits = fromPartial<CstEdits>({
-			replacementFor: (node: CstNode) => replacements.get(node),
-			tokenTextFor: () => {},
-		});
+			const root = cstTree("f()\n_G.cfg.x = 1\n");
+			const replacements = new Map<CstNode, Replacement>([
+				[root.body.body[0]!, { text }],
+				[root.body.body[1]!, { text: "(get()).x = 1" }],
+			]);
+			const edits = fromPartial<CstEdits>({
+				replacementFor: (node: CstNode) => replacements.get(node),
+				tokenTextFor: () => {},
+			});
 
-		expect(printCst(root, edits)).toBe(expected);
-	});
+			expect(printCst(root, edits)).toBe(expected);
+		},
+	);
 });
 
 function terminatedCall() {
@@ -343,7 +360,7 @@ function terminatedCall() {
 }
 
 describe("printer state across empty tokens", () => {
-	it("should retain the last nonempty token before a parenthesized statement", () => {
+	it("should retain the last nonempty token before a parenthesized statement", ({ expect }) => {
 		expect.assertions(1);
 
 		const root = terminatedCall();
@@ -365,7 +382,7 @@ describe("printer state across empty tokens", () => {
 		);
 	});
 
-	it("should retain a semicolon across an empty text replacement", () => {
+	it("should retain a semicolon across an empty text replacement", ({ expect }) => {
 		expect.assertions(1);
 
 		const root = terminatedCall();
@@ -381,7 +398,9 @@ describe("printer state across empty tokens", () => {
 		expect(printCst(root, edits)).toBe("f();\n\n(get()).x = 1\n");
 	});
 
-	it("should propagate a constructed block's printed predecessor to its enclosing statement", () => {
+	it("should propagate a constructed block's printed predecessor to its enclosing statement", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const root = cstTree("f()\n_G.cfg.x = 1\n");
@@ -398,7 +417,9 @@ describe("printer state across empty tokens", () => {
 		expect(printCst(root, edits)).toBe("local x = 1\n\n;(get()).x = 1\n");
 	});
 
-	it("should preserve whitespace around replacement text inside an already-started statement", () => {
+	it("should preserve whitespace around replacement text inside an already-started statement", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const root = cstTree("return 1\n");
@@ -410,7 +431,7 @@ describe("printer state across empty tokens", () => {
 		);
 	});
 
-	it("should omit source mappings for empty replacement text", () => {
+	it("should omit source mappings for empty replacement text", ({ expect }) => {
 		expect.assertions(1);
 
 		const root = cstTree("return 1\n");
@@ -430,7 +451,7 @@ describe("printer state across empty tokens", () => {
 		{ expected: "f() \n", index: 1, source: "f() local x = 1\n" },
 	])(
 		"should preserve comments and line endings around removed statements %#",
-		({ expected, index, source }) => {
+		({ expected, index, source }, { expect }) => {
 			expect.assertions(1);
 
 			const root = cstTree(source);

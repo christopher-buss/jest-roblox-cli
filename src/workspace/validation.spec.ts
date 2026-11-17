@@ -2,7 +2,7 @@ import { fromAny } from "@total-typescript/shoehorn";
 
 import * as path from "node:path";
 import process from "node:process";
-import { describe, expect, it, onTestFinished, vi } from "vitest";
+import { describe, it, type TestContext, vi } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import type { CliOptions } from "../config/resolved-config.ts";
@@ -48,7 +48,7 @@ function seedTurboWorkspace(names: Array<string>): Record<string, string> {
 	return { [path.join(ROOT, "turbo.json")]: "{}", ...seedWorkspace(names) };
 }
 
-function stubLinux(): void {
+function stubLinux(onTestFinished: TestContext["onTestFinished"]): void {
 	const original = process.platform;
 	Object.defineProperty(process, "platform", { value: "linux" });
 	onTestFinished(() => {
@@ -67,7 +67,7 @@ function turboReturns(childProcess: ChildProcessRunner, names: Array<string>): v
 }
 
 describe(refuseWorkspaceOnlyFlags, () => {
-	it("should allow workspace-only flags with --workspace", () => {
+	it("should allow workspace-only flags with --workspace", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -75,7 +75,7 @@ describe(refuseWorkspaceOnlyFlags, () => {
 		).toBeUndefined();
 	});
 
-	it("should allow a run with no workspace-only flag", () => {
+	it("should allow a run with no workspace-only flag", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(refuseWorkspaceOnlyFlags(makeCli({ bail: false }))).toBeUndefined();
@@ -85,7 +85,7 @@ describe(refuseWorkspaceOnlyFlags, () => {
 		[{ packages: "a" }, "--packages"],
 		[{ affectedSince: "main" }, "--affected-since"],
 		[{ bail: true }, "--bail"],
-	] as const)("should refuse %o without --workspace", ([flags, name]) => {
+	] as const)("should refuse %o without --workspace", ([flags, name], { expect }) => {
 		expect.assertions(1);
 
 		expect(refuseWorkspaceOnlyFlags(makeCli(flags))).toBe(
@@ -95,7 +95,7 @@ describe(refuseWorkspaceOnlyFlags, () => {
 });
 
 describe(validateBasicWorkspaceFlags, () => {
-	it("should reject when --packages and --affected-since are both set", () => {
+	it("should reject when --packages and --affected-since are both set", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = validateBasicWorkspaceFlags(
@@ -109,7 +109,7 @@ describe(validateBasicWorkspaceFlags, () => {
 		});
 	});
 
-	it("should accept --experimental-vm-parallel in workspace mode", () => {
+	it("should accept --experimental-vm-parallel in workspace mode", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = validateBasicWorkspaceFlags(
@@ -119,7 +119,7 @@ describe(validateBasicWorkspaceFlags, () => {
 		expect(result).toStrictEqual({ ok: true });
 	});
 
-	it("should accept a bare --workspace as every package", () => {
+	it("should accept a bare --workspace as every package", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = validateBasicWorkspaceFlags(makeCli({ workspace: true }));
@@ -129,7 +129,7 @@ describe(validateBasicWorkspaceFlags, () => {
 
 	// A bare --workspace runs everything, so an empty --packages must not read
 	// as one: the user narrowed the run and then named nothing.
-	it("should reject --workspace with empty --packages string", () => {
+	it("should reject --workspace with empty --packages string", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = validateBasicWorkspaceFlags(
@@ -143,7 +143,7 @@ describe(validateBasicWorkspaceFlags, () => {
 		});
 	});
 
-	it("should reject --packages that splits to zero entries", () => {
+	it("should reject --packages that splits to zero entries", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = validateBasicWorkspaceFlags(makeCli({ packages: "  ,  ", workspace: true }));
@@ -155,7 +155,7 @@ describe(validateBasicWorkspaceFlags, () => {
 		});
 	});
 
-	it("should accept --workspace with --packages", () => {
+	it("should accept --workspace with --packages", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = validateBasicWorkspaceFlags(makeCli({ packages: "a, ", workspace: true }));
@@ -163,7 +163,7 @@ describe(validateBasicWorkspaceFlags, () => {
 		expect(result).toStrictEqual({ ok: true });
 	});
 
-	it("should accept --workspace with --affected-since", () => {
+	it("should accept --workspace with --affected-since", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = validateBasicWorkspaceFlags(
@@ -175,10 +175,13 @@ describe(validateBasicWorkspaceFlags, () => {
 });
 
 describe(resolveWorkspacePackages, () => {
-	it("should return the affected set directly when --affected-since is set", () => {
+	it("should return the affected set directly when --affected-since is set", ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(2);
 
-		stubLinux();
+		stubLinux(onTestFinished);
 		const childProcess = createRunner();
 		const { fileSystem } = createMemoryFileSystem(seedTurboWorkspace(["@org/a", "@org/b"]));
 		turboReturns(childProcess, ["@org/a", "@org/b"]);
@@ -200,10 +203,10 @@ describe(resolveWorkspacePackages, () => {
 		);
 	});
 
-	it("should drop an excluded package from the affected set", () => {
+	it("should drop an excluded package from the affected set", ({ expect, onTestFinished }) => {
 		expect.assertions(1);
 
-		stubLinux();
+		stubLinux(onTestFinished);
 		const childProcess = createRunner();
 		const { fileSystem } = createMemoryFileSystem(seedTurboWorkspace(["@org/a"]));
 		turboReturns(childProcess, ["@org/a"]);
@@ -219,7 +222,7 @@ describe(resolveWorkspacePackages, () => {
 		expect(result).toBeEmpty();
 	});
 
-	it("should enumerate every package when neither flag narrows the run", () => {
+	it("should enumerate every package when neither flag narrows the run", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem(seedWorkspace(["a", "b"]));
@@ -235,7 +238,7 @@ describe(resolveWorkspacePackages, () => {
 		expect(result).toStrictEqual([packageInfoFor("a"), packageInfoFor("b")]);
 	});
 
-	it("should drop an excluded package from a bare --workspace run", () => {
+	it("should drop an excluded package from a bare --workspace run", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem(seedWorkspace(["a", "b"]));
@@ -252,7 +255,7 @@ describe(resolveWorkspacePackages, () => {
 		expect(result).toStrictEqual([packageInfoFor("a")]);
 	});
 
-	it("should resolve every comma-separated --packages name", () => {
+	it("should resolve every comma-separated --packages name", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem(seedWorkspace(["a", "b", "c"]));
@@ -268,7 +271,7 @@ describe(resolveWorkspacePackages, () => {
 		expect(result.map((info) => info.name)).toStrictEqual(["a", "b", "c"]);
 	});
 
-	it("should trim whitespace and drop empty entries before resolving", () => {
+	it("should trim whitespace and drop empty entries before resolving", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem(seedWorkspace(["a", "b"]));
@@ -284,7 +287,7 @@ describe(resolveWorkspacePackages, () => {
 		expect(result.map((info) => info.name)).toStrictEqual(["a", "b"]);
 	});
 
-	it("should keep a named package an exclude glob would have dropped", () => {
+	it("should keep a named package an exclude glob would have dropped", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem(seedWorkspace(["a"]));

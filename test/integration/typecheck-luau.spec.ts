@@ -1,5 +1,5 @@
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { runTypecheckAsync } from "#src/api.ts";
 
@@ -14,7 +14,7 @@ async function checkAsync(fileName: string, ignoreSourceErrors = false) {
 }
 
 describe("luau typecheck integration", () => {
-	it("should pass every it in a clean spec", async () => {
+	it("should pass every it in a clean spec", async ({ expect }) => {
 		expect.assertions(2);
 
 		const result = await checkAsync("passing.spec-d.luau");
@@ -23,7 +23,7 @@ describe("luau typecheck integration", () => {
 		expect(result.numPassedTests).toBe(2);
 	});
 
-	it("should fail the it holding a type error with lute's message", async () => {
+	it("should fail the it holding a type error with lute's message", async ({ expect }) => {
 		expect.assertions(2);
 
 		const result = await checkAsync("failing.spec-d.luau");
@@ -39,7 +39,7 @@ describe("luau typecheck integration", () => {
 		]);
 	});
 
-	it("should fail the file for an error outside every it", async () => {
+	it("should fail the file for an error outside every it", async ({ expect }) => {
 		expect.assertions(2);
 
 		const result = await checkAsync("file-level.spec-d.luau");
@@ -50,7 +50,7 @@ describe("luau typecheck integration", () => {
 		expect(passing!.status).toBe("passed");
 	});
 
-	it("should report an error in a required source file", async () => {
+	it("should report an error in a required source file", async ({ expect }) => {
 		expect.assertions(3);
 
 		const result = await checkAsync("uses-source.spec-d.luau");
@@ -64,7 +64,7 @@ describe("luau typecheck integration", () => {
 		expect(sourceResult!.testResults[0]!.failureMessages[0]).toContain("TypeError");
 	});
 
-	it("should drop source errors when ignoreSourceErrors is set", async () => {
+	it("should drop source errors when ignoreSourceErrors is set", async ({ expect }) => {
 		expect.assertions(2);
 
 		const result = await checkAsync("uses-source.spec-d.luau", true);
@@ -73,7 +73,7 @@ describe("luau typecheck integration", () => {
 		expect(result.testResults).toHaveLength(1);
 	});
 
-	it("should fail a spec without --!strict", async () => {
+	it("should fail a spec without --!strict", async ({ expect }) => {
 		expect.assertions(2);
 
 		const result = await checkAsync("nonstrict.spec-d.luau");
@@ -84,7 +84,7 @@ describe("luau typecheck integration", () => {
 		expect(fileCase!.failureMessages[0]).toContain("--!strict");
 	});
 
-	it("should fail a spec that does not parse with the parser message", async () => {
+	it("should fail a spec that does not parse with the parser message", async ({ expect }) => {
 		expect.assertions(2);
 
 		const result = await checkAsync("broken.spec-d.luau");
@@ -97,7 +97,7 @@ describe("luau typecheck integration", () => {
 		]);
 	});
 
-	it("should pass an it whose type error an @expect-error consumes", async () => {
+	it("should pass an it whose type error an @expect-error consumes", async ({ expect }) => {
 		expect.assertions(2);
 
 		const result = await checkAsync("expect-error.spec-d.luau");
@@ -106,7 +106,7 @@ describe("luau typecheck integration", () => {
 		expect(result.numPassedTests).toBe(1);
 	});
 
-	it("should fail the it holding an unused @expect-error", async () => {
+	it("should fail the it holding an unused @expect-error", async ({ expect }) => {
 		expect.assertions(2);
 
 		const result = await checkAsync("expect-error-unused.spec-d.luau");

@@ -1,6 +1,6 @@
 import { fromPartial } from "@total-typescript/shoehorn";
 
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import {
 	EXEC_ERROR_RESULT,
@@ -21,7 +21,7 @@ import type { JestResult } from "../types/jest-result-types.ts";
 import { type AgentOptions, formatAgent, formatAgentMultiProject } from "./agent.ts";
 
 describe("formatAgent summary", () => {
-	it("should show file and test counts when all tests pass", () => {
+	it("should show file and test counts when all tests pass", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = createSingleFileResult({ numPassedTests: 3, numTotalTests: 3 });
@@ -30,7 +30,7 @@ describe("formatAgent summary", () => {
 		expect(output).toBe(" Test Files  1 passed (1)\n      Tests  3 passed (3)");
 	});
 
-	it("should show type errors line when typeErrorCount is 0", () => {
+	it("should show type errors line when typeErrorCount is 0", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = createSingleFileResult({ numPassedTests: 3, numTotalTests: 3 });
@@ -43,7 +43,7 @@ describe("formatAgent summary", () => {
 		expect(output).toContain("Type Errors  no errors");
 	});
 
-	it("should show failed count when typeErrorCount is 1", () => {
+	it("should show failed count when typeErrorCount is 1", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = createSingleFileResult({ numPassedTests: 3, numTotalTests: 3 });
@@ -56,7 +56,7 @@ describe("formatAgent summary", () => {
 		expect(output).toContain("Type Errors  1 failed");
 	});
 
-	it("should show type error count when typeErrorCount > 1", () => {
+	it("should show type error count when typeErrorCount > 1", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = createSingleFileResult({ numPassedTests: 3, numTotalTests: 3 });
@@ -69,7 +69,7 @@ describe("formatAgent summary", () => {
 		expect(output).toContain("Type Errors  2 failed");
 	});
 
-	it("should omit type errors line when typeErrorCount is undefined", () => {
+	it("should omit type errors line when typeErrorCount is undefined", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = createSingleFileResult({ numPassedTests: 3, numTotalTests: 3 });
@@ -78,7 +78,7 @@ describe("formatAgent summary", () => {
 		expect(output).not.toContain("Type Errors");
 	});
 
-	it("should show failed and passed file counts", () => {
+	it("should show failed and passed file counts", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = formatAgent(FAILING_RESULT, {
@@ -89,7 +89,7 @@ describe("formatAgent summary", () => {
 		expect(output).toContain(" Test Files  1 failed (1)");
 	});
 
-	it("should count a wholly skipped file in the skipped bucket", () => {
+	it("should count a wholly skipped file in the skipped bucket", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = formatAgent(SKIPPED_RESULT, { maxFailures: 10, rootDir: "/project" });
@@ -97,7 +97,7 @@ describe("formatAgent summary", () => {
 		expect(output).toContain(" Test Files  1 passed | 2 skipped (3)");
 	});
 
-	it("should show failed, passed, and skipped test counts", () => {
+	it("should show failed, passed, and skipped test counts", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = formatAgent(MIXED_RESULT, {
@@ -108,7 +108,7 @@ describe("formatAgent summary", () => {
 		expect(output).toContain("      Tests  1 failed | 4 passed | 1 skipped (6)");
 	});
 
-	it("should show only failed counts when nothing passes", () => {
+	it("should show only failed counts when nothing passes", ({ expect }) => {
 		expect.assertions(1);
 
 		const failedTest = createTestCase({
@@ -123,7 +123,7 @@ describe("formatAgent summary", () => {
 		expect(output).toContain("      Tests  1 failed (1)");
 	});
 
-	it("should include exec errors in failed file count", () => {
+	it("should include exec errors in failed file count", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = formatAgent(MIXED_WITH_EXEC_ERROR_RESULT, {
@@ -136,7 +136,7 @@ describe("formatAgent summary", () => {
 });
 
 describe("formatAgent file headers", () => {
-	it("should show file header with test count and failure count", () => {
+	it("should show file header with test count and failure count", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = formatAgent(FAILING_RESULT, {
@@ -147,7 +147,7 @@ describe("formatAgent file headers", () => {
 		expect(output).toContain(" ❯ src/player.spec.ts (3 tests | 2 failed)");
 	});
 
-	it("should list each failed test with x marker", () => {
+	it("should list each failed test with x marker", ({ expect }) => {
 		expect.assertions(2);
 
 		const output = formatAgent(FAILING_RESULT, {
@@ -159,7 +159,7 @@ describe("formatAgent file headers", () => {
 		expect(output).toContain("   × should be alive");
 	});
 
-	it("should include duration on failed test lines", () => {
+	it("should include duration on failed test lines", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = formatAgent(FAILING_RESULT, {
@@ -170,7 +170,7 @@ describe("formatAgent file headers", () => {
 		expect(output).toContain("   × should have health 5ms");
 	});
 
-	it("should omit duration when test duration is undefined", () => {
+	it("should omit duration when test duration is undefined", ({ expect }) => {
 		expect.assertions(1);
 
 		const failedTest = createTestCase({
@@ -186,7 +186,7 @@ describe("formatAgent file headers", () => {
 		expect(output).toContain("   × should work\n");
 	});
 
-	it("should show suite failed to run for exec errors", () => {
+	it("should show suite failed to run for exec errors", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = formatAgent(EXEC_ERROR_RESULT, {
@@ -197,7 +197,7 @@ describe("formatAgent file headers", () => {
 		expect(output).toContain("(suite failed to run)");
 	});
 
-	it("should only show files with failures", () => {
+	it("should only show files with failures", ({ expect }) => {
 		expect.assertions(2);
 
 		const output = formatAgent(MIXED_RESULT, {
@@ -211,7 +211,7 @@ describe("formatAgent file headers", () => {
 });
 
 describe("formatAgent separator", () => {
-	it("should show Failed Tests N separator before failure details", () => {
+	it("should show Failed Tests N separator before failure details", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = formatAgent(FAILING_RESULT, {
@@ -222,7 +222,7 @@ describe("formatAgent separator", () => {
 		expect(output).toContain("⎯⎯⎯ Failed Tests 2 ⎯⎯⎯");
 	});
 
-	it("should not show separator when all tests pass", () => {
+	it("should not show separator when all tests pass", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = formatAgent(PASSING_RESULT, {
@@ -237,7 +237,7 @@ describe("formatAgent separator", () => {
 // --- Failure details ---
 
 describe("formatAgent failure details", () => {
-	it("should show FAIL with ancestor chain using > separator", () => {
+	it("should show FAIL with ancestor chain using > separator", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = formatAgent(FAILING_RESULT, {
@@ -248,7 +248,7 @@ describe("formatAgent failure details", () => {
 		expect(output).toContain(" FAIL src/player.spec.ts > Player > should have health");
 	});
 
-	it("should show Expected/Received labels", () => {
+	it("should show Expected/Received labels", ({ expect }) => {
 		expect.assertions(2);
 
 		const output = formatAgent(FAILING_RESULT, {
@@ -260,7 +260,7 @@ describe("formatAgent failure details", () => {
 		expect(output).toContain("Received: 0");
 	});
 
-	it("should use singular labels and preserve the full ancestor chain", () => {
+	it("should use singular labels and preserve the full ancestor chain", ({ expect }) => {
 		expect.assertions(2);
 
 		const result = createSingleFileResult({
@@ -293,7 +293,7 @@ describe("formatAgent failure details", () => {
 
 	it.for(["Expected: 100", "Received: 0"])(
 		"should preserve an incomplete expectation as raw output: %s",
-		(message) => {
+		(message, { expect }) => {
 			expect.assertions(2);
 
 			const result = createSingleFileResult({
@@ -321,7 +321,7 @@ describe("formatAgent failure details", () => {
 		},
 	);
 
-	it("should render snapshot diff", () => {
+	it("should render snapshot diff", ({ expect }) => {
 		expect.assertions(2);
 
 		const output = formatAgent(SNAPSHOT_FAILING_RESULT, {
@@ -333,7 +333,7 @@ describe("formatAgent failure details", () => {
 		expect(output).toContain('+   "health": 150,');
 	});
 
-	it("should not duplicate source location in snapshot diff", () => {
+	it("should not duplicate source location in snapshot diff", ({ expect }) => {
 		expect.assertions(2);
 
 		const result = createSingleFileResult({
@@ -409,7 +409,7 @@ describe("formatAgent failure details", () => {
 		expect(output.match(/src\/traits\.spec\.ts:29/g)!).toHaveLength(1);
 	});
 
-	it("should surface timeout error message", () => {
+	it("should surface timeout error message", ({ expect }) => {
 		expect.assertions(1);
 
 		const timeoutMessage = [
@@ -430,7 +430,7 @@ describe("formatAgent failure details", () => {
 		expect(output).toContain('thrown: "Exceeded timeout of 5000 ms for a test.');
 	});
 
-	it("should respect maxFailures limit", () => {
+	it("should respect maxFailures limit", ({ expect }) => {
 		expect.assertions(2);
 
 		const failures = Array.from({ length: 5 }, (_, index) => {
@@ -449,7 +449,7 @@ describe("formatAgent failure details", () => {
 		expect(output.match(/ FAIL /g)!).toHaveLength(2);
 	});
 
-	it("should show exec error message in failure details", () => {
+	it("should show exec error message in failure details", ({ expect }) => {
 		expect.assertions(2);
 
 		const output = formatAgent(EXEC_ERROR_RESULT, {
@@ -461,7 +461,7 @@ describe("formatAgent failure details", () => {
 		expect(output).toContain("Require-by-string is not enabled");
 	});
 
-	it("should show hint for exec errors", () => {
+	it("should show hint for exec errors", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = formatAgent(LOADSTRING_ERROR_RESULT, {
@@ -474,7 +474,7 @@ describe("formatAgent failure details", () => {
 });
 
 describe("formatAgent log hints", () => {
-	it("should show output file hint on failure", () => {
+	it("should show output file hint on failure", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = formatAgent(FAILING_RESULT, {
@@ -486,7 +486,7 @@ describe("formatAgent log hints", () => {
 		expect(output).toContain("View /tmp/results.json for full Jest output");
 	});
 
-	it("should show game output hint on failure", () => {
+	it("should show game output hint on failure", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = formatAgent(FAILING_RESULT, {
@@ -498,7 +498,7 @@ describe("formatAgent log hints", () => {
 		expect(output).toContain("View /tmp/game.json for Roblox game logs");
 	});
 
-	it("should show both hints when both configured", () => {
+	it("should show both hints when both configured", ({ expect }) => {
 		expect.assertions(2);
 
 		const output = formatAgent(FAILING_RESULT, {
@@ -512,7 +512,7 @@ describe("formatAgent log hints", () => {
 		expect(output).toContain("View /tmp/game.json for Roblox game logs");
 	});
 
-	it("should not show hints on passing results", () => {
+	it("should not show hints on passing results", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = formatAgent(PASSING_RESULT, {
@@ -524,7 +524,7 @@ describe("formatAgent log hints", () => {
 		expect(output).not.toContain("View");
 	});
 
-	it("should not show hints when no paths configured", () => {
+	it("should not show hints when no paths configured", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = formatAgent(FAILING_RESULT, {
@@ -535,7 +535,7 @@ describe("formatAgent log hints", () => {
 		expect(output).not.toContain("View");
 	});
 
-	it("should show hints without size when size is undefined", () => {
+	it("should show hints without size when size is undefined", ({ expect }) => {
 		expect.assertions(2);
 
 		const output = formatAgent(FAILING_RESULT, {
@@ -551,7 +551,7 @@ describe("formatAgent log hints", () => {
 });
 
 describe("formatAgent source mapping", () => {
-	it("should show Luau location for Luau-only mapped location", () => {
+	it("should show Luau location for Luau-only mapped location", ({ expect }) => {
 		expect.assertions(1);
 
 		const failedTest = createTestCase({
@@ -580,7 +580,7 @@ describe("formatAgent source mapping", () => {
 		expect(output).toContain(" FAIL lib/test.spec.luau:5 > TestSuite > should work");
 	});
 
-	it("should resolve DataModel testFilePath to filesystem path", () => {
+	it("should resolve DataModel testFilePath to filesystem path", ({ expect }) => {
 		expect.assertions(2);
 
 		const failedTest = createTestCase({
@@ -609,7 +609,7 @@ describe("formatAgent source mapping", () => {
 });
 
 describe("formatAgent edge cases", () => {
-	it("should show FAIL without ancestors when ancestorTitles is empty", () => {
+	it("should show FAIL without ancestors when ancestorTitles is empty", ({ expect }) => {
 		expect.assertions(1);
 
 		const failedTest = createTestCase({
@@ -626,7 +626,7 @@ describe("formatAgent edge cases", () => {
 		expect(output).toContain(" FAIL src/test.spec.ts > should work");
 	});
 
-	it("should preserve path when it does not start with rootDir", () => {
+	it("should preserve path when it does not start with rootDir", ({ expect }) => {
 		expect.assertions(1);
 
 		const failedTest = createTestCase({
@@ -642,7 +642,7 @@ describe("formatAgent edge cases", () => {
 		expect(output).toContain("other/path/test.spec.ts");
 	});
 
-	it("should make absolute source-mapped paths relative", () => {
+	it("should make absolute source-mapped paths relative", ({ expect }) => {
 		expect.assertions(2);
 
 		const failedTest = createTestCase({
@@ -667,7 +667,7 @@ describe("formatAgent edge cases", () => {
 		expect(output).not.toContain("D:/roblox");
 	});
 
-	it("should make paths relative when both use forward slashes", () => {
+	it("should make paths relative when both use forward slashes", ({ expect }) => {
 		expect.assertions(2);
 
 		const failedTest = createTestCase({
@@ -694,7 +694,7 @@ describe("formatAgent edge cases", () => {
 });
 
 describe("formatAgent loadstring hint", () => {
-	it("should show hint when loadstring is not available", () => {
+	it("should show hint when loadstring is not available", ({ expect }) => {
 		expect.assertions(2);
 
 		const output = formatAgent(LOADSTRING_ERROR_RESULT, {
@@ -713,7 +713,7 @@ describe("formatAgent snapshots", () => {
 		rootDir: "/project",
 	};
 
-	it("should format passing results", () => {
+	it("should format passing results", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = formatAgent(PASSING_RESULT, baseOptions);
@@ -724,7 +724,7 @@ describe("formatAgent snapshots", () => {
 		`);
 	});
 
-	it("should format failing results", () => {
+	it("should format failing results", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = formatAgent(FAILING_RESULT, baseOptions);
@@ -749,7 +749,7 @@ describe("formatAgent snapshots", () => {
 		`);
 	});
 
-	it("should format mixed results", () => {
+	it("should format mixed results", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = formatAgent(MIXED_RESULT, baseOptions);
@@ -769,7 +769,7 @@ describe("formatAgent snapshots", () => {
 		`);
 	});
 
-	it("should format exec-error-only result", () => {
+	it("should format exec-error-only result", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = formatAgent(EXEC_ERROR_RESULT, baseOptions);
@@ -787,7 +787,7 @@ describe("formatAgent snapshots", () => {
 		`);
 	});
 
-	it("should format a timed-out result apart from a suite that threw", () => {
+	it("should format a timed-out result apart from a suite that threw", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = formatAgent(TIMED_OUT_RESULT, baseOptions);
@@ -805,7 +805,7 @@ describe("formatAgent snapshots", () => {
 		`);
 	});
 
-	it("should format mixed passing + exec-error result", () => {
+	it("should format mixed passing + exec-error result", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = formatAgent(MIXED_WITH_EXEC_ERROR_RESULT, baseOptions);
@@ -825,7 +825,7 @@ describe("formatAgent snapshots", () => {
 });
 
 describe("formatAgent complete report contracts", () => {
-	it("should preserve representative failure reports exactly", () => {
+	it("should preserve representative failure reports exactly", ({ expect }) => {
 		expect.assertions(1);
 
 		const options: AgentOptions = {
@@ -849,7 +849,7 @@ describe("formatAgent complete report contracts", () => {
 describe(formatAgentMultiProject, () => {
 	const baseOptions: AgentOptions = { maxFailures: 10, rootDir: "/project" };
 
-	it("should group passing projects with headers and combined summary", () => {
+	it("should group passing projects with headers and combined summary", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = formatAgentMultiProject(
@@ -870,7 +870,7 @@ describe(formatAgentMultiProject, () => {
 
 	// A bailed run shows only the packages it reached, so without this the
 	// report reads as a complete run that happened to be short.
-	it("should report how far a bailed run got", () => {
+	it("should report how far a bailed run got", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = formatAgentMultiProject([{ displayName: "core", result: PASSING_RESULT }], {
@@ -881,7 +881,7 @@ describe(formatAgentMultiProject, () => {
 		expect(output).toContain("Bailed  after 1 package, 3 not run");
 	});
 
-	it("should report how many test files a Partial Run selected", () => {
+	it("should report how many test files a Partial Run selected", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = formatAgentMultiProject([{ displayName: "core", result: PASSING_RESULT }], {
@@ -896,7 +896,7 @@ describe(formatAgentMultiProject, () => {
 		expect(output).toContain("   Affected  1 of 3 test files (related to src/leaf.luau)");
 	});
 
-	it("should leave the bail line out of a run that did not bail", () => {
+	it("should leave the bail line out of a run that did not bail", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = formatAgentMultiProject(
@@ -907,7 +907,7 @@ describe(formatAgentMultiProject, () => {
 		expect(output).not.toContain("Bailed");
 	});
 
-	it("should show failure details across projects", () => {
+	it("should show failure details across projects", ({ expect }) => {
 		expect.assertions(5);
 
 		const output = formatAgentMultiProject(
@@ -925,7 +925,7 @@ describe(formatAgentMultiProject, () => {
 		expect(output).toMatchSnapshot();
 	});
 
-	it("should show exec errors from multiple projects", () => {
+	it("should show exec errors from multiple projects", ({ expect }) => {
 		expect.assertions(4);
 
 		const output = formatAgentMultiProject(
@@ -942,7 +942,7 @@ describe(formatAgentMultiProject, () => {
 		expect(output).toMatchSnapshot();
 	});
 
-	it("should show skipped files in project header and summary", () => {
+	it("should show skipped files in project header and summary", ({ expect }) => {
 		expect.assertions(4);
 
 		const output = formatAgentMultiProject(
@@ -959,7 +959,7 @@ describe(formatAgentMultiProject, () => {
 		expect(output).toMatchSnapshot();
 	});
 
-	it("should show hints in multi-project output", () => {
+	it("should show hints in multi-project output", ({ expect }) => {
 		expect.assertions(3);
 
 		const output = formatAgentMultiProject(
@@ -975,7 +975,7 @@ describe(formatAgentMultiProject, () => {
 		expect(output).toMatchSnapshot();
 	});
 
-	it("should omit passed count when no tests pass", () => {
+	it("should omit passed count when no tests pass", ({ expect }) => {
 		expect.assertions(2);
 
 		const output = formatAgentMultiProject(
@@ -990,7 +990,7 @@ describe(formatAgentMultiProject, () => {
 		expect(output).not.toMatch(/\d+ passed/);
 	});
 
-	it("should append Type Errors line when typeErrorCount is provided", () => {
+	it("should append Type Errors line when typeErrorCount is provided", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = formatAgentMultiProject([{ displayName: "core", result: PASSING_RESULT }], {
@@ -1001,7 +1001,7 @@ describe(formatAgentMultiProject, () => {
 		expect(output).toContain("Type Errors  3 failed");
 	});
 
-	it("should format the complete multi-project report contract exactly", () => {
+	it("should format the complete multi-project report contract exactly", ({ expect }) => {
 		expect.assertions(2);
 
 		const output = formatAgentMultiProject(
@@ -1055,7 +1055,9 @@ describe("agent package-relative failure detail", () => {
 		],
 	};
 
-	it("should show file lines against the run root and failures against the package root", () => {
+	it("should show file lines against the run root and failures against the package root", ({
+		expect,
+	}) => {
 		expect.assertions(4);
 
 		const output = formatAgentMultiProject(
@@ -1084,7 +1086,9 @@ describe("formatAgent single and multi-project agreement", () => {
 		);
 	}
 
-	it("should count suites that threw toward the snippet level in a single project", () => {
+	it("should count suites that threw toward the snippet level in a single project", ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const failing = locatedFailures(5);
@@ -1102,7 +1106,7 @@ describe("formatAgent single and multi-project agreement", () => {
 		expect(formatAgent(result, options)).not.toContain("> 3| boom()");
 	});
 
-	it("should cap maxFailures across the run, not per project", () => {
+	it("should cap maxFailures across the run, not per project", ({ expect }) => {
 		expect.assertions(2);
 
 		const output = formatAgentMultiProject(

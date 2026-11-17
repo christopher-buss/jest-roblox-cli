@@ -1,33 +1,33 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { findExpectationColumn } from "./column-finder.ts";
 
 describe(findExpectationColumn, () => {
-	it("should return undefined for a missing source line", () => {
+	it("should return undefined for a missing source line", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(findExpectationColumn(undefined)).toBeUndefined();
 	});
 
-	it("should return undefined for empty line", () => {
+	it("should return undefined for empty line", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(findExpectationColumn("")).toBeUndefined();
 	});
 
-	it("should return undefined for line without expect", () => {
+	it("should return undefined for line without expect", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(findExpectationColumn("const x = 5;")).toBeUndefined();
 	});
 
-	it("should not mistake a trailing method call for an expectation matcher", () => {
+	it("should not mistake a trailing method call for an expectation matcher", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(findExpectationColumn("const value = service.resolve();")).toBeUndefined();
 	});
 
-	it("should find column of .toBe matcher", () => {
+	it("should find column of .toBe matcher", ({ expect }) => {
 		expect.assertions(1);
 
 		const line = "    expect(2 + 2).toBe(5);";
@@ -36,7 +36,7 @@ describe(findExpectationColumn, () => {
 		expect(findExpectationColumn(line)).toBe(19);
 	});
 
-	it("should find column of .toEqual matcher", () => {
+	it("should find column of .toEqual matcher", ({ expect }) => {
 		expect.assertions(1);
 
 		const line = "expect(result).toEqual({ a: 1 });";
@@ -45,7 +45,7 @@ describe(findExpectationColumn, () => {
 		expect(findExpectationColumn(line)).toBe(16);
 	});
 
-	it("should find last matcher when chained", () => {
+	it("should find last matcher when chained", ({ expect }) => {
 		expect.assertions(1);
 
 		const line = "expect(value).not.toBe(undefined);";
@@ -54,7 +54,7 @@ describe(findExpectationColumn, () => {
 		expect(findExpectationColumn(line)).toBe(19);
 	});
 
-	it("should handle whitespace around dot", () => {
+	it("should handle whitespace around dot", ({ expect }) => {
 		expect.assertions(1);
 
 		const line = "expect(x) . toBe(5);";
@@ -63,7 +63,7 @@ describe(findExpectationColumn, () => {
 		expect(findExpectationColumn(line)).toBe(13);
 	});
 
-	it("should return undefined if no matcher found", () => {
+	it("should return undefined if no matcher found", ({ expect }) => {
 		expect.assertions(1);
 
 		const line = "expect(something)";
@@ -71,13 +71,13 @@ describe(findExpectationColumn, () => {
 		expect(findExpectationColumn(line)).toBeUndefined();
 	});
 
-	it("should ignore an expectation property that is not called", () => {
+	it("should ignore an expectation property that is not called", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(findExpectationColumn("expect(value).toBe")).toBeUndefined();
 	});
 
-	it("should find column of :toBe matcher in Luau colon syntax", () => {
+	it("should find column of :toBe matcher in Luau colon syntax", ({ expect }) => {
 		expect.assertions(1);
 
 		const line = '\t\texpect(player.name):toBe("Alice")';
@@ -86,7 +86,7 @@ describe(findExpectationColumn, () => {
 		expect(findExpectationColumn(line)).toBe(23);
 	});
 
-	it("should handle expect with indentation", () => {
+	it("should handle expect with indentation", ({ expect }) => {
 		expect.assertions(1);
 
 		const line = "\t\texpect(foo).toHaveBeenCalled();";
@@ -96,7 +96,7 @@ describe(findExpectationColumn, () => {
 		expect(findExpectationColumn(line)).toBe(15);
 	});
 
-	it("should find column of expect.assertions()", () => {
+	it("should find column of expect.assertions()", ({ expect }) => {
 		expect.assertions(1);
 
 		const line = "            expect.assertions(2);";
@@ -105,7 +105,7 @@ describe(findExpectationColumn, () => {
 		expect(findExpectationColumn(line)).toBe(20);
 	});
 
-	it("should find column of indented expect.assertions()", () => {
+	it("should find column of indented expect.assertions()", ({ expect }) => {
 		expect.assertions(1);
 
 		const line = "\t\texpect.assertions(3);";

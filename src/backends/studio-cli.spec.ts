@@ -7,7 +7,7 @@ import type { ChildProcess } from "node:child_process";
 import { EventEmitter } from "node:events";
 import * as path from "node:path";
 import nodeProcess from "node:process";
-import { assert, describe, expect, it, type Mock, onTestFinished, vi } from "vitest";
+import { assert, describe, it, type Mock, type TestContext, vi } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import {
@@ -74,15 +74,16 @@ function job(displayName: string, overrides: Partial<ResolvedConfig> = {}): Conf
 /**
  * The lock-poll interval never arms on the timeout path (a hung run gets no
  * graceful wait), so setTimeout is the only timer worth faking here.
+ * @param onTestFinished - Restores the real timers after the test.
  */
-function useResultDeadlineTimers(): void {
+function useResultDeadlineTimers(onTestFinished: TestContext["onTestFinished"]): void {
 	vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
 	onTestFinished(() => {
 		vi.useRealTimers();
 	});
 }
 
-function stubWin32Platform(): void {
+function stubWin32Platform(onTestFinished: TestContext["onTestFinished"]): void {
 	const original = Object.getOwnPropertyDescriptor(nodeProcess, "platform")!;
 	Object.defineProperty(nodeProcess, "platform", { value: "win32" });
 	onTestFinished(() => {
@@ -324,13 +325,19 @@ function makeBackend({
 	});
 }
 
-function startBootingRun(extra: Partial<ConstructorParameters<typeof StudioCliBackend>[0]> = {}) {
+function startBootingRun({
+	extra = {},
+	onTestFinished,
+}: {
+	extra?: Partial<ConstructorParameters<typeof StudioCliBackend>[0]>;
+	onTestFinished: TestContext["onTestFinished"];
+}) {
 	const { fileSystem } = createMemoryFileSystem();
-	useResultDeadlineTimers();
+	useResultDeadlineTimers(onTestFinished);
 	const studio = bootingStudio(fileSystem);
 	const settled = makeBackend({ extra, fileSystem, launch: studio.launch })
 		.runTestsAsync(timed(singleJob, 400))
-		.catch((err: unknown) => err);
+		.catch((err) => err);
 	return { settled, studio };
 }
 
@@ -368,7 +375,10 @@ const SERVER_TURNS = 50;
 const singleJob = studioRequest({ jobs: [job("")] });
 
 describe(StudioCliBackend, () => {
-	it("should run a single-project suite end-to-end and return one rawResult", async () => {
+	it("should run a single-project suite end-to-end and return one rawResult", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(3);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -385,7 +395,7 @@ describe(StudioCliBackend, () => {
 		expect(timing).toStrictEqual({ executionMs: 45 });
 	});
 
-	it("should close the tests progress stage after the result arrives", async () => {
+	it("should close the tests progress stage after the result arrives", async ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -403,7 +413,9 @@ describe(StudioCliBackend, () => {
 		expect(done).toHaveBeenCalledExactlyOnceWith();
 	});
 
-	it("should return one rawResult per job, in submitted order, for a multi-project run", async () => {
+	it("should return one rawResult per job, in submitted order, for a multi-project run", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -423,7 +435,7 @@ describe(StudioCliBackend, () => {
 		expect(rawResults.map((raw) => raw.entry.gameOutput)).toStrictEqual(["11", "22"]);
 	});
 
-	it("should bind the run server to loopback on an OS-assigned port", async () => {
+	it("should bind the run server to loopback on an OS-assigned port", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -440,7 +452,9 @@ describe(StudioCliBackend, () => {
 		expect(factory).toHaveBeenCalledExactlyOnceWith({ host: "127.0.0.1", port: 0 });
 	});
 
-	it("should surface the frame gameOutput as the fallback on each rawResult", async () => {
+	it("should surface the frame gameOutput as the fallback on each rawResult", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -456,7 +470,7 @@ describe(StudioCliBackend, () => {
 		expect(rawResults[0]!.fallbackGameOutput).toBe(fallback);
 	});
 
-	it("should ask the run for the managed plugin's key", async () => {
+	it("should ask the run for the managed plugin's key", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -468,7 +482,7 @@ describe(StudioCliBackend, () => {
 		expect(bootstrap()).toContain(`"pluginKey":"${PLUGIN_KEY}"`);
 	});
 
-	it("should ask for no key where no managed plugin was installed", async () => {
+	it("should ask for no key where no managed plugin was installed", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -486,7 +500,7 @@ describe(StudioCliBackend, () => {
 		expect(bootstrap()).not.toContain("pluginKey");
 	});
 
-	it("should install no plugin when Studio cannot be found", async () => {
+	it("should install no plugin when Studio cannot be found", async ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -507,7 +521,7 @@ describe(StudioCliBackend, () => {
 		expect(installPluginAsync).not.toHaveBeenCalled();
 	});
 
-	it("should install the managed plugin before Studio launches", async () => {
+	it("should install the managed plugin before Studio launches", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -536,7 +550,7 @@ describe(StudioCliBackend, () => {
 		]);
 	});
 
-	it("should tell the plugin the run budget it must finish inside", async () => {
+	it("should tell the plugin the run budget it must finish inside", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -552,7 +566,9 @@ describe(StudioCliBackend, () => {
 		expect(bootstrap()).toContain('"runBudgetMs":120000');
 	});
 
-	it("should write a bootstrap that drives ExecuteRunModeAsync over a result socket", async () => {
+	it("should write a bootstrap that drives ExecuteRunModeAsync over a result socket", async ({
+		expect,
+	}) => {
 		expect.assertions(5);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -583,7 +599,9 @@ describe(StudioCliBackend, () => {
 		expect(stableBootstrap).toMatchSnapshot();
 	});
 
-	it("should ask for a plugin update when no managed plugin was installed", async () => {
+	it("should ask for a plugin update when no managed plugin was installed", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -601,7 +619,9 @@ describe(StudioCliBackend, () => {
 		);
 	});
 
-	it("should carry a large jestOutput through the socket frame intact (no print cap)", async () => {
+	it("should carry a large jestOutput through the socket frame intact (no print cap)", async ({
+		expect,
+	}) => {
 		// The old file channel capped a single `print` at ~100k chars; the socket
 		// carries the whole envelope in one frame, so a large jestOutput rides
 		// through verbatim.
@@ -619,7 +639,9 @@ describe(StudioCliBackend, () => {
 		expect(rawResults[0]!.entry.jestOutput).toContain(bigName);
 	});
 
-	it("should surface a whole-run plugin error (success:false) as its message", async () => {
+	it("should surface a whole-run plugin error (success:false) as its message", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -631,13 +653,16 @@ describe(StudioCliBackend, () => {
 		await expect(backend.runTestsAsync(singleJob)).rejects.toThrow(/plugin produced no result/);
 	});
 
-	it("should ignore non-result frames and resolve on the matching result", async () => {
+	it("should ignore non-result frames and resolve on the matching result", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		// The server can see engine/plugin chatter and stray frames; only a
 		// well-formed `results` frame for THIS requestId resolves the run.
 		expect.assertions(5);
 
 		const { fileSystem } = createMemoryFileSystem();
-		useResultDeadlineTimers();
+		useResultDeadlineTimers(onTestFinished);
 
 		const process = makeFakeProcess();
 		let socket: MockWebSocket | undefined;
@@ -679,21 +704,24 @@ describe(StudioCliBackend, () => {
 		expect(getLastCreatedServer()!.close).toHaveBeenCalledExactlyOnceWith();
 	});
 
-	it("should reject with a timeout when a started run sends no result frame", async () => {
+	it("should reject with a timeout when a started run sends no result frame", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(3);
 
 		const { fileSystem } = createMemoryFileSystem();
 
-		useResultDeadlineTimers();
+		useResultDeadlineTimers(onTestFinished);
 
 		const studio = bootingStudio(fileSystem);
 		const backend = makeBackend({ fileSystem, launch: studio.launch });
 
-		const settled = backend.runTestsAsync(timed(singleJob, 40)).catch((err: unknown) => err);
+		const settled = backend.runTestsAsync(timed(singleJob, 40)).catch((err) => err);
 		await vi.advanceTimersByTimeAsync(0);
 		studio.send("started");
 		await vi.runAllTimersAsync();
-		const caught: unknown = await settled;
+		const caught = await settled;
 
 		assert(caught instanceof Error);
 
@@ -708,11 +736,14 @@ describe(StudioCliBackend, () => {
 		expect(getLastCreatedServer()!.close).toHaveBeenCalledExactlyOnceWith();
 	});
 
-	it("should start the run timeout once the bootstrap reports the run started", async () => {
+	it("should start the run timeout once the bootstrap reports the run started", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
-		useResultDeadlineTimers();
+		useResultDeadlineTimers(onTestFinished);
 
 		const studio = bootingStudio(fileSystem);
 		const backend = makeBackend({
@@ -731,12 +762,18 @@ describe(StudioCliBackend, () => {
 		expect(rawResults).toHaveLength(1);
 	});
 
-	it("should reject when the run never starts within the boot timeout", async () => {
+	it("should reject when the run never starts within the boot timeout", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(2);
 
-		const { settled, studio } = startBootingRun({ bootTimeout: 100 });
+		const { settled, studio } = startBootingRun({
+			extra: { bootTimeout: 100 },
+			onTestFinished,
+		});
 		await vi.advanceTimersByTimeAsync(100);
-		const caught: unknown = await settled;
+		const caught = await settled;
 
 		assert(caught instanceof Error);
 
@@ -751,43 +788,49 @@ describe(StudioCliBackend, () => {
 		expect(studio.process.kill).toHaveBeenCalledExactlyOnceWith();
 	});
 
-	it("should read the boot timeout from JEST_ROBLOX_STUDIO_BOOT_TIMEOUT", async () => {
+	it("should read the boot timeout from JEST_ROBLOX_STUDIO_BOOT_TIMEOUT", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(1);
 
 		vi.stubEnv("JEST_ROBLOX_STUDIO_BOOT_TIMEOUT", "70");
-		const { settled } = startBootingRun();
+		const { settled } = startBootingRun({ onTestFinished });
 		await vi.advanceTimersByTimeAsync(70);
-		const caught: unknown = await settled;
+		const caught = await settled;
 
 		assert(caught instanceof Error);
 
 		expect(caught.message).toMatch(/did not start the run within 70ms/);
 	});
 
-	it.for(["45s", "0"])("should reject a JEST_ROBLOX_STUDIO_BOOT_TIMEOUT of %j", (value) => {
-		expect.assertions(1);
-
-		vi.stubEnv("JEST_ROBLOX_STUDIO_BOOT_TIMEOUT", value);
-
-		expect(() => {
-			return new StudioCliBackend({
-				childProcess: fromAny({}),
-				fileSystem: createMemoryFileSystem().fileSystem,
-			});
-		}).toThrow(
-			`JEST_ROBLOX_STUDIO_BOOT_TIMEOUT must be a positive integer of milliseconds, got "${value}".`,
-		);
-	});
-
-	it.for([undefined, ""])(
-		"should give Studio 45s to start the run when JEST_ROBLOX_STUDIO_BOOT_TIMEOUT is %j",
-		async (value) => {
+	it.for(["45s", "0"])(
+		"should reject a JEST_ROBLOX_STUDIO_BOOT_TIMEOUT of %j",
+		(value, { expect }) => {
 			expect.assertions(1);
 
 			vi.stubEnv("JEST_ROBLOX_STUDIO_BOOT_TIMEOUT", value);
-			const { settled } = startBootingRun();
+
+			expect(() => {
+				return new StudioCliBackend({
+					childProcess: fromAny({}),
+					fileSystem: createMemoryFileSystem().fileSystem,
+				});
+			}).toThrow(
+				`JEST_ROBLOX_STUDIO_BOOT_TIMEOUT must be a positive integer of milliseconds, got "${value}".`,
+			);
+		},
+	);
+
+	it.for([undefined, ""])(
+		"should give Studio 45s to start the run when JEST_ROBLOX_STUDIO_BOOT_TIMEOUT is %j",
+		async (value, { expect, onTestFinished }) => {
+			expect.assertions(1);
+
+			vi.stubEnv("JEST_ROBLOX_STUDIO_BOOT_TIMEOUT", value);
+			const { settled } = startBootingRun({ onTestFinished });
 			await vi.advanceTimersByTimeAsync(45_000);
-			const caught: unknown = await settled;
+			const caught = await settled;
 
 			assert(caught instanceof Error);
 
@@ -795,10 +838,13 @@ describe(StudioCliBackend, () => {
 		},
 	);
 
-	it("should stop the boot timeout once the run starts", async () => {
+	it("should stop the boot timeout once the run starts", async ({ expect, onTestFinished }) => {
 		expect.assertions(1);
 
-		const { settled, studio } = startBootingRun({ bootTimeout: 100 });
+		const { settled, studio } = startBootingRun({
+			extra: { bootTimeout: 100 },
+			onTestFinished,
+		});
 		await vi.advanceTimersByTimeAsync(0);
 		studio.send("started");
 		await vi.advanceTimersByTimeAsync(100);
@@ -808,11 +854,14 @@ describe(StudioCliBackend, () => {
 		);
 	});
 
-	it("should leave no deadline armed when a started frame follows the result", async () => {
+	it("should leave no deadline armed when a started frame follows the result", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
-		useResultDeadlineTimers();
+		useResultDeadlineTimers(onTestFinished);
 
 		const studio = bootingStudio(fileSystem);
 		const settled = makeBackend({ fileSystem, launch: studio.launch }).runTestsAsync(singleJob);
@@ -824,7 +873,7 @@ describe(StudioCliBackend, () => {
 		expect(vi.getTimerCount()).toBe(0);
 	});
 
-	it("should reject when the result server errors", async () => {
+	it("should reject when the result server errors", async ({ expect }) => {
 		expect.assertions(3);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -846,7 +895,7 @@ describe(StudioCliBackend, () => {
 		expect(getLastCreatedServer()!.close).toHaveBeenCalledExactlyOnceWith();
 	});
 
-	it("should reject when Studio fails to spawn", async () => {
+	it("should reject when Studio fails to spawn", async ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -864,7 +913,7 @@ describe(StudioCliBackend, () => {
 			},
 		})
 			.runTestsAsync(singleJob)
-			.catch((err: unknown) => err);
+			.catch((err) => err);
 
 		assert(caught instanceof Error);
 
@@ -872,7 +921,7 @@ describe(StudioCliBackend, () => {
 		expect(caught.cause).toBe(cause);
 	});
 
-	it("should launch Studio with the RunScript task argument set", async () => {
+	it("should launch Studio with the RunScript task argument set", async ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -902,7 +951,9 @@ describe(StudioCliBackend, () => {
 		);
 	});
 
-	it("should forward headed=true to the launch request when constructed headed", async () => {
+	it("should forward headed=true to the launch request when constructed headed", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -921,7 +972,7 @@ describe(StudioCliBackend, () => {
 		expect(wasHeadedRequested).toBeTrue();
 	});
 
-	it("should default headed to false in the launch request", async () => {
+	it("should default headed to false in the launch request", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -940,7 +991,7 @@ describe(StudioCliBackend, () => {
 		expect(wasHeadedRequested).toBeFalse();
 	});
 
-	it("should pass the studioPath override to the discover seam", async () => {
+	it("should pass the studioPath override to the discover seam", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -963,7 +1014,7 @@ describe(StudioCliBackend, () => {
 		expect(discover).toHaveBeenCalledWith("C:/override/RobloxStudioBeta.exe");
 	});
 
-	it("should name a deferred stop", async () => {
+	it("should name a deferred stop", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -984,7 +1035,9 @@ describe(StudioCliBackend, () => {
 		).rejects.toThrow(/^studio-cli backend deferred 1 of 2 jobs/);
 	});
 
-	it("should drive the staged workspace entries (pkg/project per job), not a configs payload", async () => {
+	it("should drive the staged workspace entries (pkg/project per job), not a configs payload", async ({
+		expect,
+	}) => {
 		expect.assertions(4);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -1009,7 +1062,9 @@ describe(StudioCliBackend, () => {
 		expect(bootstrap()).toContain(`"resultBudgetBytes":${String(Number.MAX_SAFE_INTEGER)}`);
 	});
 
-	it("should tell the workspace runner to stop on the first failing package under --bail", async () => {
+	it("should tell the workspace runner to stop on the first failing package under --bail", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -1031,7 +1086,7 @@ describe(StudioCliBackend, () => {
 		expect(request.workspace.bail).toBeTrue();
 	});
 
-	it("should cap a workspace run's VM count at its entry count", async () => {
+	it("should cap a workspace run's VM count at its entry count", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -1063,7 +1118,9 @@ describe(StudioCliBackend, () => {
 		expect(request.workspace).toMatchObject({ runBudgetMs: 120_000, vmParallel: 4 });
 	});
 
-	it("should return one rawResult per workspace package, in submitted order", async () => {
+	it("should return one rawResult per workspace package, in submitted order", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -1088,7 +1145,9 @@ describe(StudioCliBackend, () => {
 		expect(rawResults.map((raw) => raw.entry.gameOutput)).toStrictEqual(["5", "7"]);
 	});
 
-	it("should report a bailed workspace run with the entries it did return", async () => {
+	it("should report a bailed workspace run with the entries it did return", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -1116,7 +1175,7 @@ describe(StudioCliBackend, () => {
 		expect(didBail).toBeTrue();
 	});
 
-	it("should construct with default seams", async () => {
+	it("should construct with default seams", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -1129,7 +1188,9 @@ describe(StudioCliBackend, () => {
 		expect(backend.kind).toBe("studio-cli");
 	});
 
-	it("should resolve the studioPath override through the default discover seam", async () => {
+	it("should resolve the studioPath override through the default discover seam", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -1157,13 +1218,16 @@ describe(StudioCliBackend, () => {
 		expect(launchedPath).toBe("C:/seeded/RobloxStudioBeta.exe");
 	});
 
-	it("should build the managed plugin through the backend's own child process by default", async () => {
+	it("should build the managed plugin through the backend's own child process by default", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(2);
 
 		const { fileSystem } = createMemoryFileSystem();
 		vi.stubEnv("LOCALAPPDATA", "/local");
 		vi.stubEnv("JEST_ROBLOX_PLUGINS_DIR", undefined);
-		stubWin32Platform();
+		stubWin32Platform(onTestFinished);
 		const { bootstrap, launch } = captureBootstrap(fileSystem);
 		const backend = backendBuildingPlugin(fileSystem, { launch });
 
@@ -1177,12 +1241,15 @@ describe(StudioCliBackend, () => {
 		);
 	});
 
-	it("should install the managed plugin into the configured plugins folder by default", async () => {
+	it("should install the managed plugin into the configured plugins folder by default", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
 		vi.stubEnv("LOCALAPPDATA", "/local");
-		stubWin32Platform();
+		stubWin32Platform(onTestFinished);
 		const backend = backendBuildingPlugin(fileSystem, {
 			launch: replyWith({ fileSystem, reply: {} }).launch,
 			pluginsDirectory: "D:/Studio/Plugins",
@@ -1195,7 +1262,9 @@ describe(StudioCliBackend, () => {
 		]);
 	});
 
-	it("should fall back to JEST_ROBLOX_STUDIO_PATH when no override is given", async () => {
+	it("should fall back to JEST_ROBLOX_STUDIO_PATH when no override is given", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -1224,12 +1293,17 @@ describe(StudioCliBackend, () => {
 	});
 
 	describe("early-ended run mode", () => {
-		async function startEarlyEndAsync(
-			extra: Parameters<typeof makeBackend>[0]["extra"] = {},
+		async function startEarlyEndAsync({
+			extra = {},
+			onTestFinished,
 			timeout = 300_000,
-		) {
+		}: {
+			extra?: Parameters<typeof makeBackend>[0]["extra"];
+			onTestFinished: TestContext["onTestFinished"];
+			timeout?: number;
+		}) {
 			const { fileSystem } = createMemoryFileSystem();
-			useResultDeadlineTimers();
+			useResultDeadlineTimers(onTestFinished);
 			const studio = earlyEndStudio(fileSystem);
 			const settled = makeBackend({ extra, fileSystem, launch: studio.launch }).runTestsAsync(
 				timed(singleJob, timeout),
@@ -1250,10 +1324,13 @@ describe(StudioCliBackend, () => {
 			return plugin;
 		}
 
-		it("should run with the result the plugin sends over the side channel after a nil return", async () => {
+		it("should run with the result the plugin sends over the side channel after a nil return", async ({
+			expect,
+			onTestFinished,
+		}) => {
 			expect.assertions(2);
 
-			const { settled, studio } = await startEarlyEndAsync();
+			const { settled, studio } = await startEarlyEndAsync({ onTestFinished });
 			returnNil(studio);
 			const plugin = readyPlugin(studio);
 			studio.sendResult(plugin, {
@@ -1265,14 +1342,20 @@ describe(StudioCliBackend, () => {
 			expect(vi.getTimerCount()).toBe(0);
 		});
 
-		it("should name the early-end race when no plugin answers after a nil return", async () => {
+		it("should name the early-end race when no plugin answers after a nil return", async ({
+			expect,
+			onTestFinished,
+		}) => {
 			expect.assertions(3);
 
-			const { settled: run, studio } = await startEarlyEndAsync({}, 600_000);
-			const settled = run.catch((err: unknown) => err);
+			const { settled: run, studio } = await startEarlyEndAsync({
+				onTestFinished,
+				timeout: 600_000,
+			});
+			const settled = run.catch((err) => err);
 			returnNil(studio);
 			await vi.advanceTimersByTimeAsync(30_000);
-			const caught: unknown = await settled;
+			const caught = await settled;
 
 			assert(caught instanceof Error);
 
@@ -1281,41 +1364,57 @@ describe(StudioCliBackend, () => {
 			expect(studio.process.kill).toHaveBeenCalledExactlyOnceWith();
 		});
 
-		it("should name the plugin key no copy answered for after a nil return", async () => {
+		it("should name the plugin key no copy answered for after a nil return", async ({
+			expect,
+			onTestFinished,
+		}) => {
 			expect.assertions(1);
 
-			const { settled: run, studio } = await startEarlyEndAsync({}, 600_000);
-			const settled = run.catch((err: unknown) => err);
+			const { settled: run, studio } = await startEarlyEndAsync({
+				onTestFinished,
+				timeout: 600_000,
+			});
+			const settled = run.catch((err) => err);
 			returnNil(studio);
 			await vi.advanceTimersByTimeAsync(30_000);
-			const caught: unknown = await settled;
+			const caught = await settled;
 
 			assert(caught instanceof Error);
 
 			expect(caught.message).toContain(`plugin ${PLUGIN_KEY}`);
 		});
 
-		it("should name no plugin key after a nil return when none was installed", async () => {
+		it("should name no plugin key after a nil return when none was installed", async ({
+			expect,
+			onTestFinished,
+		}) => {
 			expect.assertions(1);
 
-			const { settled: run, studio } = await startEarlyEndAsync(
-				{ installPluginAsync: async () => {} },
-				600_000,
-			);
-			const settled = run.catch((err: unknown) => err);
+			const { settled: run, studio } = await startEarlyEndAsync({
+				extra: { installPluginAsync: async () => {} },
+				onTestFinished,
+				timeout: 600_000,
+			});
+			const settled = run.catch((err) => err);
 			returnNil(studio);
 			await vi.advanceTimersByTimeAsync(30_000);
-			const caught: unknown = await settled;
+			const caught = await settled;
 
 			assert(caught instanceof Error);
 
 			expect(caught.message).not.toContain("No copy of the Studio plugin");
 		});
 
-		it("should keep the run going while a plugin that took the relay runs the suite", async () => {
+		it("should keep the run going while a plugin that took the relay runs the suite", async ({
+			expect,
+			onTestFinished,
+		}) => {
 			expect.assertions(1);
 
-			const { settled, studio } = await startEarlyEndAsync({}, 600_000);
+			const { settled, studio } = await startEarlyEndAsync({
+				onTestFinished,
+				timeout: 600_000,
+			});
 			returnNil(studio);
 			const plugin = readyPlugin(studio);
 			await vi.advanceTimersByTimeAsync(60_000);
@@ -1324,10 +1423,13 @@ describe(StudioCliBackend, () => {
 			await expect(settled).resolves.toHaveProperty("rawResults.length", 1);
 		});
 
-		it("should use the first result for a request and ignore a second", async () => {
+		it("should use the first result for a request and ignore a second", async ({
+			expect,
+			onTestFinished,
+		}) => {
 			expect.assertions(1);
 
-			const { settled, studio } = await startEarlyEndAsync();
+			const { settled, studio } = await startEarlyEndAsync({ onTestFinished });
 			const bootstrap = returnNil(studio);
 			const plugin = readyPlugin(studio);
 			studio.sendResult(plugin, {
@@ -1341,10 +1443,13 @@ describe(StudioCliBackend, () => {
 			expect(rawResults[0]!.entry.jestOutput).toContain('"numPassedTests":1');
 		});
 
-		it("should ignore a side-channel result from a copy with another plugin key", async () => {
+		it("should ignore a side-channel result from a copy with another plugin key", async ({
+			expect,
+			onTestFinished,
+		}) => {
 			expect.assertions(1);
 
-			const { settled, studio } = await startEarlyEndAsync();
+			const { settled, studio } = await startEarlyEndAsync({ onTestFinished });
 			returnNil(studio);
 			const stale = readyPlugin(studio);
 			const plugin = readyPlugin(studio);
@@ -1364,11 +1469,15 @@ describe(StudioCliBackend, () => {
 			expect(rawResults[0]!.entry.jestOutput).toContain('"numPassedTests":3');
 		});
 
-		it("should take a keyed side-channel result when the run asked for no key", async () => {
+		it("should take a keyed side-channel result when the run asked for no key", async ({
+			expect,
+			onTestFinished,
+		}) => {
 			expect.assertions(1);
 
 			const { settled, studio } = await startEarlyEndAsync({
-				installPluginAsync: async () => {},
+				extra: { installPluginAsync: async () => {} },
+				onTestFinished,
 			});
 			returnNil(studio);
 			const plugin = readyPlugin(studio);
@@ -1377,10 +1486,13 @@ describe(StudioCliBackend, () => {
 			await expect(settled).resolves.toHaveProperty("rawResults.length", 1);
 		});
 
-		it("should relay the nil return to a plugin socket that connects after it", async () => {
+		it("should relay the nil return to a plugin socket that connects after it", async ({
+			expect,
+			onTestFinished,
+		}) => {
 			expect.assertions(1);
 
-			const { fileSystem, settled, studio } = await startEarlyEndAsync();
+			const { fileSystem, settled, studio } = await startEarlyEndAsync({ onTestFinished });
 			returnNil(studio);
 			const plugin = readyPlugin(studio);
 			const sent = plugin.send.mock.calls.map(([data]) => data);
@@ -1390,10 +1502,13 @@ describe(StudioCliBackend, () => {
 			expect(sent).toStrictEqual([relayFrame(readRequestId(fileSystem, studio.args()))]);
 		});
 
-		it("should relay the nil return to a plugin socket that connected before it", async () => {
+		it("should relay the nil return to a plugin socket that connected before it", async ({
+			expect,
+			onTestFinished,
+		}) => {
 			expect.assertions(2);
 
-			const { fileSystem, settled, studio } = await startEarlyEndAsync();
+			const { fileSystem, settled, studio } = await startEarlyEndAsync({ onTestFinished });
 			const plugin = readyPlugin(studio);
 			const sentBefore = plugin.send.mock.calls.length;
 			returnNil(studio);
@@ -1405,10 +1520,13 @@ describe(StudioCliBackend, () => {
 			expect(sent).toStrictEqual([relayFrame(readRequestId(fileSystem, studio.args()))]);
 		});
 
-		it("should drop the plugin wait when a result settles the run before any plugin takes the relay", async () => {
+		it("should drop the plugin wait when a result settles the run before any plugin takes the relay", async ({
+			expect,
+			onTestFinished,
+		}) => {
 			expect.assertions(1);
 
-			const { settled, studio } = await startEarlyEndAsync();
+			const { settled, studio } = await startEarlyEndAsync({ onTestFinished });
 			const bootstrap = returnNil(studio);
 			studio.sendResult(bootstrap);
 			await settled;
@@ -1416,10 +1534,13 @@ describe(StudioCliBackend, () => {
 			expect(vi.getTimerCount()).toBe(0);
 		});
 
-		it("should reject an old-protocol plugin result on the side channel with the mismatch error", async () => {
+		it("should reject an old-protocol plugin result on the side channel with the mismatch error", async ({
+			expect,
+			onTestFinished,
+		}) => {
 			expect.assertions(1);
 
-			const { settled, studio } = await startEarlyEndAsync();
+			const { settled, studio } = await startEarlyEndAsync({ onTestFinished });
 			returnNil(studio);
 			const plugin = readyPlugin(studio);
 			studio.sendResult(plugin, { protocolVersion: 9 });
@@ -1438,7 +1559,9 @@ describe(StudioCliBackend, () => {
 			});
 		}
 
-		it("should carry the runtime coverage data through to the rawResult entry", async () => {
+		it("should carry the runtime coverage data through to the rawResult entry", async ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			const { fileSystem } = createMemoryFileSystem();
@@ -1459,7 +1582,9 @@ describe(StudioCliBackend, () => {
 	});
 
 	describe("graceful shutdown", () => {
-		it("should, by default, kill on lock release rather than instant-kill", async () => {
+		it("should, by default, kill on lock release rather than instant-kill", async ({
+			expect,
+		}) => {
 			expect.assertions(2);
 
 			const { fileSystem } = createMemoryFileSystem();
@@ -1475,7 +1600,7 @@ describe(StudioCliBackend, () => {
 			expect(process.kill).not.toHaveBeenCalled();
 		});
 
-		it("should pass the configured grace cap to the lock-release watch", async () => {
+		it("should pass the configured grace cap to the lock-release watch", async ({ expect }) => {
 			expect.assertions(1);
 
 			const { fileSystem } = createMemoryFileSystem();
@@ -1491,7 +1616,9 @@ describe(StudioCliBackend, () => {
 			expect(process.killOnLockRelease).toHaveBeenCalledWith(9999);
 		});
 
-		it("should let the background watch own teardown when a post-result check throws", async () => {
+		it("should let the background watch own teardown when a post-result check throws", async ({
+			expect,
+		}) => {
 			// The result frame landed (Studio is idle and gracefully closeable),
 			// so even though the protocol check then rejects the run, the
 			// graceful watch already owns the kill; the run must not also
@@ -1660,7 +1787,7 @@ describe(StudioCliBackend, () => {
 			throw new Error("the backend never created a result server");
 		}
 
-		function useLockPollTimers(): void {
+		function useLockPollTimers(onTestFinished: TestContext["onTestFinished"]): void {
 			vi.useFakeTimers({
 				toFake: ["setInterval", "clearInterval", "setTimeout", "clearTimeout", "Date"],
 			});
@@ -1669,12 +1796,12 @@ describe(StudioCliBackend, () => {
 			});
 		}
 
-		it("should spawn Studio and return its result", async () => {
+		it("should spawn Studio and return its result", async ({ expect, onTestFinished }) => {
 			expect.assertions(3);
 
 			const { fileSystem } = createMemoryFileSystem();
 
-			useLockPollTimers();
+			useLockPollTimers(onTestFinished);
 
 			const { args, childProcess, request } = stubSpawn();
 			const previousServer = getLastCreatedServer();
@@ -1692,12 +1819,15 @@ describe(StudioCliBackend, () => {
 			});
 		});
 
-		it("should leave the Studio window visible in headed mode", async () => {
+		it("should leave the Studio window visible in headed mode", async ({
+			expect,
+			onTestFinished,
+		}) => {
 			expect.assertions(1);
 
 			const { fileSystem } = createMemoryFileSystem();
 
-			useLockPollTimers();
+			useLockPollTimers(onTestFinished);
 
 			const { args, childProcess, request } = stubSpawn();
 			const previousServer = getLastCreatedServer();
@@ -1714,12 +1844,15 @@ describe(StudioCliBackend, () => {
 			expect(request().options.windowsHide).toBeFalse();
 		});
 
-		it("should launch through the hidden desktop helper when asked", async () => {
+		it("should launch through the hidden desktop helper when asked", async ({
+			expect,
+			onTestFinished,
+		}) => {
 			expect.assertions(1);
 
 			const { fileSystem } = createMemoryFileSystem();
 
-			useLockPollTimers();
+			useLockPollTimers(onTestFinished);
 
 			const { childProcess, request } = stubSpawn();
 			const previousServer = getLastCreatedServer();
@@ -1745,12 +1878,15 @@ describe(StudioCliBackend, () => {
 			expect(request().file).toBe("powershell.exe");
 		});
 
-		it("should spawn Studio directly on Windows when hiddenDesktop is off", async () => {
+		it("should spawn Studio directly on Windows when hiddenDesktop is off", async ({
+			expect,
+			onTestFinished,
+		}) => {
 			expect.assertions(1);
 
 			const { fileSystem } = createMemoryFileSystem();
 
-			useLockPollTimers();
+			useLockPollTimers(onTestFinished);
 
 			const { args, childProcess, request } = stubSpawn();
 			const previousServer = getLastCreatedServer();
@@ -1765,12 +1901,15 @@ describe(StudioCliBackend, () => {
 			expect(request().file).toBe("C:/Studio/RobloxStudioBeta.exe");
 		});
 
-		it("should launch a bundled macOS Studio through the JXA helper", async () => {
+		it("should launch a bundled macOS Studio through the JXA helper", async ({
+			expect,
+			onTestFinished,
+		}) => {
 			expect.assertions(2);
 
 			const { fileSystem } = createMemoryFileSystem();
 
-			useLockPollTimers();
+			useLockPollTimers(onTestFinished);
 
 			const { childProcess, request } = stubSpawn();
 			const previousServer = getLastCreatedServer();
@@ -1801,13 +1940,16 @@ describe(StudioCliBackend, () => {
 			);
 		});
 
-		it("should spawn an unbundled macOS Studio directly with a warning", async () => {
+		it("should spawn an unbundled macOS Studio directly with a warning", async ({
+			expect,
+			onTestFinished,
+		}) => {
 			expect.assertions(2);
 
 			const { fileSystem } = createMemoryFileSystem();
 			const stderr = vi.spyOn(nodeProcess.stderr, "write").mockReturnValue(true);
 
-			useLockPollTimers();
+			useLockPollTimers(onTestFinished);
 
 			const { args, childProcess, request } = stubSpawn();
 			const previousServer = getLastCreatedServer();
@@ -1825,12 +1967,15 @@ describe(StudioCliBackend, () => {
 			);
 		});
 
-		it("should clear a stale place lock a killed Studio left behind before launching", async () => {
+		it("should clear a stale place lock a killed Studio left behind before launching", async ({
+			expect,
+			onTestFinished,
+		}) => {
 			expect.assertions(1);
 
 			const { fileSystem } = createMemoryFileSystem();
 
-			useLockPollTimers();
+			useLockPollTimers(onTestFinished);
 
 			// A killed Studio cannot remove its own `<place>.lock`; the next run
 			// must, or its Studio opens onto the stale lock and crashes.
@@ -1848,7 +1993,7 @@ describe(StudioCliBackend, () => {
 			expect(fileSystem.existsSync(lockPath)).toBeFalse();
 		});
 
-		it("should reject when Studio fails to spawn", async () => {
+		it("should reject when Studio fails to spawn", async ({ expect }) => {
 			expect.assertions(1);
 
 			const { fileSystem } = createMemoryFileSystem();
@@ -1863,12 +2008,15 @@ describe(StudioCliBackend, () => {
 			await expect(promise).rejects.toThrow(/spawn ENOENT/);
 		});
 
-		it("should kill Studio and reject when no result arrives before the timeout", async () => {
+		it("should kill Studio and reject when no result arrives before the timeout", async ({
+			expect,
+			onTestFinished,
+		}) => {
 			expect.assertions(2);
 
 			const { fileSystem } = createMemoryFileSystem();
 
-			useResultDeadlineTimers();
+			useResultDeadlineTimers(onTestFinished);
 
 			const { child, childProcess } = stubSpawn();
 
@@ -1878,9 +2026,9 @@ describe(StudioCliBackend, () => {
 				fileSystem,
 			})
 				.runTestsAsync(singleJob)
-				.catch((err: unknown) => err);
+				.catch((err) => err);
 			await vi.runAllTimersAsync();
-			const caught: unknown = await settled;
+			const caught = await settled;
 
 			assert(caught instanceof Error);
 
@@ -1888,12 +2036,15 @@ describe(StudioCliBackend, () => {
 			expect(child.kill).toHaveBeenCalledExactlyOnceWith("SIGTERM");
 		});
 
-		it("should SIGKILL a timed-out Studio that ignores SIGTERM once the grace period passes", async () => {
+		it("should SIGKILL a timed-out Studio that ignores SIGTERM once the grace period passes", async ({
+			expect,
+			onTestFinished,
+		}) => {
 			expect.assertions(2);
 
 			const { fileSystem } = createMemoryFileSystem();
 
-			useResultDeadlineTimers();
+			useResultDeadlineTimers(onTestFinished);
 
 			const { args, child, childProcess } = stubSpawn({ ignoredSignals: ["SIGTERM"] });
 			const settled = backendWithDefaultLaunch({
@@ -1902,7 +2053,7 @@ describe(StudioCliBackend, () => {
 				fileSystem,
 			})
 				.runTestsAsync(singleJob)
-				.catch((err: unknown) => err);
+				.catch((err) => err);
 			await settledSpawnAsync(() => args().length > 0);
 			await vi.advanceTimersByTimeAsync(40);
 			await settled;
@@ -1915,7 +2066,10 @@ describe(StudioCliBackend, () => {
 			expect(child.kill.mock.calls).toStrictEqual([["SIGTERM"], ["SIGKILL"]]);
 		});
 
-		it("should not hold the event loop open while the SIGKILL grace period runs", async () => {
+		it("should not hold the event loop open while the SIGKILL grace period runs", async ({
+			expect,
+			onTestFinished,
+		}) => {
 			expect.assertions(1);
 
 			const { fileSystem } = createMemoryFileSystem();
@@ -1925,7 +2079,7 @@ describe(StudioCliBackend, () => {
 			const { childProcess } = stubSpawn({ ignoredSignals: ["SIGTERM"] });
 			await backendWithDefaultLaunch({ childProcess, extra: { bootTimeout: 40 }, fileSystem })
 				.runTestsAsync(singleJob)
-				.catch((err: unknown) => err);
+				.catch((err) => err);
 			const graceIndex = setTimeoutSpy.mock.calls.findIndex(([, delay]) => delay === 5000);
 			const graceTimer: NodeJS.Timeout = fromAny(
 				setTimeoutSpy.mock.results[graceIndex]!.value,
@@ -1937,12 +2091,15 @@ describe(StudioCliBackend, () => {
 			expect(graceTimer.hasRef()).toBeFalse();
 		});
 
-		it("should fail the run after a timeout when Studio survives SIGKILL too", async () => {
+		it("should fail the run after a timeout when Studio survives SIGKILL too", async ({
+			expect,
+			onTestFinished,
+		}) => {
 			expect.assertions(4);
 
 			const { fileSystem } = createMemoryFileSystem();
 
-			useResultDeadlineTimers();
+			useResultDeadlineTimers(onTestFinished);
 			vi.spyOn(nodeProcess.stderr, "write").mockReturnValue(true);
 
 			const { args, child, childProcess } = stubSpawn({
@@ -1953,7 +2110,7 @@ describe(StudioCliBackend, () => {
 				extra: { bootTimeout: 40 },
 				fileSystem,
 			});
-			const outcome = backend.runTestsAsync(singleJob).catch((err: unknown) => err);
+			const outcome = backend.runTestsAsync(singleJob).catch((err) => err);
 			await settledSpawnAsync(() => args().length > 0);
 			await vi.advanceTimersByTimeAsync(5040);
 			const error = await outcome;
@@ -1968,12 +2125,15 @@ describe(StudioCliBackend, () => {
 		});
 
 		describe("graceful kill on lock release", () => {
-			it("should kill the instant Studio releases the place lock", async () => {
+			it("should kill the instant Studio releases the place lock", async ({
+				expect,
+				onTestFinished,
+			}) => {
 				expect.assertions(2);
 
 				const { fileSystem } = createMemoryFileSystem();
 
-				useLockPollTimers();
+				useLockPollTimers(onTestFinished);
 
 				const { args, child, childProcess } = stubSpawn();
 				const previousServer = getLastCreatedServer();
@@ -1999,12 +2159,15 @@ describe(StudioCliBackend, () => {
 				expect(child.kill).toHaveBeenCalledExactlyOnceWith("SIGTERM");
 			});
 
-			it("should SIGKILL a Studio that ignores SIGTERM after the lock releases", async () => {
+			it("should SIGKILL a Studio that ignores SIGTERM after the lock releases", async ({
+				expect,
+				onTestFinished,
+			}) => {
 				expect.assertions(2);
 
 				const { fileSystem } = createMemoryFileSystem();
 
-				useLockPollTimers();
+				useLockPollTimers(onTestFinished);
 
 				const { args, child, childProcess } = stubSpawn({ ignoredSignals: ["SIGTERM"] });
 				const previousServer = getLastCreatedServer();
@@ -2023,12 +2186,15 @@ describe(StudioCliBackend, () => {
 				expect(child.kill.mock.calls).toStrictEqual([["SIGTERM"], ["SIGKILL"]]);
 			});
 
-			it("should hard-kill after the grace cap when the lock is never released", async () => {
+			it("should hard-kill after the grace cap when the lock is never released", async ({
+				expect,
+				onTestFinished,
+			}) => {
 				expect.assertions(2);
 
 				const { fileSystem } = createMemoryFileSystem();
 
-				useLockPollTimers();
+				useLockPollTimers(onTestFinished);
 
 				const { args, child, childProcess } = stubSpawn();
 				const previousServer = getLastCreatedServer();

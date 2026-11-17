@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { readHarness, spawnHarness } from "#test/luau/lute-harness.ts";
 
@@ -88,7 +88,7 @@ function runSession({
 }
 
 describe("studio plugin session ownership", () => {
-	it("should leave an unmarked nativeAudit session to its caller", () => {
+	it("should leave an unmarked nativeAudit session to its caller", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -99,7 +99,7 @@ describe("studio plugin session ownership", () => {
 		).toContain("ALL OK");
 	});
 
-	it("should ignore an unmarked session even when its protocol matches", () => {
+	it("should ignore an unmarked session even when its protocol matches", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -111,7 +111,7 @@ describe("studio plugin session ownership", () => {
 		).toContain("ALL OK");
 	});
 
-	it("should ignore scalar session arguments", () => {
+	it("should ignore scalar session arguments", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -122,7 +122,7 @@ describe("studio plugin session ownership", () => {
 		).toContain("ALL OK");
 	});
 
-	it("should ignore a session whose test marker is false", () => {
+	it("should ignore a session whose test marker is false", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -133,7 +133,7 @@ describe("studio plugin session ownership", () => {
 		).toContain("ALL OK");
 	});
 
-	it("should ignore a session whose test marker is a truthy string", () => {
+	it("should ignore a session whose test marker is a truthy string", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -144,7 +144,7 @@ describe("studio plugin session ownership", () => {
 		).toContain("ALL OK");
 	});
 
-	it("should reject a marked session missing its protocol version", () => {
+	it("should reject a marked session missing its protocol version", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -157,7 +157,7 @@ assert(output.success == false and string.find(output.err, "protocol version mis
 		).toContain("ALL OK");
 	});
 
-	it("should reject a marked session with a mismatched protocol version", () => {
+	it("should reject a marked session with a mismatched protocol version", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -170,7 +170,7 @@ assert(output.success == false and string.find(output.err, "CLI v9", 1, true), o
 		).toContain("ALL OK");
 	});
 
-	it("should reject a marked session asking for a different plugin key", () => {
+	it("should reject a marked session asking for a different plugin key", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -184,7 +184,7 @@ assert(output.success == false and string.find(output.err, "plugin key mismatch"
 		).toContain("ALL OK");
 	});
 
-	it("should return an embedded workspace result for a marked session", () => {
+	it("should return an embedded workspace result for a marked session", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -198,7 +198,7 @@ assert(output.entries ~= nil and #output.entries == 0 and output.bailed == nil a
 		).toContain("ALL OK");
 	});
 
-	it("should ignore an unmarked payload recovered through the nil relay", () => {
+	it("should ignore an unmarked payload recovered through the nil relay", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -211,7 +211,7 @@ assert(output.entries ~= nil and #output.entries == 0 and output.bailed == nil a
 		).toContain("ALL OK");
 	});
 
-	it("should leave the socket to the copy a recovered payload asks for", () => {
+	it("should leave the socket to the copy a recovered payload asks for", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -225,7 +225,7 @@ assert(output.entries ~= nil and #output.entries == 0 and output.bailed == nil a
 		).toContain("ALL OK");
 	});
 
-	it("should relay an embedded workspace result for a recovered marked payload", () => {
+	it("should relay an embedded workspace result for a recovered marked payload", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -241,7 +241,9 @@ assert(frame.requestId == "request-123" and output.entries ~= nil and #output.en
 		).toContain("ALL OK");
 	});
 
-	it("should run a marked session whose play server starts running after the plugin", () => {
+	it("should run a marked session whose play server starts running after the plugin", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		expect(
@@ -255,7 +257,7 @@ assert(output.entries ~= nil and #output.entries == 0, output.err or "Expected a
 		).toContain("ALL OK");
 	});
 
-	it("should stay out of the edit data model", () => {
+	it("should stay out of the edit data model", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -268,7 +270,9 @@ assert(output.entries ~= nil and #output.entries == 0, output.err or "Expected a
 		).toContain("ALL OK");
 	});
 
-	it("should warn when the play server of a studio-cli run never starts running", () => {
+	it("should warn when the play server of a studio-cli run never starts running", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		expect(
@@ -283,7 +287,9 @@ table.clear(warnings)`,
 		).toContain("ALL OK");
 	});
 
-	it("should give up quietly on a play server outside a studio-cli run that never starts running", () => {
+	it("should give up quietly on a play server outside a studio-cli run that never starts running", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		expect(

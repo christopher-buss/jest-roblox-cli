@@ -1,7 +1,7 @@
 import { fromAny } from "@total-typescript/shoehorn";
 
 import type * as childProcess from "node:child_process";
-import { describe, expect, it, onTestFinished, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import type { ChildProcessRunner } from "../utils/child-process.ts";
 import { spawnCheckerAsync, type SpawnCheckerOptions } from "./spawn-checker.ts";
@@ -55,7 +55,7 @@ function exitError(code: number | string): childProcess.ExecFileException {
 }
 
 describe(spawnCheckerAsync, () => {
-	it("should resolve the stdout of a clean run", async () => {
+	it("should resolve the stdout of a clean run", async ({ expect }) => {
 		expect.assertions(1);
 
 		await expect(spawnCheckerAsync(checker(respondWith(null, "clean", "")))).resolves.toBe(
@@ -63,7 +63,7 @@ describe(spawnCheckerAsync, () => {
 		);
 	});
 
-	it("should resolve the stdout of a run that exits with diagnostics", async () => {
+	it("should resolve the stdout of a run that exits with diagnostics", async ({ expect }) => {
 		expect.assertions(1);
 
 		await expect(
@@ -71,7 +71,7 @@ describe(spawnCheckerAsync, () => {
 		).resolves.toBe("found");
 	});
 
-	it("should fall back to stderr when a failing run prints no stdout", async () => {
+	it("should fall back to stderr when a failing run prints no stdout", async ({ expect }) => {
 		expect.assertions(1);
 
 		await expect(
@@ -79,7 +79,7 @@ describe(spawnCheckerAsync, () => {
 		).resolves.toBe("broken");
 	});
 
-	it("should reject a run killed at the run deadline", async () => {
+	it("should reject a run killed at the run deadline", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { runner } = stubChecker((callback) => {
@@ -91,7 +91,7 @@ describe(spawnCheckerAsync, () => {
 		).rejects.toThrow("tsgo typecheck timed out after 50ms (timeout)");
 	});
 
-	it("should reject a checker that cannot be spawned", async () => {
+	it("should reject a checker that cannot be spawned", async ({ expect }) => {
 		expect.assertions(1);
 
 		await expect(
@@ -99,7 +99,10 @@ describe(spawnCheckerAsync, () => {
 		).rejects.toThrow(/ENOENT/);
 	});
 
-	it("should kill and reject a checker that never launches", async () => {
+	it("should kill and reject a checker that never launches", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(2);
 
 		vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
@@ -116,7 +119,10 @@ describe(spawnCheckerAsync, () => {
 		expect(kill).toHaveBeenCalledOnce();
 	});
 
-	it("should disarm the launch timer once the checker spawns", async () => {
+	it("should disarm the launch timer once the checker spawns", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(1);
 
 		vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });

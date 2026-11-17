@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
 import type { ResolvedConfig } from "../config/resolved-config.ts";
@@ -31,7 +31,9 @@ function byBasename(config: ResolvedConfig, files: Array<string>): ResolvedConfi
 }
 
 describe("file narrowing", () => {
-	it("should set testPathPattern to a wrapped basename pattern when one file given", () => {
+	it("should set testPathPattern to a wrapped basename pattern when one file given", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const result = byBasename(make(), ["src/foo/bar.test.ts"]);
@@ -39,7 +41,7 @@ describe("file narrowing", () => {
 		expect(result.testPathPattern).toBe("(bar\\.test)");
 	});
 
-	it("should join multiple file basename patterns inside one alternation group", () => {
+	it("should join multiple file basename patterns inside one alternation group", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = byBasename(make(), [
@@ -50,7 +52,7 @@ describe("file narrowing", () => {
 		expect(result.testPathPattern).toBe("(use-spring\\.test|use-trail\\.test)");
 	});
 
-	it("should normalize Windows backslashes when extracting basename", () => {
+	it("should normalize Windows backslashes when extracting basename", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = byBasename(make(), ["src\\client\\__tests__\\use-spring.test.tsx"]);
@@ -58,7 +60,7 @@ describe("file narrowing", () => {
 		expect(result.testPathPattern).toBe("(use-spring\\.test)");
 	});
 
-	it("should handle a bare filename with no parent directory", () => {
+	it("should handle a bare filename with no parent directory", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = byBasename(make(), ["foo.test.ts"]);
@@ -66,7 +68,7 @@ describe("file narrowing", () => {
 		expect(result.testPathPattern).toBe("(foo\\.test)");
 	});
 
-	it("should strip .ts/.tsx/.lua/.luau extensions from each basename", () => {
+	it("should strip .ts/.tsx/.lua/.luau extensions from each basename", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = byBasename(make(), ["a.test.ts", "b.test.tsx", "c.test.lua", "d.test.luau"]);
@@ -74,7 +76,7 @@ describe("file narrowing", () => {
 		expect(result.testPathPattern).toBe("(a\\.test|b\\.test|c\\.test|d\\.test)");
 	});
 
-	it("should escape regex metacharacters in the basename", () => {
+	it("should escape regex metacharacters in the basename", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = byBasename(make(), ["src/(foo).test.ts"]);
@@ -82,7 +84,9 @@ describe("file narrowing", () => {
 		expect(result.testPathPattern).toBe("(\\(foo\\)\\.test)");
 	});
 
-	it("should dedupe identical basename patterns when multiple files share a basename", () => {
+	it("should dedupe identical basename patterns when multiple files share a basename", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const result = byBasename(make(), ["src/client/foo.test.ts", "src/server/foo.test.ts"]);
@@ -90,7 +94,9 @@ describe("file narrowing", () => {
 		expect(result.testPathPattern).toBe("(foo\\.test)");
 	});
 
-	it("should rename an index basename to init (roblox-ts compiles index to init)", () => {
+	it("should rename an index basename to init (roblox-ts compiles index to init)", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const result = byBasename(make(), ["src/foo/index.spec.ts"]);
@@ -98,7 +104,7 @@ describe("file narrowing", () => {
 		expect(result.testPathPattern).toBe("(init\\.spec)");
 	});
 
-	it("should rename a bare index file with no test suffix to init", () => {
+	it("should rename a bare index file with no test suffix to init", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = byBasename(make(), ["src/foo/index.ts"]);
@@ -106,7 +112,7 @@ describe("file narrowing", () => {
 		expect(result.testPathPattern).toBe("(init)");
 	});
 
-	it("should rename only the index basename and leave the others unchanged", () => {
+	it("should rename only the index basename and leave the others unchanged", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = byBasename(make(), ["src/foo/index.spec.ts", "src/bar/baz.spec.ts"]);
@@ -114,7 +120,7 @@ describe("file narrowing", () => {
 		expect(result.testPathPattern).toBe("(init\\.spec|baz\\.spec)");
 	});
 
-	it("should not rename a basename that merely starts with index", () => {
+	it("should not rename a basename that merely starts with index", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = byBasename(make(), ["src/foo/index-helpers.spec.ts"]);
@@ -122,7 +128,7 @@ describe("file narrowing", () => {
 		expect(result.testPathPattern).toBe("(index-helpers\\.spec)");
 	});
 
-	it("should not rename a basename that merely ends with index", () => {
+	it("should not rename a basename that merely ends with index", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = byBasename(make(), ["src/foo/reindex.spec.ts"]);
@@ -130,7 +136,7 @@ describe("file narrowing", () => {
 		expect(result.testPathPattern).toBe("(reindex\\.spec)");
 	});
 
-	it("should not rename an index basename for a pure-Luau .luau source", () => {
+	it("should not rename an index basename for a pure-Luau .luau source", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = byBasename(make(), ["src/foo/index.spec.luau"]);
@@ -138,7 +144,7 @@ describe("file narrowing", () => {
 		expect(result.testPathPattern).toBe("(index\\.spec)");
 	});
 
-	it("should not rename an index basename for a pure-Luau .lua source", () => {
+	it("should not rename an index basename for a pure-Luau .lua source", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = byBasename(make(), ["src/foo/index.spec.lua"]);
@@ -146,7 +152,7 @@ describe("file narrowing", () => {
 		expect(result.testPathPattern).toBe("(index\\.spec)");
 	});
 
-	it("should use the instance sub-path when a mount owns the file", () => {
+	it("should use the instance sub-path when a mount owns the file", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = narrowForLuauRun({
@@ -159,7 +165,9 @@ describe("file narrowing", () => {
 		expect(result.testPathPattern).toBe("(systems/attack/init\\.test)");
 	});
 
-	it("should keep same-basename files apart once the sub-path disambiguates them", () => {
+	it("should keep same-basename files apart once the sub-path disambiguates them", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const subPaths = new Map([
@@ -176,7 +184,7 @@ describe("file narrowing", () => {
 		expect(result.testPathPattern).toBe("(a/init\\.test|b/init\\.test)");
 	});
 
-	it("should fall back to the basename for a file no mount owns", () => {
+	it("should fall back to the basename for a file no mount owns", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = byBasename(make(), ["src/foo/index.test.ts"]);
@@ -184,7 +192,7 @@ describe("file narrowing", () => {
 		expect(result.testPathPattern).toBe("(init\\.test)");
 	});
 
-	it("should escape regex metacharacters in a resolved sub-path", () => {
+	it("should escape regex metacharacters in a resolved sub-path", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = narrowForLuauRun({
@@ -197,7 +205,7 @@ describe("file narrowing", () => {
 		expect(result.testPathPattern).toBe("(\\(a\\)/init\\.test)");
 	});
 
-	it("should return a new object rather than mutating the input config", () => {
+	it("should return a new object rather than mutating the input config", ({ expect }) => {
 		expect.assertions(2);
 
 		const config = make({ testPathPattern: "existing" });
@@ -209,7 +217,7 @@ describe("file narrowing", () => {
 });
 
 describe(narrowForLuauRun, () => {
-	it("should return the config untouched when no filter is active", () => {
+	it("should return the config untouched when no filter is active", ({ expect }) => {
 		expect.assertions(1);
 
 		const config = make({ testPathPattern: "src/foo/bar.spec" });
@@ -223,7 +231,9 @@ describe(narrowForLuauRun, () => {
 		expect(result).toBe(config);
 	});
 
-	it("should drop the FS pattern and forward a basename pattern when filter is active", () => {
+	it("should drop the FS pattern and forward a basename pattern when filter is active", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const result = narrowForLuauRun({
@@ -236,7 +246,7 @@ describe(narrowForLuauRun, () => {
 		expect(result.testPathPattern).toBe("(bar\\.spec)");
 	});
 
-	it("should rename an index file to init when filter is active", () => {
+	it("should rename an index file to init when filter is active", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = narrowForLuauRun({
@@ -249,7 +259,7 @@ describe(narrowForLuauRun, () => {
 		expect(result.testPathPattern).toBe("(init\\.spec)");
 	});
 
-	it("should forward the instance sub-path when a mount owns the file", () => {
+	it("should forward the instance sub-path when a mount owns the file", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = narrowForLuauRun({
@@ -262,7 +272,7 @@ describe(narrowForLuauRun, () => {
 		expect(result.testPathPattern).toBe("(foo/init\\.spec)");
 	});
 
-	it("should clear the FS pattern when filter is active but no files match", () => {
+	it("should clear the FS pattern when filter is active but no files match", ({ expect }) => {
 		expect.assertions(1);
 
 		// The raw FS pattern is dropped before the empty-files no-op, so callers

@@ -1,12 +1,12 @@
 import * as path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { recordingTimingCollector } from "#test/mocks/workspace-timing-recorder.ts";
 import { stageProjectStubs, stubCacheRoot } from "./stage-stubs.ts";
 
 describe(stageProjectStubs, () => {
-	it("should clean, then generate, under one span each for every package", () => {
+	it("should clean, then generate, under one span each for every package", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -26,7 +26,7 @@ describe(stageProjectStubs, () => {
 });
 
 describe(stubCacheRoot, () => {
-	it("should put the stub cache under the run's work directory", () => {
+	it("should put the stub cache under the run's work directory", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(stubCacheRoot("/repo")).toBe(path.resolve("/repo", ".jest-roblox", "cache"));

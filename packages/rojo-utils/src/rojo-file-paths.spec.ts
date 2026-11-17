@@ -1,5 +1,5 @@
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import {
 	convertToLuau,
@@ -17,7 +17,7 @@ describe(isRojoProjectFileName, () => {
 		["a-project.json", false],
 		["a.project.json.bak", false],
 		["project.json", false],
-	])("should classify %s", ([name, expected]) => {
+	])("should classify %s", ([name, expected], { expect }) => {
 		expect.assertions(1);
 
 		expect(isRojoProjectFileName(name)).toBe(expected);
@@ -34,7 +34,7 @@ describe(stripRojoExtensions, () => {
 		["a.toml", "a"],
 		["a.lua", "a.lua"],
 		["plain", "plain"],
-	])("should strip Rojo suffixes from %s", ([input, output]) => {
+	])("should strip Rojo suffixes from %s", ([input, output], { expect }) => {
 		expect.assertions(1);
 
 		expect(stripRojoExtensions(input)).toBe(output);
@@ -47,7 +47,7 @@ describe(convertToLuau, () => {
 		["a.luau", "a.luau"],
 		["a.lua.json", "a.lua.json"],
 		["plain", "plain"],
-	])("should normalize %s", ([input, output]) => {
+	])("should normalize %s", ([input, output], { expect }) => {
 		expect.assertions(1);
 
 		expect(convertToLuau(input)).toBe(output);
@@ -55,7 +55,7 @@ describe(convertToLuau, () => {
 });
 
 describe(isPathDescendantOf, () => {
-	it("should require a containing directory or the identical path", () => {
+	it("should require a containing directory or the identical path", ({ expect }) => {
 		expect.assertions(3);
 
 		const directory = path.resolve("root");

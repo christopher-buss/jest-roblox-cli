@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import {
 	fillPlaceholders,
@@ -11,7 +11,7 @@ const MODULE_SOURCE = readLuauModule("runtime-stub-hooks.luau");
 const HARNESS = readHarness("runtime-stub-hooks");
 
 describe("runtime jest.config stubs under lute", () => {
-	it("should pass the runtime-stub-hooks harness assertions", () => {
+	it("should pass the runtime-stub-hooks harness assertions", ({ expect }) => {
 		expect.assertions(1);
 
 		const script = fillPlaceholders(HARNESS, { __MODULE__: MODULE_SOURCE });

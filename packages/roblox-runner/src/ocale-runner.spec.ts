@@ -9,7 +9,7 @@ import { fromAny } from "@total-typescript/shoehorn";
 
 import { type } from "arktype";
 import buffer from "node:buffer";
-import { assert, describe, expect, it, onTestFinished, vi } from "vitest";
+import { assert, describe, it, type TestContext, vi } from "vitest";
 
 import type { ExecutionTimeoutError } from "./execution-timeout.ts";
 import { OcaleRunner } from "./ocale-runner.ts";
@@ -154,7 +154,7 @@ function makeRunner(
 
 describe(OcaleRunner, () => {
 	describe("uploadPlace", () => {
-		it("should save a place to the place its credentials name", async () => {
+		it("should save a place to the place its credentials name", async ({ expect }) => {
 			expect.assertions(2);
 
 			const http = createFakeHttpClient();
@@ -167,7 +167,7 @@ describe(OcaleRunner, () => {
 			expect(http.requests[0]!.request.url).toContain("/places/456/versions");
 		});
 
-		it("should honor a higher maxRetries to ride out a 429 throttle", async () => {
+		it("should honor a higher maxRetries to ride out a 429 throttle", async ({ expect }) => {
 			expect.assertions(2);
 
 			const http = createFakeHttpClient();
@@ -196,7 +196,7 @@ describe(OcaleRunner, () => {
 	});
 
 	describe("executeScript", () => {
-		it("should report when Open Cloud accepts the task", async () => {
+		it("should report when Open Cloud accepts the task", async ({ expect }) => {
 			expect.assertions(2);
 
 			const http = createFakeHttpClient();
@@ -217,7 +217,9 @@ describe(OcaleRunner, () => {
 			expect(result.outputs).toStrictEqual(["ok"]);
 		});
 
-		it("should wait for place capacity through the injected capacity wait", async () => {
+		it("should wait for place capacity through the injected capacity wait", async ({
+			expect,
+		}) => {
 			expect.assertions(2);
 
 			const http = createFakeHttpClient();
@@ -255,10 +257,13 @@ describe(OcaleRunner, () => {
 			expect(capacityWaitAsync).toHaveBeenCalledWith(5000, expect.any(AbortSignal));
 		});
 
-		it("should capture caller options before submission and its callback mutate them", async () => {
+		it("should capture caller options before submission and its callback mutate them", async ({
+			expect,
+			onTestFinished,
+		}) => {
 			expect.assertions(3);
 
-			useClock();
+			useClock(onTestFinished);
 			const http = createFakeHttpClient();
 			mockCompletion(http, ["original operation"]);
 			const originalCallback = vi.fn<() => void>();
@@ -286,7 +291,9 @@ describe(OcaleRunner, () => {
 			expect(http.requests).toHaveLength(2);
 		});
 
-		it("should stop observing a submitted task when its signal is aborted", async () => {
+		it("should stop observing a submitted task when its signal is aborted", async ({
+			expect,
+		}) => {
 			expect.assertions(2);
 
 			const http = createFakeHttpClient();
@@ -304,7 +311,7 @@ describe(OcaleRunner, () => {
 			expect(http.requests).toStrictEqual([]);
 		});
 
-		it("should throw when timeout is not positive", async () => {
+		it("should throw when timeout is not positive", async ({ expect }) => {
 			expect.assertions(2);
 
 			const http = createFakeHttpClient();
@@ -318,7 +325,7 @@ describe(OcaleRunner, () => {
 			).rejects.toThrow("Timeout must be a positive number");
 		});
 
-		it("should submit, poll, and return string outputs", async () => {
+		it("should submit, poll, and return string outputs", async ({ expect }) => {
 			expect.assertions(3);
 
 			const http = createFakeHttpClient();
@@ -342,7 +349,7 @@ describe(OcaleRunner, () => {
 			});
 		});
 
-		it("should re-read a poll body the edge cut short", async () => {
+		it("should re-read a poll body the edge cut short", async ({ expect }) => {
 			expect.assertions(2);
 
 			const http = createFakeHttpClient();
@@ -368,7 +375,7 @@ describe(OcaleRunner, () => {
 			expect(http.requests).toHaveLength(3);
 		});
 
-		it("should return empty outputs when COMPLETE task has no results", async () => {
+		it("should return empty outputs when COMPLETE task has no results", async ({ expect }) => {
 			expect.assertions(1);
 
 			const http = createFakeHttpClient();
@@ -380,7 +387,7 @@ describe(OcaleRunner, () => {
 			expect(result.outputs).toStrictEqual([]);
 		});
 
-		it("should poll through PROCESSING until COMPLETE", async () => {
+		it("should poll through PROCESSING until COMPLETE", async ({ expect }) => {
 			expect.assertions(1);
 
 			const http = createFakeHttpClient();
@@ -398,7 +405,7 @@ describe(OcaleRunner, () => {
 			expect(result.outputs).toStrictEqual(["done"]);
 		});
 
-		it("should throw with task error message when task FAILS", async () => {
+		it("should throw with task error message when task FAILS", async ({ expect }) => {
 			expect.assertions(1);
 
 			const http = createFakeHttpClient();
@@ -420,7 +427,9 @@ describe(OcaleRunner, () => {
 			).rejects.toThrow("Script blew up");
 		});
 
-		it("should truncate a log line too long to belong in an error banner", async () => {
+		it("should truncate a log line too long to belong in an error banner", async ({
+			expect,
+		}) => {
 			expect.assertions(2);
 
 			const http = createFakeHttpClient();
@@ -437,9 +446,9 @@ describe(OcaleRunner, () => {
 				status: 200,
 			});
 
-			const caught: unknown = await makeRunner(http)
+			const caught = await makeRunner(http)
 				.executeScriptAsync({ script: "return 1", timeout: 30_000 })
-				.catch((err: unknown) => err);
+				.catch((err) => err);
 
 			assert(caught instanceof Error);
 
@@ -447,7 +456,7 @@ describe(OcaleRunner, () => {
 			expect(caught.message).not.toContain("x".repeat(500));
 		});
 
-		it("should pass through an API error the poll returns", async () => {
+		it("should pass through an API error the poll returns", async ({ expect }) => {
 			expect.assertions(1);
 
 			// A 404 mid-poll is authoritative: ocale stops the loop and hands
@@ -461,7 +470,9 @@ describe(OcaleRunner, () => {
 			).rejects.toThrow(/Task not found/);
 		});
 
-		it("should carry the error code, the task, and the log tail when a task FAILS", async () => {
+		it("should carry the error code, the task, and the log tail when a task FAILS", async ({
+			expect,
+		}) => {
 			expect.assertions(4);
 
 			const observation = new AbortController();
@@ -482,13 +493,13 @@ describe(OcaleRunner, () => {
 				status: 200,
 			});
 
-			const caught: unknown = await makeRunner(http)
+			const caught = await makeRunner(http)
 				.executeScriptAsync({
 					observationSignal: observation.signal,
 					script: "return 1",
 					timeout: 30_000,
 				})
-				.catch((err: unknown) => err);
+				.catch((err) => err);
 
 			assert(caught instanceof Error);
 
@@ -502,7 +513,7 @@ describe(OcaleRunner, () => {
 			expect(caught.message).toContain("[ERROR] TaskScript:1: boom");
 		});
 
-		it("should still report the task failure when the log read fails", async () => {
+		it("should still report the task failure when the log read fails", async ({ expect }) => {
 			expect.assertions(2);
 
 			const http = createFakeHttpClient();
@@ -516,9 +527,9 @@ describe(OcaleRunner, () => {
 			});
 			http.mockApiError({ message: "Forbidden", statusCode: 403 });
 
-			const caught: unknown = await makeRunner(http)
+			const caught = await makeRunner(http)
 				.executeScriptAsync({ script: "return 1", timeout: 30_000 })
-				.catch((err: unknown) => err);
+				.catch((err) => err);
 
 			assert(caught instanceof Error);
 
@@ -526,7 +537,9 @@ describe(OcaleRunner, () => {
 			expect(caught.message).not.toContain("Roblox output before the failure");
 		});
 
-		it("should keep polling past the task deadline so a late FAILED is surfaced", async () => {
+		it("should keep polling past the task deadline so a late FAILED is surfaced", async ({
+			expect,
+		}) => {
 			expect.assertions(2);
 
 			// Roblox starts the task deadline when the script starts running,
@@ -549,9 +562,9 @@ describe(OcaleRunner, () => {
 			});
 			http.mockResponse({ body: logPageBody([]), status: 200 });
 
-			const caught: unknown = await makeAdvancingRunner(http)
+			const caught = await makeAdvancingRunner(http)
 				.executeScriptAsync({ script: "return 1", timeout: 10_000 })
-				.catch((err: unknown) => err);
+				.catch((err) => err);
 
 			assert(caught instanceof Error);
 
@@ -559,7 +572,9 @@ describe(OcaleRunner, () => {
 			expect(caught.message).not.toContain("Execution timed out:");
 		});
 
-		it("should fail a task that stays PROCESSING at the deadline its submit started", async () => {
+		it("should fail a task that stays PROCESSING at the deadline its submit started", async ({
+			expect,
+		}) => {
 			expect.assertions(3);
 
 			const http = createFakeHttpClient();
@@ -575,9 +590,9 @@ describe(OcaleRunner, () => {
 			const runner = makeAdvancingRunner(http);
 			const startedAt = Date.now();
 
-			const caught: unknown = await runner
+			const caught = await runner
 				.executeScriptAsync({ script: "return 1", timeout: 30_000 })
-				.catch((err: unknown) => err);
+				.catch((err) => err);
 
 			assert(caught instanceof Error);
 
@@ -586,7 +601,7 @@ describe(OcaleRunner, () => {
 			expect(Date.now() - startedAt).toBeLessThan(80_000);
 		});
 
-		it("should report a poll read the deadline cut off as a timeout", async () => {
+		it("should report a poll read the deadline cut off as a timeout", async ({ expect }) => {
 			expect.assertions(2);
 
 			const http = createFakeHttpClient();
@@ -596,9 +611,9 @@ describe(OcaleRunner, () => {
 				{ httpClient: withUnansweredReads(http) },
 			);
 
-			const caught: unknown = await runner
+			const caught = await runner
 				.executeScriptAsync({ pollBudget: 50, script: "return 1", timeout: 1000 })
-				.catch((err: unknown) => err);
+				.catch((err) => err);
 
 			assert(caught instanceof Error);
 
@@ -606,18 +621,12 @@ describe(OcaleRunner, () => {
 			expect(caught.message).toContain("within 0s");
 		});
 
-		it("should name the task and its last state when polling exhausts budget", async () => {
+		it("should name the task and its last state when polling exhausts budget", async ({
+			expect,
+		}) => {
 			expect.assertions(4);
 
-			const http = createFakeHttpClient();
-			http.mockResponse({ body: taskBody({ state: "QUEUED" }), status: 200 });
-			mockProcessing(http, POLLS_PER_GRACE);
-
-			const caught: unknown = await makeAdvancingRunner(http)
-				.executeScriptAsync({ script: "return 1", timeout: 1000 })
-				.catch((err) => err);
-
-			assert(caught instanceof Error);
+			const caught = await exhaustPollAsync({ script: "return 1", timeout: 1000 });
 
 			expect(caught.cause).toBeInstanceOf(PollTimeoutError);
 			expect(caught.message).toContain(
@@ -627,60 +636,46 @@ describe(OcaleRunner, () => {
 			expect(caught.message).toContain("1s task deadline plus a 45s boot-lag allowance");
 		});
 
-		it("should cap the poll at an explicit budget, not the deadline plus grace", async () => {
+		it("should cap the poll at an explicit budget, not the deadline plus grace", async ({
+			expect,
+		}) => {
 			expect.assertions(3);
 
 			// A caller that wants a wall-clock answer ("did this boot at all?")
 			// has no use for the grace, which exists so Roblox’s own verdict on a
 			// running script is observable.
-			const http = createFakeHttpClient();
-			http.mockResponse({ body: taskBody({ state: "QUEUED" }), status: 200 });
-			mockProcessing(http, POLLS_PER_GRACE);
-
-			const caught: unknown = await makeAdvancingRunner(http)
-				.executeScriptAsync({ pollBudget: 5000, script: "return 1", timeout: 300_000 })
-				.catch((err: unknown) => err);
-
-			assert(caught instanceof Error);
+			const caught = await exhaustPollAsync({
+				pollBudget: 5000,
+				script: "return 1",
+				timeout: 300_000,
+			});
 
 			expect(caught.cause).toBeInstanceOf(PollTimeoutError);
 			expect(caught.message).toContain("within 5s");
 			expect(caught.message).not.toContain("boot-lag allowance");
 		});
 
-		it("should not blame the place when the caller has proven it boots", async () => {
+		it("should not blame the place when the caller has proven it boots", async ({ expect }) => {
 			expect.assertions(3);
 
 			// A caller that ran a script against this version seconds ago has
 			// ruled the place out already. Repeating the guess would send the
 			// reader to Studio to look at a place that demonstrably loads.
-			const http = createFakeHttpClient();
-			http.mockResponse({ body: taskBody({ state: "QUEUED" }), status: 200 });
-			mockProcessing(http, POLLS_PER_GRACE);
-
-			const caught: unknown = await makeAdvancingRunner(http)
-				.executeScriptAsync({ bootProven: true, script: "return 1", timeout: 1000 })
-				.catch((err: unknown) => err);
-
-			assert(caught instanceof Error);
+			const caught = await exhaustPollAsync({
+				bootProven: true,
+				script: "return 1",
+				timeout: 1000,
+			});
 
 			expect(caught.message).not.toContain("place version Roblox could not start");
 			expect(caught.message).toContain("known to boot");
 			expect(caught.message).toContain("last observed state: PROCESSING");
 		});
 
-		it("should leave execution and boot status unknown after a timeout", async () => {
+		it("should leave execution and boot status unknown after a timeout", async ({ expect }) => {
 			expect.assertions(2);
 
-			const http = createFakeHttpClient();
-			http.mockResponse({ body: taskBody({ state: "QUEUED" }), status: 200 });
-			mockProcessing(http, POLLS_PER_GRACE);
-
-			const caught: unknown = await makeAdvancingRunner(http)
-				.executeScriptAsync({ script: "return 1", timeout: 1000 })
-				.catch((err: unknown) => err);
-
-			assert(caught instanceof Error);
+			const caught = await exhaustPollAsync({ script: "return 1", timeout: 1000 });
 
 			expect(caught.message).toContain("does not establish whether the script started");
 			expect(caught.message).toContain(
@@ -688,7 +683,7 @@ describe(OcaleRunner, () => {
 			);
 		});
 
-		it("should read the original terminal task after timeout", async () => {
+		it("should read the original terminal task after timeout", async ({ expect }) => {
 			expect.assertions(3);
 
 			const { caught, http } = await timeoutExecutionAsync();
@@ -720,7 +715,7 @@ describe(OcaleRunner, () => {
 			);
 		});
 
-		it("should cancel a recovery read before making another request", async () => {
+		it("should cancel a recovery read before making another request", async ({ expect }) => {
 			expect.assertions(2);
 
 			const { caught, http } = await timeoutExecutionAsync();
@@ -735,21 +730,23 @@ describe(OcaleRunner, () => {
 			expect(http.requests).toHaveLength(2);
 		});
 
-		it("should recover with a fresh signal after the initial observation is canceled", async () => {
+		it("should recover with a fresh signal after the initial observation is canceled", async ({
+			expect,
+		}) => {
 			expect.assertions(2);
 
 			const http = createFakeHttpClient();
 			http.mockResponse({ body: taskBody(), status: 200 });
 			mockProcessing(http, 1);
 			const original = new AbortController();
-			const caught: unknown = await makeAdvancingRunner(http)
+			const caught = await makeAdvancingRunner(http)
 				.executeScriptAsync({
 					observationSignal: original.signal,
 					pollBudget: 1,
 					script: "return 1",
 					timeout: 1000,
 				})
-				.catch((err: unknown) => err);
+				.catch((err) => err);
 			assert(caught instanceof Error);
 			original.abort();
 			const recovery = new AbortController();
@@ -773,7 +770,9 @@ describe(OcaleRunner, () => {
 			);
 		});
 
-		it("should carry recovery cancellation through terminal failure logs", async () => {
+		it("should carry recovery cancellation through terminal failure logs", async ({
+			expect,
+		}) => {
 			expect.assertions(2);
 
 			const { caught, http } = await timeoutExecutionAsync();
@@ -793,7 +792,9 @@ describe(OcaleRunner, () => {
 			);
 		});
 
-		it("should recover an original that completes within the recovery budget", async () => {
+		it("should recover an original that completes within the recovery budget", async ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			const { caught, http } = await timeoutExecutionAsync();
@@ -810,7 +811,9 @@ describe(OcaleRunner, () => {
 			});
 		});
 
-		it("should fail when the original never becomes terminal within the recovery budget", async () => {
+		it("should fail when the original never becomes terminal within the recovery budget", async ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			const { caught, http } = await timeoutExecutionAsync();
@@ -821,7 +824,9 @@ describe(OcaleRunner, () => {
 			).rejects.toThrow("Roblox never reported a terminal state for the task within 46s");
 		});
 
-		it("should poll past a stale processing replica after observing completion", async () => {
+		it("should poll past a stale processing replica after observing completion", async ({
+			expect,
+		}) => {
 			expect.assertions(3);
 
 			const { caught, http } = await timeoutExecutionAsync();
@@ -865,7 +870,9 @@ describe(OcaleRunner, () => {
 			]);
 		});
 
-		it("should report the original terminal failure when re-reading after timeout", async () => {
+		it("should report the original terminal failure when re-reading after timeout", async ({
+			expect,
+		}) => {
 			expect.assertions(2);
 
 			const { caught, http } = await timeoutExecutionAsync();
@@ -882,7 +889,9 @@ describe(OcaleRunner, () => {
 			]);
 		});
 
-		it("should report an original-task read failure without creating another task", async () => {
+		it("should report an original-task read failure without creating another task", async ({
+			expect,
+		}) => {
 			expect.assertions(2);
 
 			const { caught, http } = await timeoutExecutionAsync();
@@ -898,7 +907,9 @@ describe(OcaleRunner, () => {
 			]);
 		});
 
-		it("should say the state is unknown when the budget outran the first poll", async () => {
+		it("should say the state is unknown when the budget outran the first poll", async ({
+			expect,
+		}) => {
 			expect.assertions(2);
 
 			// A submit answered after the whole task deadline leaves the poll
@@ -924,9 +935,9 @@ describe(OcaleRunner, () => {
 				},
 			);
 
-			const caught: unknown = await runner
+			const caught = await runner
 				.executeScriptAsync({ script: "return 1", timeout: 1000 })
-				.catch((err: unknown) => err);
+				.catch((err) => err);
 
 			assert(caught instanceof Error);
 
@@ -934,7 +945,7 @@ describe(OcaleRunner, () => {
 			expect(caught.message).toContain("last observed state: unknown");
 		});
 
-		it("should throw when task is CANCELLED", async () => {
+		it("should throw when task is CANCELLED", async ({ expect }) => {
 			expect.assertions(1);
 
 			const http = createFakeHttpClient();
@@ -948,7 +959,7 @@ describe(OcaleRunner, () => {
 			).rejects.toThrow("Execution was cancelled");
 		});
 
-		it("should coerce non-string output values via JSON serialization", async () => {
+		it("should coerce non-string output values via JSON serialization", async ({ expect }) => {
 			expect.assertions(1);
 
 			const http = createFakeHttpClient();
@@ -967,7 +978,9 @@ describe(OcaleRunner, () => {
 			expect(result.outputs).toStrictEqual(["42", '{"nested":true}', "raw"]);
 		});
 
-		it("should clamp task timeout to 300 seconds when caller asks for more", async () => {
+		it("should clamp task timeout to 300 seconds when caller asks for more", async ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			const http = createFakeHttpClient();
@@ -983,7 +996,9 @@ describe(OcaleRunner, () => {
 	});
 
 	describe("binary input", () => {
-		it("should allocate a slot for the payload's size and PUT the bytes at it", async () => {
+		it("should allocate a slot for the payload's size and PUT the bytes at it", async ({
+			expect,
+		}) => {
 			expect.assertions(5);
 
 			const http = createFakeHttpClient();
@@ -1008,7 +1023,9 @@ describe(OcaleRunner, () => {
 	});
 
 	describe("infrastructure failures", () => {
-		it("should classify a task still unfinished at its deadline as a stall, with its evidence", async () => {
+		it("should classify a task still unfinished at its deadline as a stall, with its evidence", async ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			const stalled = taskBody({ state: "PROCESSING", updateTime: "2026-01-01T00:00:00Z" });
@@ -1017,9 +1034,9 @@ describe(OcaleRunner, () => {
 				http.mockResponse({ body: stalled, status: 200 });
 			}
 
-			const caught: unknown = await makeAdvancingRunner(http)
+			const caught = await makeAdvancingRunner(http)
 				.executeScriptAsync({ placeVersion: 1, script: "return 1", timeout: 1000 })
-				.catch((err: unknown) => err);
+				.catch((err) => err);
 			assert(caught instanceof Error);
 
 			expect(fromAny<TaskStallError, typeof caught>(caught).evidence).toStrictEqual({
@@ -1035,7 +1052,7 @@ describe(OcaleRunner, () => {
 	});
 
 	describe("default option fallbacks", () => {
-		it("should default readFile to fs.readFileSync when omitted", async () => {
+		it("should default readFile to fs.readFileSync when omitted", async ({ expect }) => {
 			expect.assertions(1);
 
 			const http = createFakeHttpClient();
@@ -1049,7 +1066,7 @@ describe(OcaleRunner, () => {
 			).rejects.toThrow(/ENOENT/);
 		});
 
-		it("should accept a custom baseUrl option", () => {
+		it("should accept a custom baseUrl option", ({ expect }) => {
 			expect.assertions(1);
 
 			const runner = new OcaleRunner(
@@ -1060,7 +1077,9 @@ describe(OcaleRunner, () => {
 			expect(runner).toBeInstanceOf(OcaleRunner);
 		});
 
-		it("should construct a default fetch-backed http client when none provided", () => {
+		it("should construct a default fetch-backed http client when none provided", ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			const runner = new OcaleRunner({ apiKey: "k", placeId: "456", universeId: "123" });
@@ -1076,7 +1095,7 @@ interface FetchCall {
 	url: string;
 }
 
-function useClock(): void {
+function useClock(onTestFinished: TestContext["onTestFinished"]): void {
 	vi.useFakeTimers();
 	onTestFinished(() => {
 		vi.useRealTimers();
@@ -1104,6 +1123,19 @@ function mockOriginalFailure(http: FakeHttpClient): void {
 	});
 }
 
+async function exhaustPollAsync(
+	options: Parameters<OcaleRunner["executeScriptAsync"]>[0],
+): Promise<Error> {
+	const http = createFakeHttpClient();
+	http.mockResponse({ body: taskBody({ state: "QUEUED" }), status: 200 });
+	mockProcessing(http, POLLS_PER_GRACE);
+	const caught = await makeAdvancingRunner(http)
+		.executeScriptAsync(options)
+		.catch((err) => err);
+	assert(caught instanceof Error);
+	return caught;
+}
+
 async function timeoutExecutionAsync(): Promise<{
 	caught: ExecutionTimeoutError;
 	http: FakeHttpClient;
@@ -1111,9 +1143,9 @@ async function timeoutExecutionAsync(): Promise<{
 	const http = createFakeHttpClient();
 	http.mockResponse({ body: taskBody(), status: 200 });
 	mockProcessing(http, 1);
-	const caught: unknown = await makeAdvancingRunner(http)
+	const caught = await makeAdvancingRunner(http)
 		.executeScriptAsync({ pollBudget: 1, script: "return 1", timeout: 1000 })
-		.catch((err: unknown) => err);
+		.catch((err) => err);
 	assert(caught instanceof Error);
 	return { caught: fromAny<ExecutionTimeoutError, typeof caught>(caught), http };
 }

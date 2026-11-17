@@ -1,7 +1,7 @@
 import { fromAny } from "@total-typescript/shoehorn";
 
 import { Buffer } from "node:buffer";
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { FakeHelper, type FakeHelperSpawnCall } from "#test/mocks/spec-fake-helper.ts";
@@ -63,7 +63,7 @@ describe(launchOnHiddenDesktop, () => {
 		[String.raw`C:\dir with space\\`, String.raw`"C:\dir with space\\\\"`],
 		[String.raw`a\"b c`, String.raw`"a\\\"b c"`],
 		[String.raw`C:\no\space`, String.raw`C:\no\space`],
-	] as const)("should quote the Studio argument %j as %s", ([input, expected]) => {
+	] as const)("should quote the Studio argument %j as %s", ([input, expected], { expect }) => {
 		expect.assertions(1);
 
 		const { calls } = makeLaunch([input]);
@@ -73,7 +73,7 @@ describe(launchOnHiddenDesktop, () => {
 		);
 	});
 
-	it("should pass Studio to a hidden PowerShell helper through the environment", () => {
+	it("should pass Studio to a hidden PowerShell helper through the environment", ({ expect }) => {
 		expect.assertions(5);
 
 		const { calls } = makeLaunch();
@@ -100,7 +100,7 @@ describe(launchOnHiddenDesktop, () => {
 		);
 	});
 
-	it("should hand Studio an environment without the helper variables", () => {
+	it("should hand Studio an environment without the helper variables", ({ expect }) => {
 		expect.assertions(1);
 
 		const { calls } = makeLaunch();
@@ -110,7 +110,7 @@ describe(launchOnHiddenDesktop, () => {
 		);
 	});
 
-	it("should keep the helper alive until Studio exits", () => {
+	it("should keep the helper alive until Studio exits", ({ expect }) => {
 		expect.assertions(1);
 
 		const { calls } = makeLaunch();
@@ -120,7 +120,7 @@ describe(launchOnHiddenDesktop, () => {
 		);
 	});
 
-	it("should kill the printed PID", () => {
+	it("should kill the printed PID", ({ expect }) => {
 		expect.assertions(1);
 
 		const { helper, killCommands, studio } = makeLaunch();
@@ -140,13 +140,11 @@ describe(launchOnHiddenDesktop, () => {
 		]);
 	});
 
-	it("should swallow a kill of a process that already exited", () => {
+	it("should swallow a kill of a process that already exited", ({ expect }) => {
 		expect.assertions(1);
 
 		const { helper, killProcess, studio } = makeLaunch();
-		killProcess.mockImplementation(() => {
-			throw new Error("ESRCH");
-		});
+		killProcess.mockThrow(new Error("ESRCH"));
 		helper.finish({ code: 0, stdout: "9" });
 
 		expect(() => {
@@ -154,7 +152,7 @@ describe(launchOnHiddenDesktop, () => {
 		}).not.toThrow();
 	});
 
-	it("should report a helper that exits non-zero", () => {
+	it("should report a helper that exits non-zero", ({ expect }) => {
 		expect.assertions(1);
 
 		const { errors, helper } = makeLaunch();

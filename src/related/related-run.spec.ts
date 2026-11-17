@@ -1,7 +1,7 @@
 import type { RojoTreeNode } from "@isentinel/rojo-utils";
 
 import * as path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { clockTimingCollector } from "#test/mocks/clock-timing-collector.ts";
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
@@ -39,7 +39,7 @@ function resolve({
 }
 
 describe(resolveRelatedRun, () => {
-	it("should resolve nothing on a full run", () => {
+	it("should resolve nothing on a full run", ({ expect }) => {
 		expect.assertions(1);
 
 		const run = resolve({
@@ -51,7 +51,9 @@ describe(resolveRelatedRun, () => {
 		expect(run).toBeUndefined();
 	});
 
-	it("should resolve files against the root and mounts against the Rojo project folder", () => {
+	it("should resolve files against the root and mounts against the Rojo project folder", ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const run = resolve({
@@ -67,7 +69,7 @@ describe(resolveRelatedRun, () => {
 		expect(run!.scope.rojoRoots).toStrictEqual([posixPath(path.join(ROOT, "places", "src"))]);
 	});
 
-	it("should scope the files changed since the ref", () => {
+	it("should scope the files changed since the ref", ({ expect }) => {
 		expect.assertions(2);
 
 		const run = resolve({
@@ -91,7 +93,9 @@ describe(resolveRelatedRun, () => {
 		expect(run!.scope.rojoRoots).toStrictEqual([posixPath(path.join(ROOT, "src"))]);
 	});
 
-	it("should take the default lockfile triggers and no mounts without a Rojo tree", () => {
+	it("should take the default lockfile triggers and no mounts without a Rojo tree", ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const run = resolve({

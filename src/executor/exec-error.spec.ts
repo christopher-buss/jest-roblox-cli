@@ -1,4 +1,4 @@
-import { assert, describe, expect, it, vi } from "vitest";
+import { assert, describe, it, vi } from "vitest";
 
 import type { BackendTiming } from "../backends/interface.ts";
 import { LuauScriptError } from "../jest-output/luau-script-error.ts";
@@ -61,7 +61,7 @@ function encodeOutput(...messages: Array<string>): string {
 }
 
 describe(buildExecutionErrorResult, () => {
-	it("should preserve the complete deferred failure contract", () => {
+	it("should preserve the complete deferred failure contract", ({ expect }) => {
 		expect.assertions(1);
 
 		vi.spyOn(Date, "now").mockReturnValue(1_123);
@@ -98,7 +98,7 @@ describe(buildExecutionErrorResult, () => {
 		});
 	});
 
-	it("should mark an abandoned run timed out and still fail the run", () => {
+	it("should mark an abandoned run timed out and still fail the run", ({ expect }) => {
 		expect.assertions(2);
 
 		const result = buildResult({ timedOut: true });
@@ -107,7 +107,7 @@ describe(buildExecutionErrorResult, () => {
 		expect(result.exitCode).toBe(1);
 	});
 
-	it("should prepend parsed banner output to an exact numeric exit message", () => {
+	it("should prepend parsed banner output to an exact numeric exit message", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = buildResult({
@@ -122,7 +122,7 @@ describe(buildExecutionErrorResult, () => {
 		);
 	});
 
-	it("should preserve every parsed banner line in order", () => {
+	it("should preserve every parsed banner line in order", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = buildResult({
@@ -140,7 +140,7 @@ describe(buildExecutionErrorResult, () => {
 
 	it.for(["prefix Exited with code: 10", "Exited with code: 10 trailing"] as const)(
 		"should preserve the non-exact exit message %j",
-		(message) => {
+		(message, { expect }) => {
 			expect.assertions(1);
 
 			const result = buildResult({
@@ -160,7 +160,7 @@ describe(buildExecutionErrorResult, () => {
 		JSON.stringify([{ message: "  ", messageType: 0, timestamp: 0 }]),
 	] as const)(
 		"should report instead of guessing when banner output %j has no content",
-		(bannerOutput) => {
+		(bannerOutput, { expect }) => {
 			expect.assertions(2);
 
 			const message = failureMessageOf({
@@ -181,7 +181,7 @@ describe(buildExecutionErrorResult, () => {
 // failures that exit this way, so the report says what the host knows for
 // certain and stops there.
 describe("an exit-code-only failure with nothing captured", () => {
-	it("should report every fact the host holds about the entry", () => {
+	it("should report every fact the host holds about the entry", ({ expect }) => {
 		expect.assertions(1);
 
 		const message = failureMessageOf({
@@ -209,7 +209,7 @@ describe("an exit-code-only failure with nothing captured", () => {
 		);
 	});
 
-	it("should name the project alone outside workspace mode", () => {
+	it("should name the project alone outside workspace mode", ({ expect }) => {
 		expect.assertions(1);
 
 		const message = failureMessageOf({
@@ -220,7 +220,9 @@ describe("an exit-code-only failure with nothing captured", () => {
 		expect(message).toContain("  Project      unit\n");
 	});
 
-	it("should report a host selection of zero test files without calling it the cause", () => {
+	it("should report a host selection of zero test files without calling it the cause", ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const message = failureMessageOf({
@@ -237,7 +239,7 @@ describe("an exit-code-only failure with nothing captured", () => {
 		["resolveJest", "resolving the Jest module"],
 		["resolveProjects", "resolving project and setup-file instances"],
 		["run", "running Jest"],
-	] as const)("should render the %j phase in words", ([phase, label]) => {
+	] as const)("should render the %j phase in words", ([phase, label], { expect }) => {
 		expect.assertions(1);
 
 		const message = failureMessageOf({
@@ -248,7 +250,7 @@ describe("an exit-code-only failure with nothing captured", () => {
 		expect(message).toContain(`  Phase        ${label}\n`);
 	});
 
-	it("should render a phase this version has no wording for as itself", () => {
+	it("should render a phase this version has no wording for as itself", ({ expect }) => {
 		expect.assertions(1);
 
 		const message = failureMessageOf({
@@ -263,18 +265,21 @@ describe("an exit-code-only failure with nothing captured", () => {
 		[undefined, "the runner does not report whether stdout/stderr was intercepted"],
 		[true, "stdout/stderr intercepted; Jest wrote nothing"],
 		[false, "stdout/stderr interception could not be installed"],
-	] as const)("should tell a capture of %j apart from the others", ([captureInstalled, note]) => {
-		expect.assertions(1);
+	] as const)(
+		"should tell a capture of %j apart from the others",
+		([captureInstalled, note], { expect }) => {
+			expect.assertions(1);
 
-		const message = failureMessageOf({
-			captureInstalled,
-			message: "Exited with code: 1",
-		});
+			const message = failureMessageOf({
+				captureInstalled,
+				message: "Exited with code: 1",
+			});
 
-		expect(message).toContain(`  Capture      ${note}\n`);
-	});
+			expect(message).toContain(`  Capture      ${note}\n`);
+		},
+	);
 
-	it("should keep the Game Output tail to its last lines", () => {
+	it("should keep the Game Output tail to its last lines", ({ expect }) => {
 		expect.assertions(3);
 
 		const message = failureMessageOf({
@@ -287,7 +292,7 @@ describe("an exit-code-only failure with nothing captured", () => {
 		expect(message).toContain("    three\n    four\n    five\n    six\n    seven\n");
 	});
 
-	it("should drop blank Game Output lines from the tail", () => {
+	it("should drop blank Game Output lines from the tail", ({ expect }) => {
 		expect.assertions(2);
 
 		const message = failureMessageOf({
@@ -299,7 +304,7 @@ describe("an exit-code-only failure with nothing captured", () => {
 		expect(message).not.toContain("       \n");
 	});
 
-	it("should say so when the Game Output holds nothing to show", () => {
+	it("should say so when the Game Output holds nothing to show", ({ expect }) => {
 		expect.assertions(2);
 
 		const message = failureMessageOf({
@@ -311,7 +316,7 @@ describe("an exit-code-only failure with nothing captured", () => {
 		expect(message).toEndWith("nothing captured\n\nExited with code: 1");
 	});
 
-	it("should still report a failed file carrying no failed tests", () => {
+	it("should still report a failed file carrying no failed tests", ({ expect }) => {
 		expect.assertions(3);
 
 		const result = buildResult({ message: "Exited with code: 1" });

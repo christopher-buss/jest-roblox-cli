@@ -1,6 +1,6 @@
 import { fromAny } from "@total-typescript/shoehorn";
 
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
@@ -21,7 +21,9 @@ function makePlanned(): PlannedProject {
 }
 
 describe(buildPlannedJob, () => {
-	it("should build the job and hand back the project with its resolved snapshot format", () => {
+	it("should build the job and hand back the project with its resolved snapshot format", ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const { job, project } = buildPlannedJob({

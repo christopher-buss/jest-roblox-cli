@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { describe, expect, it, onTestFinished } from "vitest";
+import { describe, it, type TestContext } from "vitest";
 
 import { createSandboxDirectory } from "#test/harness/sandbox-root.ts";
 
@@ -32,9 +32,12 @@ const DECOY_SPEC_NAMES = {
  * wherever real sandboxes land rather than wherever this file guesses.
  *
  * Returns the paths as the file list prints them.
+ * @param onTestFinished - Removes the sandbox after the test.
  * @returns Decoy spec path per project.
  */
-function plantStaleSandbox(): Record<keyof typeof DECOY_SPEC_NAMES, string> {
+function plantStaleSandbox(
+	onTestFinished: TestContext["onTestFinished"],
+): Record<keyof typeof DECOY_SPEC_NAMES, string> {
 	const directory = createSandboxDirectory();
 	onTestFinished(() => {
 		rmSync(directory, { force: true, recursive: true });
@@ -81,10 +84,10 @@ function listProjectFiles(project: string): string {
 describe("file collection", () => {
 	it.for(COLLECTING_PROJECTS)(
 		"should keep a sandbox left behind in .tmp out of $name's file list",
-		({ name, sentinel }) => {
+		({ name, sentinel }, { expect, onTestFinished }) => {
 			expect.assertions(3);
 
-			const stale = plantStaleSandbox();
+			const stale = plantStaleSandbox(onTestFinished);
 
 			const listed = listProjectFiles(name);
 

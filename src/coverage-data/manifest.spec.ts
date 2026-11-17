@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import type { CoverageManifest, ReadManifestResult } from "./manifest.ts";
@@ -53,7 +53,7 @@ function expectVersionMismatch(result: ReadManifestResult) {
 }
 
 describe(writeManifest, () => {
-	it("should round-trip through readManifest", () => {
+	it("should round-trip through readManifest", ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -70,7 +70,7 @@ describe(writeManifest, () => {
 		);
 	});
 
-	it("should round-trip per-test attribution records", () => {
+	it("should round-trip per-test attribution records", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -111,7 +111,7 @@ describe(writeManifest, () => {
 		);
 	});
 
-	it("should round-trip a per-file static-statement set", () => {
+	it("should round-trip a per-file static-statement set", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -138,7 +138,7 @@ describe(writeManifest, () => {
 		);
 	});
 
-	it("should create parent directories before writing", () => {
+	it("should create parent directories before writing", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -154,7 +154,7 @@ describe(writeManifest, () => {
 });
 
 describe(readManifest, () => {
-	it("should return missing when file does not exist", () => {
+	it("should return missing when file does not exist", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -164,7 +164,7 @@ describe(readManifest, () => {
 		expect(result.kind).toBe("missing");
 	});
 
-	it("should return malformed-json when file contains invalid JSON", () => {
+	it("should return malformed-json when file contains invalid JSON", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -178,7 +178,7 @@ describe(readManifest, () => {
 		expect(result.kind).toBe("malformed-json");
 	});
 
-	it("should return invalid when JSON root is not an object", () => {
+	it("should return invalid when JSON root is not an object", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -192,7 +192,7 @@ describe(readManifest, () => {
 		).toContain("object");
 	});
 
-	it("should return invalid when JSON is the literal null", () => {
+	it("should return invalid when JSON is the literal null", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -206,7 +206,7 @@ describe(readManifest, () => {
 		expect(result.kind).toBe("invalid");
 	});
 
-	it("should return version-mismatch when version is a different number", () => {
+	it("should return version-mismatch when version is a different number", ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -223,7 +223,9 @@ describe(readManifest, () => {
 		expect(mismatch.actual).toBe(otherVersion);
 	});
 
-	it("should reject caches written by the pre-rojo-rewriter-collapse layout (version 1)", () => {
+	it("should reject caches written by the pre-rojo-rewriter-collapse layout (version 1)", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -236,7 +238,7 @@ describe(readManifest, () => {
 		expect(readManifest("/coverage/manifest.json", fileSystem).kind).toBe("version-mismatch");
 	});
 
-	it("should reject v2 caches (pre-buildId) as version-mismatch", () => {
+	it("should reject v2 caches (pre-buildId) as version-mismatch", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -249,7 +251,7 @@ describe(readManifest, () => {
 		expect(readManifest("/coverage/manifest.json", fileSystem).kind).toBe("version-mismatch");
 	});
 
-	it("should reject v3 caches (pre-static-statement-set) as version-mismatch", () => {
+	it("should reject v3 caches (pre-static-statement-set) as version-mismatch", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -262,7 +264,7 @@ describe(readManifest, () => {
 		expect(readManifest("/coverage/manifest.json", fileSystem).kind).toBe("version-mismatch");
 	});
 
-	it("should reject v4 caches (pre-test-location) as version-mismatch", () => {
+	it("should reject v4 caches (pre-test-location) as version-mismatch", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -275,7 +277,7 @@ describe(readManifest, () => {
 		expect(readManifest("/coverage/manifest.json", fileSystem).kind).toBe("version-mismatch");
 	});
 
-	it("should return invalid when buildId is absent", () => {
+	it("should return invalid when buildId is absent", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -288,7 +290,9 @@ describe(readManifest, () => {
 		expect(readManifest("/coverage/manifest.json", fileSystem).kind).toBe("invalid");
 	});
 
-	it("should return invalid (not version-mismatch) when version field is absent", () => {
+	it("should return invalid (not version-mismatch) when version field is absent", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -302,7 +306,7 @@ describe(readManifest, () => {
 		expect(result.kind).toBe("invalid");
 	});
 
-	it("should return invalid when version field is a non-numeric value", () => {
+	it("should return invalid when version field is a non-numeric value", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -319,7 +323,7 @@ describe(readManifest, () => {
 		expect(result.kind).toBe("invalid");
 	});
 
-	it("should return invalid when coveringTestIds is not an array of test ids", () => {
+	it("should return invalid when coveringTestIds is not an array of test ids", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -341,7 +345,7 @@ describe(readManifest, () => {
 		expect(readManifest("/coverage/manifest.json", fileSystem).kind).toBe("invalid");
 	});
 
-	it("should return invalid when a static-statement set is not an array of ids", () => {
+	it("should return invalid when a static-statement set is not an array of ids", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -363,7 +367,7 @@ describe(readManifest, () => {
 		expect(readManifest("/coverage/manifest.json", fileSystem).kind).toBe("invalid");
 	});
 
-	it("should return invalid when a test record is missing its source hash", () => {
+	it("should return invalid when a test record is missing its source hash", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -381,7 +385,7 @@ describe(readManifest, () => {
 		expect(readManifest("/coverage/manifest.json", fileSystem).kind).toBe("invalid");
 	});
 
-	it("should return invalid when version matches but body fails schema", () => {
+	it("should return invalid when version matches but body fails schema", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -398,7 +402,9 @@ describe(readManifest, () => {
 		).not.toHaveLength(0);
 	});
 
-	it("should propagate non-ENOENT IO errors rather than misreport as malformed-json", () => {
+	it("should propagate non-ENOENT IO errors rather than misreport as malformed-json", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();

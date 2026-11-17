@@ -1,9 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { createToken, isToken } from "./cst-token.ts";
 
 describe(createToken, () => {
-	it("should retain a token's spelling and source span", () => {
+	it("should retain a token's spelling and source span", ({ expect }) => {
 		expect.assertions(1);
 
 		const origin = { beginColumn: 2, beginLine: 1, endColumn: 3, endLine: 1 };
@@ -18,7 +18,7 @@ describe(createToken, () => {
 });
 
 describe(isToken, () => {
-	it("should accept a created token", () => {
+	it("should accept a created token", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -36,14 +36,16 @@ describe(isToken, () => {
 		{ expected: false, value: { text: "x" } },
 	])(
 		"should recognize $value as a token only when its text is a string",
-		({ expected, value }) => {
+		({ expected, value }, { expect }) => {
 			expect.assertions(1);
 
 			expect(isToken(value)).toBe(expected);
 		},
 	);
 
-	it("should reject a token whose text is not a string even when its trivia lists are valid", () => {
+	it("should reject a token whose text is not a string even when its trivia lists are valid", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		expect(isToken({ leading: [], text: 0, trailing: [] })).toBeFalse();

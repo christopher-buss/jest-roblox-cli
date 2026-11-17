@@ -1,6 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { startFakeOpenCloudServerAsync } from "#test/harness/fake-open-cloud.ts";
 import {
@@ -45,7 +45,7 @@ async function runOpenCloudWorkspaceAsync(
 describe("workspace --parallel work-stealing", () => {
 	it.skipIf(!rojoOnPath())(
 		"should fan results across N parallel tasks and write each package's snapshots",
-		async () => {
+		async ({ expect }) => {
 			expect.assertions(7);
 
 			const sandbox = createFixtureSandbox(WORKSPACE_FIXTURE_PATH);
@@ -129,7 +129,7 @@ describe("workspace --parallel work-stealing", () => {
 describe("workspace synthesizer $path-mounted parent virtualization", () => {
 	it.skipIf(!rojoOnPath())(
 		"should reach backend dispatch when stubMount targets a sub-directory of a $path-mounted parent",
-		async () => {
+		async ({ expect }) => {
 			expect.assertions(4);
 
 			const sandbox = createFixtureSandbox(WORKSPACE_FIXTURE_PATH);
@@ -157,7 +157,7 @@ describe("workspace synthesizer $path-mounted parent virtualization", () => {
 describe("workspace synthesizer zero-test project tolerance", () => {
 	it.skipIf(!rojoOnPath())(
 		"should not emit stubMounts for projects with no discovered tests",
-		async () => {
+		async ({ expect }) => {
 			expect.assertions(4);
 
 			const sandbox = createFixtureSandbox(WORKSPACE_FIXTURE_PATH);
@@ -187,7 +187,7 @@ describe("workspace synthesizer zero-test project tolerance", () => {
 describe("workspace pre-flight cleanup of leftover own-stubs", () => {
 	it.skipIf(!rojoOnPath())(
 		"should delete marker-bearing source-tree stubs left by a prior multi-project run",
-		async () => {
+		async ({ expect }) => {
 			expect.assertions(4);
 
 			const sandbox = createFixtureSandbox(WORKSPACE_FIXTURE_PATH);
@@ -234,7 +234,7 @@ describe("workspace pre-flight cleanup of leftover own-stubs", () => {
 describe("workspace bare enumeration", () => {
 	it.skipIf(!rojoOnPath())(
 		"should select every package the exclude leaves and skip one with no jest.config",
-		async () => {
+		async ({ expect }) => {
 			expect.assertions(5);
 
 			const sandbox = createFixtureSandbox(WORKSPACE_FIXTURE_PATH);
@@ -295,7 +295,7 @@ describe("workspace bare enumeration", () => {
 describe("workspace positional file scoping", () => {
 	it.skipIf(!rojoOnPath())(
 		"should dispatch only the package that owns a relative positional file",
-		async () => {
+		async ({ expect }) => {
 			expect.assertions(4);
 
 			const sandbox = createFixtureSandbox(WORKSPACE_FIXTURE_PATH);

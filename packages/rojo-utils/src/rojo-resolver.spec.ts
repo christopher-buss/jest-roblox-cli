@@ -1,7 +1,7 @@
 import { fromAny } from "@total-typescript/shoehorn";
 
 import path from "node:path";
-import { describe, expect, it, onTestFinished, vi } from "vitest";
+import { describe, it, type TestContext, vi } from "vitest";
 
 import { makeFileSystem } from "#test/helpers/unit/file-system";
 import type { FileSystem } from "./file-system.ts";
@@ -34,7 +34,9 @@ function makeModuleProject(): ReturnType<typeof makeFileSystem> {
 	});
 }
 
-function makeSyntheticFileSystem(): ReturnType<typeof makeFileSystem> {
+function makeSyntheticFileSystem(
+	onTestFinished: TestContext["onTestFinished"],
+): ReturnType<typeof makeFileSystem> {
 	const fixture = makeFileSystem();
 	const { fromTree } = RojoResolver;
 	const spy = vi.spyOn(RojoResolver, "fromTree").mockImplementation((options) => {
@@ -47,7 +49,7 @@ function makeSyntheticFileSystem(): ReturnType<typeof makeFileSystem> {
 }
 
 describe("findRojoConfigFilePath", () => {
-	it("should prefer the default project over sorted alternatives", () => {
+	it("should prefer the default project over sorted alternatives", ({ expect }) => {
 		expect.assertions(2);
 
 		const { directory, fileSystem } = makeFileSystem({
@@ -61,7 +63,7 @@ describe("findRojoConfigFilePath", () => {
 		expect(result.warnings).toBeEmpty();
 	});
 
-	it("should default an empty resolver to non-game queries", () => {
+	it("should default an empty resolver to non-game queries", ({ expect }) => {
 		expect.assertions(2);
 
 		const resolver = new RojoResolver();
@@ -70,7 +72,7 @@ describe("findRojoConfigFilePath", () => {
 		expect(resolver.getNetworkType(["StarterGui"])).toBe(NetworkType.Unknown);
 	});
 
-	it("should return the default project file when present", () => {
+	it("should return the default project file when present", ({ expect }) => {
 		expect.assertions(2);
 
 		const { directory, fileSystem } = makeFileSystem({
@@ -82,7 +84,7 @@ describe("findRojoConfigFilePath", () => {
 		expect(result.warnings).toBeEmpty();
 	});
 
-	it("should return a single non-default project file without warning", () => {
+	it("should return a single non-default project file without warning", ({ expect }) => {
 		expect.assertions(2);
 
 		const { directory, fileSystem } = makeFileSystem({
@@ -94,7 +96,7 @@ describe("findRojoConfigFilePath", () => {
 		expect(result.warnings).toBeEmpty();
 	});
 
-	it("should skip a dangling default project link", () => {
+	it("should skip a dangling default project link", ({ expect }) => {
 		expect.assertions(2);
 
 		const { directory, fileSystem, fs } = makeFileSystem({
@@ -110,7 +112,7 @@ describe("findRojoConfigFilePath", () => {
 		expect(result.warnings).toBeEmpty();
 	});
 
-	it("should recognize the legacy roblox-project.json name", () => {
+	it("should recognize the legacy roblox-project.json name", ({ expect }) => {
 		expect.assertions(1);
 
 		const { directory, fileSystem } = makeFileSystem({
@@ -122,7 +124,7 @@ describe("findRojoConfigFilePath", () => {
 		);
 	});
 
-	it("should warn when multiple project files are present", () => {
+	it("should warn when multiple project files are present", ({ expect }) => {
 		expect.assertions(1);
 
 		const { directory, fileSystem } = makeFileSystem({
@@ -135,7 +137,7 @@ describe("findRojoConfigFilePath", () => {
 		);
 	});
 
-	it("should probe the given file system rather than the disk", () => {
+	it("should probe the given file system rather than the disk", ({ expect }) => {
 		expect.assertions(1);
 
 		const { directory, fileSystem } = makeFileSystem({ "default.project.json": "{}" });
@@ -145,7 +147,7 @@ describe("findRojoConfigFilePath", () => {
 		);
 	});
 
-	it("should return undefined when no project file is present", () => {
+	it("should return undefined when no project file is present", ({ expect }) => {
 		expect.assertions(1);
 
 		const { directory, fileSystem } = makeFileSystem({ "readme.md": "hi" });
@@ -155,7 +157,7 @@ describe("findRojoConfigFilePath", () => {
 });
 
 describe("fromPath", () => {
-	it("should mark a DataModel project as a game", () => {
+	it("should mark a DataModel project as a game", ({ expect }) => {
 		expect.assertions(1);
 
 		const { directory, fileSystem } = makeFileSystem({
@@ -165,7 +167,7 @@ describe("fromPath", () => {
 		expect(fromProject({ directory, fileSystem }).isGame).toBeTrue();
 	});
 
-	it("should warn when the config path does not exist", () => {
+	it("should warn when the config path does not exist", ({ expect }) => {
 		expect.assertions(1);
 
 		const { directory, fileSystem } = makeFileSystem({ "readme.md": "hi" });
@@ -178,7 +180,7 @@ describe("fromPath", () => {
 		expect(resolver.getWarnings()[0]).toInclude("Path does not exist");
 	});
 
-	it("should warn on an invalid configuration", () => {
+	it("should warn on an invalid configuration", ({ expect }) => {
 		expect.assertions(1);
 
 		const { directory, fileSystem } = makeFileSystem({
@@ -190,7 +192,7 @@ describe("fromPath", () => {
 		);
 	});
 
-	it("should warn when the tree is an array rather than an object", () => {
+	it("should warn when the tree is an array rather than an object", ({ expect }) => {
 		expect.assertions(1);
 
 		const { directory, fileSystem } = makeFileSystem({
@@ -202,7 +204,7 @@ describe("fromPath", () => {
 		);
 	});
 
-	it("should warn when $path is neither a string nor an optional mount", () => {
+	it("should warn when $path is neither a string nor an optional mount", ({ expect }) => {
 		expect.assertions(1);
 
 		const { directory, fileSystem } = makeFileSystem({
@@ -214,7 +216,7 @@ describe("fromPath", () => {
 		);
 	});
 
-	it("should warn on malformed JSON instead of throwing", () => {
+	it("should warn on malformed JSON instead of throwing", ({ expect }) => {
 		expect.assertions(1);
 
 		const { directory, fileSystem } = makeFileSystem({
@@ -226,7 +228,7 @@ describe("fromPath", () => {
 		);
 	});
 
-	it("should map a module file path directly", () => {
+	it("should map a module file path directly", ({ expect }) => {
 		expect.assertions(1);
 
 		const { directory, fileSystem } = makeFileSystem({
@@ -244,7 +246,7 @@ describe("fromPath", () => {
 		).toStrictEqual(["Config"]);
 	});
 
-	it("should resolve a directory partition and strip init", () => {
+	it("should resolve a directory partition and strip init", ({ expect }) => {
 		expect.assertions(2);
 
 		const { directory, fileSystem } = makeModuleProject();
@@ -259,7 +261,7 @@ describe("fromPath", () => {
 		).toStrictEqual(["ReplicatedStorage", "module"]);
 	});
 
-	it("should accept the optional $path object form", () => {
+	it("should accept the optional $path object form", ({ expect }) => {
 		expect.assertions(1);
 
 		const { directory, fileSystem } = makeFileSystem({
@@ -277,7 +279,7 @@ describe("fromPath", () => {
 		).toStrictEqual(["Maybe", "value"]);
 	});
 
-	it("should create a partition for a $path that does not exist", () => {
+	it("should create a partition for a $path that does not exist", ({ expect }) => {
 		expect.assertions(1);
 
 		const { directory, fileSystem } = makeFileSystem({
@@ -290,7 +292,7 @@ describe("fromPath", () => {
 		expect(fromProject({ directory, fileSystem }).getPartitions()).not.toBeEmpty();
 	});
 
-	it("should parse a nested default project referenced by directory", () => {
+	it("should parse a nested default project referenced by directory", ({ expect }) => {
 		expect.assertions(1);
 
 		const { directory, fileSystem } = makeFileSystem({
@@ -309,7 +311,9 @@ describe("fromPath", () => {
 		).toStrictEqual(["Nested", "inside"]);
 	});
 
-	it("should embed a nested project referenced by a project file and ignore its name", () => {
+	it("should embed a nested project referenced by a project file and ignore its name", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { directory, fileSystem } = makeFileSystem({
@@ -330,7 +334,9 @@ describe("fromPath", () => {
 		).toStrictEqual(["Pkg", "mod"]);
 	});
 
-	it("should register the nested partition and not map the project file as a leaf", () => {
+	it("should register the nested partition and not map the project file as a leaf", ({
+		expect,
+	}) => {
 		expect.assertions(3);
 
 		const { directory, fileSystem } = makeFileSystem({
@@ -355,7 +361,7 @@ describe("fromPath", () => {
 		expect([...resolver.walkedConfigFiles]).toContain(projectFile);
 	});
 
-	it("should return undefined for an unmapped file", () => {
+	it("should return undefined for an unmapped file", ({ expect }) => {
 		expect.assertions(1);
 
 		const { directory, fileSystem } = makeFileSystem({
@@ -371,7 +377,7 @@ describe("fromPath", () => {
 });
 
 describe("searchDirectory", () => {
-	it("should follow nested project files and subfolders", () => {
+	it("should follow nested project files and subfolders", ({ expect }) => {
 		expect.assertions(2);
 
 		const { directory, fileSystem } = makeFileSystem({
@@ -392,7 +398,7 @@ describe("searchDirectory", () => {
 		expect(resolver.getPartitions().length).toBeGreaterThan(1);
 	});
 
-	it("should stop at a subfolder that has its own default project", () => {
+	it("should stop at a subfolder that has its own default project", ({ expect }) => {
 		expect.assertions(1);
 
 		const { directory, fileSystem } = makeFileSystem({
@@ -412,7 +418,7 @@ describe("searchDirectory", () => {
 });
 
 describe("getRbxTypeFromFilePath", () => {
-	it("should classify non-script side suffixes as modules", () => {
+	it("should classify non-script side suffixes as modules", ({ expect }) => {
 		expect.assertions(1);
 
 		const resolver = new RojoResolver();
@@ -420,7 +426,7 @@ describe("getRbxTypeFromFilePath", () => {
 		expect(resolver.getRbxTypeFromFilePath("value.server.json")).toBe(RbxType.ModuleScript);
 	});
 
-	it("should classify a .server script", () => {
+	it("should classify a .server script", ({ expect }) => {
 		expect.assertions(1);
 
 		const resolver = new RojoResolver();
@@ -428,7 +434,7 @@ describe("getRbxTypeFromFilePath", () => {
 		expect(resolver.getRbxTypeFromFilePath("a.server.luau")).toBe(RbxType.Script);
 	});
 
-	it("should classify a .client script", () => {
+	it("should classify a .client script", ({ expect }) => {
 		expect.assertions(1);
 
 		const resolver = new RojoResolver();
@@ -436,7 +442,7 @@ describe("getRbxTypeFromFilePath", () => {
 		expect(resolver.getRbxTypeFromFilePath("a.client.luau")).toBe(RbxType.LocalScript);
 	});
 
-	it("should classify a plain module script", () => {
+	it("should classify a plain module script", ({ expect }) => {
 		expect.assertions(1);
 
 		const resolver = new RojoResolver();
@@ -444,7 +450,7 @@ describe("getRbxTypeFromFilePath", () => {
 		expect(resolver.getRbxTypeFromFilePath("a.luau")).toBe(RbxType.ModuleScript);
 	});
 
-	it("should classify a non-script module by extension", () => {
+	it("should classify a non-script module by extension", ({ expect }) => {
 		expect.assertions(1);
 
 		const resolver = new RojoResolver();
@@ -452,7 +458,7 @@ describe("getRbxTypeFromFilePath", () => {
 		expect(resolver.getRbxTypeFromFilePath("a.json")).toBe(RbxType.ModuleScript);
 	});
 
-	it("should return Unknown for an unrecognized sub-extension", () => {
+	it("should return Unknown for an unrecognized sub-extension", ({ expect }) => {
 		expect.assertions(1);
 
 		const resolver = new RojoResolver();
@@ -460,7 +466,7 @@ describe("getRbxTypeFromFilePath", () => {
 		expect(resolver.getRbxTypeFromFilePath("a.weird.luau")).toBe(RbxType.Unknown);
 	});
 
-	it("should convert a .lua extension to .luau", () => {
+	it("should convert a .lua extension to .luau", ({ expect }) => {
 		expect.assertions(1);
 
 		const resolver = new RojoResolver();
@@ -493,7 +499,7 @@ describe("container queries", () => {
 		return fromProject({ directory, fileSystem });
 	}
 
-	it("should report network type by container", () => {
+	it("should report network type by container", ({ expect }) => {
 		expect.assertions(3);
 
 		const { directory, fileSystem, fs } = makeFileSystem({});
@@ -504,7 +510,7 @@ describe("container queries", () => {
 		expect(resolver.getNetworkType(["ReplicatedStorage"])).toBe(NetworkType.Unknown);
 	});
 
-	it("should detect isolated containers", () => {
+	it("should detect isolated containers", ({ expect }) => {
 		expect.assertions(2);
 
 		const { directory, fileSystem, fs } = makeFileSystem({});
@@ -515,7 +521,7 @@ describe("container queries", () => {
 		expect(resolver.isIsolated(["ReplicatedStorage"])).toBeFalse();
 	});
 
-	it("should compute file relations across containers", () => {
+	it("should compute file relations across containers", ({ expect }) => {
 		expect.assertions(5);
 
 		const { directory, fileSystem, fs } = makeFileSystem({});
@@ -538,10 +544,10 @@ describe("container queries", () => {
 		);
 	});
 
-	it("should treat a synthetic non-game resolver as all-out", () => {
+	it("should treat a synthetic non-game resolver as all-out", ({ expect, onTestFinished }) => {
 		expect.assertions(3);
 
-		const { directory } = makeSyntheticFileSystem();
+		const { directory } = makeSyntheticFileSystem(onTestFinished);
 		const resolver = RojoResolver.synthetic(directory);
 
 		expect(resolver.getNetworkType(["StarterGui"])).toBe(NetworkType.Unknown);
@@ -553,19 +559,19 @@ describe("container queries", () => {
 });
 
 describe("relative", () => {
-	it("should return an empty path for identical locations", () => {
+	it("should return an empty path for identical locations", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(RojoResolver.relative(["a", "b"], ["a", "b"])).toBeEmpty();
 	});
 
-	it("should descend into a child path", () => {
+	it("should descend into a child path", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(RojoResolver.relative(["a"], ["a", "b", "c"])).toStrictEqual(["b", "c"]);
 	});
 
-	it("should ascend with parent markers", () => {
+	it("should ascend with parent markers", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(RojoResolver.relative(["a", "b", "c"], ["a"])).toStrictEqual([
@@ -574,7 +580,7 @@ describe("relative", () => {
 		]);
 	});
 
-	it("should mix ascent and descent", () => {
+	it("should mix ascent and descent", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(RojoResolver.relative(["a", "b"], ["a", "c"])).toStrictEqual([
@@ -585,7 +591,7 @@ describe("relative", () => {
 });
 
 describe("state serialization", () => {
-	it("should copy nested snapshot collections in both directions", () => {
+	it("should copy nested snapshot collections in both directions", ({ expect }) => {
 		expect.assertions(2);
 
 		const original = {
@@ -618,7 +624,7 @@ describe("state serialization", () => {
 		expect(resolver.getState()).toStrictEqual(snapshot);
 	});
 
-	it("should round-trip through getState and fromState", () => {
+	it("should round-trip through getState and fromState", ({ expect }) => {
 		expect.assertions(4);
 
 		const { directory, fileSystem } = makeFileSystem({
@@ -641,7 +647,7 @@ describe("state serialization", () => {
 		expect(restored.walkedDirectories.size).toBe(original.walkedDirectories.size);
 	});
 
-	it("should record walked directories and config files", () => {
+	it("should record walked directories and config files", ({ expect }) => {
 		expect.assertions(2);
 
 		const { directory, fileSystem } = makeFileSystem({
@@ -657,7 +663,7 @@ describe("state serialization", () => {
 		expect(resolver.walkedDirectories.size).toBeGreaterThan(0);
 	});
 
-	it("should round-trip a direct module-file mapping", () => {
+	it("should round-trip a direct module-file mapping", ({ expect }) => {
 		expect.assertions(1);
 
 		const { directory, fileSystem } = makeFileSystem({
@@ -678,10 +684,10 @@ describe("state serialization", () => {
 });
 
 describe("non-module file partitions", () => {
-	it("should mount synthetic source roots", () => {
+	it("should mount synthetic source roots", ({ expect, onTestFinished }) => {
 		expect.assertions(1);
 
-		const { directory } = makeSyntheticFileSystem();
+		const { directory } = makeSyntheticFileSystem(onTestFinished);
 		const resolver = RojoResolver.synthetic(directory);
 
 		expect(resolver.getRbxPathFromFilePath(path.join(directory, "leaf.luau"))).toStrictEqual([
@@ -689,7 +695,7 @@ describe("non-module file partitions", () => {
 		]);
 	});
 
-	it("should resolve a partition that targets a non-module file", () => {
+	it("should resolve a partition that targets a non-module file", ({ expect }) => {
 		expect.assertions(1);
 
 		const { directory, fileSystem } = makeFileSystem({
@@ -707,7 +713,7 @@ describe("non-module file partitions", () => {
 		).toStrictEqual(["Data"]);
 	});
 
-	it("should resolve a non-script module extension under a partition", () => {
+	it("should resolve a non-script module extension under a partition", ({ expect }) => {
 		expect.assertions(1);
 
 		const { directory, fileSystem } = makeFileSystem({
@@ -727,7 +733,7 @@ describe("non-module file partitions", () => {
 });
 
 describe("script sub-extension resolution", () => {
-	it("should strip a .server sub-extension when resolving via a partition", () => {
+	it("should strip a .server sub-extension when resolving via a partition", ({ expect }) => {
 		expect.assertions(1);
 
 		const { directory, fileSystem } = makeFileSystem({
@@ -772,7 +778,7 @@ describe("walker parity snapshot", () => {
 		};
 	}
 
-	it("should capture combined partition / nested / overlap / init shapes", () => {
+	it("should capture combined partition / nested / overlap / init shapes", ({ expect }) => {
 		expect.assertions(3);
 
 		const { directory, fileSystem } = makeFileSystem({
@@ -848,7 +854,7 @@ describe("walker parity snapshot", () => {
 });
 
 describe("fromTree", () => {
-	it("should build a resolver from a tree object", () => {
+	it("should build a resolver from a tree object", ({ expect }) => {
 		expect.assertions(1);
 
 		const { directory, fileSystem } = makeFileSystem({ "src/value.luau": "return {}" });
@@ -869,7 +875,7 @@ describe("fromTree", () => {
 		).toStrictEqual(["Shared", "value"]);
 	});
 
-	it("should skip members that are not trees", () => {
+	it("should skip members that are not trees", ({ expect }) => {
 		expect.assertions(1);
 
 		const { directory, fileSystem } = makeFileSystem({ "src/value.luau": "return {}" });

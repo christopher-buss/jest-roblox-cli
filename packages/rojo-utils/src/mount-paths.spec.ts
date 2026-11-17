@@ -1,5 +1,5 @@
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import {
 	collectPaths,
@@ -10,7 +10,7 @@ import {
 import type { RojoTreeNode } from "./rojo-types.ts";
 
 describe(collectPaths, () => {
-	it("should filter object metadata and optional-looking child properties", () => {
+	it("should filter object metadata and optional-looking child properties", ({ expect }) => {
 		expect.assertions(2);
 
 		const tree = {
@@ -26,7 +26,7 @@ describe(collectPaths, () => {
 		expect(required).toStrictEqual(["visible"]);
 	});
 
-	it("should collect all $path strings from a tree", () => {
+	it("should collect all $path strings from a tree", ({ expect }) => {
 		expect.assertions(1);
 
 		const tree: RojoTreeNode = {
@@ -45,7 +45,7 @@ describe(collectPaths, () => {
 		expect(result).toStrictEqual(["out/client", "out/server"]);
 	});
 
-	it("should normalize backslashes", () => {
+	it("should normalize backslashes", ({ expect }) => {
 		expect.assertions(1);
 
 		const tree: RojoTreeNode = {
@@ -59,7 +59,7 @@ describe(collectPaths, () => {
 		expect(result).toStrictEqual(["out/workspace"]);
 	});
 
-	it("should collect the inner path of an optional $path", () => {
+	it("should collect the inner path of an optional $path", ({ expect }) => {
 		expect.assertions(1);
 
 		const tree: RojoTreeNode = {
@@ -73,7 +73,7 @@ describe(collectPaths, () => {
 		expect(result).toStrictEqual(["maybe/workspace"]);
 	});
 
-	it("should descend into a child named optional", () => {
+	it("should descend into a child named optional", ({ expect }) => {
 		expect.assertions(1);
 
 		const tree: RojoTreeNode = {
@@ -87,7 +87,7 @@ describe(collectPaths, () => {
 		expect(result).toStrictEqual(["out/optional"]);
 	});
 
-	it("should return empty for a tree with no $path entries", () => {
+	it("should return empty for a tree with no $path entries", ({ expect }) => {
 		expect.assertions(1);
 
 		const tree: RojoTreeNode = {
@@ -102,7 +102,7 @@ describe(collectPaths, () => {
 });
 
 describe(collectRequiredPaths, () => {
-	it("should skip an optional $path", () => {
+	it("should skip an optional $path", ({ expect }) => {
 		expect.assertions(1);
 
 		const tree: RojoTreeNode = {
@@ -121,13 +121,13 @@ describe(collectRequiredPaths, () => {
 });
 
 describe(resolveMountPath, () => {
-	it("should join a relative mount onto the base directory", () => {
+	it("should join a relative mount onto the base directory", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(resolveMountPath("/repo/place", "out/client")).toBe("/repo/place/out/client");
 	});
 
-	it("should collapse traversal in a relative mount", () => {
+	it("should collapse traversal in a relative mount", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(resolveMountPath("/repo/place", "../shared/out")).toBe("/repo/shared/out");
@@ -141,13 +141,13 @@ describe(resolveMountPath, () => {
 		{ expected: "D:/external/out", mount: "D:/external/out" },
 		{ expected: "D:/external/out", mount: "D:\\external\\out" },
 		{ expected: "/external/out", mount: "\\external\\out" },
-	])("should return the absolute mount $mount unjoined", ({ expected, mount }) => {
+	])("should return the absolute mount $mount unjoined", ({ expected, mount }, { expect }) => {
 		expect.assertions(1);
 
 		expect(resolveMountPath("C:/repo/place", mount)).toBe(expected);
 	});
 
-	it("should return a posix path for a backslash base directory", () => {
+	it("should return a posix path for a backslash base directory", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(resolveMountPath("D:\\repo\\place", "out/client")).toBe("D:/repo/place/out/client");
@@ -162,7 +162,7 @@ describe(resolveMountPath, () => {
 		{ expected: "/repo/place/out/client", mount: "out/client/" },
 		{ expected: "/external/out", mount: "/external/out/" },
 		{ expected: "D:/external/out", mount: "D:\\external\\out\\" },
-	])("should drop the trailing separator on $mount", ({ expected, mount }) => {
+	])("should drop the trailing separator on $mount", ({ expected, mount }, { expect }) => {
 		expect.assertions(1);
 
 		expect(resolveMountPath("/repo/place", mount)).toBe(expected);
@@ -171,14 +171,16 @@ describe(resolveMountPath, () => {
 	it.for([
 		{ label: "posix", mount: "/" },
 		{ label: "drive", mount: "D:/" },
-	])("should keep a bare $label root whole", ({ mount }) => {
+	])("should keep a bare $label root whole", ({ mount }, { expect }) => {
 		expect.assertions(1);
 
 		// Nothing left to name if the separator goes.
 		expect(resolveMountPath("/repo/place", mount)).toBe(mount);
 	});
 
-	it("should leave a mount that contains a root a valid prefix of what it holds", () => {
+	it("should leave a mount that contains a root a valid prefix of what it holds", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		// The shape every coverage containment test needs: `${mount}/` has to be
@@ -191,7 +193,9 @@ describe(resolveMountPath, () => {
 });
 
 describe(rebaseTreePaths, () => {
-	it("should rebase nested directories without interpreting child optional fields as mounts", () => {
+	it("should rebase nested directories without interpreting child optional fields as mounts", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const root = path.resolve("project");
@@ -216,7 +220,7 @@ describe(rebaseTreePaths, () => {
 		});
 	});
 
-	it("should re-express $path strings from one base directory to another", () => {
+	it("should re-express $path strings from one base directory to another", ({ expect }) => {
 		expect.assertions(1);
 
 		const packageDirectory = path.resolve("repo", "pkg");
@@ -243,7 +247,7 @@ describe(rebaseTreePaths, () => {
 		});
 	});
 
-	it("should return $path unchanged when both bases are equal", () => {
+	it("should return $path unchanged when both bases are equal", ({ expect }) => {
 		expect.assertions(1);
 
 		const base = path.resolve("repo", "pkg");
@@ -264,7 +268,7 @@ describe(rebaseTreePaths, () => {
 		});
 	});
 
-	it("should rebase every $path in a nested tree", () => {
+	it("should rebase every $path in a nested tree", ({ expect }) => {
 		expect.assertions(1);
 
 		const packageDirectory = path.resolve("repo", "pkg");
@@ -293,7 +297,7 @@ describe(rebaseTreePaths, () => {
 		});
 	});
 
-	it("should rebase an optional $path and keep its wrapper", () => {
+	it("should rebase an optional $path and keep its wrapper", ({ expect }) => {
 		expect.assertions(1);
 
 		const base = path.resolve("repo", "pkg");

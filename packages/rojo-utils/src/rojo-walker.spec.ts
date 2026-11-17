@@ -1,11 +1,13 @@
 import path from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import { makeFileSystem } from "#test/helpers/unit/file-system";
 import { walkRojoConfig, walkRojoTree } from "./rojo-walker.ts";
 
 describe(walkRojoConfig, () => {
-	it("should skip metadata, nulls and arrays while retaining nested mount siblings", () => {
+	it("should skip metadata, nulls and arrays while retaining nested mount siblings", ({
+		expect,
+	}) => {
 		expect.assertions(3);
 
 		const { directory, fileSystem } = makeFileSystem({
@@ -41,7 +43,7 @@ describe(walkRojoConfig, () => {
 		).toStrictEqual(["RojoResolver: Invalid configuration!"]);
 	});
 
-	it("should report a missing or malformed project without throwing", () => {
+	it("should report a missing or malformed project without throwing", ({ expect }) => {
 		expect.assertions(3);
 
 		const { directory, fileSystem } = makeFileSystem({
@@ -63,7 +65,9 @@ describe(walkRojoConfig, () => {
 		).toStrictEqual(new Set([path.join(directory, "invalid.project.json")]));
 	});
 
-	it("should embed file projects and directory defaults without their root names", () => {
+	it("should embed file projects and directory defaults without their root names", ({
+		expect,
+	}) => {
 		expect.assertions(4);
 
 		const { directory, fileSystem } = makeFileSystem({
@@ -106,7 +110,9 @@ describe(walkRojoConfig, () => {
 		);
 	});
 
-	it("should visit sibling projects before subdirectories and stop at their defaults", () => {
+	it("should visit sibling projects before subdirectories and stop at their defaults", ({
+		expect,
+	}) => {
 		expect.assertions(3);
 
 		const { directory, fileSystem } = makeFileSystem({
@@ -133,7 +139,7 @@ describe(walkRojoConfig, () => {
 		expect(result.warnings).toBeEmpty();
 	});
 
-	it("should follow file and directory links and warn about broken links", () => {
+	it("should follow file and directory links and warn about broken links", ({ expect }) => {
 		expect.assertions(3);
 
 		const { directory, fileSystem, fs } = makeFileSystem({
@@ -161,7 +167,7 @@ describe(walkRojoConfig, () => {
 		]);
 	});
 
-	it("should warn about a link whose target cannot be read", () => {
+	it("should warn about a link whose target cannot be read", ({ expect }) => {
 		expect.assertions(1);
 
 		const { directory, fileSystem, fs } = makeFileSystem({
@@ -173,9 +179,7 @@ describe(walkRojoConfig, () => {
 		const realpathSync = fileSystem.realpathSync.bind(fileSystem);
 		vi.spyOn(fileSystem, "realpathSync")
 			.mockImplementationOnce((target) => realpathSync(target))
-			.mockImplementationOnce(() => {
-				throw new Error("EACCES: permission denied");
-			});
+			.mockThrowOnce(new Error("EACCES: permission denied"));
 		const result = walkRojoTree({ basePath: directory, tree: { $path: "source" } }, fileSystem);
 
 		expect(result.warnings).toStrictEqual([
@@ -185,7 +189,9 @@ describe(walkRojoConfig, () => {
 });
 
 describe(walkRojoTree, () => {
-	it("should cache canonical paths and classify native entries without extra stats", () => {
+	it("should cache canonical paths and classify native entries without extra stats", ({
+		expect,
+	}) => {
 		expect.assertions(3);
 
 		const { directory, fileSystem } = makeFileSystem({ "source/module.luau": "return 1" });
@@ -204,7 +210,9 @@ describe(walkRojoTree, () => {
 		expect(result.walkedDirectories).toStrictEqual(new Set([path.join(directory, "source")]));
 	});
 
-	it("should retain directory prefixes and restore the mount path before explicit children", () => {
+	it("should retain directory prefixes and restore the mount path before explicit children", ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const { directory, fileSystem } = makeFileSystem({
@@ -241,7 +249,9 @@ describe(walkRojoTree, () => {
 		);
 	});
 
-	it("should restore the parent path after each nested child and ignore metadata", () => {
+	it("should restore the parent path after each nested child and ignore metadata", ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const { directory, fileSystem } = makeFileSystem();

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import {
 	createSpanTree,
@@ -57,7 +57,7 @@ function makeNode(
 }
 
 describe(createSpanTree, () => {
-	it("should nest spans and report root and child closes", () => {
+	it("should nest spans and report root and child closes", ({ expect }) => {
 		expect.assertions(4);
 
 		const { advance, closed, opened, tree } = makeTree();
@@ -80,7 +80,7 @@ describe(createSpanTree, () => {
 		]);
 	});
 
-	it("should accumulate repeated spans into one node", () => {
+	it("should accumulate repeated spans into one node", ({ expect }) => {
 		expect.assertions(1);
 
 		const { advance, tree } = makeTree();
@@ -93,7 +93,7 @@ describe(createSpanTree, () => {
 		expect(tree.roots.get("phase")).toMatchObject({ closed: true, count: 2, elapsedMs: 5 });
 	});
 
-	it("should record a leaf under the open frame", () => {
+	it("should record a leaf under the open frame", ({ expect }) => {
 		expect.assertions(2);
 
 		const { tree } = makeTree();
@@ -111,13 +111,11 @@ describe(createSpanTree, () => {
 		expect(tree.roots.get("loose")).toMatchObject({ closed: false, count: 1, elapsedMs: 2 });
 	});
 
-	it("should pop the frame when the open callback throws", () => {
+	it("should pop the frame when the open callback throws", ({ expect }) => {
 		expect.assertions(2);
 
 		const onSpanOpen = vi.fn<(node: SpanNode, isRoot: boolean) => void>();
-		onSpanOpen.mockImplementationOnce(() => {
-			throw new Error("EPIPE");
-		});
+		onSpanOpen.mockThrowOnce(new Error("EPIPE"));
 		const tree = createSpanTree(
 			{ now: () => 0 },
 			{ onSpanClose: vi.fn<(node: SpanNode, isRoot: boolean) => void>(), onSpanOpen },
@@ -132,7 +130,7 @@ describe(createSpanTree, () => {
 });
 
 describe(emitSpanNode, () => {
-	it("should indent children, count repeats, and name the unmeasured gap", () => {
+	it("should indent children, count repeats, and name the unmeasured gap", ({ expect }) => {
 		expect.assertions(1);
 
 		const node = makeNode("phase", {
@@ -151,7 +149,7 @@ describe(emitSpanNode, () => {
 		]);
 	});
 
-	it("should drop an unmeasured gap below one millisecond or below zero", () => {
+	it("should drop an unmeasured gap below one millisecond or below zero", ({ expect }) => {
 		expect.assertions(2);
 
 		const tight = makeNode("tight", {
@@ -167,7 +165,7 @@ describe(emitSpanNode, () => {
 		expect(emit(over)).toStrictEqual(["[TIMING] over: 10ms", "[TIMING]   a: 12ms"]);
 	});
 
-	it("should aggregate repeated nested spans into one counted line", () => {
+	it("should aggregate repeated nested spans into one counted line", ({ expect }) => {
 		expect.assertions(1);
 
 		const node = makeNode("prepareCoverage", {
@@ -182,7 +180,7 @@ describe(emitSpanNode, () => {
 		]);
 	});
 
-	it("should report unmeasured time at every depth that has children", () => {
+	it("should report unmeasured time at every depth that has children", ({ expect }) => {
 		expect.assertions(1);
 
 		const node = makeNode("runProjects", {
@@ -204,7 +202,7 @@ describe(emitSpanNode, () => {
 		]);
 	});
 
-	it("should omit the unmeasured line when the children account for the phase", () => {
+	it("should omit the unmeasured line when the children account for the phase", ({ expect }) => {
 		expect.assertions(1);
 
 		const node = makeNode("prepareCoverage", {
@@ -218,7 +216,7 @@ describe(emitSpanNode, () => {
 		]);
 	});
 
-	it("should report a whole millisecond of unmeasured time", () => {
+	it("should report a whole millisecond of unmeasured time", ({ expect }) => {
 		expect.assertions(1);
 
 		const node = makeNode("prepareCoverage", {
@@ -231,7 +229,7 @@ describe(emitSpanNode, () => {
 });
 
 describe(emitFinalReport, () => {
-	it("should emit unclosed roots and total every root", () => {
+	it("should emit unclosed roots and total every root", ({ expect }) => {
 		expect.assertions(1);
 
 		const closedRoot = makeNode("phase", { elapsedMs: 10.4 });
@@ -252,7 +250,7 @@ describe(emitFinalReport, () => {
 });
 
 describe(formatPhaseStart, () => {
-	it("should announce a phase", () => {
+	it("should announce a phase", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(formatPhaseStart("build")).toBe("[TIMING] build: start");

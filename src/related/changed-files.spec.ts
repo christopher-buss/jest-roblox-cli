@@ -1,6 +1,6 @@
 import type { ExecFileSyncOptionsWithStringEncoding } from "node:child_process";
 import * as path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { readChangedFiles } from "./changed-files.ts";
 
@@ -45,7 +45,7 @@ function gitFailure(stderr: string): Error {
 }
 
 describe(readChangedFiles, () => {
-	it("should read the uncommitted files only when the ref is HEAD", () => {
+	it("should read the uncommitted files only when the ref is HEAD", ({ expect }) => {
 		expect.assertions(2);
 
 		const git = fakeGit({
@@ -61,7 +61,7 @@ describe(readChangedFiles, () => {
 		expect(git.hidden).toStrictEqual([true, true, true]);
 	});
 
-	it("should add the files committed since the merge base of another ref", () => {
+	it("should add the files committed since the merge base of another ref", ({ expect }) => {
 		expect.assertions(1);
 
 		const git = fakeGit({
@@ -74,7 +74,7 @@ describe(readChangedFiles, () => {
 		]);
 	});
 
-	it("should name the failed git command with its stderr", () => {
+	it("should name the failed git command with its stderr", ({ expect }) => {
 		expect.assertions(1);
 
 		const failure = gitFailure("fatal: bad index\n");
@@ -92,7 +92,9 @@ describe(readChangedFiles, () => {
 		);
 	});
 
-	it("should name the failed git command with its error when it wrote no stderr", () => {
+	it("should name the failed git command with its error when it wrote no stderr", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const git = fakeGit({
@@ -105,7 +107,7 @@ describe(readChangedFiles, () => {
 		);
 	});
 
-	it("should say when the folder is in no git repository", () => {
+	it("should say when the folder is in no git repository", ({ expect }) => {
 		expect.assertions(1);
 
 		const failure = gitFailure("fatal: not a git repository");

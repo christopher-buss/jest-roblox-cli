@@ -1,7 +1,7 @@
 import { fromPartial } from "@total-typescript/shoehorn";
 
 import process from "node:process";
-import { describe, expect, it, onTestFinished, vi } from "vitest";
+import { describe, it, type TestContext, vi } from "vitest";
 import type { TestModule } from "vitest/node";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
@@ -23,7 +23,7 @@ function quotaSkip(): FakeResult {
 	return { note: `${NOTE_PREFIX} Roblox refused the task create`, state: "skipped" };
 }
 
-function setupReporter() {
+function setupReporter(onTestFinished: TestContext["onTestFinished"]) {
 	const previous = process.exitCode;
 	onTestFinished(() => {
 		process.exitCode = previous;
@@ -38,10 +38,10 @@ function setupReporter() {
 }
 
 describe(QuotaSkipReporter, () => {
-	it("should leave a run without quota skips alone", () => {
+	it("should leave a run without quota skips alone", ({ expect, onTestFinished }) => {
 		expect.assertions(1);
 
-		const { reporter } = setupReporter();
+		const { reporter } = setupReporter(onTestFinished);
 		process.exitCode = 0;
 
 		reporter.onTestRunEnd(
@@ -57,10 +57,13 @@ describe(QuotaSkipReporter, () => {
 		expect(process.exitCode).toBe(0);
 	});
 
-	it("should fail an otherwise green run and report its Nx task", () => {
+	it("should fail an otherwise green run and report its Nx task", ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(2);
 
-		const { reportContents, reporter } = setupReporter();
+		const { reportContents, reporter } = setupReporter(onTestFinished);
 		vi.stubEnv("OPEN_CLOUD_QUOTA_REPORT_DIR", REPORT_DIRECTORY);
 		vi.stubEnv("NX_TASK_TARGET_PROJECT", "jest-roblox-cli");
 		vi.stubEnv("NX_TASK_TARGET_TARGET", "e2e-live");
@@ -71,10 +74,10 @@ describe(QuotaSkipReporter, () => {
 		expect(reportContents()).toStrictEqual(["jest-roblox-cli:e2e-live\n"]);
 	});
 
-	it("should report nothing outside an Nx task", () => {
+	it("should report nothing outside an Nx task", ({ expect, onTestFinished }) => {
 		expect.assertions(2);
 
-		const { reportContents, reporter } = setupReporter();
+		const { reportContents, reporter } = setupReporter(onTestFinished);
 		vi.stubEnv("OPEN_CLOUD_QUOTA_REPORT_DIR", REPORT_DIRECTORY);
 		vi.stubEnv("NX_TASK_TARGET_PROJECT", undefined);
 
@@ -84,10 +87,10 @@ describe(QuotaSkipReporter, () => {
 		expect(reportContents()).toBeEmpty();
 	});
 
-	it("should report nothing for a task without a target", () => {
+	it("should report nothing for a task without a target", ({ expect, onTestFinished }) => {
 		expect.assertions(2);
 
-		const { reportContents, reporter } = setupReporter();
+		const { reportContents, reporter } = setupReporter(onTestFinished);
 		vi.stubEnv("OPEN_CLOUD_QUOTA_REPORT_DIR", REPORT_DIRECTORY);
 		vi.stubEnv("NX_TASK_TARGET_PROJECT", "jest-roblox-cli");
 		vi.stubEnv("NX_TASK_TARGET_TARGET", undefined);
@@ -98,10 +101,13 @@ describe(QuotaSkipReporter, () => {
 		expect(reportContents()).toBeEmpty();
 	});
 
-	it("should write no report when the run also failed for another reason", () => {
+	it("should write no report when the run also failed for another reason", ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(1);
 
-		const { reportContents, reporter } = setupReporter();
+		const { reportContents, reporter } = setupReporter(onTestFinished);
 		vi.stubEnv("OPEN_CLOUD_QUOTA_REPORT_DIR", REPORT_DIRECTORY);
 		vi.stubEnv("NX_TASK_TARGET_PROJECT", "jest-roblox-cli");
 
@@ -110,10 +116,10 @@ describe(QuotaSkipReporter, () => {
 		expect(reportContents()).toBeEmpty();
 	});
 
-	it("should fail the run without a report directory", () => {
+	it("should fail the run without a report directory", ({ expect, onTestFinished }) => {
 		expect.assertions(1);
 
-		const { reporter } = setupReporter();
+		const { reporter } = setupReporter(onTestFinished);
 		vi.stubEnv("OPEN_CLOUD_QUOTA_REPORT_DIR", undefined);
 
 		reporter.onTestRunEnd(makeModules([quotaSkip()]), [], "passed");

@@ -4,7 +4,7 @@ import {
 	validQueueItemBody,
 } from "@bedrock-rbx/ocale/testing";
 
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import {
 	createJsonWorkQueueWriter,
@@ -34,7 +34,7 @@ function makeWriter(
 }
 
 describe("work queue writer", () => {
-	it("should let a host acknowledge an opaque worker receipt", async () => {
+	it("should let a host acknowledge an opaque worker receipt", async ({ expect }) => {
 		expect.assertions(2);
 
 		const http = createFakeHttpClient();
@@ -53,7 +53,7 @@ describe("work queue writer", () => {
 		expect(http.requests[0]!.request.body).toStrictEqual({ readId: "read-worker-1" });
 	});
 
-	it("should surface a rejected host acknowledgement", async () => {
+	it("should surface a rejected host acknowledgement", async ({ expect }) => {
 		expect.assertions(1);
 
 		const http = createFakeHttpClient();
@@ -70,7 +70,7 @@ describe("work queue writer", () => {
 	});
 
 	describe("enqueue", () => {
-		it("should POST one item per call", async () => {
+		it("should POST one item per call", async ({ expect }) => {
 			expect.assertions(2);
 
 			const http = createFakeHttpClient();
@@ -95,7 +95,7 @@ describe("work queue writer", () => {
 			);
 		});
 
-		it("should pass encoded payload to enqueue body", async () => {
+		it("should pass encoded payload to enqueue body", async ({ expect }) => {
 			expect.assertions(1);
 
 			const http = createFakeHttpClient();
@@ -117,7 +117,7 @@ describe("work queue writer", () => {
 		it.for([
 			{ ttl: "30s", ttlMs: 30_000 },
 			{ ttl: "1s", ttlMs: 500 },
-		])("should round $ttlMs milliseconds up to $ttl", async ({ ttl, ttlMs }) => {
+		])("should round $ttlMs milliseconds up to $ttl", async ({ ttl, ttlMs }, { expect }) => {
 			expect.assertions(1);
 
 			const http = createFakeHttpClient();
@@ -130,7 +130,7 @@ describe("work queue writer", () => {
 			expect(http.requests[0]!.request.body).toHaveProperty("ttl", ttl);
 		});
 
-		it("should omit ttl when ttlMs not provided", async () => {
+		it("should omit ttl when ttlMs not provided", async ({ expect }) => {
 			expect.assertions(1);
 
 			const http = createFakeHttpClient();
@@ -145,7 +145,7 @@ describe("work queue writer", () => {
 			expect(http.requests[0]!.request.body).not.toHaveProperty("ttl");
 		});
 
-		it("should throw when enqueue returns API error", async () => {
+		it("should throw when enqueue returns API error", async ({ expect }) => {
 			expect.assertions(1);
 
 			const http = createFakeHttpClient();
@@ -160,7 +160,7 @@ describe("work queue writer", () => {
 	});
 
 	describe("construction", () => {
-		it("should enqueue without configuring a decoder", async () => {
+		it("should enqueue without configuring a decoder", async ({ expect }) => {
 			expect.assertions(1);
 
 			const http = createFakeHttpClient();
@@ -182,7 +182,7 @@ describe("work queue writer", () => {
 			});
 		});
 
-		it("should construct with default http client when none provided", () => {
+		it("should construct with default http client when none provided", ({ expect }) => {
 			expect.assertions(1);
 
 			const queue = createWorkQueueWriter<Job>({
@@ -195,7 +195,9 @@ describe("work queue writer", () => {
 			expect(queue.enqueueAsync).toBeTypeOf("function");
 		});
 
-		it("should route enqueue traffic through a custom baseUrl when supplied", async () => {
+		it("should route enqueue traffic through a custom baseUrl when supplied", async ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			const http = createFakeHttpClient();

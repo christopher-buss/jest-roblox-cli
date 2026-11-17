@@ -1,5 +1,5 @@
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { createFixtureSandbox, createRbxtsFixtureSandbox } from "#test/harness/helpers.ts";
 import { buildProjectSourceMapperAsync } from "#test/integration/source-mapper/project-source-mapper.ts";
@@ -9,7 +9,7 @@ const LUAU_FIXTURE = path.resolve(__dirname, "../../e2e/fixtures/luau-project");
 
 describe("source mapping", { timeout: 30_000 }, () => {
 	describe("roblox-ts project", () => {
-		it("should map luau line to typescript source", async () => {
+		it("should map luau line to typescript source", async ({ expect }) => {
 			expect.assertions(3);
 
 			const fixtureRoot = createRbxtsFixtureSandbox(RBXTS_FIXTURE);
@@ -25,7 +25,7 @@ describe("source mapping", { timeout: 30_000 }, () => {
 			expect(result.locations[0]!.tsPath).toContain("example.ts");
 		});
 
-		it("should map spec file luau line to typescript source", async () => {
+		it("should map spec file luau line to typescript source", async ({ expect }) => {
 			expect.assertions(3);
 
 			const fixtureRoot = createRbxtsFixtureSandbox(RBXTS_FIXTURE);
@@ -41,7 +41,7 @@ describe("source mapping", { timeout: 30_000 }, () => {
 			expect(result.locations[0]!.tsPath).toContain("example.spec.ts");
 		});
 
-		it("should resolve test file path from DataModel path", async () => {
+		it("should resolve test file path from DataModel path", async ({ expect }) => {
 			expect.assertions(1);
 
 			const fixtureRoot = createRbxtsFixtureSandbox(RBXTS_FIXTURE);
@@ -54,7 +54,7 @@ describe("source mapping", { timeout: 30_000 }, () => {
 	});
 
 	describe("luau project", () => {
-		it("should pass through luau paths without source mapping", async () => {
+		it("should pass through luau paths without source mapping", async ({ expect }) => {
 			expect.assertions(2);
 
 			const mapper = await buildProjectSourceMapperAsync(createFixtureSandbox(LUAU_FIXTURE));

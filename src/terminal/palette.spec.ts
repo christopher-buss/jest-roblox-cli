@@ -1,10 +1,10 @@
 import color from "tinyrainbow";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { createStyles, formatDuration, formatProjectBadge } from "./palette.ts";
 
 describe(formatProjectBadge, () => {
-	it("should render every named color", () => {
+	it("should render every named color", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -26,7 +26,7 @@ describe(formatProjectBadge, () => {
 		]);
 	});
 
-	it("should hash unnamed projects across the complete palette", () => {
+	it("should hash unnamed projects across the complete palette", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -42,7 +42,7 @@ describe(formatProjectBadge, () => {
 		]);
 	});
 
-	it("should render plain project names without an ANSI label", () => {
+	it("should render plain project names without an ANSI label", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -56,7 +56,7 @@ describe(formatProjectBadge, () => {
 });
 
 describe(createStyles, () => {
-	it("should paint the RUN badge black on cyan in bold", () => {
+	it("should paint the RUN badge black on cyan in bold", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(createStyles(true).runBadge(" RUN ")).toBe(
@@ -66,7 +66,7 @@ describe(createStyles, () => {
 });
 
 describe(formatDuration, () => {
-	it("should switch from the fast to slow style only above the threshold", () => {
+	it("should switch from the fast to slow style only above the threshold", ({ expect }) => {
 		expect.assertions(1);
 
 		const styles = createStyles(true, 10);
@@ -79,7 +79,7 @@ describe(formatDuration, () => {
 });
 
 describe(formatProjectBadge, () => {
-	it("should return plain text when color is disabled", () => {
+	it("should return plain text when color is disabled", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = formatProjectBadge({ displayName: "core", styles: createStyles(false) });
@@ -87,7 +87,7 @@ describe(formatProjectBadge, () => {
 		expect(output).toBe("▶ core");
 	});
 
-	it("should apply named displayColor when provided", () => {
+	it("should apply named displayColor when provided", ({ expect }) => {
 		expect.assertions(2);
 
 		const output = formatProjectBadge({
@@ -100,7 +100,7 @@ describe(formatProjectBadge, () => {
 		expect(output).not.toBe("▶ core");
 	});
 
-	it("should fall back to hash-based color for unknown displayColor", () => {
+	it("should fall back to hash-based color for unknown displayColor", ({ expect }) => {
 		expect.assertions(2);
 
 		const output = formatProjectBadge({
@@ -113,7 +113,7 @@ describe(formatProjectBadge, () => {
 		expect(output).not.toBe("▶ core");
 	});
 
-	it("should treat Object prototype names as unknown displayColors", () => {
+	it("should treat Object prototype names as unknown displayColors", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -125,7 +125,7 @@ describe(formatProjectBadge, () => {
 		).toBe(formatProjectBadge({ displayName: "core", styles: createStyles(true) }));
 	});
 
-	it("should apply all named displayColors", () => {
+	it("should apply all named displayColors", ({ expect }) => {
 		expect.assertions(1);
 
 		const colors = ["blue", "cyan", "green", "magenta", "red", "white", "yellow"];
@@ -141,7 +141,7 @@ describe(formatProjectBadge, () => {
 		expect(badges).not.toContain("▶ x");
 	});
 
-	it("should use all hash-based badge colors", () => {
+	it("should use all hash-based badge colors", ({ expect }) => {
 		expect.assertions(1);
 
 		// d→0 (bgYellow), a→1 (bgCyan), b→2 (bgGreen), c→3 (bgMagenta)

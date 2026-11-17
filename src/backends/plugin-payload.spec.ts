@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { projectJob } from "#test/mocks/project-job.ts";
 import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
@@ -42,7 +42,7 @@ function payloadRequest(
 const PAIRING = { backendName: "Studio backend", gameOutput: "out.log", jobCount: 2 };
 
 describe(buildRunPayload, () => {
-	it("should send configs with their runtime stub mounts", () => {
+	it("should send configs with their runtime stub mounts", ({ expect }) => {
 		expect.assertions(2);
 
 		const payload = buildRunPayload(
@@ -67,7 +67,7 @@ describe(buildRunPayload, () => {
 		expect(payload).not.toHaveProperty("vmParallel");
 	});
 
-	it("should send no runtime stub mounts when the place has the stubs built in", () => {
+	it("should send no runtime stub mounts when the place has the stubs built in", ({ expect }) => {
 		expect.assertions(1);
 
 		const payload = buildRunPayload(
@@ -81,7 +81,7 @@ describe(buildRunPayload, () => {
 		expect(payload).toMatchObject({ configs: [{ runtimeStubMounts: [] }] });
 	});
 
-	it("should send the VM count and run budget for a parallel config run", () => {
+	it("should send the VM count and run budget for a parallel config run", ({ expect }) => {
 		expect.assertions(1);
 
 		const payload = buildRunPayload(
@@ -107,7 +107,7 @@ describe(buildRunPayload, () => {
 		[0, 5, undefined],
 	] as const)(
 		"should start %j VMs over %i configs as %j",
-		([vmParallel, configCount, expected]) => {
+		([vmParallel, configCount, expected], { expect }) => {
 			expect.assertions(1);
 
 			const payload = buildRunPayload(
@@ -127,7 +127,7 @@ describe(buildRunPayload, () => {
 		},
 	);
 
-	it("should send workspace entries with an unbounded result budget", () => {
+	it("should send workspace entries with an unbounded result budget", ({ expect }) => {
 		expect.assertions(1);
 
 		const payload = buildRunPayload(
@@ -151,7 +151,9 @@ describe(buildRunPayload, () => {
 		});
 	});
 
-	it("should cap the VM count by the entry count and leave the per-package split to the plugin", () => {
+	it("should cap the VM count by the entry count and leave the per-package split to the plugin", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const payload = buildRunPayload(
@@ -170,7 +172,7 @@ describe(buildRunPayload, () => {
 		expect(payload).toMatchObject({ workspace: { runBudgetMs: 1000, vmParallel: 4 } });
 	});
 
-	it("should fail fast when a workspace job is missing its package name", () => {
+	it("should fail fast when a workspace job is missing its package name", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(() => {
@@ -185,7 +187,7 @@ describe(buildRunPayload, () => {
 });
 
 describe(readPluginEntries, () => {
-	it("should give every entry the job it names and the fallback game output", () => {
+	it("should give every entry the job it names and the fallback game output", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = readPluginEntries(envelope(2, { gameOutputScope: "batch" }), PAIRING);
@@ -209,7 +211,7 @@ describe(readPluginEntries, () => {
 		});
 	});
 
-	it("should report a bail", () => {
+	it("should report a bail", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = readPluginEntries(envelope(1, { bailed: true }), {
@@ -220,7 +222,7 @@ describe(readPluginEntries, () => {
 		expect(result.bailed).toBeTrue();
 	});
 
-	it("should name a deferred stop", () => {
+	it("should name a deferred stop", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(() => readPluginEntries(envelope(1, { deferred: true }), PAIRING)).toThrow(

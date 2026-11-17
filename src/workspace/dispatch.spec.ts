@@ -1,6 +1,6 @@
 import { fromAny } from "@total-typescript/shoehorn";
 
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import { prepareWorkspaceDispatch } from "./dispatch.ts";
 
@@ -15,7 +15,7 @@ const ENTRY = {
 };
 
 describe(prepareWorkspaceDispatch, () => {
-	it("should pass the run's parallelism and bail through", () => {
+	it("should pass the run's parallelism and bail through", ({ expect }) => {
 		expect.assertions(1);
 
 		const spec = prepareWorkspaceDispatch({ bail: true, parallel: "auto", vmParallel: 2 });
@@ -28,7 +28,7 @@ describe(prepareWorkspaceDispatch, () => {
 		});
 	});
 
-	it("should not bail unless asked", () => {
+	it("should not bail unless asked", ({ expect }) => {
 		expect.assertions(1);
 
 		const spec = prepareWorkspaceDispatch({});
@@ -36,7 +36,7 @@ describe(prepareWorkspaceDispatch, () => {
 		expect(spec.bail).toBeFalse();
 	});
 
-	it("should pass each streamed package to the consumer once", () => {
+	it("should pass each streamed package to the consumer once", ({ expect }) => {
 		expect.assertions(1);
 
 		const onStreamingResult = vi.fn<(entry: typeof ENTRY) => void>();

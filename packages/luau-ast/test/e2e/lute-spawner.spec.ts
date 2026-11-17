@@ -2,9 +2,9 @@ import { spawnLute, writeTemporaryLuauScript } from "@isentinel/luau-ast";
 
 import fs from "node:fs";
 import os from "node:os";
-import { describe, expect, it, onTestFinished } from "vitest";
+import { describe, it, type TestContext } from "vitest";
 
-function makeScript() {
+function makeScript(onTestFinished: TestContext["onTestFinished"]) {
 	const scriptPath = writeTemporaryLuauScript({
 		name: "luau-ast-process-test",
 		source: 'print("package ready")',
@@ -16,10 +16,13 @@ function makeScript() {
 }
 
 describe("lute process", () => {
-	it("should execute a temporary script through the package interface", () => {
+	it("should execute a temporary script through the package interface", ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(1);
 
-		const options = makeScript();
+		const options = makeScript(onTestFinished);
 
 		expect(spawnLute(options)).toBe(`package ready${os.EOL}`);
 	});

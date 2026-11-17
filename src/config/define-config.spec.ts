@@ -1,9 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { defineConfig, defineProject } from "./define-config.ts";
 
 describe(defineConfig, () => {
-	it("should return the config object unchanged", () => {
+	it("should return the config object unchanged", ({ expect }) => {
 		expect.assertions(1);
 
 		const config = { backend: "studio" as const, test: { verbose: true } };
@@ -11,7 +11,7 @@ describe(defineConfig, () => {
 		expect(defineConfig(config)).toBe(config);
 	});
 
-	it("should return an empty config unchanged", () => {
+	it("should return an empty config unchanged", ({ expect }) => {
 		expect.assertions(1);
 
 		const config = {};
@@ -19,7 +19,7 @@ describe(defineConfig, () => {
 		expect(defineConfig(config)).toBe(config);
 	});
 
-	it("should accept merger functions for test.* array fields", () => {
+	it("should accept merger functions for test.* array fields", ({ expect }) => {
 		expect.assertions(1);
 
 		const config = defineConfig({
@@ -35,7 +35,7 @@ describe(defineConfig, () => {
 });
 
 describe(defineProject, () => {
-	it("should return the project config unchanged", () => {
+	it("should return the project config unchanged", ({ expect }) => {
 		expect.assertions(1);
 
 		const config = { test: { displayName: "client", include: ["src/client"] } };
@@ -43,7 +43,7 @@ describe(defineProject, () => {
 		expect(defineProject(config)).toBe(config);
 	});
 
-	it("should accept displayName as string", () => {
+	it("should accept displayName as string", ({ expect }) => {
 		expect.assertions(1);
 
 		const config = { test: { displayName: "server", include: ["src/server"] } };
@@ -52,7 +52,7 @@ describe(defineProject, () => {
 		expect(result.test.displayName).toBe("server");
 	});
 
-	it("should accept displayName as object with name and color", () => {
+	it("should accept displayName as object with name and color", ({ expect }) => {
 		expect.assertions(1);
 
 		const config = {

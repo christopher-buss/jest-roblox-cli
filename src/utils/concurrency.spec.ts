@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { mapWithLimitAsync } from "./concurrency.ts";
 
@@ -41,7 +41,7 @@ async function settleAsync(): Promise<void> {
 }
 
 describe(mapWithLimitAsync, () => {
-	it("should keep no more than `limit` calls outstanding", async () => {
+	it("should keep no more than `limit` calls outstanding", async ({ expect }) => {
 		expect.assertions(3);
 
 		const gate = createGate();
@@ -65,7 +65,7 @@ describe(mapWithLimitAsync, () => {
 		await expect(pending).resolves.toStrictEqual(["A", "B", "C", "D", "E"]);
 	});
 
-	it("should return results in the order of the items, not of settling", async () => {
+	it("should return results in the order of the items, not of settling", async ({ expect }) => {
 		expect.assertions(1);
 
 		const gate = createGate();
@@ -80,7 +80,7 @@ describe(mapWithLimitAsync, () => {
 		await expect(pending).resolves.toStrictEqual(["A", "B", "C"]);
 	});
 
-	it("should run one at a time when the limit is below one", async () => {
+	it("should run one at a time when the limit is below one", async ({ expect }) => {
 		expect.assertions(2);
 
 		const gate = createGate();
@@ -98,7 +98,7 @@ describe(mapWithLimitAsync, () => {
 		await expect(pending).resolves.toStrictEqual(["A", "B"]);
 	});
 
-	it("should not spawn more workers than there are items", async () => {
+	it("should not spawn more workers than there are items", async ({ expect }) => {
 		expect.assertions(2);
 
 		const gate = createGate();
@@ -112,7 +112,7 @@ describe(mapWithLimitAsync, () => {
 		await expect(pending).resolves.toStrictEqual(["A"]);
 	});
 
-	it("should answer an empty item list without calling `func`", async () => {
+	it("should answer an empty item list without calling `func`", async ({ expect }) => {
 		expect.assertions(2);
 
 		const gate = createGate();

@@ -1,9 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { applyExcludes } from "./apply-excludes.ts";
 
 describe(applyExcludes, () => {
-	it("should drop files matching an exclude glob", () => {
+	it("should drop files matching an exclude glob", ({ expect }) => {
 		expect.assertions(1);
 
 		const files = ["src/a.spec.ts", "src/legacy/b.spec.ts"];
@@ -11,7 +11,7 @@ describe(applyExcludes, () => {
 		expect(applyExcludes(files, ["**/legacy/**"])).toStrictEqual(["src/a.spec.ts"]);
 	});
 
-	it("should return the input untouched when excludeGlobs is undefined", () => {
+	it("should return the input untouched when excludeGlobs is undefined", ({ expect }) => {
 		expect.assertions(1);
 
 		const files = ["src/a.spec.ts", "src/b.spec.ts"];
@@ -19,7 +19,7 @@ describe(applyExcludes, () => {
 		expect(applyExcludes(files, undefined)).toBe(files);
 	});
 
-	it("should return the input untouched when excludeGlobs is empty", () => {
+	it("should return the input untouched when excludeGlobs is empty", ({ expect }) => {
 		expect.assertions(1);
 
 		const files = ["src/a.spec.ts", "src/b.spec.ts"];
@@ -27,7 +27,7 @@ describe(applyExcludes, () => {
 		expect(applyExcludes(files, [])).toBe(files);
 	});
 
-	it("should match an exclude glob written with a leading ./", () => {
+	it("should match an exclude glob written with a leading ./", ({ expect }) => {
 		expect.assertions(1);
 
 		const files = ["src/a.spec.ts", "src/legacy/b.spec.ts"];
@@ -35,7 +35,7 @@ describe(applyExcludes, () => {
 		expect(applyExcludes(files, ["./src/legacy/**"])).toStrictEqual(["src/a.spec.ts"]);
 	});
 
-	it("should treat regex metacharacters in a glob as literals", () => {
+	it("should treat regex metacharacters in a glob as literals", ({ expect }) => {
 		expect.assertions(1);
 
 		const files = ["src/(gen)/a.spec.ts", "src/genX/b.spec.ts"];
@@ -43,7 +43,7 @@ describe(applyExcludes, () => {
 		expect(applyExcludes(files, ["**/(gen)/**"])).toStrictEqual(["src/genX/b.spec.ts"]);
 	});
 
-	it("should keep every file when no glob matches", () => {
+	it("should keep every file when no glob matches", ({ expect }) => {
 		expect.assertions(1);
 
 		const files = ["src/a.spec.ts", "src/b.spec.ts"];
@@ -51,7 +51,7 @@ describe(applyExcludes, () => {
 		expect(applyExcludes(files, ["**/*.gen.spec.ts"])).toStrictEqual(files);
 	});
 
-	it("should drop files matching any of several globs", () => {
+	it("should drop files matching any of several globs", ({ expect }) => {
 		expect.assertions(1);
 
 		const files = ["src/a.spec.ts", "src/legacy/b.spec.ts", "src/gen/c.spec.ts"];

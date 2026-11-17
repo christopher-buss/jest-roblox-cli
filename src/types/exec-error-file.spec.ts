@@ -1,6 +1,6 @@
 import { fromPartial } from "@total-typescript/shoehorn";
 
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { execErrorReason, execErrorTitle, hasExecError } from "./exec-error-file.ts";
 import type { TestFileResult } from "./jest-result-types.ts";
@@ -10,13 +10,13 @@ describe(hasExecError, () => {
 		{ failureMessage: undefined, testResults: [] },
 		{ failureMessage: "", testResults: [] },
 		{ failureMessage: "test suite failed", testResults: [{}] },
-	])("should reject a non-execution error: %j", (file) => {
+	])("should reject a non-execution error: %j", (file, { expect }) => {
 		expect.assertions(1);
 
 		expect(hasExecError(fromPartial<TestFileResult>(file))).toBeFalse();
 	});
 
-	it("should identify a file-level execution error", () => {
+	it("should identify a file-level execution error", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -31,13 +31,13 @@ describe(hasExecError, () => {
 });
 
 describe(execErrorTitle, () => {
-	it("should title a suite that failed to run", () => {
+	it("should title a suite that failed to run", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(execErrorTitle(fromPartial<TestFileResult>({}))).toBe("Test suite failed to run");
 	});
 
-	it("should title a suite that timed out", () => {
+	it("should title a suite that timed out", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(execErrorTitle(fromPartial<TestFileResult>({ timedOut: true }))).toBe(
@@ -47,7 +47,7 @@ describe(execErrorTitle, () => {
 });
 
 describe(execErrorReason, () => {
-	it("should not read a false timeout flag as a timeout", () => {
+	it("should not read a false timeout flag as a timeout", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(execErrorReason(fromPartial<TestFileResult>({ timedOut: false }))).toBe(

@@ -4,7 +4,7 @@ import type { ResolvedConfig as C12ResolvedConfig, LoadConfigOptions } from "c12
 import * as path from "node:path";
 import process from "node:process";
 import type { Mock } from "vitest";
-import { describe, expect, it, onTestFinished, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import { createConfigFixture } from "#test/mocks/config-fixture.ts";
 import { createLuteChildProcess } from "#test/mocks/lute-child-process.ts";
@@ -16,7 +16,7 @@ import type { ConfigLoader, ConfigLoadOptions } from "./loader.ts";
 import { loadConfig, loadPackageConfigAsync, resolveConfig } from "./loader.ts";
 
 describe(resolveConfig, () => {
-	it("should use defaults when no config provided", () => {
+	it("should use defaults when no config provided", ({ expect }) => {
 		expect.assertions(3);
 
 		const result = resolveConfig({});
@@ -26,7 +26,7 @@ describe(resolveConfig, () => {
 		expect(result.silent).toBeFalse();
 	});
 
-	it("should omit artifact paths that the user did not configure", () => {
+	it("should omit artifact paths that the user did not configure", ({ expect }) => {
 		expect.assertions(2);
 
 		const result = resolveConfig({});
@@ -35,7 +35,7 @@ describe(resolveConfig, () => {
 		expect(result).not.toHaveProperty("outputFile");
 	});
 
-	it("should override defaults with provided config", () => {
+	it("should override defaults with provided config", ({ expect }) => {
 		expect.assertions(2);
 
 		const config: Config = {
@@ -50,7 +50,7 @@ describe(resolveConfig, () => {
 		expect(result.verbose).toBeTrue();
 	});
 
-	it("should preserve rootDir from config", () => {
+	it("should preserve rootDir from config", ({ expect }) => {
 		expect.assertions(1);
 
 		const config: Config = {
@@ -61,7 +61,7 @@ describe(resolveConfig, () => {
 		expect(result.rootDir).toBe("/custom/path");
 	});
 
-	it("should reject a root config key", () => {
+	it("should reject a root config key", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(() => resolveConfig(fromAny({ config: "jest.config.ts" }))).toThrow(
@@ -69,7 +69,7 @@ describe(resolveConfig, () => {
 		);
 	});
 
-	it("should read test.coverage as collectCoverage", () => {
+	it("should read test.coverage as collectCoverage", ({ expect }) => {
 		expect.assertions(2);
 
 		const result = resolveConfig({ test: { coverage: true } });
@@ -78,7 +78,7 @@ describe(resolveConfig, () => {
 		expect(result).not.toHaveProperty("coverage");
 	});
 
-	it("should let test.collectCoverage win over test.coverage", () => {
+	it("should let test.collectCoverage win over test.coverage", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = resolveConfig({ test: { collectCoverage: false, coverage: true } });
@@ -86,7 +86,7 @@ describe(resolveConfig, () => {
 		expect(result.collectCoverage).toBeFalse();
 	});
 
-	it("should expand gameOutput: true to game-output.log under rootDir", () => {
+	it("should expand gameOutput: true to game-output.log under rootDir", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = resolveConfig({ gameOutput: true, rootDir: "/custom/path" });
@@ -94,7 +94,7 @@ describe(resolveConfig, () => {
 		expect(result.gameOutput).toBe(path.join("/custom/path", "game-output.log"));
 	});
 
-	it("should leave an explicit gameOutput path untouched", () => {
+	it("should leave an explicit gameOutput path untouched", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = resolveConfig({ gameOutput: "logs/out.json" });
@@ -102,7 +102,7 @@ describe(resolveConfig, () => {
 		expect(result.gameOutput).toBe("logs/out.json");
 	});
 
-	it("should expand outputFile: true to jest-output.log under rootDir", () => {
+	it("should expand outputFile: true to jest-output.log under rootDir", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = resolveConfig({ outputFile: true, rootDir: "/custom/path" });
@@ -110,7 +110,7 @@ describe(resolveConfig, () => {
 		expect(result.outputFile).toBe(path.join("/custom/path", "jest-output.log"));
 	});
 
-	it("should leave an explicit outputFile path untouched", () => {
+	it("should leave an explicit outputFile path untouched", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = resolveConfig({ outputFile: "results.json" });
@@ -118,7 +118,7 @@ describe(resolveConfig, () => {
 		expect(result.outputFile).toBe("results.json");
 	});
 
-	it("should accept valid backend values", () => {
+	it("should accept valid backend values", ({ expect }) => {
 		expect.assertions(3);
 
 		expect(resolveConfig({ backend: "auto" }).backend).toBe("auto");
@@ -126,7 +126,7 @@ describe(resolveConfig, () => {
 		expect(resolveConfig({ backend: "studio" }).backend).toBe("studio");
 	});
 
-	it("should throw on invalid backend in config", () => {
+	it("should throw on invalid backend in config", ({ expect }) => {
 		expect.assertions(1);
 
 		const config: Config = fromAny({ backend: "not-a-backend" });
@@ -134,7 +134,7 @@ describe(resolveConfig, () => {
 		expect(() => resolveConfig(config)).toThrow("Invalid config");
 	});
 
-	it("should default collectCoverage to false", () => {
+	it("should default collectCoverage to false", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = resolveConfig({});
@@ -142,7 +142,7 @@ describe(resolveConfig, () => {
 		expect(result.collectCoverage).toBeFalse();
 	});
 
-	it("should default coverageDirectory to 'coverage'", () => {
+	it("should default coverageDirectory to 'coverage'", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = resolveConfig({});
@@ -150,7 +150,9 @@ describe(resolveConfig, () => {
 		expect(result.coverageDirectory).toBe("coverage");
 	});
 
-	it("should default coveragePathIgnorePatterns to exclude test and vendor files", () => {
+	it("should default coveragePathIgnorePatterns to exclude test and vendor files", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const result = resolveConfig({});
@@ -165,7 +167,7 @@ describe(resolveConfig, () => {
 		]);
 	});
 
-	it("should default coverageReporters to text and lcov", () => {
+	it("should default coverageReporters to text and lcov", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = resolveConfig({});
@@ -173,7 +175,7 @@ describe(resolveConfig, () => {
 		expect(result.coverageReporters).toStrictEqual(["text", "lcov"]);
 	});
 
-	it("should leave collectCoverageFrom undefined by default", () => {
+	it("should leave collectCoverageFrom undefined by default", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = resolveConfig({});
@@ -181,7 +183,7 @@ describe(resolveConfig, () => {
 		expect(result.collectCoverageFrom).toBeUndefined();
 	});
 
-	it("should leave coverageThreshold undefined by default", () => {
+	it("should leave coverageThreshold undefined by default", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = resolveConfig({});
@@ -189,7 +191,7 @@ describe(resolveConfig, () => {
 		expect(result.coverageThreshold).toBeUndefined();
 	});
 
-	it("should override coverageDirectory from config", () => {
+	it("should override coverageDirectory from config", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = resolveConfig({ test: { coverageDirectory: "my-coverage" } });
@@ -199,7 +201,9 @@ describe(resolveConfig, () => {
 });
 
 describe("config loader seams", () => {
-	it("should anchor a relative rootDir on the loaded config's package directory", async () => {
+	it("should anchor a relative rootDir on the loaded config's package directory", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const workspaceRoot = path.resolve("/repo");
@@ -223,7 +227,7 @@ describe("config loader seams", () => {
 		expect(result.rootDir).toBe(packageDirectory);
 	});
 
-	it("should keep the declared rootDir beside the anchored one", async () => {
+	it("should keep the declared rootDir beside the anchored one", async ({ expect }) => {
 		expect.assertions(2);
 
 		const packageDirectory = path.resolve("/repo/packages/example");
@@ -248,7 +252,7 @@ describe("config loader seams", () => {
 		expect(result.resolved.rootDir).toBe(packageDirectory);
 	});
 
-	it("should absolutize a relative cwd when no rootDir is declared", async () => {
+	it("should absolutize a relative cwd when no rootDir is declared", async ({ expect }) => {
 		expect.assertions(1);
 
 		const result = await loadConfig({ cwd: "." });
@@ -256,7 +260,9 @@ describe("config loader seams", () => {
 		expect(result.rootDir).toBe(process.cwd());
 	});
 
-	it("should retain the loader error as the cause for a missing explicit config", async () => {
+	it("should retain the loader error as the cause for a missing explicit config", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const error = new Error("missing.config.mjs cannot be resolved");
@@ -270,7 +276,7 @@ describe("config loader seams", () => {
 		).rejects.toHaveProperty("cause", error);
 	});
 
-	it("should pass through auto-discovery loader failures", async () => {
+	it("should pass through auto-discovery loader failures", async ({ expect }) => {
 		expect.assertions(1);
 
 		const error = new Error("dependency cannot be resolved");
@@ -284,7 +290,7 @@ describe("config loader seams", () => {
 	});
 
 	describe("luau configs", () => {
-		it("should discover a jest.config.luau in the working directory", async () => {
+		it("should discover a jest.config.luau in the working directory", async ({ expect }) => {
 			expect.assertions(2);
 
 			const temporaryDirectory = path.resolve("/project");
@@ -299,7 +305,7 @@ describe("config loader seams", () => {
 			expect(result.verbose).toBeTrue();
 		});
 
-		it("should load the luau file an explicit config path names", async () => {
+		it("should load the luau file an explicit config path names", async ({ expect }) => {
 			expect.assertions(1);
 
 			const temporaryDirectory = path.resolve("/project");
@@ -317,7 +323,9 @@ describe("config loader seams", () => {
 			expect(result.verbose).toBeTrue();
 		});
 
-		it("should run a luau config that holds code through the given child process", async () => {
+		it("should run a luau config that holds code through the given child process", async ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			const temporaryDirectory = path.resolve("/project");
@@ -335,7 +343,7 @@ describe("config loader seams", () => {
 			).rejects.toThrow('--version" printed "9.9.9"');
 		});
 
-		it("should throw when an explicit luau config path is missing", async () => {
+		it("should throw when an explicit luau config path is missing", async ({ expect }) => {
 			expect.assertions(1);
 
 			const temporaryDirectory = path.resolve("/project");
@@ -346,7 +354,9 @@ describe("config loader seams", () => {
 			).rejects.toThrowWithMessage(Error, "Config file not found: missing.luau");
 		});
 
-		it("should anchor a relative rootDir on the luau config's directory", async () => {
+		it("should anchor a relative rootDir on the luau config's directory", async ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			const temporaryDirectory = path.resolve("/project");
@@ -364,7 +374,9 @@ describe("config loader seams", () => {
 			expect(result.rootDir).toBe(configDirectory);
 		});
 
-		it("should anchor a relative workspace.root on the luau config's directory", async () => {
+		it("should anchor a relative workspace.root on the luau config's directory", async ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			const temporaryDirectory = path.resolve("/project");
@@ -378,7 +390,9 @@ describe("config loader seams", () => {
 			expect(result.workspace!.root).toBe(temporaryDirectory);
 		});
 
-		it("should reject jest options outside a test block as every format does", async () => {
+		it("should reject jest options outside a test block as every format does", async ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			const temporaryDirectory = path.resolve("/project");
@@ -396,7 +410,7 @@ describe("config loader seams", () => {
 
 		it.for(["jest.config.mjs", ".config/jest.json", ".config/jest.config.yaml"])(
 			"should name both files before evaluating a conflicting %s",
-			async (relativePath) => {
+			async (relativePath, { expect }) => {
 				expect.assertions(1);
 
 				const temporaryDirectory = path.resolve("/project");
@@ -416,7 +430,9 @@ describe("config loader seams", () => {
 			},
 		);
 
-		it("should load an explicit script config that sits beside a luau config", async () => {
+		it("should load an explicit script config that sits beside a luau config", async ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			const fixture = loadFixture({ "jest.config.mjs": { test: { verbose: true } } });
@@ -430,7 +446,7 @@ describe("config loader seams", () => {
 			expect(result.verbose).toBeTrue();
 		});
 
-		it("should let a luau config extend a script config", async () => {
+		it("should let a luau config extend a script config", async ({ expect }) => {
 			expect.assertions(2);
 
 			const fixture = loadFixture({
@@ -447,7 +463,7 @@ describe("config loader seams", () => {
 			expect(result.verbose).toBeFalse();
 		});
 
-		it("should let a script config extend a luau config", async () => {
+		it("should let a script config extend a luau config", async ({ expect }) => {
 			expect.assertions(2);
 
 			const fixture = loadFixture({
@@ -464,7 +480,7 @@ describe("config loader seams", () => {
 			expect(result.verbose).toBeFalse();
 		});
 
-		it("should name the extends entry when its luau file is missing", async () => {
+		it("should name the extends entry when its luau file is missing", async ({ expect }) => {
 			expect.assertions(1);
 
 			const fixture = loadFixture();
@@ -488,7 +504,7 @@ function loadFixture(layers: Parameters<typeof createConfigFixture>[0] = {}) {
 }
 
 describe("config layer resolution", () => {
-	it("should anchor roots to the loaded file and retain absolute roots", async () => {
+	it("should anchor roots to the loaded file and retain absolute roots", async ({ expect }) => {
 		expect.assertions(4);
 
 		const fixture = loadFixture({
@@ -513,7 +529,9 @@ describe("config layer resolution", () => {
 		expect(absolute.workspace!.root).toBe(path.resolve("workspace"));
 	});
 
-	it("should extend roots detected with the loaded config's directory and readers", async () => {
+	it("should extend roots detected with the loaded config's directory and readers", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const cwd = path.resolve("merger-fixture");
@@ -545,7 +563,7 @@ describe("config layer resolution", () => {
 		expect(result.luauRoots).toStrictEqual(["compiled", "extra"]);
 	});
 
-	it("should return defaults when a search finds no file", async () => {
+	it("should return defaults when a search finds no file", async ({ expect }) => {
 		expect.assertions(2);
 
 		const fixture = loadFixture();
@@ -555,7 +573,7 @@ describe("config layer resolution", () => {
 		expect(result.verbose).toBeFalse();
 	});
 
-	it("should distinguish a missing explicit config from a loader failure", async () => {
+	it("should distinguish a missing explicit config from a loader failure", async ({ expect }) => {
 		expect.assertions(2);
 
 		const fixture = loadFixture();
@@ -569,7 +587,7 @@ describe("config layer resolution", () => {
 		).rejects.toThrow("invalid syntax");
 	});
 
-	it("should support a loader with no resolved filename", async () => {
+	it("should support a loader with no resolved filename", async ({ expect }) => {
 		expect.assertions(1);
 
 		const configLoader: ConfigLoader = fromAny(async () => {
@@ -588,13 +606,16 @@ describe("legacy config functions", () => {
 	it.for([
 		fromAny<Config, { roots: () => Array<string> }>({ roots: () => ["legacy"] }),
 		fromAny<Config, { roots: Array<string> }>({ roots: ["legacy"] }),
-	])("should reject legacy root merger fields after resolving them", async (layer) => {
-		expect.assertions(1);
+	])(
+		"should reject legacy root merger fields after resolving them",
+		async (layer, { expect }) => {
+			expect.assertions(1);
 
-		await expect(loadConfig(loadFixture({ "jest.config.mjs": layer }))).rejects.toThrow(
-			"jest options must be wrapped",
-		);
-	});
+			await expect(loadConfig(loadFixture({ "jest.config.mjs": layer }))).rejects.toThrow(
+				"jest options must be wrapped",
+			);
+		},
+	);
 });
 
 type C12Loader = (options: LoadConfigOptions) => Promise<C12ResolvedConfig>;
@@ -611,7 +632,9 @@ function seamsFor(configLoader: Mock<C12Loader>, fileSystem: FileSystem): Config
 }
 
 describe("c12 loader boundary", () => {
-	it("should isolate implicit config discovery from ambient configuration sources", async () => {
+	it("should isolate implicit config discovery from ambient configuration sources", async ({
+		expect,
+	}) => {
 		expect.assertions(3);
 
 		const configLoader = emptyConfigLoader();
@@ -642,7 +665,7 @@ describe("c12 loader boundary", () => {
 		});
 	});
 
-	it("should require and name an explicitly requested config file", async () => {
+	it("should require and name an explicitly requested config file", async ({ expect }) => {
 		expect.assertions(2);
 
 		const configLoader = emptyConfigLoader();
@@ -672,7 +695,10 @@ describe("c12 loader boundary", () => {
 		});
 	});
 
-	it("should provide the filesystem importer only in SEA mode", async () => {
+	it("should provide the filesystem importer only in SEA mode", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(3);
 
 		const configLoader = emptyConfigLoader();

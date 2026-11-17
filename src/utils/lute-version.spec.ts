@@ -1,9 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { isSupportedLuteVersion } from "./lute-version.ts";
 
 describe(isSupportedLuteVersion, () => {
-	it("should accept a major 1 version as the last word", () => {
+	it("should accept a major 1 version as the last word", ({ expect }) => {
 		expect.assertions(3);
 
 		expect(isSupportedLuteVersion("1.0.1")).toBeTrue();
@@ -11,7 +11,7 @@ describe(isSupportedLuteVersion, () => {
 		expect(isSupportedLuteVersion("lute 1.0.1")).toBeTrue();
 	});
 
-	it("should reject another major or output that is not a version", () => {
+	it("should reject another major or output that is not a version", ({ expect }) => {
 		expect.assertions(3);
 
 		expect(isSupportedLuteVersion("2.1.0")).toBeFalse();

@@ -1,6 +1,6 @@
 import { fromAny } from "@total-typescript/shoehorn";
 
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import type { ProjectScope } from "../config/filter-projects-by-files.ts";
 import { selectProjectScopes } from "./project-selector.ts";
@@ -15,7 +15,7 @@ function scopes(): Array<ProjectScope> {
 }
 
 describe(selectProjectScopes, () => {
-	it("should preserve all scopes without filters", () => {
+	it("should preserve all scopes without filters", ({ expect }) => {
 		expect.assertions(1);
 
 		const all = scopes();
@@ -30,7 +30,7 @@ describe(selectProjectScopes, () => {
 		).toStrictEqual(all.map((scope) => ({ files: undefined, scope })));
 	});
 
-	it("should treat empty files as no file filter", () => {
+	it("should treat empty files as no file filter", ({ expect }) => {
 		expect.assertions(1);
 
 		const all = scopes();
@@ -45,7 +45,7 @@ describe(selectProjectScopes, () => {
 		).toStrictEqual([{ files: undefined, scope: all[0]! }]);
 	});
 
-	it("should apply file filters after names and use the invocation base", () => {
+	it("should apply file filters after names and use the invocation base", ({ expect }) => {
 		expect.assertions(1);
 
 		const all = scopes();
@@ -60,7 +60,7 @@ describe(selectProjectScopes, () => {
 		).toStrictEqual([{ files: ["/repo/pkg/src/client/a.spec.ts"], scope: all[0]! }]);
 	});
 
-	it("should validate names before files", () => {
+	it("should validate names before files", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(() => {
@@ -73,7 +73,7 @@ describe(selectProjectScopes, () => {
 		}).toThrow("Unknown project name(s): missing. Available: client, server");
 	});
 
-	it("should reject files belonging only to excluded scopes", () => {
+	it("should reject files belonging only to excluded scopes", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(() => {
@@ -86,7 +86,7 @@ describe(selectProjectScopes, () => {
 		}).toThrow("No project contains the requested file(s)");
 	});
 
-	it("should select nothing for an explicit empty name list", () => {
+	it("should select nothing for an explicit empty name list", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(

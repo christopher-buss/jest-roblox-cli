@@ -1,5 +1,5 @@
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { createRbxtsFixtureSandbox } from "#test/harness/helpers.ts";
 import {
@@ -25,7 +25,9 @@ function isMappedReportKey(key: string): boolean {
 }
 
 describe("coverage pipeline (mapper -> istanbul json reporter)", { timeout: 30_000 }, () => {
-	it("should write coverage-final.json keyed by ts paths with sane statement/fn maps", async () => {
+	it("should write coverage-final.json keyed by ts paths with sane statement/fn maps", async ({
+		expect,
+	}) => {
 		expect.assertions(4);
 
 		const fixtureRoot = createRbxtsFixtureSandbox(RBXTS_FIXTURE);

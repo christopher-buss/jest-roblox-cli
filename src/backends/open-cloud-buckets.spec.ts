@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { projectJob } from "#test/mocks/project-job.ts";
 import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
@@ -26,14 +26,14 @@ describe(resolveBucketCount, () => {
 		{ expected: 2, jobCount: 5, parallel: 2.7 },
 	] as const)(
 		"should give $expected buckets for $jobCount jobs at --parallel $parallel",
-		({ expected, jobCount, parallel }) => {
+		({ expected, jobCount, parallel }, { expect }) => {
 			expect.assertions(1);
 
 			expect(resolveBucketCount(parallel, jobCount)).toBe(expected);
 		},
 	);
 
-	it("should throw when --parallel is less than 1", () => {
+	it("should throw when --parallel is less than 1", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(() => resolveBucketCount(0, 1)).toThrow("--parallel must be >= 1, got 0");
@@ -41,7 +41,9 @@ describe(resolveBucketCount, () => {
 });
 
 describe(bucketJobs, () => {
-	it("should round-robin 10 jobs into buckets of 4/3/3 and record each job's index", () => {
+	it("should round-robin 10 jobs into buckets of 4/3/3 and record each job's index", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const buckets = bucketJobs(jobs(10), 3);
@@ -55,7 +57,7 @@ describe(bucketJobs, () => {
 });
 
 describe(bucketScript, () => {
-	it("should carry every job's config and request index in the script", () => {
+	it("should carry every job's config and request index in the script", ({ expect }) => {
 		expect.assertions(4);
 
 		const script = bucketScript([

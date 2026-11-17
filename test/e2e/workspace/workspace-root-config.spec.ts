@@ -1,6 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { startFakeOpenCloudServerAsync } from "#test/harness/fake-open-cloud.ts";
 import {
@@ -117,7 +117,7 @@ async function runWorkspaceAsync(sandbox: string): Promise<RunSnapshot> {
 describe("workspace run vs a config at the invocation directory", () => {
 	it.skipIf(!rojoOnPath())(
 		"should produce the same output, files, and exit code with a hostile root config",
-		async () => {
+		async ({ expect }) => {
 			expect.assertions(5);
 
 			const sandbox = createFixtureSandbox(WORKSPACE_FIXTURE_PATH);

@@ -1,6 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { startFakeOpenCloudServerAsync } from "#test/harness/fake-open-cloud.ts";
 import {
@@ -17,7 +17,7 @@ const LUAU_FIXTURE_PATH = path.resolve(__dirname, "../fixtures/luau-project");
 describe("run log", () => {
 	it.skipIf(!rojoOnPath())(
 		"should keep the run's output on disk and tell the agent formatter where",
-		async () => {
+		async ({ expect }) => {
 			expect.assertions(3);
 
 			const sandbox = createFixtureSandbox(LUAU_FIXTURE_PATH);

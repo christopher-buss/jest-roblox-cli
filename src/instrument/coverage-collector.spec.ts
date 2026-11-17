@@ -1,7 +1,7 @@
 import type { LuauSpan } from "@isentinel/luau-ast/ast";
 import { loadLuauParser } from "@isentinel/luau-ast/parser";
 
-import { assert, describe, expect, it } from "vitest";
+import { assert, describe, it } from "vitest";
 
 import { COLLECTED_FIXTURES } from "#test/mocks/coverage-collected-fixtures.ts";
 import type { CollectorResult } from "./coverage-accumulator.ts";
@@ -36,7 +36,7 @@ const luauParser = loadLuauParser();
 
 describe(collectCoverage, () => {
 	describe("statements", () => {
-		it("should return empty result for empty source", () => {
+		it("should return empty result for empty source", ({ expect }) => {
 			expect.assertions(5);
 
 			const result = collect("");
@@ -48,7 +48,7 @@ describe(collectCoverage, () => {
 			expect(result.wrapProbes).toBeEmpty();
 		});
 
-		it("should collect instrumentable statements with 1-based indices", () => {
+		it("should collect instrumentable statements with 1-based indices", ({ expect }) => {
 			expect.assertions(3);
 
 			const result = collect("local x = 1\nprint(x)");
@@ -64,7 +64,7 @@ describe(collectCoverage, () => {
 			});
 		});
 
-		it("should skip non-instrumentable statement kinds", () => {
+		it("should skip non-instrumentable statement kinds", ({ expect }) => {
 			expect.assertions(1);
 
 			const result = collect("type Alias = number");
@@ -74,7 +74,7 @@ describe(collectCoverage, () => {
 	});
 
 	describe("functions", () => {
-		it("should collect named functions from localfunction statements", () => {
+		it("should collect named functions from localfunction statements", ({ expect }) => {
 			expect.assertions(3);
 
 			const result = collect("local function greet()\n\treturn 1\nend");
@@ -90,7 +90,9 @@ describe(collectCoverage, () => {
 			});
 		});
 
-		it("should fall back to (anonymous) when the function is named by a local", () => {
+		it("should fall back to (anonymous) when the function is named by a local", ({
+			expect,
+		}) => {
 			expect.assertions(2);
 
 			const result = collect("local obj\nfunction obj()\nend");
@@ -99,7 +101,7 @@ describe(collectCoverage, () => {
 			expect(result.functions[0]!.name).toBe("(anonymous)");
 		});
 
-		it("should collect named functions from global function statements", () => {
+		it("should collect named functions from global function statements", ({ expect }) => {
 			expect.assertions(2);
 
 			const result = collect("function globalFunc()\n\treturn 1\nend");
@@ -108,7 +110,7 @@ describe(collectCoverage, () => {
 			expect(result.functions[0]!.name).toBe("globalFunc");
 		});
 
-		it("should collect anonymous function expressions in local assignments", () => {
+		it("should collect anonymous function expressions in local assignments", ({ expect }) => {
 			expect.assertions(2);
 
 			const result = collect("local f = function()\n\treturn 1\nend");
@@ -117,7 +119,7 @@ describe(collectCoverage, () => {
 			expect(result.functions[0]!.name).toBe("(anonymous)");
 		});
 
-		it("should extract dotted name from dot-method function", () => {
+		it("should extract dotted name from dot-method function", ({ expect }) => {
 			expect.assertions(2);
 
 			const result = collect("function Obj.method()\nend");
@@ -126,7 +128,7 @@ describe(collectCoverage, () => {
 			expect(result.functions[0]!.name).toBe("Obj.method");
 		});
 
-		it("should extract colon name from colon-method function", () => {
+		it("should extract colon name from colon-method function", ({ expect }) => {
 			expect.assertions(2);
 
 			const result = collect("function Obj:method()\nend");
@@ -135,7 +137,7 @@ describe(collectCoverage, () => {
 			expect(result.functions[0]!.name).toBe("Obj:method");
 		});
 
-		it("should use body block start position for empty-body function", () => {
+		it("should use body block start position for empty-body function", ({ expect }) => {
 			expect.assertions(3);
 
 			const result = collect("local function noop()\nend");
@@ -147,7 +149,7 @@ describe(collectCoverage, () => {
 	});
 
 	describe("statement-if branches", () => {
-		it("should collect if-else branches with then, elseif, and else arms", () => {
+		it("should collect if-else branches with then, elseif, and else arms", ({ expect }) => {
 			expect.assertions(5);
 
 			const result = collect(
@@ -161,7 +163,7 @@ describe(collectCoverage, () => {
 			expect(result.implicitElseProbes).toBeEmpty();
 		});
 
-		it("should create implicit else probe for if without else", () => {
+		it("should create implicit else probe for if without else", ({ expect }) => {
 			expect.assertions(5);
 
 			const result = collect("if a then\n\tf()\nend");
@@ -177,7 +179,9 @@ describe(collectCoverage, () => {
 		// The parser extends the if statement's location past a trailing `;`
 		// (endColumn 5, past `end;`), but `end` starts at column 1. The
 		// then-block's end reliably marks the start of `end`.
-		it("should place implicit else probe at start of `end` when source has trailing semicolon", () => {
+		it("should place implicit else probe at start of `end` when source has trailing semicolon", ({
+			expect,
+		}) => {
 			expect.assertions(2);
 
 			const result = collect("if a then\n\tf()\nend;");
@@ -186,7 +190,9 @@ describe(collectCoverage, () => {
 			expect(result.implicitElseProbes[0]!.endColumn).toBe(1);
 		});
 
-		it("should place implicit else probe at start of `end` for if/elseif with trailing semicolon", () => {
+		it("should place implicit else probe at start of `end` for if/elseif with trailing semicolon", ({
+			expect,
+		}) => {
 			expect.assertions(2);
 
 			const result = collect("if a then\n\tf()\nelseif b then\n\tg()\nend;");
@@ -197,7 +203,7 @@ describe(collectCoverage, () => {
 	});
 
 	describe("expression-if branches", () => {
-		it("should collect expr-if branches with bodyFirstLine=0", () => {
+		it("should collect expr-if branches with bodyFirstLine=0", ({ expect }) => {
 			expect.assertions(5);
 
 			const result = collect("local x = if a then 1 else 2");
@@ -209,7 +215,7 @@ describe(collectCoverage, () => {
 			expect(result.branches[0]!.arms[1]!.bodyFirstLine).toBe(0);
 		});
 
-		it("should generate wrapProbes for each expr-if arm", () => {
+		it("should generate wrapProbes for each expr-if arm", ({ expect }) => {
 			expect.assertions(3);
 
 			const result = collect("local x = if a then 1 else 2");
@@ -227,7 +233,7 @@ describe(collectCoverage, () => {
 			});
 		});
 
-		it("should collect expr-if with elseif arms", () => {
+		it("should collect expr-if with elseif arms", ({ expect }) => {
 			expect.assertions(5);
 
 			const result = collect('local x = if a then "a" elseif b then "b" else "c"');
@@ -243,7 +249,7 @@ describe(collectCoverage, () => {
 	});
 
 	describe("binary branches", () => {
-		it("should collect an and expression as a binary-expr branch", () => {
+		it("should collect an and expression as a binary-expr branch", ({ expect }) => {
 			expect.assertions(5);
 
 			const result = collect("local c = a and b");
@@ -279,7 +285,7 @@ describe(collectCoverage, () => {
 			]);
 		});
 
-		it("should collect an or expression as a binary-expr branch", () => {
+		it("should collect an or expression as a binary-expr branch", ({ expect }) => {
 			expect.assertions(2);
 
 			const result = collect("local c = p or q");
@@ -288,7 +294,7 @@ describe(collectCoverage, () => {
 			expect(result.wrapProbes).toHaveLength(2);
 		});
 
-		it("should not treat a non-logical binary operator as a branch", () => {
+		it("should not treat a non-logical binary operator as a branch", ({ expect }) => {
 			expect.assertions(2);
 
 			const result = collect("local c = a + b");
@@ -297,7 +303,7 @@ describe(collectCoverage, () => {
 			expect(result.wrapProbes).toBeEmpty();
 		});
 
-		it("should collect a left-associative and chain as two nested branches", () => {
+		it("should collect a left-associative and chain as two nested branches", ({ expect }) => {
 			expect.assertions(3);
 
 			// `a and b and c` parses as `(a and b) and c`. The outer node is
@@ -318,7 +324,7 @@ describe(collectCoverage, () => {
 	});
 
 	describe("ignore directives", () => {
-		it("should drop the next statement and every site inside it", () => {
+		it("should drop the next statement and every site inside it", ({ expect }) => {
 			expect.assertions(3);
 
 			const result = collect(
@@ -343,7 +349,7 @@ describe(collectCoverage, () => {
 			expect(result.branches).toBeEmpty();
 		});
 
-		it("should drop a function statement and keep the next one", () => {
+		it("should drop a function statement and keep the next one", ({ expect }) => {
 			expect.assertions(1);
 
 			const result = collect(
@@ -355,7 +361,7 @@ describe(collectCoverage, () => {
 			expect(result.functions.map((func) => func.name)).toStrictEqual(["Obj.b"]);
 		});
 
-		it("should keep indices contiguous around a dropped statement", () => {
+		it("should keep indices contiguous around a dropped statement", ({ expect }) => {
 			expect.assertions(1);
 
 			const result = collect(
@@ -374,7 +380,7 @@ describe(collectCoverage, () => {
 			]);
 		});
 
-		it("should drop a function expression the directive precedes", () => {
+		it("should drop a function expression the directive precedes", ({ expect }) => {
 			expect.assertions(2);
 
 			const result = collect("f(--[[ cov ignore next ]] function()\n\treturn 1\nend)");
@@ -388,7 +394,7 @@ describe(collectCoverage, () => {
 			]);
 		});
 
-		it("should drop the then arm and its body with ignore if", () => {
+		it("should drop the then arm and its body with ignore if", ({ expect }) => {
 			expect.assertions(3);
 
 			const result = collect(
@@ -413,7 +419,7 @@ describe(collectCoverage, () => {
 			]);
 		});
 
-		it("should drop the else arm and its body with ignore else", () => {
+		it("should drop the else arm and its body with ignore else", ({ expect }) => {
 			expect.assertions(2);
 
 			const result = collect(
@@ -435,7 +441,7 @@ describe(collectCoverage, () => {
 			expect(result.branches[0]!.arms.map((arm) => arm.bodyFirstLine)).toStrictEqual([3, 5]);
 		});
 
-		it("should drop the implicit else arm with ignore else", () => {
+		it("should drop the implicit else arm with ignore else", ({ expect }) => {
 			expect.assertions(2);
 
 			const result = collect(["-- cov ignore else", "if a then", "\tf()", "end"].join("\n"));
@@ -444,7 +450,9 @@ describe(collectCoverage, () => {
 			expect(result.implicitElseProbes).toBeEmpty();
 		});
 
-		it("should drop the whole branch when ignore if and ignore else both apply", () => {
+		it("should drop the whole branch when ignore if and ignore else both apply", ({
+			expect,
+		}) => {
 			expect.assertions(2);
 
 			const result = collect(
@@ -458,7 +466,7 @@ describe(collectCoverage, () => {
 });
 
 describe("collected fixtures", () => {
-	it.for(Object.keys(COLLECTED_FIXTURES))("should collect %s as recorded", (name) => {
+	it.for(Object.keys(COLLECTED_FIXTURES))("should collect %s as recorded", (name, { expect }) => {
 		expect.assertions(1);
 
 		const fixture = COLLECTED_FIXTURES[name]!;

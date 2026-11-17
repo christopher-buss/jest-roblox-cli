@@ -16,7 +16,7 @@
  * derivation, per-project grouping, exit code).
  */
 import * as path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import {
 	createFixtureSandbox,
@@ -29,7 +29,7 @@ const SINGLE_BROKEN_FIXTURE = path.resolve(__dirname, "../fixtures/typecheck-sin
 const MULTI_FIXTURE = path.resolve(__dirname, "../fixtures/typecheck-multi");
 
 describe("single --typecheckOnly e2e", () => {
-	it("should run config-enabled type tests and exit 0 when they pass", async () => {
+	it("should run config-enabled type tests and exit 0 when they pass", async ({ expect }) => {
 		expect.assertions(2);
 
 		const sandbox = createFixtureSandbox(SINGLE_FIXTURE);
@@ -40,7 +40,9 @@ describe("single --typecheckOnly e2e", () => {
 		expect(result.stdout + result.stderr).toContain("1 passed");
 	});
 
-	it("should enable type tests from the --typecheckOnly flag and surface a failure", async () => {
+	it("should enable type tests from the --typecheckOnly flag and surface a failure", async ({
+		expect,
+	}) => {
 		expect.assertions(3);
 
 		// This fixture's config does NOT enable Type Tests. The CLI flag is the
@@ -58,7 +60,9 @@ describe("single --typecheckOnly e2e", () => {
 });
 
 describe("multi --typecheckOnly e2e", () => {
-	it("should group type tests per project and merge results across projects", async () => {
+	it("should group type tests per project and merge results across projects", async ({
+		expect,
+	}) => {
 		expect.assertions(4);
 
 		const sandbox = createFixtureSandbox(MULTI_FIXTURE);
@@ -82,7 +86,9 @@ describe("multi --typecheckOnly e2e", () => {
 		expect(paths.some((filePath) => filePath.includes("beta"))).toBeTrue();
 	});
 
-	it("should filter to one project with --project and exit 0 when it passes", async () => {
+	it("should filter to one project with --project and exit 0 when it passes", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const sandbox = createFixtureSandbox(MULTI_FIXTURE);

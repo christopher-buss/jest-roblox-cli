@@ -1,33 +1,33 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { parseArgs } from "./cli-args.ts";
 
 describe(parseArgs, () => {
-	it("should return help when --help is passed", () => {
+	it("should return help when --help is passed", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(parseArgs(["--help"]).help).toBeTrue();
 	});
 
-	it("should return version when --version is passed", () => {
+	it("should return version when --version is passed", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(parseArgs(["--version"]).version).toBeTrue();
 	});
 
-	it("should parse --config option", () => {
+	it("should parse --config option", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(parseArgs(["--config", "./custom.config.ts"]).config).toBe("./custom.config.ts");
 	});
 
-	it("should parse --testPathPattern option", () => {
+	it("should parse --testPathPattern option", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(parseArgs(["--testPathPattern", "player"]).testPathPattern).toBe("player");
 	});
 
-	it("should parse -t / --testNamePattern option", () => {
+	it("should parse -t / --testNamePattern option", ({ expect }) => {
 		expect.assertions(2);
 
 		expect(parseArgs(["-t", "should spawn"]).testNamePattern).toBe("should spawn");
@@ -36,43 +36,43 @@ describe(parseArgs, () => {
 		);
 	});
 
-	it("should parse --formatters json", () => {
+	it("should parse --formatters json", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(parseArgs(["--formatters", "json"]).formatters).toStrictEqual(["json"]);
 	});
 
-	it("should parse --outputFile option", () => {
+	it("should parse --outputFile option", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(parseArgs(["--outputFile", "results.json"]).outputFile).toBe("results.json");
 	});
 
-	it("should parse --verbose flag", () => {
+	it("should parse --verbose flag", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(parseArgs(["--verbose"]).verbose).toBeTrue();
 	});
 
-	it("should parse --silent flag", () => {
+	it("should parse --silent flag", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(parseArgs(["--silent"]).silent).toBeTrue();
 	});
 
-	it("should parse --bail flag", () => {
+	it("should parse --bail flag", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(parseArgs(["--bail"]).bail).toBeTrue();
 	});
 
-	it("should leave bail undefined without the flag", () => {
+	it("should leave bail undefined without the flag", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(parseArgs([]).bail).toBeUndefined();
 	});
 
-	it("should parse positional file arguments", () => {
+	it("should parse positional file arguments", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = parseArgs(["src/test.spec.ts", "src/other.spec.ts"]);
@@ -80,7 +80,7 @@ describe(parseArgs, () => {
 		expect(result.files).toStrictEqual(["src/test.spec.ts", "src/other.spec.ts"]);
 	});
 
-	it("should parse related source files and keep the filters", () => {
+	it("should parse related source files and keep the filters", ({ expect }) => {
 		expect.assertions(2);
 
 		const result = parseArgs([
@@ -104,20 +104,20 @@ describe(parseArgs, () => {
 		});
 	});
 
-	it("should reject related with no source file", () => {
+	it("should reject related with no source file", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(() => parseArgs(["related"])).toThrow("related needs at least one source file.");
 	});
 
-	it("should pass a related run that selects no tests", () => {
+	it("should pass a related run that selects no tests", ({ expect }) => {
 		expect.assertions(2);
 
 		expect(parseArgs(["related", "src/a.luau"]).passWithNoTests).toBeTrue();
 		expect(parseArgs(["src/a.spec.luau"]).passWithNoTests).toBeUndefined();
 	});
 
-	it("should read a bare --changed as the uncommitted changes against HEAD", () => {
+	it("should read a bare --changed as the uncommitted changes against HEAD", ({ expect }) => {
 		expect.assertions(3);
 
 		const result = parseArgs(["--changed", "--verbose"]);
@@ -127,7 +127,7 @@ describe(parseArgs, () => {
 		expect(result.passWithNoTests).toBeTrue();
 	});
 
-	it("should read the ref after --changed", () => {
+	it("should read the ref after --changed", ({ expect }) => {
 		expect.assertions(3);
 
 		expect(parseArgs(["--changed", "origin/main"]).changed).toBe("origin/main");
@@ -135,7 +135,7 @@ describe(parseArgs, () => {
 		expect(parseArgs(["--changed"]).changed).toBe("HEAD");
 	});
 
-	it("should reject a --changed ref that git would read as an option", () => {
+	it("should reject a --changed ref that git would read as an option", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(() => parseArgs(["--changed=--output=x"])).toThrow(
@@ -143,7 +143,7 @@ describe(parseArgs, () => {
 		);
 	});
 
-	it("should reject related together with --changed", () => {
+	it("should reject related together with --changed", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(() => parseArgs(["related", "src/a.luau", "--changed"])).toThrow(
@@ -151,19 +151,19 @@ describe(parseArgs, () => {
 		);
 	});
 
-	it("should leave related undefined on a run of positional files", () => {
+	it("should leave related undefined on a run of positional files", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(parseArgs(["src/a.spec.luau"]).related).toBeUndefined();
 	});
 
-	it("should leave files undefined when no positionals", () => {
+	it("should leave files undefined when no positionals", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(parseArgs([]).files).toBeUndefined();
 	});
 
-	it("should parse combined options and files", () => {
+	it("should parse combined options and files", ({ expect }) => {
 		expect.assertions(3);
 
 		const result = parseArgs(["--verbose", "-t", "should pass", "src/test.spec.ts"]);
@@ -173,44 +173,44 @@ describe(parseArgs, () => {
 		expect(result.files).toStrictEqual(["src/test.spec.ts"]);
 	});
 
-	it("should parse --formatters agent", () => {
+	it("should parse --formatters agent", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(parseArgs(["--formatters", "agent"]).formatters).toStrictEqual(["agent"]);
 	});
 
-	it("should reject --no-cache as an unknown option", () => {
+	it("should reject --no-cache as an unknown option", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(() => parseArgs(["--no-cache"])).toThrow(/Unknown option/);
 	});
 
-	it("should reject --cache as an unknown option", () => {
+	it("should reject --cache as an unknown option", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(() => parseArgs(["--cache"])).toThrow(/Unknown option/);
 	});
 
-	it("should parse --no-coverage-cache flag", () => {
+	it("should parse --no-coverage-cache flag", ({ expect }) => {
 		expect.assertions(2);
 
 		expect(parseArgs(["--no-coverage-cache"]).coverageCache).toBeFalse();
 		expect(parseArgs(["--coverage-cache"]).coverageCache).toBeTrue();
 	});
 
-	it("should let --no-coverage-cache take precedence over --coverage-cache", () => {
+	it("should let --no-coverage-cache take precedence over --coverage-cache", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(parseArgs(["--coverage-cache", "--no-coverage-cache"]).coverageCache).toBeFalse();
 	});
 
-	it("should parse --no-upload-cache flag", () => {
+	it("should parse --no-upload-cache flag", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(parseArgs(["--no-upload-cache"]).uploadCache).toBeFalse();
 	});
 
-	it("should leave uploadCache unset when the flag is absent", () => {
+	it("should leave uploadCache unset when the flag is absent", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(parseArgs([]).uploadCache).toBeUndefined();
@@ -218,14 +218,14 @@ describe(parseArgs, () => {
 
 	it.for(["--binary-input", "--no-binary-input"])(
 		"should reject %s as an unknown option",
-		(flag) => {
+		(flag, { expect }) => {
 			expect.assertions(1);
 
 			expect(() => parseArgs([flag])).toThrow(/Unknown option/);
 		},
 	);
 
-	it("should parse color flags and prefer --no-color", () => {
+	it("should parse color flags and prefer --no-color", ({ expect }) => {
 		expect.assertions(3);
 
 		expect(parseArgs(["--no-color"]).color).toBeFalse();
@@ -233,13 +233,13 @@ describe(parseArgs, () => {
 		expect(parseArgs(["--color", "--no-color"]).color).toBeFalse();
 	});
 
-	it("should parse --gameOutput option", () => {
+	it("should parse --gameOutput option", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(parseArgs(["--gameOutput", "/tmp/game.json"]).gameOutput).toBe("/tmp/game.json");
 	});
 
-	it("should parse Luau display flags and prefer --no-show-luau", () => {
+	it("should parse Luau display flags and prefer --no-show-luau", ({ expect }) => {
 		expect.assertions(3);
 
 		expect(parseArgs(["--no-show-luau"]).showLuau).toBeFalse();
@@ -247,26 +247,26 @@ describe(parseArgs, () => {
 		expect(parseArgs(["--showLuau", "--no-show-luau"]).showLuau).toBeFalse();
 	});
 
-	it("should parse -u / --updateSnapshot flag", () => {
+	it("should parse -u / --updateSnapshot flag", ({ expect }) => {
 		expect.assertions(2);
 
 		expect(parseArgs(["-u"]).updateSnapshot).toBeTrue();
 		expect(parseArgs(["--updateSnapshot"]).updateSnapshot).toBeTrue();
 	});
 
-	it("should leave typecheck unset without either flag", () => {
+	it("should leave typecheck unset without either flag", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(parseArgs([]).typecheck).toBeUndefined();
 	});
 
-	it("should parse --typecheck flag", () => {
+	it("should parse --typecheck flag", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(parseArgs(["--typecheck"]).typecheck).toBeTrue();
 	});
 
-	it("should parse --typecheckOnly flag and imply --typecheck", () => {
+	it("should parse --typecheckOnly flag and imply --typecheck", ({ expect }) => {
 		expect.assertions(2);
 
 		const result = parseArgs(["--typecheckOnly"]);
@@ -275,7 +275,7 @@ describe(parseArgs, () => {
 		expect(result.typecheck).toBeTrue();
 	});
 
-	it("should parse --typecheckTsconfig option", () => {
+	it("should parse --typecheckTsconfig option", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(parseArgs(["--typecheckTsconfig", "tsconfig.test.json"]).typecheckTsconfig).toBe(
@@ -283,7 +283,7 @@ describe(parseArgs, () => {
 		);
 	});
 
-	it("should parse valid --backend values", () => {
+	it("should parse valid --backend values", ({ expect }) => {
 		expect.assertions(4);
 
 		expect(parseArgs(["--backend", "auto"]).backend).toBe("auto");
@@ -292,7 +292,7 @@ describe(parseArgs, () => {
 		expect(parseArgs(["--backend", "studio-cli"]).backend).toBe("studio-cli");
 	});
 
-	it("should parse --studioPath", () => {
+	it("should parse --studioPath", ({ expect }) => {
 		expect.assertions(2);
 
 		expect(parseArgs(["--studioPath", "C:/Studio/RobloxStudioBeta.exe"]).studioPath).toBe(
@@ -301,33 +301,33 @@ describe(parseArgs, () => {
 		expect(parseArgs([]).studioPath).toBeUndefined();
 	});
 
-	it("should parse --headed", () => {
+	it("should parse --headed", ({ expect }) => {
 		expect.assertions(2);
 
 		expect(parseArgs(["--headed"]).headed).toBeTrue();
 		expect(parseArgs([]).headed).toBeUndefined();
 	});
 
-	it("should parse --hiddenDesktop", () => {
+	it("should parse --hiddenDesktop", ({ expect }) => {
 		expect.assertions(2);
 
 		expect(parseArgs(["--hiddenDesktop"]).hiddenDesktop).toBeTrue();
 		expect(parseArgs([]).hiddenDesktop).toBeUndefined();
 	});
 
-	it("should parse --no-hiddenDesktop as false", () => {
+	it("should parse --no-hiddenDesktop as false", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(parseArgs(["--no-hiddenDesktop"]).hiddenDesktop).toBeFalse();
 	});
 
-	it("should leave backend undefined when not passed", () => {
+	it("should leave backend undefined when not passed", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(parseArgs([]).backend).toBeUndefined();
 	});
 
-	it("should throw on invalid --backend value", () => {
+	it("should throw on invalid --backend value", ({ expect }) => {
 		expect.assertions(2);
 
 		expect(() => parseArgs(["--backend", "not-a-backend"])).toThrow(
@@ -338,25 +338,27 @@ describe(parseArgs, () => {
 		);
 	});
 
-	it("should parse --coverage flag", () => {
+	it("should parse --coverage flag", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(parseArgs(["--coverage"]).collectCoverage).toBeTrue();
 	});
 
-	it("should parse --no-coverage flag", () => {
+	it("should parse --no-coverage flag", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(parseArgs(["--no-coverage"]).collectCoverage).toBeFalse();
 	});
 
-	it("should let --no-coverage take precedence over --coverage when both are passed", () => {
+	it("should let --no-coverage take precedence over --coverage when both are passed", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		expect(parseArgs(["--coverage", "--no-coverage"]).collectCoverage).toBeFalse();
 	});
 
-	it("should parse --coverageDirectory option", () => {
+	it("should parse --coverageDirectory option", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(parseArgs(["--coverageDirectory", "my-coverage"]).coverageDirectory).toBe(
@@ -364,7 +366,7 @@ describe(parseArgs, () => {
 		);
 	});
 
-	it("should parse --coverageReporters with multiple values", () => {
+	it("should parse --coverageReporters with multiple values", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = parseArgs([
@@ -379,7 +381,7 @@ describe(parseArgs, () => {
 		expect(result.coverageReporters).toStrictEqual(["text", "lcov", "html"]);
 	});
 
-	it("should report every invalid --coverageReporters value", () => {
+	it("should report every invalid --coverageReporters value", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(() => {
@@ -396,7 +398,7 @@ describe(parseArgs, () => {
 		);
 	});
 
-	it("should parse --collectCoverageFrom with multiple values", () => {
+	it("should parse --collectCoverageFrom with multiple values", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = parseArgs([
@@ -409,20 +411,20 @@ describe(parseArgs, () => {
 		expect(result.collectCoverageFrom).toStrictEqual(["src/**/*.ts", "lib/**/*.ts"]);
 	});
 
-	it("should leave collectCoverageFrom undefined when not passed", () => {
+	it("should leave collectCoverageFrom undefined when not passed", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(parseArgs([]).collectCoverageFrom).toBeUndefined();
 	});
 
-	it("should parse --port option", () => {
+	it("should parse --port option", ({ expect }) => {
 		expect.assertions(2);
 
 		expect(parseArgs(["--port", "4000"]).port).toBe(4000);
 		expect(parseArgs([]).port).toBeUndefined();
 	});
 
-	it("should parse --timeout option", () => {
+	it("should parse --timeout option", ({ expect }) => {
 		expect.assertions(2);
 
 		expect(parseArgs(["--timeout", "60000"]).timeout).toBe(60000);
@@ -436,7 +438,7 @@ describe(parseArgs, () => {
 		["--timeout", "slow"],
 		["--timeout", "1.5"],
 		["--timeout", "-5"],
-	])("should reject %s %j", ([flag, value]) => {
+	])("should reject %s %j", ([flag, value], { expect }) => {
 		expect.assertions(1);
 
 		expect(() => parseArgs([`${flag}=${value}`])).toThrow(
@@ -444,13 +446,13 @@ describe(parseArgs, () => {
 		);
 	});
 
-	it("should parse single --project flag", () => {
+	it("should parse single --project flag", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(parseArgs(["--project", "client"]).project).toStrictEqual(["client"]);
 	});
 
-	it("should parse multiple --project flags", () => {
+	it("should parse multiple --project flags", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = parseArgs(["--project", "client", "--project", "server"]);
@@ -458,7 +460,7 @@ describe(parseArgs, () => {
 		expect(result.project).toStrictEqual(["client", "server"]);
 	});
 
-	it("should keep a positional file alongside --project", () => {
+	it("should keep a positional file alongside --project", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = parseArgs(["--project", "client", "src/player.spec.ts"]);
@@ -466,7 +468,7 @@ describe(parseArgs, () => {
 		expect(result).toMatchObject({ files: ["src/player.spec.ts"], project: ["client"] });
 	});
 
-	it("should parse --passWithNoTests flag", () => {
+	it("should parse --passWithNoTests flag", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(parseArgs(["--passWithNoTests"]).passWithNoTests).toBeTrue();
@@ -474,7 +476,7 @@ describe(parseArgs, () => {
 
 	it.for(["--parallel", "--experimental-vm-parallel"])(
 		"should leave a positional test path after bare %s",
-		(flag) => {
+		(flag, { expect }) => {
 			expect.assertions(1);
 
 			expect(parseArgs([flag, "src/example.spec.ts"]).files).toStrictEqual([
@@ -483,14 +485,14 @@ describe(parseArgs, () => {
 		},
 	);
 
-	it("should parse --parallel with integer value", () => {
+	it("should parse --parallel with integer value", ({ expect }) => {
 		expect.assertions(2);
 
 		expect(parseArgs(["--parallel", "3"]).parallel).toBe(3);
 		expect(parseArgs(["--parallel", "12"]).parallel).toBe(12);
 	});
 
-	it('should parse --parallel with "auto"', () => {
+	it('should parse --parallel with "auto"', ({ expect }) => {
 		expect.assertions(2);
 
 		const result = parseArgs(["--parallel", "auto"]);
@@ -499,13 +501,13 @@ describe(parseArgs, () => {
 		expect(result.files).toBeUndefined();
 	});
 
-	it('should treat bare --parallel (no value) as "auto"', () => {
+	it('should treat bare --parallel (no value) as "auto"', ({ expect }) => {
 		expect.assertions(1);
 
 		expect(parseArgs(["--parallel"]).parallel).toBe("auto");
 	});
 
-	it("should treat --parallel followed by another flag as auto", () => {
+	it("should treat --parallel followed by another flag as auto", ({ expect }) => {
 		expect.assertions(2);
 
 		const result = parseArgs(["--parallel", "--verbose"]);
@@ -514,37 +516,37 @@ describe(parseArgs, () => {
 		expect(result.verbose).toBeTrue();
 	});
 
-	it("should leave a negative positional for the argument parser", () => {
+	it("should leave a negative positional for the argument parser", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(() => parseArgs(["--parallel", "-1"])).toThrow("Unknown option '-1'");
 	});
 
-	it("should leave parallel undefined when flag not present", () => {
+	it("should leave parallel undefined when flag not present", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(parseArgs([]).parallel).toBeUndefined();
 	});
 
-	it("should throw on --parallel 0", () => {
+	it("should throw on --parallel 0", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(() => parseArgs(["--parallel", "0"])).toThrow("Invalid --parallel value");
 	});
 
-	it("should accept the minimum --parallel value", () => {
+	it("should accept the minimum --parallel value", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(parseArgs(["--parallel", "1"]).parallel).toBe(1);
 	});
 
-	it("should throw on --parallel -1", () => {
+	it("should throw on --parallel -1", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(() => parseArgs(["--parallel=-1"])).toThrow("Invalid --parallel value");
 	});
 
-	it("should throw on --parallel non-numeric", () => {
+	it("should throw on --parallel non-numeric", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(() => parseArgs(["--parallel=xyz"])).toThrow("Invalid --parallel value");
@@ -552,27 +554,29 @@ describe(parseArgs, () => {
 
 	it.for(["3x", "x3"])(
 		"should reject attached partially numeric --parallel value %j",
-		(value) => {
+		(value, { expect }) => {
 			expect.assertions(1);
 
 			expect(() => parseArgs([`--parallel=${value}`])).toThrow("Invalid --parallel value");
 		},
 	);
 
-	it("should parse --experimental-vm-parallel with integer value", () => {
+	it("should parse --experimental-vm-parallel with integer value", ({ expect }) => {
 		expect.assertions(2);
 
 		expect(parseArgs(["--experimental-vm-parallel", "3"]).experimentalVmParallel).toBe(3);
 		expect(parseArgs(["--experimental-vm-parallel", "1"]).experimentalVmParallel).toBe(1);
 	});
 
-	it('should treat bare --experimental-vm-parallel as "auto"', () => {
+	it('should treat bare --experimental-vm-parallel as "auto"', ({ expect }) => {
 		expect.assertions(1);
 
 		expect(parseArgs(["--experimental-vm-parallel"]).experimentalVmParallel).toBe("auto");
 	});
 
-	it('should consume "auto" as the --experimental-vm-parallel value, not a test path', () => {
+	it('should consume "auto" as the --experimental-vm-parallel value, not a test path', ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const result = parseArgs(["--experimental-vm-parallel", "auto"]);
@@ -581,7 +585,7 @@ describe(parseArgs, () => {
 		expect(result.files).toBeUndefined();
 	});
 
-	it("should treat --experimental-vm-parallel followed by another flag as auto", () => {
+	it("should treat --experimental-vm-parallel followed by another flag as auto", ({ expect }) => {
 		expect.assertions(2);
 
 		const result = parseArgs(["--experimental-vm-parallel", "--verbose"]);
@@ -590,13 +594,13 @@ describe(parseArgs, () => {
 		expect(result.verbose).toBeTrue();
 	});
 
-	it("should leave experimentalVmParallel undefined when flag not present", () => {
+	it("should leave experimentalVmParallel undefined when flag not present", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(parseArgs([]).experimentalVmParallel).toBeUndefined();
 	});
 
-	it("should throw on --experimental-vm-parallel 0", () => {
+	it("should throw on --experimental-vm-parallel 0", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(() => parseArgs(["--experimental-vm-parallel", "0"])).toThrow(
@@ -604,7 +608,7 @@ describe(parseArgs, () => {
 		);
 	});
 
-	it("should throw on --experimental-vm-parallel non-numeric", () => {
+	it("should throw on --experimental-vm-parallel non-numeric", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(() => parseArgs(["--experimental-vm-parallel=xyz"])).toThrow(
@@ -612,25 +616,25 @@ describe(parseArgs, () => {
 		);
 	});
 
-	it("should parse --apiKey option", () => {
+	it("should parse --apiKey option", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(parseArgs(["--apiKey", "secret"]).apiKey).toBe("secret");
 	});
 
-	it("should parse --universeId option", () => {
+	it("should parse --universeId option", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(parseArgs(["--universeId", "123"]).universeId).toBe("123");
 	});
 
-	it("should parse --placeId option", () => {
+	it("should parse --placeId option", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(parseArgs(["--placeId", "456"]).placeId).toBe("456");
 	});
 
-	it("should parse all three credential flags together", () => {
+	it("should parse all three credential flags together", ({ expect }) => {
 		expect.assertions(3);
 
 		const result = parseArgs(["--apiKey", "secret", "--universeId", "123", "--placeId", "456"]);
@@ -640,7 +644,7 @@ describe(parseArgs, () => {
 		expect(result.placeId).toBe("456");
 	});
 
-	it("should leave credential fields undefined when flags are absent", () => {
+	it("should leave credential fields undefined when flags are absent", ({ expect }) => {
 		expect.assertions(3);
 
 		const result = parseArgs([]);
@@ -650,25 +654,25 @@ describe(parseArgs, () => {
 		expect(result.placeId).toBeUndefined();
 	});
 
-	it("should parse --workspace flag", () => {
+	it("should parse --workspace flag", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(parseArgs(["--workspace"]).workspace).toBeTrue();
 	});
 
-	it("should parse --packages option", () => {
+	it("should parse --packages option", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(parseArgs(["--packages", "foo,bar"]).packages).toBe("foo,bar");
 	});
 
-	it("should parse --affected-since option", () => {
+	it("should parse --affected-since option", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(parseArgs(["--affected-since", "main"]).affectedSince).toBe("main");
 	});
 
-	it("should parse --workspace-root option", () => {
+	it("should parse --workspace-root option", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(parseArgs(["--workspace-root", "./pkgs/testing"]).workspaceRoot).toBe(
@@ -676,7 +680,7 @@ describe(parseArgs, () => {
 		);
 	});
 
-	it("should parse --setupFiles list", () => {
+	it("should parse --setupFiles list", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = parseArgs(["--setupFiles", "a.ts", "--setupFiles", "b.ts"]);
@@ -684,7 +688,7 @@ describe(parseArgs, () => {
 		expect(result.setupFiles).toStrictEqual(["a.ts", "b.ts"]);
 	});
 
-	it("should parse --setupFilesAfterEnv list", () => {
+	it("should parse --setupFilesAfterEnv list", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = parseArgs(["--setupFilesAfterEnv", "x.ts", "--setupFilesAfterEnv", "y.ts"]);
@@ -692,7 +696,7 @@ describe(parseArgs, () => {
 		expect(result.setupFilesAfterEnv).toStrictEqual(["x.ts", "y.ts"]);
 	});
 
-	it("should parse --rojoProject option", () => {
+	it("should parse --rojoProject option", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(parseArgs(["--rojoProject", "custom.project.json"]).rojoProject).toBe(
@@ -700,7 +704,7 @@ describe(parseArgs, () => {
 		);
 	});
 
-	it("should parse --sourceMap flag", () => {
+	it("should parse --sourceMap flag", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(parseArgs(["--sourceMap"]).sourceMap).toBeTrue();

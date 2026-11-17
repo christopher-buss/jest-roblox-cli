@@ -1,7 +1,7 @@
 import { fromAny, fromPartial } from "@total-typescript/shoehorn";
 
 import process from "node:process";
-import { describe, expect, it, onTestFinished } from "vitest";
+import { describe, it } from "vitest";
 
 import { createPlainStyles } from "#test/mocks/format-plain-styles.ts";
 import type { MappedLocation, SourceMapper } from "../source-mapper/index.ts";
@@ -28,7 +28,7 @@ function makeFile(overrides: Partial<TestFileResult>): TestFileResult {
 }
 
 describe(countFileBuckets, () => {
-	it("should count a file with both passing and pending tests as passed", () => {
+	it("should count a file with both passing and pending tests as passed", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -40,7 +40,7 @@ describe(countFileBuckets, () => {
 		).toStrictEqual({ failed: 0, passed: 1, skipped: 0 });
 	});
 
-	it("should count collected files with no tests as passed", () => {
+	it("should count collected files with no tests as passed", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -52,7 +52,9 @@ describe(countFileBuckets, () => {
 		).toStrictEqual({ failed: 0, passed: 2, skipped: 0 });
 	});
 
-	it("should count an exec-error file as failed and an all-pending file as skipped", () => {
+	it("should count an exec-error file as failed and an all-pending file as skipped", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		expect(
@@ -69,7 +71,7 @@ describe(countFileBuckets, () => {
 });
 
 describe("locateFailure without a mapper", () => {
-	it("should parse supported source extensions with optional columns", () => {
+	it("should parse supported source extensions with optional columns", ({ expect }) => {
 		expect.assertions(1);
 
 		expect([
@@ -89,7 +91,7 @@ describe("locateFailure without a mapper", () => {
 });
 
 describe("locateFailure Luau locations in the message", () => {
-	it("should parse .luau file location", () => {
+	it("should parse .luau file location", ({ expect }) => {
 		expect.assertions(2);
 
 		const result = locateFailure("path/test.luau:25", undefined).primary;
@@ -98,7 +100,7 @@ describe("locateFailure Luau locations in the message", () => {
 		expect(result!.line).toBe(25);
 	});
 
-	it("should parse .lua file location with column", () => {
+	it("should parse .lua file location with column", ({ expect }) => {
 		expect.assertions(3);
 
 		const result = locateFailure("path/test.lua:10:5", undefined).primary;
@@ -110,7 +112,7 @@ describe("locateFailure Luau locations in the message", () => {
 });
 
 describe(formatFailedTestsHeader, () => {
-	it("should flank the title with the given rule on each side", () => {
+	it("should flank the title with the given rule on each side", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(formatFailedTestsHeader(3, { rule: 3, styles: createPlainStyles() })).toBe(
@@ -118,7 +120,7 @@ describe(formatFailedTestsHeader, () => {
 		);
 	});
 
-	it("should fill the terminal width without a rule", () => {
+	it("should fill the terminal width without a rule", ({ expect, onTestFinished }) => {
 		expect.assertions(2);
 
 		const original = process.stdout.columns;
@@ -135,7 +137,7 @@ describe(formatFailedTestsHeader, () => {
 });
 
 describe(formatLogHintLines, () => {
-	it("should name each written log", () => {
+	it("should name each written log", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -146,7 +148,7 @@ describe(formatLogHintLines, () => {
 		]);
 	});
 
-	it("should skip unwritten logs", () => {
+	it("should skip unwritten logs", ({ expect }) => {
 		expect.assertions(2);
 
 		expect(formatLogHintLines({ outputFile: "out.json" })).toStrictEqual([
@@ -157,7 +159,7 @@ describe(formatLogHintLines, () => {
 });
 
 describe(locateFailure, () => {
-	it("should fall back to the location written in the message without a mapper", () => {
+	it("should fall back to the location written in the message without a mapper", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(locateFailure("boom at src/a.ts:4:2", undefined).primary).toStrictEqual({
@@ -167,7 +169,7 @@ describe(locateFailure, () => {
 		});
 	});
 
-	it("should prefer the mapped TypeScript location, else the Luau one", () => {
+	it("should prefer the mapped TypeScript location, else the Luau one", ({ expect }) => {
 		expect.assertions(2);
 
 		function mapper(locations: Array<MappedLocation>): SourceMapper {
@@ -191,7 +193,7 @@ describe(locateFailure, () => {
 });
 
 describe(snippetSources, () => {
-	it("should offer no source when the failure names none", () => {
+	it("should offer no source when the failure names none", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(snippetSources(locateFailure("plain failure", undefined))).toStrictEqual([]);
@@ -199,7 +201,7 @@ describe(snippetSources, () => {
 });
 
 describe(failureDetail, () => {
-	it("should pick the snapshot diff, then the value pair, then the message", () => {
+	it("should pick the snapshot diff, then the value pair, then the message", ({ expect }) => {
 		expect.assertions(3);
 
 		expect(failureDetail({ message: "m", snapshotDiff: "d" })).toStrictEqual({
@@ -216,7 +218,7 @@ describe(failureDetail, () => {
 });
 
 describe(describeExecError, () => {
-	it("should badge a timed-out suite TIMEOUT and a thrown one FAIL", () => {
+	it("should badge a timed-out suite TIMEOUT and a thrown one FAIL", ({ expect }) => {
 		expect.assertions(2);
 
 		const file = { ...makeFile({}), failureMessage: "boom" };

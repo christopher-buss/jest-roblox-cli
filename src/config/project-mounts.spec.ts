@@ -1,6 +1,6 @@
 import type { RojoTreeNode } from "@isentinel/rojo-utils";
 
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { createFsClassifier, resolveMounts } from "./project-mounts.ts";
@@ -38,7 +38,7 @@ function captureMappingError(outDirectory: string): unknown {
 }
 
 describe("outDir mapping", () => {
-	it("should pin the project to one mount at the outDir", () => {
+	it("should pin the project to one mount at the outDir", ({ expect }) => {
 		expect.assertions(1);
 
 		const mounts = resolveMounts({
@@ -54,7 +54,7 @@ describe("outDir mapping", () => {
 		]);
 	});
 
-	it("should map outDir to DataModel path via Rojo tree", () => {
+	it("should map outDir to DataModel path via Rojo tree", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = mapOutDirectory("out/client", simpleRojoTree);
@@ -62,7 +62,7 @@ describe("outDir mapping", () => {
 		expect(result).toBe("ReplicatedStorage/client");
 	});
 
-	it("should map server outDir to DataModel path", () => {
+	it("should map server outDir to DataModel path", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = mapOutDirectory("out/server", simpleRojoTree);
@@ -70,7 +70,7 @@ describe("outDir mapping", () => {
 		expect(result).toBe("ServerScriptService/server");
 	});
 
-	it("should handle nested tree structures", () => {
+	it("should handle nested tree structures", ({ expect }) => {
 		expect.assertions(1);
 
 		const nestedTree: RojoTreeNode = {
@@ -87,7 +87,7 @@ describe("outDir mapping", () => {
 		expect(result).toBe("ReplicatedStorage/shared/lib");
 	});
 
-	it("should handle path nested under a $path entry", () => {
+	it("should handle path nested under a $path entry", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = mapOutDirectory("out/client/ui", simpleRojoTree);
@@ -95,7 +95,7 @@ describe("outDir mapping", () => {
 		expect(result).toBe("ReplicatedStorage/client/ui");
 	});
 
-	it("should throw a config error when no mapping found", () => {
+	it("should throw a config error when no mapping found", ({ expect }) => {
 		expect.assertions(2);
 
 		expect(captureMappingError("out/unknown")).toBeInstanceOf(Error);
@@ -106,7 +106,7 @@ describe("outDir mapping", () => {
 		});
 	});
 
-	it("should include hint when path starts with src/", () => {
+	it("should include hint when path starts with src/", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(captureMappingError("src/client")).toHaveProperty(
@@ -115,13 +115,13 @@ describe("outDir mapping", () => {
 		);
 	});
 
-	it("should omit hint when path does not start with src/", () => {
+	it("should omit hint when path does not start with src/", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(captureMappingError("out/unknown")).toHaveProperty("hint", undefined);
 	});
 
-	it("should omit available paths line when tree has no $path entries", () => {
+	it("should omit available paths line when tree has no $path entries", ({ expect }) => {
 		expect.assertions(1);
 
 		const emptyTree: RojoTreeNode = { $className: "DataModel" };
@@ -131,7 +131,7 @@ describe("outDir mapping", () => {
 		}).toThrowWithMessage(Error, "No Rojo tree mapping found for path: out/foo");
 	});
 
-	it("should strip trailing slash before lookup", () => {
+	it("should strip trailing slash before lookup", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = mapOutDirectory("out/client/", simpleRojoTree);
@@ -139,7 +139,7 @@ describe("outDir mapping", () => {
 		expect(result).toBe("ReplicatedStorage/client");
 	});
 
-	it("should look up source path directly for pure Luau", () => {
+	it("should look up source path directly for pure Luau", ({ expect }) => {
 		expect.assertions(1);
 
 		const tree: RojoTreeNode = {
@@ -156,7 +156,7 @@ describe("outDir mapping", () => {
 });
 
 describe(createFsClassifier, () => {
-	it("should return 'directory' for a path holding a directory", () => {
+	it("should return 'directory' for a path holding a directory", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({ "/root/some/directory/child.luau": "" });
@@ -164,7 +164,7 @@ describe(createFsClassifier, () => {
 		expect(createFsClassifier("/root", fileSystem)("some/directory")).toBe("directory");
 	});
 
-	it("should return 'file' for a path holding a file", () => {
+	it("should return 'file' for a path holding a file", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({ "/root/some/file.txt": "" });
@@ -172,7 +172,7 @@ describe(createFsClassifier, () => {
 		expect(createFsClassifier("/root", fileSystem)("some/file.txt")).toBe("file");
 	});
 
-	it("should return 'missing' for a path holding nothing", () => {
+	it("should return 'missing' for a path holding nothing", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -180,7 +180,7 @@ describe(createFsClassifier, () => {
 		expect(createFsClassifier("/root", fileSystem)("missing/path")).toBe("missing");
 	});
 
-	it("should resolve relative paths against the given root directory", () => {
+	it("should resolve relative paths against the given root directory", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -190,7 +190,7 @@ describe(createFsClassifier, () => {
 		expect(createFsClassifier("/workspace/root", fileSystem)("src/Client")).toBe("directory");
 	});
 
-	it("should pass absolute paths through without resolution", () => {
+	it("should pass absolute paths through without resolution", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({ "/absolute/path/init.luau": "" });

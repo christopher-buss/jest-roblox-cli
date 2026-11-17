@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import {
 	fillPlaceholders,
@@ -15,7 +15,7 @@ const HARNESS = readHarness("runner");
 const STUBBED = stubbedModules(HARNESS);
 
 describe("multi-mode runner under lute", () => {
-	it("should pass the runner harness assertions", () => {
+	it("should pass the runner harness assertions", ({ expect }) => {
 		expect.assertions(1);
 
 		const script = fillPlaceholders(HARNESS, {

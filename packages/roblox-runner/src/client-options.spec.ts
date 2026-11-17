@@ -1,6 +1,6 @@
 import { createFakeHttpClient } from "@bedrock-rbx/ocale/testing";
 
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import {
 	createClientOptions,
@@ -9,7 +9,7 @@ import {
 } from "./client-options.ts";
 
 describe(createClientOptions, () => {
-	it("should bind the authorized key and configured SDK overrides", () => {
+	it("should bind the authorized key and configured SDK overrides", ({ expect }) => {
 		expect.assertions(1);
 
 		const httpClient = createFakeHttpClient();
@@ -31,7 +31,7 @@ describe(createClientOptions, () => {
 		});
 	});
 
-	it("should omit absent overrides while supplying the native transport", () => {
+	it("should omit absent overrides while supplying the native transport", ({ expect }) => {
 		expect.assertions(2);
 
 		const options = createClientOptions("key", undefined);
@@ -40,7 +40,7 @@ describe(createClientOptions, () => {
 		expect(options.httpClient.request).toBeTypeOf("function");
 	});
 
-	it("should preserve the default retry policy with an injected transport", () => {
+	it("should preserve the default retry policy with an injected transport", ({ expect }) => {
 		expect.assertions(1);
 
 		const httpClient = createFakeHttpClient();
@@ -53,7 +53,7 @@ describe(createClientOptions, () => {
 });
 
 describe(createStorageClient, () => {
-	it("should issue storage calls through the injected SDK transport", async () => {
+	it("should issue storage calls through the injected SDK transport", async ({ expect }) => {
 		expect.assertions(2);
 
 		const http = createFakeHttpClient();
@@ -76,7 +76,9 @@ describe(createStorageClient, () => {
 });
 
 describe(createSubmitRequestOptions, () => {
-	it("should preserve SDK retry counts and disable ambiguous transport retry when requested", () => {
+	it("should preserve SDK retry counts and disable ambiguous transport retry when requested", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const signal = AbortSignal.abort("stopped");
@@ -92,7 +94,9 @@ describe(createSubmitRequestOptions, () => {
 		).toStrictEqual({ retryableTransportCodes: [], signal, timeout: 1234 });
 	});
 
-	it("should bound explicitly budgeted idempotent create retries through SDK policy", () => {
+	it("should bound explicitly budgeted idempotent create retries through SDK policy", ({
+		expect,
+	}) => {
 		expect.assertions(4);
 
 		const signal = AbortSignal.abort("stopped");

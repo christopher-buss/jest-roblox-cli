@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { createPlainStyles } from "#test/mocks/format-plain-styles.ts";
 import { createTaggedStyles } from "#test/mocks/format-tagged-styles.ts";
@@ -19,7 +19,7 @@ function entry(overrides: Partial<StreamingResultEntry> = {}): StreamingResultEn
 }
 
 describe(formatStreamingProgressLine, () => {
-	it("should emit a passing line with pkg, count, and elapsed time", () => {
+	it("should emit a passing line with pkg, count, and elapsed time", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(formatStreamingProgressLine(entry(), createPlainStyles())).toBe(
@@ -27,7 +27,7 @@ describe(formatStreamingProgressLine, () => {
 		);
 	});
 
-	it("should include a failed count when failures are present", () => {
+	it("should include a failed count when failures are present", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -42,7 +42,7 @@ describe(formatStreamingProgressLine, () => {
 		).toBe("▶ @halcyon/foo  2 failed | 1 passed (1234ms)");
 	});
 
-	it("should append the project name when it differs from the package", () => {
+	it("should append the project name when it differs from the package", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -50,7 +50,7 @@ describe(formatStreamingProgressLine, () => {
 		).toContain("@halcyon/foo › client");
 	});
 
-	it("should include skipped tests in the breakdown when present", () => {
+	it("should include skipped tests in the breakdown when present", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -61,7 +61,7 @@ describe(formatStreamingProgressLine, () => {
 		).toBe("▶ @halcyon/foo  2 passed | 1 skipped (1234ms)");
 	});
 
-	it("should render '0 tests' when the result has no passed/failed/skipped", () => {
+	it("should render '0 tests' when the result has no passed/failed/skipped", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -72,7 +72,9 @@ describe(formatStreamingProgressLine, () => {
 		).toBe("▶ @halcyon/foo  0 tests (1234ms)");
 	});
 
-	it("should paint the arrow, each count and the elapsed time through the palette", () => {
+	it("should paint the arrow, each count and the elapsed time through the palette", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const out = formatStreamingProgressLine(

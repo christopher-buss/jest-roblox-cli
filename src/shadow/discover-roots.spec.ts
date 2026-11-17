@@ -1,7 +1,7 @@
 import type { RojoTreeNode } from "@isentinel/rojo-utils";
 
 import * as path from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import type { MemoryVolume } from "#test/mocks/memory-file-system.ts";
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
@@ -47,7 +47,7 @@ function discover(
 }
 
 describe(discoverLuauRoots, () => {
-	it("should take a mount that holds only .lua source", () => {
+	it("should take a mount that holds only .lua source", ({ expect }) => {
 		expect.assertions(1);
 
 		const { result } = discover({ "out/init.lua": "" }, { mounts: ["out"] });
@@ -55,7 +55,7 @@ describe(discoverLuauRoots, () => {
 		expect(result).toStrictEqual([posixRoot("out")]);
 	});
 
-	it("should take a mount that holds only spec files", () => {
+	it("should take a mount that holds only spec files", ({ expect }) => {
 		expect.assertions(1);
 
 		const { result } = discover({ "out/a.spec.luau": "" }, { mounts: ["out"] });
@@ -63,7 +63,7 @@ describe(discoverLuauRoots, () => {
 		expect(result).toStrictEqual([posixRoot("out")]);
 	});
 
-	it("should skip the roblox-ts include directory", () => {
+	it("should skip the roblox-ts include directory", ({ expect }) => {
 		expect.assertions(1);
 
 		const { result } = discover(
@@ -74,7 +74,7 @@ describe(discoverLuauRoots, () => {
 		expect(result).toStrictEqual([posixRoot("out")]);
 	});
 
-	it("should answer undefined when there is no rojo project", () => {
+	it("should answer undefined when there is no rojo project", ({ expect }) => {
 		expect.assertions(1);
 
 		const { result } = discover({}, { rojo: undefined });
@@ -82,7 +82,7 @@ describe(discoverLuauRoots, () => {
 		expect(result).toBeUndefined();
 	});
 
-	it("should take explicit roots verbatim when nothing checks them", () => {
+	it("should take explicit roots verbatim when nothing checks them", ({ expect }) => {
 		expect.assertions(1);
 
 		const { result } = discover({}, { check: undefined, explicit: ["./out", "out", "gone"] });
@@ -90,7 +90,7 @@ describe(discoverLuauRoots, () => {
 		expect(result).toStrictEqual([posixRoot("out"), posixRoot("gone")]);
 	});
 
-	it("should drop an explicit root outside the frame, with a warning", () => {
+	it("should drop an explicit root outside the frame, with a warning", ({ expect }) => {
 		expect.assertions(2);
 
 		const { result, warn } = discover({}, { explicit: ["../bar"], mounts: ["out"] });
@@ -101,7 +101,7 @@ describe(discoverLuauRoots, () => {
 		);
 	});
 
-	it("should drop an explicit root no mount reaches, with a warning", () => {
+	it("should drop an explicit root no mount reaches, with a warning", ({ expect }) => {
 		expect.assertions(2);
 
 		const warn = vi.fn<(text: string) => void>();
@@ -120,7 +120,7 @@ describe(discoverLuauRoots, () => {
 		);
 	});
 
-	it("should name the subject when the frame itself is given as a root", () => {
+	it("should name the subject when the frame itself is given as a root", ({ expect }) => {
 		expect.assertions(1);
 
 		const warn = vi.fn<(text: string) => void>();
@@ -137,7 +137,7 @@ describe(discoverLuauRoots, () => {
 		);
 	});
 
-	it("should skip a mount that holds nothing the caller takes", () => {
+	it("should skip a mount that holds nothing the caller takes", ({ expect }) => {
 		expect.assertions(1);
 
 		const { result } = discover(
@@ -148,7 +148,7 @@ describe(discoverLuauRoots, () => {
 		expect(result).toBeUndefined();
 	});
 
-	it("should skip a mount that holds no Luau", () => {
+	it("should skip a mount that holds no Luau", ({ expect }) => {
 		expect.assertions(1);
 
 		const { result } = discover({ "out/a.txt": "" }, { mounts: ["out"] });
@@ -156,7 +156,7 @@ describe(discoverLuauRoots, () => {
 		expect(result).toBeUndefined();
 	});
 
-	it("should not take the frame itself as a mounted root", () => {
+	it("should not take the frame itself as a mounted root", ({ expect }) => {
 		expect.assertions(1);
 
 		const { result } = discover({ "init.luau": "" }, { mounts: ["."] });
@@ -164,7 +164,7 @@ describe(discoverLuauRoots, () => {
 		expect(result).toBeUndefined();
 	});
 
-	it("should keep an explicit root above its mounts, deduped by spelling", () => {
+	it("should keep an explicit root above its mounts, deduped by spelling", ({ expect }) => {
 		expect.assertions(1);
 
 		const { result } = discover(
@@ -175,7 +175,7 @@ describe(discoverLuauRoots, () => {
 		expect(result).toStrictEqual([posixRoot("out")]);
 	});
 
-	it("should keep an explicit root that holds only spec files", () => {
+	it("should keep an explicit root that holds only spec files", ({ expect }) => {
 		expect.assertions(1);
 
 		const { result } = discover(
@@ -186,7 +186,7 @@ describe(discoverLuauRoots, () => {
 		expect(result).toStrictEqual([posixRoot("src")]);
 	});
 
-	it("should skip the reach check when there is no rojo project", () => {
+	it("should skip the reach check when there is no rojo project", ({ expect }) => {
 		expect.assertions(1);
 
 		const { result } = discover(
@@ -197,7 +197,7 @@ describe(discoverLuauRoots, () => {
 		expect(result).toStrictEqual([posixRoot("out")]);
 	});
 
-	it("should drop an ignored or empty explicit root", () => {
+	it("should drop an ignored or empty explicit root", ({ expect }) => {
 		expect.assertions(1);
 
 		const { result } = discover(

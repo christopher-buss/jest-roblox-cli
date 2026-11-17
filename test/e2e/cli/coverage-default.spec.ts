@@ -1,7 +1,7 @@
 import { type } from "arktype";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { assert, describe, expect, it } from "vitest";
+import { assert, describe, it } from "vitest";
 
 import { startFakeOpenCloudServerAsync } from "#test/harness/fake-open-cloud.ts";
 import {
@@ -24,7 +24,7 @@ describe.skipIf(!rojoOnPath())("single-mode coverage default", () => {
 	])(
 		"should report zero-hit sources within $collectCoverageFrom",
 		{ timeout: RUN_TIMEOUT_MS },
-		async ({ collectCoverageFrom, expected }) => {
+		async ({ collectCoverageFrom, expected }, { expect }) => {
 			expect.assertions(3);
 
 			const sandbox = createFixtureSandbox(FIXTURE);

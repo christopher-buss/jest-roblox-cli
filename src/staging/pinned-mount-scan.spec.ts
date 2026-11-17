@@ -1,7 +1,7 @@
 import type { RojoTreeNode } from "@isentinel/rojo-utils";
 
 import * as path from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import type { MemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { posixPath } from "#test/mocks/posix-path.ts";
@@ -30,7 +30,7 @@ function sources(mounts: Array<PinnedMount>): Array<string> {
 }
 
 describe(findPinnedMounts, () => {
-	it("should skip a mount the project already ignores", () => {
+	it("should skip a mount the project already ignores", ({ expect }) => {
 		expect.assertions(1);
 
 		const model = path.join(ASSETS, "Workspace/Terrain.rbxmx");
@@ -46,7 +46,9 @@ describe(findPinnedMounts, () => {
 		).toBeEmpty();
 	});
 
-	it("should match an absolute ignore path after removing the Windows drive letter", () => {
+	it("should match an absolute ignore path after removing the Windows drive letter", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const model = path.join(ASSETS, "Workspace/Terrain.rbxmx");
@@ -61,7 +63,7 @@ describe(findPinnedMounts, () => {
 		).toBeEmpty();
 	});
 
-	it("should skip a mounted entry the project already ignores", () => {
+	it("should skip a mounted entry the project already ignores", ({ expect }) => {
 		expect.assertions(1);
 
 		const memory = seed({ [path.join(ASSETS, "Workspace/Terrain.rbxmx")]: TERRAIN_XML });
@@ -74,7 +76,7 @@ describe(findPinnedMounts, () => {
 		).toBeEmpty();
 	});
 
-	it("should ignore a mount that is not on disk", () => {
+	it("should ignore a mount that is not on disk", ({ expect }) => {
 		expect.assertions(1);
 
 		const stage = {
@@ -84,7 +86,7 @@ describe(findPinnedMounts, () => {
 		expect(scan(seed(), { stage })).toBeEmpty();
 	});
 
-	it("should ignore a mount that is a file rojo reads without a class", () => {
+	it("should ignore a mount that is a file rojo reads without a class", ({ expect }) => {
 		expect.assertions(1);
 
 		const source = path.join(ASSETS, "init.luau");
@@ -93,7 +95,7 @@ describe(findPinnedMounts, () => {
 		expect(scan(seed({ [source]: "return {}" }), { stage })).toBeEmpty();
 	});
 
-	it("should ignore a mounted model whose own root is not pinned", () => {
+	it("should ignore a mounted model whose own root is not pinned", ({ expect }) => {
 		expect.assertions(1);
 
 		const model = path.join(ASSETS, "pod.rbxmx");
@@ -102,7 +104,7 @@ describe(findPinnedMounts, () => {
 		expect(scan(seed({ [model]: MODEL_XML }), { stage })).toBeEmpty();
 	});
 
-	it("should not report a buried pinned class the project already ignores", () => {
+	it("should not report a buried pinned class the project already ignores", ({ expect }) => {
 		expect.assertions(1);
 
 		const top = path.join(ASSETS, "Workspace/Terrain.rbxmx");
@@ -121,7 +123,7 @@ describe(findPinnedMounts, () => {
 		).toStrictEqual([posixPath(top)]);
 	});
 
-	it("should apply ignore globs to dot-directories", () => {
+	it("should apply ignore globs to dot-directories", ({ expect }) => {
 		expect.assertions(1);
 
 		const memory = seed({
@@ -136,7 +138,9 @@ describe(findPinnedMounts, () => {
 		).toBeEmpty();
 	});
 
-	it("should report a pinned class buried below the mount rather than rebuilding it", () => {
+	it("should report a pinned class buried below the mount rather than rebuilding it", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const memory = seed({
@@ -158,7 +162,7 @@ describe(findPinnedMounts, () => {
 		);
 	});
 
-	it("should walk past a nested directory that holds no pinned class", () => {
+	it("should walk past a nested directory that holds no pinned class", ({ expect }) => {
 		expect.assertions(1);
 
 		const top = path.join(ASSETS, "Workspace/Terrain.rbxmx");
@@ -172,7 +176,7 @@ describe(findPinnedMounts, () => {
 		).toStrictEqual([posixPath(top)]);
 	});
 
-	it("should leave an auto-mounted directory of ordinary files unreported", () => {
+	it("should leave an auto-mounted directory of ordinary files unreported", ({ expect }) => {
 		expect.assertions(1);
 
 		const memory = seed({
@@ -183,7 +187,7 @@ describe(findPinnedMounts, () => {
 		expect(scan(memory, { stage: directoryStage(path.join(ASSETS, "Workspace")) })).toBeEmpty();
 	});
 
-	it("should not treat an init.meta.json directory as a class descriptor", () => {
+	it("should not treat an init.meta.json directory as a class descriptor", ({ expect }) => {
 		expect.assertions(2);
 
 		const memory = seed({
@@ -200,7 +204,7 @@ describe(findPinnedMounts, () => {
 		["in a nested directory", "src/Child/init.meta.json", "src/Child/value.luau", 2],
 	] as const)(
 		"should read non-pinned metadata %s only while classifying it",
-		([, meta, value, reads]) => {
+		([, meta, value, reads], { expect }) => {
 			expect.assertions(3);
 
 			const metaPath = path.join(ASSETS, meta);
@@ -216,7 +220,7 @@ describe(findPinnedMounts, () => {
 		},
 	);
 
-	it("should scan a shared mount path once", () => {
+	it("should scan a shared mount path once", ({ expect }) => {
 		expect.assertions(1);
 
 		const shared = path.join(ASSETS, "StarterPlayerScripts.rbxmx");
@@ -231,7 +235,7 @@ describe(findPinnedMounts, () => {
 		expect(scan(memory, { stage })).toHaveLength(1);
 	});
 
-	it("should not recurse into reserved dollar-prefixed metadata nodes", () => {
+	it("should not recurse into reserved dollar-prefixed metadata nodes", ({ expect }) => {
 		expect.assertions(1);
 
 		const model = path.join(ASSETS, "Terrain.rbxmx");

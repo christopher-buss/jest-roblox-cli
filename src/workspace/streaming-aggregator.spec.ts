@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import type { StreamingResultEntry } from "../protocol/streaming-summary.ts";
 import { StreamingAggregator, type StreamingAggregatorOnEntry } from "./streaming-aggregator.ts";
@@ -18,7 +18,7 @@ function makeEntry(overrides: Partial<StreamingResultEntry> = {}): StreamingResu
 
 describe(StreamingAggregator, () => {
 	describe("accept", () => {
-		it("should call onEntry exactly once when streaming mode is enabled", () => {
+		it("should call onEntry exactly once when streaming mode is enabled", ({ expect }) => {
 			expect.assertions(1);
 
 			const onEntry = vi.fn<StreamingAggregatorOnEntry>();
@@ -30,7 +30,9 @@ describe(StreamingAggregator, () => {
 			expect(onEntry).toHaveBeenCalledExactlyOnceWith(entry);
 		});
 
-		it("should ignore duplicate entries for the same pkg/project (work-stealing retry)", () => {
+		it("should ignore duplicate entries for the same pkg/project (work-stealing retry)", ({
+			expect,
+		}) => {
 			expect.assertions(2);
 
 			const onEntry = vi.fn<StreamingAggregatorOnEntry>();
@@ -44,7 +46,9 @@ describe(StreamingAggregator, () => {
 			expect(aggregator.drain()).toHaveLength(1);
 		});
 
-		it("should report whether the entry was newly accepted via the return value", () => {
+		it("should report whether the entry was newly accepted via the return value", ({
+			expect,
+		}) => {
 			expect.assertions(2);
 
 			const aggregator = new StreamingAggregator();
@@ -53,7 +57,7 @@ describe(StreamingAggregator, () => {
 			expect(aggregator.accept(makeEntry({ pkg: "a", project: "p" }))).toBeFalse();
 		});
 
-		it("should not call onEntry on a duplicate", () => {
+		it("should not call onEntry on a duplicate", ({ expect }) => {
 			expect.assertions(1);
 
 			const onEntry = vi.fn<StreamingAggregatorOnEntry>();
@@ -66,7 +70,9 @@ describe(StreamingAggregator, () => {
 			expect(onEntry).toHaveBeenCalledExactlyOnceWith(first);
 		});
 
-		it("should treat different projects under the same pkg as distinct entries", () => {
+		it("should treat different projects under the same pkg as distinct entries", ({
+			expect,
+		}) => {
 			expect.assertions(2);
 
 			const onEntry = vi.fn<StreamingAggregatorOnEntry>();
@@ -79,7 +85,7 @@ describe(StreamingAggregator, () => {
 			expect(aggregator.drain()).toHaveLength(2);
 		});
 
-		it("should accept entries with no onEntry hook (buffer-only mode)", () => {
+		it("should accept entries with no onEntry hook (buffer-only mode)", ({ expect }) => {
 			expect.assertions(2);
 
 			const aggregator = new StreamingAggregator();
@@ -90,7 +96,7 @@ describe(StreamingAggregator, () => {
 	});
 
 	describe("drain", () => {
-		it("should return entries in arrival order", () => {
+		it("should return entries in arrival order", ({ expect }) => {
 			expect.assertions(1);
 
 			const aggregator = new StreamingAggregator();
@@ -106,7 +112,7 @@ describe(StreamingAggregator, () => {
 			]);
 		});
 
-		it("should return an empty array when nothing was accepted", () => {
+		it("should return an empty array when nothing was accepted", ({ expect }) => {
 			expect.assertions(1);
 
 			const aggregator = new StreamingAggregator();
@@ -114,7 +120,7 @@ describe(StreamingAggregator, () => {
 			expect(aggregator.drain()).toStrictEqual([]);
 		});
 
-		it("should return a snapshot copy so subsequent accepts don't mutate it", () => {
+		it("should return a snapshot copy so subsequent accepts don't mutate it", ({ expect }) => {
 			expect.assertions(2);
 
 			const aggregator = new StreamingAggregator();

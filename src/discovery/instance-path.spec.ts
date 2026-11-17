@@ -1,6 +1,6 @@
 import type { Mount } from "@isentinel/rojo-utils";
 
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { createInstancePathResolver } from "./instance-path.ts";
 
@@ -12,7 +12,7 @@ const SHARED_MOUNT: Mount = { dataModelPath: "ReplicatedStorage/PkgShared", fsPa
 const TS_MAPPING = { outDir: "out", rootDir: "src" };
 
 describe(createInstancePathResolver, () => {
-	it("should return the mount name and the path below it for a luau source", () => {
+	it("should return the mount name and the path below it for a luau source", ({ expect }) => {
 		expect.assertions(1);
 
 		const resolve = createInstancePathResolver({
@@ -24,7 +24,9 @@ describe(createInstancePathResolver, () => {
 		expect(resolve("out/shared/lib/example.spec.luau")).toBe("PkgShared/lib/example.spec");
 	});
 
-	it("should map a TypeScript source through the tsconfig rootDir/outDir rewrite", () => {
+	it("should map a TypeScript source through the tsconfig rootDir/outDir rewrite", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const resolve = createInstancePathResolver({
@@ -41,7 +43,7 @@ describe(createInstancePathResolver, () => {
 
 	// Without the mount name on the front the path below the mount is a bare
 	// suffix, so naming `a/index.test.ts` would also select the nested namesake.
-	it("should not let a named file's path be a suffix of a deeper namesake", () => {
+	it("should not let a named file's path be a suffix of a deeper namesake", ({ expect }) => {
 		expect.assertions(2);
 
 		const resolve = createInstancePathResolver({
@@ -61,7 +63,7 @@ describe(createInstancePathResolver, () => {
 
 	// `rootDir` is not a project-only key, so discovery can be based at a
 	// subdirectory while the mounts stay relative to the Rojo root.
-	it("should resolve when the file base and the mount base differ", () => {
+	it("should resolve when the file base and the mount base differ", ({ expect }) => {
 		expect.assertions(1);
 
 		const resolve = createInstancePathResolver({
@@ -76,7 +78,7 @@ describe(createInstancePathResolver, () => {
 		expect(resolve("a/index.spec.ts")).toBe("PkgServer/a/init.spec");
 	});
 
-	it("should let the mount pick between mappings that share a rootDir", () => {
+	it("should let the mount pick between mappings that share a rootDir", ({ expect }) => {
 		expect.assertions(1);
 
 		const resolve = createInstancePathResolver({
@@ -93,7 +95,7 @@ describe(createInstancePathResolver, () => {
 		);
 	});
 
-	it("should treat a rootDirs mapping rooted at dot as owning every source", () => {
+	it("should treat a rootDirs mapping rooted at dot as owning every source", ({ expect }) => {
 		expect.assertions(1);
 
 		const resolve = createInstancePathResolver({
@@ -111,7 +113,7 @@ describe(createInstancePathResolver, () => {
 	// A Luau source is already in the output namespace. A `rootDirs` tsconfig
 	// collapses to a rootDir owning every path under the base, so rebasing one
 	// would prepend the outDir a second time and match nothing.
-	it("should not rebase a pure-Luau source that already sits under the outDir", () => {
+	it("should not rebase a pure-Luau source that already sits under the outDir", ({ expect }) => {
 		expect.assertions(1);
 
 		const resolve = createInstancePathResolver({
@@ -124,7 +126,7 @@ describe(createInstancePathResolver, () => {
 		expect(resolve("out/shared/lib/example.spec.luau")).toBe("TS/shared/lib/example.spec");
 	});
 
-	it("should match a project that mounts its TypeScript sources directly", () => {
+	it("should match a project that mounts its TypeScript sources directly", ({ expect }) => {
 		expect.assertions(1);
 
 		const resolve = createInstancePathResolver({
@@ -139,7 +141,7 @@ describe(createInstancePathResolver, () => {
 		);
 	});
 
-	it("should keep an index stem for a pure-Luau source", () => {
+	it("should keep an index stem for a pure-Luau source", ({ expect }) => {
 		expect.assertions(1);
 
 		const resolve = createInstancePathResolver({
@@ -153,7 +155,7 @@ describe(createInstancePathResolver, () => {
 
 	// `path.resolve` on Windows stamps the cwd's drive onto a drive-less root, so
 	// a discovered file can carry a letter its root never had.
-	it("should ignore a drive letter the root directory does not carry", () => {
+	it("should ignore a drive letter the root directory does not carry", ({ expect }) => {
 		expect.assertions(1);
 
 		const resolve = createInstancePathResolver({
@@ -167,7 +169,7 @@ describe(createInstancePathResolver, () => {
 		);
 	});
 
-	it("should resolve an absolute Windows path against the root directory", () => {
+	it("should resolve an absolute Windows path against the root directory", ({ expect }) => {
 		expect.assertions(1);
 
 		const resolve = createInstancePathResolver({
@@ -182,7 +184,7 @@ describe(createInstancePathResolver, () => {
 		);
 	});
 
-	it("should return the bare filename for a file directly under the mount root", () => {
+	it("should return the bare filename for a file directly under the mount root", ({ expect }) => {
 		expect.assertions(1);
 
 		const resolve = createInstancePathResolver({
@@ -194,7 +196,7 @@ describe(createInstancePathResolver, () => {
 		expect(resolve("out/shared/example.spec.luau")).toBe("PkgShared/example.spec");
 	});
 
-	it("should pick the deepest mount when one mount nests inside another", () => {
+	it("should pick the deepest mount when one mount nests inside another", ({ expect }) => {
 		expect.assertions(1);
 
 		const resolve = createInstancePathResolver({
@@ -206,7 +208,7 @@ describe(createInstancePathResolver, () => {
 		expect(resolve("out/shared/lib/example.spec.luau")).toBe("PkgShared/lib/example.spec");
 	});
 
-	it("should return undefined when no mount owns the file", () => {
+	it("should return undefined when no mount owns the file", ({ expect }) => {
 		expect.assertions(1);
 
 		const resolve = createInstancePathResolver({
@@ -218,7 +220,9 @@ describe(createInstancePathResolver, () => {
 		expect(resolve("out/client/example.spec.luau")).toBeUndefined();
 	});
 
-	it("should return undefined when a TypeScript source has no tsconfig mapping to a mount", () => {
+	it("should return undefined when a TypeScript source has no tsconfig mapping to a mount", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const resolve = createInstancePathResolver({
@@ -230,7 +234,7 @@ describe(createInstancePathResolver, () => {
 		expect(resolve("src/server/systems/attack/index.test.ts")).toBeUndefined();
 	});
 
-	it("should not treat a sibling directory sharing the mount prefix as a match", () => {
+	it("should not treat a sibling directory sharing the mount prefix as a match", ({ expect }) => {
 		expect.assertions(1);
 
 		const resolve = createInstancePathResolver({
@@ -242,7 +246,7 @@ describe(createInstancePathResolver, () => {
 		expect(resolve("out/shared-extra/example.spec.luau")).toBeUndefined();
 	});
 
-	it("should rename only the filename stem, never a directory named index", () => {
+	it("should rename only the filename stem, never a directory named index", ({ expect }) => {
 		expect.assertions(1);
 
 		const resolve = createInstancePathResolver({
@@ -255,7 +259,7 @@ describe(createInstancePathResolver, () => {
 		expect(resolve("src/server/index/index.test.ts")).toBe("PkgServer/index/init.test");
 	});
 
-	it("should rename a bare index module with no test suffix", () => {
+	it("should rename a bare index module with no test suffix", ({ expect }) => {
 		expect.assertions(1);
 
 		const resolve = createInstancePathResolver({

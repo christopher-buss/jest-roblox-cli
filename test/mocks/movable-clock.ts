@@ -9,7 +9,7 @@ export interface MovableClockCollector {
 export function movableClockCollector(startMs: number): MovableClockCollector {
 	let now = startMs;
 	return {
-		advance: (byMs: number) => {
+		advance: (byMs) => {
 			now += byMs;
 		},
 		timing: clockTimingCollector({ now: () => now }),

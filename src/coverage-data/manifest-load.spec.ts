@@ -1,5 +1,5 @@
 import process from "node:process";
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import { MANIFEST_VERSION } from "#test/mocks/coverage-versions.ts";
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
@@ -17,7 +17,7 @@ function seedManifest(contents: string) {
 }
 
 describe(loadPriorManifest, () => {
-	it("should answer undefined without a warning when no manifest exists", () => {
+	it("should answer undefined without a warning when no manifest exists", ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -29,7 +29,7 @@ describe(loadPriorManifest, () => {
 		expect(stderr).not.toHaveBeenCalled();
 	});
 
-	it("should name the manifest in the warning when its JSON is malformed", () => {
+	it("should name the manifest in the warning when its JSON is malformed", ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem } = seedManifest("{");
@@ -43,7 +43,7 @@ describe(loadPriorManifest, () => {
 		);
 	});
 
-	it("should name the manifest in the warning when it fails the schema", () => {
+	it("should name the manifest in the warning when it fails the schema", ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem } = seedManifest(JSON.stringify({ version: MANIFEST_VERSION }));
@@ -57,7 +57,7 @@ describe(loadPriorManifest, () => {
 		);
 	});
 
-	it("should answer the manifest when it reads cleanly", () => {
+	it("should answer the manifest when it reads cleanly", ({ expect }) => {
 		expect.assertions(1);
 
 		const manifest: CoverageManifest = {

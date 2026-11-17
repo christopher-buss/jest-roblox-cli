@@ -359,7 +359,7 @@ function isSlotValue(value: unknown): value is CstValue {
 }
 
 function readSlot(node: CstNode, slot: string): CstValue {
-	const value: unknown = Reflect.get(node, slot);
+	const value = Reflect.get(node, slot);
 	if (!isSlotValue(value)) {
 		assert.fail(`${node.type}.${slot} holds no node, token, or list`);
 	}

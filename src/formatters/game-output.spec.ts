@@ -1,16 +1,18 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { createTaggedStyles } from "#test/mocks/format-tagged-styles.ts";
 import { formatGameOutputBlock } from "./game-output.ts";
 
 describe(formatGameOutputBlock, () => {
-	it("should return no lines when the package printed nothing", () => {
+	it("should return no lines when the package printed nothing", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(formatGameOutputBlock([], createTaggedStyles())).toStrictEqual([]);
 	});
 
-	it("should paint warnings as pending, errors as failures, and split multiline messages", () => {
+	it("should paint warnings as pending, errors as failures, and split multiline messages", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		expect(

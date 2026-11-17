@@ -1,11 +1,11 @@
-import { assert, describe, expect, it } from "vitest";
+import { assert, describe, it } from "vitest";
 
 import { astTree, cstTree, rawTree } from "#test/helpers/unit/trees";
 import type { CstParseResult } from "./cst-materialize.ts";
 import { loadLuauParser } from "./parser.ts";
 
 describe("parser diagnostics", () => {
-	it("should decode marked AST errors and discard empty lines", () => {
+	it("should decode marked AST errors and discard empty lines", ({ expect }) => {
 		expect.assertions(1);
 
 		const parser = loadLuauParser({
@@ -20,7 +20,7 @@ describe("parser diagnostics", () => {
 		});
 	});
 
-	it("should decode marked CST errors without treating them as tree JSON", () => {
+	it("should decode marked CST errors without treating them as tree JSON", ({ expect }) => {
 		expect.assertions(1);
 
 		const parser = loadLuauParser({
@@ -37,7 +37,7 @@ describe("parser diagnostics", () => {
 });
 
 describe("decode of a malformed wrapper payload", () => {
-	it("should fail loudly when the JSON is not a parse output", () => {
+	it("should fail loudly when the JSON is not a parse output", ({ expect }) => {
 		expect.assertions(1);
 
 		const parser = loadLuauParser({
@@ -51,7 +51,7 @@ describe("decode of a malformed wrapper payload", () => {
 		);
 	});
 
-	it("should fail loudly when the JSON is not even an object", () => {
+	it("should fail loudly when the JSON is not even an object", ({ expect }) => {
 		expect.assertions(1);
 
 		const parser = loadLuauParser({
@@ -65,7 +65,7 @@ describe("decode of a malformed wrapper payload", () => {
 		);
 	});
 
-	it("should fail loudly on an unrecognized location string", () => {
+	it("should fail loudly on an unrecognized location string", ({ expect }) => {
 		expect.assertions(1);
 
 		const parser = loadLuauParser({
@@ -116,7 +116,9 @@ function localStatement(overrides: TreeOverrides): string {
 }
 
 describe("gap detector", () => {
-	it("should name the file, the two tokens, and the bytes when a token is skipped", () => {
+	it("should name the file, the two tokens, and the bytes when a token is skipped", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		// The name token points at the `=`, so `x` falls into the gap between
@@ -133,7 +135,7 @@ describe("gap detector", () => {
 		]);
 	});
 
-	it("should name the start of the file when bytes precede the first token", () => {
+	it("should name the start of the file when bytes precede the first token", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = parseWithPayload(
@@ -148,7 +150,7 @@ describe("gap detector", () => {
 		]);
 	});
 
-	it("should treat an unterminated block comment as offending bytes", () => {
+	it("should treat an unterminated block comment as offending bytes", ({ expect }) => {
 		expect.assertions(1);
 
 		const source = `${SOURCE} --[[ open`;
@@ -161,7 +163,7 @@ describe("gap detector", () => {
 		]);
 	});
 
-	it("should report a token that overlaps the previous one", () => {
+	it("should report a token that overlaps the previous one", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = parseWithPayload(
@@ -178,7 +180,7 @@ describe("gap detector", () => {
 });
 
 describe("decode of a malformed CST payload", () => {
-	it("should surface a serializer defect as an error result", () => {
+	it("should surface a serializer defect as an error result", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = parseWithPayload(
@@ -192,7 +194,7 @@ describe("decode of a malformed CST payload", () => {
 		});
 	});
 
-	it("should fail loudly when the JSON is not a tree", () => {
+	it("should fail loudly when the JSON is not a tree", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(() => parseWithPayload({ fileName: "shape.luau" }, '{"type":"Nope"}')).toThrow(
@@ -202,7 +204,7 @@ describe("decode of a malformed CST payload", () => {
 });
 
 describe("cST location payload", () => {
-	it("should reject a location with a nonnumeric coordinate", () => {
+	it("should reject a location with a nonnumeric coordinate", ({ expect }) => {
 		expect.assertions(1);
 
 		const parser = loadLuauParser({
@@ -234,7 +236,7 @@ describe("normalized parser output", () => {
 	it.for([
 		{ remaining: [], suffix: "" },
 		{ remaining: [{ type: "AstExprConstantNumber", value: Infinity }], suffix: ", 1e999" },
-	])("should parse a large string alongside $suffix", ({ remaining, suffix }) => {
+	])("should parse a large string alongside $suffix", ({ remaining, suffix }, { expect }) => {
 		expect.assertions(2);
 
 		const value = "x".repeat(10_000_000);
@@ -249,17 +251,20 @@ describe("normalized parser output", () => {
 		);
 	});
 
-	it.for(["local x = 1", "return t.field"])("should normalize all spans in %s", (source) => {
-		expect.assertions(1);
+	it.for(["local x = 1", "return t.field"])(
+		"should normalize all spans in %s",
+		(source, { expect }) => {
+			expect.assertions(1);
 
-		const result = parserForPayload(rawTree(source, "ast")).parse(source);
+			const result = parserForPayload(rawTree(source, "ast")).parse(source);
 
-		expect(result).toStrictEqual({
-			comments: [],
-			ok: true,
-			root: astTree(source),
-		});
-	});
+			expect(result).toStrictEqual({
+				comments: [],
+				ok: true,
+				root: astTree(source),
+			});
+		},
+	);
 
 	it.for([
 		"null",
@@ -270,13 +275,15 @@ describe("normalized parser output", () => {
 		'{"root":[],"commentLocations":[]}',
 		'{"root":{},"commentLocations":[]}',
 		'{"root":{"type":"AstStatBlock"},"commentLocations":null}',
-	])("should reject an invalid parse result %s", (payload) => {
+	])("should reject an invalid parse result %s", (payload, { expect }) => {
 		expect.assertions(1);
 
 		expect(() => parserForPayload(payload).parse("source")).toThrow("unrecognized JSON shape");
 	});
 
-	it("should normalize suffix locations while preserving escaped Infinity strings and numeric signs", () => {
+	it("should normalize suffix locations while preserving escaped Infinity strings and numeric signs", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const payload =
@@ -293,7 +300,7 @@ describe("normalized parser output", () => {
 		});
 	});
 
-	it("should prefix a serializer defect with its filename", () => {
+	it("should prefix a serializer defect with its filename", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -307,7 +314,7 @@ describe("normalized parser output", () => {
 		});
 	});
 
-	it("should materialize valid CST output", () => {
+	it("should materialize valid CST output", ({ expect }) => {
 		expect.assertions(1);
 
 		const source = "return 1\n";
@@ -317,7 +324,7 @@ describe("normalized parser output", () => {
 		).toStrictEqual({ ok: true, root: cstTree(source) });
 	});
 
-	it("should expose constructed expressions and statements through the parser", () => {
+	it("should expose constructed expressions and statements through the parser", ({ expect }) => {
 		expect.assertions(2);
 
 		const parser = parserForPayload(rawTree("return 1\n", "cst"));
@@ -332,7 +339,7 @@ describe("normalized parser output", () => {
 		});
 	});
 
-	it("should share the default parser and keep supplied backends independent", () => {
+	it("should share the default parser and keep supplied backends independent", ({ expect }) => {
 		expect.assertions(2);
 
 		expect(loadLuauParser()).toBe(loadLuauParser());

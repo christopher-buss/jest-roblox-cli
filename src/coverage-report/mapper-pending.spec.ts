@@ -1,6 +1,6 @@
 import { fromAny } from "@total-typescript/shoehorn";
 
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import {
 	buildMappedResult,
@@ -14,7 +14,7 @@ import type { PendingBranch } from "./mapper-types.ts";
 const span = { end: { column: 4, line: 2 }, start: { column: 0, line: 1 } };
 
 describe(buildMappedResult, () => {
-	it("should report a file that holds only functions or only branches", () => {
+	it("should report a file that holds only functions or only branches", ({ expect }) => {
 		expect.assertions(1);
 
 		const pending = createPendingCoverage();
@@ -29,7 +29,7 @@ describe(buildMappedResult, () => {
 		expect(Object.keys(buildMappedResult(pending).files)).toStrictEqual(["a.ts", "b.ts"]);
 	});
 
-	it("should number statements across lines in insertion order", () => {
+	it("should number statements across lines in insertion order", ({ expect }) => {
 		expect.assertions(1);
 
 		const pending = createPendingCoverage();
@@ -45,7 +45,7 @@ describe(buildMappedResult, () => {
 });
 
 describe(pushPendingBranch, () => {
-	it("should zero-fill arms the raw data has no count for", () => {
+	it("should zero-fill arms the raw data has no count for", ({ expect }) => {
 		expect.assertions(2);
 
 		const fileBranches: Array<PendingBranch> = [];

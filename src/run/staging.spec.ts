@@ -1,7 +1,7 @@
 import { fromAny } from "@total-typescript/shoehorn";
 
 import * as path from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import { clockTimingCollector } from "#test/mocks/clock-timing-collector.ts";
 import { fakeTimingCollector, phaseNamesOf } from "#test/mocks/fake-timing-collector.ts";
@@ -83,7 +83,7 @@ describe(stageRunAsync, () => {
 	// `rojoProject`. Only the user's project points at the real `outDir`; a
 	// swapped field degrades every frame to a bare Luau path with no error, so
 	// the whole object is pinned.
-	it("should change only placeFile when coverage rebuilds the place", async () => {
+	it("should change only placeFile when coverage rebuilds the place", async ({ expect }) => {
 		expect.assertions(3);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -102,7 +102,7 @@ describe(stageRunAsync, () => {
 		});
 	});
 
-	it("should carry the prepared coverage manifest", async () => {
+	it("should carry the prepared coverage manifest", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -116,7 +116,7 @@ describe(stageRunAsync, () => {
 		expect(staged.coverageManifest).toStrictEqual(makeCoverageResult().manifest);
 	});
 
-	it("should time coverage preparation as its own phase", async () => {
+	it("should time coverage preparation as its own phase", async ({ expect }) => {
 		expect.assertions(1);
 
 		const timing = fakeTimingCollector();
@@ -131,7 +131,7 @@ describe(stageRunAsync, () => {
 		expect(phaseNamesOf(timing.profileAsync)).toContain("prepareCoverage");
 	});
 
-	it("should pass the root config through untouched without coverage", async () => {
+	it("should pass the root config through untouched without coverage", async ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -145,7 +145,7 @@ describe(stageRunAsync, () => {
 		expect(seams.prepareCoverage).not.toHaveBeenCalled();
 	});
 
-	it("should hand coverage a stub bake", async () => {
+	it("should hand coverage a stub bake", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -156,7 +156,9 @@ describe(stageRunAsync, () => {
 		expect(vi.mocked(seams.prepareCoverage).mock.calls[0]![1].bake).toBeDefined();
 	});
 
-	it("should build the coverage place through the run's own rojo launcher", async () => {
+	it("should build the coverage place through the run's own rojo launcher", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -169,7 +171,9 @@ describe(stageRunAsync, () => {
 		);
 	});
 
-	it("should publish a coveragePlace-only build manifest when the place was rebuilt", async () => {
+	it("should publish a coveragePlace-only build manifest when the place was rebuilt", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -189,7 +193,7 @@ describe(stageRunAsync, () => {
 		expect(manifest).not.toHaveProperty("cleanPlace");
 	});
 
-	it("should record one manifest project per DataModel mount", async () => {
+	it("should record one manifest project per DataModel mount", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -245,7 +249,7 @@ describe(stageRunAsync, () => {
 		]);
 	});
 
-	it("should leave the build manifest alone when the place was reused", async () => {
+	it("should leave the build manifest alone when the place was reused", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();

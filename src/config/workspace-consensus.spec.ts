@@ -1,6 +1,6 @@
 import { fromAny } from "@total-typescript/shoehorn";
 
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import type { Config } from "./config-types.ts";
 import type { FormatterEntry } from "./formatter-selection.ts";
@@ -53,13 +53,13 @@ function captureConsensusError(entries: ReadonlyArray<PackageConfigEntry>): Cons
 }
 
 describe(computeConsensus, () => {
-	it("should return the value every package agrees on", () => {
+	it("should return the value every package agrees on", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(computeConsensus(packages("studio", "studio"), BACKEND)).toBe("studio");
 	});
 
-	it("should treat deep-equal values as agreement", () => {
+	it("should treat deep-equal values as agreement", ({ expect }) => {
 		expect.assertions(1);
 
 		const spec = { name: "formatters", readConfig: (config: Config) => config.formatters };
@@ -71,13 +71,13 @@ describe(computeConsensus, () => {
 		expect(computeConsensus(entries, spec)).toStrictEqual(["json"]);
 	});
 
-	it("should be undefined when no package declares the field", () => {
+	it("should be undefined when no package declares the field", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(computeConsensus(packages(undefined, undefined), BACKEND)).toBeUndefined();
 	});
 
-	it("should list each declared value with the packages declaring it", () => {
+	it("should list each declared value with the packages declaring it", ({ expect }) => {
 		expect.assertions(5);
 
 		const captured = captureConsensusError(packages("open-cloud", "open-cloud", "studio"));
@@ -105,7 +105,7 @@ describe(computeConsensus, () => {
 		);
 	});
 
-	it("should use the partial-variant wording in the error message", () => {
+	it("should use the partial-variant wording in the error message", ({ expect }) => {
 		expect.assertions(3);
 
 		const captured = captureConsensusError(
@@ -134,7 +134,7 @@ describe(computeConsensus, () => {
 });
 
 describe(assertConsensus, () => {
-	it("should pass when packages agree", () => {
+	it("should pass when packages agree", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(() => {
@@ -142,7 +142,7 @@ describe(assertConsensus, () => {
 		}).not.toThrow();
 	});
 
-	it("should throw when packages disagree", () => {
+	it("should throw when packages disagree", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(() => {
@@ -152,7 +152,7 @@ describe(assertConsensus, () => {
 });
 
 describe(resolveField, () => {
-	it("should let the CLI value beat per-package disagreement", () => {
+	it("should let the CLI value beat per-package disagreement", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -164,7 +164,7 @@ describe(resolveField, () => {
 		).toBe("studio-cli");
 	});
 
-	it("should use the per-package consensus", () => {
+	it("should use the per-package consensus", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -176,7 +176,7 @@ describe(resolveField, () => {
 		).toBe("studio");
 	});
 
-	it("should fall back to the default when no package declares the field", () => {
+	it("should fall back to the default when no package declares the field", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -190,7 +190,7 @@ describe(resolveField, () => {
 });
 
 describe(resolveOptionalField, () => {
-	it("should let the CLI value beat per-package disagreement", () => {
+	it("should let the CLI value beat per-package disagreement", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -202,7 +202,7 @@ describe(resolveOptionalField, () => {
 		).toBe("studio");
 	});
 
-	it("should be undefined when no one declares the field", () => {
+	it("should be undefined when no one declares the field", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(

@@ -1,10 +1,10 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { HEADER, isGeneratedStub } from "./stub-files.ts";
 
 describe(isGeneratedStub, () => {
-	it("should return true for a stub that starts with the marker", () => {
+	it("should return true for a stub that starts with the marker", ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -17,7 +17,7 @@ describe(isGeneratedStub, () => {
 		expect(closeSpy).toHaveBeenCalledExactlyOnceWith(expect.any(Number));
 	});
 
-	it("should return false for a user-authored file without the marker", () => {
+	it("should return false for a user-authored file without the marker", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -27,7 +27,7 @@ describe(isGeneratedStub, () => {
 		expect(isGeneratedStub("/root/src/Shared/jest.config.luau", fileSystem)).toBeFalse();
 	});
 
-	it("should reject a file containing only a prefix of the generated marker", () => {
+	it("should reject a file containing only a prefix of the generated marker", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -37,7 +37,7 @@ describe(isGeneratedStub, () => {
 		expect(isGeneratedStub("/root/src/Shared/jest.config.luau", fileSystem)).toBeFalse();
 	});
 
-	it("should reject a full-length header with different contents", () => {
+	it("should reject a full-length header with different contents", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -47,7 +47,7 @@ describe(isGeneratedStub, () => {
 		expect(isGeneratedStub("/root/src/Shared/jest.config.luau", fileSystem)).toBeFalse();
 	});
 
-	it("should return false for a missing file", () => {
+	it("should return false for a missing file", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -55,14 +55,12 @@ describe(isGeneratedStub, () => {
 		expect(isGeneratedStub("/root/nonexistent/jest.config.luau", fileSystem)).toBeFalse();
 	});
 
-	it("should return false when openSync throws (defensive catch)", () => {
+	it("should return false when openSync throws (defensive catch)", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({ "/root/file.luau": "anything" });
 
-		vi.spyOn(fileSystem, "openSync").mockImplementation(() => {
-			throw new Error("EACCES: permission denied");
-		});
+		vi.spyOn(fileSystem, "openSync").mockThrow(new Error("EACCES: permission denied"));
 
 		expect(isGeneratedStub("/root/file.luau", fileSystem)).toBeFalse();
 	});

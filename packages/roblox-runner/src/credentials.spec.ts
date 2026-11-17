@@ -1,6 +1,6 @@
 import { fromAny } from "@total-typescript/shoehorn";
 
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import { resolveCredentials } from "./credentials.ts";
 
@@ -21,7 +21,7 @@ function clearAllEnvironment(): void {
 
 describe(resolveCredentials, () => {
 	describe("returns credentials when source is present", () => {
-		it("should return credentials from overrides when all three are provided", () => {
+		it("should return credentials from overrides when all three are provided", ({ expect }) => {
 			expect.assertions(1);
 
 			clearAllEnvironment();
@@ -33,7 +33,9 @@ describe(resolveCredentials, () => {
 			expect(credentials).toStrictEqual({ apiKey: "key", placeId: "456", universeId: "123" });
 		});
 
-		it("should return credentials from JEST_ROBLOX_ env when envPrefix is set", () => {
+		it("should return credentials from JEST_ROBLOX_ env when envPrefix is set", ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			clearAllEnvironment();
@@ -50,7 +52,9 @@ describe(resolveCredentials, () => {
 			});
 		});
 
-		it("should return credentials from canonical ROBLOX_ env without envPrefix", () => {
+		it("should return credentials from canonical ROBLOX_ env without envPrefix", ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			clearAllEnvironment();
@@ -67,7 +71,9 @@ describe(resolveCredentials, () => {
 			});
 		});
 
-		it("should fall through to canonical ROBLOX_ env when envPrefix vars are unset", () => {
+		it("should fall through to canonical ROBLOX_ env when envPrefix vars are unset", ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			clearAllEnvironment();
@@ -84,7 +90,7 @@ describe(resolveCredentials, () => {
 			});
 		});
 
-		it("should pull universeId/placeId from defaults and apiKey from env", () => {
+		it("should pull universeId/placeId from defaults and apiKey from env", ({ expect }) => {
 			expect.assertions(1);
 
 			clearAllEnvironment();
@@ -103,7 +109,7 @@ describe(resolveCredentials, () => {
 	});
 
 	describe("precedence", () => {
-		it("should prefer overrides.apiKey over both env vars", () => {
+		it("should prefer overrides.apiKey over both env vars", ({ expect }) => {
 			expect.assertions(1);
 
 			clearAllEnvironment();
@@ -120,7 +126,7 @@ describe(resolveCredentials, () => {
 			expect(credentials.apiKey).toBe("override-key");
 		});
 
-		it("should prefer JEST_ROBLOX_ env over canonical ROBLOX_ env", () => {
+		it("should prefer JEST_ROBLOX_ env over canonical ROBLOX_ env", ({ expect }) => {
 			expect.assertions(1);
 
 			clearAllEnvironment();
@@ -140,7 +146,7 @@ describe(resolveCredentials, () => {
 			});
 		});
 
-		it("should prefer ROBLOX_ env over defaults", () => {
+		it("should prefer ROBLOX_ env over defaults", ({ expect }) => {
 			expect.assertions(1);
 
 			clearAllEnvironment();
@@ -154,7 +160,7 @@ describe(resolveCredentials, () => {
 			expect(credentials.universeId).toBe("c123");
 		});
 
-		it("should resolve mixed sources independently per field", () => {
+		it("should resolve mixed sources independently per field", ({ expect }) => {
 			expect.assertions(1);
 
 			clearAllEnvironment();
@@ -174,7 +180,7 @@ describe(resolveCredentials, () => {
 	});
 
 	describe("empty-string treated as missing", () => {
-		it("should fall through when overrides.apiKey is empty string", () => {
+		it("should fall through when overrides.apiKey is empty string", ({ expect }) => {
 			expect.assertions(1);
 
 			clearAllEnvironment();
@@ -187,7 +193,7 @@ describe(resolveCredentials, () => {
 			expect(credentials.apiKey).toBe("canonical-key");
 		});
 
-		it("should fall through when ROBLOX_ env is empty string", () => {
+		it("should fall through when ROBLOX_ env is empty string", ({ expect }) => {
 			expect.assertions(1);
 
 			clearAllEnvironment();
@@ -202,7 +208,7 @@ describe(resolveCredentials, () => {
 			}).toThrow(/Missing: apiKey/);
 		});
 
-		it("should treat defaults empty string as missing", () => {
+		it("should treat defaults empty string as missing", ({ expect }) => {
 			expect.assertions(1);
 
 			clearAllEnvironment();
@@ -213,7 +219,7 @@ describe(resolveCredentials, () => {
 			);
 		});
 
-		it("should treat whitespace-only values as empty", () => {
+		it("should treat whitespace-only values as empty", ({ expect }) => {
 			expect.assertions(1);
 
 			clearAllEnvironment();
@@ -224,7 +230,7 @@ describe(resolveCredentials, () => {
 			expect(() => resolveCredentials()).toThrow(/Missing: apiKey, universeId, placeId/);
 		});
 
-		it("should trim whitespace around resolved values", () => {
+		it("should trim whitespace around resolved values", ({ expect }) => {
 			expect.assertions(1);
 
 			clearAllEnvironment();
@@ -243,7 +249,7 @@ describe(resolveCredentials, () => {
 	});
 
 	describe("error format", () => {
-		it("should throw when no source provides any credential", () => {
+		it("should throw when no source provides any credential", ({ expect }) => {
 			expect.assertions(1);
 
 			clearAllEnvironment();
@@ -251,7 +257,7 @@ describe(resolveCredentials, () => {
 			expect(() => resolveCredentials()).toThrow(/credentials are required/);
 		});
 
-		it("should list all three missing fields in error", () => {
+		it("should list all three missing fields in error", ({ expect }) => {
 			expect.assertions(2);
 
 			clearAllEnvironment();
@@ -262,7 +268,7 @@ describe(resolveCredentials, () => {
 			);
 		});
 
-		it("should list only apiKey when other two are provided via defaults", () => {
+		it("should list only apiKey when other two are provided via defaults", ({ expect }) => {
 			expect.assertions(2);
 
 			clearAllEnvironment();
@@ -275,7 +281,7 @@ describe(resolveCredentials, () => {
 			}).not.toThrow(/UNIVERSE_ID|PLACE_ID/);
 		});
 
-		it("should mention JEST_ROBLOX_ alternates when envPrefix is set", () => {
+		it("should mention JEST_ROBLOX_ alternates when envPrefix is set", ({ expect }) => {
 			expect.assertions(1);
 
 			clearAllEnvironment();
@@ -285,7 +291,7 @@ describe(resolveCredentials, () => {
 			);
 		});
 
-		it("should omit JEST_ROBLOX_ alternates when envPrefix is unset", () => {
+		it("should omit JEST_ROBLOX_ alternates when envPrefix is unset", ({ expect }) => {
 			expect.assertions(1);
 
 			clearAllEnvironment();
@@ -293,7 +299,7 @@ describe(resolveCredentials, () => {
 			expect(() => resolveCredentials()).not.toThrow(/JEST_ROBLOX_/);
 		});
 
-		it("should not reference caller-specific concepts", () => {
+		it("should not reference caller-specific concepts", ({ expect }) => {
 			expect.assertions(2);
 
 			clearAllEnvironment();
@@ -304,7 +310,7 @@ describe(resolveCredentials, () => {
 	});
 
 	describe("envPrefix gating", () => {
-		it("should ignore JEST_ROBLOX_ env when envPrefix is unset", () => {
+		it("should ignore JEST_ROBLOX_ env when envPrefix is unset", ({ expect }) => {
 			expect.assertions(1);
 
 			clearAllEnvironment();
@@ -318,7 +324,7 @@ describe(resolveCredentials, () => {
 });
 
 describe("credential security", () => {
-	it("should refuse API keys smuggled into fallback defaults", () => {
+	it("should refuse API keys smuggled into fallback defaults", ({ expect }) => {
 		expect.assertions(1);
 
 		clearAllEnvironment();
@@ -335,7 +341,7 @@ describe("credential security", () => {
 });
 
 describe("unprefixed environment", () => {
-	it("should never read an undefined prefix as an environment-variable name", () => {
+	it("should never read an undefined prefix as an environment-variable name", ({ expect }) => {
 		expect.assertions(1);
 
 		clearAllEnvironment();

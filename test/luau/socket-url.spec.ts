@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import {
 	fillPlaceholders,
@@ -8,7 +8,7 @@ import {
 } from "#test/luau/lute-harness.ts";
 
 describe("edit-mode plugin socket url under lute", () => {
-	it("should dial the port the place names, or the default", () => {
+	it("should dial the port the place names, or the default", ({ expect }) => {
 		expect.assertions(1);
 
 		const script = fillPlaceholders(readHarness("socket-url"), {

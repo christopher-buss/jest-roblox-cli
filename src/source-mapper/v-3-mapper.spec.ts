@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { createV3Mapper } from "./v-3-mapper.ts";
@@ -21,7 +21,7 @@ const ONE_LINE_MAP = JSON.stringify({
 });
 
 describe(createV3Mapper, () => {
-	it("should return undefined when no map file sits beside the generated file", () => {
+	it("should return undefined when no map file sits beside the generated file", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -31,7 +31,7 @@ describe(createV3Mapper, () => {
 		).toBeUndefined();
 	});
 
-	it("should return the mapped position from a valid V3 sourcemap", () => {
+	it("should return the mapped position from a valid V3 sourcemap", ({ expect }) => {
 		expect.assertions(3);
 
 		const { fileSystem } = createMemoryFileSystem({ "/output.luau.map": TWO_LINE_MAP });
@@ -46,7 +46,7 @@ describe(createV3Mapper, () => {
 		expect(result!.line).toBe(1);
 	});
 
-	it("should return undefined for a line the map says nothing about", () => {
+	it("should return undefined for a line the map says nothing about", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({ "/output.luau.map": ONE_LINE_MAP });
@@ -56,7 +56,7 @@ describe(createV3Mapper, () => {
 		).toBeUndefined();
 	});
 
-	it("should parse a sourcemap once however many lookups it answers", () => {
+	it("should parse a sourcemap once however many lookups it answers", ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem } = createMemoryFileSystem({ "/cached.luau.map": ONE_LINE_MAP });
@@ -73,7 +73,7 @@ describe(createV3Mapper, () => {
 
 	// Two mappers must not share a parse cache: one spec file's reads would
 	// otherwise answer the next file's lookups under a shared worker.
-	it("should keep each mapper's parse cache to itself", () => {
+	it("should keep each mapper's parse cache to itself", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({ "/cached.luau.map": ONE_LINE_MAP });
@@ -85,7 +85,7 @@ describe(createV3Mapper, () => {
 		expect(readFile).toHaveBeenCalledExactlyOnceWith("/cached.luau.map", "utf-8");
 	});
 
-	it("should return undefined for source content when the map file is missing", () => {
+	it("should return undefined for source content when the map file is missing", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -95,7 +95,7 @@ describe(createV3Mapper, () => {
 		).toBeUndefined();
 	});
 
-	it("should return the embedded source content for a mapped source", () => {
+	it("should return the embedded source content for a mapped source", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -113,7 +113,7 @@ describe(createV3Mapper, () => {
 		);
 	});
 
-	it("should return null when the map embeds no content for the source", () => {
+	it("should return null when the map embeds no content for the source", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({ "/output.luau.map": ONE_LINE_MAP });
@@ -123,7 +123,9 @@ describe(createV3Mapper, () => {
 		).toBeNull();
 	});
 
-	it("should find the first mapping on an indented line a column-0 lookup misses", () => {
+	it("should find the first mapping on an indented line a column-0 lookup misses", ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		// cspell:ignore IAAA
@@ -148,7 +150,7 @@ describe(createV3Mapper, () => {
 		});
 	});
 
-	it("should return no line start when the line has no mapping", () => {
+	it("should return no line start when the line has no mapping", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({ "/output.luau.map": ONE_LINE_MAP });
@@ -156,7 +158,7 @@ describe(createV3Mapper, () => {
 		expect(createV3Mapper(fileSystem).mapLineStart("/output.luau", 3)).toBeUndefined();
 	});
 
-	it("should return no line start when no map file exists", () => {
+	it("should return no line start when no map file exists", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();

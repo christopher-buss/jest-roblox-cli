@@ -1,6 +1,6 @@
 import { writeFileSync } from "node:fs";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { createStyles, formatFailure } from "#src/api.ts";
 import { createFixtureSandbox } from "#test/harness/helpers.ts";
@@ -58,7 +58,7 @@ function snapshotStack(luauLine: number): string {
 }
 
 describe("source-mapper pipeline", () => {
-	it("should map simple expect().toBe() to exact TS line", async () => {
+	it("should map simple expect().toBe() to exact TS line", async ({ expect }) => {
 		expect.assertions(3);
 
 		const sourceMapper = await createFixtureSourceMapperAsync();
@@ -70,7 +70,7 @@ describe("source-mapper pipeline", () => {
 		expect(locations[0]!.tsColumn).toBe(23);
 	});
 
-	it("should map .never.toBe() with column on toBe not never", async () => {
+	it("should map .never.toBe() with column on toBe not never", async ({ expect }) => {
 		expect.assertions(3);
 
 		const sourceMapper = await createFixtureSourceMapperAsync();
@@ -82,7 +82,7 @@ describe("source-mapper pipeline", () => {
 		expect(locations[0]!.tsColumn).toBe(24);
 	});
 
-	it("should map expect() inside closure despite function()/arrow offset", async () => {
+	it("should map expect() inside closure despite function()/arrow offset", async ({ expect }) => {
 		expect.assertions(3);
 
 		const sourceMapper = await createFixtureSourceMapperAsync();
@@ -94,7 +94,7 @@ describe("source-mapper pipeline", () => {
 		expect(locations[0]!.tsColumn).toBe(18);
 	});
 
-	it("should map optional chaining temp vars via pattern match", async () => {
+	it("should map optional chaining temp vars via pattern match", async ({ expect }) => {
 		expect.assertions(3);
 
 		const sourceMapper = await createFixtureSourceMapperAsync();
@@ -106,7 +106,7 @@ describe("source-mapper pipeline", () => {
 		expect(locations[0]!.tsColumn).toBe(32);
 	});
 
-	it("should map .toMatchSnapshot() to exact TS line", async () => {
+	it("should map .toMatchSnapshot() to exact TS line", async ({ expect }) => {
 		expect.assertions(3);
 
 		const sourceMapper = await createFixtureSourceMapperAsync();
@@ -120,7 +120,7 @@ describe("source-mapper pipeline", () => {
 });
 
 describe("formatter output", () => {
-	it("should render TS snippet for simple assertion", async () => {
+	it("should render TS snippet for simple assertion", async ({ expect }) => {
 		expect.assertions(1);
 
 		const sourceMapper = await createFixtureSourceMapperAsync();
@@ -159,7 +159,7 @@ describe("formatter output", () => {
 		`);
 	});
 
-	it("should render TS+Luau snippets when showLuau is true", async () => {
+	it("should render TS+Luau snippets when showLuau is true", async ({ expect }) => {
 		expect.assertions(1);
 
 		const sourceMapper = await createFixtureSourceMapperAsync();
@@ -207,7 +207,7 @@ describe("formatter output", () => {
 		`);
 	});
 
-	it("should render .never.toBe() mapping", async () => {
+	it("should render .never.toBe() mapping", async ({ expect }) => {
 		expect.assertions(1);
 
 		const sourceMapper = await createFixtureSourceMapperAsync();
@@ -246,7 +246,7 @@ describe("formatter output", () => {
 		`);
 	});
 
-	it("should render closure expect mapping", async () => {
+	it("should render closure expect mapping", async ({ expect }) => {
 		expect.assertions(1);
 
 		const sourceMapper = await createFixtureSourceMapperAsync();
@@ -285,7 +285,7 @@ describe("formatter output", () => {
 		`);
 	});
 
-	it("should render toMatchSnapshot() mapping", async () => {
+	it("should render toMatchSnapshot() mapping", async ({ expect }) => {
 		expect.assertions(1);
 
 		const sourceMapper = await createFixtureSourceMapperAsync();
@@ -324,7 +324,7 @@ describe("formatter output", () => {
 		`);
 	});
 
-	it("should render snapshot diff without swallowing mapped TS location", async () => {
+	it("should render snapshot diff without swallowing mapped TS location", async ({ expect }) => {
 		expect.assertions(1);
 
 		const sourceMapper = await createFixtureSourceMapperAsync();
@@ -366,7 +366,7 @@ describe("formatter output", () => {
 		`);
 	});
 
-	it("should render optional chaining mapping", async () => {
+	it("should render optional chaining mapping", async ({ expect }) => {
 		expect.assertions(1);
 
 		const sourceMapper = await createFixtureSourceMapperAsync();

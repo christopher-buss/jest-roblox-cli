@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { describe, expect, it, onTestFinished } from "vitest";
+import { describe, it, type TestContext } from "vitest";
 
 import {
 	collectPaths,
@@ -11,7 +11,7 @@ import {
 	RojoResolver,
 } from "#src/index.ts";
 
-function makeProject(): string {
+function makeProject(onTestFinished: TestContext["onTestFinished"]): string {
 	const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "rojo-integration-")));
 	onTestFinished(() => {
 		fs.rmSync(root, { force: true, recursive: true });
@@ -33,10 +33,10 @@ function makeProject(): string {
 }
 
 describe("disk-backed project API", () => {
-	it("should preserve synthetic resolvers as array callbacks", () => {
+	it("should preserve synthetic resolvers as array callbacks", ({ expect, onTestFinished }) => {
 		expect.assertions(2);
 
-		const root = makeProject();
+		const root = makeProject(onTestFinished);
 		const roots = [path.join(root, "first"), path.join(root, "second")];
 		for (const directory of roots) {
 			fs.mkdirSync(directory);
@@ -53,7 +53,7 @@ describe("disk-backed project API", () => {
 		).toStrictEqual(["module"]);
 	});
 
-	it("should use the exported parent marker for each ascending step", () => {
+	it("should use the exported parent marker for each ascending step", ({ expect }) => {
 		expect.assertions(3);
 
 		expect(RojoResolver.relative(["A", "B"], [])).toStrictEqual([RbxPathParent, RbxPathParent]);
@@ -61,10 +61,13 @@ describe("disk-backed project API", () => {
 		expect(RojoResolver.relative([], ["A"])).toStrictEqual(["A"]);
 	});
 
-	it("should agree on loaded mounts, path mapping and resolver snapshots", () => {
+	it("should agree on loaded mounts, path mapping and resolver snapshots", ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(4);
 
-		const root = makeProject();
+		const root = makeProject(onTestFinished);
 		const projectPath = path.join(root, "default.project.json");
 		const loaded = loadRojoProject(projectPath);
 		const mounts: Array<string> = [];
@@ -83,10 +86,13 @@ describe("disk-backed project API", () => {
 		);
 	});
 
-	it("should follow a directory link through the native filesystem seam", () => {
+	it("should follow a directory link through the native filesystem seam", ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(2);
 
-		const root = makeProject();
+		const root = makeProject(onTestFinished);
 		fs.symlinkSync(path.join(root, "nested/source"), path.join(root, "linked"), "junction");
 		const resolver = RojoResolver.fromTree({ basePath: root, tree: { $path: "linked" } });
 

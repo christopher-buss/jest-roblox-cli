@@ -1,10 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
 import { buildProjectRunPolicy } from "./project-run-policy.ts";
 
 describe(buildProjectRunPolicy, () => {
-	it("should preserve dispatch settings and root checker policy", () => {
+	it("should preserve dispatch settings and root checker policy", ({ expect }) => {
 		expect.assertions(1);
 
 		const rootConfig = {
@@ -21,7 +21,7 @@ describe(buildProjectRunPolicy, () => {
 		});
 	});
 
-	it("should preserve default checker and unset dispatch settings", () => {
+	it("should preserve default checker and unset dispatch settings", ({ expect }) => {
 		expect.assertions(1);
 
 		const rootConfig = createResolvedConfig();

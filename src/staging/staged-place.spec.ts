@@ -1,7 +1,7 @@
 import { fromAny } from "@total-typescript/shoehorn";
 
 import * as path from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { NOOP_PROGRESS } from "#test/mocks/noop-progress.ts";
@@ -49,7 +49,7 @@ async function buildAsync(harness: ReturnType<typeof seed>) {
 }
 
 describe(buildStagedPlaceAsync, () => {
-	it("should build the place under the rojoBuild span", async () => {
+	it("should build the place under the rojoBuild span", async ({ expect }) => {
 		expect.assertions(3);
 
 		const harness = seed();
@@ -60,7 +60,7 @@ describe(buildStagedPlaceAsync, () => {
 		expect(harness.volume.existsSync(path.join(CACHE, "synthesized.project.json"))).toBeTrue();
 	});
 
-	it("should reuse the place when its inputs are unchanged", async () => {
+	it("should reuse the place when its inputs are unchanged", async ({ expect }) => {
 		expect.assertions(3);
 
 		const harness = seed();

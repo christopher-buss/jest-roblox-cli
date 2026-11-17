@@ -3,7 +3,7 @@ import { fromAny } from "@total-typescript/shoehorn";
 import type { ChildProcess } from "node:child_process";
 import { EventEmitter } from "node:events";
 import nodeProcess from "node:process";
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { MockWebSocketServer } from "#test/mocks/mock-web-socket-server.ts";
@@ -43,7 +43,7 @@ describe(resolveHiddenDesktop, () => {
 		["darwin", false, false],
 	] as const)(
 		"should resolve hiddenDesktop on %s from %j to %j",
-		([platform, hiddenDesktop, expected]) => {
+		([platform, hiddenDesktop, expected], { expect }) => {
 			expect.assertions(2);
 
 			const stderr = vi.spyOn(nodeProcess.stderr, "write").mockReturnValue(true);
@@ -53,7 +53,7 @@ describe(resolveHiddenDesktop, () => {
 		},
 	);
 
-	it("should ignore an explicit hiddenDesktop with a warning on Linux", () => {
+	it("should ignore an explicit hiddenDesktop with a warning on Linux", ({ expect }) => {
 		expect.assertions(2);
 
 		const stderr = vi.spyOn(nodeProcess.stderr, "write").mockReturnValue(true);
@@ -64,7 +64,7 @@ describe(resolveHiddenDesktop, () => {
 		);
 	});
 
-	it("should let headed win over hiddenDesktop", () => {
+	it("should let headed win over hiddenDesktop", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -74,7 +74,7 @@ describe(resolveHiddenDesktop, () => {
 });
 
 describe(hardTeardown, () => {
-	it("should kill Studio and close the result server", () => {
+	it("should kill Studio and close the result server", ({ expect }) => {
 		expect.assertions(3);
 
 		const child = fakeProcess();
@@ -86,7 +86,7 @@ describe(hardTeardown, () => {
 		expect(server.close).toHaveBeenCalledOnce();
 	});
 
-	it("should close the result server when Studio never launched", () => {
+	it("should close the result server when Studio never launched", ({ expect }) => {
 		expect.assertions(1);
 
 		const { server } = serverWithClient();
@@ -97,7 +97,9 @@ describe(hardTeardown, () => {
 });
 
 describe(startGracefulTeardown, () => {
-	it("should close the result server and hand the kill to the lock-release watch", () => {
+	it("should close the result server and hand the kill to the lock-release watch", ({
+		expect,
+	}) => {
 		expect.assertions(3);
 
 		const child = fakeProcess();
@@ -111,7 +113,7 @@ describe(startGracefulTeardown, () => {
 });
 
 describe(launchStudioProcess, () => {
-	it("should spawn Studio directly when it is not hidden", () => {
+	it("should spawn Studio directly when it is not hidden", ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem } = createMemoryFileSystem();

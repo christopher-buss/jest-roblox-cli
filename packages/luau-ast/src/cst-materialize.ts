@@ -74,7 +74,7 @@ export function materializeCst(options: MaterializeOptions): CstParseResult {
 	const bytes = indexSourceBytes(options.source);
 	const placed: Array<PlacedToken> = [];
 	const slicer: Slicer = { bytes, placed };
-	const parsed: JSONValue = JSON.parse(options.json);
+	const parsed = JSON.parse(options.json);
 	const root = materializeInPlace(parsed, { key: undefined, slicer });
 	assert(
 		isCstNode(root) && root.type === "Root",

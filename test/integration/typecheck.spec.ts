@@ -1,5 +1,5 @@
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { runTypecheckAsync } from "#src/api.ts";
 
@@ -7,7 +7,7 @@ const FIXTURE_DIR = path.resolve(__dirname, "..", "fixtures", "typecheck");
 const SOURCE_FIXTURE_DIR = path.resolve(__dirname, "..", "fixtures", "typecheck-source");
 
 describe("typecheck integration", () => {
-	it("should pass all tests when file has no type errors", async () => {
+	it("should pass all tests when file has no type errors", async ({ expect }) => {
 		expect.assertions(3);
 
 		const result = await runTypecheckAsync({
@@ -22,7 +22,7 @@ describe("typecheck integration", () => {
 		expect(result.numFailedTests).toBe(0);
 	});
 
-	it("should fail the test containing a type error", async () => {
+	it("should fail the test containing a type error", async ({ expect }) => {
 		expect.assertions(4);
 
 		const result = await runTypecheckAsync({
@@ -40,7 +40,7 @@ describe("typecheck integration", () => {
 		expect(failedTest!.title).toBe("should reject string as number");
 	});
 
-	it("should handle mixed files with passing and failing", async () => {
+	it("should handle mixed files with passing and failing", async ({ expect }) => {
 		expect.assertions(3);
 
 		const result = await runTypecheckAsync({
@@ -57,7 +57,7 @@ describe("typecheck integration", () => {
 		expect(result.numFailedTests).toBe(1);
 	});
 
-	it("should include TS error code in failure message", async () => {
+	it("should include TS error code in failure message", async ({ expect }) => {
 		expect.assertions(1);
 
 		const result = await runTypecheckAsync({
@@ -71,7 +71,7 @@ describe("typecheck integration", () => {
 		expect(failedTest!.failureMessages[0]).toContain("TS2322");
 	});
 
-	it("should report correct test file path", async () => {
+	it("should report correct test file path", async ({ expect }) => {
 		expect.assertions(1);
 
 		const result = await runTypecheckAsync({
@@ -84,7 +84,7 @@ describe("typecheck integration", () => {
 		expect(result.testResults[0]!.testFilePath).toContain("passing.test-d.ts");
 	});
 
-	it("should fail the run when a non-test source file has a type error", async () => {
+	it("should fail the run when a non-test source file has a type error", async ({ expect }) => {
 		expect.assertions(3);
 
 		const result = await runTypecheckAsync({
@@ -102,7 +102,9 @@ describe("typecheck integration", () => {
 		expect(sourceResult!.testResults[0]!.failureMessages[0]).toContain("TS2322");
 	});
 
-	it("should suppress non-test source file errors when ignoreSourceErrors is true", async () => {
+	it("should suppress non-test source file errors when ignoreSourceErrors is true", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const result = await runTypecheckAsync({

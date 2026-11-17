@@ -1,5 +1,5 @@
 import { type } from "arktype";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import {
 	findGitHubActionsOptions,
@@ -22,15 +22,18 @@ describe(selectTerminalFormatter, () => {
 		[["agent"], true, { name: "default" }],
 		[["github-actions"], false, { name: "default" }],
 		[undefined, false, { name: "default" }],
-	])("should select from %j (verbose %j) as %j", ([formatters, verbose, expected]) => {
-		expect.assertions(1);
+	])(
+		"should select from %j (verbose %j) as %j",
+		([formatters, verbose, expected], { expect }) => {
+			expect.assertions(1);
 
-		expect(selectTerminalFormatter({ formatters, verbose })).toStrictEqual(expected);
-	});
+			expect(selectTerminalFormatter({ formatters, verbose })).toStrictEqual(expected);
+		},
+	);
 });
 
 describe(usesAgentFormatter, () => {
-	it("should suppress agent mode only when verbose output is requested", () => {
+	it("should suppress agent mode only when verbose output is requested", ({ expect }) => {
 		expect.assertions(2);
 
 		expect(usesAgentFormatter({ formatters: ["agent"] })).toBeTrue();
@@ -49,7 +52,7 @@ describe(isDefaultHumanFormatter, () => {
 		[{}, true],
 	];
 
-	it.for(cases)("should resolve %j as %j", ([options, expected]) => {
+	it.for(cases)("should resolve %j as %j", ([options, expected], { expect }) => {
 		expect.assertions(1);
 
 		expect(isDefaultHumanFormatter(options)).toBe(expected);
@@ -57,7 +60,9 @@ describe(isDefaultHumanFormatter, () => {
 });
 
 describe(findGitHubActionsOptions, () => {
-	it("should give empty options for a bare name and the entry's own options for a pair", () => {
+	it("should give empty options for a bare name and the entry's own options for a pair", ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		expect(findGitHubActionsOptions(["default", "github-actions"])).toStrictEqual({});
@@ -66,7 +71,7 @@ describe(findGitHubActionsOptions, () => {
 		).toStrictEqual({ displayAnnotations: false });
 	});
 
-	it("should give undefined when the list does not name it", () => {
+	it("should give undefined when the list does not name it", ({ expect }) => {
 		expect.assertions(2);
 
 		expect(findGitHubActionsOptions(["agent"])).toBeUndefined();
@@ -75,13 +80,13 @@ describe(findGitHubActionsOptions, () => {
 });
 
 describe("formatterEntriesSchema", () => {
-	it("should accept a formatter name or a name with options", () => {
+	it("should accept a formatter name or a name with options", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(formatterEntriesSchema(["json", ["agent", {}]])).not.toBeInstanceOf(type.errors);
 	});
 
-	it("should accept every formatter's documented options", () => {
+	it("should accept every formatter's documented options", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -114,7 +119,7 @@ describe("formatterEntriesSchema", () => {
 		[[["agent", { maxFailures: "3" }]]],
 		[[["github-actions", { jobSummary: { fileLinks: { repo: "o/r" } } }]]],
 		[[["json", { pretty: true }]]],
-	])("should reject %j when the config loads", ([entries]) => {
+	])("should reject %j when the config loads", ([entries], { expect }) => {
 		expect.assertions(1);
 
 		expect(formatterEntriesSchema(entries)).toBeInstanceOf(type.errors);

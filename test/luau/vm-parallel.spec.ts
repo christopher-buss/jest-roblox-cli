@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import {
 	fillPlaceholders,
@@ -15,7 +15,7 @@ const STUBBED = stubbedModules(HARNESS);
 const MODULE_SOURCE = readLuauTree("vm-parallel.luau", STUBBED);
 
 describe("vm-parallel dispatch planning under lute", () => {
-	it("should pass the vm-parallel harness assertions", () => {
+	it("should pass the vm-parallel harness assertions", ({ expect }) => {
 		expect.assertions(1);
 
 		const script = fillPlaceholders(HARNESS, { __MODULE__: MODULE_SOURCE });

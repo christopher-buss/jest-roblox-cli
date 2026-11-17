@@ -1,7 +1,7 @@
 import { fromPartial } from "@total-typescript/shoehorn";
 
 import * as path from "node:path";
-import { describe, expect, it, onTestFinished, vi } from "vitest";
+import { describe, it, type TestContext, vi } from "vitest";
 import type { WebSocket } from "ws";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
@@ -10,7 +10,7 @@ import { startNilReturnRelay, startRunDeadlines } from "./studio-cli-deadlines.t
 
 const OUTPUT_FILE = path.resolve("/repo/.jest-roblox/studio-cli/output.log");
 
-function useFakeTimers(): void {
+function useFakeTimers(onTestFinished: TestContext["onTestFinished"]): void {
 	vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
 	onTestFinished(() => {
 		vi.useRealTimers();
@@ -35,10 +35,10 @@ function expiredMessage(onExpired: ReturnType<typeof deadlines>["onExpired"]): s
 }
 
 describe(startRunDeadlines, () => {
-	it("should quote Studio's own log when the run never starts", () => {
+	it("should quote Studio's own log when the run never starts", ({ expect, onTestFinished }) => {
 		expect.assertions(1);
 
-		useFakeTimers();
+		useFakeTimers(onTestFinished);
 		const { onExpired, volume } = deadlines({ bootTimeout: 40 });
 		volume.mkdirSync(path.dirname(OUTPUT_FILE), { recursive: true });
 		volume.writeFileSync(
@@ -70,10 +70,10 @@ describe(startRunDeadlines, () => {
 		);
 	});
 
-	it("should not restart the run timeout on a repeated start", () => {
+	it("should not restart the run timeout on a repeated start", ({ expect, onTestFinished }) => {
 		expect.assertions(1);
 
-		useFakeTimers();
+		useFakeTimers(onTestFinished);
 		const { onExpired, started } = deadlines();
 		started.markStarted();
 		vi.advanceTimersByTime(30);
@@ -85,10 +85,10 @@ describe(startRunDeadlines, () => {
 		);
 	});
 
-	it("should arm nothing after it is cleared", () => {
+	it("should arm nothing after it is cleared", ({ expect, onTestFinished }) => {
 		expect.assertions(2);
 
-		useFakeTimers();
+		useFakeTimers(onTestFinished);
 		const { onExpired, started } = deadlines();
 		started.clear();
 		started.markStarted();
@@ -116,10 +116,13 @@ function pluginSocket(): MockWebSocket & WebSocket {
 }
 
 describe(startNilReturnRelay, () => {
-	it("should relay the nil return to a plugin that connected before it", () => {
+	it("should relay the nil return to a plugin that connected before it", ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(1);
 
-		useFakeTimers();
+		useFakeTimers(onTestFinished);
 		const { nilRelay } = relay();
 		const socket = pluginSocket();
 		nilRelay.onPluginReady(socket);
@@ -130,10 +133,13 @@ describe(startNilReturnRelay, () => {
 		);
 	});
 
-	it("should arm one plugin wait however many nil returns arrive", () => {
+	it("should arm one plugin wait however many nil returns arrive", ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(1);
 
-		useFakeTimers();
+		useFakeTimers(onTestFinished);
 		const { nilRelay } = relay();
 		nilRelay.onNilReturn();
 		nilRelay.onNilReturn();
@@ -141,10 +147,10 @@ describe(startNilReturnRelay, () => {
 		expect(vi.getTimerCount()).toBe(1);
 	});
 
-	it("should name the plugin key no copy answered for", () => {
+	it("should name the plugin key no copy answered for", ({ expect, onTestFinished }) => {
 		expect.assertions(1);
 
-		useFakeTimers();
+		useFakeTimers(onTestFinished);
 		const { nilRelay, onExpired } = relay("1.2.3-abcdef01");
 		nilRelay.onNilReturn();
 		vi.runAllTimers();
@@ -154,10 +160,10 @@ describe(startNilReturnRelay, () => {
 		);
 	});
 
-	it("should name a play server that never ran as a cause", () => {
+	it("should name a play server that never ran as a cause", ({ expect, onTestFinished }) => {
 		expect.assertions(1);
 
-		useFakeTimers();
+		useFakeTimers(onTestFinished);
 		const { nilRelay, onExpired } = relay("1.2.3-abcdef01");
 		nilRelay.onNilReturn();
 		vi.runAllTimers();

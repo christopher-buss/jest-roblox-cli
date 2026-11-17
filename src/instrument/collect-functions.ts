@@ -46,7 +46,7 @@ export function createFunctionCollector(
 	const context = { accumulator, ignores, namedFunctions };
 
 	return {
-		visitExprFunction(node: AstExprFunction): boolean {
+		visitExprFunction(node): boolean {
 			if (namedFunctions.has(node) || ignores.covers(node.location)) {
 				return true;
 			}
@@ -57,13 +57,13 @@ export function createFunctionCollector(
 			return true;
 		},
 
-		visitStatFunction(node: AstStatFunction): boolean {
+		visitStatFunction(node): boolean {
 			addNamedFunction(context, { name: extractFunctionName(node), node });
 
 			return true;
 		},
 
-		visitStatLocalFunction(node: AstStatLocalFunction): boolean {
+		visitStatLocalFunction(node): boolean {
 			addNamedFunction(context, { name: node.name.name, node });
 
 			return true;

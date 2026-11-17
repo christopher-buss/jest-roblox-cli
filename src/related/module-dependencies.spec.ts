@@ -1,7 +1,7 @@
 import { loadLuauParser } from "@isentinel/luau-ast/parser";
 
 import * as path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { posixPath } from "#test/mocks/posix-path.ts";
@@ -33,7 +33,9 @@ function readerCache(
 }
 
 describe(createReaderCache, () => {
-	it("should follow a string require and an instance require through the Rojo project", () => {
+	it("should follow a string require and an instance require through the Rojo project", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const readerOf = readerCache({
@@ -51,7 +53,9 @@ describe(createReaderCache, () => {
 		}).toStrictEqual({ dependencies: [at("src/b.luau"), at("src/c.luau")], isOpen: false });
 	});
 
-	it("should open a module whose instance require has no Rojo project to resolve through", () => {
+	it("should open a module whose instance require has no Rojo project to resolve through", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const readerOf = readerCache({ "src/a.luau": "return require(script.Parent.c)" });
@@ -59,7 +63,7 @@ describe(createReaderCache, () => {
 		expect(readerOf(undefined)(at("src/a.luau")).isOpen).toBeTrue();
 	});
 
-	it("should read a related module gone from disk as one with no requires", () => {
+	it("should read a related module gone from disk as one with no requires", ({ expect }) => {
 		expect.assertions(1);
 
 		const readerOf = readerCache({}, ["src/gone.luau"]);
@@ -70,7 +74,7 @@ describe(createReaderCache, () => {
 		});
 	});
 
-	it("should reuse the reader of a Rojo project", () => {
+	it("should reuse the reader of a Rojo project", ({ expect }) => {
 		expect.assertions(1);
 
 		const readerOf = readerCache({});

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { buildInstrumentationSkipFiles } from "./instrumentation-plan.ts";
 
@@ -18,7 +18,7 @@ describe(buildInstrumentationSkipFiles, () => {
 		},
 	])(
 		"should combine cached and excluded files: $expected",
-		({ excluded, expected, skipFiles }) => {
+		({ excluded, expected, skipFiles }, { expect }) => {
 			expect.assertions(1);
 
 			expect(buildInstrumentationSkipFiles({ excluded, skipFiles })).toStrictEqual(expected);

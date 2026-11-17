@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import type { MemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
@@ -18,7 +18,7 @@ function seed(version: string): MemoryFileSystem {
 }
 
 describe(stampPluginVersion, () => {
-	it("should write the package version as a Luau module", () => {
+	it("should write the package version as a Luau module", ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = seed("1.2.3");
@@ -29,7 +29,7 @@ describe(stampPluginVersion, () => {
 		);
 	});
 
-	it("should overwrite a stamp left by an earlier build", () => {
+	it("should overwrite a stamp left by an earlier build", ({ expect }) => {
 		// The file is generated, never merged: a rebuild after a version bump
 		// has to replace it, or the plugin reports the release before last.
 		expect.assertions(1);

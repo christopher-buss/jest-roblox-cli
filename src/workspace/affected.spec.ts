@@ -2,14 +2,17 @@ import { fromAny } from "@total-typescript/shoehorn";
 
 import * as path from "node:path";
 import process from "node:process";
-import { assert, describe, expect, it, onTestFinished, vi } from "vitest";
+import { assert, describe, it, type TestContext, vi } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import type { ChildProcessRunner } from "../utils/child-process.ts";
 import { getAffectedPackages } from "./affected.ts";
 import type { PackageInfo } from "./package-resolver.ts";
 
-function stubPlatform(platform: NodeJS.Platform): void {
+function stubPlatform(
+	platform: NodeJS.Platform,
+	onTestFinished: TestContext["onTestFinished"],
+): void {
 	const original = process.platform;
 	Object.defineProperty(process, "platform", { value: platform });
 	onTestFinished(() => {
@@ -132,11 +135,14 @@ function mockWindowsNxResponses(
 	});
 }
 
-function windowsTurboArgs(ref: string): ReadonlyArray<string> | undefined {
+function windowsTurboArgs(
+	ref: string,
+	onTestFinished: TestContext["onTestFinished"],
+): ReadonlyArray<string> | undefined {
 	const childProcess = createRunner();
 	const { fileSystem, volume } = createMemoryFileSystem();
 
-	stubPlatform("win32");
+	stubPlatform("win32", onTestFinished);
 
 	volume.fromJSON({ [path.join(ROOT, "turbo.json")]: "{}" });
 	vi.mocked(childProcess.execFileSync).mockReturnValue(
@@ -165,13 +171,16 @@ function affectedFromTurbo(
 }
 
 describe(getAffectedPackages, () => {
-	it("should shell out to turbo when turbo.json is present and parse the package list", () => {
+	it("should shell out to turbo when turbo.json is present and parse the package list", ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(2);
 
 		const childProcess = createRunner();
 		const { fileSystem, volume } = createMemoryFileSystem();
 
-		stubPlatform("linux");
+		stubPlatform("linux", onTestFinished);
 
 		volume.fromJSON({
 			[path.join(ROOT, "turbo.json")]: "{}",
@@ -196,7 +205,9 @@ describe(getAffectedPackages, () => {
 		);
 	});
 
-	it("should throw with a descriptive error when turbo output does not match the expected schema", () => {
+	it("should throw with a descriptive error when turbo output does not match the expected schema", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const childProcess = createRunner();
@@ -214,7 +225,9 @@ describe(getAffectedPackages, () => {
 		}).toThrow(/Unexpected turbo ls output/);
 	});
 
-	it("should throw with a descriptive error when turbo output is not valid JSON", () => {
+	it("should throw with a descriptive error when turbo output is not valid JSON", ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const childProcess = createRunner();
@@ -237,7 +250,9 @@ describe(getAffectedPackages, () => {
 		expect(caught.cause).toBeInstanceOf(SyntaxError);
 	});
 
-	it("should throw with a descriptive error when nx output does not match the expected schema", () => {
+	it("should throw with a descriptive error when nx output does not match the expected schema", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const childProcess = createRunner();
@@ -255,7 +270,7 @@ describe(getAffectedPackages, () => {
 		}).toThrow(/Unexpected nx show projects output/);
 	});
 
-	it("should throw with a descriptive error when nx output is not valid JSON", () => {
+	it("should throw with a descriptive error when nx output is not valid JSON", ({ expect }) => {
 		expect.assertions(2);
 
 		const childProcess = createRunner();
@@ -277,7 +292,9 @@ describe(getAffectedPackages, () => {
 		expect(caught.cause).toBeInstanceOf(SyntaxError);
 	});
 
-	it("should tolerate unknown top-level fields in turbo output (e.g. packageManager)", () => {
+	it("should tolerate unknown top-level fields in turbo output (e.g. packageManager)", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const childProcess = createRunner();
@@ -298,16 +315,14 @@ describe(getAffectedPackages, () => {
 		).toStrictEqual([packageInfoFor("@org/foo")]);
 	});
 
-	it("should throw a friendly error when turbo is not on PATH", () => {
+	it("should throw a friendly error when turbo is not on PATH", ({ expect }) => {
 		expect.assertions(1);
 
 		const childProcess = createRunner();
 		const { fileSystem } = createMemoryFileSystem({ [path.join(ROOT, "turbo.json")]: "{}" });
 
 		const enoent = Object.assign(new Error("spawn turbo ENOENT"), { code: "ENOENT" });
-		vi.mocked(childProcess.execFileSync).mockImplementation(() => {
-			throw enoent;
-		});
+		vi.mocked(childProcess.execFileSync).mockThrow(enoent);
 
 		expect(() => {
 			return getAffectedPackages({
@@ -319,7 +334,7 @@ describe(getAffectedPackages, () => {
 		}).toThrow(/turbo was not found on PATH/);
 	});
 
-	it("should include stderr content in the error when turbo exits non-zero", () => {
+	it("should include stderr content in the error when turbo exits non-zero", ({ expect }) => {
 		expect.assertions(1);
 
 		const childProcess = createRunner();
@@ -329,9 +344,7 @@ describe(getAffectedPackages, () => {
 			code: "EPERM",
 			stderr: "  invalid filter syntax\n",
 		});
-		vi.mocked(childProcess.execFileSync).mockImplementation(() => {
-			throw stderrError;
-		});
+		vi.mocked(childProcess.execFileSync).mockThrow(stderrError);
 
 		expect(() => {
 			return getAffectedPackages({
@@ -343,7 +356,9 @@ describe(getAffectedPackages, () => {
 		}).toThrowWithMessage(Error, "turbo failed: invalid filter syntax");
 	});
 
-	it("should fall back to stdout content when nx writes its diagnostic to stdout", () => {
+	it("should fall back to stdout content when nx writes its diagnostic to stdout", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const childProcess = createRunner();
@@ -353,9 +368,7 @@ describe(getAffectedPackages, () => {
 			stderr: "",
 			stdout: 'NX  Command failed: git diff --name-only "main" "HEAD"\nfatal: ambiguous argument \'main\': unknown revision',
 		});
-		vi.mocked(childProcess.execFileSync).mockImplementation(() => {
-			throw stdoutError;
-		});
+		vi.mocked(childProcess.execFileSync).mockThrow(stdoutError);
 
 		expect(() => {
 			return getAffectedPackages({
@@ -367,7 +380,9 @@ describe(getAffectedPackages, () => {
 		}).toThrow(/nx failed: NX {2}Command failed.*ambiguous argument 'main'/s);
 	});
 
-	it("should fall back to a generic failure message when turbo stderr is not a string", () => {
+	it("should fall back to a generic failure message when turbo stderr is not a string", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const childProcess = createRunner();
@@ -376,9 +391,7 @@ describe(getAffectedPackages, () => {
 		const numericStderr = Object.assign(new Error("turbo exited with code 1"), {
 			stderr: 12_345,
 		});
-		vi.mocked(childProcess.execFileSync).mockImplementation(() => {
-			throw numericStderr;
-		});
+		vi.mocked(childProcess.execFileSync).mockThrow(numericStderr);
 
 		expect(() => {
 			return getAffectedPackages({
@@ -390,16 +403,16 @@ describe(getAffectedPackages, () => {
 		}).toThrowWithMessage(Error, "turbo failed");
 	});
 
-	it("should fall back to a generic failure message when turbo error has no stderr", () => {
+	it("should fall back to a generic failure message when turbo error has no stderr", ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const childProcess = createRunner();
 		const { fileSystem } = createMemoryFileSystem({ [path.join(ROOT, "turbo.json")]: "{}" });
 
 		const bareError = new Error("turbo exited with code 1");
-		vi.mocked(childProcess.execFileSync).mockImplementation(() => {
-			throw bareError;
-		});
+		vi.mocked(childProcess.execFileSync).mockThrow(bareError);
 
 		let caught: unknown;
 		try {
@@ -423,7 +436,7 @@ describe(getAffectedPackages, () => {
 		["main`whoami`", "backtick"],
 		["$(whoami)", "command substitution"],
 		["--help", "leading dash"],
-	])("should reject ref %j (%s) before invoking the shell", ([ref]) => {
+	])("should reject ref %j (%s) before invoking the shell", ([ref], { expect }) => {
 		expect.assertions(2);
 
 		const childProcess = createRunner();
@@ -440,7 +453,7 @@ describe(getAffectedPackages, () => {
 
 	it.for(["main", "HEAD", "HEAD~1", "HEAD^", "v1.2.3", "release/2026-05", "abc123def"])(
 		"should accept valid git ref %j",
-		(ref) => {
+		(ref, { expect }) => {
 			expect.assertions(1);
 
 			const childProcess = createRunner();
@@ -458,7 +471,9 @@ describe(getAffectedPackages, () => {
 		},
 	);
 
-	it("should throw a clear error directing users to --packages when neither tool is detected", () => {
+	it("should throw a clear error directing users to --packages when neither tool is detected", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const childProcess = createRunner();
@@ -476,13 +491,16 @@ describe(getAffectedPackages, () => {
 		}).toThrow(/--affected-since requires turbo or nx.*--packages/s);
 	});
 
-	it("should invoke cmd.exe directly with verbatim args on Windows (no shell:true to avoid DEP0190)", () => {
+	it("should invoke cmd.exe directly with verbatim args on Windows (no shell:true to avoid DEP0190)", ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(5);
 
 		const childProcess = createRunner();
 		const { fileSystem, volume } = createMemoryFileSystem();
 
-		stubPlatform("win32");
+		stubPlatform("win32", onTestFinished);
 
 		volume.fromJSON({
 			[path.join(ROOT, "turbo.json")]: "{}",
@@ -514,7 +532,10 @@ describe(getAffectedPackages, () => {
 	});
 
 	// cspell:words PATHEXT
-	it("should leave the command unquoted on Windows so npm-cli shim %~dp0 resolves correctly", () => {
+	it("should leave the command unquoted on Windows so npm-cli shim %~dp0 resolves correctly", ({
+		expect,
+		onTestFinished,
+	}) => {
 		// Regression: quoting the command (`"turbo"`) makes cmd.exe set %0 to
 		// the bare name when it resolves via PATHEXT, so the shim's %~dp0
 		// falls back to cwd and `node "%~dp0\..\turbo\bin\turbo"` loads a
@@ -522,26 +543,32 @@ describe(getAffectedPackages, () => {
 		// MODULE_NOT_FOUND. Command must stay unquoted; args stay quoted.
 		expect.assertions(1);
 
-		const args = windowsTurboArgs("main");
+		const args = windowsTurboArgs("main", onTestFinished);
 
 		expect(args![3]).toStartWith('"turbo "');
 	});
 
-	it("should preserve cmd metacharacters like ^ inside double-quoted args on Windows", () => {
+	it("should preserve cmd metacharacters like ^ inside double-quoted args on Windows", ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(1);
 
-		const args = windowsTurboArgs("HEAD^");
+		const args = windowsTurboArgs("HEAD^", onTestFinished);
 
 		expect(args![3]).toContain('"--filter=...[HEAD^]"');
 	});
 
-	it("should resolve nx from node_modules/.bin without a shell on POSIX", () => {
+	it("should resolve nx from node_modules/.bin without a shell on POSIX", ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(1);
 
 		const childProcess = createRunner();
 		const { fileSystem, volume } = createMemoryFileSystem();
 
-		stubPlatform("linux");
+		stubPlatform("linux", onTestFinished);
 
 		const shimPath = path.join(ROOT, "node_modules", ".bin", "nx");
 		volume.fromJSON({
@@ -563,13 +590,16 @@ describe(getAffectedPackages, () => {
 		);
 	});
 
-	it("should fall back to the bare command on POSIX when no local shim is present", () => {
+	it("should fall back to the bare command on POSIX when no local shim is present", ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(1);
 
 		const childProcess = createRunner();
 		const { fileSystem, volume } = createMemoryFileSystem();
 
-		stubPlatform("linux");
+		stubPlatform("linux", onTestFinished);
 
 		volume.fromJSON({
 			[path.join(ROOT, "nx.json")]: "{}",
@@ -589,13 +619,16 @@ describe(getAffectedPackages, () => {
 		);
 	});
 
-	it("should shell out to nx when nx.json is present and parse the project list", () => {
+	it("should shell out to nx when nx.json is present and parse the project list", ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(4);
 
 		const childProcess = createRunner();
 		const { fileSystem, volume } = createMemoryFileSystem();
 
-		stubPlatform("linux");
+		stubPlatform("linux", onTestFinished);
 
 		volume.fromJSON({
 			[path.join(ROOT, "nx.json")]: "{}",
@@ -632,7 +665,9 @@ describe(getAffectedPackages, () => {
 		);
 	});
 
-	it("should return an empty list when every affected package lacks a jest.config.*", () => {
+	it("should return an empty list when every affected package lacks a jest.config.*", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		expect(
@@ -646,7 +681,9 @@ describe(getAffectedPackages, () => {
 		).toStrictEqual([]);
 	});
 
-	it("should silently drop turbo entries that live outside our known workspace globs", () => {
+	it("should silently drop turbo entries that live outside our known workspace globs", ({
+		expect,
+	}) => {
 		// Real-world workspaces have packages turbo's discovery surfaces that
 		// pnpm-workspace.yaml globs don't match, e.g. nested workspaces,
 		// packages in directories not covered by the top-level patterns. Those
@@ -674,7 +711,10 @@ describe(getAffectedPackages, () => {
 		).toStrictEqual([packageInfoFor("@org/foo")]);
 	});
 
-	it("should resolve the nx project to its package.json name when the two diverge", () => {
+	it("should resolve the nx project to its package.json name when the two diverge", ({
+		expect,
+		onTestFinished,
+	}) => {
 		// Regression: nx project names live in a separate namespace from
 		// `package.json.name`. The returned PackageInfo must carry the
 		// `package.json` name. Downstream resolution matches against it, so
@@ -685,7 +725,7 @@ describe(getAffectedPackages, () => {
 		const childProcess = createRunner();
 		const { fileSystem, volume } = createMemoryFileSystem();
 
-		stubPlatform("linux");
+		stubPlatform("linux", onTestFinished);
 
 		volume.fromJSON({
 			[path.join(ROOT, "apps/foo/jest.config.ts")]: "export default {};",
@@ -702,7 +742,10 @@ describe(getAffectedPackages, () => {
 		).toStrictEqual([{ name: "@org/foo", packageDirectory: path.join(ROOT, "apps/foo") }]);
 	});
 
-	it("should fall back to the nx project name when the root has no package.json", () => {
+	it("should fall back to the nx project name when the root has no package.json", ({
+		expect,
+		onTestFinished,
+	}) => {
 		// An nx project can carry a jest.config without a package.json (e.g. a
 		// Luau-only project). With no `package.json#name` to read, the nx
 		// project name is the only identifier we have.
@@ -711,7 +754,7 @@ describe(getAffectedPackages, () => {
 		const childProcess = createRunner();
 		const { fileSystem, volume } = createMemoryFileSystem();
 
-		stubPlatform("linux");
+		stubPlatform("linux", onTestFinished);
 
 		volume.fromJSON({
 			[path.join(ROOT, "apps/foo/jest.config.ts")]: "export default {};",
@@ -727,13 +770,13 @@ describe(getAffectedPackages, () => {
 		).toStrictEqual([{ name: "foo", packageDirectory: path.join(ROOT, "apps/foo") }]);
 	});
 
-	it("should drop nx projects whose root has no jest.config.*", () => {
+	it("should drop nx projects whose root has no jest.config.*", ({ expect, onTestFinished }) => {
 		expect.assertions(1);
 
 		const childProcess = createRunner();
 		const { fileSystem, volume } = createMemoryFileSystem();
 
-		stubPlatform("linux");
+		stubPlatform("linux", onTestFinished);
 
 		volume.fromJSON({
 			[path.join(ROOT, "apps/plain/package.json")]: '{"name":"plain"}',
@@ -749,13 +792,16 @@ describe(getAffectedPackages, () => {
 		).toStrictEqual([]);
 	});
 
-	it("should throw when 'nx show project' output is missing root, mentioning the project name", () => {
+	it("should throw when 'nx show project' output is missing root, mentioning the project name", ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(2);
 
 		const childProcess = createRunner();
 		const { fileSystem, volume } = createMemoryFileSystem();
 
-		stubPlatform("linux");
+		stubPlatform("linux", onTestFinished);
 
 		volume.fromJSON({ [path.join(ROOT, "nx.json")]: "{}" });
 		mockNxResponses(childProcess, {
@@ -776,7 +822,10 @@ describe(getAffectedPackages, () => {
 		expect(act).toThrow(/root/);
 	});
 
-	it("should surface the project name when 'nx show project' fails", () => {
+	it("should surface the project name when 'nx show project' fails", ({
+		expect,
+		onTestFinished,
+	}) => {
 		// Loud failure on resolver drift, no silent under-coverage. nx
 		// reporting an affected project it can't subsequently locate is a
 		// real inconsistency the user needs to see.
@@ -785,7 +834,7 @@ describe(getAffectedPackages, () => {
 		const childProcess = createRunner();
 		const { fileSystem, volume } = createMemoryFileSystem();
 
-		stubPlatform("linux");
+		stubPlatform("linux", onTestFinished);
 
 		volume.fromJSON({ [path.join(ROOT, "nx.json")]: "{}" });
 		mockNxResponses(childProcess, {
@@ -803,7 +852,10 @@ describe(getAffectedPackages, () => {
 		}).toThrow(/nx show project "ghost"/);
 	});
 
-	it("should surface the project name when 'nx show project' returns non-JSON", () => {
+	it("should surface the project name when 'nx show project' returns non-JSON", ({
+		expect,
+		onTestFinished,
+	}) => {
 		// nx's own stderr already mentions the name on failure, but
 		// parseJson's error doesn't know about names. Wrap so the name is
 		// in the message regardless of failure mode.
@@ -812,7 +864,7 @@ describe(getAffectedPackages, () => {
 		const childProcess = createRunner();
 		const { fileSystem, volume } = createMemoryFileSystem();
 
-		stubPlatform("linux");
+		stubPlatform("linux", onTestFinished);
 
 		volume.fromJSON({ [path.join(ROOT, "nx.json")]: "{}" });
 		mockNxResponses(childProcess, {
@@ -840,13 +892,16 @@ describe(getAffectedPackages, () => {
 		expect(caught.cause.cause).toBeInstanceOf(SyntaxError);
 	});
 
-	it("should route per-project 'nx show project' calls through cmd.exe on Windows", () => {
+	it("should route per-project 'nx show project' calls through cmd.exe on Windows", ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(3);
 
 		const childProcess = createRunner();
 		const { fileSystem, volume } = createMemoryFileSystem();
 
-		stubPlatform("win32");
+		stubPlatform("win32", onTestFinished);
 
 		volume.fromJSON({
 			[path.join(ROOT, "apps/foo/jest.config.ts")]: "export default {};",
@@ -873,7 +928,7 @@ describe(getAffectedPackages, () => {
 		expect(perProjectArgs![3]).toBe('"nx "show" "project" "foo" "--json""');
 	});
 
-	it("should silently drop turbo items whose path no longer exists on disk", () => {
+	it("should silently drop turbo items whose path no longer exists on disk", ({ expect }) => {
 		// Stale turbo cache or a package deleted between turbo's view and ours
 		// would otherwise throw ENOENT from fs.readdirSync, breaking the
 		// silent-drop guarantee.
@@ -898,7 +953,9 @@ describe(getAffectedPackages, () => {
 		).toStrictEqual([packageInfoFor("@org/foo")]);
 	});
 
-	it("should short-circuit empty nx output without firing any 'nx show project' calls", () => {
+	it("should short-circuit empty nx output without firing any 'nx show project' calls", ({
+		expect,
+	}) => {
 		// Common CI case: nothing affected. Per-project resolution is wasted
 		// work when there's nothing to resolve.
 		expect.assertions(2);
@@ -918,7 +975,7 @@ describe(getAffectedPackages, () => {
 		);
 	});
 
-	it("should accept any jest.config.<ext> as the marker", () => {
+	it("should accept any jest.config.<ext> as the marker", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -932,7 +989,7 @@ describe(getAffectedPackages, () => {
 		).toStrictEqual([packageInfoFor("@org/foo")]);
 	});
 
-	it("should require the whole filename to be jest.config.<ext>", () => {
+	it("should require the whole filename to be jest.config.<ext>", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -947,7 +1004,7 @@ describe(getAffectedPackages, () => {
 		).toStrictEqual([]);
 	});
 
-	it("should drop affected packages that lack a jest.config.* marker", () => {
+	it("should drop affected packages that lack a jest.config.* marker", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(

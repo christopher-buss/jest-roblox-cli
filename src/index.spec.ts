@@ -1,9 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import * as entry from "./index.ts";
 
 describe("package root entry", () => {
-	it("should retain the supported runtime exports", () => {
+	it("should retain the supported runtime exports", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(Object.keys(entry).sort()).toStrictEqual(

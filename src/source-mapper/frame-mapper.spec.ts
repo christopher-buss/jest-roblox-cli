@@ -1,7 +1,7 @@
 import { fromAny } from "@total-typescript/shoehorn";
 
 import * as path from "node:path";
-import { assert, describe, expect, it, vi } from "vitest";
+import { assert, describe, it, vi } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { posixPath } from "#test/mocks/posix-path.ts";
@@ -51,7 +51,7 @@ function contextWith(parts: {
 }
 
 describe(createFrameMapper, () => {
-	it("should map an exact TypeScript source location with embedded content", () => {
+	it("should map an exact TypeScript source location with embedded content", ({ expect }) => {
 		expect.assertions(3);
 
 		const resolve = vi.fn<PathResolver["resolve"]>(() => {
@@ -100,7 +100,9 @@ describe(createFrameMapper, () => {
 		});
 	});
 
-	it("should read source from disk only when the source map has no embedded content", () => {
+	it("should read source from disk only when the source map has no embedded content", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const resolvedSourcePath = posixPath(path.resolve("out", "../src/example.ts"));
@@ -135,7 +137,9 @@ describe(createFrameMapper, () => {
 		});
 	});
 
-	it("should leave a frame with no TypeScript origin unmapped even beside a source map", () => {
+	it("should leave a frame with no TypeScript origin unmapped even beside a source map", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const mapper = createFrameMapper(
@@ -158,7 +162,9 @@ describe(createFrameMapper, () => {
 });
 
 describe(createLineMapper, () => {
-	it("should map a Luau line through the first mapping on that line of the compiled file", () => {
+	it("should map a Luau line through the first mapping on that line of the compiled file", ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const context = contextWith({
@@ -178,7 +184,7 @@ describe(createLineMapper, () => {
 		expect(context.v3Mapper.mapLineStart).toHaveBeenCalledWith("out/m.spec.luau", 10);
 	});
 
-	it("should keep the Luau line for a file with no TypeScript origin", () => {
+	it("should keep the Luau line for a file with no TypeScript origin", ({ expect }) => {
 		expect.assertions(1);
 
 		const mapLine = createLineMapper(
@@ -192,7 +198,7 @@ describe(createLineMapper, () => {
 		expect(mapLine("ReplicatedStorage.m.spec", 10)).toBe(10);
 	});
 
-	it("should return undefined when the path does not resolve", () => {
+	it("should return undefined when the path does not resolve", ({ expect }) => {
 		expect.assertions(1);
 
 		const mapLine = createLineMapper(
@@ -202,7 +208,7 @@ describe(createLineMapper, () => {
 		expect(mapLine("ReplicatedStorage.missing", 10)).toBeUndefined();
 	});
 
-	it("should return undefined when the source map has nothing on the line", () => {
+	it("should return undefined when the source map has nothing on the line", ({ expect }) => {
 		expect.assertions(1);
 
 		const mapLine = createLineMapper(

@@ -1,9 +1,11 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import { ExecutionTimeoutError } from "./execution-timeout.ts";
 
 describe(ExecutionTimeoutError, () => {
-	it("should preserve the original cause and recover through the supplied observer", async () => {
+	it("should preserve the original cause and recover through the supplied observer", async ({
+		expect,
+	}) => {
 		expect.assertions(4);
 
 		const cause = new Error("transport");

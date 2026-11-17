@@ -7,7 +7,7 @@ import type {
 } from "@isentinel/luau-ast/ast";
 import { fromAny } from "@total-typescript/shoehorn";
 
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { recordingAccumulator } from "#test/mocks/coverage-accumulator.ts";
 import { block, NO_IGNORES, span } from "#test/mocks/coverage-spec-luau-ast.ts";
@@ -39,7 +39,7 @@ function armAt(line: number): Arm {
 }
 
 describe(createBranchCollector, () => {
-	it("should collect short-circuit, expression-if, and statement-if arms", () => {
+	it("should collect short-circuit, expression-if, and statement-if arms", ({ expect }) => {
 		expect.assertions(2);
 
 		const accumulator = recordingAccumulator();
@@ -79,7 +79,7 @@ describe(createBranchCollector, () => {
 		]);
 	});
 
-	it("should fold an elseif expression chain into one branch", () => {
+	it("should fold an elseif expression chain into one branch", ({ expect }) => {
 		expect.assertions(2);
 
 		const accumulator = recordingAccumulator();
@@ -104,7 +104,7 @@ describe(createBranchCollector, () => {
 		).toStrictEqual([span(1), span(2), span(3)]);
 	});
 
-	it("should fold an elseif statement chain into one branch", () => {
+	it("should fold an elseif statement chain into one branch", ({ expect }) => {
 		expect.assertions(1);
 
 		const accumulator = recordingAccumulator();
@@ -120,7 +120,7 @@ describe(createBranchCollector, () => {
 		]);
 	});
 
-	it("should add a synthetic arm and probe for an if without else", () => {
+	it("should add a synthetic arm and probe for an if without else", ({ expect }) => {
 		expect.assertions(2);
 
 		const accumulator = recordingAccumulator();
@@ -134,7 +134,7 @@ describe(createBranchCollector, () => {
 		]);
 	});
 
-	it("should add no synthetic arm when the ignores drop the implicit else", () => {
+	it("should add no synthetic arm when the ignores drop the implicit else", ({ expect }) => {
 		expect.assertions(2);
 
 		const accumulator = recordingAccumulator();
@@ -151,7 +151,7 @@ describe(createBranchCollector, () => {
 		expect(accumulator.result().implicitElseProbes).toStrictEqual([]);
 	});
 
-	it("should record no branch when the ignores cover every arm", () => {
+	it("should record no branch when the ignores cover every arm", ({ expect }) => {
 		expect.assertions(1);
 
 		const accumulator = recordingAccumulator();
@@ -165,7 +165,7 @@ describe(createBranchCollector, () => {
 		expect(accumulator.result().branches).toStrictEqual([]);
 	});
 
-	it("should skip nodes the ignores cover", () => {
+	it("should skip nodes the ignores cover", ({ expect }) => {
 		expect.assertions(2);
 
 		const accumulator = recordingAccumulator();

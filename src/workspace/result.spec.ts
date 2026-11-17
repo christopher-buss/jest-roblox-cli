@@ -1,6 +1,6 @@
 import { fromPartial } from "@total-typescript/shoehorn";
 
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import { MANIFEST_VERSION } from "#test/mocks/run-constants.ts";
 import type { WorkspaceRunOptions } from "../config/resolved-config.ts";
@@ -78,7 +78,9 @@ function build({
 
 describe(buildWorkspaceResult, () => {
 	describe("coverage aggregation", () => {
-		it("should filter each package's coverage by its own globs against its rootDir", () => {
+		it("should filter each package's coverage by its own globs against its rootDir", ({
+			expect,
+		}) => {
 			expect.assertions(2);
 
 			const covered = { path: "/ws/packages/foo/src/a.ts" };
@@ -120,7 +122,9 @@ describe(buildWorkspaceResult, () => {
 			]);
 		});
 
-		it("should merge raw coverageData across same-pkg multi-project entries and skip pkgs without a manifest", () => {
+		it("should merge raw coverageData across same-pkg multi-project entries and skip pkgs without a manifest", ({
+			expect,
+		}) => {
 			expect.assertions(2);
 
 			const mapCoverage = vi.fn<CoverageMapper>(() => ({ files: {} }));
@@ -157,7 +161,7 @@ describe(buildWorkspaceResult, () => {
 			expect(mapCoverage.mock.calls[0]![0].coverageData["out/foo.luau"]!.s["1"]).toBe(7);
 		});
 
-		it("should name a package whose coverage data came back empty", () => {
+		it("should name a package whose coverage data came back empty", ({ expect }) => {
 			expect.assertions(1);
 
 			const result = build({
@@ -178,7 +182,7 @@ describe(buildWorkspaceResult, () => {
 			});
 		});
 
-		it("should join the notices of several packages one per line", () => {
+		it("should join the notices of several packages one per line", ({ expect }) => {
 			expect.assertions(1);
 
 			const result = build({
@@ -201,7 +205,7 @@ describe(buildWorkspaceResult, () => {
 			);
 		});
 
-		it("should carry no notice when every package mapped", () => {
+		it("should carry no notice when every package mapped", ({ expect }) => {
 			expect.assertions(1);
 
 			const result = build({
@@ -221,7 +225,7 @@ describe(buildWorkspaceResult, () => {
 			expect(result.coverage).not.toHaveProperty("notice");
 		});
 
-		it("should not map when no runtime results carry a coverage manifest", () => {
+		it("should not map when no runtime results carry a coverage manifest", ({ expect }) => {
 			expect.assertions(2);
 
 			const mapCoverage = vi.fn<CoverageMapper>();
@@ -240,7 +244,9 @@ describe(buildWorkspaceResult, () => {
 			expect(result.coverage).toBeUndefined();
 		});
 
-		it("should surface per-package coverage gates with each package's own threshold", () => {
+		it("should surface per-package coverage gates with each package's own threshold", ({
+			expect,
+		}) => {
 			expect.assertions(2);
 
 			const result = build({
@@ -296,7 +302,7 @@ describe(buildWorkspaceResult, () => {
 	});
 
 	describe("output settings", () => {
-		it("should carry the resolved output settings onto the result", () => {
+		it("should carry the resolved output settings onto the result", ({ expect }) => {
 			expect.assertions(2);
 
 			const result = build({
@@ -325,7 +331,7 @@ describe(buildWorkspaceResult, () => {
 			expect(result.projectResults[0]!.unit).toStrictEqual({ pkg: "a", project: "a" });
 		});
 
-		it("should keep each project's label color", () => {
+		it("should keep each project's label color", ({ expect }) => {
 			expect.assertions(1);
 
 			const result = build({

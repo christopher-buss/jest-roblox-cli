@@ -1,6 +1,6 @@
 import { Buffer } from "node:buffer";
 import * as path from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import type { FormatterEntry } from "../config/formatter-selection.ts";
@@ -53,7 +53,9 @@ function makeHarness(formatters: Array<FormatterEntry> = ["default"]) {
 }
 
 describe(withRunLogAsync, () => {
-	it("should write both streams to the log in the order they were written", async () => {
+	it("should write both streams to the log in the order they were written", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { options, readLog, streams } = makeHarness();
@@ -67,7 +69,7 @@ describe(withRunLogAsync, () => {
 		expect(readLog()).toBe("summary\nwarning\nfooter\n");
 	});
 
-	it("should close the log when the run ends", async () => {
+	it("should close the log when the run ends", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { options } = makeHarness();
@@ -77,7 +79,7 @@ describe(withRunLogAsync, () => {
 		expect(closeSync).toHaveBeenCalledOnce();
 	});
 
-	it("should log bytes as well as strings", async () => {
+	it("should log bytes as well as strings", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { options, readLog, streams } = makeHarness();
@@ -89,7 +91,7 @@ describe(withRunLogAsync, () => {
 		expect(readLog()).toBe("bytes\n");
 	});
 
-	it("should still write through to the streams", async () => {
+	it("should still write through to the streams", async ({ expect }) => {
 		expect.assertions(2);
 
 		const { options, streams } = makeHarness();
@@ -103,7 +105,7 @@ describe(withRunLogAsync, () => {
 		expect(streams.stderr.received).toStrictEqual(["warning\n"]);
 	});
 
-	it("should return what the run returned", async () => {
+	it("should return what the run returned", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { options } = makeHarness();
@@ -111,7 +113,7 @@ describe(withRunLogAsync, () => {
 		await expect(withRunLogAsync(options, async () => 1)).resolves.toBe(1);
 	});
 
-	it("should stop recording once the run ends", async () => {
+	it("should stop recording once the run ends", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { options, readLog, streams } = makeHarness();
@@ -124,7 +126,7 @@ describe(withRunLogAsync, () => {
 		expect(readLog()).toBe("inside\n");
 	});
 
-	it("should stop recording and rethrow when the run throws", async () => {
+	it("should stop recording and rethrow when the run throws", async ({ expect }) => {
 		expect.assertions(2);
 
 		const { options, readLog, streams } = makeHarness();
@@ -142,7 +144,7 @@ describe(withRunLogAsync, () => {
 		expect(readLog()).toBe("dying\n");
 	});
 
-	it("should overwrite the previous run's log", async () => {
+	it("should overwrite the previous run's log", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { options, readLog, streams } = makeHarness();
@@ -158,7 +160,7 @@ describe(withRunLogAsync, () => {
 		expect(readLog()).toBe("second\n");
 	});
 
-	it("should point the agent formatter at the log after the run", async () => {
+	it("should point the agent formatter at the log after the run", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { options, streams } = makeHarness(["agent"]);
@@ -170,7 +172,7 @@ describe(withRunLogAsync, () => {
 		expect(streams.stderr.received.at(-1)).toContain(runLogPath(ROOT));
 	});
 
-	it("should keep the hint out of the log", async () => {
+	it("should keep the hint out of the log", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { options, readLog, streams } = makeHarness(["agent"]);
@@ -182,7 +184,7 @@ describe(withRunLogAsync, () => {
 		expect(readLog()).toBe("summary\n");
 	});
 
-	it("should say nothing to a human formatter", async () => {
+	it("should say nothing to a human formatter", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { options, streams } = makeHarness(["default"]);
@@ -191,7 +193,7 @@ describe(withRunLogAsync, () => {
 		expect(streams.stderr.received).toStrictEqual([]);
 	});
 
-	it("should run without a log when the log cannot be opened", async () => {
+	it("should run without a log when the log cannot be opened", async ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem } = createMemoryFileSystem({ "/project/.jest-roblox": "a file" }, ROOT);
@@ -219,7 +221,9 @@ describe(withRunLogAsync, () => {
 });
 
 describe("withRunLogAsync with a run target", () => {
-	it("should move the log under the run's root and name it for the run's agent formatter", async () => {
+	it("should move the log under the run's root and name it for the run's agent formatter", async ({
+		expect,
+	}) => {
 		expect.assertions(3);
 
 		const { options, streams, volume } = makeHarness(["default"]);
@@ -250,25 +254,26 @@ describe("withRunLogAsync with a run target", () => {
 	it.for<{ formatters: Array<FormatterEntry>; verbose: boolean }>([
 		{ formatters: ["default"], verbose: false },
 		{ formatters: ["agent"], verbose: true },
-	])("should not name the log when the run does not render for an agent (%o)", async (target) => {
-		expect.assertions(1);
+	])(
+		"should not name the log when the run does not render for an agent (%o)",
+		async (target, { expect }) => {
+			expect.assertions(1);
 
-		const { options, streams } = makeHarness(["agent"]);
-		await withRunLogAsync(
-			{ ...options, runTarget: () => ({ ...target, rootDir: ROOT }) },
-			async () => 0,
-		);
+			const { options, streams } = makeHarness(["agent"]);
+			await withRunLogAsync(
+				{ ...options, runTarget: () => ({ ...target, rootDir: ROOT }) },
+				async () => 0,
+			);
 
-		expect(streams.stderr.received).toStrictEqual([]);
-	});
+			expect(streams.stderr.received).toStrictEqual([]);
+		},
+	);
 
-	it("should keep the log where it was written when it cannot move", async () => {
+	it("should keep the log where it was written when it cannot move", async ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem, options, streams, volume } = makeHarness(["default"]);
-		vi.spyOn(fileSystem, "renameSync").mockImplementation(() => {
-			throw new Error("EXDEV");
-		});
+		vi.spyOn(fileSystem, "renameSync").mockThrow(new Error("EXDEV"));
 		await withRunLogAsync(
 			{
 				...options,

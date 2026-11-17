@@ -6,7 +6,7 @@ import {
 	validQueueItemBody,
 } from "@bedrock-rbx/ocale/testing";
 
-import { assert, describe, expect, it } from "vitest";
+import { assert, describe, it } from "vitest";
 
 import { dequeueOrEmptyAsync } from "./work-queue-shared.ts";
 
@@ -25,7 +25,7 @@ async function dequeueAsync(http: FakeHttpClient): ReturnType<typeof dequeueOrEm
 }
 
 describe(dequeueOrEmptyAsync, () => {
-	it("should read the API's empty read as an empty success", async () => {
+	it("should read the API's empty read as an empty success", async ({ expect }) => {
 		expect.assertions(1);
 
 		const http = createFakeHttpClient();
@@ -45,7 +45,7 @@ describe(dequeueOrEmptyAsync, () => {
 		expect(read.data).toStrictEqual(EMPTY);
 	});
 
-	it("should keep a 404 that carries no canonical status a failure", async () => {
+	it("should keep a 404 that carries no canonical status a failure", async ({ expect }) => {
 		expect.assertions(1);
 
 		const http = createFakeHttpClient();
@@ -61,7 +61,7 @@ describe(dequeueOrEmptyAsync, () => {
 		expect(read.err.message).toContain("HTTP 404");
 	});
 
-	it("should pass a non-404 failure straight through", async () => {
+	it("should pass a non-404 failure straight through", async ({ expect }) => {
 		expect.assertions(1);
 
 		const http = createFakeHttpClient();
@@ -74,7 +74,7 @@ describe(dequeueOrEmptyAsync, () => {
 		expect(read.err.message).toContain("Forbidden");
 	});
 
-	it("should report a 200 carrying no item as the same empty read", async () => {
+	it("should report a 200 carrying no item as the same empty read", async ({ expect }) => {
 		expect.assertions(1);
 
 		const http = createFakeHttpClient();
@@ -90,7 +90,9 @@ describe(dequeueOrEmptyAsync, () => {
 		expect(read.data).toStrictEqual(EMPTY);
 	});
 
-	it("should refuse an all-or-nothing read, whose 404 does not mean empty", async () => {
+	it("should refuse an all-or-nothing read, whose 404 does not mean empty", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const http = createFakeHttpClient();
@@ -110,7 +112,9 @@ describe(dequeueOrEmptyAsync, () => {
 		expect(read.data).toStrictEqual(EMPTY);
 	});
 
-	it("should carry the items and their readId through on a non-empty read", async () => {
+	it("should carry the items and their readId through on a non-empty read", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const http = createFakeHttpClient();

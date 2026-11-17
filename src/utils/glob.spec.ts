@@ -1,5 +1,5 @@
 import process from "node:process";
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { createGlobCache, globSync, matchesGlobPattern } from "./glob.ts";
@@ -7,7 +7,7 @@ import { createGlobCache, globSync, matchesGlobPattern } from "./glob.ts";
 const CWD = "/project";
 
 describe(globSync, () => {
-	it("should return empty array for empty directory", () => {
+	it("should return empty array for empty directory", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -17,7 +17,7 @@ describe(globSync, () => {
 		expect(globSync("**/*.ts", { cwd: CWD, fileSystem })).toBeEmpty();
 	});
 
-	it("should match files with single wildcard pattern", () => {
+	it("should match files with single wildcard pattern", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -27,7 +27,7 @@ describe(globSync, () => {
 		expect(globSync("*.ts", { cwd: CWD, fileSystem })).toStrictEqual(["app.ts", "util.ts"]);
 	});
 
-	it("should match files recursively with double-star pattern", () => {
+	it("should match files recursively with double-star pattern", ({ expect }) => {
 		expect.assertions(3);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -42,7 +42,7 @@ describe(globSync, () => {
 		expect(result).not.toContain("src/util.js");
 	});
 
-	it("should skip node_modules directories", () => {
+	it("should skip node_modules directories", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -52,7 +52,7 @@ describe(globSync, () => {
 		expect(globSync("**/*.ts", { cwd: CWD, fileSystem })).toStrictEqual(["src/app.ts"]);
 	});
 
-	it("should skip dot directories", () => {
+	it("should skip dot directories", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -62,7 +62,7 @@ describe(globSync, () => {
 		expect(globSync("**/*.ts", { cwd: CWD, fileSystem })).toStrictEqual(["src/app.ts"]);
 	});
 
-	it("should match files directly in a prefixed doublestar directory", () => {
+	it("should match files directly in a prefixed doublestar directory", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -74,20 +74,18 @@ describe(globSync, () => {
 		]);
 	});
 
-	it("should handle permission errors gracefully", () => {
+	it("should handle permission errors gracefully", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
 
 		volume.fromJSON({ "app.ts": "" }, CWD);
-		vi.spyOn(fileSystem, "readdirSync").mockImplementation(() => {
-			throw new Error("EACCES: permission denied");
-		});
+		vi.spyOn(fileSystem, "readdirSync").mockThrow(new Error("EACCES: permission denied"));
 
 		expect(globSync("**/*.ts", { cwd: CWD, fileSystem })).toBeEmpty();
 	});
 
-	it("should default cwd to process.cwd() when not provided", () => {
+	it("should default cwd to process.cwd() when not provided", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -98,7 +96,7 @@ describe(globSync, () => {
 		expect(globSync("*", { fileSystem })).toStrictEqual(["index.ts"]);
 	});
 
-	it("should match root files through a leading ./ in the pattern", () => {
+	it("should match root files through a leading ./ in the pattern", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -110,7 +108,7 @@ describe(globSync, () => {
 		]);
 	});
 
-	it("should match dot-extension patterns correctly", () => {
+	it("should match dot-extension patterns correctly", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -122,7 +120,7 @@ describe(globSync, () => {
 });
 
 describe(matchesGlobPattern, () => {
-	it("should only remove a current-directory prefix at the start", () => {
+	it("should only remove a current-directory prefix at the start", ({ expect }) => {
 		expect.assertions(2);
 
 		expect(matchesGlobPattern("file.ts", "./file.ts")).toBeTrue();
@@ -131,7 +129,7 @@ describe(matchesGlobPattern, () => {
 });
 
 describe("walk caching", () => {
-	it("should walk once when a cache is shared across patterns", () => {
+	it("should walk once when a cache is shared across patterns", ({ expect }) => {
 		expect.assertions(3);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -151,7 +149,7 @@ describe("walk caching", () => {
 		expect(readdir).toHaveBeenCalledTimes(afterFirst);
 	});
 
-	it("should walk again for each call when no cache is given", () => {
+	it("should walk again for each call when no cache is given", ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -168,7 +166,7 @@ describe("walk caching", () => {
 		expect(readdir.mock.calls.length).toBeGreaterThan(afterFirst);
 	});
 
-	it("should key a shared cache by cwd", () => {
+	it("should key a shared cache by cwd", ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -181,7 +179,7 @@ describe("walk caching", () => {
 		expect(globSync("*.ts", { cache, cwd: "/two", fileSystem })).toStrictEqual(["b.ts"]);
 	});
 
-	it("should not let the first pattern narrow an undeclared shared cache", () => {
+	it("should not let the first pattern narrow an undeclared shared cache", ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -197,7 +195,7 @@ describe("walk caching", () => {
 		]);
 	});
 
-	it("should still walk once when a declared cache serves several patterns", () => {
+	it("should still walk once when a declared cache serves several patterns", ({ expect }) => {
 		expect.assertions(3);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -219,7 +217,9 @@ describe("walk caching", () => {
 		expect(readdir).toHaveBeenCalledTimes(afterFirst);
 	});
 
-	it("should serve a pattern the cache was not declared for without losing files", () => {
+	it("should serve a pattern the cache was not declared for without losing files", ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -238,7 +238,7 @@ describe("walk caching", () => {
 });
 
 describe("walk filtering", () => {
-	it("should not retain files no declared pattern can match", () => {
+	it("should not retain files no declared pattern can match", ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -254,7 +254,7 @@ describe("walk filtering", () => {
 		expect(cache.walks.get(CWD)).toStrictEqual(["pkg/package.json"]);
 	});
 
-	it("should retain everything when a declared pattern ends in a doublestar", () => {
+	it("should retain everything when a declared pattern ends in a doublestar", ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -266,7 +266,7 @@ describe("walk filtering", () => {
 		expect(cache.walks.get(CWD)).toStrictEqual(["out/bundle.js", "src/app.ts"]);
 	});
 
-	it("should retain the union across declared patterns", () => {
+	it("should retain the union across declared patterns", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -278,7 +278,7 @@ describe("walk filtering", () => {
 		expect(cache.walks.get(CWD)).toStrictEqual(["a.luau", "a.ts"]);
 	});
 
-	it("should filter an uncached call by its own trailing segment", () => {
+	it("should filter an uncached call by its own trailing segment", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -292,7 +292,7 @@ describe("walk filtering", () => {
 });
 
 describe("leaf derivation", () => {
-	it("should drop the filter when any declared pattern is unconstrained", () => {
+	it("should drop the filter when any declared pattern is unconstrained", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -306,7 +306,7 @@ describe("leaf derivation", () => {
 		expect(cache.walks.get(CWD)).toStrictEqual(["a.ts", "b.txt"]);
 	});
 
-	it("should not serve an unconstrained pattern from a declared cache", () => {
+	it("should not serve an unconstrained pattern from a declared cache", ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -323,7 +323,7 @@ describe("leaf derivation", () => {
 		]);
 	});
 
-	it("should treat a pattern with no separator as its own leaf", () => {
+	it("should treat a pattern with no separator as its own leaf", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -335,7 +335,7 @@ describe("leaf derivation", () => {
 });
 
 describe("doublestar expansion", () => {
-	it("should match any depth below a trailing doublestar", () => {
+	it("should match any depth below a trailing doublestar", ({ expect }) => {
 		expect.assertions(3);
 
 		expect(matchesGlobPattern("tools/a/b", "tools/**")).toBeTrue();
@@ -343,14 +343,14 @@ describe("doublestar expansion", () => {
 		expect(matchesGlobPattern("other/a/b", "tools/**")).toBeFalse();
 	});
 
-	it("should match any depth on both sides of an interior segment", () => {
+	it("should match any depth on both sides of an interior segment", ({ expect }) => {
 		expect.assertions(2);
 
 		expect(matchesGlobPattern("x/fixtures/y/z", "**/fixtures/**")).toBeTrue();
 		expect(matchesGlobPattern("x/other/y/z", "**/fixtures/**")).toBeFalse();
 	});
 
-	it("should keep a single star inside one segment", () => {
+	it("should keep a single star inside one segment", ({ expect }) => {
 		expect.assertions(2);
 
 		expect(matchesGlobPattern("tools/ab", "tools/*")).toBeTrue();

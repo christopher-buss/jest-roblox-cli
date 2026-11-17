@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import {
 	isCountValue,
@@ -11,19 +11,19 @@ import {
 } from "./option-parsers.ts";
 
 describe(parsePositiveInteger, () => {
-	it("should parse a positive integer", () => {
+	it("should parse a positive integer", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(parsePositiveInteger("port")("4000")).toBe(4000);
 	});
 
-	it("should accept 1, the smallest positive integer", () => {
+	it("should accept 1, the smallest positive integer", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(parsePositiveInteger("port")("1")).toBe(1);
 	});
 
-	it("should name the flag when the value is not one", () => {
+	it("should name the flag when the value is not one", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(() => parsePositiveInteger("port")("0")).toThrow(
@@ -33,7 +33,7 @@ describe(parsePositiveInteger, () => {
 });
 
 describe(parseBackend, () => {
-	it("should reject an unknown backend", () => {
+	it("should reject an unknown backend", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(() => parseBackend("nope")).toThrow('Invalid backend "nope"');
@@ -41,7 +41,7 @@ describe(parseBackend, () => {
 });
 
 describe(parseCoverageReporters, () => {
-	it("should keep known reporters", () => {
+	it("should keep known reporters", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(parseCoverageReporters(["text", "lcov"])).toStrictEqual(["text", "lcov"]);
@@ -49,13 +49,13 @@ describe(parseCoverageReporters, () => {
 });
 
 describe(parseFormatterNames, () => {
-	it("should keep known formatter names", () => {
+	it("should keep known formatter names", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(parseFormatterNames(["agent", "json"])).toStrictEqual(["agent", "json"]);
 	});
 
-	it("should name every unknown formatter", () => {
+	it("should name every unknown formatter", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(() => parseFormatterNames(["fancy", "json", "x"])).toThrow(
@@ -69,7 +69,7 @@ describe(isCountValue, () => {
 		["auto", true],
 		["3", true],
 		["src/a.spec.ts", false],
-	] as const)("should read %j as a count: %j", ([next, isCount]) => {
+	] as const)("should read %j as a count: %j", ([next, isCount], { expect }) => {
 		expect.assertions(1);
 
 		expect(isCountValue(next)).toBe(isCount);
@@ -77,7 +77,7 @@ describe(isCountValue, () => {
 });
 
 describe(parseParallel, () => {
-	it("should parse auto and counts", () => {
+	it("should parse auto and counts", ({ expect }) => {
 		expect.assertions(2);
 
 		expect(parseParallel("auto")).toBe("auto");
@@ -86,7 +86,7 @@ describe(parseParallel, () => {
 });
 
 describe(parseVmParallel, () => {
-	it("should parse auto and counts", () => {
+	it("should parse auto and counts", ({ expect }) => {
 		expect.assertions(2);
 
 		expect(parseVmParallel("auto")).toBe("auto");

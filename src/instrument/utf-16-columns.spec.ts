@@ -1,6 +1,6 @@
 import type { LuauSpan } from "@isentinel/luau-ast";
 
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import type { CollectorResult } from "./coverage-accumulator.ts";
 import { toUtf16Columns } from "./utf-16-columns.ts";
@@ -36,7 +36,7 @@ function branchResult(arm: BranchArm, branchType: string): CollectorResult<LuauS
 
 describe("utf16-columns", () => {
 	describe(toUtf16Columns, () => {
-		it("should leave the columns of an ASCII source alone", () => {
+		it("should leave the columns of an ASCII source alone", ({ expect }) => {
 			expect.assertions(1);
 
 			const result = statementResult(span({ beginColumn: 1, endColumn: 12 }));
@@ -49,7 +49,7 @@ describe("utf16-columns", () => {
 		// column 13, because U+221E is three bytes and one UTF-16 unit. The
 		// column math itself belongs to `indexSourceBytes` and is covered
 		// there; what these cases pin is which fields this file reaches.
-		it("should convert both columns of a statement span", () => {
+		it("should convert both columns of a statement span", ({ expect }) => {
 			expect.assertions(2);
 
 			const source = 'local a = "\u{221E}" 1\n';
@@ -63,7 +63,7 @@ describe("utf16-columns", () => {
 			expect<number>(location.endColumn).toBe(13);
 		});
 
-		it("should convert the body position of a function and of a branch arm", () => {
+		it("should convert the body position of a function and of a branch arm", ({ expect }) => {
 			expect.assertions(3);
 
 			const source = 'local f = function() return "\u{221E}", 1 end\n';
@@ -97,7 +97,7 @@ describe("utf16-columns", () => {
 
 		// `bodyFirstLine`/`bodyFirstColumn` of 0 is the "wrap probe, not point
 		// probe" sentinel. It names no position, so it must survive untouched.
-		it("should leave the wrap-probe sentinel at zero", () => {
+		it("should leave the wrap-probe sentinel at zero", ({ expect }) => {
 			expect.assertions(1);
 
 			const converted = toUtf16Columns(
@@ -115,7 +115,7 @@ describe("utf16-columns", () => {
 			expect<number>(converted.branches[0]!.arms[0]!.bodyFirstColumn).toBe(0);
 		});
 
-		it("should convert implicit-else probe and wrap positions", () => {
+		it("should convert implicit-else probe and wrap positions", ({ expect }) => {
 			expect.assertions(2);
 
 			const source = 'if x then return "\u{221E}" end\n';

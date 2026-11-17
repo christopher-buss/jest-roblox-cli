@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { posixRoot } from "#test/mocks/posix-path.ts";
 import { redirectPath } from "./path-redirect.ts";
@@ -11,7 +11,7 @@ describe(redirectPath, () => {
 		];
 	}
 
-	it("should rewrite a path inside a redirect into its target", () => {
+	it("should rewrite a path inside a redirect into its target", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(redirectPath("/repo/lib/shared/a.luau", redirects())).toBe(
@@ -19,13 +19,13 @@ describe(redirectPath, () => {
 		);
 	});
 
-	it("should land an exact match on the target directory itself", () => {
+	it("should land an exact match on the target directory itself", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(redirectPath("/repo/out", redirects())).toBe("/repo/.shadow/out");
 	});
 
-	it("should return undefined for a path outside every redirect", () => {
+	it("should return undefined for a path outside every redirect", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(redirectPath("/repo/out-tsc/a.luau", redirects())).toBeUndefined();

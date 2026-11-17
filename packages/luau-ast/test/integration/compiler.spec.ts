@@ -1,7 +1,7 @@
 import type { LuauCompileOptions } from "@isentinel/luau-ast/compiler";
 import { loadLuauCompiler } from "@isentinel/luau-ast/compiler";
 
-import { assert, describe, expect, it } from "vitest";
+import { assert, describe, it } from "vitest";
 
 function constantLocals(localCount: number): Array<string> {
 	return Array.from(
@@ -25,7 +25,7 @@ function keepAlive(localCount: number): Array<string> {
 }
 
 describe("compile", () => {
-	it("should report statistics for the main function frame", () => {
+	it("should report statistics for the main function frame", ({ expect }) => {
 		expect.assertions(1);
 
 		const compiler = loadLuauCompiler();
@@ -52,7 +52,7 @@ describe("compile", () => {
 		]);
 	});
 
-	it("should report every nested function frame in compiler order", () => {
+	it("should report every nested function frame in compiler order", ({ expect }) => {
 		expect.assertions(1);
 
 		const compiler = loadLuauCompiler();
@@ -84,7 +84,7 @@ describe("compile", () => {
 		]);
 	});
 
-	it("should stack nested-block locals and reuse sibling-block slots", () => {
+	it("should stack nested-block locals and reuse sibling-block slots", ({ expect }) => {
 		expect.assertions(1);
 
 		const compiler = loadLuauCompiler();
@@ -108,7 +108,7 @@ describe("compile", () => {
 		expect(result.frames.at(-1)!.peakLocals).toBe(170);
 	});
 
-	it("should free the slot of a local after its last use", () => {
+	it("should free the slot of a local after its last use", ({ expect }) => {
 		expect.assertions(1);
 
 		const compiler = loadLuauCompiler();
@@ -123,7 +123,7 @@ describe("compile", () => {
 		expect(result.frames.at(-1)!.peakLocals).toBe(1);
 	});
 
-	it("should count a loop variable toward the 200-local limit", () => {
+	it("should count a loop variable toward the 200-local limit", ({ expect }) => {
 		expect.assertions(2);
 
 		const compiler = loadLuauCompiler();
@@ -157,7 +157,7 @@ describe("compile", () => {
 		expect(overflowing.error.localName).toBe("index");
 	});
 
-	it("should elide constant locals at debug levels 1 and 2", () => {
+	it("should elide constant locals at debug levels 1 and 2", ({ expect }) => {
 		expect.assertions(2);
 
 		const compiler = loadLuauCompiler();
@@ -173,7 +173,7 @@ describe("compile", () => {
 		expect(debugOne.frames.at(-1)!.peakLocals).toBe(0);
 	});
 
-	it("should compile 200 locals with 54 call arguments and reject 55", () => {
+	it("should compile 200 locals with 54 call arguments and reject 55", ({ expect }) => {
 		expect.assertions(3);
 
 		const compiler = loadLuauCompiler();
@@ -209,7 +209,7 @@ describe("compile", () => {
 		expect(overflowing.error.localName).toBeUndefined();
 	});
 
-	it("should reject one closure that captures 201 upvalues", () => {
+	it("should reject one closure that captures 201 upvalues", ({ expect }) => {
 		expect.assertions(2);
 
 		const compiler = loadLuauCompiler();
@@ -247,7 +247,7 @@ describe("compile", () => {
 		expect(result.error.localName).toBe("inner50");
 	});
 
-	it("should preserve a compile error's message, location, and local name", () => {
+	it("should preserve a compile error's message, location, and local name", ({ expect }) => {
 		expect.assertions(1);
 
 		const compiler = loadLuauCompiler();
@@ -272,7 +272,7 @@ describe("compile", () => {
 		});
 	});
 
-	it("should report the local named by a repeat-until continue error", () => {
+	it("should report the local named by a repeat-until continue error", ({ expect }) => {
 		expect.assertions(2);
 
 		const compiler = loadLuauCompiler();
@@ -293,7 +293,7 @@ describe("compile", () => {
 		expect(result.error.localName).toBe("value");
 	});
 
-	it("should compile source that outgrows the initial wasm heap", () => {
+	it("should compile source that outgrows the initial wasm heap", ({ expect }) => {
 		expect.assertions(1);
 
 		const compiler = loadLuauCompiler();
@@ -306,7 +306,7 @@ describe("compile", () => {
 		expect(result.frames).toHaveLength(1);
 	});
 
-	it("should report a successful inline in the bytecode text when asked", () => {
+	it("should report a successful inline in the bytecode text when asked", ({ expect }) => {
 		expect.assertions(2);
 
 		const compiler = loadLuauCompiler();
@@ -329,7 +329,7 @@ describe("compile", () => {
 		expect(result.bytecodeText).toMatch(/^ *4: return double\(input\(\)\)$/m);
 	});
 
-	it("should omit the bytecode text by default", () => {
+	it("should omit the bytecode text by default", ({ expect }) => {
 		expect.assertions(1);
 
 		const compiler = loadLuauCompiler();
@@ -341,7 +341,7 @@ describe("compile", () => {
 		expect(result.bytecodeText).toBeUndefined();
 	});
 
-	it("should return the same compiler instance on repeat loads", () => {
+	it("should return the same compiler instance on repeat loads", ({ expect }) => {
 		expect.assertions(1);
 
 		const compiler = loadLuauCompiler();

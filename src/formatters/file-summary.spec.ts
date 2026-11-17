@@ -1,6 +1,6 @@
 import { fromAny } from "@total-typescript/shoehorn";
 
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { createTaggedStyles } from "#test/mocks/format-tagged-styles.ts";
 import type { JestResult, TestCaseResult, TestFileResult } from "../types/jest-result-types.ts";
@@ -36,7 +36,7 @@ function makeFile(overrides: Partial<TestFileResult>): TestFileResult {
 }
 
 describe(formatFileSummary, () => {
-	it("should render a collected file with no tests as passed", () => {
+	it("should render a collected file with no tests as passed", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -46,7 +46,7 @@ describe(formatFileSummary, () => {
 		);
 	});
 
-	it("should show an absolute test file path relative to the run root", () => {
+	it("should show an absolute test file path relative to the run root", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -60,7 +60,7 @@ describe(formatFileSummary, () => {
 		);
 	});
 
-	it("should render an all-pending file through the pending style", () => {
+	it("should render an all-pending file through the pending style", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -74,7 +74,7 @@ describe(formatFileSummary, () => {
 		);
 	});
 
-	it("should mark an abandoned project with the clock, not the cross", () => {
+	it("should mark an abandoned project with the clock, not the cross", ({ expect }) => {
 		expect.assertions(1);
 
 		const file = makeFile({
@@ -88,7 +88,7 @@ describe(formatFileSummary, () => {
 		);
 	});
 
-	it("should render failed groups and individual statuses on separate lines", () => {
+	it("should render failed groups and individual statuses on separate lines", ({ expect }) => {
 		expect.assertions(1);
 
 		const file = makeFile({
@@ -111,7 +111,9 @@ describe(formatFileSummary, () => {
 		).toMatchSnapshot();
 	});
 
-	it("should mark a describe group without failures as passed inside a failed file", () => {
+	it("should mark a describe group without failures as passed inside a failed file", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const file = makeFile({
@@ -127,7 +129,7 @@ describe(formatFileSummary, () => {
 		);
 	});
 
-	it("should mark a thrown file with the cross", () => {
+	it("should mark a thrown file with the cross", ({ expect }) => {
 		expect.assertions(1);
 
 		const file = makeFile({ failureMessage: "boom", testFilePath: "<exec-error>" });
@@ -137,7 +139,7 @@ describe(formatFileSummary, () => {
 		);
 	});
 
-	it("should omit the duration of a failed test that reports none", () => {
+	it("should omit the duration of a failed test that reports none", ({ expect }) => {
 		expect.assertions(1);
 
 		const file = makeFile({
@@ -150,7 +152,7 @@ describe(formatFileSummary, () => {
 		);
 	});
 
-	it("should render only passing tests in verbose passed-file output", () => {
+	it("should render only passing tests in verbose passed-file output", ({ expect }) => {
 		expect.assertions(1);
 
 		const file = makeFile({
@@ -171,7 +173,7 @@ describe(formatFileSummary, () => {
 		).toMatchSnapshot();
 	});
 
-	it("should omit durations when passed tests do not report one", () => {
+	it("should omit durations when passed tests do not report one", ({ expect }) => {
 		expect.assertions(1);
 
 		const file = makeFile({ numPassingTests: 1, testResults: [makeTest({})] });
@@ -181,7 +183,7 @@ describe(formatFileSummary, () => {
 		);
 	});
 
-	it("should omit durations from verbose test rows when they are not reported", () => {
+	it("should omit durations from verbose test rows when they are not reported", ({ expect }) => {
 		expect.assertions(1);
 
 		const file = makeFile({ numPassingTests: 1, testResults: [makeTest({})] });
@@ -200,7 +202,7 @@ describe(formatFileSummary, () => {
 });
 
 describe(computeProjectStats, () => {
-	it("should classify files and sum durations for tests that executed", () => {
+	it("should classify files and sum durations for tests that executed", ({ expect }) => {
 		expect.assertions(1);
 
 		const result: JestResult = fromAny({

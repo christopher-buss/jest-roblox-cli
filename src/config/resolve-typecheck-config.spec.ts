@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import type { ResolvedTypecheckConfig, TypecheckLayers } from "./resolve-typecheck-config.ts";
 import { resolveTypecheckConfig, toTypecheckCliOptions } from "./resolve-typecheck-config.ts";
@@ -50,7 +50,7 @@ const cases: Array<[TypecheckLayers, ResolvedTypecheckConfig]> = [
 ];
 
 describe(resolveTypecheckConfig, () => {
-	it.for(cases)("should merge layers (case %#)", ([layers, expected]) => {
+	it.for(cases)("should merge layers (case %#)", ([layers, expected], { expect }) => {
 		expect.assertions(1);
 
 		expect(resolveTypecheckConfig(layers)).toStrictEqual(expected);
@@ -58,7 +58,7 @@ describe(resolveTypecheckConfig, () => {
 });
 
 describe(toTypecheckCliOptions, () => {
-	it("should map each typecheck flag onto its config field", () => {
+	it("should map each typecheck flag onto its config field", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(

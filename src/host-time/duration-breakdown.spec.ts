@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import type { TimingResult } from "../types/timing-types.ts";
 import { buildDurationBreakdown } from "./duration-breakdown.ts";
@@ -15,7 +15,7 @@ const TIMING = {
 } satisfies TimingResult;
 
 describe(buildDurationBreakdown, () => {
-	it("should name the window's phases and take every outside phase from cli", () => {
+	it("should name the window's phases and take every outside phase from cli", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(

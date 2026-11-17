@@ -1,7 +1,7 @@
 import { Buffer } from "node:buffer";
 import * as path from "node:path";
 import process from "node:process";
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { atomicWrite } from "./atomic-write.ts";
@@ -103,7 +103,7 @@ function splitStamp(name: string | undefined): [string, string, string] {
 }
 
 describe(atomicWrite, () => {
-	it("should write contents to the target path", () => {
+	it("should write contents to the target path", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -113,7 +113,7 @@ describe(atomicWrite, () => {
 		expect(volume.readFileSync("/coverage/manifest.json", "utf-8")).toBe("hello");
 	});
 
-	it("should create missing parent directories before writing", () => {
+	it("should create missing parent directories before writing", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -127,7 +127,7 @@ describe(atomicWrite, () => {
 		expect(volume.existsSync("/nested/deep/coverage/manifest.json")).toBeTrue();
 	});
 
-	it("should accept Buffer contents", () => {
+	it("should accept Buffer contents", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -143,7 +143,7 @@ describe(atomicWrite, () => {
 		);
 	});
 
-	it("should land the write when the first rename attempts fail", () => {
+	it("should land the write when the first rename attempts fail", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -155,7 +155,7 @@ describe(atomicWrite, () => {
 		expect(volume.readFileSync("/coverage/manifest.json", "utf-8")).toBe("hello");
 	});
 
-	it("should replace an existing target on the last retry left", () => {
+	it("should replace an existing target on the last retry left", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -168,7 +168,9 @@ describe(atomicWrite, () => {
 		expect(volume.readFileSync("/coverage/manifest.json", "utf-8")).toBe("new");
 	});
 
-	it("should leave no file at the target path once the rename attempts are spent", () => {
+	it("should leave no file at the target path once the rename attempts are spent", ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -181,22 +183,22 @@ describe(atomicWrite, () => {
 		expect(volume.existsSync("/coverage/manifest.json")).toBeFalse();
 	});
 
-	it("should normalize a non-Error rename failure", () => {
+	it("should normalize a non-Error rename failure", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
 
-		vi.spyOn(fileSystem, "renameSync").mockImplementation(() => {
+		vi.spyOn(fileSystem, "renameSync").mockThrow(
 			// oxlint-disable-next-line typescript/only-throw-error -- exercises the non-Error normalization branch
-			throw "disk gone";
-		});
+			"disk gone",
+		);
 
 		expect(() => {
 			atomicWrite({ contents: "hello", fileSystem, targetPath: "/coverage/manifest.json" });
 		}).toThrow("disk gone");
 	});
 
-	it("should pause between rename attempts but not before the first", () => {
+	it("should pause between rename attempts but not before the first", ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -210,7 +212,7 @@ describe(atomicWrite, () => {
 		expect(waitSpy.mock.calls.map((call) => call[3])).toStrictEqual([2, 2]);
 	});
 
-	it("should name the temp file after this process and the write's own nonce", () => {
+	it("should name the temp file after this process and the write's own nonce", ({ expect }) => {
 		expect.assertions(3);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -229,7 +231,7 @@ describe(atomicWrite, () => {
 	// Two live writers on one target would otherwise share a temp pathname,
 	// and so would a writer handed a pid the operating system recycled from the
 	// owner whose stray the sweep is on its way to delete.
-	it("should give two writes to one target different temp names", () => {
+	it("should give two writes to one target different temp names", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -242,7 +244,9 @@ describe(atomicWrite, () => {
 		expect(names[0]).not.toBe(names[1]);
 	});
 
-	it("should delete a stray temp file left by a process that is no longer running", () => {
+	it("should delete a stray temp file left by a process that is no longer running", ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -256,7 +260,7 @@ describe(atomicWrite, () => {
 		expect(volume.readFileSync("/coverage/manifest.json", "utf-8")).toBe("hello");
 	});
 
-	it("should keep the temp file of a peer that is still running", () => {
+	it("should keep the temp file of a peer that is still running", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -271,7 +275,7 @@ describe(atomicWrite, () => {
 		);
 	});
 
-	it("should read no directory at all when the caller opts out of the sweep", () => {
+	it("should read no directory at all when the caller opts out of the sweep", ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -293,7 +297,7 @@ describe(atomicWrite, () => {
 		);
 	});
 
-	it("should keep a temp file whose owner refuses the liveness probe", () => {
+	it("should keep a temp file whose owner refuses the liveness probe", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -314,7 +318,7 @@ describe(atomicWrite, () => {
 	// stamp is read at a fixed offset, so an equal-length name is exactly the
 	// one a sweep that skipped the prefix check would read a valid stamp out of
 	// and delete.
-	it("should leave a sibling target's stray temp file alone", () => {
+	it("should leave a sibling target's stray temp file alone", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -329,7 +333,7 @@ describe(atomicWrite, () => {
 		);
 	});
 
-	it("should leave a sibling alone when more follows the nonce", () => {
+	it("should leave a sibling alone when more follows the nonce", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -344,7 +348,7 @@ describe(atomicWrite, () => {
 		);
 	});
 
-	it("should leave a sibling alone when the stamp opens with more than a pid", () => {
+	it("should leave a sibling alone when the stamp opens with more than a pid", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -362,7 +366,7 @@ describe(atomicWrite, () => {
 	// Only a writer from before the nonce existed leaves one, and that is the
 	// writer a recycled pid can put back behind this very name while the sweep
 	// runs. Whoever the pid names now, the file stays.
-	it("should leave a temp file carrying no nonce alone", () => {
+	it("should leave a temp file carrying no nonce alone", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -377,7 +381,7 @@ describe(atomicWrite, () => {
 		);
 	});
 
-	it("should publish even when a stray temp file cannot be deleted", () => {
+	it("should publish even when a stray temp file cannot be deleted", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -393,7 +397,7 @@ describe(atomicWrite, () => {
 		expect(volume.readFileSync("/coverage/manifest.json", "utf-8")).toBe("hello");
 	});
 
-	it("should keep sweeping past a stray temp file it cannot delete", () => {
+	it("should keep sweeping past a stray temp file it cannot delete", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -410,7 +414,7 @@ describe(atomicWrite, () => {
 		expect(volume.existsSync("/coverage/manifest.json.tmp.4243.a1b2c3d4")).toBeFalse();
 	});
 
-	it("should publish when the directory cannot be listed at all", () => {
+	it("should publish when the directory cannot be listed at all", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();

@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import type { OptionRow } from "#src/config/option-row.ts";
 import { OPTION_ROWS } from "#src/config/options.ts";
@@ -40,7 +40,7 @@ function beforeFirstDot(cell: string): string {
 }
 
 describe("rEADME option tables", () => {
-	it("should list every root config key", () => {
+	it("should list every root config key", ({ expect }) => {
 		expect.assertions(1);
 
 		const listed = firstCells(section("### Root config fields")).map(beforeFirstDot);
@@ -50,7 +50,7 @@ describe("rEADME option tables", () => {
 		);
 	});
 
-	it("should list every CLI flag", () => {
+	it("should list every CLI flag", ({ expect }) => {
 		expect.assertions(1);
 
 		const listed = firstCells(section("## CLI flags")).map((cell) => /--[\w-]+/.exec(cell)![0]);

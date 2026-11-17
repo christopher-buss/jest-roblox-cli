@@ -9,7 +9,7 @@ import type {
 import { formatPlaceMismatch, PLACE_MISMATCH } from "@isentinel/roblox-runner/testing";
 
 import * as path from "node:path";
-import { describe, expect, it, onTestFinished, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { NOOP_PROGRESS } from "#test/mocks/noop-progress.ts";
@@ -302,7 +302,7 @@ describe(OpenCloudBackend, () => {
 	it.for([
 		{ cause: "an uncertain create", failure: () => new Error("HTTP 500 unknown exception") },
 		{ cause: "a poll timeout", failure: pollTimeout },
-	])("should create one task per execution after $cause", async ({ failure }) => {
+	])("should create one task per execution after $cause", async ({ failure }, { expect }) => {
 		expect.assertions(2);
 
 		const stub = probeStub();
@@ -320,7 +320,7 @@ describe(OpenCloudBackend, () => {
 		expect(stub.executeCalls).toHaveLength(1);
 	});
 
-	it("should close the tests stage once every job has run", async () => {
+	it("should close the tests stage once every job has run", async ({ expect }) => {
 		expect.assertions(1);
 
 		const closed: Array<string> = [];
@@ -340,7 +340,7 @@ describe(OpenCloudBackend, () => {
 		expect(closed).toContain("tests");
 	});
 
-	it("should submit a Shared Place task with no submit budget", async () => {
+	it("should submit a Shared Place task with no submit budget", async ({ expect }) => {
 		expect.assertions(1);
 
 		const stub = probeStub();
@@ -352,7 +352,9 @@ describe(OpenCloudBackend, () => {
 		]);
 	});
 
-	it("should submit the boot probe without an idempotent retry or a submit budget", async () => {
+	it("should submit the boot probe without an idempotent retry or a submit budget", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const stub = probeStub();
@@ -371,7 +373,9 @@ describe(OpenCloudBackend, () => {
 	});
 
 	describe("bucketing", () => {
-		it("should default to a single executeScript carrying every job's config", async () => {
+		it("should default to a single executeScript carrying every job's config", async ({
+			expect,
+		}) => {
 			expect.assertions(4);
 
 			const stub = createRunnerStub();
@@ -411,7 +415,9 @@ describe(OpenCloudBackend, () => {
 			]);
 		});
 
-		it("should preserve snapshotFormat per job inside the bundled configs array", async () => {
+		it("should preserve snapshotFormat per job inside the bundled configs array", async ({
+			expect,
+		}) => {
 			expect.assertions(2);
 
 			const stub = createRunnerStub();
@@ -445,7 +451,7 @@ describe(OpenCloudBackend, () => {
 			expect(script).toContain('"escapeString":false');
 		});
 
-		it("should treat --parallel 1 identically to the default path", async () => {
+		it("should treat --parallel 1 identically to the default path", async ({ expect }) => {
 			expect.assertions(2);
 
 			const stub = createRunnerStub();
@@ -475,7 +481,10 @@ describe(OpenCloudBackend, () => {
 			expect(rawResults).toHaveLength(3);
 		});
 
-		it("should populate timing.executionMs on the BackendResult", async () => {
+		it("should populate timing.executionMs on the BackendResult", async ({
+			expect,
+			onTestFinished,
+		}) => {
 			expect.assertions(1);
 
 			const now = vi
@@ -498,7 +507,9 @@ describe(OpenCloudBackend, () => {
 			expect(timing).toStrictEqual({ executionMs: 45, uploadMs: 12 });
 		});
 
-		it("should fan --parallel 3 out to three executeScript calls, one bucket each", async () => {
+		it("should fan --parallel 3 out to three executeScript calls, one bucket each", async ({
+			expect,
+		}) => {
 			expect.assertions(3);
 
 			let bucketIndex = 0;
@@ -538,7 +549,9 @@ describe(OpenCloudBackend, () => {
 			]);
 		});
 
-		it("should round-robin 10 jobs into buckets of 4/3/3, each entry naming its job", async () => {
+		it("should round-robin 10 jobs into buckets of 4/3/3, each entry naming its job", async ({
+			expect,
+		}) => {
 			expect.assertions(5);
 
 			const bucketPatterns: Array<Array<string>> = [];
@@ -589,7 +602,9 @@ describe(OpenCloudBackend, () => {
 			]);
 		});
 
-		it("should reject the whole call when any parallel bucket fails first", async () => {
+		it("should reject the whole call when any parallel bucket fails first", async ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			const stub = createRunnerStub();
@@ -621,7 +636,9 @@ describe(OpenCloudBackend, () => {
 	});
 
 	describe("envelope parsing", () => {
-		it("should expose outputs[1] as the fallback gameOutput on each rawResult", async () => {
+		it("should expose outputs[1] as the fallback gameOutput on each rawResult", async ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			const fallback = JSON.stringify([
@@ -640,7 +657,7 @@ describe(OpenCloudBackend, () => {
 			expect(rawResults[0]!.fallbackGameOutput).toBe(fallback);
 		});
 
-		it("should throw when executeScript returns no outputs", async () => {
+		it("should throw when executeScript returns no outputs", async ({ expect }) => {
 			expect.assertions(1);
 
 			const stub = createRunnerStub();
@@ -653,7 +670,7 @@ describe(OpenCloudBackend, () => {
 			).rejects.toThrow(/No test results in output/);
 		});
 
-		it("should expose multi-entry rawResults with their job indices", async () => {
+		it("should expose multi-entry rawResults with their job indices", async ({ expect }) => {
 			expect.assertions(2);
 
 			const stub = createRunnerStub();
@@ -686,7 +703,9 @@ describe(OpenCloudBackend, () => {
 	});
 
 	describe("upload integration", () => {
-		it("should call runner.uploadPlaceAsync exactly once regardless of bucket count", async () => {
+		it("should call runner.uploadPlaceAsync exactly once regardless of bucket count", async ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			const stub = createRunnerStub();
@@ -708,7 +727,7 @@ describe(OpenCloudBackend, () => {
 			expect(stub.uploadCalls).toHaveLength(1);
 		});
 
-		it("should propagate upload errors from the runner", async () => {
+		it("should propagate upload errors from the runner", async ({ expect }) => {
 			expect.assertions(1);
 
 			const stub = createRunnerStub({
@@ -723,7 +742,9 @@ describe(OpenCloudBackend, () => {
 	});
 
 	describe("work-stealing", () => {
-		it("should fire N tasks all carrying the same scriptOverride and upload once", async () => {
+		it("should fire N tasks all carrying the same scriptOverride and upload once", async ({
+			expect,
+		}) => {
 			expect.assertions(3);
 
 			const taskPkgs = [
@@ -764,7 +785,9 @@ describe(OpenCloudBackend, () => {
 			expect(stub.uploadCalls).toHaveLength(1);
 		});
 
-		it("should not replenish a freed slot: single-wave fires exactly parallel tasks", async () => {
+		it("should not replenish a freed slot: single-wave fires exactly parallel tasks", async ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			// One task returns immediately while the other lingers. The shared
@@ -796,7 +819,7 @@ describe(OpenCloudBackend, () => {
 			expect(stub.executeCalls).toHaveLength(2);
 		});
 
-		it("should shard a workspace run across one task per bucket", async () => {
+		it("should shard a workspace run across one task per bucket", async ({ expect }) => {
 			expect.assertions(2);
 
 			// A workspace run knows every entry up front, so the factory can
@@ -826,7 +849,7 @@ describe(OpenCloudBackend, () => {
 			]);
 		});
 
-		it("should build the first script as the materializer for the jobs", async () => {
+		it("should build the first script as the materializer for the jobs", async ({ expect }) => {
 			expect.assertions(1);
 
 			const stub = createRunnerStub();
@@ -846,7 +869,9 @@ describe(OpenCloudBackend, () => {
 		// --bail stops the run on the first failing package, so the packages
 		// after it have no entry by design. Reporting them as bailed is what
 		// separates that from a task that broke and lost its results.
-		it("should preserve bail evidence when only one work-stealing task bails", async () => {
+		it("should preserve bail evidence when only one work-stealing task bails", async ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			const stub = createRunnerStub();
@@ -876,7 +901,9 @@ describe(OpenCloudBackend, () => {
 			});
 		});
 
-		it("should aggregate entries from all task envelopes by the job each names", async () => {
+		it("should aggregate entries from all task envelopes by the job each names", async ({
+			expect,
+		}) => {
 			expect.assertions(2);
 
 			const taskPkgs = [
@@ -912,7 +939,9 @@ describe(OpenCloudBackend, () => {
 			expect(rawResults.map((raw) => raw.jobIndex)).toStrictEqual([0, 2, 1, 3]);
 		});
 
-		it("should set up the queue with the run's credentials and base URL", async () => {
+		it("should set up the queue with the run's credentials and base URL", async ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			vi.stubEnv("JEST_ROBLOX_OPEN_CLOUD_BASE_URL", "http://127.0.0.1:4010/");
@@ -931,7 +960,9 @@ describe(OpenCloudBackend, () => {
 			});
 		});
 
-		it("should throw when work-stealing executeScript returns no outputs", async () => {
+		it("should throw when work-stealing executeScript returns no outputs", async ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			const stub = createRunnerStub();
@@ -953,7 +984,7 @@ describe(OpenCloudBackend, () => {
 });
 
 describe("construction", () => {
-	it("should construct an OpenCloudBackend from given credentials", () => {
+	it("should construct an OpenCloudBackend from given credentials", ({ expect }) => {
 		expect.assertions(1);
 
 		const backend = new OpenCloudBackend(credentials);
@@ -961,7 +992,9 @@ describe("construction", () => {
 		expect(backend).toBeInstanceOf(OpenCloudBackend);
 	});
 
-	it("should construct the default runner with JEST_ROBLOX_OCALE_MAX_RETRIES set", () => {
+	it("should construct the default runner with JEST_ROBLOX_OCALE_MAX_RETRIES set", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		vi.stubEnv("JEST_ROBLOX_OCALE_MAX_RETRIES", "8");
@@ -988,7 +1021,7 @@ describe("upload cache", () => {
 		return new Error("execute failed", { cause });
 	}
 
-	it("should clear a suspect cache without restarting dispatched tests", async () => {
+	it("should clear a suspect cache without restarting dispatched tests", async ({ expect }) => {
 		expect.assertions(4);
 
 		const fixture = cacheFixture();
@@ -1012,7 +1045,7 @@ describe("upload cache", () => {
 		await expect(runOnceAsync(fixture)).resolves.toBe(1);
 	});
 
-	it("should report cache lookup time separately from execution", async () => {
+	it("should report cache lookup time separately from execution", async ({ expect }) => {
 		expect.assertions(1);
 
 		const fixture = cacheFixture();
@@ -1038,7 +1071,7 @@ describe("upload cache", () => {
  * retried pinned: the first submission is already the right one.
  */
 describe("exact version submission", () => {
-	it("should pin the boot probe to the uploaded version", async () => {
+	it("should pin the boot probe to the uploaded version", async ({ expect }) => {
 		expect.assertions(2);
 
 		const stub = probeStub();
@@ -1053,7 +1086,9 @@ describe("exact version submission", () => {
 	});
 
 	/** A 5xx create may still have counted against the create limit. */
-	it("should not re-send a probe create that Open Cloud answered with a 5xx", async () => {
+	it("should not re-send a probe create that Open Cloud answered with a 5xx", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const stub = probeStub();
@@ -1063,7 +1098,7 @@ describe("exact version submission", () => {
 		expect(stub.probeCalls[0]!.isSubmitIdempotent).not.toBeTrue();
 	});
 
-	it("should pin every bucket to the uploaded version with no guard", async () => {
+	it("should pin every bucket to the uploaded version with no guard", async ({ expect }) => {
 		expect.assertions(2);
 
 		const stub = probeStub();
@@ -1088,7 +1123,7 @@ describe("exact version submission", () => {
 		expect(stub.executeCalls.some((call) => call.script.includes(PLACE_MISMATCH))).toBeFalse();
 	});
 
-	it("should pin work-stealing tasks and hand them the script as written", async () => {
+	it("should pin work-stealing tasks and hand them the script as written", async ({ expect }) => {
 		expect.assertions(2);
 
 		const stub = createRunnerStub({ uploadResult: { uploadMs: 12, versionNumber: 7 } });
@@ -1105,7 +1140,7 @@ describe("exact version submission", () => {
 		expect(stub.executeCalls[0]!.script).toContain('"queueId":"queue-1"');
 	});
 
-	it("should treat a version mismatch sentinel as a malformed result", async () => {
+	it("should treat a version mismatch sentinel as a malformed result", async ({ expect }) => {
 		expect.assertions(2);
 
 		const stub = probeStub();
@@ -1131,7 +1166,9 @@ function pollTimeout(): Error {
 
 describe("boot probe", () => {
 	/** A lost probe says nothing about the place. */
-	it("should send one more probe when the first is lost, then run the tests", async () => {
+	it("should send one more probe when the first is lost, then run the tests", async ({
+		expect,
+	}) => {
 		expect.assertions(4);
 
 		const stub = probeStub();
@@ -1158,7 +1195,9 @@ describe("boot probe", () => {
 	 * carries the proof. Re-probing would spend a boot on a question already
 	 * answered, on every run that reuses a version.
 	 */
-	it("should skip the probe and pin the tests to the version the upload cache reused", async () => {
+	it("should skip the probe and pin the tests to the version the upload cache reused", async ({
+		expect,
+	}) => {
 		expect.assertions(4);
 
 		const fixture = cacheFixture();
@@ -1177,7 +1216,7 @@ describe("boot probe", () => {
 	 * never settles. The probe has just disproved that for these bytes, so a
 	 * later timeout must not send the reader to Studio over it.
 	 */
-	it("should tell the runner the place boots once the probe has passed", async () => {
+	it("should tell the runner the place boots once the probe has passed", async ({ expect }) => {
 		expect.assertions(2);
 
 		const stub = probeStub();
@@ -1193,7 +1232,9 @@ describe("boot probe", () => {
 	 * A cache entry says the bytes booted when it was written, which is not
 	 * the same claim, so a reused version leaves the runner its own reading.
 	 */
-	it("should leave the runner to guess when the version came from the cache", async () => {
+	it("should leave the runner to guess when the version came from the cache", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const fixture = cacheFixture();
@@ -1214,7 +1255,7 @@ describe("boot probe", () => {
 	 * would be reported as one Roblox cannot start while its script ran: the
 	 * one verdict that has to be trustworthy.
 	 */
-	it("should give the probe its own budget, 90s by default", async () => {
+	it("should give the probe its own budget, 90s by default", async ({ expect }) => {
 		expect.assertions(3);
 
 		const stub = createRunnerStub();

@@ -1,7 +1,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { describe, expect, it, onTestFinished, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import { buildJestArgv, DEFAULT_CONFIG, OpenCloudBackend } from "#src/api.ts";
 import { startFakeOpenCloudServerAsync } from "#test/harness/fake-open-cloud.ts";
@@ -52,7 +52,10 @@ function localOnlyFetch(
 }
 
 describe(OpenCloudBackend, () => {
-	it("should run through the configured Open Cloud base URL", async () => {
+	it("should run through the configured Open Cloud base URL", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(3);
 
 		const server = await startFakeOpenCloudServerAsync([{ jestOutput: successJest() }]);

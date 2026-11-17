@@ -1,5 +1,5 @@
 import * as path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { makeResolvedProject } from "#test/mocks/spec-resolved-project.ts";
@@ -51,7 +51,7 @@ function syncWithoutMounts(): boolean {
 }
 
 describe("stub sync into the shadow", () => {
-	it("should preserve the shadow root when removing its last orphan stub", () => {
+	it("should preserve the shadow root when removing its last orphan stub", ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = createMemoryFileSystem({
@@ -69,7 +69,7 @@ describe("stub sync into the shadow", () => {
 		expect(volume.existsSync("/shadow/orphan")).toBeFalse();
 	});
 
-	it("should copy stub files from original dirs to shadow dir", () => {
+	it("should copy stub files from original dirs to shadow dir", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -90,7 +90,7 @@ describe("stub sync into the shadow", () => {
 		expect(volume.readFileSync("/shadow/out/client/jest.config.luau", "utf8")).toBe("-- stub");
 	});
 
-	it("should write no stub for a mount the place reads from source", () => {
+	it("should write no stub for a mount the place reads from source", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -107,7 +107,7 @@ describe("stub sync into the shadow", () => {
 		expect(volume.existsSync("/shadow/out/client/jest.config.luau")).toBeFalse();
 	});
 
-	it("should report no change for a mount the place reads from source", () => {
+	it("should report no change for a mount the place reads from source", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -124,7 +124,7 @@ describe("stub sync into the shadow", () => {
 		expect(hasChanged).toBeFalse();
 	});
 
-	it("should return true when stub is new", () => {
+	it("should return true when stub is new", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -145,7 +145,7 @@ describe("stub sync into the shadow", () => {
 		expect(hasChanged).toBeTrue();
 	});
 
-	it("should return true when stub content changed", () => {
+	it("should return true when stub content changed", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -168,7 +168,7 @@ describe("stub sync into the shadow", () => {
 		expect(hasChanged).toBeTrue();
 	});
 
-	it("should return false when stub content identical", () => {
+	it("should return false when stub content identical", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -191,7 +191,7 @@ describe("stub sync into the shadow", () => {
 		expect(hasChanged).toBeFalse();
 	});
 
-	it("should skip projects with empty rojoMounts", () => {
+	it("should skip projects with empty rojoMounts", ({ expect }) => {
 		expect.assertions(1);
 
 		const hasChanged = syncWithoutMounts();
@@ -199,7 +199,7 @@ describe("stub sync into the shadow", () => {
 		expect(hasChanged).toBeFalse();
 	});
 
-	it("should create directories in shadow dir as needed", () => {
+	it("should create directories in shadow dir as needed", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -227,7 +227,9 @@ describe("stub sync into the shadow", () => {
 		expect(volume.existsSync("/shadow/out/deep/nested/jest.config.luau")).toBeTrue();
 	});
 
-	it("should delete orphaned shadow stubs not in current projects and return true", () => {
+	it("should delete orphaned shadow stubs not in current projects and return true", ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -253,7 +255,7 @@ describe("stub sync into the shadow", () => {
 		expect(volume.existsSync("/shadow/out/removed/jest.config.luau")).toBeFalse();
 	});
 
-	it("should throw when mount fsPath is an absolute path", () => {
+	it("should throw when mount fsPath is an absolute path", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -274,7 +276,7 @@ describe("stub sync into the shadow", () => {
 		}).toThrow("mount fsPath must be relative");
 	});
 
-	it("should throw when mount fsPath escapes rootDirectory via parent segments", () => {
+	it("should throw when mount fsPath escapes rootDirectory via parent segments", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -295,7 +297,7 @@ describe("stub sync into the shadow", () => {
 		}).toThrow("mount fsPath escapes root directory");
 	});
 
-	it("should clean up empty parent directories after orphan removal", () => {
+	it("should clean up empty parent directories after orphan removal", ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -320,7 +322,7 @@ describe("stub sync into the shadow", () => {
 		expect(volume.existsSync("/shadow/out/removed")).toBeFalse();
 	});
 
-	it("should return false when no orphans and no changes", () => {
+	it("should return false when no orphans and no changes", ({ expect }) => {
 		expect.assertions(1);
 
 		// No stubs anywhere, no mounts tracked
@@ -329,7 +331,7 @@ describe("stub sync into the shadow", () => {
 		expect(hasChanged).toBeFalse();
 	});
 
-	it("should not remove parent when it still contains other files", () => {
+	it("should not remove parent when it still contains other files", ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -355,7 +357,7 @@ describe("stub sync into the shadow", () => {
 		expect(volume.existsSync("/shadow/out/mixed/other-file.txt")).toBeTrue();
 	});
 
-	it("should ignore non-config files in shadow directory", () => {
+	it("should ignore non-config files in shadow directory", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -376,7 +378,9 @@ describe("stub sync into the shadow", () => {
 		expect(hasChanged).toBeFalse();
 	});
 
-	it("should delete both generated config extensions without sweeping marker-bearing neighbors", () => {
+	it("should delete both generated config extensions without sweeping marker-bearing neighbors", ({
+		expect,
+	}) => {
 		expect.assertions(5);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -404,7 +408,7 @@ describe("stub sync into the shadow", () => {
 		expect(volume.existsSync("/shadow/user/jest.config.luau")).toBeTrue();
 	});
 
-	it("should skip project when source stub does not exist", () => {
+	it("should skip project when source stub does not exist", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -424,7 +428,7 @@ describe("stub sync into the shadow", () => {
 		expect(hasChanged).toBeFalse();
 	});
 
-	it("should copy stubs from every mount of a multi-mount project", () => {
+	it("should copy stubs from every mount of a multi-mount project", ({ expect }) => {
 		expect.assertions(3);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -460,7 +464,7 @@ describe("stub sync into the shadow", () => {
 		expect(volume.existsSync("/shadow/src/Shared/jest.config.luau")).toBeTrue();
 	});
 
-	it("should remove shadow stub when its mount is dropped between runs", () => {
+	it("should remove shadow stub when its mount is dropped between runs", ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -497,7 +501,7 @@ describe("stub sync into the shadow", () => {
 });
 
 describe(createStubBake, () => {
-	it("should only own marked files with a recognized stub name", () => {
+	it("should only own marked files with a recognized stub name", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -514,7 +518,7 @@ describe(createStubBake, () => {
 		]).toStrictEqual([false, false, true]);
 	});
 
-	it("should sync the cache stubs into the shadow when run", () => {
+	it("should sync the cache stubs into the shadow when run", ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = createMemoryFileSystem({
@@ -532,7 +536,7 @@ describe(createStubBake, () => {
 });
 
 describe("createStubBake stub mounts", () => {
-	it("should mount the cached stub of a mount the place reads from source", () => {
+	it("should mount the cached stub of a mount the place reads from source", ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -553,7 +557,7 @@ describe("createStubBake stub mounts", () => {
 		expect(bake.stubMounts(shadowAtRoot())).toStrictEqual([]);
 	});
 
-	it("should mount nothing for a mount with no cached stub", () => {
+	it("should mount nothing for a mount with no cached stub", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -568,7 +572,9 @@ describe("createStubBake stub mounts", () => {
 });
 
 describe("syncStubsToShadowDirectory preserves user-authored configs", () => {
-	it("should NOT delete a user-authored config from the shadow when the cache has no stub for that mount", () => {
+	it("should NOT delete a user-authored config from the shadow when the cache has no stub for that mount", ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -612,7 +618,9 @@ describe("syncStubsToShadowDirectory preserves user-authored configs", () => {
 		);
 	});
 
-	it("should write the stub over a mirrored user jest.config.lua so the shadow mount holds one config", () => {
+	it("should write the stub over a mirrored user jest.config.lua so the shadow mount holds one config", ({
+		expect,
+	}) => {
 		expect.assertions(3);
 
 		const { fileSystem, volume } = createMemoryFileSystem({
@@ -634,7 +642,9 @@ describe("syncStubsToShadowDirectory preserves user-authored configs", () => {
 		expect(volume.existsSync("/shadow/out/Shared/jest.config.luau")).toBeFalse();
 	});
 
-	it("should leave a stub baked over a user jest.config.lua in place on the next run", () => {
+	it("should leave a stub baked over a user jest.config.lua in place on the next run", ({
+		expect,
+	}) => {
 		expect.assertions(3);
 
 		const { fileSystem, volume } = createMemoryFileSystem({
@@ -669,7 +679,7 @@ describe("syncStubsToShadowDirectory preserves user-authored configs", () => {
 		},
 	])(
 		"should keep the stub in $expectedName when the shadow mount holds both names",
-		({ expectedName, legacy, sweptName }) => {
+		({ expectedName, legacy, sweptName }, { expect }) => {
 			expect.assertions(2);
 
 			const { fileSystem, volume } = createMemoryFileSystem({
@@ -695,7 +705,9 @@ describe("syncStubsToShadowDirectory preserves user-authored configs", () => {
 });
 
 describe("syncStubsToShadowDirectory demoted mounts", () => {
-	it("should bake into the directory the place mounts, not the mirror beside it", () => {
+	it("should bake into the directory the place mounts, not the mirror beside it", ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = createMemoryFileSystem();

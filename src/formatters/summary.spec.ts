@@ -1,7 +1,7 @@
 import { fromAny } from "@total-typescript/shoehorn";
 
 import { stripVTControlCharacters } from "node:util";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import {
 	EXEC_ERROR_RESULT,
@@ -73,7 +73,7 @@ function summarizeSnapshot(snapshot: SnapshotSummary): string {
 }
 
 describe(formatLogHints, () => {
-	it("should join every applicable hint in a stable order", () => {
+	it("should join every applicable hint in a stable order", ({ expect }) => {
 		expect.assertions(1);
 
 		const snapshot: SnapshotSummary = {
@@ -106,7 +106,7 @@ describe(formatLogHints, () => {
 		);
 	});
 
-	it("should omit the snapshot hint when no snapshots failed", () => {
+	it("should omit the snapshot hint when no snapshots failed", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -120,7 +120,7 @@ describe(formatLogHints, () => {
 });
 
 describe(formatTestSummary, () => {
-	it("should render exact snapshot, file, test, bail, and timing semantics", () => {
+	it("should render exact snapshot, file, test, bail, and timing semantics", ({ expect }) => {
 		expect.assertions(1);
 
 		const result: JestResult = fromAny({
@@ -167,7 +167,7 @@ describe(formatTestSummary, () => {
 });
 
 describe(formatRunHeader, () => {
-	it("should show the version and root directory", () => {
+	it("should show the version and root directory", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(formatRunHeader({ rootDir: "/repo", version: "1.0.0" }, createTaggedStyles())).toBe(
@@ -175,7 +175,7 @@ describe(formatRunHeader, () => {
 		);
 	});
 
-	it("should add the coverage subtitle when coverage is collected", () => {
+	it("should add the coverage subtitle when coverage is collected", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -188,7 +188,7 @@ describe(formatRunHeader, () => {
 });
 
 describe(formatTypeErrorsLine, () => {
-	it("should report no errors when typecheck found none", () => {
+	it("should report no errors when typecheck found none", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(formatTypeErrorsLine(0, createTaggedStyles())).toBe(
@@ -198,7 +198,7 @@ describe(formatTypeErrorsLine, () => {
 });
 
 describe(formatBailLine, () => {
-	it("should pluralize the reached package count", () => {
+	it("should pluralize the reached package count", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(formatBailLine({ notRun: 1, ran: 2 }, createTaggedStyles())).toBe(
@@ -208,7 +208,7 @@ describe(formatBailLine, () => {
 });
 
 describe(formatAffectedLine, () => {
-	it("should name the one related file", () => {
+	it("should name the one related file", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -219,7 +219,7 @@ describe(formatAffectedLine, () => {
 		).toBe("<dim>   Affected</dim>  1 of 3 test files <dim>(related to src/leaf.luau)</dim>");
 	});
 
-	it("should count several related files", () => {
+	it("should count several related files", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -230,7 +230,7 @@ describe(formatAffectedLine, () => {
 		).toBe("<dim>   Affected</dim>  2 of 5 test files <dim>(related to 2 files)</dim>");
 	});
 
-	it("should name the ref a --changed run selected since", () => {
+	it("should name the ref a --changed run selected since", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -241,7 +241,7 @@ describe(formatAffectedLine, () => {
 		).toBe("<dim>   Affected</dim>  1 of 3 test files <dim>(changed since HEAD)</dim>");
 	});
 
-	it("should count an empty list of related files", () => {
+	it("should count an empty list of related files", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -254,7 +254,7 @@ describe(formatAffectedLine, () => {
 });
 
 describe("formatTestSummary optional rows", () => {
-	it("should put the Affected row right after the Test Files row", () => {
+	it("should put the Affected row right after the Test Files row", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = formatTestSummary({
@@ -280,39 +280,42 @@ describe("formatTestSummary optional rows", () => {
 	it.for([
 		{ name: "absent", snapshot: undefined },
 		{ name: "idle", snapshot: { added: 0, matched: 0, total: 0, unmatched: 0, updated: 0 } },
-	])("should omit the snapshot rows when the snapshot summary is $name", ({ snapshot }) => {
-		expect.assertions(4);
+	])(
+		"should omit the snapshot rows when the snapshot summary is $name",
+		({ snapshot }, { expect }) => {
+			expect.assertions(4);
 
-		const output = formatTestSummary({
-			result: fromAny({
-				numFailedTests: 0,
-				numPassedTests: 1,
-				numPendingTests: 0,
-				numTotalTests: 1,
-				snapshot,
-				testResults: [makeFile({ numPassingTests: 1 })],
-			}),
-			styles: createTaggedStyles(),
-			timing: {
-				executionMs: 400,
-				stagingMs: 30,
-				startTime: 0,
-				testsMs: 100,
-				totalMs: 500,
-			},
-		});
+			const output = formatTestSummary({
+				result: fromAny({
+					numFailedTests: 0,
+					numPassedTests: 1,
+					numPendingTests: 0,
+					numTotalTests: 1,
+					snapshot,
+					testResults: [makeFile({ numPassingTests: 1 })],
+				}),
+				styles: createTaggedStyles(),
+				timing: {
+					executionMs: 400,
+					stagingMs: 30,
+					startTime: 0,
+					testsMs: 100,
+					totalMs: 500,
+				},
+			});
 
-		expect(output).not.toContain("Snapshot");
-		expect(output).not.toContain("Type Errors");
-		expect(output).not.toContain("Bailed");
-		expect(output).toContain(
-			"<dim>(environment 300ms, tests 100ms, cli 70ms, staging 30ms)</dim>",
-		);
-	});
+			expect(output).not.toContain("Snapshot");
+			expect(output).not.toContain("Type Errors");
+			expect(output).not.toContain("Bailed");
+			expect(output).toContain(
+				"<dim>(environment 300ms, tests 100ms, cli 70ms, staging 30ms)</dim>",
+			);
+		},
+	);
 });
 
 describe(formatTestSummary, () => {
-	it("should format all passing tests", () => {
+	it("should format all passing tests", ({ expect }) => {
 		expect.assertions(4);
 
 		const result: JestResult = {
@@ -345,7 +348,7 @@ describe(formatTestSummary, () => {
 		expect(summary).toContain("2500ms");
 	});
 
-	it("should format mixed results", () => {
+	it("should format mixed results", ({ expect }) => {
 		expect.assertions(5);
 
 		const result: JestResult = {
@@ -386,7 +389,7 @@ describe(formatTestSummary, () => {
 		expect(summary).toContain("(10)");
 	});
 
-	it("should order buckets failed-first like vitest", () => {
+	it("should order buckets failed-first like vitest", ({ expect }) => {
 		expect.assertions(2);
 
 		const summary = stripVTControlCharacters(
@@ -401,7 +404,7 @@ describe(formatTestSummary, () => {
 		expect(summary).toContain("      Tests  1 failed | 4 passed | 1 skipped (6)");
 	});
 
-	it("should count a file that collected no tests as passed", () => {
+	it("should count a file that collected no tests as passed", ({ expect }) => {
 		expect.assertions(2);
 
 		const summary = stripVTControlCharacters(
@@ -416,7 +419,7 @@ describe(formatTestSummary, () => {
 		expect(summary).not.toContain("skipped");
 	});
 
-	it("should hide snapshots line when no snapshot data", () => {
+	it("should hide snapshots line when no snapshot data", ({ expect }) => {
 		expect.assertions(1);
 
 		const result: JestResult = {
@@ -446,7 +449,7 @@ describe(formatTestSummary, () => {
 		expect(summary).not.toContain("Snapshots");
 	});
 
-	it("should hide snapshots line when no snapshot activity (all zeros)", () => {
+	it("should hide snapshots line when no snapshot activity (all zeros)", ({ expect }) => {
 		expect.assertions(1);
 
 		const summary = summarizeSnapshot({
@@ -460,7 +463,7 @@ describe(formatTestSummary, () => {
 		expect(summary).not.toContain("Snapshots");
 	});
 
-	it("should show snapshots line when all snapshots pass", () => {
+	it("should show snapshots line when all snapshots pass", ({ expect }) => {
 		expect.assertions(3);
 
 		const summary = summarizeSnapshot({
@@ -476,7 +479,7 @@ describe(formatTestSummary, () => {
 		expect(summary).toContain("(3)");
 	});
 
-	it("should show snapshots line above test files when snapshots fail", () => {
+	it("should show snapshots line above test files when snapshots fail", ({ expect }) => {
 		expect.assertions(4);
 
 		const result: JestResult = {
@@ -510,7 +513,7 @@ describe(formatTestSummary, () => {
 		expect(summary.indexOf("Snapshots")).toBeLessThan(summary.indexOf("Test Files"));
 	});
 
-	it("should show written count when snapshots are added", () => {
+	it("should show written count when snapshots are added", ({ expect }) => {
 		expect.assertions(2);
 
 		const summary = summarizeSnapshot({
@@ -525,7 +528,7 @@ describe(formatTestSummary, () => {
 		expect(summary).toMatch(/Snapshots.*2 passed/);
 	});
 
-	it("should show updated count when snapshots are updated", () => {
+	it("should show updated count when snapshots are updated", ({ expect }) => {
 		expect.assertions(2);
 
 		const summary = summarizeSnapshot({
@@ -540,7 +543,7 @@ describe(formatTestSummary, () => {
 		expect(summary).toMatch(/Snapshots.*1 passed/);
 	});
 
-	it("should report unchecked snapshot keys as the obsolete count", () => {
+	it("should report unchecked snapshot keys as the obsolete count", ({ expect }) => {
 		expect.assertions(1);
 
 		const summary = summarizeSnapshot({
@@ -555,7 +558,7 @@ describe(formatTestSummary, () => {
 		expect(summary).toMatch(/Snapshots.*2 obsolete/);
 	});
 
-	it("should not treat filesRemoved as obsolete (different unit)", () => {
+	it("should not treat filesRemoved as obsolete (different unit)", ({ expect }) => {
 		expect.assertions(2);
 
 		const summary = summarizeSnapshot({
@@ -572,7 +575,7 @@ describe(formatTestSummary, () => {
 		expect(summary).not.toContain("  Snapshots");
 	});
 
-	it("should show obsolete count even when total is zero", () => {
+	it("should show obsolete count even when total is zero", ({ expect }) => {
 		expect.assertions(3);
 
 		const summary = summarizeSnapshot({
@@ -589,7 +592,7 @@ describe(formatTestSummary, () => {
 		expect(summary).not.toMatch(/Snapshots.*passed/);
 	});
 
-	it("should render Snapshot Write line when persistence failures occur", () => {
+	it("should render Snapshot Write line when persistence failures occur", ({ expect }) => {
 		expect.assertions(2);
 
 		const result: JestResult = {
@@ -623,7 +626,9 @@ describe(formatTestSummary, () => {
 		expect(summary.indexOf("Snapshot Write")).toBeLessThan(summary.lastIndexOf("Snapshots"));
 	});
 
-	it("should order snapshot parts as failed, obsolete, updated, written, passed", () => {
+	it("should order snapshot parts as failed, obsolete, updated, written, passed", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const result: JestResult = {
@@ -662,7 +667,7 @@ describe(formatTestSummary, () => {
 		expect(snapshotLine).toMatch(/1 failed.*1 obsolete.*2 updated.*1 written.*2 passed.*\(6\)/);
 	});
 
-	it("should format test files count with pipe separator", () => {
+	it("should format test files count with pipe separator", ({ expect }) => {
 		expect.assertions(3);
 
 		const result: JestResult = {
@@ -703,7 +708,7 @@ describe(formatTestSummary, () => {
 });
 
 describe(formatRunHeader, () => {
-	it("should include coverage subtitle when collectCoverage is true", () => {
+	it("should include coverage subtitle when collectCoverage is true", ({ expect }) => {
 		expect.assertions(2);
 
 		const header = formatRunHeader(
@@ -715,7 +720,7 @@ describe(formatRunHeader, () => {
 		expect(header).toContain("istanbul");
 	});
 
-	it("should not include coverage subtitle when collectCoverage is false", () => {
+	it("should not include coverage subtitle when collectCoverage is false", ({ expect }) => {
 		expect.assertions(1);
 
 		const header = formatRunHeader(
@@ -726,7 +731,7 @@ describe(formatRunHeader, () => {
 		expect(header).not.toContain("Coverage enabled");
 	});
 
-	it("should not include coverage subtitle when collectCoverage is omitted", () => {
+	it("should not include coverage subtitle when collectCoverage is omitted", ({ expect }) => {
 		expect.assertions(1);
 
 		const header = formatRunHeader({ ...defaultOptions }, createPlainStyles());
@@ -736,7 +741,7 @@ describe(formatRunHeader, () => {
 });
 
 describe("formatTestSummary exec errors", () => {
-	it("should count exec-error files as failed, not skipped", () => {
+	it("should count exec-error files as failed, not skipped", ({ expect }) => {
 		expect.assertions(3);
 
 		const summary = formatTestSummary({
@@ -750,7 +755,7 @@ describe("formatTestSummary exec errors", () => {
 		expect(summary).toContain("(1)");
 	});
 
-	it("should count exec-error files alongside passing files", () => {
+	it("should count exec-error files alongside passing files", ({ expect }) => {
 		expect.assertions(3);
 
 		const summary = formatTestSummary({
@@ -766,7 +771,7 @@ describe("formatTestSummary exec errors", () => {
 });
 
 describe("formatTestSummary type errors line", () => {
-	it("should show 'no errors' when typeErrors is 0", () => {
+	it("should show 'no errors' when typeErrors is 0", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = formatTestSummary({
@@ -780,7 +785,7 @@ describe("formatTestSummary type errors line", () => {
 		expect(plain).toContain("Type Errors  no errors");
 	});
 
-	it("should show failed count when typeErrors > 0", () => {
+	it("should show failed count when typeErrors > 0", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = formatTestSummary({
@@ -794,7 +799,7 @@ describe("formatTestSummary type errors line", () => {
 		expect(plain).toContain("Type Errors  3 failed");
 	});
 
-	it("should omit type errors line when typeErrors is undefined", () => {
+	it("should omit type errors line when typeErrors is undefined", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = formatTestSummary({
@@ -809,7 +814,7 @@ describe("formatTestSummary type errors line", () => {
 });
 
 describe("formatTestSummary coverage timing", () => {
-	it("should show coverage bucket when coverageMs is provided", () => {
+	it("should show coverage bucket when coverageMs is provided", ({ expect }) => {
 		expect.assertions(2);
 
 		const summary = formatTestSummary({
@@ -823,7 +828,7 @@ describe("formatTestSummary coverage timing", () => {
 		expect(plain).toContain("Duration  3250ms");
 	});
 
-	it("should subtract coverageMs from cli bucket", () => {
+	it("should subtract coverageMs from cli bucket", ({ expect }) => {
 		expect.assertions(1);
 
 		const summary = formatTestSummary({
@@ -837,7 +842,7 @@ describe("formatTestSummary coverage timing", () => {
 		expect(plain).toContain("cli 50ms");
 	});
 
-	it("should omit coverage bucket when coverageMs is undefined", () => {
+	it("should omit coverage bucket when coverageMs is undefined", ({ expect }) => {
 		expect.assertions(1);
 
 		const summary = formatTestSummary({
@@ -850,7 +855,7 @@ describe("formatTestSummary coverage timing", () => {
 		expect(plain).not.toContain("coverage");
 	});
 
-	it("should omit coverage bucket when coverageMs is zero", () => {
+	it("should omit coverage bucket when coverageMs is zero", ({ expect }) => {
 		expect.assertions(1);
 
 		const summary = formatTestSummary({
@@ -865,7 +870,7 @@ describe("formatTestSummary coverage timing", () => {
 });
 
 describe("formatTestSummary staging timing", () => {
-	it("should show staging bucket when stagingMs is provided", () => {
+	it("should show staging bucket when stagingMs is provided", ({ expect }) => {
 		expect.assertions(2);
 
 		const summary = formatTestSummary({
@@ -879,7 +884,7 @@ describe("formatTestSummary staging timing", () => {
 		expect(plain).toContain("Duration  650ms");
 	});
 
-	it("should subtract stagingMs from the cli residual", () => {
+	it("should subtract stagingMs from the cli residual", ({ expect }) => {
 		expect.assertions(1);
 
 		// totalMs=650, uploadMs=50, executionMs=150, stagingMs=400 -> cli=50
@@ -893,7 +898,7 @@ describe("formatTestSummary staging timing", () => {
 		expect(plain).toContain("cli 50ms");
 	});
 
-	it("should omit staging bucket when stagingMs is zero", () => {
+	it("should omit staging bucket when stagingMs is zero", ({ expect }) => {
 		expect.assertions(1);
 
 		const summary = formatTestSummary({
@@ -908,7 +913,7 @@ describe("formatTestSummary staging timing", () => {
 });
 
 describe("formatTestSummary setup timing", () => {
-	it("should show setup bucket when setupMs is provided", () => {
+	it("should show setup bucket when setupMs is provided", ({ expect }) => {
 		expect.assertions(1);
 
 		const summary = formatTestSummary({
@@ -926,7 +931,7 @@ describe("formatTestSummary setup timing", () => {
 		expect(plain).toContain("setup 200ms");
 	});
 
-	it("should subtract setupMs from environment bucket", () => {
+	it("should subtract setupMs from environment bucket", ({ expect }) => {
 		expect.assertions(1);
 
 		// executionMs=500, testsMs=100, setupMs=200 → environment=200
@@ -945,7 +950,7 @@ describe("formatTestSummary setup timing", () => {
 		expect(plain).toContain("environment 200ms");
 	});
 
-	it("should clamp environment to zero when setupMs exceeds available time", () => {
+	it("should clamp environment to zero when setupMs exceeds available time", ({ expect }) => {
 		expect.assertions(1);
 
 		// executionMs=150, testsMs=100, setupMs=200 → would be -150, clamp to 0
@@ -962,7 +967,7 @@ describe("formatTestSummary setup timing", () => {
 		expect(plain).toContain("environment 0ms");
 	});
 
-	it("should omit setup bucket when setupMs is undefined", () => {
+	it("should omit setup bucket when setupMs is undefined", ({ expect }) => {
 		expect.assertions(1);
 
 		const summary = formatTestSummary({
@@ -975,7 +980,7 @@ describe("formatTestSummary setup timing", () => {
 		expect(plain).not.toContain("setup");
 	});
 
-	it("should omit setup bucket when setupMs is zero", () => {
+	it("should omit setup bucket when setupMs is zero", ({ expect }) => {
 		expect.assertions(1);
 
 		const summary = formatTestSummary({
@@ -990,7 +995,7 @@ describe("formatTestSummary setup timing", () => {
 });
 
 describe("formatResult timeouts", () => {
-	it("should still count the run as failed", () => {
+	it("should still count the run as failed", ({ expect }) => {
 		expect.assertions(2);
 
 		const summary = formatTestSummary({

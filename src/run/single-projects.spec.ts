@@ -2,7 +2,7 @@ import type { RojoTreeNode } from "@isentinel/rojo-utils";
 import { fromAny } from "@total-typescript/shoehorn";
 
 import * as path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { fakeTimingCollector, phaseNamesOf } from "#test/mocks/fake-timing-collector.ts";
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
@@ -16,7 +16,7 @@ const tree: RojoTreeNode = fromAny({
 });
 
 describe(resolveRunProjectsAsync, () => {
-	it("should time the Rojo tree load of the implicit project", async () => {
+	it("should time the Rojo tree load of the implicit project", async ({ expect }) => {
 		expect.assertions(1);
 
 		const timing = fakeTimingCollector();
@@ -56,13 +56,13 @@ describe(readRunRojoTree, () => {
 		});
 	}
 
-	it("should read the Rojo tree of a run with runtime tests", () => {
+	it("should read the Rojo tree of a run with runtime tests", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(readWith(false)).toMatchObject({ $className: "DataModel" });
 	});
 
-	it("should read no Rojo tree on a typecheck-only run", () => {
+	it("should read no Rojo tree on a typecheck-only run", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(readWith(true)).toBeUndefined();

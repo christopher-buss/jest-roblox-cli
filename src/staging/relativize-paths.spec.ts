@@ -1,6 +1,6 @@
 import { type } from "arktype";
 import * as path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { relativizeProjectPaths } from "./relativize-paths.ts";
 
@@ -20,7 +20,7 @@ function parse(json: string): typeof projectSchema.infer {
 }
 
 describe(relativizeProjectPaths, () => {
-	it("should express an absolute $path relative to the project directory", () => {
+	it("should express an absolute $path relative to the project directory", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = parse(
@@ -30,7 +30,9 @@ describe(relativizeProjectPaths, () => {
 		expect(result.tree).toStrictEqual({ $path: "../../out/client" });
 	});
 
-	it("should express the inner path of an optional $path relative to the project directory", () => {
+	it("should express the inner path of an optional $path relative to the project directory", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const result = parse(
@@ -43,7 +45,7 @@ describe(relativizeProjectPaths, () => {
 		expect(result.tree).toStrictEqual({ $path: { optional: "../../out/client" } });
 	});
 
-	it("should leave an attribute named optional as written", () => {
+	it("should leave an attribute named optional as written", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = parse(
@@ -56,7 +58,7 @@ describe(relativizeProjectPaths, () => {
 		expect(result.tree).toStrictEqual({ $attributes: { optional: OUT_DIR } });
 	});
 
-	it("should rewrite $path entries at every depth", () => {
+	it("should rewrite $path entries at every depth", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = parse(
@@ -81,7 +83,7 @@ describe(relativizeProjectPaths, () => {
 		});
 	});
 
-	it("should leave a $path that is already relative alone", () => {
+	it("should leave a $path that is already relative alone", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = parse(
@@ -91,7 +93,7 @@ describe(relativizeProjectPaths, () => {
 		expect(result.tree).toStrictEqual({ $path: "src" });
 	});
 
-	it("should leave a non-string $path alone", () => {
+	it("should leave a non-string $path alone", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = parse(
@@ -101,7 +103,9 @@ describe(relativizeProjectPaths, () => {
 		expect(result.tree).toStrictEqual({ $path: 42 });
 	});
 
-	it("should express an absolute globIgnorePaths entry relative to the project directory", () => {
+	it("should express an absolute globIgnorePaths entry relative to the project directory", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const result = parse(
@@ -119,7 +123,7 @@ describe(relativizeProjectPaths, () => {
 		]);
 	});
 
-	it("should carry non-path fields through untouched", () => {
+	it("should carry non-path fields through untouched", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = parse(
@@ -146,7 +150,7 @@ describe(relativizeProjectPaths, () => {
 		});
 	});
 
-	it("should leave a globIgnorePaths below the project root alone", () => {
+	it("should leave a globIgnorePaths below the project root alone", ({ expect }) => {
 		expect.assertions(1);
 
 		const tree = { $attributes: { globIgnorePaths: [OUT_DIR] } };
@@ -156,7 +160,7 @@ describe(relativizeProjectPaths, () => {
 		expect(result.tree).toStrictEqual(tree);
 	});
 
-	it("should carry a null member through untouched", () => {
+	it("should carry a null member through untouched", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = parse(

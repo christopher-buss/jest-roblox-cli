@@ -1,11 +1,11 @@
 import { stripVTControlCharacters } from "node:util";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { createTaggedStyles } from "#test/mocks/format-tagged-styles.ts";
 import { formatBanner, formatBannerBar } from "./banner.ts";
 
 describe(formatBannerBar, () => {
-	it("should paint an error bar with the fail badge and fail separators", () => {
+	it("should paint an error bar with the fail badge and fail separators", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = formatBannerBar({
@@ -18,7 +18,7 @@ describe(formatBannerBar, () => {
 		expect(result).toBe("<fail>⎯⎯</fail><failBadge> E </failBadge><fail>⎯⎯⎯</fail>");
 	});
 
-	it("should paint a warn bar with the timeout badge and pending separators", () => {
+	it("should paint a warn bar with the timeout badge and pending separators", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = formatBannerBar({
@@ -33,7 +33,7 @@ describe(formatBannerBar, () => {
 		);
 	});
 
-	it("should contain the title text", () => {
+	it("should contain the title text", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = formatBannerBar({ level: "warn", termWidth: 80, title: "Test Title" });
@@ -41,7 +41,7 @@ describe(formatBannerBar, () => {
 		expect(result).toContain("Test Title");
 	});
 
-	it("should pad with separator characters to fill terminal width", () => {
+	it("should pad with separator characters to fill terminal width", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = formatBannerBar({ level: "warn", termWidth: 40, title: "Hi" });
@@ -51,7 +51,7 @@ describe(formatBannerBar, () => {
 		expect(stripVTControlCharacters(result)).toHaveLength(40);
 	});
 
-	it("should use error styling for error level", () => {
+	it("should use error styling for error level", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = formatBannerBar({ level: "error", termWidth: 40, title: "Error" });
@@ -59,7 +59,7 @@ describe(formatBannerBar, () => {
 		expect(result).toContain("Error");
 	});
 
-	it("should use warn styling for warn level", () => {
+	it("should use warn styling for warn level", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = formatBannerBar({ level: "warn", termWidth: 40, title: "Warning" });
@@ -67,7 +67,7 @@ describe(formatBannerBar, () => {
 		expect(result).toContain("Warning");
 	});
 
-	it("should handle title wider than terminal gracefully", () => {
+	it("should handle title wider than terminal gracefully", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = formatBannerBar({
@@ -79,7 +79,7 @@ describe(formatBannerBar, () => {
 		expect(result).toContain("A Very Long Title That Exceeds Width");
 	});
 
-	it("should default termWidth when not provided", () => {
+	it("should default termWidth when not provided", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = formatBannerBar({ level: "warn", title: "Test" });
@@ -89,7 +89,7 @@ describe(formatBannerBar, () => {
 });
 
 describe(formatBanner, () => {
-	it("should include the title in the header bar", () => {
+	it("should include the title in the header bar", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = formatBanner({
@@ -102,7 +102,7 @@ describe(formatBanner, () => {
 		expect(result).toContain("Snapshot Warning");
 	});
 
-	it("should include all body lines", () => {
+	it("should include all body lines", ({ expect }) => {
 		expect.assertions(2);
 
 		const result = formatBanner({
@@ -116,7 +116,7 @@ describe(formatBanner, () => {
 		expect(result).toContain("Line two");
 	});
 
-	it("should include a closing separator bar", () => {
+	it("should include a closing separator bar", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = formatBanner({
@@ -133,7 +133,7 @@ describe(formatBanner, () => {
 		expect(stripVTControlCharacters(closingLine!)).not.toContain("Test");
 	});
 
-	it("should handle empty body", () => {
+	it("should handle empty body", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = formatBanner({
@@ -148,7 +148,7 @@ describe(formatBanner, () => {
 		);
 	});
 
-	it("should default termWidth when not provided", () => {
+	it("should default termWidth when not provided", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = formatBanner({
@@ -160,7 +160,7 @@ describe(formatBanner, () => {
 		expect(result).toContain("Test");
 	});
 
-	it("should wrap output with leading and trailing newlines", () => {
+	it("should wrap output with leading and trailing newlines", ({ expect }) => {
 		expect.assertions(2);
 
 		const result = formatBanner({
@@ -176,7 +176,7 @@ describe(formatBanner, () => {
 });
 
 describe("snapshots", () => {
-	it("should match snapshot for warn banner", () => {
+	it("should match snapshot for warn banner", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = formatBanner({
@@ -192,7 +192,7 @@ describe("snapshots", () => {
 		expect(stripVTControlCharacters(result)).toMatchSnapshot();
 	});
 
-	it("should match snapshot for error banner", () => {
+	it("should match snapshot for error banner", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = formatBanner({
@@ -205,7 +205,7 @@ describe("snapshots", () => {
 		expect(stripVTControlCharacters(result)).toMatchSnapshot();
 	});
 
-	it("should match snapshot for banner bar only", () => {
+	it("should match snapshot for banner bar only", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = formatBannerBar({ level: "warn", termWidth: 80, title: "Snapshot Warning" });

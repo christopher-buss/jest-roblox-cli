@@ -1,9 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { normalizeRawCoverage, parseCoverageEnvelope } from "./raw-coverage.ts";
 
 describe(normalizeRawCoverage, () => {
-	it("should return undefined for a non-object input", () => {
+	it("should return undefined for a non-object input", ({ expect }) => {
 		expect.assertions(3);
 
 		expect(normalizeRawCoverage(undefined)).toBeUndefined();
@@ -11,7 +11,7 @@ describe(normalizeRawCoverage, () => {
 		expect(normalizeRawCoverage(42)).toBeUndefined();
 	});
 
-	it("should convert Luau 1-based statement arrays to string-keyed records", () => {
+	it("should convert Luau 1-based statement arrays to string-keyed records", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = normalizeRawCoverage({ "out/init.luau": { s: [3, 0, 5] } });
@@ -19,7 +19,7 @@ describe(normalizeRawCoverage, () => {
 		expect(result).toStrictEqual({ "out/init.luau": { s: { "1": 3, "2": 0, "3": 5 } } });
 	});
 
-	it("should normalize function and nested branch counters", () => {
+	it("should normalize function and nested branch counters", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = normalizeRawCoverage({
@@ -35,7 +35,7 @@ describe(normalizeRawCoverage, () => {
 		});
 	});
 
-	it("should keep the fileKey verbatim; it is the cross-machine join key", () => {
+	it("should keep the fileKey verbatim; it is the cross-machine join key", ({ expect }) => {
 		expect.assertions(1);
 
 		const key = "data-package/src/init.luau";
@@ -44,7 +44,7 @@ describe(normalizeRawCoverage, () => {
 		expect(Object.keys(result!)).toStrictEqual([key]);
 	});
 
-	it("should skip entries that carry no statement map", () => {
+	it("should skip entries that carry no statement map", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = normalizeRawCoverage({ "out/a.luau": { f: [1] }, "out/b.luau": { s: [1] } });
@@ -52,7 +52,7 @@ describe(normalizeRawCoverage, () => {
 		expect(result).toStrictEqual({ "out/b.luau": { s: { "1": 1 } } });
 	});
 
-	it("should skip entries that are arrays rather than counter tables", () => {
+	it("should skip entries that are arrays rather than counter tables", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = normalizeRawCoverage({ "out/a.luau": [1, 2], "out/b.luau": { s: [1] } });
@@ -60,7 +60,7 @@ describe(normalizeRawCoverage, () => {
 		expect(result).toStrictEqual({ "out/b.luau": { s: { "1": 1 } } });
 	});
 
-	it("should return undefined for a table that serialized as a JSON array", () => {
+	it("should return undefined for a table that serialized as a JSON array", ({ expect }) => {
 		expect.assertions(2);
 
 		// An empty Luau table encodes as `[]`; anything array-shaped is keyed by
@@ -69,13 +69,15 @@ describe(normalizeRawCoverage, () => {
 		expect(normalizeRawCoverage([{ s: [1] }])).toBeUndefined();
 	});
 
-	it("should return undefined when no file carries coverage", () => {
+	it("should return undefined when no file carries coverage", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(normalizeRawCoverage({})).toBeUndefined();
 	});
 
-	it("should coerce non-numeric values on the already-keyed statement path to 0", () => {
+	it("should coerce non-numeric values on the already-keyed statement path to 0", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		// `s` arrives as a keyed object (a re-read table), not a Luau array.
@@ -84,7 +86,7 @@ describe(normalizeRawCoverage, () => {
 		expect(result).toStrictEqual({ "out/a.luau": { s: { "1": 3, "2": 0 } } });
 	});
 
-	it("should coerce branch arms given as an already-keyed object", () => {
+	it("should coerce branch arms given as an already-keyed object", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = normalizeRawCoverage({
@@ -98,7 +100,7 @@ describe(normalizeRawCoverage, () => {
 });
 
 describe(parseCoverageEnvelope, () => {
-	it("should extract runner.coverage from a JSON envelope string", () => {
+	it("should extract runner.coverage from a JSON envelope string", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = JSON.stringify({
@@ -113,7 +115,7 @@ describe(parseCoverageEnvelope, () => {
 		});
 	});
 
-	it("should extract runner.coverage from an already-parsed envelope object", () => {
+	it("should extract runner.coverage from an already-parsed envelope object", ({ expect }) => {
 		expect.assertions(1);
 
 		const envelope = { runner: { coverage: { "out/init.luau": { s: [2] } } }, success: true };
@@ -123,7 +125,7 @@ describe(parseCoverageEnvelope, () => {
 		});
 	});
 
-	it("should treat a bare hit table (the _G global) as the coverage itself", () => {
+	it("should treat a bare hit table (the _G global) as the coverage itself", ({ expect }) => {
 		expect.assertions(1);
 
 		// Machine B reading `_G.__jest_roblox_cov` directly has no
@@ -133,20 +135,20 @@ describe(parseCoverageEnvelope, () => {
 		});
 	});
 
-	it("should return undefined for a malformed JSON string", () => {
+	it("should return undefined for a malformed JSON string", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(parseCoverageEnvelope("not json {")).toBeUndefined();
 	});
 
-	it("should return undefined for a JSON string that decodes to a non-object", () => {
+	it("should return undefined for a JSON string that decodes to a non-object", ({ expect }) => {
 		expect.assertions(1);
 
 		// Valid JSON, but a scalar, not a coverage table.
 		expect(parseCoverageEnvelope("42")).toBeUndefined();
 	});
 
-	it("should return undefined for a non-string, non-object input", () => {
+	it("should return undefined for a non-string, non-object input", ({ expect }) => {
 		expect.assertions(1);
 
 		// The signature accepts any `JSONValue` (callers often hold raw run
@@ -154,7 +156,7 @@ describe(parseCoverageEnvelope, () => {
 		expect(parseCoverageEnvelope(42)).toBeUndefined();
 	});
 
-	it("should return undefined when the envelope carries no coverage", () => {
+	it("should return undefined when the envelope carries no coverage", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(parseCoverageEnvelope({ success: true })).toBeUndefined();

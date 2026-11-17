@@ -1,5 +1,5 @@
 import * as path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import type { FileSystem } from "../utils/file-system.ts";
@@ -26,7 +26,7 @@ function validateFoo(fileSystem: FileSystem): ReturnType<typeof validatePackages
 }
 
 describe(validatePackages, () => {
-	it("should return no errors when all files and $path targets resolve", () => {
+	it("should return no errors when all files and $path targets resolve", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -46,7 +46,7 @@ describe(validatePackages, () => {
 		expect(errors).toStrictEqual([]);
 	});
 
-	it("should report when rojoProject file is missing", () => {
+	it("should report when rojoProject file is missing", ({ expect }) => {
 		expect.assertions(3);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -60,7 +60,7 @@ describe(validatePackages, () => {
 		expect(errors[0]!.reason).toMatch(/rojoProject not found/);
 	});
 
-	it("should report when rojoProject fails to parse", () => {
+	it("should report when rojoProject fails to parse", ({ expect }) => {
 		expect.assertions(3);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -74,7 +74,7 @@ describe(validatePackages, () => {
 		expect(errors[0]!.reason).toMatch(/failed to parse rojoProject/);
 	});
 
-	it("should report each missing $path target", () => {
+	it("should report each missing $path target", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -96,7 +96,7 @@ describe(validatePackages, () => {
 		]);
 	});
 
-	it("should not report a missing optional $path target", () => {
+	it("should not report a missing optional $path target", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -118,7 +118,7 @@ describe(validatePackages, () => {
 		expect(errors).toStrictEqual([]);
 	});
 
-	it("should validate multiple packages and aggregate errors", () => {
+	it("should validate multiple packages and aggregate errors", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();

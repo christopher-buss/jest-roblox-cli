@@ -1,5 +1,5 @@
 import * as path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { projectJob } from "#test/mocks/project-job.ts";
@@ -59,7 +59,7 @@ function writeBootstrap({
 }
 
 describe(buildStudioArgs, () => {
-	it("should point Studio at the place, the bootstrap and the output log", () => {
+	it("should point Studio at the place, the bootstrap and the output log", ({ expect }) => {
 		expect.assertions(2);
 
 		const { args } = writeBootstrap();
@@ -68,7 +68,7 @@ describe(buildStudioArgs, () => {
 		expect(args).toContain("--quitAfterExecution");
 	});
 
-	it("should leave the stubs to the place it opens", () => {
+	it("should leave the stubs to the place it opens", ({ expect }) => {
 		expect.assertions(1);
 
 		const { bootstrap } = writeBootstrap({
@@ -78,7 +78,7 @@ describe(buildStudioArgs, () => {
 		expect(bootstrap).toContain('"runtimeStubMounts":[]');
 	});
 
-	it("should carry the requested VM count in the bootstrap payload", () => {
+	it("should carry the requested VM count in the bootstrap payload", ({ expect }) => {
 		expect.assertions(1);
 
 		const { bootstrap } = writeBootstrap({ jobs: [job("alpha"), job("beta")], vmParallel: 2 });
@@ -86,7 +86,7 @@ describe(buildStudioArgs, () => {
 		expect(bootstrap).toContain('"vmParallel":2');
 	});
 
-	it("should omit the VM count from the bootstrap payload when not vm-parallel", () => {
+	it("should omit the VM count from the bootstrap payload when not vm-parallel", ({ expect }) => {
 		expect.assertions(1);
 
 		const { bootstrap } = writeBootstrap();
@@ -94,7 +94,7 @@ describe(buildStudioArgs, () => {
 		expect(bootstrap).not.toContain("vmParallel");
 	});
 
-	it("should go on to ExecuteRunModeAsync when the side channel cannot be set", () => {
+	it("should go on to ExecuteRunModeAsync when the side channel cannot be set", ({ expect }) => {
 		expect.assertions(2);
 
 		const { bootstrap } = writeBootstrap();
@@ -110,7 +110,7 @@ describe(buildStudioArgs, () => {
 		expect(guard).toBeLessThan(bootstrap.indexOf("ExecuteRunModeAsync"));
 	});
 
-	it("should escape a config value containing the Luau long-string terminator", () => {
+	it("should escape a config value containing the Luau long-string terminator", ({ expect }) => {
 		expect.assertions(2);
 
 		const { bootstrap } = writeBootstrap({
@@ -123,7 +123,7 @@ describe(buildStudioArgs, () => {
 });
 
 describe(studioOutputFile, () => {
-	it("should log inside the work directory", () => {
+	it("should log inside the work directory", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(studioOutputFile(WORK_DIRECTORY)).toBe(path.join(WORK_DIRECTORY, "output.log"));
@@ -133,20 +133,22 @@ describe(studioOutputFile, () => {
 describe("protocol version parity", () => {
 	it.for(["init.server.luau", "test-in-run-mode.server.luau"])(
 		"should read the protocol version from the generated module in %s",
-		(file) => {
+		(file, { expect }) => {
 			expect.assertions(1);
 
 			expect(PLUGIN_SOURCES[file]).toContain("Protocol.studio.protocolVersion");
 		},
 	);
 
-	it("should read the pluginKey field the studio-cli payload sends", () => {
+	it("should read the pluginKey field the studio-cli payload sends", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(runModeSource).toContain("testArgs.pluginKey");
 	});
 
-	it("should hand the studio-cli bootstrap payload over the attribute the runner reads", () => {
+	it("should hand the studio-cli bootstrap payload over the attribute the runner reads", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { bootstrap } = writeBootstrap();

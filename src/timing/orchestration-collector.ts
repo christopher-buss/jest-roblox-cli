@@ -215,7 +215,7 @@ function createNoopTimingCollector(clock: { now: () => number }): TimingCollecto
 		flushTimingReport: noOp,
 		profile: passthroughProfile,
 		profileAsync: passthroughProfileAsync,
-		...createTimedProfilers((_name: string) => {
+		...createTimedProfilers((_name) => {
 			const start = clock.now();
 			return () => clock.now() - start;
 		}),

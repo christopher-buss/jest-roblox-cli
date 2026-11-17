@@ -1,10 +1,10 @@
 import { type } from "arktype";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { streamingResultSchema } from "./streaming-summary.ts";
 
 describe("streamingResultSchema", () => {
-	it("should reject a summary with no package", () => {
+	it("should reject a summary with no package", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(

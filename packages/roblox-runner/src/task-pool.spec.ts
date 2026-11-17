@@ -1,6 +1,6 @@
 import { ApiError, RateLimitError } from "@bedrock-rbx/ocale";
 
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import type { ScriptResult } from "./runner-types.ts";
 import { allocateTaskSlots, runTaskPoolAsync } from "./task-pool.ts";
@@ -98,7 +98,7 @@ function throwOnceThenSucceed(
 }
 
 describe(runTaskPoolAsync, () => {
-	it("should fill to concurrency on start", async () => {
+	it("should fill to concurrency on start", async ({ expect }) => {
 		expect.assertions(2);
 
 		const { pending, runTask } = makePendingTask();
@@ -121,7 +121,7 @@ describe(runTaskPoolAsync, () => {
 		await expect(pool).resolves.toBeUndefined();
 	});
 
-	it("should report each settled task under its own stable slot index", async () => {
+	it("should report each settled task under its own stable slot index", async ({ expect }) => {
 		expect.assertions(2);
 
 		const { pending, runTask } = makePendingTask();
@@ -154,7 +154,7 @@ describe(runTaskPoolAsync, () => {
 		await expect(pool).resolves.toBeUndefined();
 	});
 
-	it("should relaunch a slot when a task returns while work remains", async () => {
+	it("should relaunch a slot when a task returns while work remains", async ({ expect }) => {
 		expect.assertions(3);
 
 		const { pending, runTask } = makePendingTask();
@@ -180,7 +180,7 @@ describe(runTaskPoolAsync, () => {
 		await expect(pool).resolves.toBeUndefined();
 	});
 
-	it("should stop launching once done and resolve after in-flight settle", async () => {
+	it("should stop launching once done and resolve after in-flight settle", async ({ expect }) => {
 		expect.assertions(2);
 
 		const { pending, runTask } = makePendingTask();
@@ -205,7 +205,7 @@ describe(runTaskPoolAsync, () => {
 		expect(isDone).toBeTrue();
 	});
 
-	it("should fold every settled task's envelope", async () => {
+	it("should fold every settled task's envelope", async ({ expect }) => {
 		expect.assertions(1);
 
 		// Eager relaunch means slots may over-launch past the real work; those
@@ -228,7 +228,9 @@ describe(runTaskPoolAsync, () => {
 		expect(hasEvery(seen, expected)).toBeTrue();
 	});
 
-	it("should free and relaunch a slot when a task throws, surfacing the error", async () => {
+	it("should free and relaunch a slot when a task throws, surfacing the error", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const counter = { attempt: 0 };
@@ -251,7 +253,7 @@ describe(runTaskPoolAsync, () => {
 		expect(errors[0]).toBe("transient");
 	});
 
-	it("should normalize a non-Error task rejection before surfacing it", async () => {
+	it("should normalize a non-Error task rejection before surfacing it", async ({ expect }) => {
 		expect.assertions(1);
 
 		const counter = { attempt: 0 };
@@ -278,7 +280,7 @@ describe(runTaskPoolAsync, () => {
 		);
 	});
 
-	it("should swallow a task error when no onError handler is provided", async () => {
+	it("should swallow a task error when no onError handler is provided", async ({ expect }) => {
 		expect.assertions(1);
 
 		const counter = { attempt: 0 };
@@ -296,7 +298,7 @@ describe(runTaskPoolAsync, () => {
 		).resolves.toBeUndefined();
 	});
 
-	it("should reject a non-positive concurrency", async () => {
+	it("should reject a non-positive concurrency", async ({ expect }) => {
 		expect.assertions(1);
 
 		const runTask = vi.fn<() => Promise<ScriptResult>>(async () => makeScriptResult());
@@ -311,7 +313,7 @@ describe(runTaskPoolAsync, () => {
 		).rejects.toThrow(/concurrency must be >= 1/);
 	});
 
-	it("should reject an empty place list", async () => {
+	it("should reject an empty place list", async ({ expect }) => {
 		expect.assertions(1);
 
 		await expect(
@@ -324,7 +326,7 @@ describe(runTaskPoolAsync, () => {
 		).rejects.toThrow(/at least one place/);
 	});
 
-	it("should launch nothing when work is already done at start", async () => {
+	it("should launch nothing when work is already done at start", async ({ expect }) => {
 		expect.assertions(1);
 
 		const runTask = vi.fn<() => Promise<ScriptResult>>(async () => makeScriptResult());
@@ -338,7 +340,9 @@ describe(runTaskPoolAsync, () => {
 		expect(runTask).not.toHaveBeenCalled();
 	});
 
-	it("should skip a launch while the consumer reports the remaining work covered", async () => {
+	it("should skip a launch while the consumer reports the remaining work covered", async ({
+		expect,
+	}) => {
 		expect.assertions(4);
 
 		const { pending, runTask } = makePendingTask();
@@ -371,7 +375,7 @@ describe(runTaskPoolAsync, () => {
 		expect(isWorkCovered).not.toHaveBeenCalledWith(0);
 	});
 
-	it("should launch while covered when no task is live", async () => {
+	it("should launch while covered when no task is live", async ({ expect }) => {
 		expect.assertions(2);
 
 		const counter = { attempt: 0 };
@@ -394,7 +398,7 @@ describe(runTaskPoolAsync, () => {
 });
 
 describe("runTaskPool multi-place fan-out", () => {
-	it("should drain one shared queue exactly-once across places", async () => {
+	it("should drain one shared queue exactly-once across places", async ({ expect }) => {
 		expect.assertions(3);
 
 		const queue = ["w0", "w1", "w2", "w3", "w4", "w5"];
@@ -419,7 +423,9 @@ describe("runTaskPool multi-place fan-out", () => {
 		expect(placeCalls[0]! > 0 && placeCalls[1]! > 0).toBeTrue();
 	});
 
-	it("should distribute concurrency unevenly, the remainder going to earlier places", () => {
+	it("should distribute concurrency unevenly, the remainder going to earlier places", ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const runTaskA = vi.fn<() => Promise<ScriptResult>>(async () => makeDeferred().promise);
@@ -437,7 +443,7 @@ describe("runTaskPool multi-place fan-out", () => {
 		expect(runTaskB).toHaveBeenCalledTimes(2);
 	});
 
-	it("should clamp an over-capacity total to 10 per place and warn once", () => {
+	it("should clamp an over-capacity total to 10 per place and warn once", ({ expect }) => {
 		expect.assertions(3);
 
 		const runTaskA = vi.fn<() => Promise<ScriptResult>>(async () => makeDeferred().promise);
@@ -459,7 +465,7 @@ describe("runTaskPool multi-place fan-out", () => {
 		);
 	});
 
-	it("should launch each place in the slots allocateTaskSlots gives it", () => {
+	it("should launch each place in the slots allocateTaskSlots gives it", ({ expect }) => {
 		expect.assertions(1);
 
 		const launched: Array<Array<number>> = [[], [], []];
@@ -482,7 +488,7 @@ describe("runTaskPool multi-place fan-out", () => {
 		);
 	});
 
-	it("should leave a place the concurrency does not reach without slots", () => {
+	it("should leave a place the concurrency does not reach without slots", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(allocateTaskSlots({ concurrency: 2, placeCount: 3 })).toStrictEqual([
@@ -492,7 +498,7 @@ describe("runTaskPool multi-place fan-out", () => {
 		]);
 	});
 
-	it("should warn through console.warn by default", () => {
+	it("should warn through console.warn by default", ({ expect }) => {
 		expect.assertions(1);
 
 		const consoleWarn = vi.spyOn(console, "warn").mockImplementation(() => {});
@@ -510,7 +516,9 @@ describe("runTaskPool multi-place fan-out", () => {
 });
 
 describe("runTaskPool backoff", () => {
-	it("should back off a rate-limit 429 by the server retry delay and retry", async () => {
+	it("should back off a rate-limit 429 by the server retry delay and retry", async ({
+		expect,
+	}) => {
 		expect.assertions(3);
 
 		const counter = { attempt: 0 };
@@ -538,7 +546,7 @@ describe("runTaskPool backoff", () => {
 		expect(onError).not.toHaveBeenCalled();
 	});
 
-	it("should end a backoff wait once the signal aborts", async () => {
+	it("should end a backoff wait once the signal aborts", async ({ expect }) => {
 		expect.assertions(2);
 
 		const controller = new AbortController();
@@ -561,7 +569,7 @@ describe("runTaskPool backoff", () => {
 		expect(runTask).toHaveBeenCalledOnce();
 	});
 
-	it("should surface a backoff sleep failure that is not an abort", async () => {
+	it("should surface a backoff sleep failure that is not an abort", async ({ expect }) => {
 		expect.assertions(1);
 
 		const controller = new AbortController();
@@ -584,7 +592,7 @@ describe("runTaskPool backoff", () => {
 		await expect(pool).rejects.toThrow("timer broke");
 	});
 
-	it("should floor a zero retry-after to the default delay, not spin", async () => {
+	it("should floor a zero retry-after to the default delay, not spin", async ({ expect }) => {
 		expect.assertions(2);
 
 		const counter = { attempt: 0 };
@@ -603,7 +611,9 @@ describe("runTaskPool backoff", () => {
 		expect(sleep).toHaveBeenCalledExactlyOnceWith(5000, undefined);
 	});
 
-	it("should back off a genuinely-full place by the default delay and retry", async () => {
+	it("should back off a genuinely-full place by the default delay and retry", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const counter = { attempt: 0 };
@@ -624,7 +634,7 @@ describe("runTaskPool backoff", () => {
 	it.for([
 		{ elapsedMs: 2000, expectedWaitMs: 8000 },
 		{ elapsedMs: 10000, expectedWaitMs: 30000 },
-	])("should bound the recycle window: %j", async ({ elapsedMs, expectedWaitMs }) => {
+	])("should bound the recycle window: %j", async ({ elapsedMs, expectedWaitMs }, { expect }) => {
 		expect.assertions(2);
 
 		const counter = { attempt: 0 };
@@ -654,7 +664,7 @@ describe("runTaskPool backoff", () => {
 		expect(sleep).toHaveBeenCalledExactlyOnceWith(expectedWaitMs, undefined);
 	});
 
-	it("should unwrap a backoff signal carried on the error cause chain", async () => {
+	it("should unwrap a backoff signal carried on the error cause chain", async ({ expect }) => {
 		expect.assertions(2);
 
 		const counter = { attempt: 0 };
@@ -674,7 +684,9 @@ describe("runTaskPool backoff", () => {
 		expect(sleep).toHaveBeenCalledExactlyOnceWith(3000, undefined);
 	});
 
-	it("should surface an API error it does not back off on rather than backing off", async () => {
+	it("should surface an API error it does not back off on rather than backing off", async ({
+		expect,
+	}) => {
 		expect.assertions(3);
 
 		const counter = { attempt: 0 };
@@ -697,7 +709,7 @@ describe("runTaskPool backoff", () => {
 		expect(sleep).not.toHaveBeenCalled();
 	});
 
-	it("should report a rate-limit wait to the backoff observer", async () => {
+	it("should report a rate-limit wait to the backoff observer", async ({ expect }) => {
 		expect.assertions(1);
 
 		const counter = { attempt: 0 };
@@ -727,7 +739,9 @@ describe("runTaskPool backoff", () => {
 		});
 	});
 
-	it("should report a full place to the backoff observer under the place it came from", async () => {
+	it("should report a full place to the backoff observer under the place it came from", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const counter = { attempt: 0 };
@@ -802,7 +816,9 @@ async function runRetryPoolAsync({
 }
 
 describe("pool boundaries", () => {
-	it("should avoid warning when requested concurrency exactly equals place capacity", () => {
+	it("should avoid warning when requested concurrency exactly equals place capacity", ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const runTask = vi.fn<() => Promise<ScriptResult>>(async () => makeDeferred().promise);
@@ -821,7 +837,9 @@ describe("pool boundaries", () => {
 });
 
 describe("failed task backpressure", () => {
-	it("should free failed work before deciding whether another launch is covered", async () => {
+	it("should free failed work before deciding whether another launch is covered", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const pending = makeDeferred();

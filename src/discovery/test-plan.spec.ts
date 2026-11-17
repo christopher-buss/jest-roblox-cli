@@ -1,7 +1,7 @@
 import { fromAny } from "@total-typescript/shoehorn";
 
 import * as path from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
@@ -81,7 +81,7 @@ function runtimeFiles(result: TestsPlan): Array<Array<string>> {
 }
 
 describe(planTests, () => {
-	it("should split one glob into runtime files and absolute type tests", () => {
+	it("should split one glob into runtime files and absolute type tests", ({ expect }) => {
 		expect.assertions(2);
 
 		const result = plan(
@@ -99,7 +99,7 @@ describe(planTests, () => {
 		]);
 	});
 
-	it("should drop the files a testPathIgnorePatterns entry matches", () => {
+	it("should drop the files a testPathIgnorePatterns entry matches", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = plan(
@@ -110,7 +110,7 @@ describe(planTests, () => {
 		expect(runtimeFiles(result)).toStrictEqual([["src/a.spec.ts"]]);
 	});
 
-	it("should apply the exclude to discovered files but not to positional files", () => {
+	it("should apply the exclude to discovered files but not to positional files", ({ expect }) => {
 		expect.assertions(2);
 
 		const files = ["/ws/pkg/src/a.spec.ts", "/ws/pkg/src/b.spec.ts"];
@@ -128,7 +128,9 @@ describe(planTests, () => {
 		).toStrictEqual([[path.resolve("/ws/pkg", "src/b.spec.ts")]]);
 	});
 
-	it("should apply the typecheck include and exclude to discovered type tests but not to positional ones", () => {
+	it("should apply the typecheck include and exclude to discovered type tests but not to positional ones", ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const typecheck = {
@@ -147,7 +149,9 @@ describe(planTests, () => {
 		).toStrictEqual([path.resolve("/ws/pkg", "types/b.spec-d.ts")]);
 	});
 
-	it("should filter runtime and type tests by testPathPattern and narrow the config", () => {
+	it("should filter runtime and type tests by testPathPattern and narrow the config", ({
+		expect,
+	}) => {
 		expect.assertions(3);
 
 		const result = plan(
@@ -185,7 +189,7 @@ describe(planTests, () => {
 		["src/*.spec.ts", "src/a.test-d.ts", []],
 	] as const)(
 		"should derive type tests from include %s only for a runtime test suffix",
-		([include, typeFile, expected]) => {
+		([include, typeFile, expected], { expect }) => {
 			expect.assertions(1);
 
 			const result = plan(
@@ -199,7 +203,7 @@ describe(planTests, () => {
 		},
 	);
 
-	it("should walk a project root once for its runtime and type test globs", () => {
+	it("should walk a project root once for its runtime and type test globs", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -220,7 +224,7 @@ describe(planTests, () => {
 		).toHaveLength(1);
 	});
 
-	it("should keep type tests out of the runtime files when typecheck is off", () => {
+	it("should keep type tests out of the runtime files when typecheck is off", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = plan([makeScope()], ["/ws/pkg/src/a.spec.ts", "/ws/pkg/src/a.spec-d.ts"]);
@@ -228,7 +232,9 @@ describe(planTests, () => {
 		expect(runtimeFiles(result)).toStrictEqual([["src/a.spec.ts"]]);
 	});
 
-	it("should fail each scope that found no test, unless it passes with no tests", () => {
+	it("should fail each scope that found no test, unless it passes with no tests", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const result = plan(
@@ -247,7 +253,7 @@ describe(planTests, () => {
 		});
 	});
 
-	it("should drop a scope whose tests the testPathPattern rejects", () => {
+	it("should drop a scope whose tests the testPathPattern rejects", ({ expect }) => {
 		expect.assertions(2);
 
 		const config = { testPathPattern: "a\\.spec" };
@@ -260,7 +266,9 @@ describe(planTests, () => {
 		expect(runtimeFiles(result)).toStrictEqual([["src/a.spec.ts"], []]);
 	});
 
-	it("should fail a run the testPathPattern leaves empty, unless every scope passes", () => {
+	it("should fail a run the testPathPattern leaves empty, unless every scope passes", ({
+		expect,
+	}) => {
 		expect.assertions(3);
 
 		const config = { testPathPattern: "none" };
@@ -292,7 +300,7 @@ describe(planTests, () => {
 });
 
 describe("partial runs", () => {
-	it("should anchor related causes at the supplied summary root", () => {
+	it("should anchor related causes at the supplied summary root", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -315,7 +323,7 @@ describe("partial runs", () => {
 		});
 	});
 
-	it("should summarize a partial run with no selected scopes", () => {
+	it("should summarize a partial run with no selected scopes", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();

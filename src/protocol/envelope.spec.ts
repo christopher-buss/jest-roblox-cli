@@ -1,16 +1,16 @@
 import { type } from "arktype";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { encodeRunFailure, entryKey, taskEnvelopeSchema } from "./envelope.ts";
 
 describe(encodeRunFailure, () => {
-	it("should encode a failure with no runner block", () => {
+	it("should encode a failure with no runner block", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(JSON.parse(encodeRunFailure("boom"))).toStrictEqual({ err: "boom", success: false });
 	});
 
-	it("should carry what the runner measured", () => {
+	it("should carry what the runner measured", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(JSON.parse(encodeRunFailure("boom", { abandon: "timeout" }))).toStrictEqual({
@@ -22,7 +22,7 @@ describe(encodeRunFailure, () => {
 });
 
 describe("taskEnvelopeSchema", () => {
-	it("should reject a scope other than batch", () => {
+	it("should reject a scope other than batch", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(taskEnvelopeSchema({ entries: [], gameOutputScope: "project" })).toBeInstanceOf(
@@ -32,7 +32,7 @@ describe("taskEnvelopeSchema", () => {
 });
 
 describe(entryKey, () => {
-	it("should join package and project", () => {
+	it("should join package and project", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(entryKey("@scope/pkg", "core")).toBe("@scope/pkg::core");

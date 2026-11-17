@@ -1,6 +1,6 @@
 import * as path from "node:path";
 import process from "node:process";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { posixPath } from "#test/mocks/posix-path.ts";
 import type { MappedCoverageResult, MappedFileCoverage } from "../coverage-report/mapper-types.ts";
@@ -37,7 +37,7 @@ function keys(result: MappedCoverageResult): Array<string> {
 }
 
 describe(filterCoverageUniverse, () => {
-	it("should apply ignores with an explicitly unrestricted include", () => {
+	it("should apply ignores with an explicitly unrestricted include", ({ expect }) => {
 		expect.assertions(1);
 
 		const filtered = filterCoverageUniverse(resultFor("src/a.client.ts", "src/ignored.ts"), {
@@ -48,7 +48,7 @@ describe(filterCoverageUniverse, () => {
 		expect(keys(filtered)).toStrictEqual(["src/a.client.ts"]);
 	});
 
-	it("should drop a file matching an ignore pattern", () => {
+	it("should drop a file matching an ignore pattern", ({ expect }) => {
 		expect.assertions(1);
 
 		const filtered = filterCoverageUniverse(
@@ -61,7 +61,7 @@ describe(filterCoverageUniverse, () => {
 		expect(keys(filtered)).toStrictEqual(["src/foo/player.ts"]);
 	});
 
-	it("should match ignore patterns by substring like Jest", () => {
+	it("should match ignore patterns by substring like Jest", ({ expect }) => {
 		expect.assertions(1);
 
 		// `contains: true`: a bare `index.ts` matches anywhere in the path,
@@ -73,7 +73,7 @@ describe(filterCoverageUniverse, () => {
 		expect(keys(filtered)).toStrictEqual([]);
 	});
 
-	it("should keep files that match no ignore pattern", () => {
+	it("should keep files that match no ignore pattern", ({ expect }) => {
 		expect.assertions(1);
 
 		const filtered = filterCoverageUniverse(resultFor("src/foo/init.ts"), {
@@ -83,7 +83,7 @@ describe(filterCoverageUniverse, () => {
 		expect(keys(filtered)).toStrictEqual(["src/foo/init.ts"]);
 	});
 
-	it("should treat a leading bang in an ignore pattern literally", () => {
+	it("should treat a leading bang in an ignore pattern literally", ({ expect }) => {
 		expect.assertions(1);
 
 		const filtered = filterCoverageUniverse(resultFor("src/!generated.ts", "src/main.ts"), {
@@ -93,7 +93,7 @@ describe(filterCoverageUniverse, () => {
 		expect(keys(filtered)).toStrictEqual(["src/main.ts"]);
 	});
 
-	it("should keep only files matching the include globs", () => {
+	it("should keep only files matching the include globs", ({ expect }) => {
 		expect.assertions(1);
 
 		const filtered = filterCoverageUniverse(resultFor("src/a.ts", "lib/b.ts"), {
@@ -103,7 +103,7 @@ describe(filterCoverageUniverse, () => {
 		expect(keys(filtered)).toStrictEqual(["src/a.ts"]);
 	});
 
-	it("should match slash-free include globs by basename", () => {
+	it("should match slash-free include globs by basename", ({ expect }) => {
 		expect.assertions(1);
 
 		const filtered = filterCoverageUniverse(
@@ -116,7 +116,7 @@ describe(filterCoverageUniverse, () => {
 		expect(keys(filtered)).toStrictEqual(["src/foo/player.ts"]);
 	});
 
-	it("should combine path and basename include globs", () => {
+	it("should combine path and basename include globs", ({ expect }) => {
 		expect.assertions(1);
 
 		const filtered = filterCoverageUniverse(
@@ -127,7 +127,7 @@ describe(filterCoverageUniverse, () => {
 		expect(keys(filtered)).toStrictEqual(["lib/player.ts", "src/player.ts"]);
 	});
 
-	it("should relativize absolute file paths against the cwd before matching", () => {
+	it("should relativize absolute file paths against the cwd before matching", ({ expect }) => {
 		expect.assertions(1);
 
 		const absolutePath = path.join(process.cwd(), "src/foo/index.ts");
@@ -138,7 +138,7 @@ describe(filterCoverageUniverse, () => {
 		expect(keys(filtered)).toStrictEqual([]);
 	});
 
-	it("should hand back the same result when the filter selects nothing", () => {
+	it("should hand back the same result when the filter selects nothing", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = resultFor("src/a.ts", "lib/b.ts");
@@ -146,7 +146,7 @@ describe(filterCoverageUniverse, () => {
 		expect(filterCoverageUniverse(result, { include: [] })).toBe(result);
 	});
 
-	it("should drop files matching a negated include glob", () => {
+	it("should drop files matching a negated include glob", ({ expect }) => {
 		expect.assertions(1);
 
 		const filtered = filterCoverageUniverse(resultFor("src/a.ts", "src/a.spec.ts"), {
@@ -156,7 +156,7 @@ describe(filterCoverageUniverse, () => {
 		expect(keys(filtered)).toStrictEqual(["src/a.ts"]);
 	});
 
-	it("should keep every other file when the include globs only negate", () => {
+	it("should keep every other file when the include globs only negate", ({ expect }) => {
 		expect.assertions(1);
 
 		const filtered = filterCoverageUniverse(resultFor("src/a.ts", "src/a.spec.ts"), {
@@ -166,7 +166,7 @@ describe(filterCoverageUniverse, () => {
 		expect(keys(filtered)).toStrictEqual(["src/a.ts"]);
 	});
 
-	it("should treat bangs after the first include negation literally", () => {
+	it("should treat bangs after the first include negation literally", ({ expect }) => {
 		expect.assertions(1);
 
 		const filtered = filterCoverageUniverse(resultFor("src/!generated.ts", "src/main.ts"), {
@@ -176,7 +176,7 @@ describe(filterCoverageUniverse, () => {
 		expect(keys(filtered)).toStrictEqual(["src/main.ts"]);
 	});
 
-	it("should drop a file that is included but also ignored", () => {
+	it("should drop a file that is included but also ignored", ({ expect }) => {
 		expect.assertions(1);
 
 		const filtered = filterCoverageUniverse(
@@ -190,7 +190,7 @@ describe(filterCoverageUniverse, () => {
 		expect(keys(filtered)).toStrictEqual(["src/foo/player.ts"]);
 	});
 
-	it("should match include globs against the given rootDir, not the cwd", () => {
+	it("should match include globs against the given rootDir, not the cwd", ({ expect }) => {
 		expect.assertions(1);
 
 		// A package's own config writes `src/**/*.ts` for its own sources. The
@@ -208,7 +208,7 @@ describe(filterCoverageUniverse, () => {
 		expect(keys(filtered)).toStrictEqual([own]);
 	});
 
-	it("should anchor on a rootDir that is absolute for another host", () => {
+	it("should anchor on a rootDir that is absolute for another host", ({ expect }) => {
 		expect.assertions(1);
 
 		// A Windows `rootDir` reaching a Linux runner (or the reverse) must
@@ -227,7 +227,7 @@ describe(filterCoverageUniverse, () => {
 		expect(keys(filtered)).toStrictEqual([own]);
 	});
 
-	it("should return every file when neither include nor ignore is given", () => {
+	it("should return every file when neither include nor ignore is given", ({ expect }) => {
 		expect.assertions(1);
 
 		const filtered = filterCoverageUniverse(
@@ -244,7 +244,7 @@ function missingRealpath(file: string): string {
 }
 
 describe(narrowCoverageToFiles, () => {
-	it("should keep only the named files, keyed absolute or cwd-relative", () => {
+	it("should keep only the named files, keyed absolute or cwd-relative", ({ expect }) => {
 		expect.assertions(1);
 
 		const absolute = path.join(process.cwd(), "src/absolute.ts");
@@ -261,7 +261,7 @@ describe(narrowCoverageToFiles, () => {
 		expect(keys(narrowed)).toStrictEqual([absolute, "src/relative.ts"].sort());
 	});
 
-	it("should match a named file and a key that spell one real path two ways", () => {
+	it("should match a named file and a key that spell one real path two ways", ({ expect }) => {
 		expect.assertions(1);
 
 		const narrowed = narrowCoverageToFiles({
@@ -273,7 +273,7 @@ describe(narrowCoverageToFiles, () => {
 		expect(keys(narrowed)).toStrictEqual(["d:/repo/src/changed.ts"]);
 	});
 
-	it("should keep no file when no named file is in the universe", () => {
+	it("should keep no file when no named file is in the universe", ({ expect }) => {
 		expect.assertions(1);
 
 		const narrowed = narrowCoverageToFiles({
@@ -289,7 +289,7 @@ describe(narrowCoverageToFiles, () => {
 describe(createCoverageUniverseMatcher, () => {
 	it.for([undefined, [], ["**/generated/**"]])(
 		"should exclude scripts by default independently of ignore patterns %j",
-		(ignore) => {
+		(ignore, { expect }) => {
 			expect.assertions(2);
 
 			const files = [
@@ -322,7 +322,7 @@ describe(createCoverageUniverseMatcher, () => {
 
 	it.for([[], ["**/*"], ["!**/generated/**"]])(
 		"should let explicit include globs select scripts %j",
-		(include) => {
+		(include, { expect }) => {
 			expect.assertions(2);
 
 			const files = ["src/start.client.ts", "out/init.server.luau"];
@@ -334,7 +334,7 @@ describe(createCoverageUniverseMatcher, () => {
 		},
 	);
 
-	it("should make absent and empty ignore lists select the same files", () => {
+	it("should make absent and empty ignore lists select the same files", ({ expect }) => {
 		expect.assertions(1);
 
 		const withoutIgnore = createCoverageUniverseMatcher({ include: ["src/**/*.ts"] });
@@ -349,7 +349,7 @@ describe(createCoverageUniverseMatcher, () => {
 		]);
 	});
 
-	it("should apply empty, path, basename, negated, and ignore patterns exactly", () => {
+	it("should apply empty, path, basename, negated, and ignore patterns exactly", ({ expect }) => {
 		expect.assertions(1);
 
 		const cases = [
@@ -404,25 +404,25 @@ describe(resolveUniverseAnchor, () => {
 		return resolveUniverseAnchor(rootDirectory);
 	}
 
-	it("should keep a windows absolute rootDir whole on any host", () => {
+	it("should keep a windows absolute rootDir whole on any host", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(anchorFor("D:\\repo\\packages\\foo")).toBe("D:/repo/packages/foo");
 	});
 
-	it("should keep a posix absolute rootDir whole", () => {
+	it("should keep a posix absolute rootDir whole", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(anchorFor("/repo/packages/foo")).toBe("/repo/packages/foo");
 	});
 
-	it("should drop a trailing slash so the anchor is a clean prefix", () => {
+	it("should drop a trailing slash so the anchor is a clean prefix", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(anchorFor("/repo/packages/foo/")).toBe("/repo/packages/foo");
 	});
 
-	it("should read a relative rootDir against the cwd", () => {
+	it("should read a relative rootDir against the cwd", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(anchorFor("packages/foo")).toBe(

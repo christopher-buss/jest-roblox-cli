@@ -5,7 +5,7 @@ import type {
 } from "@isentinel/luau-ast/ast";
 import { fromAny } from "@total-typescript/shoehorn";
 
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { recordingAccumulator } from "#test/mocks/coverage-accumulator.ts";
 import { block, NO_IGNORES, span } from "#test/mocks/coverage-spec-luau-ast.ts";
@@ -20,7 +20,9 @@ function expressionAt(line: number): AstExprFunction {
 }
 
 describe(createFunctionCollector, () => {
-	it("should name functions, preserve traversal, and avoid counting named expressions twice", () => {
+	it("should name functions, preserve traversal, and avoid counting named expressions twice", ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const accumulator = recordingAccumulator();
@@ -90,7 +92,7 @@ describe(createFunctionCollector, () => {
 		]);
 	});
 
-	it("should name an index on a non-name target from an anonymous base", () => {
+	it("should name an index on a non-name target from an anonymous base", ({ expect }) => {
 		expect.assertions(1);
 
 		const accumulator = recordingAccumulator();
@@ -115,7 +117,7 @@ describe(createFunctionCollector, () => {
 		]);
 	});
 
-	it("should skip functions the ignores cover", () => {
+	it("should skip functions the ignores cover", ({ expect }) => {
 		expect.assertions(2);
 
 		const accumulator = recordingAccumulator();
@@ -140,13 +142,13 @@ describe(createFunctionCollector, () => {
 });
 
 describe(getBodyFirstStatement, () => {
-	it("should use the block position for an empty function body", () => {
+	it("should use the block position for an empty function body", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(getBodyFirstStatement(block(42))).toStrictEqual({ column: 1, line: 42 });
 	});
 
-	it("should use the position of the first statement for a non-empty body", () => {
+	it("should use the position of the first statement for a non-empty body", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(

@@ -1,5 +1,5 @@
 import * as path from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import { copyIgnoreMatcher } from "#test/mocks/coverage-copy-ignore.ts";
 import type { MemoryFileSystem, MemoryVolume } from "#test/mocks/memory-file-system.ts";
@@ -45,7 +45,7 @@ function at(relativePath: string): PosixRoot {
 const NESTED_MOUNTS = [at("server"), at("server/modules")];
 
 describe(createShadowLayout, () => {
-	it("should serve a directory inside a narrowed root from the shadow", () => {
+	it("should serve a directory inside a narrowed root from the shadow", ({ expect }) => {
 		expect.assertions(2);
 
 		const layout = createShadowLayout("/shadow", [
@@ -56,7 +56,7 @@ describe(createShadowLayout, () => {
 		expect(layout.isShadowed("src/other")).toBeFalse();
 	});
 
-	it("should serve a demoted mount from the shadow", () => {
+	it("should serve a demoted mount from the shadow", ({ expect }) => {
 		expect.assertions(1);
 
 		const layout = createShadowLayout("/shadow", [
@@ -70,7 +70,7 @@ describe(createShadowLayout, () => {
 		expect(layout.isShadowed("src")).toBeTrue();
 	});
 
-	it("should read a root that narrowed to nothing from source", () => {
+	it("should read a root that narrowed to nothing from source", ({ expect }) => {
 		expect.assertions(1);
 
 		const layout = createShadowLayout("/shadow", [
@@ -82,7 +82,7 @@ describe(createShadowLayout, () => {
 });
 
 describe(resolveSpineDirectories, () => {
-	it("should return nothing when every root is a mount", () => {
+	it("should return nothing when every root is a mount", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -90,7 +90,7 @@ describe(resolveSpineDirectories, () => {
 		).toStrictEqual([]);
 	});
 
-	it("should walk from the mount down to the root's parent", () => {
+	it("should walk from the mount down to the root's parent", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -98,7 +98,7 @@ describe(resolveSpineDirectories, () => {
 		).toStrictEqual([at("server"), at("server/modules")]);
 	});
 
-	it("should share one chain between roots under the same mount", () => {
+	it("should share one chain between roots under the same mount", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -109,7 +109,7 @@ describe(resolveSpineDirectories, () => {
 		).toStrictEqual([at("server"), at("server/modules")]);
 	});
 
-	it("should stop at the deepest mount above the root", () => {
+	it("should stop at the deepest mount above the root", ({ expect }) => {
 		expect.assertions(1);
 
 		// The shallower mount still loads the deeper one’s own $path, so
@@ -119,7 +119,7 @@ describe(resolveSpineDirectories, () => {
 		).toStrictEqual([at("server/modules")]);
 	});
 
-	it("should skip a root no mount contains", () => {
+	it("should skip a root no mount contains", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -127,7 +127,7 @@ describe(resolveSpineDirectories, () => {
 		).toStrictEqual([]);
 	});
 
-	it("should pick the deepest mount whichever order the tree declares them", () => {
+	it("should pick the deepest mount whichever order the tree declares them", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -168,7 +168,7 @@ describe(prepareSpine, () => {
 		});
 	}
 
-	it("should copy a spine directory's own loose files and nothing below them", () => {
+	it("should copy a spine directory's own loose files and nothing below them", ({ expect }) => {
 		expect.assertions(3);
 
 		const { fileSystem, volume } = seed({
@@ -184,7 +184,7 @@ describe(prepareSpine, () => {
 		expect(volume.existsSync(`${mounted("out/server/modules")}/ecs`)).toBeFalse();
 	});
 
-	it("should keep a deeper spine level outside the level above it", () => {
+	it("should keep a deeper spine level outside the level above it", ({ expect }) => {
 		expect.assertions(3);
 
 		const { fileSystem, volume } = seed({
@@ -205,7 +205,7 @@ describe(prepareSpine, () => {
 		expect(volume.existsSync(`${below!.shadowDir}/net.luau`)).toBeTrue();
 	});
 
-	it("should name the copy the place mounts for each demoted level", () => {
+	it("should name the copy the place mounts for each demoted level", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = seed({ [at("server/loose.luau")]: "return nil" });
@@ -215,7 +215,7 @@ describe(prepareSpine, () => {
 		).toStrictEqual([{ luauRoot: posixRoot("out/server"), shadowDir: mounted("out/server") }]);
 	});
 
-	it("should record each mirrored file against its source hash", () => {
+	it("should record each mirrored file against its source hash", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = seed({ [at("server/loose.luau")]: "return nil" });
@@ -225,7 +225,7 @@ describe(prepareSpine, () => {
 		).toStrictEqual([at("server/loose.luau")]);
 	});
 
-	it("should leave a copy-ignored file out of the spine", () => {
+	it("should leave a copy-ignored file out of the spine", ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = seed({
@@ -247,7 +247,7 @@ describe(prepareSpine, () => {
 		expect(Object.keys(result.files)).toStrictEqual([at("server/keep.luau")]);
 	});
 
-	it("should report no change when every record carries forward", () => {
+	it("should report no change when every record carries forward", ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem } = seed({ [at("server/loose.luau")]: "return nil" });
@@ -264,23 +264,21 @@ describe(prepareSpine, () => {
 		expect(second.changed).toBeFalse();
 	});
 
-	it("should leave a spine file it cannot delete alone", () => {
+	it("should leave a spine file it cannot delete alone", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = seed({ [at("server/loose.luau")]: "return nil" });
 
 		spineOf(fileSystem, { levels: ["out/server"].map(posixRoot) });
 		volume.unlinkSync(at("server/loose.luau"));
-		vi.spyOn(fileSystem, "rmSync").mockImplementation(() => {
-			throw new Error("EPERM");
-		});
+		vi.spyOn(fileSystem, "rmSync").mockThrow(new Error("EPERM"));
 
 		// Reporting a file as gone when it is still there would have the caller
 		// rebuild the place over a lie.
 		expect(spineOf(fileSystem, { levels: ["out/server"].map(posixRoot) }).changed).toBeFalse();
 	});
 
-	it("should drop a spine file whose source is gone", () => {
+	it("should drop a spine file whose source is gone", ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = seed({ [at("server/loose.luau")]: "return nil" });
@@ -307,7 +305,7 @@ describe(prepareSpine, () => {
 			return bakedPath;
 		}
 
-		it("should keep it when this run declares the ownership", () => {
+		it("should keep it when this run declares the ownership", ({ expect }) => {
 			expect.assertions(2);
 
 			const { fileSystem, volume } = seed({ [at("server/loose.luau")]: "return nil" });
@@ -333,7 +331,7 @@ describe(prepareSpine, () => {
 			expect(second.changed).toBeFalse();
 		});
 
-		it("should sweep it when this run declares none", () => {
+		it("should sweep it when this run declares none", ({ expect }) => {
 			expect.assertions(1);
 
 			const { fileSystem, volume } = seed({ [at("server/loose.luau")]: "return nil" });

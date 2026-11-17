@@ -1,5 +1,5 @@
 import picomatch from "picomatch";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { posixRoot } from "#test/mocks/posix-path.ts";
@@ -18,7 +18,7 @@ function universeOf(include: string): InstrumentUniverse {
 }
 
 describe(discoverRootFiles, () => {
-	it("should discover .luau files", async () => {
+	it("should discover .luau files", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -37,7 +37,7 @@ describe(discoverRootFiles, () => {
 	// ENOENT on a file that never existed.
 	it.for(["out/../out", "out/.", "out//", "out/./"])(
 		"should name walked files the same for a root spelled %s",
-		async (luauRoot) => {
+		async (luauRoot, { expect }) => {
 			expect.assertions(1);
 
 			const { fileSystem, volume } = createMemoryFileSystem();
@@ -55,7 +55,7 @@ describe(discoverRootFiles, () => {
 	// A file-system root is the one root that already ends in a separator, so
 	// a walk that writes its own doubles it. Reachable in workspace mode,
 	// where roots are absolute and no check refuses this one.
-	it("should walk a file-system root without doubling the separator", async () => {
+	it("should walk a file-system root without doubling the separator", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -69,7 +69,9 @@ describe(discoverRootFiles, () => {
 		expect(result).toStrictEqual(new Set(["init.luau", "shared/player.luau"]));
 	});
 
-	it("should name walked files relative to a root spelled as the current directory", async () => {
+	it("should name walked files relative to a root spelled as the current directory", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -83,7 +85,7 @@ describe(discoverRootFiles, () => {
 		expect(result).toStrictEqual(new Set(["init.luau", "shared/player.luau"]));
 	});
 
-	it("should exclude spec, test, and snap files", async () => {
+	it("should exclude spec, test, and snap files", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -102,7 +104,7 @@ describe(discoverRootFiles, () => {
 		expect(result).toStrictEqual(new Set(["init.luau"]));
 	});
 
-	it("should skip node_modules and dot directories", async () => {
+	it("should skip node_modules and dot directories", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -119,7 +121,7 @@ describe(discoverRootFiles, () => {
 		expect(result).toStrictEqual(new Set());
 	});
 
-	it("should include .lua files", async () => {
+	it("should include .lua files", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -132,7 +134,7 @@ describe(discoverRootFiles, () => {
 		expect(result).toStrictEqual(new Set(["init.lua"]));
 	});
 
-	it("should return empty set for empty directory", async () => {
+	it("should return empty set for empty directory", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -144,7 +146,7 @@ describe(discoverRootFiles, () => {
 		expect(result).toStrictEqual(new Set());
 	});
 
-	it("should treat every prod file as instrumentable without a universe", async () => {
+	it("should treat every prod file as instrumentable without a universe", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -157,7 +159,7 @@ describe(discoverRootFiles, () => {
 		);
 	});
 
-	it("should leave a copy-ignored prod file out of both sets", async () => {
+	it("should leave a copy-ignored prod file out of both sets", async ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -177,7 +179,7 @@ describe(discoverRootFiles, () => {
 		expect(result.excluded).toStrictEqual(new Set());
 	});
 
-	it("should split prod files by the coverage universe", async () => {
+	it("should split prod files by the coverage universe", async ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -197,7 +199,9 @@ describe(discoverRootFiles, () => {
 	// The universe names files as `path.join` writes them: the bare name under
 	// `.`. A root that pastes its own `.` on the front misses the universe, so
 	// every probe demotes to a mirrored copy and the run reports no coverage.
-	it("should split prod files by the universe under a current-directory root", async () => {
+	it("should split prod files by the universe under a current-directory root", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -216,7 +220,7 @@ describe(discoverRootFiles, () => {
 });
 
 describe(createCopyIgnoreMatcher, () => {
-	it("should match paths anchored at the root", () => {
+	it("should match paths anchored at the root", ({ expect }) => {
 		expect.assertions(2);
 
 		const isIgnored = createCopyIgnoreMatcher(["vendor/**"]);
@@ -227,13 +231,13 @@ describe(createCopyIgnoreMatcher, () => {
 });
 
 describe(hashCopyIgnorePatterns, () => {
-	it("should ignore pattern order", () => {
+	it("should ignore pattern order", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(hashCopyIgnorePatterns(["a", "b"])).toBe(hashCopyIgnorePatterns(["b", "a"]));
 	});
 
-	it("should change when a pattern changes", () => {
+	it("should change when a pattern changes", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(hashCopyIgnorePatterns(["a"])).not.toBe(hashCopyIgnorePatterns(["a", "b"]));
@@ -248,7 +252,7 @@ describe(isInstrumentableFile, () => {
 		["a.test.lua", false],
 		["a.snap.luau", false],
 		["a.json", false],
-	])("should classify %s as instrumentable: %s", ([name, expected]) => {
+	])("should classify %s as instrumentable: %s", ([name, expected], { expect }) => {
 		expect.assertions(1);
 
 		expect(isInstrumentableFile(name)).toBe(expected);
@@ -260,7 +264,7 @@ describe(isSkippedDirectory, () => {
 		["node_modules", true],
 		[".git", true],
 		["shared", false],
-	])("should skip %s: %s", ([name, expected]) => {
+	])("should skip %s: %s", ([name, expected], { expect }) => {
 		expect.assertions(1);
 
 		expect(isSkippedDirectory(name)).toBe(expected);
@@ -268,7 +272,9 @@ describe(isSkippedDirectory, () => {
 });
 
 describe(walkLuauDirectory, () => {
-	it("should report every directory it descends into and skip what the filter claims", () => {
+	it("should report every directory it descends into and skip what the filter claims", ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = createMemoryFileSystem();

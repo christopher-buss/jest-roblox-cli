@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { renderHelp } from "./cli-help.ts";
 import type { OptionRow } from "./config/option-row.ts";
@@ -29,7 +29,7 @@ function isListed(help: string, name: string): boolean {
 }
 
 describe(renderHelp, () => {
-	it("should list every flag the parser accepts", () => {
+	it("should list every flag the parser accepts", ({ expect }) => {
 		expect.assertions(1);
 
 		const help = renderHelp();
@@ -38,7 +38,7 @@ describe(renderHelp, () => {
 		expect(missing).toStrictEqual([]);
 	});
 
-	it("should frame the flag sections with the usage header and the footer", () => {
+	it("should frame the flag sections with the usage header and the footer", ({ expect }) => {
 		expect.assertions(3);
 
 		const help = renderHelp();
@@ -52,7 +52,7 @@ describe(renderHelp, () => {
 		expect(help).toEndWith("Skip coverage instrumentation for this run\n\n");
 	});
 
-	it("should list the sections in order", () => {
+	it("should list the sections in order", ({ expect }) => {
 		expect.assertions(1);
 
 		const headings = renderHelp()
@@ -74,7 +74,7 @@ describe(renderHelp, () => {
 		]);
 	});
 
-	it("should render short flags, values, negations and repeatable flags", () => {
+	it("should render short flags, values, negations and repeatable flags", ({ expect }) => {
 		expect.assertions(3);
 
 		const help = renderHelp();
@@ -90,7 +90,7 @@ describe(renderHelp, () => {
 		);
 	});
 
-	it("should fill each line up to the column limit before wrapping", () => {
+	it("should fill each line up to the column limit before wrapping", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(renderHelp()).toContain(
@@ -98,7 +98,7 @@ describe(renderHelp, () => {
 		);
 	});
 
-	it("should keep every line within 80 columns", () => {
+	it("should keep every line within 80 columns", ({ expect }) => {
 		expect.assertions(1);
 
 		const long = renderHelp()
@@ -108,7 +108,7 @@ describe(renderHelp, () => {
 		expect(long).toStrictEqual([]);
 	});
 
-	it("should hold only flag rows and their wrapped lines under each section", () => {
+	it("should hold only flag rows and their wrapped lines under each section", ({ expect }) => {
 		expect.assertions(1);
 
 		const sections = backendSections(renderHelp());

@@ -1,7 +1,7 @@
 // cspell:ignore SSTR
 import { Buffer } from "node:buffer";
 import * as path from "node:path";
-import { assert, describe, expect, it, vi } from "vitest";
+import { assert, describe, it, vi } from "vitest";
 
 import compressedModel from "#test/fixtures/model-classes/rojo-compressed.json" with { type: "json" };
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
@@ -116,7 +116,7 @@ describe(isModelFile, () => {
 		["init.meta.json", true],
 		["init.luau", false],
 		["data.json", false],
-	] as const)("should report %s as %s", ([fileName, expected]) => {
+	] as const)("should report %s as %s", ([fileName, expected], { expect }) => {
 		expect.assertions(1);
 
 		expect(isModelFile(fileName)).toBe(expected);
@@ -131,7 +131,7 @@ describe(readDeclaredClasses, () => {
 			model: Buffer.concat([binaryHeader(), chunk("INST", instancePayload("Folder"))]),
 		},
 		{ classes: [], kind: "malformed", model: Buffer.alloc(8) },
-	])("should close the file after reading a $kind binary", ({ classes, model }) => {
+	])("should close the file after reading a $kind binary", ({ classes, model }, { expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -146,7 +146,7 @@ describe(readDeclaredClasses, () => {
 		expect(() => fileSystem.readSync(handle, Buffer.alloc(1), 0, 1, 0)).toThrow("EBADF");
 	});
 
-	it("should report no classes when the file ends before its first chunk", () => {
+	it("should report no classes when the file ends before its first chunk", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -155,7 +155,7 @@ describe(readDeclaredClasses, () => {
 		expect(readDeclaredClasses("/empty.rbxm", fileSystem)).toStrictEqual([]);
 	});
 
-	it("should read every class out of an XML model", () => {
+	it("should read every class out of an XML model", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(readDeclaredClasses(path.join(FIXTURES, "service-root.rbxmx"))).toStrictEqual(
@@ -163,7 +163,7 @@ describe(readDeclaredClasses, () => {
 		);
 	});
 
-	it("should read every class out of a binary model, LZ4 chunks included", () => {
+	it("should read every class out of a binary model, LZ4 chunks included", ({ expect }) => {
 		expect.assertions(1);
 
 		const model = Buffer.from(compressedModel.base64, "base64");
@@ -173,7 +173,7 @@ describe(readDeclaredClasses, () => {
 		);
 	});
 
-	it("should accept repeated whitespace before an XML class attribute", () => {
+	it("should accept repeated whitespace before an XML class attribute", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -183,7 +183,7 @@ describe(readDeclaredClasses, () => {
 		).toStrictEqual(["Folder"]);
 	});
 
-	it("should report no pinned class for a model that declares none", () => {
+	it("should report no pinned class for a model that declares none", ({ expect }) => {
 		expect.assertions(1);
 
 		const model = Buffer.concat([binaryHeader(), chunk("INST", instancePayload("Folder"))]);
@@ -191,7 +191,7 @@ describe(readDeclaredClasses, () => {
 		expect(readDeclaredClasses(...memoryFile("a.rbxm", model))).toStrictEqual(["Folder"]);
 	});
 
-	it("should read ClassName out of a .model.json", () => {
+	it("should read ClassName out of a .model.json", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(readDeclaredClasses(path.join(FIXTURES, "service.model.json"))).toStrictEqual([
@@ -199,7 +199,7 @@ describe(readDeclaredClasses, () => {
 		]);
 	});
 
-	it("should read className out of an init.meta.json", () => {
+	it("should read className out of an init.meta.json", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -207,7 +207,7 @@ describe(readDeclaredClasses, () => {
 		).toStrictEqual(["StarterPlayerScripts"]);
 	});
 
-	it("should report nothing for a JSON descriptor that names no class", () => {
+	it("should report nothing for a JSON descriptor that names no class", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(
@@ -217,20 +217,20 @@ describe(readDeclaredClasses, () => {
 
 	it.for(["null", "[]"] as const)(
 		"should report nothing for a JSON descriptor of %s, which names no class",
-		(contents) => {
+		(contents, { expect }) => {
 			expect.assertions(1);
 
 			expect(readDeclaredClasses(...memoryFile("a.model.json", contents))).toStrictEqual([]);
 		},
 	);
 
-	it("should report nothing for a file extension that declares no class", () => {
+	it("should report nothing for a file extension that declares no class", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(readDeclaredClasses(...memoryFile("init.luau", "return {}"))).toStrictEqual([]);
 	});
 
-	it("should report nothing for a malformed file rather than throwing", () => {
+	it("should report nothing for a malformed file rather than throwing", ({ expect }) => {
 		expect.assertions(1);
 
 		// rojo reads the same bytes moments later, and its error says far more
@@ -238,13 +238,13 @@ describe(readDeclaredClasses, () => {
 		expect(readDeclaredClasses(...memoryFile("a.model.json", "{not json"))).toStrictEqual([]);
 	});
 
-	it("should report nothing for a binary file too short to hold a header", () => {
+	it("should report nothing for a binary file too short to hold a header", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(readDeclaredClasses(...memoryFile("a.rbxm", Buffer.alloc(8)))).toStrictEqual([]);
 	});
 
-	it("should report nothing for a file whose magic is not the binary format", () => {
+	it("should report nothing for a file whose magic is not the binary format", ({ expect }) => {
 		expect.assertions(1);
 
 		const model = Buffer.concat([
@@ -255,7 +255,7 @@ describe(readDeclaredClasses, () => {
 		expect(readDeclaredClasses(...memoryFile("a.rbxm", model))).toStrictEqual([]);
 	});
 
-	it("should skip the chunks that precede the class table", () => {
+	it("should skip the chunks that precede the class table", ({ expect }) => {
 		expect.assertions(1);
 
 		const model = Buffer.concat([
@@ -268,7 +268,7 @@ describe(readDeclaredClasses, () => {
 		expect(readDeclaredClasses(...memoryFile("a.rbxm", model))).toStrictEqual(["Terrain"]);
 	});
 
-	it("should decode a compressed chunk whose literal length uses an extension", () => {
+	it("should decode a compressed chunk whose literal length uses an extension", ({ expect }) => {
 		expect.assertions(1);
 
 		const payload = instancePayload("Workspace");
@@ -283,7 +283,7 @@ describe(readDeclaredClasses, () => {
 
 	it.for([8, 20, 275] as const)(
 		"should decode an overlapping LZ4 match for a %i-byte class name",
-		(length) => {
+		(length, { expect }) => {
 			expect.assertions(1);
 
 			const declared = "A".repeat(length);
@@ -299,7 +299,9 @@ describe(readDeclaredClasses, () => {
 		},
 	);
 
-	it("should reject compressed data that ends before its declared output length", () => {
+	it("should reject compressed data that ends before its declared output length", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const declared = "A".repeat(8);
@@ -314,7 +316,9 @@ describe(readDeclaredClasses, () => {
 		expect(readDeclaredClasses(...memoryFile("a.rbxm", model))).toStrictEqual([]);
 	});
 
-	it("should reject compressed data that continues past its declared output length", () => {
+	it("should reject compressed data that continues past its declared output length", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const declared = "A".repeat(8);
@@ -333,7 +337,7 @@ describe(readDeclaredClasses, () => {
 		expect(readDeclaredClasses(...memoryFile("a.rbxm", model))).toStrictEqual([]);
 	});
 
-	it("should stop at the first chunk after the class table", () => {
+	it("should stop at the first chunk after the class table", ({ expect }) => {
 		expect.assertions(1);
 
 		// Everything past `PROP` is property data (the bulk of a game-sized
@@ -348,7 +352,7 @@ describe(readDeclaredClasses, () => {
 		expect(readDeclaredClasses(...memoryFile("a.rbxm", model))).toStrictEqual(["Workspace"]);
 	});
 
-	it("should stop at a chunk whose body is truncated", () => {
+	it("should stop at a chunk whose body is truncated", ({ expect }) => {
 		expect.assertions(1);
 
 		// The header claims more bytes than the file holds. Decompressing the
@@ -369,7 +373,7 @@ describe(readDeclaredClasses, () => {
 		expect(readDeclaredClasses(...memoryFile("a.rbxm", model))).toStrictEqual(["Lighting"]);
 	});
 
-	it("should stop at a truncated chunk header", () => {
+	it("should stop at a truncated chunk header", ({ expect }) => {
 		expect.assertions(1);
 
 		const model = Buffer.concat([

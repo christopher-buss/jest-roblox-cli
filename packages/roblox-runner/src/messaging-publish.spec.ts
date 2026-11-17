@@ -2,7 +2,7 @@ import type { FakeHttpClient } from "@bedrock-rbx/ocale/testing";
 import { createFakeHttpClient } from "@bedrock-rbx/ocale/testing";
 import { fromAny } from "@total-typescript/shoehorn";
 
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import { publishMessageAsync } from "./messaging-publish.ts";
 
@@ -18,7 +18,7 @@ async function publishAsync(http: FakeHttpClient, overrides?: { baseUrl?: string
 }
 
 describe("messaging publish", () => {
-	it("should POST the topic and message to the universe publish endpoint", async () => {
+	it("should POST the topic and message to the universe publish endpoint", async ({ expect }) => {
 		expect.assertions(4);
 
 		const http = createFakeHttpClient();
@@ -35,7 +35,7 @@ describe("messaging publish", () => {
 		});
 	});
 
-	it("should route through a custom baseUrl when supplied", async () => {
+	it("should route through a custom baseUrl when supplied", async ({ expect }) => {
 		expect.assertions(1);
 
 		const http = createFakeHttpClient();
@@ -46,7 +46,7 @@ describe("messaging publish", () => {
 		expect(http.requests[0]!.config.baseUrl).toBe("http://127.0.0.1:4010");
 	});
 
-	it("should default to the public Open Cloud host", async () => {
+	it("should default to the public Open Cloud host", async ({ expect }) => {
 		expect.assertions(1);
 
 		const http = createFakeHttpClient();
@@ -57,7 +57,7 @@ describe("messaging publish", () => {
 		expect(http.requests[0]!.config.baseUrl).toBe("https://apis.roblox.com");
 	});
 
-	it("should throw when the publish returns an API error", async () => {
+	it("should throw when the publish returns an API error", async ({ expect }) => {
 		expect.assertions(1);
 
 		const http = createFakeHttpClient();
@@ -66,7 +66,7 @@ describe("messaging publish", () => {
 		await expect(publishAsync(http)).rejects.toThrow(/Bad Request/);
 	});
 
-	it("should say nothing about scopes on a failure the key did not cause", async () => {
+	it("should say nothing about scopes on a failure the key did not cause", async ({ expect }) => {
 		expect.assertions(1);
 
 		const http = createFakeHttpClient();
@@ -80,7 +80,7 @@ describe("messaging publish", () => {
 	describe("complete publish diagnostics", () => {
 		it.for([401, 403])(
 			"should name the missing api-key scope when the publish is refused with %i",
-			async (statusCode) => {
+			async (statusCode, { expect }) => {
 				expect.assertions(1);
 
 				const http = createFakeHttpClient();
@@ -92,7 +92,9 @@ describe("messaging publish", () => {
 			},
 		);
 
-		it("should reach Open Cloud over the real transport when no client is injected", async () => {
+		it("should reach Open Cloud over the real transport when no client is injected", async ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			const fetchMock = vi
@@ -112,7 +114,9 @@ describe("messaging publish", () => {
 			);
 		});
 
-		it("should name no scope on a failure that carries no status at all", async () => {
+		it("should name no scope on a failure that carries no status at all", async ({
+			expect,
+		}) => {
 			expect.assertions(2);
 
 			const http = createFakeHttpClient();
@@ -137,7 +141,7 @@ describe("messaging publish", () => {
 		},
 	])(
 		"should retain complete publish diagnostics: %j",
-		async ({ message, statusCode, suffix }) => {
+		async ({ message, statusCode, suffix }, { expect }) => {
 			expect.assertions(1);
 
 			const http = createFakeHttpClient();
@@ -149,7 +153,7 @@ describe("messaging publish", () => {
 		},
 	);
 
-	it("should report transport failure without adding a permission hint", async () => {
+	it("should report transport failure without adding a permission hint", async ({ expect }) => {
 		expect.assertions(1);
 
 		const http = createFakeHttpClient();

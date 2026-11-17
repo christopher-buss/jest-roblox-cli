@@ -4,7 +4,7 @@ import { Buffer } from "node:buffer";
 import { createHash } from "node:crypto";
 import * as path from "node:path";
 import process from "node:process";
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import type { MemoryVolume } from "#test/mocks/memory-file-system.ts";
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
@@ -269,7 +269,9 @@ function prepareCoverageCall({ seams }: Harness): Parameters<RunSeams["prepareCo
 }
 
 describe(prepareArtifactsAsync, () => {
-	it("should return distinct clean and coverage places sharing one buildId", async () => {
+	it("should return distinct clean and coverage places sharing one buildId", async ({
+		expect,
+	}) => {
 		expect.assertions(4);
 
 		const harness = seed(manifestWithFile());
@@ -294,7 +296,7 @@ describe(prepareArtifactsAsync, () => {
 		expect(bundle.buildId).toBe("build-42");
 	});
 
-	it("should build the Clean Place in the place directory", async () => {
+	it("should build the Clean Place in the place directory", async ({ expect }) => {
 		expect.assertions(1);
 
 		const harness = seed(manifestWithFile());
@@ -304,7 +306,7 @@ describe(prepareArtifactsAsync, () => {
 		expect(bundle.cleanPlace.path).toBe(CLEAN_PLACE_PATH);
 	});
 
-	it("should build the Clean Place stamped with the covering set's id", async () => {
+	it("should build the Clean Place stamped with the covering set's id", async ({ expect }) => {
 		expect.assertions(1);
 
 		const harness = seed(manifestWithFile());
@@ -317,7 +319,7 @@ describe(prepareArtifactsAsync, () => {
 		expect(bundle.cleanPlace.contentId).toBe(contentIdOf(manifestWithFile()));
 	});
 
-	it("should surface the coverage manifest paths", async () => {
+	it("should surface the coverage manifest paths", async ({ expect }) => {
 		expect.assertions(2);
 
 		const harness = seed(manifestWithFile());
@@ -328,7 +330,7 @@ describe(prepareArtifactsAsync, () => {
 		expect(bundle.coverageManifestPath).toBe(COVERAGE_MANIFEST_PATH);
 	});
 
-	it("should surface the declared projects from the coverage artifacts", async () => {
+	it("should surface the declared projects from the coverage artifacts", async ({ expect }) => {
 		expect.assertions(1);
 
 		const harness = seed(manifestWithFile(), { declared: ["client"] });
@@ -338,7 +340,7 @@ describe(prepareArtifactsAsync, () => {
 		expect(bundle.projects).toStrictEqual([manifestProject("client", "client")]);
 	});
 
-	it("should emit the build manifest once with both places", async () => {
+	it("should emit the build manifest once with both places", async ({ expect }) => {
 		expect.assertions(2);
 
 		const harness = seed(manifestWithFile());
@@ -350,7 +352,7 @@ describe(prepareArtifactsAsync, () => {
 		expect(manifest.cleanPlace).toStrictEqual(bundle.cleanPlace);
 	});
 
-	it("should carry coverage data from a no-projects run", async () => {
+	it("should carry coverage data from a no-projects run", async ({ expect }) => {
 		expect.assertions(1);
 
 		const harness = seed(manifestWithFile(), {
@@ -364,7 +366,7 @@ describe(prepareArtifactsAsync, () => {
 
 	it.for([undefined, []])(
 		"should build the clean place with the implicit project's stub mounts for projects=%j",
-		async (projects) => {
+		async (projects, { expect }) => {
 			expect.assertions(3);
 
 			const harness = seed(manifestWithFile());
@@ -387,7 +389,7 @@ describe(prepareArtifactsAsync, () => {
 		},
 	);
 
-	it("should build the clean place with stub mounts in multi mode", async () => {
+	it("should build the clean place with stub mounts in multi mode", async ({ expect }) => {
 		expect.assertions(2);
 
 		const harness = seed(manifestWithFile(), {
@@ -406,7 +408,9 @@ describe(prepareArtifactsAsync, () => {
 		expect(bundle.coverageData).toStrictEqual({ "b.luau": { s: { "0": 1 } } });
 	});
 
-	it("should fold per-test attribution into the published coverage manifest", async () => {
+	it("should fold per-test attribution into the published coverage manifest", async ({
+		expect,
+	}) => {
 		expect.assertions(3);
 
 		const harness = seed(manifestWithFile(), {
@@ -422,7 +426,7 @@ describe(prepareArtifactsAsync, () => {
 		expect(written.files["out/init.luau"]!.staticStatementIds).toStrictEqual(["0"]);
 	});
 
-	it("should fold attribution across every project result", async () => {
+	it("should fold attribution across every project result", async ({ expect }) => {
 		expect.assertions(2);
 
 		const second: AttributionResult = {
@@ -445,7 +449,9 @@ describe(prepareArtifactsAsync, () => {
 		});
 	});
 
-	it("should leave the published coverage manifest alone when a run attributes nothing", async () => {
+	it("should leave the published coverage manifest alone when a run attributes nothing", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const harness = seed(manifestWithFile());
@@ -455,7 +461,9 @@ describe(prepareArtifactsAsync, () => {
 		expect(readCoverageManifest(harness)).toStrictEqual(manifestWithFile());
 	});
 
-	it("should refuse to stamp a place when the coverage manifest cannot be read", async () => {
+	it("should refuse to stamp a place when the coverage manifest cannot be read", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		// The manifest is what the Place Content Id is taken over, so a bundle
@@ -467,7 +475,7 @@ describe(prepareArtifactsAsync, () => {
 		);
 	});
 
-	it("should opt the coverage run into per-test attribution collection", async () => {
+	it("should opt the coverage run into per-test attribution collection", async ({ expect }) => {
 		expect.assertions(1);
 
 		const harness = seed(manifestWithFile());
@@ -477,7 +485,7 @@ describe(prepareArtifactsAsync, () => {
 		expect(prepareCoverageCall(harness)[0].collectPerTestCoverage).toBeTrue();
 	});
 
-	it("should collect coverage whatever the caller's config said", async () => {
+	it("should collect coverage whatever the caller's config said", async ({ expect }) => {
 		expect.assertions(1);
 
 		const harness = seed(manifestWithFile());
@@ -487,7 +495,7 @@ describe(prepareArtifactsAsync, () => {
 		expect(prepareCoverageCall(harness)[0].collectCoverage).toBeTrue();
 	});
 
-	it("should hand the caller's instrument universe to the coverage pass", async () => {
+	it("should hand the caller's instrument universe to the coverage pass", async ({ expect }) => {
 		expect.assertions(1);
 
 		const harness = seed(manifestWithFile());
@@ -501,7 +509,9 @@ describe(prepareArtifactsAsync, () => {
 		);
 	});
 
-	it("should hand the coverage pass no instrument universe when the caller gave none", async () => {
+	it("should hand the coverage pass no instrument universe when the caller gave none", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const harness = seed(manifestWithFile());
@@ -511,7 +521,7 @@ describe(prepareArtifactsAsync, () => {
 		expect(prepareCoverageCall(harness)[1]).not.toHaveProperty("instrumentUniverse");
 	});
 
-	it("should throw when the coverage run produced no artifacts", async () => {
+	it("should throw when the coverage run produced no artifacts", async ({ expect }) => {
 		expect.assertions(1);
 
 		const harness = seed(manifestWithFile(), { specs: false });
@@ -519,7 +529,7 @@ describe(prepareArtifactsAsync, () => {
 		await expect(prepareArtifactsAsync(makeConfig(), harness)).rejects.toThrow(/no artifacts/);
 	});
 
-	it("should flush the timing report when artifact production fails", async () => {
+	it("should flush the timing report when artifact production fails", async ({ expect }) => {
 		expect.assertions(2);
 
 		vi.stubEnv("TIMING", "1");

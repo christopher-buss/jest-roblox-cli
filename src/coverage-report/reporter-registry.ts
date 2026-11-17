@@ -20,19 +20,19 @@ import { writeIstanbulHtmlAssets } from "./html-assets.ts";
 // Static imports, not `istanbulReports.create(name)`: its dynamic require
 // escapes the bundle.
 const REPORTER_FACTORIES = {
-	"clover": (options: object) => new CloverReport(options),
-	"cobertura": (options: object) => new CoberturaReport(options),
-	"html": (options: object) => carryAssets(new HtmlReport(options)),
-	"html-spa": (options: object) => createHtmlSpaReport(options),
-	"json": (options: object) => new JsonReport(options),
-	"json-summary": (options: object) => new JsonSummaryReport(options),
-	"lcov": (options: object) => createLcovReport(options),
-	"lcovonly": (options: object) => new LcovOnlyReport(options),
-	"none": (options: object) => new NoneReport(options),
-	"teamcity": (options: object) => new TeamcityReport(options),
-	"text": (options: object) => new TextReport(options),
-	"text-lcov": (options: object) => new TextLcovReport(options),
-	"text-summary": (options: object) => new TextSummaryReport(options),
+	"clover": (options) => new CloverReport(options),
+	"cobertura": (options) => new CoberturaReport(options),
+	"html": (options) => carryAssets(new HtmlReport(options)),
+	"html-spa": (options) => createHtmlSpaReport(options),
+	"json": (options) => new JsonReport(options),
+	"json-summary": (options) => new JsonSummaryReport(options),
+	"lcov": (options) => createLcovReport(options),
+	"lcovonly": (options) => new LcovOnlyReport(options),
+	"none": (options) => new NoneReport(options),
+	"teamcity": (options) => new TeamcityReport(options),
+	"text": (options) => new TextReport(options),
+	"text-lcov": (options) => new TextLcovReport(options),
+	"text-summary": (options) => new TextSummaryReport(options),
 } as const satisfies Record<CoverageReporter, (options: object) => ReportBase>;
 
 /**

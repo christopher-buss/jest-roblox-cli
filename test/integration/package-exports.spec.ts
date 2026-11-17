@@ -1,7 +1,7 @@
 import { type } from "arktype";
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 const PACKAGE_ROOT = path.resolve(__dirname, "..", "..");
 
@@ -20,7 +20,7 @@ function readConditionalExports(): Array<[string, Record<string, string>]> {
 }
 
 describe("package exports", () => {
-	it("should resolve each subpath to the same module from source and from dist", () => {
+	it("should resolve each subpath to the same module from source and from dist", ({ expect }) => {
 		expect.assertions(1);
 
 		const stems = readConditionalExports().map(([subpath, conditions]) => {
@@ -34,7 +34,7 @@ describe("package exports", () => {
 		expect(stems.filter(({ built, source }) => built !== source)).toStrictEqual([]);
 	});
 
-	it("should build every source entry", () => {
+	it("should build every source entry", ({ expect }) => {
 		expect.assertions(1);
 
 		const tsdownConfig = readFileSync(path.join(PACKAGE_ROOT, "tsdown.config.ts"), "utf-8");

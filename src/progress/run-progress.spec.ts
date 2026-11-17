@@ -1,9 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { NOOP_RUN_PROGRESS } from "./run-progress.ts";
 
 describe("nOOP_RUN_PROGRESS", () => {
-	it("should say nothing anywhere through the shared silent reporter", () => {
+	it("should say nothing anywhere through the shared silent reporter", ({ expect }) => {
 		expect.assertions(1);
 
 		const written: Array<string> = [];

@@ -1,5 +1,5 @@
 import process from "node:process";
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import { asciiColumn } from "#test/mocks/ascii-columns.ts";
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
@@ -26,7 +26,7 @@ function expectOk(result: ReadCoverageMapResult): CoverageMap {
 }
 
 describe(writeCoverageMap, () => {
-	it("should round-trip statement-only map through readCoverageMap", () => {
+	it("should round-trip statement-only map through readCoverageMap", ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -43,7 +43,7 @@ describe(writeCoverageMap, () => {
 		);
 	});
 
-	it("should round-trip a map with functionMap and branchMap", () => {
+	it("should round-trip a map with functionMap and branchMap", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -88,7 +88,7 @@ describe(writeCoverageMap, () => {
 		);
 	});
 
-	it("should create parent directories before writing", () => {
+	it("should create parent directories before writing", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -105,7 +105,7 @@ describe(writeCoverageMap, () => {
 	// This runs once per covered file into the shadow mirror the instrumenter
 	// is filling, so it is the one publisher that declines `atomicWrite`'s
 	// stray sweep: a directory scan per file is more than the write costs.
-	it("should not scan the directory for strays", () => {
+	it("should not scan the directory for strays", ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = createMemoryFileSystem({
@@ -129,7 +129,7 @@ describe(writeCoverageMap, () => {
 });
 
 describe(readCoverageMap, () => {
-	it("should return missing when file is absent", () => {
+	it("should return missing when file is absent", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -137,7 +137,7 @@ describe(readCoverageMap, () => {
 		expect(readCoverageMap("/nonexistent.cov-map.json", fileSystem).kind).toBe("missing");
 	});
 
-	it("should return invalid when file contains malformed JSON", () => {
+	it("should return invalid when file contains malformed JSON", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -149,7 +149,7 @@ describe(readCoverageMap, () => {
 		expect(readCoverageMap("/coverage/x.cov-map.json", fileSystem).kind).toBe("invalid");
 	});
 
-	it("should return invalid when statementMap is missing", () => {
+	it("should return invalid when statementMap is missing", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -161,7 +161,7 @@ describe(readCoverageMap, () => {
 		expect(readCoverageMap("/coverage/x.cov-map.json", fileSystem).kind).toBe("invalid");
 	});
 
-	it("should return invalid when nested span shape is wrong", () => {
+	it("should return invalid when nested span shape is wrong", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -176,7 +176,7 @@ describe(readCoverageMap, () => {
 		expect(readCoverageMap("/coverage/x.cov-map.json", fileSystem).kind).toBe("invalid");
 	});
 
-	it("should propagate non-ENOENT IO errors rather than misreport as missing", () => {
+	it("should propagate non-ENOENT IO errors rather than misreport as missing", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { createUtf8OffsetMap } from "./utf-8-offsets.ts";
 
@@ -10,7 +10,7 @@ describe(createUtf8OffsetMap, () => {
 		{ text: "\u0800x", utf16Width: 1, width: 3 },
 		{ text: "\uffffx", utf16Width: 1, width: 3 },
 		{ text: "\u{10000}x", utf16Width: 2, width: 4 },
-	])("should map UTF-8 width boundaries for $text", ({ text, utf16Width, width }) => {
+	])("should map UTF-8 width boundaries for $text", ({ text, utf16Width, width }, { expect }) => {
 		expect.assertions(3);
 
 		const { byteLength, toUtf16 } = createUtf8OffsetMap(text);
@@ -20,7 +20,7 @@ describe(createUtf8OffsetMap, () => {
 		expect(toUtf16(width)).toBe(utf16Width);
 	});
 
-	it.for([0.5, NaN])("should reject an unmappable byte offset %s", (offset) => {
+	it.for([0.5, NaN])("should reject an unmappable byte offset %s", (offset, { expect }) => {
 		expect.assertions(1);
 
 		const { toUtf16 } = createUtf8OffsetMap("hello");
@@ -28,7 +28,7 @@ describe(createUtf8OffsetMap, () => {
 		expect(() => toUtf16(offset)).toThrow("Clamped byte offset must be within the map");
 	});
 
-	it("should map ASCII byte offsets one to one", () => {
+	it("should map ASCII byte offsets one to one", ({ expect }) => {
 		expect.assertions(4);
 
 		const { byteLength, toUtf16 } = createUtf8OffsetMap("hello");
@@ -39,7 +39,7 @@ describe(createUtf8OffsetMap, () => {
 		expect(toUtf16(5)).toBe(5);
 	});
 
-	it("should count a two-byte character as one UTF-16 unit", () => {
+	it("should count a two-byte character as one UTF-16 unit", ({ expect }) => {
 		expect.assertions(2);
 
 		const { byteLength, toUtf16 } = createUtf8OffsetMap("éx");
@@ -48,7 +48,7 @@ describe(createUtf8OffsetMap, () => {
 		expect(toUtf16(2)).toBe(1);
 	});
 
-	it("should count a three-byte character as one UTF-16 unit", () => {
+	it("should count a three-byte character as one UTF-16 unit", ({ expect }) => {
 		expect.assertions(2);
 
 		const { byteLength, toUtf16 } = createUtf8OffsetMap("漢x");
@@ -57,7 +57,7 @@ describe(createUtf8OffsetMap, () => {
 		expect(toUtf16(3)).toBe(1);
 	});
 
-	it("should count a four-byte character as two UTF-16 units", () => {
+	it("should count a four-byte character as two UTF-16 units", ({ expect }) => {
 		expect.assertions(2);
 
 		const { byteLength, toUtf16 } = createUtf8OffsetMap("🚀x");
@@ -66,7 +66,7 @@ describe(createUtf8OffsetMap, () => {
 		expect(toUtf16(4)).toBe(2);
 	});
 
-	it("should resolve an offset inside a character to where it starts", () => {
+	it("should resolve an offset inside a character to where it starts", ({ expect }) => {
 		expect.assertions(2);
 
 		const { toUtf16 } = createUtf8OffsetMap("a🚀");
@@ -75,7 +75,7 @@ describe(createUtf8OffsetMap, () => {
 		expect(toUtf16(4)).toBe(1);
 	});
 
-	it("should clamp an offset outside the text to its nearest end", () => {
+	it("should clamp an offset outside the text to its nearest end", ({ expect }) => {
 		expect.assertions(2);
 
 		const { toUtf16 } = createUtf8OffsetMap("é");
@@ -84,7 +84,7 @@ describe(createUtf8OffsetMap, () => {
 		expect(toUtf16(99)).toBe(1);
 	});
 
-	it("should map the empty text to a single zero offset", () => {
+	it("should map the empty text to a single zero offset", ({ expect }) => {
 		expect.assertions(2);
 
 		const { byteLength, toUtf16 } = createUtf8OffsetMap("");

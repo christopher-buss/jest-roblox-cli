@@ -1,7 +1,7 @@
 import { type } from "arktype";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { startFakeOpenCloudServerAsync } from "#test/harness/fake-open-cloud.ts";
 import {
@@ -120,7 +120,7 @@ function readVendoredShadow(sandbox: string) {
 describe("workspace coverage: $path mounts specs alongside helpers", () => {
 	it.skipIf(!rojoOnPath())(
 		"should preserve spec files in the shadow and reach backend dispatch",
-		async () => {
+		async ({ expect }) => {
 			expect.assertions(4);
 
 			const sandbox = createFixtureSandbox(WORKSPACE_FIXTURE_PATH);
@@ -170,7 +170,7 @@ describe("workspace coverage: $path mounts specs alongside helpers", () => {
 describe("workspace coverage: collectCoverageFrom scopes instrumentation", () => {
 	it.skipIf(!rojoOnPath())(
 		"should mirror an out-of-universe file verbatim and leave it out of the manifest",
-		async () => {
+		async ({ expect }) => {
 			expect.assertions(5);
 
 			const sandbox = createFixtureSandbox(WORKSPACE_FIXTURE_PATH);
@@ -232,7 +232,7 @@ describe("workspace coverage: multi-$path rojo tree honors per-pkg luauRoots", (
 				});
 			},
 		},
-	])("$name", { timeout: RUN_TIMEOUT_MS + 5000 }, async ({ configure }) => {
+	])("$name", { timeout: RUN_TIMEOUT_MS + 5000 }, async ({ configure }, { expect }) => {
 		expect.assertions(5);
 
 		const sandbox = createFixtureSandbox(WORKSPACE_FIXTURE_PATH);

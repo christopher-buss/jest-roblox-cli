@@ -1,9 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { startFakeOpenCloudServerAsync } from "#test/harness/fake-open-cloud.ts";
 
 describe("fake Open Cloud request failures", () => {
-	it("should answer a rejected queue handler and keep serving requests", async () => {
+	it("should answer a rejected queue handler and keep serving requests", async ({ expect }) => {
 		expect.assertions(3);
 
 		const { baseUrl } = await startFakeOpenCloudServerAsync([]);
@@ -31,7 +31,7 @@ describe("fake Open Cloud request failures", () => {
 
 	it.for(["{", JSON.stringify({ script: 123 })])(
 		"should explain invalid task input %s",
-		async (body) => {
+		async (body, { expect }) => {
 			expect.assertions(2);
 
 			const { baseUrl } = await startFakeOpenCloudServerAsync([]);

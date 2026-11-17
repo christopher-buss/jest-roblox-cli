@@ -2,7 +2,7 @@ import { fromAny } from "@total-typescript/shoehorn";
 
 import * as path from "node:path";
 import type { Mock } from "vitest";
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import type { MemoryVolume } from "#test/mocks/memory-file-system.ts";
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
@@ -192,7 +192,9 @@ function setup({
 }
 
 describe(buildPlaceForBackendAsync, () => {
-	it("should build the dispatch place for a backend that takes a built place", async () => {
+	it("should build the dispatch place for a backend that takes a built place", async ({
+		expect,
+	}) => {
 		expect.assertions(5);
 
 		const { fakes, input, recorded, volume } = setup({ backendKind: "open-cloud" });
@@ -206,7 +208,7 @@ describe(buildPlaceForBackendAsync, () => {
 		expect(outcome.placeBuildMs).toBe(7);
 	});
 
-	it("should build a loadstring-enabled place for studio-cli to open", async () => {
+	it("should build a loadstring-enabled place for studio-cli to open", async ({ expect }) => {
 		expect.assertions(2);
 
 		const { fakes, input, volume } = setup({ backendKind: "studio-cli" });
@@ -221,7 +223,7 @@ describe(buildPlaceForBackendAsync, () => {
 		).toContain('"LoadStringEnabled": true');
 	});
 
-	it("should refuse to build when the config has no Rojo project", async () => {
+	it("should refuse to build when the config has no Rojo project", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { input } = setup({
@@ -232,7 +234,7 @@ describe(buildPlaceForBackendAsync, () => {
 		await expect(runTestPlanAsync(input)).rejects.toThrow("No Rojo project found");
 	});
 
-	it("should build no place for a backend that takes none", async () => {
+	it("should build no place for a backend that takes none", async ({ expect }) => {
 		expect.assertions(2);
 
 		const { fakes, input } = setup({ backendKind: "studio" });
@@ -243,7 +245,7 @@ describe(buildPlaceForBackendAsync, () => {
 		expect(outcome.placeBuildMs).toBe(0);
 	});
 
-	it("should build no place on a coverage run", async () => {
+	it("should build no place on a coverage run", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fakes, input } = setup({

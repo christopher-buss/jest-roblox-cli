@@ -1,6 +1,6 @@
 import * as path from "node:path";
 import process from "node:process";
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import { copyIgnoreMatcher } from "#test/mocks/coverage-copy-ignore.ts";
 import type { MemoryVolume } from "#test/mocks/memory-file-system.ts";
@@ -47,7 +47,7 @@ function descriptorFor(luauRoots?: Array<string>): WorkspacePackageDescriptor {
 }
 
 describe(narrowPackageRoots, () => {
-	it("should answer each mounted root in package-relative terms", () => {
+	it("should answer each mounted root in package-relative terms", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -63,7 +63,7 @@ describe(narrowPackageRoots, () => {
 		).toStrictEqual([{ luauRoot: posixRoot("out"), roots: [posixRoot("out")], spine: [] }]);
 	});
 
-	it("should discover roblox-ts output mounts without explicit roots", () => {
+	it("should discover roblox-ts output mounts without explicit roots", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -85,7 +85,7 @@ describe(narrowPackageRoots, () => {
 		]);
 	});
 
-	it("should fall back to tsconfig output when Rojo has no Luau files", () => {
+	it("should fall back to tsconfig output when Rojo has no Luau files", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -110,7 +110,7 @@ describe(narrowPackageRoots, () => {
 
 	it.for([null, { config: {}, path: "tsconfig.json" }])(
 		"should fail when tsconfig supplies no output: %j",
-		(tsconfig) => {
+		(tsconfig, { expect }) => {
 			expect.assertions(1);
 
 			const { fileSystem, volume } = createMemoryFileSystem();
@@ -128,7 +128,7 @@ describe(narrowPackageRoots, () => {
 		},
 	);
 
-	it("should skip an explicit root that escapes the package, with a warning", () => {
+	it("should skip an explicit root that escapes the package, with a warning", ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = createMemoryFileSystem();

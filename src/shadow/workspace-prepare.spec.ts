@@ -6,7 +6,7 @@ import * as path from "node:path";
 import process from "node:process";
 import type { Except, SetOptional as PartialBy } from "type-fest";
 import type { MockedFunction } from "vitest";
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import { copyIgnoreHash } from "#test/mocks/coverage-hash.ts";
 import { INSTRUMENTER_VERSION, MANIFEST_VERSION } from "#test/mocks/coverage-versions.ts";
@@ -299,7 +299,7 @@ describe(prepareWorkspaceCoverage, () => {
 		},
 	])(
 		"should select script instrumentation in workspace mode with include $collectCoverageFrom",
-		({ collectCoverageFrom, expected }) => {
+		({ collectCoverageFrom, expected }, { expect }) => {
 			expect.assertions(1);
 
 			const { fileSystem, volume } = createMemoryFileSystem();
@@ -326,7 +326,7 @@ describe(prepareWorkspaceCoverage, () => {
 		},
 	])(
 		"should narrow instrumentation to collectCoverageFrom anchored at $anchor",
-		async ({ glob, rootDir }) => {
+		async ({ glob, rootDir }, { expect }) => {
 			expect.assertions(2);
 
 			const { fileSystem, volume } = createMemoryFileSystem();
@@ -355,7 +355,9 @@ describe(prepareWorkspaceCoverage, () => {
 		},
 	);
 
-	it("should leave a root the universe never touches out of the coverage roots", async () => {
+	it("should leave a root the universe never touches out of the coverage roots", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -383,7 +385,9 @@ describe(prepareWorkspaceCoverage, () => {
 		expect(result!.coverageRoots.map((entry): string => entry.luauRoot)).toStrictEqual(["out"]);
 	});
 
-	it("should instrument the whole package with explicitly unrestricted coverage", async () => {
+	it("should instrument the whole package with explicitly unrestricted coverage", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -397,7 +401,9 @@ describe(prepareWorkspaceCoverage, () => {
 		expect(result[0]!.manifest.coverageUniverseHash).toBeUndefined();
 	});
 
-	it("should return per-package coverage roots whose luauRoot is package-relative and shadowDir is absolute", async () => {
+	it("should return per-package coverage roots whose luauRoot is package-relative and shadowDir is absolute", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -417,7 +423,7 @@ describe(prepareWorkspaceCoverage, () => {
 		]);
 	});
 
-	it("should write a per-package manifest at workspace-root-scoped path", async () => {
+	it("should write a per-package manifest at workspace-root-scoped path", async ({ expect }) => {
 		expect.assertions(3);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -433,7 +439,7 @@ describe(prepareWorkspaceCoverage, () => {
 		expect(volume.readFileSync(expectedPath, "utf8")).toContain('\n\t"buildId":');
 	});
 
-	it("should publish instrumented files from every discovered luau root", async () => {
+	it("should publish instrumented files from every discovered luau root", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -455,7 +461,7 @@ describe(prepareWorkspaceCoverage, () => {
 		]);
 	});
 
-	it("should isolate shadow dirs and manifests between packages", async () => {
+	it("should isolate shadow dirs and manifests between packages", async ({ expect }) => {
 		expect.assertions(4);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -497,7 +503,9 @@ describe(prepareWorkspaceCoverage, () => {
 		expect(volume.existsSync(barManifest)).toBeTrue();
 	});
 
-	it("should aggregate instrumented file records into the per-package manifest", async () => {
+	it("should aggregate instrumented file records into the per-package manifest", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -516,7 +524,9 @@ describe(prepareWorkspaceCoverage, () => {
 	// runs warm. Stale files from a prior run would survive into the redirected
 	// $path mount, so workspace must clear its per-package shadow root, as
 	// single-package prepares clear COVERAGE_DIR.
-	it("should name the workspace manifest when it discards a malformed one", async () => {
+	it("should name the workspace manifest when it discards a malformed one", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -535,7 +545,7 @@ describe(prepareWorkspaceCoverage, () => {
 		expect(stderrText()).toContain("Warning: Workspace coverage manifest is malformed JSON");
 	});
 
-	it("should remove stale shadow files when running cold (no cache)", async () => {
+	it("should remove stale shadow files when running cold (no cache)", async ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -563,7 +573,9 @@ describe(prepareWorkspaceCoverage, () => {
 		expect(volume.existsSync(path.join(packageShadow, "out/live.spec.luau"))).toBeTrue();
 	});
 
-	it("should bypass a full cache hit when the descriptor opts out via per-pkg coverageCache", async () => {
+	it("should bypass a full cache hit when the descriptor opts out via per-pkg coverageCache", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -580,7 +592,9 @@ describe(prepareWorkspaceCoverage, () => {
 		expect(volume.readFileSync(`${FOO_SHADOW}/out/init.luau`, "utf8")).toContain("__cov");
 	});
 
-	it("should discard a manifest whose coverage universe no longer matches", async () => {
+	it("should discard a manifest whose coverage universe no longer matches", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -600,7 +614,7 @@ describe(prepareWorkspaceCoverage, () => {
 		expect(volume.readFileSync(`${FOO_SHADOW}/out/init.luau`, "utf8")).toContain("__cov");
 	});
 
-	it("should discard a manifest with a stale instrumenter version", async () => {
+	it("should discard a manifest with a stale instrumenter version", async ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -631,28 +645,31 @@ describe(prepareWorkspaceCoverage, () => {
 			}),
 			expectedWarning: "is invalid",
 		},
-	])("should warn and discard the cache for $name", async ({ body, expectedWarning }) => {
-		expect.assertions(2);
+	])(
+		"should warn and discard the cache for $name",
+		async ({ body, expectedWarning }, { expect }) => {
+			expect.assertions(2);
 
-		const { fileSystem, volume } = createMemoryFileSystem();
-		const stderrText = captureStderr();
+			const { fileSystem, volume } = createMemoryFileSystem();
+			const stderrText = captureStderr();
 
-		seedPackage(volume, { packageDirectory: FOO_DIR });
-		const manifestDirectory = path.join(
-			WORKSPACE_ROOT,
-			".jest-roblox/workspace/@halcyon-foo/coverage",
-		);
-		volume.mkdirSync(manifestDirectory, { recursive: true });
-		volume.writeFileSync(path.join(manifestDirectory, "coverage-manifest.json"), body);
+			seedPackage(volume, { packageDirectory: FOO_DIR });
+			const manifestDirectory = path.join(
+				WORKSPACE_ROOT,
+				".jest-roblox/workspace/@halcyon-foo/coverage",
+			);
+			volume.mkdirSync(manifestDirectory, { recursive: true });
+			volume.writeFileSync(path.join(manifestDirectory, "coverage-manifest.json"), body);
 
-		const result = prepareFoo({ fileSystem });
+			const result = prepareFoo({ fileSystem });
 
-		expect(manifestFileKeys(result[0]!.manifest)).toStrictEqual(["out/init.luau"]);
+			expect(manifestFileKeys(result[0]!.manifest)).toStrictEqual(["out/init.luau"]);
 
-		expect(stderrText()).toContain(expectedWarning);
-	});
+			expect(stderrText()).toContain(expectedWarning);
+		},
+	);
 
-	it("should re-instrument when the cached shadow file is missing", async () => {
+	it("should re-instrument when the cached shadow file is missing", async ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -666,7 +683,7 @@ describe(prepareWorkspaceCoverage, () => {
 		expect(volume.readFileSync(`${FOO_SHADOW}/out/init.luau`, "utf8")).toContain("__cov");
 	});
 
-	it("should skip instrumentRoot on a full cache hit", async () => {
+	it("should skip instrumentRoot on a full cache hit", async ({ expect }) => {
 		expect.assertions(3);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -681,7 +698,7 @@ describe(prepareWorkspaceCoverage, () => {
 	});
 
 	// Validate by re-copying when the shadow file is missing.
-	it("should re-copy non-instrumented file when its shadow is missing", async () => {
+	it("should re-copy non-instrumented file when its shadow is missing", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -747,7 +764,9 @@ describe(prepareWorkspaceCoverage, () => {
 	// shadow mirrors verbatim (spec/test/snap luau) needs a record in
 	// the manifest so a future incremental run can detect stale shadow
 	// entries and prune them.
-	it("should track non-instrumented files (spec/test/snap) in the per-package manifest", async () => {
+	it("should track non-instrumented files (spec/test/snap) in the per-package manifest", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -762,7 +781,7 @@ describe(prepareWorkspaceCoverage, () => {
 		expect(Object.keys(manifest.nonInstrumentedFiles)).toContain(specKey);
 	});
 
-	it("should skip $path entries that escape the package directory", async () => {
+	it("should skip $path entries that escape the package directory", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -781,7 +800,7 @@ describe(prepareWorkspaceCoverage, () => {
 		}).toThrow('Could not determine luauRoots for package "@halcyon/foo"');
 	});
 
-	it("should skip $path entries that do not exist on disk", async () => {
+	it("should skip $path entries that do not exist on disk", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -798,7 +817,7 @@ describe(prepareWorkspaceCoverage, () => {
 		}).toThrow('Could not determine luauRoots for package "@halcyon/foo"');
 	});
 
-	it("should skip $path entries matching coveragePathIgnorePatterns", async () => {
+	it("should skip $path entries matching coveragePathIgnorePatterns", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -817,7 +836,7 @@ describe(prepareWorkspaceCoverage, () => {
 		}).toThrow('Could not determine luauRoots for package "@halcyon/foo"');
 	});
 
-	it("should skip $path entries that resolve to files (not directories)", async () => {
+	it("should skip $path entries that resolve to files (not directories)", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -835,7 +854,7 @@ describe(prepareWorkspaceCoverage, () => {
 		}).toThrow('Could not determine luauRoots for package "@halcyon/foo"');
 	});
 
-	it("should skip directories that contain no .luau files", async () => {
+	it("should skip directories that contain no .luau files", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -854,7 +873,9 @@ describe(prepareWorkspaceCoverage, () => {
 		}).toThrow('Could not determine luauRoots for package "@halcyon/foo"');
 	});
 
-	it("should discover ordinary .lua files without treating unrelated files as Luau", async () => {
+	it("should discover ordinary .lua files without treating unrelated files as Luau", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -879,7 +900,7 @@ describe(prepareWorkspaceCoverage, () => {
 		]);
 	});
 
-	it("should resolve roots containing only spec and snapshot Luau files", async () => {
+	it("should resolve roots containing only spec and snapshot Luau files", async ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -901,7 +922,9 @@ describe(prepareWorkspaceCoverage, () => {
 		]);
 	});
 
-	it("should preserve spec files in the shadow when $path mixes specs with non-spec helpers", async () => {
+	it("should preserve spec files in the shadow when $path mixes specs with non-spec helpers", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -921,7 +944,7 @@ describe(prepareWorkspaceCoverage, () => {
 	// roblox-ts ships `RuntimeLib.lua` and `Promise.lua` into rbxts `include/`.
 	// Instrumenting that vendor code adds probe overhead to every `TS.import`, so
 	// any `$path` whose root holds a `RuntimeLib` file is skipped.
-	it("should skip directories containing RuntimeLib (rbxts include)", async () => {
+	it("should skip directories containing RuntimeLib (rbxts include)", async ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -952,7 +975,7 @@ describe(prepareWorkspaceCoverage, () => {
 		]);
 	});
 
-	it("should dedupe duplicate $path entries within a single package", async () => {
+	it("should dedupe duplicate $path entries within a single package", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -969,7 +992,9 @@ describe(prepareWorkspaceCoverage, () => {
 		expect(manifestFileKeys(result[0]!.manifest)).toStrictEqual(["src/init.luau"]);
 	});
 
-	it("should treat an empty coveragePathIgnorePatterns list as ignoring nothing", async () => {
+	it("should treat an empty coveragePathIgnorePatterns list as ignoring nothing", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -980,7 +1005,9 @@ describe(prepareWorkspaceCoverage, () => {
 		expect(manifestFileKeys(result[0]!.manifest)).toStrictEqual(["out/init.luau"]);
 	});
 
-	it("should require explicit luauRoots to correspond to collected rojo mounts", async () => {
+	it("should require explicit luauRoots to correspond to collected rojo mounts", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -1003,7 +1030,9 @@ describe(prepareWorkspaceCoverage, () => {
 		);
 	});
 
-	it("should reject package-root, parent, and unrelated paths as explicit rojo mounts", async () => {
+	it("should reject package-root, parent, and unrelated paths as explicit rojo mounts", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -1040,7 +1069,7 @@ describe(prepareWorkspaceCoverage, () => {
 		);
 	});
 
-	it("should not treat the package-root rojo path as a coverage root", async () => {
+	it("should not treat the package-root rojo path as a coverage root", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -1061,7 +1090,7 @@ describe(prepareWorkspaceCoverage, () => {
 		expect(manifestFileKeys(result[0]!.manifest)).toStrictEqual(["out/init.luau"]);
 	});
 
-	it("should apply ignore patterns within a mounted path", async () => {
+	it("should apply ignore patterns within a mounted path", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -1084,7 +1113,7 @@ describe(prepareWorkspaceCoverage, () => {
 		}).toThrow('Could not determine luauRoots for package "@halcyon/foo"');
 	});
 
-	it("should use tsconfig output roots when no Rojo mount supplies roots", () => {
+	it("should use tsconfig output roots when no Rojo mount supplies roots", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -1113,7 +1142,7 @@ describe(prepareWorkspaceCoverage, () => {
 		]);
 	});
 
-	it("should reject packages with no roots and name the package", () => {
+	it("should reject packages with no roots and name the package", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -1180,7 +1209,9 @@ describe(prepareWorkspaceCoverage, () => {
 			});
 		}
 
-		it("should short-circuit to descriptor.luauRoots when set, ignoring other rojo $path mounts", async () => {
+		it("should short-circuit to descriptor.luauRoots when set, ignoring other rojo $path mounts", async ({
+			expect,
+		}) => {
 			expect.assertions(3);
 
 			const { fileSystem, volume } = createMemoryFileSystem();
@@ -1202,7 +1233,7 @@ describe(prepareWorkspaceCoverage, () => {
 			expect(manifest.luauRoots).toHaveLength(1);
 		});
 
-		it("should walk every $path when descriptor.luauRoots is undefined", async () => {
+		it("should walk every $path when descriptor.luauRoots is undefined", async ({ expect }) => {
 			expect.assertions(2);
 
 			const { fileSystem, volume } = createMemoryFileSystem();
@@ -1220,7 +1251,7 @@ describe(prepareWorkspaceCoverage, () => {
 			).toStrictEqual(["src", "vendored-packages"]);
 		});
 
-		it("should drop off-tree luauRoot entries with a stderr warning", async () => {
+		it("should drop off-tree luauRoot entries with a stderr warning", async ({ expect }) => {
 			expect.assertions(3);
 
 			const { fileSystem, volume } = createMemoryFileSystem();
@@ -1240,7 +1271,9 @@ describe(prepareWorkspaceCoverage, () => {
 			expect(stderrText()).toContain('luauRoot "build/out" in @halcyon/foo');
 		});
 
-		it("should fall through to the rojo walk when descriptor.luauRoots is an empty array", async () => {
+		it("should fall through to the rojo walk when descriptor.luauRoots is an empty array", async ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			const { fileSystem, volume } = createMemoryFileSystem();
@@ -1254,7 +1287,9 @@ describe(prepareWorkspaceCoverage, () => {
 			]);
 		});
 
-		it("should honor per-pkg coveragePathIgnorePatterns over the defaults", async () => {
+		it("should honor per-pkg coveragePathIgnorePatterns over the defaults", async ({
+			expect,
+		}) => {
 			expect.assertions(2);
 
 			const { fileSystem, volume } = createMemoryFileSystem();
@@ -1272,7 +1307,9 @@ describe(prepareWorkspaceCoverage, () => {
 			]);
 		});
 
-		it("should honor per-pkg coverageCopyIgnorePatterns over the defaults", async () => {
+		it("should honor per-pkg coverageCopyIgnorePatterns over the defaults", async ({
+			expect,
+		}) => {
 			expect.assertions(2);
 
 			const { fileSystem, volume } = createMemoryFileSystem();
@@ -1296,7 +1333,9 @@ describe(prepareWorkspaceCoverage, () => {
 			expect(mirrored.some((entry) => entry.endsWith(".tsbuildinfo"))).toBeFalse();
 		});
 
-		it("should rebuild a package cold when its copy-ignore list changed", async () => {
+		it("should rebuild a package cold when its copy-ignore list changed", async ({
+			expect,
+		}) => {
 			expect.assertions(3);
 
 			const { fileSystem, volume } = createMemoryFileSystem();
@@ -1360,7 +1399,9 @@ describe(prepareWorkspaceCoverage, () => {
 			expect(manifestFileKeys(result!.manifest)).toStrictEqual(["src/init.luau"]);
 		});
 
-		it("should instrument every mount when the descriptor opts out of every pattern via an empty array", async () => {
+		it("should instrument every mount when the descriptor opts out of every pattern via an empty array", async ({
+			expect,
+		}) => {
 			expect.assertions(2);
 
 			const { fileSystem, volume } = createMemoryFileSystem();
@@ -1381,7 +1422,9 @@ describe(prepareWorkspaceCoverage, () => {
 			).toStrictEqual(["src", "vendored-packages"]);
 		});
 
-		it("should take a luauRoot nested below the $path mount that covers it", async () => {
+		it("should take a luauRoot nested below the $path mount that covers it", async ({
+			expect,
+		}) => {
 			expect.assertions(4);
 
 			const { fileSystem, volume } = createMemoryFileSystem();
@@ -1422,7 +1465,7 @@ describe(prepareWorkspaceCoverage, () => {
 			},
 		])(
 			"should demote the deepest containing mount when declared $order",
-			async ({ mounts }) => {
+			async ({ mounts }, { expect }) => {
 				expect.assertions(1);
 
 				const { fileSystem, volume } = createMemoryFileSystem();
@@ -1444,7 +1487,9 @@ describe(prepareWorkspaceCoverage, () => {
 			},
 		);
 
-		it("should reject a luauRoot that escapes the package through a traversal", async () => {
+		it("should reject a luauRoot that escapes the package through a traversal", async ({
+			expect,
+		}) => {
 			expect.assertions(2);
 
 			const { fileSystem, volume } = createMemoryFileSystem();
@@ -1474,7 +1519,9 @@ describe(prepareWorkspaceCoverage, () => {
 			);
 		});
 
-		it("should reject a traversal that resolves back to the package root", async () => {
+		it("should reject a traversal that resolves back to the package root", async ({
+			expect,
+		}) => {
 			expect.assertions(2);
 
 			const { fileSystem, volume } = createMemoryFileSystem();
@@ -1501,7 +1548,9 @@ describe(prepareWorkspaceCoverage, () => {
 			);
 		});
 
-		it("should accept a directory whose name merely starts with two dots", async () => {
+		it("should accept a directory whose name merely starts with two dots", async ({
+			expect,
+		}) => {
 			expect.assertions(2);
 
 			const { fileSystem, volume } = createMemoryFileSystem();
@@ -1526,7 +1575,9 @@ describe(prepareWorkspaceCoverage, () => {
 			]);
 		});
 
-		it("should reject an empty luauRoot, which names the package itself", async () => {
+		it("should reject an empty luauRoot, which names the package itself", async ({
+			expect,
+		}) => {
 			expect.assertions(2);
 
 			const { fileSystem, volume } = createMemoryFileSystem();
@@ -1548,7 +1599,9 @@ describe(prepareWorkspaceCoverage, () => {
 			);
 		});
 
-		it("should accept a luauRoot nested below one mount when a finer mount lands on it", async () => {
+		it("should accept a luauRoot nested below one mount when a finer mount lands on it", async ({
+			expect,
+		}) => {
 			expect.assertions(2);
 
 			const { fileSystem, volume } = createMemoryFileSystem();
@@ -1576,7 +1629,9 @@ describe(prepareWorkspaceCoverage, () => {
 			]);
 		});
 
-		it("should accept a luauRoot that contains a finer-grained $path mount", async () => {
+		it("should accept a luauRoot that contains a finer-grained $path mount", async ({
+			expect,
+		}) => {
 			expect.assertions(2);
 
 			const { fileSystem, volume } = createMemoryFileSystem();
@@ -1605,7 +1660,7 @@ describe(prepareWorkspaceCoverage, () => {
 			]);
 		});
 
-		it("should deduplicate repeated luauRoots entries", async () => {
+		it("should deduplicate repeated luauRoots entries", async ({ expect }) => {
 			expect.assertions(2);
 
 			const { fileSystem, volume } = createMemoryFileSystem();
@@ -1623,7 +1678,9 @@ describe(prepareWorkspaceCoverage, () => {
 			]);
 		});
 
-		it("should skip a luauRoot that is on the rojo tree but has no instrumentable files", async () => {
+		it("should skip a luauRoot that is on the rojo tree but has no instrumentable files", async ({
+			expect,
+		}) => {
 			expect.assertions(2);
 
 			const { fileSystem, volume } = createMemoryFileSystem();
@@ -1652,7 +1709,9 @@ describe(prepareWorkspaceCoverage, () => {
 			]);
 		});
 
-		it("should cold-rebuild the shadow when luauRoots shrinks between runs", async () => {
+		it("should cold-rebuild the shadow when luauRoots shrinks between runs", async ({
+			expect,
+		}) => {
 			expect.assertions(2);
 
 			const { fileSystem, volume } = createMemoryFileSystem();
@@ -1683,7 +1742,9 @@ describe(prepareWorkspaceCoverage, () => {
 			expect(volume.existsSync(vendoredShadowDirectory)).toBeFalse();
 		});
 
-		it("should cold-rebuild when luauRoots size matches but membership changes", async () => {
+		it("should cold-rebuild when luauRoots size matches but membership changes", async ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			const { fileSystem, volume } = createMemoryFileSystem();
@@ -1709,7 +1770,9 @@ describe(prepareWorkspaceCoverage, () => {
 			expect(volume.existsSync(staleVendoredShadow)).toBeFalse();
 		});
 
-		it("should preserve the cache when luauRoots is unchanged between runs", async () => {
+		it("should preserve the cache when luauRoots is unchanged between runs", async ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			const { fileSystem, volume } = createMemoryFileSystem();
@@ -1742,7 +1805,9 @@ describe(prepareWorkspaceCoverage, () => {
 			expect(volume.existsSync(path.join(packageShadow, "out/init.cov-map.json"))).toBeTrue();
 		});
 
-		it("should skip rojo $path entries that escape the package directory", async () => {
+		it("should skip rojo $path entries that escape the package directory", async ({
+			expect,
+		}) => {
 			expect.assertions(2);
 
 			const { fileSystem, volume } = createMemoryFileSystem();
@@ -1774,7 +1839,9 @@ describe(prepareWorkspaceCoverage, () => {
 });
 
 describe(emitWorkspaceBuildManifests, () => {
-	it("should preserve build identity and manifest bytes when the place is reused", () => {
+	it("should preserve build identity and manifest bytes when the place is reused", ({
+		expect,
+	}) => {
 		expect.assertions(3);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -1803,7 +1870,9 @@ describe(emitWorkspaceBuildManifests, () => {
 		expect(volume.readFileSync(buildPath, "utf8")).toBe(bytes);
 	});
 
-	it("should write a build-manifest.json next to each package's coverage-manifest.json", async () => {
+	it("should write a build-manifest.json next to each package's coverage-manifest.json", async ({
+		expect,
+	}) => {
 		expect.assertions(5);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -1837,7 +1906,9 @@ describe(emitWorkspaceBuildManifests, () => {
 		expect(manifest.cleanPlace).toBeUndefined();
 	});
 
-	it("should emit an independent build manifest per package over the one shared place", async () => {
+	it("should emit an independent build manifest per package over the one shared place", async ({
+		expect,
+	}) => {
 		expect.assertions(5);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -1882,7 +1953,9 @@ describe(emitWorkspaceBuildManifests, () => {
 		expect(bar.coveragePlace).toStrictEqual(SHARED_PLACE);
 	});
 
-	it("should project files to sourceHash records and leave projects empty", async () => {
+	it("should project files to sourceHash records and leave projects empty", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -1947,7 +2020,7 @@ describe("narrowing a workspace package to its coverage universe", () => {
 		});
 	}
 
-	it("should instrument the narrowed root rather than the whole mount", async () => {
+	it("should instrument the narrowed root rather than the whole mount", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -1962,7 +2035,9 @@ describe("narrowing a workspace package to its coverage universe", () => {
 		]);
 	});
 
-	it("should name the demoted mount and carry its loose files onto the spine", async () => {
+	it("should name the demoted mount and carry its loose files onto the spine", async ({
+		expect,
+	}) => {
 		expect.assertions(3);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -1996,7 +2071,7 @@ describe("workspace-mode $path containment", () => {
 	const packageDirectory = posixRoot(path.resolve("/pkg"));
 	const packageProject = `${packageDirectory}/test.project.json`;
 
-	it("should reject a mount outside the package", () => {
+	it("should reject a mount outside the package", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -2022,7 +2097,7 @@ describe("workspace-mode $path containment", () => {
 			roots: ["out"],
 			shape: "an absolute mount inside",
 		},
-	])("should answer $roots for $shape the frame", async ({ mount, roots }) => {
+	])("should answer $roots for $shape the frame", async ({ mount, roots }, { expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();

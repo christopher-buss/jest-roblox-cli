@@ -1,7 +1,7 @@
 import { fromAny } from "@total-typescript/shoehorn";
 
 import { Script } from "node:vm";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { FakeHelper, type FakeHelperSpawnCall } from "#test/mocks/spec-fake-helper.ts";
@@ -61,7 +61,7 @@ describe(findAppBundle, () => {
 		],
 		["/opt/studio/RobloxStudioBeta", undefined],
 		[`${BUNDLE}/Contents/Resources/RobloxStudioBeta`, undefined],
-	] as const)("should find the bundle of %s", ([studioPath, expected]) => {
+	] as const)("should find the bundle of %s", ([studioPath, expected], { expect }) => {
 		expect.assertions(1);
 
 		expect(findAppBundle(studioPath)).toBe(expected);
@@ -69,7 +69,7 @@ describe(findAppBundle, () => {
 });
 
 describe(launchHiddenOnMacos, () => {
-	it("should pass the bundle and argv to a JXA helper through the environment", () => {
+	it("should pass the bundle and argv to a JXA helper through the environment", ({ expect }) => {
 		expect.assertions(4);
 
 		const { calls } = makeLaunch();
@@ -88,7 +88,9 @@ describe(launchHiddenOnMacos, () => {
 		expect(call.args[3]).not.toContain("RobloxStudio");
 	});
 
-	it("should launch without activation, as a new instance, off the recent list, and keep Studio hidden", () => {
+	it("should launch without activation, as a new instance, off the recent list, and keep Studio hidden", ({
+		expect,
+	}) => {
 		expect.assertions(4);
 
 		const script = makeLaunch().calls[0]!.args[3]!;
@@ -99,7 +101,7 @@ describe(launchHiddenOnMacos, () => {
 		expect(script).toContain("while (!app.isTerminated)");
 	});
 
-	it("should hand Studio an environment without the helper variables", () => {
+	it("should hand Studio an environment without the helper variables", ({ expect }) => {
 		expect.assertions(3);
 
 		const script = makeLaunch().calls[0]!.args[3]!;
@@ -113,7 +115,7 @@ describe(launchHiddenOnMacos, () => {
 		);
 	});
 
-	it("should hand osascript a script that parses as JavaScript", () => {
+	it("should hand osascript a script that parses as JavaScript", ({ expect }) => {
 		expect.assertions(1);
 
 		const script = makeLaunch().calls[0]!.args[3]!;
@@ -121,7 +123,9 @@ describe(launchHiddenOnMacos, () => {
 		expect(() => new Script(script)).not.toThrow();
 	});
 
-	it("should SIGKILL the printed PID once ps names Studio, then stop the helper", () => {
+	it("should SIGKILL the printed PID once ps names Studio, then stop the helper", ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const { helper, killCommands, studio } = makeLaunch();
@@ -135,7 +139,7 @@ describe(launchHiddenOnMacos, () => {
 		expect(helper.kill).toHaveBeenCalledOnce();
 	});
 
-	it("should SIGKILL a Studio PID after the helper died", () => {
+	it("should SIGKILL a Studio PID after the helper died", ({ expect }) => {
 		expect.assertions(1);
 
 		const { helper, killCommands, studio } = makeLaunch();
@@ -146,7 +150,7 @@ describe(launchHiddenOnMacos, () => {
 		expect(killCommands.map(([file]) => file)).toStrictEqual(["ps", "kill"]);
 	});
 
-	it("should not kill a PID that ps names as another program", () => {
+	it("should not kill a PID that ps names as another program", ({ expect }) => {
 		expect.assertions(2);
 
 		const { helper, killCommands, studio } = makeLaunch("/usr/bin/vim\n");
@@ -157,7 +161,7 @@ describe(launchHiddenOnMacos, () => {
 		expect(helper.kill).toHaveBeenCalledOnce();
 	});
 
-	it("should not kill a PID that no longer exists", () => {
+	it("should not kill a PID that no longer exists", ({ expect }) => {
 		expect.assertions(1);
 
 		const { helper, killCommands, studio } = makeLaunch("");
@@ -167,7 +171,7 @@ describe(launchHiddenOnMacos, () => {
 		expect(killCommands.map(([file]) => file)).toStrictEqual(["ps"]);
 	});
 
-	it("should kill Studio when its PID arrives after a kill stopped the helper", () => {
+	it("should kill Studio when its PID arrives after a kill stopped the helper", ({ expect }) => {
 		expect.assertions(2);
 
 		const { helper, killCommands, studio } = makeLaunch();
@@ -180,7 +184,7 @@ describe(launchHiddenOnMacos, () => {
 		expect(killCommands.map(([file]) => file)).toStrictEqual(["ps", "kill"]);
 	});
 
-	it("should report a launch the helper could not make", () => {
+	it("should report a launch the helper could not make", ({ expect }) => {
 		expect.assertions(1);
 
 		const { errors, helper } = makeLaunch();

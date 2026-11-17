@@ -2,7 +2,7 @@ import { fromAny } from "@total-typescript/shoehorn";
 
 import type * as childProcess from "node:child_process";
 import * as path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import packageJson from "../../package.json" with { type: "json" };
@@ -120,7 +120,9 @@ function setup({
 }
 
 describe(evaluateLuauConfigWithLute, () => {
-	it("should return the value after the value sentinel and skip the config's own prints", async () => {
+	it("should return the value after the value sentinel and skip the config's own prints", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { evaluate } = setup({
@@ -130,7 +132,9 @@ describe(evaluateLuauConfigWithLute, () => {
 		await expect(evaluate()).resolves.toStrictEqual({ test: { verbose: true } });
 	});
 
-	it("should run the bootstrap with the config's module name from the config's directory", async () => {
+	it("should run the bootstrap with the config's module name from the config's directory", async ({
+		expect,
+	}) => {
 		expect.assertions(4);
 
 		const { evaluate, invocations } = setup({ run: { stdout: `${VALUE}{}` } });
@@ -148,7 +152,7 @@ describe(evaluateLuauConfigWithLute, () => {
 		});
 	});
 
-	it("should write the bootstrap with the sentinels the parser reads", async () => {
+	it("should write the bootstrap with the sentinels the parser reads", async ({ expect }) => {
 		expect.assertions(3);
 
 		const { evaluate, invocations } = setup({ run: { stdout: `${VALUE}{}` } });
@@ -162,7 +166,7 @@ describe(evaluateLuauConfigWithLute, () => {
 		expect(source).not.toMatch(/__[A-Z_]+__/);
 	});
 
-	it("should run lute hidden on a bootstrap in a named temporary folder", async () => {
+	it("should run lute hidden on a bootstrap in a named temporary folder", async ({ expect }) => {
 		expect.assertions(2);
 
 		const { evaluate, invocations } = setup({ run: { stdout: `${VALUE}{}` } });
@@ -177,7 +181,9 @@ describe(evaluateLuauConfigWithLute, () => {
 		expect(run.windowsHide).toBeTrue();
 	});
 
-	it("should write the type module for its own version before the run when it is missing", async () => {
+	it("should write the type module for its own version before the run when it is missing", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const { evaluate, invocations, volume } = setup({ run: { stdout: `${VALUE}{}` } });
@@ -188,7 +194,7 @@ describe(evaluateLuauConfigWithLute, () => {
 		expect(volume.readFileSync(TYPE_MODULE, "utf-8")).toContain("export type Config =");
 	});
 
-	it("should keep a type module that is already there", async () => {
+	it("should keep a type module that is already there", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { evaluate, volume } = setup({
@@ -201,7 +207,7 @@ describe(evaluateLuauConfigWithLute, () => {
 		expect(volume.readFileSync(TYPE_MODULE, "utf-8")).toBe("-- kept");
 	});
 
-	it("should return the value when the home folder cannot be written", async () => {
+	it("should return the value when the home folder cannot be written", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { evaluate } = setup({
@@ -216,7 +222,9 @@ describe(evaluateLuauConfigWithLute, () => {
 		await expect(evaluate()).resolves.toStrictEqual({ test: { verbose: true } });
 	});
 
-	it("should name the failed type write when the config then fails in lute", async () => {
+	it("should name the failed type write when the config then fails in lute", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const { evaluate } = setup({
@@ -241,7 +249,7 @@ describe(evaluateLuauConfigWithLute, () => {
 		);
 	});
 
-	it("should write no type module when lute is missing", async () => {
+	it("should write no type module when lute is missing", async ({ expect }) => {
 		expect.assertions(2);
 
 		const { evaluate, volume } = setup({ version: { error: { code: "ENOENT" } } });
@@ -250,7 +258,7 @@ describe(evaluateLuauConfigWithLute, () => {
 		expect(volume.existsSync(path.dirname(TYPE_MODULE))).toBeFalse();
 	});
 
-	it("should give the config directory alias forward slashes", async () => {
+	it("should give the config directory alias forward slashes", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { evaluate, invocations } = setup({
@@ -267,7 +275,7 @@ describe(evaluateLuauConfigWithLute, () => {
 		});
 	});
 
-	it("should read the value line apart from what lute prints after it", async () => {
+	it("should read the value line apart from what lute prints after it", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { evaluate } = setup({ run: { stdout: `${VALUE}{"a":1}\nlute exited\n` } });
@@ -275,7 +283,9 @@ describe(evaluateLuauConfigWithLute, () => {
 		await expect(evaluate()).resolves.toStrictEqual({ a: 1 });
 	});
 
-	it("should name the config when the value lute printed is not a Luau value", async () => {
+	it("should name the config when the value lute printed is not a Luau value", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { evaluate } = setup({ run: { stdout: `${VALUE}{"test":{"verbose":null}}` } });
@@ -285,7 +295,7 @@ describe(evaluateLuauConfigWithLute, () => {
 		);
 	});
 
-	it("should read a value whose string holds the sentinel text", async () => {
+	it("should read a value whose string holds the sentinel text", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { evaluate } = setup({ run: { stdout: `\n${VALUE}{"name":"${VALUE}{}"}\n` } });
@@ -295,7 +305,7 @@ describe(evaluateLuauConfigWithLute, () => {
 
 	it.for([VALUE, ERROR])(
 		"should name the config when the line after %s is not JSON",
-		async (sentinel) => {
+		async (sentinel, { expect }) => {
 			expect.assertions(2);
 
 			const { evaluate } = setup({ run: { stdout: `${sentinel}{"x":` } });
@@ -308,7 +318,9 @@ describe(evaluateLuauConfigWithLute, () => {
 		},
 	);
 
-	it("should name the config when the error lute printed is not a bootstrap error", async () => {
+	it("should name the config when the error lute printed is not a bootstrap error", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { evaluate } = setup({ run: { stdout: `${ERROR}{"kind":"other"}` } });
@@ -318,7 +330,9 @@ describe(evaluateLuauConfigWithLute, () => {
 		);
 	});
 
-	it("should put each bootstrap in a new folder and remove it after success", async () => {
+	it("should put each bootstrap in a new folder and remove it after success", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const { evaluate, invocations, leftovers } = setup({ run: { stdout: `${VALUE}{}` } });
@@ -332,7 +346,7 @@ describe(evaluateLuauConfigWithLute, () => {
 		expect(leftovers()).toStrictEqual([]);
 	});
 
-	it("should remove the bootstrap folder after a failure", async () => {
+	it("should remove the bootstrap folder after a failure", async ({ expect }) => {
 		expect.assertions(2);
 
 		const { evaluate, leftovers } = setup({
@@ -343,7 +357,7 @@ describe(evaluateLuauConfigWithLute, () => {
 		expect(leftovers()).toStrictEqual([]);
 	});
 
-	it("should run the binary that JEST_ROBLOX_LUTE_PATH names", async () => {
+	it("should run the binary that JEST_ROBLOX_LUTE_PATH names", async ({ expect }) => {
 		expect.assertions(2);
 
 		const { evaluate, invocations } = setup({
@@ -360,7 +374,7 @@ describe(evaluateLuauConfigWithLute, () => {
 		expect(invocations[1]!.timeout).toBeGreaterThan(0);
 	});
 
-	it("should fall back to PATH when JEST_ROBLOX_LUTE_PATH is empty", async () => {
+	it("should fall back to PATH when JEST_ROBLOX_LUTE_PATH is empty", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { evaluate, invocations } = setup({
@@ -373,7 +387,9 @@ describe(evaluateLuauConfigWithLute, () => {
 		expect(invocations.map(({ binary }) => binary).join(" ")).toBe("lute lute");
 	});
 
-	it("should say lute is needed and name the unreadable line when the binary is missing", async () => {
+	it("should say lute is needed and name the unreadable line when the binary is missing", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const { evaluate, invocations } = setup({
@@ -390,7 +406,7 @@ describe(evaluateLuauConfigWithLute, () => {
 
 	it.for(["2.0.0", "lute 0.9.1", "garbage"])(
 		"should reject a binary whose version prints %s",
-		async (printed) => {
+		async (printed, { expect }) => {
 			expect.assertions(1);
 
 			const { evaluate } = setup({ version: { stdout: `${printed}\n` } });
@@ -401,7 +417,7 @@ describe(evaluateLuauConfigWithLute, () => {
 		},
 	);
 
-	it("should accept a version printed after the program name", async () => {
+	it("should accept a version printed after the program name", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { evaluate } = setup({
@@ -412,7 +428,7 @@ describe(evaluateLuauConfigWithLute, () => {
 		await expect(evaluate()).resolves.toStrictEqual({ a: 1 });
 	});
 
-	it("should name the version command when it fails to run", async () => {
+	it("should name the version command when it fails to run", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { evaluate } = setup({ version: { error: { code: "EACCES", message: "denied" } } });
@@ -423,7 +439,7 @@ describe(evaluateLuauConfigWithLute, () => {
 	it.for([
 		["the version check", { version: { error: { killed: true } } }],
 		["the run", { run: { error: { killed: true }, stdout: "partial" } }],
-	] as const)("should name the file when %s times out", async ([, replies]) => {
+	] as const)("should name the file when %s times out", async ([, replies], { expect }) => {
 		expect.assertions(1);
 
 		const { evaluate } = setup(replies);
@@ -435,7 +451,7 @@ describe(evaluateLuauConfigWithLute, () => {
 		);
 	});
 
-	it("should pass on lute's message when the config fails to evaluate", async () => {
+	it("should pass on lute's message when the config fails to evaluate", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { evaluate } = setup({
@@ -450,7 +466,7 @@ describe(evaluateLuauConfigWithLute, () => {
 		);
 	});
 
-	it("should name what the config returned when it is not a table", async () => {
+	it("should name what the config returned when it is not a table", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { evaluate } = setup({
@@ -466,20 +482,23 @@ describe(evaluateLuauConfigWithLute, () => {
 	it.for([
 		["test.setupFiles[2]", "at test.setupFiles[2]"],
 		["", "at its root"],
-	])("should name the value at %j that cannot serialize", async ([keyPath, location]) => {
-		expect.assertions(1);
+	])(
+		"should name the value at %j that cannot serialize",
+		async ([keyPath, location], { expect }) => {
+			expect.assertions(1);
 
-		const { evaluate } = setup({
-			run: {
-				stdout: `${ERROR}${JSON.stringify({ kind: "serialize", path: keyPath, type: "a function" })}`,
-			},
-		});
+			const { evaluate } = setup({
+				run: {
+					stdout: `${ERROR}${JSON.stringify({ kind: "serialize", path: keyPath, type: "a function" })}`,
+				},
+			});
 
-		await expect(evaluate()).rejects.toThrowWithMessage(
-			Error,
-			`Luau config ${CONFIG_FILE} holds a function ${location}, which cannot cross into JSON. Move that value to a TypeScript config.`,
-		);
-	});
+			await expect(evaluate()).rejects.toThrowWithMessage(
+				Error,
+				`Luau config ${CONFIG_FILE} holds a function ${location}, which cannot cross into JSON. Move that value to a TypeScript config.`,
+			);
+		},
+	);
 
 	it.for([
 		[{ error: { code: 1 }, stderr: " lute crashed \n", stdout: "noise" }, "lute crashed"],
@@ -488,7 +507,7 @@ describe(evaluateLuauConfigWithLute, () => {
 		[{}, "no output"],
 	] as const)(
 		"should pass on what lute printed when no sentinel arrives (%#)",
-		async ([run, message]) => {
+		async ([run, message], { expect }) => {
 			expect.assertions(1);
 
 			const { evaluate } = setup({ run });

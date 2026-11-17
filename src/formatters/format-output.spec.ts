@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
 import type { ResolvedConfig } from "../config/resolved-config.ts";
@@ -77,13 +77,13 @@ function format(config: ResolvedConfig, result = PASSING_RESULT): string {
 }
 
 describe(formatExecuteOutput, () => {
-	it("should print nothing when silent", () => {
+	it("should print nothing when silent", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(format(makeConfig({ formatters: ["json"], silent: true }))).toBe("");
 	});
 
-	it("should render the JSON formatter as the raw result", () => {
+	it("should render the JSON formatter as the raw result", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(JSON.parse(format(makeConfig({ formatters: ["json"] })))).toStrictEqual(
@@ -91,7 +91,7 @@ describe(formatExecuteOutput, () => {
 		);
 	});
 
-	it("should render the agent formatter with resolved hint paths", () => {
+	it("should render the agent formatter with resolved hint paths", ({ expect }) => {
 		expect.assertions(2);
 
 		const output = format(
@@ -107,7 +107,7 @@ describe(formatExecuteOutput, () => {
 		expect(output).toContain("game.log");
 	});
 
-	it("should use the default formatter when the agent formatter runs verbose", () => {
+	it("should use the default formatter when the agent formatter runs verbose", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(format(makeConfig({ formatters: ["agent"], verbose: true }))).toContain(
@@ -115,7 +115,7 @@ describe(formatExecuteOutput, () => {
 		);
 	});
 
-	it("should render the default formatter otherwise", () => {
+	it("should render the default formatter otherwise", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(format(makeConfig())).toContain("✓ src/utils.spec.ts (1 test");

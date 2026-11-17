@@ -2,7 +2,7 @@ import { ApiError, RateLimitError } from "@bedrock-rbx/ocale";
 import type { HttpRequest } from "@bedrock-rbx/ocale";
 import { createFakeHttpClient } from "@bedrock-rbx/ocale/testing";
 
-import { assert, describe, expect, it, onTestFinished, vi } from "vitest";
+import { assert, describe, it, type TestContext, vi } from "vitest";
 
 import {
 	type CapacitySubmitClientOptions,
@@ -31,7 +31,9 @@ function taskRef(index: number): string {
 }
 
 describe(createCapacitySubmitClient, () => {
-	it("should report the server-directed wait for an exhausted create quota", async () => {
+	it("should report the server-directed wait for an exhausted create quota", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const http = createFakeHttpClient();
@@ -70,7 +72,7 @@ describe(createCapacitySubmitClient, () => {
 		{ method: "POST", remaining: 0, retryAfterSeconds: Number.MAX_VALUE, url: SUBMIT_URL },
 	])(
 		"should not exempt quota waits without valid evidence: %j",
-		async ({ method, remaining, retryAfterSeconds, url }) => {
+		async ({ method, remaining, retryAfterSeconds, url }, { expect }) => {
 			expect.assertions(1);
 
 			const http = createFakeHttpClient();
@@ -87,7 +89,7 @@ describe(createCapacitySubmitClient, () => {
 		},
 	);
 
-	it("should canonicalize reordered duplicate blocker progress", async () => {
+	it("should canonicalize reordered duplicate blocker progress", async ({ expect }) => {
 		expect.assertions(3);
 
 		const http = createFakeHttpClient();
@@ -125,7 +127,7 @@ describe(createCapacitySubmitClient, () => {
 
 	it.for(["PROCESSING", "QUEUED"])(
 		"should wait for a %s blocker before permitting another submit",
-		async (state) => {
+		async (state, { expect }) => {
 			expect.assertions(5);
 
 			const http = createFakeHttpClient();
@@ -202,7 +204,7 @@ describe(createCapacitySubmitClient, () => {
 		},
 	])(
 		"should credit only the remaining capacity window after a $readMs ms read",
-		async ({ expected, simulateReadAsync }) => {
+		async ({ expected, simulateReadAsync }, { expect, onTestFinished }) => {
 			expect.assertions(3);
 
 			const onAdmissionWait = vi.fn<(milliseconds: number) => void>();
@@ -213,7 +215,7 @@ describe(createCapacitySubmitClient, () => {
 					});
 				},
 			);
-			useClock();
+			useClock(onTestFinished);
 
 			const http = createFakeHttpClient();
 			http.mockError(capacityError([taskRef(1)]));
@@ -245,7 +247,9 @@ describe(createCapacitySubmitClient, () => {
 		},
 	);
 
-	it("should not credit or schedule a wait after the final blocker read is canceled", async () => {
+	it("should not credit or schedule a wait after the final blocker read is canceled", async ({
+		expect,
+	}) => {
 		expect.assertions(4);
 
 		const controller = new AbortController();
@@ -274,7 +278,7 @@ describe(createCapacitySubmitClient, () => {
 		expect(http.requests).toHaveLength(2);
 	});
 
-	it("should abort reads without poisoning a later request", async () => {
+	it("should abort reads without poisoning a later request", async ({ expect }) => {
 		expect.assertions(4);
 
 		const controller = new AbortController();
@@ -308,7 +312,7 @@ describe(createCapacitySubmitClient, () => {
 		expect(http.requests.filter(({ request }) => request.method === "POST")).toHaveLength(2);
 	});
 
-	it("should not begin blocker reads for an already-aborted request", async () => {
+	it("should not begin blocker reads for an already-aborted request", async ({ expect }) => {
 		expect.assertions(2);
 
 		const controller = new AbortController();
@@ -326,11 +330,11 @@ describe(createCapacitySubmitClient, () => {
 		expect(http.requests).toHaveLength(1);
 	});
 
-	it("should make the default wait cancelable", async () => {
+	it("should make the default wait cancelable", async ({ expect, onTestFinished }) => {
 		expect.assertions(3);
 
 		const controller = new AbortController();
-		useClock();
+		useClock(onTestFinished);
 
 		const http = createFakeHttpClient();
 		http.mockError(capacityError([taskRef(1)]));
@@ -339,7 +343,7 @@ describe(createCapacitySubmitClient, () => {
 			placeId: "456",
 			universeId: "123",
 		}).request({ method: "POST", url: SUBMIT_URL }, { ...CONFIG, signal: controller.signal });
-		const settled = submitted.catch((err: unknown) => err);
+		const settled = submitted.catch((err) => err);
 		await vi.advanceTimersByTimeAsync(0);
 		controller.abort(new Error("cancelled"));
 		await vi.runAllTimersAsync();
@@ -350,11 +354,14 @@ describe(createCapacitySubmitClient, () => {
 		expect(controller.signal.aborted).toBeTrue();
 	});
 
-	it("should stop observing blockers at its independent deadline", async () => {
+	it("should stop observing blockers at its independent deadline", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(2);
 
 		let requestCount = 0;
-		useClock();
+		useClock(onTestFinished);
 
 		const http = createFakeHttpClient();
 		http.mockError(capacityError([taskRef(1)]));
@@ -366,7 +373,7 @@ describe(createCapacitySubmitClient, () => {
 			placeId: "456",
 			universeId: "123",
 		}).request({ method: "POST", url: SUBMIT_URL }, CONFIG);
-		const settled = submitted.catch((err: unknown) => err);
+		const settled = submitted.catch((err) => err);
 		await vi.advanceTimersByTimeAsync(60_000);
 
 		await expect(settled).resolves.toMatchObject({ success: false });
@@ -376,7 +383,7 @@ describe(createCapacitySubmitClient, () => {
 		expect(requestCount).toBe(2);
 	});
 
-	it("should defer to the SDK when quota itself is exhausted", async () => {
+	it("should defer to the SDK when quota itself is exhausted", async ({ expect }) => {
 		expect.assertions(2);
 
 		const http = createFakeHttpClient();
@@ -398,7 +405,7 @@ describe(createCapacitySubmitClient, () => {
 		expect(waitAsync).not.toHaveBeenCalled();
 	});
 
-	it("should reject malformed and foreign blocker paths", async () => {
+	it("should reject malformed and foreign blocker paths", async ({ expect }) => {
 		expect.assertions(3);
 
 		const http = createFakeHttpClient();
@@ -422,7 +429,7 @@ describe(createCapacitySubmitClient, () => {
 		).resolves.toMatchObject({ success: false });
 	});
 
-	it("should preserve unrelated requests and non-capacity errors", async () => {
+	it("should preserve unrelated requests and non-capacity errors", async ({ expect }) => {
 		expect.assertions(2);
 
 		const http = createFakeHttpClient();
@@ -438,7 +445,7 @@ describe(createCapacitySubmitClient, () => {
 		).resolves.toMatchObject({ success: true });
 	});
 
-	it("should fall back when a blocker cannot be read", async () => {
+	it("should fall back when a blocker cannot be read", async ({ expect }) => {
 		expect.assertions(4);
 
 		const http = createFakeHttpClient();
@@ -475,23 +482,26 @@ describe("capacity routing", () => {
 	it.for<{ method: HttpRequest["method"]; url: string }>([
 		{ method: "GET", url: SUBMIT_URL },
 		{ method: "POST", url: "/unrelated" },
-	])("should preserve capacity-shaped refusals on unrelated routes: %j", async (request) => {
-		expect.assertions(2);
+	])(
+		"should preserve capacity-shaped refusals on unrelated routes: %j",
+		async (request, { expect }) => {
+			expect.assertions(2);
 
-		const http = createFakeHttpClient();
-		const error = capacityError([taskRef(1)]);
-		http.mockError(error);
-		const { client, waitAsync } = makeObservedClient(http);
+			const http = createFakeHttpClient();
+			const error = capacityError([taskRef(1)]);
+			http.mockError(error);
+			const { client, waitAsync } = makeObservedClient(http);
 
-		await expect(client.request(request, CONFIG)).resolves.toStrictEqual({
-			err: error,
-			success: false,
-		});
-		expect(waitAsync).not.toHaveBeenCalled();
-	});
+			await expect(client.request(request, CONFIG)).resolves.toStrictEqual({
+				err: error,
+				success: false,
+			});
+			expect(waitAsync).not.toHaveBeenCalled();
+		},
+	);
 });
 
-function useClock(): void {
+function useClock(onTestFinished: TestContext["onTestFinished"]): void {
 	vi.useFakeTimers();
 	onTestFinished(() => {
 		vi.useRealTimers();
@@ -499,7 +509,7 @@ function useClock(): void {
 }
 
 describe("bounded blocker observations", () => {
-	it("should observe only the final ten validated blocker paths", async () => {
+	it("should observe only the final ten validated blocker paths", async ({ expect }) => {
 		expect.assertions(2);
 
 		const http = createFakeHttpClient();
@@ -524,10 +534,13 @@ describe("bounded blocker observations", () => {
 		);
 	});
 
-	it("should abort capacity waits with their own diagnostic reason", async () => {
+	it("should abort capacity waits with their own diagnostic reason", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(2);
 
-		useClock();
+		useClock(onTestFinished);
 		const http = createFakeHttpClient();
 		http.mockError(capacityError([taskRef(1)]));
 		http.mockResponse({ body: { state: "PROCESSING" }, status: 200 });

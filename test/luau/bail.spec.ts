@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import {
 	fillPlaceholders,
@@ -16,7 +16,7 @@ const STUBBED = stubbedModules(HARNESS);
 const MODULE_SOURCE = readLuauTree("staging/bail.luau", STUBBED);
 
 describe("workspace bail signal under lute", () => {
-	it("should pass the bail harness assertions", () => {
+	it("should pass the bail harness assertions", ({ expect }) => {
 		expect.assertions(1);
 
 		const script = fillPlaceholders(HARNESS, { __MODULE__: MODULE_SOURCE });

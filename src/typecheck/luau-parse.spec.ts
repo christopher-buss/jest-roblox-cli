@@ -1,11 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { parseLuauOutput } from "./luau-parse.ts";
 
 const FILE = "/project/sample.spec-d.luau";
 
 describe(parseLuauOutput, () => {
-	it("should strip the type function prefix and keep the continuation line", () => {
+	it("should strip the type function prefix and keep the continuation line", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = [
@@ -25,7 +25,7 @@ describe(parseLuauOutput, () => {
 		]);
 	});
 
-	it("should keep a continuation line's indent and drop its trailing space", () => {
+	it("should keep a continuation line's indent and drop its trailing space", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = [`${FILE}:9:11-28: (W0) TypeError: outer`, "  inner  ", ""].join("\n");
@@ -33,7 +33,7 @@ describe(parseLuauOutput, () => {
 		expect(parseLuauOutput(output).get(FILE)![0]!.message).toBe("outer\n  inner");
 	});
 
-	it("should join a multi-line message and separate diagnostics at blank lines", () => {
+	it("should join a multi-line message and separate diagnostics at blank lines", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = [
@@ -63,7 +63,7 @@ describe(parseLuauOutput, () => {
 		]);
 	});
 
-	it("should keep UTF-8 byte columns after non-ASCII source", () => {
+	it("should keep UTF-8 byte columns after non-ASCII source", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = `${FILE}:13:37-39: (W0) TypeError: Expected this to be 'number', but got 'string'\n`;
@@ -71,7 +71,7 @@ describe(parseLuauOutput, () => {
 		expect(parseLuauOutput(output).get(FILE)![0]!.column).toBe(37);
 	});
 
-	it("should group diagnostics by file and ignore location-less lines", () => {
+	it("should group diagnostics by file and ignore location-less lines", ({ expect }) => {
 		expect.assertions(1);
 
 		const output = [

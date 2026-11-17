@@ -1,5 +1,5 @@
 import { Buffer } from "node:buffer";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 // cspell:ignore turbofish
 import { collectLuauTestDefinitions } from "./luau-collect.ts";
@@ -7,7 +7,7 @@ import { collectLuauTestDefinitions } from "./luau-collect.ts";
 const FILE = "a.spec-d.luau";
 
 describe("collectLuauTestDefinitions locations", () => {
-	it("should map UTF-8 byte columns to byte offsets", () => {
+	it("should map UTF-8 byte columns to byte offsets", ({ expect }) => {
 		expect.assertions(3);
 
 		const { locations } = collectLuauTestDefinitions('a"é"\nb', FILE);
@@ -19,7 +19,7 @@ describe("collectLuauTestDefinitions locations", () => {
 });
 
 describe(collectLuauTestDefinitions, () => {
-	it("should collect global, local, member and turbofish calls with ancestors", () => {
+	it("should collect global, local, member and turbofish calls with ancestors", ({ expect }) => {
 		expect.assertions(1);
 
 		const source = [
@@ -49,7 +49,7 @@ describe(collectLuauTestDefinitions, () => {
 		]);
 	});
 
-	it("should span the call in byte offsets after non-ASCII text", () => {
+	it("should span the call in byte offsets after non-ASCII text", ({ expect }) => {
 		expect.assertions(1);
 
 		const prefix = '--!strict\nlocal _s = "ü"\n';
@@ -64,7 +64,7 @@ describe(collectLuauTestDefinitions, () => {
 		});
 	});
 
-	it("should skip calls without a string literal name or with another callee", () => {
+	it("should skip calls without a string literal name or with another callee", ({ expect }) => {
 		expect.assertions(1);
 
 		const source = [
@@ -82,7 +82,7 @@ describe(collectLuauTestDefinitions, () => {
 		expect([result.definitions, result.resolve([])]).toStrictEqual([[], []]);
 	});
 
-	it("should report a file without --!strict", () => {
+	it("should report a file without --!strict", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = collectLuauTestDefinitions('--!nonstrict\nit("x", function() end)', FILE);
@@ -98,7 +98,7 @@ describe(collectLuauTestDefinitions, () => {
 		]);
 	});
 
-	it("should accept --!strict after other leading comments", () => {
+	it("should accept --!strict after other leading comments", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = collectLuauTestDefinitions("-- header\n\n--!strict\nlocal _x = 1", FILE);
@@ -106,13 +106,13 @@ describe(collectLuauTestDefinitions, () => {
 		expect(result.resolve([])).toStrictEqual([]);
 	});
 
-	it("should report a file of only comments without --!strict", () => {
+	it("should report a file of only comments without --!strict", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(collectLuauTestDefinitions("-- only a comment", FILE).resolve([])).toHaveLength(1);
 	});
 
-	it("should report a file whose only --!strict follows code", () => {
+	it("should report a file whose only --!strict follows code", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = collectLuauTestDefinitions("local _x = 1\n--!strict", FILE);
@@ -120,7 +120,7 @@ describe(collectLuauTestDefinitions, () => {
 		expect(result.resolve([])).toHaveLength(1);
 	});
 
-	it("should report a file whose --!strict trails the first statement", () => {
+	it("should report a file whose --!strict trails the first statement", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = collectLuauTestDefinitions("local _x = 1 --!strict", FILE);
@@ -128,7 +128,7 @@ describe(collectLuauTestDefinitions, () => {
 		expect(result.resolve([])).toHaveLength(1);
 	});
 
-	it("should report a file whose first mode directive is not --!strict", () => {
+	it("should report a file whose first mode directive is not --!strict", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = collectLuauTestDefinitions("--!nocheck\n--!strict\nlocal _x = 1", FILE);
@@ -136,7 +136,7 @@ describe(collectLuauTestDefinitions, () => {
 		expect(result.resolve([])).toHaveLength(1);
 	});
 
-	it("should accept --!strict after a multi-line block comment header", () => {
+	it("should accept --!strict after a multi-line block comment header", ({ expect }) => {
 		expect.assertions(1);
 
 		const source = "--[[ header\nlocal _y = 1\n]]\n--[=[ a ]]\nb ]=]\n--!strict\nlocal _x = 1";
@@ -144,7 +144,7 @@ describe(collectLuauTestDefinitions, () => {
 		expect(collectLuauTestDefinitions(source, FILE).resolve([])).toStrictEqual([]);
 	});
 
-	it("should report a parse failure with the parser message", () => {
+	it("should report a parse failure with the parser message", ({ expect }) => {
 		expect.assertions(2);
 
 		const result = collectLuauTestDefinitions("--!strict\nlocal x = ", FILE);
@@ -156,7 +156,7 @@ describe(collectLuauTestDefinitions, () => {
 		});
 	});
 
-	it("should report every parse error on its own line", () => {
+	it("should report every parse error on its own line", ({ expect }) => {
 		expect.assertions(1);
 
 		const result = collectLuauTestDefinitions("--!strict\nlocal = 1\nlocal = 2", FILE);

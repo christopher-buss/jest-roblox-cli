@@ -1,10 +1,10 @@
 import * as path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { DEFAULT_CONFIG, resolvePlaceFilePath } from "./resolved-config.ts";
 
 describe(resolvePlaceFilePath, () => {
-	it("should resolve placeFile against rootDir", () => {
+	it("should resolve placeFile against rootDir", ({ expect }) => {
 		expect.assertions(1);
 
 		const rootDirectory = path.resolve("/project");

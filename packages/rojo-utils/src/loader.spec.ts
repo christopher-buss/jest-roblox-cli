@@ -1,5 +1,5 @@
 import * as path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import { captureError } from "#test/helpers/unit/errors";
 import { makeFileSystem } from "#test/helpers/unit/file-system";
@@ -12,7 +12,7 @@ import {
 } from "./loader.ts";
 
 describe(loadRojoProject, () => {
-	it("should reject invalid fields after loading a valid project", () => {
+	it("should reject invalid fields after loading a valid project", ({ expect }) => {
 		expect.assertions(5);
 
 		const { directory, fileSystem, fs } = makeFileSystem();
@@ -41,7 +41,7 @@ describe(loadRojoProject, () => {
 		expect(() => loadRojoProject(file, fileSystem)).toThrow(/optional/);
 	});
 
-	it("should retain the host failure as the read error cause", () => {
+	it("should retain the host failure as the read error cause", ({ expect }) => {
 		expect.assertions(1);
 
 		const failure = new Error("unavailable");
@@ -55,7 +55,7 @@ describe(loadRojoProject, () => {
 		);
 	});
 
-	it("should retain malformed JSON as the parse error cause", () => {
+	it("should retain malformed JSON as the parse error cause", ({ expect }) => {
 		expect.assertions(1);
 
 		const { directory, fileSystem } = makeFileSystem({ "broken.project.json": "{" });
@@ -67,7 +67,7 @@ describe(loadRojoProject, () => {
 		expect(error.cause).toBeInstanceOf(SyntaxError);
 	});
 
-	it("should load and parse a valid Rojo project", () => {
+	it("should load and parse a valid Rojo project", ({ expect }) => {
 		expect.assertions(2);
 
 		const { directory: temporaryDirectory, fileSystem, fs } = makeFileSystem();
@@ -97,7 +97,7 @@ describe(loadRojoProject, () => {
 		});
 	});
 
-	it("should resolve nested project references", () => {
+	it("should resolve nested project references", ({ expect }) => {
 		expect.assertions(1);
 
 		const { directory: temporaryDirectory, fileSystem, fs } = makeFileSystem();
@@ -127,7 +127,7 @@ describe(loadRojoProject, () => {
 		});
 	});
 
-	it("should preserve servePort when present", () => {
+	it("should preserve servePort when present", ({ expect }) => {
 		expect.assertions(1);
 
 		const { directory: temporaryDirectory, fileSystem, fs } = makeFileSystem();
@@ -147,7 +147,7 @@ describe(loadRojoProject, () => {
 		expect(project.servePort).toBe(34872);
 	});
 
-	it("should not include servePort when absent", () => {
+	it("should not include servePort when absent", ({ expect }) => {
 		expect.assertions(1);
 
 		const { directory: temporaryDirectory, fileSystem, fs } = makeFileSystem();
@@ -166,7 +166,7 @@ describe(loadRojoProject, () => {
 		expect(project.servePort).toBeUndefined();
 	});
 
-	it("should keep undeclared top-level keys on raw only", () => {
+	it("should keep undeclared top-level keys on raw only", ({ expect }) => {
 		expect.assertions(2);
 
 		const { directory: temporaryDirectory, fileSystem, fs } = makeFileSystem();
@@ -187,7 +187,7 @@ describe(loadRojoProject, () => {
 		expect(project.raw["gameId"]).toBe(12345);
 	});
 
-	it("should throw when servePort is not a number", () => {
+	it("should throw when servePort is not a number", ({ expect }) => {
 		expect.assertions(1);
 
 		const { directory: temporaryDirectory, fileSystem, fs } = makeFileSystem();
@@ -203,7 +203,7 @@ describe(loadRojoProject, () => {
 		);
 	});
 
-	it("should throw with file path when project has malformed JSON", () => {
+	it("should throw with file path when project has malformed JSON", ({ expect }) => {
 		expect.assertions(1);
 
 		const { directory: temporaryDirectory, fileSystem, fs } = makeFileSystem();
@@ -216,7 +216,7 @@ describe(loadRojoProject, () => {
 		);
 	});
 
-	it("should throw when project JSON is not an object", () => {
+	it("should throw when project JSON is not an object", ({ expect }) => {
 		expect.assertions(1);
 
 		const { directory: temporaryDirectory, fileSystem, fs } = makeFileSystem();
@@ -229,7 +229,7 @@ describe(loadRojoProject, () => {
 		);
 	});
 
-	it("should throw when file does not exist", () => {
+	it("should throw when file does not exist", ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = makeFileSystem();
@@ -239,7 +239,7 @@ describe(loadRojoProject, () => {
 		);
 	});
 
-	it("should throw when name is missing", () => {
+	it("should throw when name is missing", ({ expect }) => {
 		expect.assertions(1);
 
 		const { directory: temporaryDirectory, fileSystem, fs } = makeFileSystem();
@@ -252,7 +252,7 @@ describe(loadRojoProject, () => {
 		);
 	});
 
-	it("should throw when name is empty string", () => {
+	it("should throw when name is empty string", ({ expect }) => {
 		expect.assertions(1);
 
 		const { directory: temporaryDirectory, fileSystem, fs } = makeFileSystem();
@@ -268,7 +268,7 @@ describe(loadRojoProject, () => {
 		);
 	});
 
-	it("should throw when tree is missing", () => {
+	it("should throw when tree is missing", ({ expect }) => {
 		expect.assertions(1);
 
 		const { directory: temporaryDirectory, fileSystem, fs } = makeFileSystem();
@@ -281,7 +281,7 @@ describe(loadRojoProject, () => {
 		);
 	});
 
-	it("should throw when tree is an array", () => {
+	it("should throw when tree is an array", ({ expect }) => {
 		expect.assertions(1);
 
 		const { directory: temporaryDirectory, fileSystem, fs } = makeFileSystem();
@@ -294,7 +294,7 @@ describe(loadRojoProject, () => {
 		);
 	});
 
-	it("should throw when tree is null", () => {
+	it("should throw when tree is null", ({ expect }) => {
 		expect.assertions(1);
 
 		const { directory: temporaryDirectory, fileSystem, fs } = makeFileSystem();
@@ -309,7 +309,7 @@ describe(loadRojoProject, () => {
 });
 
 describe(tryLoadRojoProject, () => {
-	it("should answer undefined when the project file is absent", () => {
+	it("should answer undefined when the project file is absent", ({ expect }) => {
 		expect.assertions(1);
 
 		const { directory, fileSystem } = makeFileSystem();
@@ -319,7 +319,7 @@ describe(tryLoadRojoProject, () => {
 		).toBeUndefined();
 	});
 
-	it("should throw a read failure that is not absence", () => {
+	it("should throw a read failure that is not absence", ({ expect }) => {
 		expect.assertions(1);
 
 		const failure = Object.assign(new Error("denied"), { code: "EACCES" });
@@ -336,7 +336,7 @@ describe(tryLoadRojoProject, () => {
 		);
 	});
 
-	it("should throw a read failure that carries no error code", () => {
+	it("should throw a read failure that carries no error code", ({ expect }) => {
 		expect.assertions(1);
 
 		const failure = { code: "ENOENT" };
@@ -351,7 +351,7 @@ describe(tryLoadRojoProject, () => {
 		);
 	});
 
-	it("should load a present project", () => {
+	it("should load a present project", ({ expect }) => {
 		expect.assertions(1);
 
 		const { directory, fileSystem } = makeFileSystem({
@@ -368,7 +368,7 @@ describe(tryLoadRojoProject, () => {
 		});
 	});
 
-	it("should throw on a malformed present project", () => {
+	it("should throw on a malformed present project", ({ expect }) => {
 		expect.assertions(1);
 
 		const { directory, fileSystem } = makeFileSystem({ "a.project.json": "{" });
@@ -380,7 +380,7 @@ describe(tryLoadRojoProject, () => {
 });
 
 describe(parseRojoProject, () => {
-	it("should return the validated fields without resolving nested projects", () => {
+	it("should return the validated fields without resolving nested projects", ({ expect }) => {
 		expect.assertions(1);
 
 		const text = JSON.stringify({ name: "Game", tree: { Inner: { $path: "a.project.json" } } });
@@ -390,7 +390,7 @@ describe(parseRojoProject, () => {
 		});
 	});
 
-	it("should name the file when the text fails the schema", () => {
+	it("should name the file when the text fails the schema", ({ expect }) => {
 		expect.assertions(1);
 
 		expect(() => parseRojoProject("[]", "x.project.json")).toThrow(
@@ -400,7 +400,7 @@ describe(parseRojoProject, () => {
 });
 
 describe(findRojoProjectFile, () => {
-	it("should prefer the default project file", () => {
+	it("should prefer the default project file", ({ expect }) => {
 		expect.assertions(1);
 
 		const { directory, fileSystem } = makeFileSystem({
@@ -413,7 +413,7 @@ describe(findRojoProjectFile, () => {
 		);
 	});
 
-	it("should fall back to the first project file", () => {
+	it("should fall back to the first project file", ({ expect }) => {
 		expect.assertions(1);
 
 		const { directory, fileSystem } = makeFileSystem({
@@ -426,7 +426,7 @@ describe(findRojoProjectFile, () => {
 		);
 	});
 
-	it("should answer undefined when there is no project file", () => {
+	it("should answer undefined when there is no project file", ({ expect }) => {
 		expect.assertions(1);
 
 		const { directory, fileSystem } = makeFileSystem({ "a.json": "{}" });
@@ -434,7 +434,7 @@ describe(findRojoProjectFile, () => {
 		expect(findRojoProjectFile(directory, fileSystem)).toBeUndefined();
 	});
 
-	it("should answer undefined when the directory does not exist", () => {
+	it("should answer undefined when the directory does not exist", ({ expect }) => {
 		expect.assertions(1);
 
 		const { directory, fileSystem } = makeFileSystem();
@@ -442,7 +442,7 @@ describe(findRojoProjectFile, () => {
 		expect(findRojoProjectFile(`${directory}/absent`, fileSystem)).toBeUndefined();
 	});
 
-	it("should throw a directory read failure that is not absence", () => {
+	it("should throw a directory read failure that is not absence", ({ expect }) => {
 		expect.assertions(1);
 
 		const failure = Object.assign(new Error("denied"), { code: "EACCES" });

@@ -5,7 +5,7 @@ import * as crypto from "node:crypto";
 import * as path from "node:path";
 import process from "node:process";
 import type { Except } from "type-fest";
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import { writeAgedFile } from "#test/mocks/aged-file.ts";
 import { copyIgnoreHash as digestCopyIgnore } from "#test/mocks/coverage-hash.ts";
@@ -213,7 +213,7 @@ describe(prepareCoverageAsync, () => {
 		},
 	])(
 		"should select script instrumentation in single mode with include $collectCoverageFrom",
-		async ({ collectCoverageFrom, expected }) => {
+		async ({ collectCoverageFrom, expected }, { expect }) => {
 			expect.assertions(1);
 
 			const { fileSystem, volume } = seedFilesystem();
@@ -236,7 +236,7 @@ describe(prepareCoverageAsync, () => {
 	);
 
 	describe("when resolving luauRoots", () => {
-		it("should use config.luauRoots when provided", async () => {
+		it("should use config.luauRoots when provided", async ({ expect }) => {
 			expect.assertions(1);
 
 			const { fileSystem, volume } = seedFilesystem();
@@ -250,7 +250,9 @@ describe(prepareCoverageAsync, () => {
 			expect(Object.keys(result.manifest.files)).toStrictEqual([COVERED_FILE]);
 		});
 
-		it("should warn on stderr for each explicit root that reports no coverage", async () => {
+		it("should warn on stderr for each explicit root that reports no coverage", async ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			const rootDirectory = path.resolve("/elsewhere/pkg");
@@ -282,7 +284,9 @@ describe(prepareCoverageAsync, () => {
 			);
 		});
 
-		it("should read, shadow and publish in rootDir when it is not the cwd", async () => {
+		it("should read, shadow and publish in rootDir when it is not the cwd", async ({
+			expect,
+		}) => {
 			expect.assertions(3);
 
 			const rootDirectory = path.resolve("/elsewhere/pkg");
@@ -315,7 +319,7 @@ describe(prepareCoverageAsync, () => {
 			expect(volume.existsSync(".jest-roblox/coverage/coverage-manifest.json")).toBeFalse();
 		});
 
-		it("should auto-detect luauRoots from tsconfig outDir", async () => {
+		it("should auto-detect luauRoots from tsconfig outDir", async ({ expect }) => {
 			expect.assertions(1);
 
 			const { fileSystem, volume } = seedFilesystem({ luauRoot: "out" });
@@ -333,7 +337,7 @@ describe(prepareCoverageAsync, () => {
 			expect(Object.keys(result.manifest.files)).toStrictEqual(["out/init.luau"]);
 		});
 
-		it("should throw when luauRoots contains an absolute path", async () => {
+		it("should throw when luauRoots contains an absolute path", async ({ expect }) => {
 			expect.assertions(1);
 
 			const { fileSystem, volume } = seedFilesystem({ luauRoot: "/abs/out" });
@@ -358,7 +362,7 @@ describe(prepareCoverageAsync, () => {
 		// root reads as a plain relative filename on Linux: the same config
 		// throws on a developer's Windows machine and instruments a root
 		// outside the package in CI.
-		it("should throw for a drive-letter root on any host", async () => {
+		it("should throw for a drive-letter root on any host", async ({ expect }) => {
 			expect.assertions(1);
 
 			const { fileSystem, volume } = seedFilesystem({ luauRoot: "D:/abs/out" });
@@ -379,7 +383,7 @@ describe(prepareCoverageAsync, () => {
 			);
 		});
 
-		it("should throw for a file-system root", async () => {
+		it("should throw for a file-system root", async ({ expect }) => {
 			expect.assertions(1);
 
 			const { fileSystem, volume } = seedFilesystem({ luauRoot: "/" });
@@ -400,7 +404,7 @@ describe(prepareCoverageAsync, () => {
 			);
 		});
 
-		it("should throw for an absolute tsconfig outDir", async () => {
+		it("should throw for an absolute tsconfig outDir", async ({ expect }) => {
 			expect.assertions(1);
 
 			const { fileSystem, volume } = seedFilesystem({ luauRoot: "/abs/out" });
@@ -417,7 +421,9 @@ describe(prepareCoverageAsync, () => {
 			).rejects.toThrow(/luauRoots must be relative paths/);
 		});
 
-		it("should throw when luauRoots is not provided and tsconfig has no outDir", async () => {
+		it("should throw when luauRoots is not provided and tsconfig has no outDir", async ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			const { fileSystem, volume } = seedFilesystem();
@@ -436,7 +442,7 @@ describe(prepareCoverageAsync, () => {
 	});
 
 	describe("when preparing the shadow directory", () => {
-		it("should wipe and recreate the shadow directory on each run", async () => {
+		it("should wipe and recreate the shadow directory on each run", async ({ expect }) => {
 			expect.assertions(2);
 
 			const { fileSystem, volume } = seedFilesystem();
@@ -450,7 +456,9 @@ describe(prepareCoverageAsync, () => {
 			expect(volume.existsSync(".jest-roblox/coverage")).toBeTrue();
 		});
 
-		it("should write the synthesized project outside the shadow directory", async () => {
+		it("should write the synthesized project outside the shadow directory", async ({
+			expect,
+		}) => {
 			expect.assertions(2);
 
 			const { volume } = await prepareSeededAsync();
@@ -459,7 +467,7 @@ describe(prepareCoverageAsync, () => {
 			expect(volume.existsSync(".jest-roblox/place/synthesized.project.json")).toBeTrue();
 		});
 
-		it("should build the place outside the shadow directory", async () => {
+		it("should build the place outside the shadow directory", async ({ expect }) => {
 			expect.assertions(1);
 
 			const { volume } = await prepareSeededAsync();
@@ -469,7 +477,7 @@ describe(prepareCoverageAsync, () => {
 			);
 		});
 
-		it("should mirror every file the instrumenter never emits", async () => {
+		it("should mirror every file the instrumenter never emits", async ({ expect }) => {
 			expect.assertions(2);
 
 			const { fileSystem, volume } = seedFilesystem();
@@ -489,7 +497,7 @@ describe(prepareCoverageAsync, () => {
 			).toBe("{}");
 		});
 
-		it("should mirror an empty source directory on a cold run", async () => {
+		it("should mirror an empty source directory on a cold run", async ({ expect }) => {
 			expect.assertions(1);
 
 			const { fileSystem, volume } = seedFilesystem();
@@ -503,7 +511,9 @@ describe(prepareCoverageAsync, () => {
 			expect(volume.existsSync(".jest-roblox/coverage/out-tsc/test/empty")).toBeTrue();
 		});
 
-		it("should honour the ignore list when luauRoots carries a trailing slash", async () => {
+		it("should honour the ignore list when luauRoots carries a trailing slash", async ({
+			expect,
+		}) => {
 			expect.assertions(2);
 
 			const { fileSystem, volume } = seedFilesystem();
@@ -529,7 +539,9 @@ describe(prepareCoverageAsync, () => {
 			expect(volume.existsSync(".jest-roblox/coverage/out-tsc/test/init.d.ts")).toBeFalse();
 		});
 
-		it("should record a trailing-slash root under one canonical spelling", async () => {
+		it("should record a trailing-slash root under one canonical spelling", async ({
+			expect,
+		}) => {
 			expect.assertions(2);
 
 			const { fileSystem, volume } = seedFilesystem();
@@ -555,7 +567,7 @@ describe(prepareCoverageAsync, () => {
 			).toBe(".jest-roblox/coverage/out-tsc/test/init.spec.luau");
 		});
 
-		it("should leave declaration artifacts out of the shadow directory", async () => {
+		it("should leave declaration artifacts out of the shadow directory", async ({ expect }) => {
 			expect.assertions(2);
 
 			const { fileSystem, volume } = seedFilesystem();
@@ -584,7 +596,9 @@ describe(prepareCoverageAsync, () => {
 			);
 		});
 
-		it("should keep an ignored directory out of the shadow on a cold run", async () => {
+		it("should keep an ignored directory out of the shadow on a cold run", async ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			const { fileSystem, volume } = seedFilesystem();
@@ -606,7 +620,9 @@ describe(prepareCoverageAsync, () => {
 			expect(volume.existsSync(".jest-roblox/coverage/out-tsc/test/vendor")).toBeFalse();
 		});
 
-		it("should mirror declaration artifacts when the ignore list is emptied", async () => {
+		it("should mirror declaration artifacts when the ignore list is emptied", async ({
+			expect,
+		}) => {
 			expect.assertions(2);
 
 			const { fileSystem, volume } = seedFilesystem();
@@ -630,7 +646,7 @@ describe(prepareCoverageAsync, () => {
 	});
 
 	describe("when rewriting and building the Rojo project", () => {
-		it("should rewrite the Rojo project and invoke rojo build", async () => {
+		it("should rewrite the Rojo project and invoke rojo build", async ({ expect }) => {
 			expect.assertions(2);
 
 			const { volume } = await prepareSeededAsync();
@@ -641,7 +657,7 @@ describe(prepareCoverageAsync, () => {
 			);
 		});
 
-		it("should use config.rojoProject when provided", async () => {
+		it("should use config.rojoProject when provided", async ({ expect }) => {
 			expect.assertions(1);
 
 			const { fileSystem, volume } = seedFilesystem({ rojoProject: "/custom.project.json" });
@@ -661,7 +677,7 @@ describe(prepareCoverageAsync, () => {
 			expect(volume.existsSync(".jest-roblox/place/synthesized.project.json")).toBeTrue();
 		});
 
-		it("should auto-detect the Rojo project when not configured", async () => {
+		it("should auto-detect the Rojo project when not configured", async ({ expect }) => {
 			expect.assertions(1);
 
 			const { volume } = await prepareSeededAsync();
@@ -669,7 +685,7 @@ describe(prepareCoverageAsync, () => {
 			expect(volume.existsSync(".jest-roblox/place/synthesized.project.json")).toBeTrue();
 		});
 
-		it("should build from a configured non-default project", async () => {
+		it("should build from a configured non-default project", async ({ expect }) => {
 			expect.assertions(1);
 
 			const rojoProject = path.join(PROJECT_DIR, "game.project.json");
@@ -685,7 +701,9 @@ describe(prepareCoverageAsync, () => {
 			expect(volume.existsSync(".jest-roblox/place/synthesized.project.json")).toBeTrue();
 		});
 
-		it("should throw when Rojo project has valid JSON but invalid schema", async () => {
+		it("should throw when Rojo project has valid JSON but invalid schema", async ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			const { fileSystem, volume } = seedFilesystem();
@@ -706,7 +724,7 @@ describe(prepareCoverageAsync, () => {
 			).rejects.toThrow(/Invalid Rojo project/);
 		});
 
-		it("should throw when no Rojo project is found", async () => {
+		it("should throw when no Rojo project is found", async ({ expect }) => {
 			expect.assertions(1);
 
 			const { fileSystem, volume } = createMemoryFileSystem();
@@ -728,7 +746,9 @@ describe(prepareCoverageAsync, () => {
 	});
 
 	describe("when building the coverage place for the run-mode runner", () => {
-		it("should enable LoadString so the studio-cli Run-mode runner's gate passes", async () => {
+		it("should enable LoadString so the studio-cli Run-mode runner's gate passes", async ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			const { volume } = await prepareSeededAsync();
@@ -748,7 +768,9 @@ describe(prepareCoverageAsync, () => {
 	});
 
 	describe("when computing $path entries for the rewritten project", () => {
-		it("should express $path entries relative to the rewritten project's own directory", async () => {
+		it("should express $path entries relative to the rewritten project's own directory", async ({
+			expect,
+		}) => {
 			expect.assertions(2);
 
 			const { fileSystem, volume } = createMemoryFileSystem();
@@ -800,7 +822,9 @@ describe(prepareCoverageAsync, () => {
 	});
 
 	describe("when rojoProject lives outside rootDir", () => {
-		it("should redirect luauRoot against rootDir, not the rojo project's directory", async () => {
+		it("should redirect luauRoot against rootDir, not the rojo project's directory", async ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			const { fileSystem, volume } = createMemoryFileSystem();
@@ -848,7 +872,9 @@ describe(prepareCoverageAsync, () => {
 	});
 
 	describe("when Rojo project has nested project references", () => {
-		it("should resolve nested .project.json refs before rewriting paths", async () => {
+		it("should resolve nested .project.json refs before rewriting paths", async ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			const { fileSystem, volume } = createMemoryFileSystem();
@@ -910,7 +936,7 @@ describe(prepareCoverageAsync, () => {
 	});
 
 	describe("when returning results", () => {
-		it("should return the manifest and placeFile path", async () => {
+		it("should return the manifest and placeFile path", async ({ expect }) => {
 			expect.assertions(2);
 
 			const { result } = await prepareSeededAsync();
@@ -921,7 +947,7 @@ describe(prepareCoverageAsync, () => {
 	});
 
 	describe("when resolving the build artifacts", () => {
-		it("should return the coverage place, buildId, and rebuilt flag", async () => {
+		it("should return the coverage place, buildId, and rebuilt flag", async ({ expect }) => {
 			expect.assertions(3);
 
 			const { result } = await prepareSeededAsync();
@@ -931,7 +957,9 @@ describe(prepareCoverageAsync, () => {
 			expect(result.rebuilt).toBeTrue();
 		});
 
-		it("should omit an unavailable input digest from a rebuilt manifest", async () => {
+		it("should omit an unavailable input digest from a rebuilt manifest", async ({
+			expect,
+		}) => {
 			expect.assertions(2);
 
 			const { fileSystem, volume } = seedFilesystem();
@@ -947,7 +975,7 @@ describe(prepareCoverageAsync, () => {
 			).not.toHaveProperty("rojoInputsHash");
 		});
 
-		it("should report the place build apart from the instrumentation", async () => {
+		it("should report the place build apart from the instrumentation", async ({ expect }) => {
 			expect.assertions(3);
 
 			const { fileSystem, volume } = seedFilesystem();
@@ -982,7 +1010,7 @@ describe(prepareCoverageAsync, () => {
 			]);
 		});
 
-		it("should share the buildId with the coverage manifest it wrote", async () => {
+		it("should share the buildId with the coverage manifest it wrote", async ({ expect }) => {
 			expect.assertions(1);
 
 			const { result, volume } = await prepareSeededAsync();
@@ -995,7 +1023,9 @@ describe(prepareCoverageAsync, () => {
 			expect(result.buildId).toBe(coverage.buildId);
 		});
 
-		it("should record source hashes for the build manifest in the result", async () => {
+		it("should record source hashes for the build manifest in the result", async ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			const { fileSystem, volume } = seedFilesystem();
@@ -1020,7 +1050,9 @@ describe(prepareCoverageAsync, () => {
 			expect(result.files["out-tsc/test/init.luau"]!.sourceHash).toBe("deadbeef");
 		});
 
-		it("should not write a build manifest (the entry point owns emission)", async () => {
+		it("should not write a build manifest (the entry point owns emission)", async ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			const { volume } = await prepareSeededAsync();
@@ -1028,7 +1060,7 @@ describe(prepareCoverageAsync, () => {
 			expect(volume.existsSync(".jest-roblox/coverage/build-manifest.json")).toBeFalse();
 		});
 
-		it("should leave no coverage manifest when rojo build fails", async () => {
+		it("should leave no coverage manifest when rojo build fails", async ({ expect }) => {
 			expect.assertions(2);
 
 			const { fileSystem, volume } = seedFilesystem();
@@ -1066,7 +1098,7 @@ describe(prepareCoverageAsync, () => {
 			});
 		}
 
-		it("should hold an out-of-universe file back from the instrumenter", async () => {
+		it("should hold an out-of-universe file back from the instrumenter", async ({ expect }) => {
 			expect.assertions(1);
 
 			const { childProcess, fileSystem } = await seedTwoFilesAsync();
@@ -1080,7 +1112,7 @@ describe(prepareCoverageAsync, () => {
 			expect(Object.keys(result.manifest.files)).toStrictEqual([COVERED_FILE]);
 		});
 
-		it("should mirror an out-of-universe file into the shadow instead", async () => {
+		it("should mirror an out-of-universe file into the shadow instead", async ({ expect }) => {
 			expect.assertions(2);
 
 			const { childProcess, fileSystem, volume } = await seedTwoFilesAsync();
@@ -1134,7 +1166,9 @@ describe(prepareCoverageAsync, () => {
 			});
 		}
 
-		it("should leave a root the universe never touches out of the shadow", async () => {
+		it("should leave a root the universe never touches out of the shadow", async ({
+			expect,
+		}) => {
 			expect.assertions(2);
 
 			const { childProcess, fileSystem, volume } = await seedTwoRootsAsync();
@@ -1149,7 +1183,9 @@ describe(prepareCoverageAsync, () => {
 			expect(volume.existsSync(".jest-roblox/coverage/out-tsc/vendor")).toBeFalse();
 		});
 
-		it("should keep a root with no shadow mounted on the source it already served", async () => {
+		it("should keep a root with no shadow mounted on the source it already served", async ({
+			expect,
+		}) => {
 			expect.assertions(2);
 
 			const { childProcess, fileSystem, volume } = await seedTwoRootsAsync();
@@ -1174,7 +1210,7 @@ describe(prepareCoverageAsync, () => {
 			);
 		});
 
-		it("should reuse the place when nothing under either root changed", async () => {
+		it("should reuse the place when nothing under either root changed", async ({ expect }) => {
 			expect.assertions(1);
 
 			const { childProcess, fileSystem } = await seedTwoRootsAsync();
@@ -1196,7 +1232,9 @@ describe(prepareCoverageAsync, () => {
 			expect(second.rebuilt).toBeFalse();
 		});
 
-		it("should rebuild when a file changes in a root the universe never touches", async () => {
+		it("should rebuild when a file changes in a root the universe never touches", async ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			const { childProcess, fileSystem, volume } = await seedTwoRootsAsync();
@@ -1221,7 +1259,9 @@ describe(prepareCoverageAsync, () => {
 			expect(second.rebuilt).toBeTrue();
 		});
 
-		it("should keep the shadow when the ignore list is what emptied the root", async () => {
+		it("should keep the shadow when the ignore list is what emptied the root", async ({
+			expect,
+		}) => {
 			expect.assertions(2);
 
 			const { childProcess, fileSystem, volume } = await seedTwoFilesAsync();
@@ -1243,7 +1283,9 @@ describe(prepareCoverageAsync, () => {
 			expect(result.manifest.nonInstrumentedFiles).toHaveProperty(UNCOVERED_FILE);
 		});
 
-		it("should instrument the whole root with explicitly unrestricted coverage", async () => {
+		it("should instrument the whole root with explicitly unrestricted coverage", async ({
+			expect,
+		}) => {
 			expect.assertions(2);
 
 			const { childProcess, fileSystem } = await seedTwoFilesAsync();
@@ -1261,7 +1303,9 @@ describe(prepareCoverageAsync, () => {
 			expect(result.manifest.coverageUniverseHash).toBeUndefined();
 		});
 
-		it("should instrument by the caller's universe in place of the coverage globs", async () => {
+		it("should instrument by the caller's universe in place of the coverage globs", async ({
+			expect,
+		}) => {
 			expect.assertions(2);
 
 			const { childProcess, fileSystem } = await seedTwoFilesAsync();
@@ -1280,7 +1324,7 @@ describe(prepareCoverageAsync, () => {
 			expect(result.manifest.coverageUniverseHash).toBe("caller-universe");
 		});
 
-		it("should record the universe digest in the manifest", async () => {
+		it("should record the universe digest in the manifest", async ({ expect }) => {
 			expect.assertions(1);
 
 			const { childProcess, fileSystem } = await seedTwoFilesAsync();
@@ -1294,7 +1338,9 @@ describe(prepareCoverageAsync, () => {
 			expect(result.manifest.coverageUniverseHash).toMatch(/^[a-f0-9]{64}$/);
 		});
 
-		it("should rebuild cold when the coverage globs changed since the last run", async () => {
+		it("should rebuild cold when the coverage globs changed since the last run", async ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			const { childProcess, fileSystem, volume } = await seedTwoFilesAsync();
@@ -1536,7 +1582,7 @@ describe(prepareCoverageAsync, () => {
 			}
 		}
 
-		it("should store sourceHash in each file record", async () => {
+		it("should store sourceHash in each file record", async ({ expect }) => {
 			expect.assertions(1);
 
 			const { fileSystem, volume } = seedFilesystem();
@@ -1555,7 +1601,7 @@ describe(prepareCoverageAsync, () => {
 			expect(record!.sourceHash).toMatch(/^[a-f0-9]{64}$/);
 		});
 
-		it("should include instrumenterVersion in manifest", async () => {
+		it("should include instrumenterVersion in manifest", async ({ expect }) => {
 			expect.assertions(1);
 
 			const { result } = await prepareSeededAsync();
@@ -1563,7 +1609,7 @@ describe(prepareCoverageAsync, () => {
 			expect(result.manifest.instrumenterVersion).toBe(INSTRUMENTER_VERSION);
 		});
 
-		it("should include placeFilePath in manifest", async () => {
+		it("should include placeFilePath in manifest", async ({ expect }) => {
 			expect.assertions(1);
 
 			const { result } = await prepareSeededAsync();
@@ -1571,7 +1617,9 @@ describe(prepareCoverageAsync, () => {
 			expect(result.manifest.placeFilePath).toContain("game.rbxl");
 		});
 
-		it("should carry forward records for unchanged files without calling instrumentRoot", async () => {
+		it("should carry forward records for unchanged files without calling instrumentRoot", async ({
+			expect,
+		}) => {
 			expect.assertions(2);
 
 			const { fileSystem, volume } = createMemoryFileSystem();
@@ -1589,7 +1637,7 @@ describe(prepareCoverageAsync, () => {
 			expect(result.manifest.files["out-tsc/test/init.luau"]).toBeDefined();
 		});
 
-		it("should re-instrument files whose source hash changed", async () => {
+		it("should re-instrument files whose source hash changed", async ({ expect }) => {
 			expect.assertions(1);
 
 			const { fileSystem, volume } = createMemoryFileSystem();
@@ -1608,7 +1656,7 @@ describe(prepareCoverageAsync, () => {
 			);
 		});
 
-		it("should instrument new files not in previous manifest", async () => {
+		it("should instrument new files not in previous manifest", async ({ expect }) => {
 			expect.assertions(2);
 
 			const { fileSystem, volume } = createMemoryFileSystem();
@@ -1632,7 +1680,7 @@ describe(prepareCoverageAsync, () => {
 			).toBe("-- instrumented");
 		});
 
-		it("should remove deleted files from shadow dir and manifest", async () => {
+		it("should remove deleted files from shadow dir and manifest", async ({ expect }) => {
 			expect.assertions(2);
 
 			const { childProcess, fileSystem, instrumenter, volume } = setupMemoryMocks();
@@ -1649,7 +1697,7 @@ describe(prepareCoverageAsync, () => {
 			).toBeFalse();
 		});
 
-		it("should handle cleanup when shadow files are already missing", async () => {
+		it("should handle cleanup when shadow files are already missing", async ({ expect }) => {
 			expect.assertions(1);
 
 			const { childProcess, fileSystem, instrumenter, volume } = setupMemoryMocks();
@@ -1665,7 +1713,9 @@ describe(prepareCoverageAsync, () => {
 			expect(result.manifest.files["out-tsc/test/deleted.luau"]).toBeUndefined();
 		});
 
-		it("should rebuild when raw Rojo input changes normalize to the same synthesized tree", async () => {
+		it("should rebuild when raw Rojo input changes normalize to the same synthesized tree", async ({
+			expect,
+		}) => {
 			expect.assertions(2);
 
 			const { fileSystem, volume } = seedFilesystem();
@@ -1682,7 +1732,9 @@ describe(prepareCoverageAsync, () => {
 			expect(second.buildId).not.toBe(first.buildId);
 		});
 
-		it("should reuse when the original input digest is temporarily unavailable", async () => {
+		it("should reuse when the original input digest is temporarily unavailable", async ({
+			expect,
+		}) => {
 			expect.assertions(2);
 
 			const { fileSystem, volume } = seedFilesystem();
@@ -1697,7 +1749,9 @@ describe(prepareCoverageAsync, () => {
 			expect(second.buildId).toBe(first.buildId);
 		});
 
-		it("should keep the build identity and timestamp on a no-change rerun", async () => {
+		it("should keep the build identity and timestamp on a no-change rerun", async ({
+			expect,
+		}) => {
 			expect.assertions(4);
 
 			const { fileSystem, volume } = seedFilesystem();
@@ -1711,7 +1765,9 @@ describe(prepareCoverageAsync, () => {
 			expect(second.manifest.generatedAt).toBe(first.manifest.generatedAt);
 		});
 
-		it("should rebuild when no files changed but the prior place is missing on disk", async () => {
+		it("should rebuild when no files changed but the prior place is missing on disk", async ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			const { fileSystem, volume } = createMemoryFileSystem();
@@ -1728,7 +1784,9 @@ describe(prepareCoverageAsync, () => {
 			);
 		});
 
-		it("should rebuild when the prior place sits outside the place directory", async () => {
+		it("should rebuild when the prior place sits outside the place directory", async ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			const { fileSystem, volume } = createMemoryFileSystem();
@@ -1747,7 +1805,7 @@ describe(prepareCoverageAsync, () => {
 			);
 		});
 
-		it("should rebuild when the cached place bytes drift", async () => {
+		it("should rebuild when the cached place bytes drift", async ({ expect }) => {
 			expect.assertions(3);
 
 			const { fileSystem, volume } = seedFilesystem();
@@ -1761,7 +1819,7 @@ describe(prepareCoverageAsync, () => {
 			expect(volume.readFileSync(second.placeFile, "utf8")).toBe("rebuilt RBXL");
 		});
 
-		it("should reuse the prior place when the build manifest validates", async () => {
+		it("should reuse the prior place when the build manifest validates", async ({ expect }) => {
 			expect.assertions(1);
 
 			const { fileSystem, volume } = createMemoryFileSystem();
@@ -1779,7 +1837,9 @@ describe(prepareCoverageAsync, () => {
 			);
 		});
 
-		it("should report the reuse gate as staging when nothing is rebuilt", async () => {
+		it("should report the reuse gate as staging when nothing is rebuilt", async ({
+			expect,
+		}) => {
 			expect.assertions(2);
 
 			const { fileSystem, volume } = createMemoryFileSystem();
@@ -1805,7 +1865,7 @@ describe(prepareCoverageAsync, () => {
 			expect(result.stagingMs).toBeGreaterThan(0);
 		});
 
-		it("should instrument a new file while preserving the cached twin", async () => {
+		it("should instrument a new file while preserving the cached twin", async ({ expect }) => {
 			expect.assertions(2);
 
 			const { fileSystem, volume } = createMemoryFileSystem();
@@ -1828,7 +1888,7 @@ describe(prepareCoverageAsync, () => {
 			).toBe("-- instrumented");
 		});
 
-		it("should discard a deleted file while preserving the cached twin", async () => {
+		it("should discard a deleted file while preserving the cached twin", async ({ expect }) => {
 			expect.assertions(2);
 
 			const { fileSystem, volume } = createMemoryFileSystem();
@@ -1865,7 +1925,9 @@ describe(prepareCoverageAsync, () => {
 			expect(result.manifest.files).not.toHaveProperty("out-tsc/test/b.luau");
 		});
 
-		it("should still rebuild rojo when only non-instrumented file changed", async () => {
+		it("should still rebuild rojo when only non-instrumented file changed", async ({
+			expect,
+		}) => {
 			expect.assertions(2);
 
 			const { fileSystem, volume } = createMemoryFileSystem();
@@ -1894,7 +1956,7 @@ describe(prepareCoverageAsync, () => {
 			);
 		});
 
-		it("should wipe and re-instrument all when cache is disabled", async () => {
+		it("should wipe and re-instrument all when cache is disabled", async ({ expect }) => {
 			expect.assertions(1);
 
 			const { fileSystem, volume } = createMemoryFileSystem();
@@ -1922,7 +1984,7 @@ describe(prepareCoverageAsync, () => {
 			).toContain("local x = 1");
 		});
 
-		it("should wipe shadow directory when cache is disabled", async () => {
+		it("should wipe shadow directory when cache is disabled", async ({ expect }) => {
 			expect.assertions(2);
 
 			const { childProcess, fileSystem, instrumenter, volume } = setupMemoryMocks();
@@ -1946,7 +2008,7 @@ describe(prepareCoverageAsync, () => {
 			expect(volume.existsSync(".jest-roblox/coverage")).toBeTrue();
 		});
 
-		it("should handle luauRoots change between runs", async () => {
+		it("should handle luauRoots change between runs", async ({ expect }) => {
 			expect.assertions(1);
 
 			const { childProcess, fileSystem, volume } = setupMemoryMocks();
@@ -1984,7 +2046,9 @@ describe(prepareCoverageAsync, () => {
 			).toContain("local z = 1");
 		});
 
-		it("should fall back to full instrumentation when manifest JSON is malformed", async () => {
+		it("should fall back to full instrumentation when manifest JSON is malformed", async ({
+			expect,
+		}) => {
 			expect.assertions(2);
 
 			const { fileSystem, volume } = createMemoryFileSystem();
@@ -2016,7 +2080,7 @@ describe(prepareCoverageAsync, () => {
 			);
 		});
 
-		it("should re-instrument all when instrumenterVersion differs", async () => {
+		it("should re-instrument all when instrumenterVersion differs", async ({ expect }) => {
 			expect.assertions(1);
 
 			const { fileSystem, volume } = createMemoryFileSystem();
@@ -2042,7 +2106,9 @@ describe(prepareCoverageAsync, () => {
 			).toContain("local x = 1");
 		});
 
-		it("should re-instrument all when manifest file record lacks sourceHash", async () => {
+		it("should re-instrument all when manifest file record lacks sourceHash", async ({
+			expect,
+		}) => {
 			expect.assertions(2);
 
 			const { fileSystem, volume } = createMemoryFileSystem();
@@ -2087,7 +2153,7 @@ describe(prepareCoverageAsync, () => {
 			);
 		});
 
-		it("should handle incremental mode across multiple luauRoots", async () => {
+		it("should handle incremental mode across multiple luauRoots", async ({ expect }) => {
 			expect.assertions(2);
 
 			const { childProcess, fileSystem, volume } = setupMemoryMocks();
@@ -2139,7 +2205,9 @@ describe(prepareCoverageAsync, () => {
 			expect(result.rebuilt).toBeFalse();
 		});
 
-		it("should force rebuild when the bake reports a write on an incremental run", async () => {
+		it("should force rebuild when the bake reports a write on an incremental run", async ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			const { fileSystem, volume } = seedFilesystem();
@@ -2155,7 +2223,9 @@ describe(prepareCoverageAsync, () => {
 			expect(result.rebuilt).toBeTrue();
 		});
 
-		it("should force rebuild when the bake mounts a stub beside the shadow", async () => {
+		it("should force rebuild when the bake mounts a stub beside the shadow", async ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			const { childProcess, fileSystem, instrumenter, volume } = setupMemoryMocks();
@@ -2188,7 +2258,9 @@ describe(prepareCoverageAsync, () => {
 			);
 		});
 
-		it("should not force rebuild when the bake writes nothing on an incremental run", async () => {
+		it("should not force rebuild when the bake writes nothing on an incremental run", async ({
+			expect,
+		}) => {
 			expect.assertions(1);
 
 			const { childProcess, fileSystem, instrumenter, volume } = setupMemoryMocks();
@@ -2261,7 +2333,7 @@ describe(prepareCoverageAsync, () => {
 				writeValidBuildManifest(volume);
 			}
 
-			it("should rebuild when a non-luauRoot mount's file changes", async () => {
+			it("should rebuild when a non-luauRoot mount's file changes", async ({ expect }) => {
 				expect.assertions(1);
 
 				const { fileSystem, volume } = createMemoryFileSystem();
@@ -2278,7 +2350,9 @@ describe(prepareCoverageAsync, () => {
 				);
 			});
 
-			it("should reuse the place and log when rojo inputs are unchanged", async () => {
+			it("should reuse the place and log when rojo inputs are unchanged", async ({
+				expect,
+			}) => {
 				expect.assertions(2);
 
 				const { fileSystem, volume } = createMemoryFileSystem();
@@ -2297,7 +2371,9 @@ describe(prepareCoverageAsync, () => {
 				expect(stderrText()).toContain("Reusing cached coverage place");
 			});
 
-			it("should reject an invalid project even when a place is cached", async () => {
+			it("should reject an invalid project even when a place is cached", async ({
+				expect,
+			}) => {
 				expect.assertions(1);
 
 				const { fileSystem, volume } = createMemoryFileSystem();
@@ -2316,7 +2392,7 @@ describe(prepareCoverageAsync, () => {
 		});
 
 		describe("when syncing non-instrumented files", () => {
-			it("should copy spec files to shadow dir on first run", async () => {
+			it("should copy spec files to shadow dir on first run", async ({ expect }) => {
 				expect.assertions(1);
 
 				const { fileSystem, volume } = createMemoryFileSystem();
@@ -2334,7 +2410,7 @@ describe(prepareCoverageAsync, () => {
 				).toBe("-- test code");
 			});
 
-			it("should update changed spec files during incremental run", async () => {
+			it("should update changed spec files during incremental run", async ({ expect }) => {
 				expect.assertions(1);
 
 				const { childProcess, fileSystem, instrumenter, volume } = setupMemoryMocks();
@@ -2351,7 +2427,7 @@ describe(prepareCoverageAsync, () => {
 				).toBe("-- new test");
 			});
 
-			it("should skip unchanged spec files during incremental run", async () => {
+			it("should skip unchanged spec files during incremental run", async ({ expect }) => {
 				expect.assertions(1);
 
 				const { childProcess, fileSystem, instrumenter, volume } = setupMemoryMocks();
@@ -2364,7 +2440,9 @@ describe(prepareCoverageAsync, () => {
 				).toBe(sha256("-- unchanged test"));
 			});
 
-			it("should detect deleted spec files and clean up shadow copies", async () => {
+			it("should detect deleted spec files and clean up shadow copies", async ({
+				expect,
+			}) => {
 				expect.assertions(2);
 
 				const { fileSystem, volume } = createMemoryFileSystem();
@@ -2397,7 +2475,9 @@ describe(prepareCoverageAsync, () => {
 				).toBeFalse();
 			});
 
-			it("should replace a shadow file whose source turned into a directory", async () => {
+			it("should replace a shadow file whose source turned into a directory", async ({
+				expect,
+			}) => {
 				expect.assertions(2);
 
 				const { childProcess, fileSystem, instrumenter, volume } = setupMemoryMocks();
@@ -2429,7 +2509,9 @@ describe(prepareCoverageAsync, () => {
 				expect(result.rebuilt).toBeTrue();
 			});
 
-			it("should replace a shadow directory whose source turned into a file", async () => {
+			it("should replace a shadow directory whose source turned into a file", async ({
+				expect,
+			}) => {
 				expect.assertions(2);
 
 				const { childProcess, fileSystem, instrumenter, volume } = setupMemoryMocks();
@@ -2465,7 +2547,9 @@ describe(prepareCoverageAsync, () => {
 			// Both carry-forwards check `existsSync`, which says yes to a
 			// directory. A carried record would then hand rojo a Folder under a
 			// file's name, and nothing throws.
-			it("should re-copy when the recorded shadow path became a directory", async () => {
+			it("should re-copy when the recorded shadow path became a directory", async ({
+				expect,
+			}) => {
 				expect.assertions(1);
 
 				const { childProcess, fileSystem, instrumenter, volume } = setupMemoryMocks();
@@ -2487,7 +2571,9 @@ describe(prepareCoverageAsync, () => {
 				expect(volume.readFileSync(specRecord.shadowPath, "utf-8")).toBe("-- spec");
 			});
 
-			it("should re-instrument when the recorded twin became a directory", async () => {
+			it("should re-instrument when the recorded twin became a directory", async ({
+				expect,
+			}) => {
 				expect.assertions(1);
 
 				const { childProcess, fileSystem, volume } = setupMemoryMocks();
@@ -2506,7 +2592,9 @@ describe(prepareCoverageAsync, () => {
 				expect(volume.readFileSync(twin, "utf8")).toContain("__cov");
 			});
 
-			it("should remove orphaned non-luau files from the shadow when source is deleted", async () => {
+			it("should remove orphaned non-luau files from the shadow when source is deleted", async ({
+				expect,
+			}) => {
 				expect.assertions(1);
 
 				const { childProcess, fileSystem, instrumenter, volume } = setupMemoryMocks();
@@ -2532,7 +2620,9 @@ describe(prepareCoverageAsync, () => {
 				).toBeFalse();
 			});
 
-			it("should keep and sync non-luau files whose source still exists", async () => {
+			it("should keep and sync non-luau files whose source still exists", async ({
+				expect,
+			}) => {
 				expect.assertions(2);
 
 				const { childProcess, fileSystem, instrumenter, volume } = setupMemoryMocks();
@@ -2565,7 +2655,9 @@ describe(prepareCoverageAsync, () => {
 			// carried for a deleted file, an orphan cov-map at 0%, and a new file
 			// lost because `instrumentable.size` cancelled against a
 			// newly-ignored one. All three come from counts the old list wrote.
-			it("should rebuild cold when the copy-ignore list changed since the manifest", async () => {
+			it("should rebuild cold when the copy-ignore list changed since the manifest", async ({
+				expect,
+			}) => {
 				expect.assertions(2);
 
 				const { childProcess, fileSystem, volume } = setupMemoryMocks();
@@ -2590,7 +2682,9 @@ describe(prepareCoverageAsync, () => {
 				).toContain("local fresh = 1");
 			});
 
-			it("should reuse the cache when the copy-ignore list only reorders", async () => {
+			it("should reuse the cache when the copy-ignore list only reorders", async ({
+				expect,
+			}) => {
 				expect.assertions(1);
 
 				const { childProcess, fileSystem, volume } = setupMemoryMocks();
@@ -2611,7 +2705,9 @@ describe(prepareCoverageAsync, () => {
 				).toBe("-- instrumented");
 			});
 
-			it("should keep a cov-map sidecar a user JSON pattern would match", async () => {
+			it("should keep a cov-map sidecar a user JSON pattern would match", async ({
+				expect,
+			}) => {
 				expect.assertions(1);
 
 				const { childProcess, fileSystem, instrumenter, volume } = setupMemoryMocks();
@@ -2639,7 +2735,9 @@ describe(prepareCoverageAsync, () => {
 				).toBeTrue();
 			});
 
-			it("should remove declaration artifacts an earlier run copied in", async () => {
+			it("should remove declaration artifacts an earlier run copied in", async ({
+				expect,
+			}) => {
 				expect.assertions(2);
 
 				const { childProcess, fileSystem, instrumenter, volume } = setupMemoryMocks();
@@ -2672,7 +2770,9 @@ describe(prepareCoverageAsync, () => {
 				).toBeFalse();
 			});
 
-			it("should remove an orphaned cov-map sidecar when its base source is gone", async () => {
+			it("should remove an orphaned cov-map sidecar when its base source is gone", async ({
+				expect,
+			}) => {
 				expect.assertions(1);
 
 				const { childProcess, fileSystem, instrumenter, volume } = setupMemoryMocks();
@@ -2692,7 +2792,9 @@ describe(prepareCoverageAsync, () => {
 				).toBeFalse();
 			});
 
-			it("should keep a cov-map sidecar whose base source still exists", async () => {
+			it("should keep a cov-map sidecar whose base source still exists", async ({
+				expect,
+			}) => {
 				expect.assertions(1);
 
 				const { childProcess, fileSystem, instrumenter, volume } = setupMemoryMocks();
@@ -2714,7 +2816,9 @@ describe(prepareCoverageAsync, () => {
 				).toBeTrue();
 			});
 
-			it("should remove an orphaned shadow directory when its source directory is gone", async () => {
+			it("should remove an orphaned shadow directory when its source directory is gone", async ({
+				expect,
+			}) => {
 				expect.assertions(2);
 
 				const { childProcess, fileSystem, instrumenter, volume } = setupMemoryMocks();
@@ -2750,7 +2854,9 @@ describe(prepareCoverageAsync, () => {
 				expect(volume.existsSync(".jest-roblox/coverage/out-tsc/test/dir")).toBeFalse();
 			});
 
-			it("should collapse a nested orphaned shadow directory tree in one pass", async () => {
+			it("should collapse a nested orphaned shadow directory tree in one pass", async ({
+				expect,
+			}) => {
 				expect.assertions(1);
 
 				const { childProcess, fileSystem, instrumenter, volume } = setupMemoryMocks();
@@ -2775,7 +2881,9 @@ describe(prepareCoverageAsync, () => {
 				expect(volume.existsSync(".jest-roblox/coverage/out-tsc/test/a")).toBeFalse();
 			});
 
-			it("should rebuild when an empty source directory appears on a warm run", async () => {
+			it("should rebuild when an empty source directory appears on a warm run", async ({
+				expect,
+			}) => {
 				expect.assertions(2);
 
 				const { childProcess, fileSystem, instrumenter, volume } = setupMemoryMocks();
@@ -2795,7 +2903,9 @@ describe(prepareCoverageAsync, () => {
 				expect(result.rebuilt).toBeTrue();
 			});
 
-			it("should keep an empty shadow directory whose source directory still exists", async () => {
+			it("should keep an empty shadow directory whose source directory still exists", async ({
+				expect,
+			}) => {
 				expect.assertions(1);
 
 				const { childProcess, fileSystem, instrumenter, volume } = setupMemoryMocks();
@@ -2817,7 +2927,9 @@ describe(prepareCoverageAsync, () => {
 				expect(volume.existsSync(".jest-roblox/coverage/out-tsc/test/empty")).toBeTrue();
 			});
 
-			it("should keep a skipped directory while its parent source survives", async () => {
+			it("should keep a skipped directory while its parent source survives", async ({
+				expect,
+			}) => {
 				expect.assertions(1);
 
 				const { childProcess, fileSystem, instrumenter, volume } = setupMemoryMocks();
@@ -2854,7 +2966,9 @@ describe(prepareCoverageAsync, () => {
 				).toBeTrue();
 			});
 
-			it("should remove a skipped directory once its parent source is gone", async () => {
+			it("should remove a skipped directory once its parent source is gone", async ({
+				expect,
+			}) => {
 				expect.assertions(1);
 
 				const { childProcess, fileSystem, instrumenter, volume } = setupMemoryMocks();
@@ -2881,7 +2995,9 @@ describe(prepareCoverageAsync, () => {
 				expect(volume.existsSync(".jest-roblox/coverage/out-tsc/test/vendor")).toBeFalse();
 			});
 
-			it("should force a rebuild when an orphaned shadow directory is removed", async () => {
+			it("should force a rebuild when an orphaned shadow directory is removed", async ({
+				expect,
+			}) => {
 				expect.assertions(1);
 
 				const { childProcess, fileSystem, instrumenter, volume } = setupMemoryMocks();
@@ -2901,7 +3017,9 @@ describe(prepareCoverageAsync, () => {
 				);
 			});
 
-			it("should force a rebuild when an orphaned non-luau file is removed", async () => {
+			it("should force a rebuild when an orphaned non-luau file is removed", async ({
+				expect,
+			}) => {
 				expect.assertions(1);
 
 				const { childProcess, fileSystem, instrumenter, volume } = setupMemoryMocks();
@@ -2921,7 +3039,9 @@ describe(prepareCoverageAsync, () => {
 				);
 			});
 
-			it("should force a cold rebuild when a luauRoot is dropped from the set", async () => {
+			it("should force a cold rebuild when a luauRoot is dropped from the set", async ({
+				expect,
+			}) => {
 				expect.assertions(2);
 
 				const { childProcess, fileSystem, instrumenter, volume } = setupMemoryMocks();
@@ -2948,7 +3068,9 @@ describe(prepareCoverageAsync, () => {
 				).toBeFalse();
 			});
 
-			it("should set changed=true when spec file changes (triggers rojo rebuild)", async () => {
+			it("should set changed=true when spec file changes (triggers rojo rebuild)", async ({
+				expect,
+			}) => {
 				expect.assertions(1);
 
 				const { childProcess, fileSystem, instrumenter, volume } = setupMemoryMocks();
@@ -2962,7 +3084,7 @@ describe(prepareCoverageAsync, () => {
 				);
 			});
 
-			it("should track non-instrumented files in manifest", async () => {
+			it("should track non-instrumented files in manifest", async ({ expect }) => {
 				expect.assertions(2);
 
 				const { fileSystem, volume } = createMemoryFileSystem();
@@ -2978,7 +3100,9 @@ describe(prepareCoverageAsync, () => {
 				expect(record!.sourceHash).toBe(sha256("-- test code"));
 			});
 
-			it("should force cold rebuild when previous manifest lacks nonInstrumentedFiles", async () => {
+			it("should force cold rebuild when previous manifest lacks nonInstrumentedFiles", async ({
+				expect,
+			}) => {
 				expect.assertions(1);
 
 				const { fileSystem, volume } = createMemoryFileSystem();
@@ -3018,7 +3142,9 @@ describe(prepareCoverageAsync, () => {
 				).toContain("__cov");
 			});
 
-			it("should reuse the place when a deleted file's shadow copy is already gone", async () => {
+			it("should reuse the place when a deleted file's shadow copy is already gone", async ({
+				expect,
+			}) => {
 				expect.assertions(2);
 
 				const { fileSystem, volume } = createMemoryFileSystem();
@@ -3050,7 +3176,7 @@ describe(prepareCoverageAsync, () => {
 				);
 			});
 
-			it("should discover spec files in subdirectories", async () => {
+			it("should discover spec files in subdirectories", async ({ expect }) => {
 				expect.assertions(1);
 
 				const { fileSystem, volume } = createMemoryFileSystem();
@@ -3066,7 +3192,7 @@ describe(prepareCoverageAsync, () => {
 				).toBeDefined();
 			});
 
-			it("should not prune non-instrumented files from other roots", async () => {
+			it("should not prune non-instrumented files from other roots", async ({ expect }) => {
 				expect.assertions(1);
 
 				const { childProcess, fileSystem, instrumenter, volume } = setupMemoryMocks();
@@ -3125,7 +3251,9 @@ describe(prepareCoverageAsync, () => {
 				).toBeDefined();
 			});
 
-			it("should skip node_modules and dot directories when discovering spec files", async () => {
+			it("should skip node_modules and dot directories when discovering spec files", async ({
+				expect,
+			}) => {
 				expect.assertions(2);
 
 				const { fileSystem, volume } = createMemoryFileSystem();
@@ -3146,7 +3274,9 @@ describe(prepareCoverageAsync, () => {
 				).toBeUndefined();
 			});
 
-			it("should handle file rename across categories (source to spec)", async () => {
+			it("should handle file rename across categories (source to spec)", async ({
+				expect,
+			}) => {
 				expect.assertions(2);
 
 				const { childProcess, fileSystem, instrumenter, volume } = setupMemoryMocks();
@@ -3175,7 +3305,7 @@ describe(prepareCoverageAsync, () => {
 	});
 
 	describe("when a bake is provided", () => {
-		it("should run the bake against the shadow layout", async () => {
+		it("should run the bake against the shadow layout", async ({ expect }) => {
 			expect.assertions(2);
 
 			const { fileSystem, volume } = seedFilesystem();
@@ -3202,7 +3332,7 @@ describe(prepareCoverageAsync, () => {
 			);
 		});
 
-		it("should report the callback as staging rather than as coverage", async () => {
+		it("should report the callback as staging rather than as coverage", async ({ expect }) => {
 			expect.assertions(2);
 
 			const { fileSystem, volume } = seedFilesystem();
@@ -3230,7 +3360,7 @@ describe(prepareCoverageAsync, () => {
 			expect(result.stagingMs).toBe(90);
 		});
 
-		it("should skip callback when not provided", async () => {
+		it("should skip callback when not provided", async ({ expect }) => {
 			expect.assertions(1);
 
 			const { volume } = await prepareSeededAsync();
@@ -3242,7 +3372,7 @@ describe(prepareCoverageAsync, () => {
 	});
 
 	describe("when using multiple roots", () => {
-		it("should instrument each root separately", async () => {
+		it("should instrument each root separately", async ({ expect }) => {
 			expect.assertions(2);
 
 			const { fileSystem, volume } = createMemoryFileSystem();
@@ -3273,7 +3403,7 @@ describe(prepareCoverageAsync, () => {
 			).toContain("__cov");
 		});
 
-		it("should mirror each root into its own shadow directory", async () => {
+		it("should mirror each root into its own shadow directory", async ({ expect }) => {
 			expect.assertions(2);
 
 			const { fileSystem, volume } = createMemoryFileSystem();
@@ -3308,7 +3438,7 @@ describe(prepareCoverageAsync, () => {
 			).toBe("local b = 2");
 		});
 
-		it("should write a single manifest with all roots", async () => {
+		it("should write a single manifest with all roots", async ({ expect }) => {
 			expect.assertions(1);
 
 			const { fileSystem, volume } = createMemoryFileSystem();
@@ -3336,7 +3466,9 @@ describe(prepareCoverageAsync, () => {
 });
 
 describe(toCoverageArtifacts, () => {
-	it("should project a prepare result and the caller's projects onto one record", async () => {
+	it("should project a prepare result and the caller's projects onto one record", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const result: PrepareCoverageResult = {
@@ -3415,7 +3547,7 @@ describe("narrowing to the coverage universe", () => {
 		return { ...mocks, config, fileSystem, result, volume };
 	}
 
-	it("should mirror only the subtrees the universe resolves to", async () => {
+	it("should mirror only the subtrees the universe resolves to", async ({ expect }) => {
 		expect.assertions(3);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -3446,7 +3578,7 @@ describe("narrowing to the coverage universe", () => {
 		expect(volume.existsSync(".jest-roblox/coverage/out/modules/net.luau")).toBeFalse();
 	});
 
-	it("should carry each demoted level's loose files onto the spine", async () => {
+	it("should carry each demoted level's loose files onto the spine", async ({ expect }) => {
 		expect.assertions(3);
 
 		const { result, volume } = await prepareNarrowedAsync();
@@ -3461,7 +3593,7 @@ describe("narrowing to the coverage universe", () => {
 		]);
 	});
 
-	it("should refill a spine leaf a warm run recorded elsewhere", async () => {
+	it("should refill a spine leaf a warm run recorded elsewhere", async ({ expect }) => {
 		expect.assertions(2);
 
 		const { childProcess, config, fileSystem, instrumenter, volume } =
@@ -3493,7 +3625,7 @@ describe("narrowing to the coverage universe", () => {
 		expect(result.rebuilt).toBeTrue();
 	});
 
-	it("should record the narrowed roots in the manifest", async () => {
+	it("should record the narrowed roots in the manifest", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { result } = await prepareNarrowedAsync();
@@ -3501,7 +3633,7 @@ describe("narrowing to the coverage universe", () => {
 		expect(result.manifest.luauRoots).toStrictEqual(["out/modules/ecs"]);
 	});
 
-	it("should leave a mount the universe never reaches out of the shadow", async () => {
+	it("should leave a mount the universe never reaches out of the shadow", async ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -3525,7 +3657,7 @@ describe("narrowing to the coverage universe", () => {
 		expect(volume.existsSync(".jest-roblox/coverage/out")).toBeFalse();
 	});
 
-	it("should hand the bake the spine copy for a demoted directory", async () => {
+	it("should hand the bake the spine copy for a demoted directory", async ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -3560,7 +3692,7 @@ describe("narrowing to the coverage universe", () => {
 });
 
 describe("when hashing the rojo build inputs", () => {
-	it("should not re-read an unchanged mount on the next run", async () => {
+	it("should not re-read an unchanged mount on the next run", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = seedFilesystem();
@@ -3684,7 +3816,7 @@ describe("when a run bakes generated jest.config stubs into the shadow", () => {
 		});
 	}
 
-	it("should reuse the place on a no-change rerun", async () => {
+	it("should reuse the place on a no-change rerun", async ({ expect }) => {
 		expect.assertions(3);
 
 		const { prepareAsync, volume } = setupBakedRun();
@@ -3698,7 +3830,7 @@ describe("when a run bakes generated jest.config stubs into the shadow", () => {
 		expect(second.buildId).toBe(first.buildId);
 	});
 
-	it("should reuse the place when a baked mount has no source directory", async () => {
+	it("should reuse the place when a baked mount has no source directory", async ({ expect }) => {
 		expect.assertions(3);
 
 		const { prepareAsync, volume } = setupBakedRun({ absent: "game.Workspace" });
@@ -3712,7 +3844,7 @@ describe("when a run bakes generated jest.config stubs into the shadow", () => {
 		expect(volume.readFileSync(".jest-roblox/place/game.rbxl", "utf8")).toBe("rebuilt RBXL");
 	});
 
-	it("should clear an orphan mount directory of all but the baked stub", async () => {
+	it("should clear an orphan mount directory of all but the baked stub", async ({ expect }) => {
 		expect.assertions(4);
 
 		const { prepareAsync, volume } = setupBakedRun({ absent: "game.Workspace" });
@@ -3735,7 +3867,9 @@ describe("when a run bakes generated jest.config stubs into the shadow", () => {
 		expect(second.rebuilt).toBeTrue();
 	});
 
-	it("should rebuild when an empty leftover directory was all there was to sweep", async () => {
+	it("should rebuild when an empty leftover directory was all there was to sweep", async ({
+		expect,
+	}) => {
 		expect.assertions(3);
 
 		const { prepareAsync, volume } = setupBakedRun({ absent: "game.Workspace" });
@@ -3752,7 +3886,9 @@ describe("when a run bakes generated jest.config stubs into the shadow", () => {
 		expect(volume.existsSync(absentStub)).toBeTrue();
 	});
 
-	it("should report no rebuild when a leftover directory cannot be removed", async () => {
+	it("should report no rebuild when a leftover directory cannot be removed", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const { fileSystem, prepareAsync, volume } = setupBakedRun({ absent: "game.Workspace" });
@@ -3771,7 +3907,7 @@ describe("when a run bakes generated jest.config stubs into the shadow", () => {
 		expect(volume.existsSync(hollow)).toBeTrue();
 	});
 
-	it("should keep a baked stub nested under an orphan directory", async () => {
+	it("should keep a baked stub nested under an orphan directory", async ({ expect }) => {
 		expect.assertions(3);
 
 		const { prepareAsync, volume } = setupBakedRun({
@@ -3789,7 +3925,9 @@ describe("when a run bakes generated jest.config stubs into the shadow", () => {
 		).toBeTrue();
 	});
 
-	it("should sweep an orphan mount directory on a rerun that does not bake", async () => {
+	it("should sweep an orphan mount directory on a rerun that does not bake", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const { childProcess, config, fileSystem, instrumenter, prepareAsync, volume } =
@@ -3810,7 +3948,7 @@ describe("when a run bakes generated jest.config stubs into the shadow", () => {
 		expect(volume.existsSync(".jest-roblox/coverage/out/absent")).toBeFalse();
 	});
 
-	it("should sweep the stubs on a rerun that does not bake", async () => {
+	it("should sweep the stubs on a rerun that does not bake", async ({ expect }) => {
 		expect.assertions(2);
 
 		const { childProcess, config, fileSystem, instrumenter, prepareAsync, volume } =

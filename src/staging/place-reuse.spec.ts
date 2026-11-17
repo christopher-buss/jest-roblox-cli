@@ -3,7 +3,7 @@ import { fromAny } from "@total-typescript/shoehorn";
 import * as path from "node:path";
 import process from "node:process";
 import { setTimeout as delayAsync } from "node:timers/promises";
-import { describe, expect, it, vi } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import { ageFile } from "#test/mocks/aged-file.ts";
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
@@ -69,7 +69,7 @@ async function keyForAsync(
 }
 
 describe(computePlaceInputsKeyAsync, () => {
-	it("should not re-read a mount whose stat stood still", async () => {
+	it("should not re-read a mount whose stat stood still", async ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem } = createMemoryFileSystem({ "/cache/assets/model.txt": "one" });
@@ -83,7 +83,7 @@ describe(computePlaceInputsKeyAsync, () => {
 		expect(readFile).not.toHaveBeenCalledWith("/cache/assets/model.txt");
 	});
 
-	it("should report the same key when nothing changed", async () => {
+	it("should report the same key when nothing changed", async ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem } = createMemoryFileSystem({ "/cache/assets/model.txt": "one" });
@@ -94,7 +94,7 @@ describe(computePlaceInputsKeyAsync, () => {
 		await expect(keyForAsync(fileSystem)).resolves.toBe(first);
 	});
 
-	it("should report a different key when a walked input changes", async () => {
+	it("should report a different key when a walked input changes", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem({ "/cache/assets/model.txt": "one" });
@@ -106,7 +106,9 @@ describe(computePlaceInputsKeyAsync, () => {
 		await expect(keyForAsync(fileSystem)).resolves.not.toBe(before);
 	});
 
-	it("should report a different key when an instrumented source hash changes", async () => {
+	it("should report a different key when an instrumented source hash changes", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -122,7 +124,9 @@ describe(computePlaceInputsKeyAsync, () => {
 		expect(after).not.toBe(before);
 	});
 
-	it("should report a different key when a non-instrumented source hash changes", async () => {
+	it("should report a different key when a non-instrumented source hash changes", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -146,7 +150,7 @@ describe(computePlaceInputsKeyAsync, () => {
 		expect(after).not.toBe(before);
 	});
 
-	it("should report a different key when the instrumenter version bumps", async () => {
+	it("should report a different key when the instrumenter version bumps", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -160,7 +164,7 @@ describe(computePlaceInputsKeyAsync, () => {
 		).resolves.not.toBe(before);
 	});
 
-	it("should leave shadow roots out of the walk", async () => {
+	it("should leave shadow roots out of the walk", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem({ "/cache/shadow/a.luau": "one" });
@@ -178,7 +182,9 @@ describe(computePlaceInputsKeyAsync, () => {
 		).resolves.toBe(before);
 	});
 
-	it("should key on the project text, not the file the project file names", async () => {
+	it("should key on the project text, not the file the project file names", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -190,7 +196,7 @@ describe(computePlaceInputsKeyAsync, () => {
 		await expect(keyForAsync(fileSystem)).resolves.toBeString();
 	});
 
-	it("should report a different key when the staging pass version bumps", async () => {
+	it("should report a different key when the staging pass version bumps", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -204,7 +210,9 @@ describe(computePlaceInputsKeyAsync, () => {
 		await expect(keyForAsync(fileSystem, { stagingVersions: [2] })).resolves.not.toBe(before);
 	});
 
-	it("should report a different key when two pass versions concatenate the same", async () => {
+	it("should report a different key when two pass versions concatenate the same", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -218,7 +226,9 @@ describe(computePlaceInputsKeyAsync, () => {
 		await expect(keyForAsync(fileSystem, { stagingVersions: [12] })).resolves.not.toBe(before);
 	});
 
-	it("should report the same key when the manifests arrive in a different order", async () => {
+	it("should report the same key when the manifests arrive in a different order", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -241,7 +251,9 @@ describe(computePlaceInputsKeyAsync, () => {
 		);
 	});
 
-	it("should report undefined and warn when the project text cannot be parsed", async () => {
+	it("should report undefined and warn when the project text cannot be parsed", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -257,7 +269,7 @@ describe(computePlaceInputsKeyAsync, () => {
 });
 
 describe(readPlaceReuseRecord, () => {
-	it("should round-trip a written record", async () => {
+	it("should round-trip a written record", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -276,7 +288,7 @@ describe(readPlaceReuseRecord, () => {
 		});
 	});
 
-	it("should report undefined when no record exists", async () => {
+	it("should report undefined when no record exists", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
@@ -284,7 +296,7 @@ describe(readPlaceReuseRecord, () => {
 		expect(readPlaceReuseRecord("/cache/missing.json", fileSystem)).toBeUndefined();
 	});
 
-	it("should report undefined for malformed json", async () => {
+	it("should report undefined for malformed json", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({ "/cache/place.json": "{ truncated" });
@@ -292,7 +304,7 @@ describe(readPlaceReuseRecord, () => {
 		expect(readPlaceReuseRecord("/cache/place.json", fileSystem)).toBeUndefined();
 	});
 
-	it("should report undefined when the record has the wrong shape", async () => {
+	it("should report undefined when the record has the wrong shape", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem({
@@ -325,7 +337,7 @@ function stageInputs() {
 }
 
 describe(computePlaceInputsKeyAsync, () => {
-	it("should reach the event loop while it fingerprints the build inputs", async () => {
+	it("should reach the event loop while it fingerprints the build inputs", async ({ expect }) => {
 		expect.assertions(2);
 
 		const { fileSystem, projectFile, projectJson } = stageInputs();

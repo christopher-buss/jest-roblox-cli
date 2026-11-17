@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import type { IndexedJestArgv } from "./jest-argv.ts";
 import { generateTestScript } from "./test-script.ts";
@@ -8,7 +8,7 @@ function createArgv(overrides: Partial<IndexedJestArgv> = {}): IndexedJestArgv {
 }
 
 describe(generateTestScript, () => {
-	it("should contain Jest.runCLI call", () => {
+	it("should contain Jest.runCLI call", ({ expect }) => {
 		expect.assertions(1);
 
 		const script = generateTestScript([createArgv()]);
@@ -16,7 +16,7 @@ describe(generateTestScript, () => {
 		expect(script).toContain("Jest.runCLI");
 	});
 
-	it("should embed config as JSON", () => {
+	it("should embed config as JSON", ({ expect }) => {
 		expect.assertions(5);
 
 		const script = generateTestScript([createArgv({ verbose: true })]);
@@ -28,7 +28,9 @@ describe(generateTestScript, () => {
 		expect(script).not.toContain("__CONFIG_JSON__");
 	});
 
-	it("should keep a test name pattern holding a long-string terminator inside the payload", () => {
+	it("should keep a test name pattern holding a long-string terminator inside the payload", ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const argv = createArgv({ testNamePattern: "a]=]b" });
@@ -38,7 +40,7 @@ describe(generateTestScript, () => {
 		expect(script).toContain(`[==[${JSON.stringify({ configs: [argv] })}]==]`);
 	});
 
-	it("should embed one argv per config of a bucket", () => {
+	it("should embed one argv per config of a bucket", ({ expect }) => {
 		expect.assertions(1);
 
 		const first = createArgv({ testMatch: ["a/**/*.spec"] });
