@@ -1,4 +1,4 @@
-import assert from "node:assert";
+import assert from "node:assert/strict";
 
 import type { RawCoverageData } from "../coverage-data/coverage-types.ts";
 import { mergeRawCoverage } from "../coverage-data/merge-raw-coverage.ts";

@@ -1,4 +1,4 @@
-import assert from "node:assert";
+import assert from "node:assert/strict";
 
 import type { CstEdits, Removal, Replacement } from "./cst-edit.ts";
 import { isCstNode, tokenBounds, walkCst } from "./cst.ts";

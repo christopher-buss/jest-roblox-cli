@@ -17,7 +17,7 @@ import { type EntryContext, processOrRecoverEntry } from "./process-entry.ts";
 
 const FAILURE_ENVELOPE = JSON.stringify({ err: "Exited with code: 1", success: false });
 
-function createContext(overrides: Partial<EntryContext> = {}): EntryContext {
+function createContext(): EntryContext {
 	const { fileSystem, volume } = createMemoryFileSystem();
 	volume.mkdirSync(process.cwd(), { recursive: true });
 	return {
@@ -27,7 +27,6 @@ function createContext(overrides: Partial<EntryContext> = {}): EntryContext {
 		timing: clockTimingCollector(),
 		tsconfigCache: new Map(),
 		tsconfigReader: fromAny(() => null),
-		...overrides,
 	};
 }
 

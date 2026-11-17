@@ -19,15 +19,11 @@ function emptyResult(): CollectorResult<LuauSpan> {
 
 /**
  * A span within one line. Every source under test here is one statement.
- * @param line - Line the span sits on.
  * @param options - Begin and end columns.
  * @returns Single-line span.
  */
-function span(
-	line: number,
-	{ beginColumn, endColumn }: { beginColumn: number; endColumn: number },
-): LuauSpan {
-	return { beginColumn, beginLine: line, endColumn, endLine: line };
+function span({ beginColumn, endColumn }: { beginColumn: number; endColumn: number }): LuauSpan {
+	return { beginColumn, beginLine: 1, endColumn, endLine: 1 };
 }
 
 function statementResult(location: LuauSpan): CollectorResult<LuauSpan> {
@@ -43,7 +39,7 @@ describe("utf16-columns", () => {
 		it("should leave the columns of an ASCII source alone", () => {
 			expect.assertions(1);
 
-			const result = statementResult(span(1, { beginColumn: 1, endColumn: 12 }));
+			const result = statementResult(span({ beginColumn: 1, endColumn: 12 }));
 			const converted = toUtf16Columns(result, "local x = 1\n");
 
 			expect<CollectorResult<LuauSpan>>(converted).toStrictEqual(result);
@@ -58,7 +54,7 @@ describe("utf16-columns", () => {
 
 			const source = 'local a = "\u{221E}" 1\n';
 			const converted = toUtf16Columns(
-				statementResult(span(1, { beginColumn: 11, endColumn: 15 })),
+				statementResult(span({ beginColumn: 11, endColumn: 15 })),
 				source,
 			);
 			const { location } = converted.statements[0]!;
@@ -77,7 +73,7 @@ describe("utf16-columns", () => {
 						{
 							bodyFirstColumn: 36,
 							bodyFirstLine: 1,
-							location: span(1, { beginColumn: 29, endColumn: 34 }),
+							location: span({ beginColumn: 29, endColumn: 34 }),
 						},
 						"if",
 					),
@@ -87,7 +83,7 @@ describe("utf16-columns", () => {
 							bodyFirstColumn: 22,
 							bodyFirstLine: 1,
 							index: 1,
-							location: span(1, { beginColumn: 11, endColumn: 41 }),
+							location: span({ beginColumn: 11, endColumn: 41 }),
 						},
 					],
 				},
@@ -109,7 +105,7 @@ describe("utf16-columns", () => {
 					{
 						bodyFirstColumn: 0,
 						bodyFirstLine: 0,
-						location: span(1, { beginColumn: 11, endColumn: 15 }),
+						location: span({ beginColumn: 11, endColumn: 15 }),
 					},
 					"binary-expr",
 				),
@@ -133,7 +129,7 @@ describe("utf16-columns", () => {
 						{
 							armIndex: 1,
 							branchIndex: 1,
-							exprLocation: span(1, { beginColumn: 18, endColumn: 23 }),
+							exprLocation: span({ beginColumn: 18, endColumn: 23 }),
 						},
 					],
 				},

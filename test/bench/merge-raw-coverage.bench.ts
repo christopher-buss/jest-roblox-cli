@@ -5,22 +5,23 @@ import { describe, it } from "vitest";
 import type { RawCoverageData } from "#src/coverage-data/coverage-types.ts";
 import { mergeRawCoverage } from "#src/coverage-data/merge-raw-coverage.ts";
 
+const ENTRIES_PER_FILE = 40;
+
 /**
  * Workspace coverage folds each project's raw hit counts into a per-package
  * total via `mergeRawCoverage`. The cost scales with the file count and the
  * statement/function/branch maps per file; this bench guards the additive
  * merge against regressions as coverage grows.
  * @param fileCount - Number of files.
- * @param entriesPerFile - Statements, functions and branches per file.
  * @returns Synthetic raw coverage.
  */
-function rawCoverage(fileCount: number, entriesPerFile: number): RawCoverageData {
+function rawCoverage(fileCount: number): RawCoverageData {
 	const data: RawCoverageData = {};
 	for (let fileIndex = 0; fileIndex < fileCount; fileIndex++) {
 		const statements: Record<string, number> = {};
 		const functions: Record<string, number> = {};
 		const branches: Record<string, Array<number>> = {};
-		for (let entryIndex = 0; entryIndex < entriesPerFile; entryIndex++) {
+		for (let entryIndex = 0; entryIndex < ENTRIES_PER_FILE; entryIndex++) {
 			const key = String(entryIndex);
 			statements[key] = entryIndex % 3;
 			functions[key] = entryIndex % 2;
@@ -35,14 +36,12 @@ function rawCoverage(fileCount: number, entriesPerFile: number): RawCoverageData
 
 const FILE_COUNTS = [50, 200, 800];
 
-const ENTRIES_PER_FILE = 40;
-
 describe(mergeRawCoverage, () => {
 	it("should benchmark the additive merge", async ({ bench }) => {
 		await bench.compare(
 			...FILE_COUNTS.map((count) => {
-				const target = rawCoverage(count, ENTRIES_PER_FILE);
-				const source = rawCoverage(count, ENTRIES_PER_FILE);
+				const target = rawCoverage(count);
+				const source = rawCoverage(count);
 				return bench(`${String(count)} files`, () => {
 					mergeRawCoverage(target, source);
 				});

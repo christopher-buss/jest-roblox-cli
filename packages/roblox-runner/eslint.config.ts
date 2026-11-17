@@ -27,6 +27,7 @@ export default isentinel(
 			"flawless/no-shared-mocks": "off",
 			"flawless/prefer-mock-throw": "off",
 			"flawless/prefer-vitest-local-context": "off",
+			"package-json/consistent-package-manager-declaration": "off",
 			"package-json/restrict-private-properties": "off",
 		},
 		test: {

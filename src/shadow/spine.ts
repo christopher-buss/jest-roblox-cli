@@ -236,11 +236,7 @@ function pruneSpineDirectory({
 	let hasDeleted = false;
 	const entries = fileSystem.readdirSync(spineDirectory, { withFileTypes: true });
 	for (const entry of entries) {
-		if (mirrored.has(entry.name)) {
-			continue;
-		}
-
-		if (isBakeOwned?.(`${spineDirectory}/${entry.name}`) === true) {
+		if (mirrored.has(entry.name) || isBakeOwned?.(`${spineDirectory}/${entry.name}`) === true) {
 			continue;
 		}
 

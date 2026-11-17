@@ -82,25 +82,17 @@ function seed(files: Record<string, string> = {}): Harness {
 }
 
 /**
- * The shape every walk test shares: one package staging a single service that
- * auto-mounts a directory of assets.
- * @param service - Service key the directory mounts under.
- * @param options - The directory and the project's ignore list.
- * @param options.directory - Directory the service mounts.
- * @param options.globIgnorePaths - Patterns the project ignores.
+ * The shape every walk test shares: one package staging `StarterPlayer`, which
+ * auto-mounts its directory of assets.
  * @returns The project text.
  */
-function directoryMount(
-	service: string,
-	{
-		directory,
-		globIgnorePaths,
-	}: { directory: string; globIgnorePaths?: Array<string> | undefined },
-): string {
-	return stagedProject(
-		{ pkg: { $className: "Folder", [service]: { $className: "Folder", $path: directory } } },
-		globIgnorePaths,
-	);
+function starterPlayerMount(): string {
+	return stagedProject({
+		pkg: {
+			$className: "Folder",
+			StarterPlayer: { $className: "Folder", $path: path.join(ASSETS, "StarterPlayer") },
+		},
+	});
 }
 
 async function runAsync(
@@ -241,10 +233,7 @@ describe(demotePinnedMountsAsync, () => {
 				serviceModelXml("StarterPlayerScripts"),
 		});
 
-		const project = await demoteAsync(
-			rojo,
-			directoryMount("StarterPlayer", { directory: path.join(ASSETS, "StarterPlayer") }),
-		);
+		const project = await demoteAsync(rojo, starterPlayerMount());
 
 		// The auto-mount stays, less the one entry the stand-in replaces.
 		expect(mountOf(project, "pkg", "StarterPlayer")).toBe(path.join(ASSETS, "StarterPlayer"));
@@ -265,10 +254,7 @@ describe(demotePinnedMountsAsync, () => {
 					'{"className":"StarterPlayerScripts"}',
 			});
 
-			const project = await demoteAsync(
-				rojo,
-				directoryMount("StarterPlayer", { directory: path.join(ASSETS, "StarterPlayer") }),
-			);
+			const project = await demoteAsync(rojo, starterPlayerMount());
 
 			expect(mountOf(project, "pkg", "StarterPlayer", "StarterPlayerScripts")).toContain(
 				"pinned-shadow",
@@ -365,10 +351,7 @@ describe(demotePinnedMountsAsync, () => {
 				[path.join(ASSETS, "StarterPlayer", fileName)]: contents,
 			});
 
-			const project = await demoteAsync(
-				rojo,
-				directoryMount("StarterPlayer", { directory: path.join(ASSETS, "StarterPlayer") }),
-			);
+			const project = await demoteAsync(rojo, starterPlayerMount());
 
 			expect(staged(project, "pkg", "StarterPlayer", instanceName)).toBeDefined();
 		},

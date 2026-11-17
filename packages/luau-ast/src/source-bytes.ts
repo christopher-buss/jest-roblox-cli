@@ -1,4 +1,4 @@
-import assert from "node:assert";
+import assert from "node:assert/strict";
 import { Buffer } from "node:buffer";
 
 import type { LuauSpan, Utf16Column, Utf16Span } from "./ast-types.ts";

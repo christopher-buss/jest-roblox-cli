@@ -50,7 +50,7 @@
 		"arktype": "2.2.3"
 	},
 	"devDependencies": {
-		"@isentinel/eslint-config": "7.0.0",
+		"@isentinel/eslint-config": "7.1.0",
 		"@isentinel/tsconfig": "3.0.0",
 		"@stryker-mutator/core": "10.1.1",
 		"@stryker-mutator/typescript-checker": "10.1.1",
@@ -61,7 +61,7 @@
 		"@vitest/eslint-plugin": "1.6.27",
 		"eslint": "10.15.0",
 		"eslint-plugin-jest-extended": "3.0.1",
-		"eslint-plugin-n": "18.3.0",
+		"eslint-plugin-n": "18.5.0",
 		"eslint-plugin-pnpm": "1.8.0",
 		"jest-extended": "7.0.0",
 		"knip": "6.29.0",

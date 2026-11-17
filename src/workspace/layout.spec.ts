@@ -58,8 +58,11 @@ function seedWorkspace(root: string, names: Array<string>): Record<string, strin
 	return entries;
 }
 
-function seedTurboWorkspace(root: string, names: Array<string>): Record<string, string> {
-	return { [path.join(root, "turbo.json")]: "{}", ...seedWorkspace(root, names) };
+function seedTurboWorkspace(): Record<string, string> {
+	return {
+		[path.join(ROOT, "turbo.json")]: "{}",
+		...seedWorkspace(ROOT, WORKSPACE_PACKAGES),
+	};
 }
 
 function stubLinux(): void {
@@ -77,11 +80,9 @@ function createRunner(): ChildProcessRunner {
 function turboReturns({
 	childProcess,
 	names,
-	root,
 }: {
 	childProcess: ChildProcessRunner;
 	names: Array<string>;
-	root: string;
 }): void {
 	vi.mocked(childProcess.execFileSync).mockReturnValue(
 		JSON.stringify({
@@ -89,7 +90,7 @@ function turboReturns({
 				items: names.map((name) => {
 					return {
 						name,
-						path: path.relative(root, packageDirectoryFor(root, name)),
+						path: path.relative(ROOT, packageDirectoryFor(ROOT, name)),
 					};
 				}),
 			},
@@ -1138,11 +1139,10 @@ describe(createWorkspaceLayout, () => {
 			expect.assertions(3);
 
 			stubLinux();
-			const harness = setupHappyPath(seedTurboWorkspace(ROOT, WORKSPACE_PACKAGES));
+			const harness = setupHappyPath(seedTurboWorkspace());
 			turboReturns({
 				childProcess: harness.childProcess,
 				names: ["@halcyon/foo", "@halcyon/bar"],
-				root: ROOT,
 			});
 			runWorkspaceReturns({
 				...harness,
@@ -1178,8 +1178,8 @@ describe(createWorkspaceLayout, () => {
 			expect.assertions(3);
 
 			stubLinux();
-			const harness = setupHappyPath(seedTurboWorkspace(ROOT, WORKSPACE_PACKAGES));
-			turboReturns({ childProcess: harness.childProcess, names: [], root: ROOT });
+			const harness = setupHappyPath(seedTurboWorkspace());
+			turboReturns({ childProcess: harness.childProcess, names: [] });
 			const stdoutSpy = vi.spyOn(process.stdout, "write").mockReturnValue(true);
 
 			const result = await runWorkspaceModeAsync({

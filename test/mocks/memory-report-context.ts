@@ -43,6 +43,7 @@ export function createMemoryReportEnvironment(): MemoryReportEnvironment {
 
 function createContentWriter(filePath: string, fileSystem: FileSystem): ContentWriter {
 	const chunks: Array<Buffer> = [];
+	// eslint-disable-next-line ts/no-unsafe-class-instance-assignment -- memory double of the istanbul writer class
 	return {
 		close(): void {
 			fileSystem.mkdirSync(path.dirname(filePath), { recursive: true });
@@ -69,6 +70,7 @@ function createMemoryWriter({
 	directory: string;
 	fileSystem: FileSystem;
 }): MemoryWriter {
+	// eslint-disable-next-line ts/no-unsafe-class-instance-assignment -- memory double of the istanbul writer class
 	return {
 		copyFile(source: string, destination: string, header = ""): void {
 			const output = this.writeFile(destination);

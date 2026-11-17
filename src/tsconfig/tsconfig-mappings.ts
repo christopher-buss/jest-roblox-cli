@@ -92,15 +92,7 @@ export function isLuauProject(
 	testFiles: ReadonlyArray<string>,
 	tsconfigMappings: ReadonlyArray<TsconfigMapping>,
 ): boolean {
-	if (tsconfigMappings.length > 0) {
-		return false;
-	}
-
-	if (testFiles.some((file) => isTsSource(file))) {
-		return false;
-	}
-
-	return true;
+	return tsconfigMappings.length === 0 && testFiles.every((file) => !isTsSource(file));
 }
 
 /**
@@ -182,10 +174,12 @@ export function findMapping({
 		const prefix = mapping[key];
 		const isMatch = filePath === prefix || filePath.startsWith(`${prefix}/`);
 
-		if (isMatch && prefix.length > bestLength) {
-			best = mapping;
-			bestLength = prefix.length;
+		if (!isMatch || prefix.length <= bestLength) {
+			continue;
 		}
+
+		best = mapping;
+		bestLength = prefix.length;
 	}
 
 	return best;
@@ -280,10 +274,12 @@ function scanTsconfigMappings({
 		const parsed = parseTsconfigMappings(compilerOptions, outDirectory);
 		for (const entry of parsed) {
 			const key = `${entry.outDir}:${entry.rootDir}`;
-			if (!seen.has(key)) {
-				seen.add(key);
-				mappings.push(entry);
+			if (seen.has(key)) {
+				continue;
 			}
+
+			seen.add(key);
+			mappings.push(entry);
 		}
 	}
 

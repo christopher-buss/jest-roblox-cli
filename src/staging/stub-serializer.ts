@@ -26,11 +26,7 @@ export function serializeToLuau(config: StubConfig): string {
 		),
 	};
 	for (const [key, value] of Object.entries(robloxConfig)) {
-		if (SKIP_FIELDS.has(key)) {
-			continue;
-		}
-
-		if (value === undefined) {
+		if (value === undefined || SKIP_FIELDS.has(key)) {
 			continue;
 		}
 

@@ -23,13 +23,9 @@ function buildAssets(): BuiltAssets {
 	return builtAssetsSchema.assert(JSON.parse(literal));
 }
 
-function findAsset(
-	assets: BuiltAssets,
-	group: keyof BuiltAssets,
-	name: string,
-): BuiltAssets["html"][number] {
-	const asset = assets[group].find((entry) => entry.name === name);
-	assert(asset !== undefined, `${group} carries no ${name}`);
+function findAsset(assets: BuiltAssets, name: string): BuiltAssets["html"][number] {
+	const asset = assets.html.find((entry) => entry.name === name);
+	assert(asset !== undefined, `html carries no ${name}`);
 	return asset;
 }
 
@@ -62,11 +58,11 @@ describe("istanbul html assets module", () => {
 
 		const assets = buildAssets();
 
-		expect(findAsset(assets, "html", "base.css").text).toContain("body");
+		expect(findAsset(assets, "base.css").text).toContain("body");
 
 		// The png decodes back to its magic bytes, so the base64 it travels as
 		// is the file rather than a mangled utf-8 read of it.
-		const favicon = decodeAsset(findAsset(assets, "html", "favicon.png"));
+		const favicon = decodeAsset(findAsset(assets, "favicon.png"));
 
 		expect(favicon.subarray(0, 4).toString("hex")).toBe("89504e47");
 	});

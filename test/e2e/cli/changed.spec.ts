@@ -4,8 +4,8 @@ import * as path from "node:path";
 import { stripVTControlCharacters } from "node:util";
 import { describe, expect, it } from "vitest";
 
-import type { GitRepo } from "#test/e2e/cli/git-repo.ts";
-import { initGitRepo } from "#test/e2e/cli/git-repo.ts";
+import type { GitRepository } from "#test/e2e/cli/git-repository.ts";
+import { initGitRepository } from "#test/e2e/cli/git-repository.ts";
 import {
 	PARTIAL_RUN_TIMEOUT_MS as RUN_TIMEOUT_MS,
 	runPartialAsync,
@@ -80,14 +80,14 @@ async function runWithLeafHitsAsync(
 	return { ...result, stdout: stripVTControlCharacters(result.stdout) };
 }
 
-function createChangedRepo(config: string): GitRepo & { sandbox: string } {
+function createChangedRepository(config: string): GitRepository & { sandbox: string } {
 	const sandbox = createFixtureSandbox(RELATED_FIXTURE_PATH);
 	writeFileSync(path.join(sandbox, "jest.config.luau"), config);
 	writeFileSync(path.join(sandbox, "src/setup.luau"), "return nil\n");
 	writeFileSync(path.join(sandbox, ".gitignore"), "game.rbxl\n.jest-roblox/\ncoverage/\n");
-	const repo = initGitRepo(sandbox);
-	repo.commit("base");
-	return { ...repo, sandbox };
+	const repository = initGitRepository(sandbox);
+	repository.commit("base");
+	return { ...repository, sandbox };
 }
 
 describe.skipIf(!rojoOnPath())("--changed", () => {
@@ -96,12 +96,12 @@ describe.skipIf(!rojoOnPath())("--changed", () => {
 		async () => {
 			expect.assertions(7);
 
-			const repo = createChangedRepo(CONFIG_WITH_SETUP);
-			repo.write("src/leaf.luau", "return {\n\tvalue = 2,\n}\n");
-			repo.git("add", "src/leaf.luau");
-			repo.write("src/fresh.spec.luau", "return function() end\n");
+			const repository = createChangedRepository(CONFIG_WITH_SETUP);
+			repository.write("src/leaf.luau", "return {\n\tvalue = 2,\n}\n");
+			repository.git("add", "src/leaf.luau");
+			repository.write("src/fresh.spec.luau", "return function() end\n");
 
-			const run = await runChangedAsync(repo.sandbox, ["--changed"]);
+			const run = await runChangedAsync(repository.sandbox, ["--changed"]);
 
 			expect(run.exitCode, `stderr: ${run.stderr}\nstdout: ${run.stdout}`).toBe(0);
 			expect(run.patterns).toHaveLength(1);
@@ -119,10 +119,10 @@ describe.skipIf(!rojoOnPath())("--changed", () => {
 		async () => {
 			expect.assertions(3);
 
-			const repo = createChangedRepo(CONFIG_WITH_SETUP);
-			repo.remove("src/leaf.luau");
+			const repository = createChangedRepository(CONFIG_WITH_SETUP);
+			repository.remove("src/leaf.luau");
 
-			const run = await runChangedAsync(repo.sandbox, ["--changed"]);
+			const run = await runChangedAsync(repository.sandbox, ["--changed"]);
 
 			expect(run.exitCode, `stderr: ${run.stderr}\nstdout: ${run.stdout}`).toBe(0);
 			expect(run.patterns).toHaveLength(1);
@@ -136,12 +136,12 @@ describe.skipIf(!rojoOnPath())("--changed", () => {
 		async () => {
 			expect.assertions(3);
 
-			const repo = createChangedRepo(CONFIG_WITH_SETUP);
-			repo.git("branch", "base");
-			repo.write("src/leaf.luau", "return {\n\tvalue = 2,\n}\n");
-			repo.commit("change leaf");
+			const repository = createChangedRepository(CONFIG_WITH_SETUP);
+			repository.git("branch", "base");
+			repository.write("src/leaf.luau", "return {\n\tvalue = 2,\n}\n");
+			repository.commit("change leaf");
 
-			const run = await runChangedAsync(repo.sandbox, ["--changed", "base"]);
+			const run = await runChangedAsync(repository.sandbox, ["--changed", "base"]);
 
 			expect(run.exitCode, `stderr: ${run.stderr}\nstdout: ${run.stdout}`).toBe(0);
 			expect(run.patterns).toHaveLength(1);
@@ -155,10 +155,10 @@ describe.skipIf(!rojoOnPath())("--changed", () => {
 		async () => {
 			expect.assertions(4);
 
-			const repo = createChangedRepo(CONFIG_WITH_THRESHOLD);
-			repo.write("src/leaf.luau", "return {\n\tvalue = 2,\n}\n");
+			const repository = createChangedRepository(CONFIG_WITH_THRESHOLD);
+			repository.write("src/leaf.luau", "return {\n\tvalue = 2,\n}\n");
 
-			const run = await runWithLeafHitsAsync(repo.sandbox, {
+			const run = await runWithLeafHitsAsync(repository.sandbox, {
 				args: ["--changed"],
 				leafHits: 1,
 			});
@@ -176,10 +176,10 @@ describe.skipIf(!rojoOnPath())("--changed", () => {
 		async () => {
 			expect.assertions(2);
 
-			const repo = createChangedRepo(CONFIG_WITH_THRESHOLD);
-			repo.write("src/leaf.luau", "return {\n\tvalue = 2,\n}\n");
+			const repository = createChangedRepository(CONFIG_WITH_THRESHOLD);
+			repository.write("src/leaf.luau", "return {\n\tvalue = 2,\n}\n");
 
-			const run = await runWithLeafHitsAsync(repo.sandbox, {
+			const run = await runWithLeafHitsAsync(repository.sandbox, {
 				args: ["--changed"],
 				leafHits: 0,
 			});
@@ -195,9 +195,9 @@ describe.skipIf(!rojoOnPath())("--changed", () => {
 		async () => {
 			expect.assertions(2);
 
-			const repo = createChangedRepo(CONFIG_WITH_THRESHOLD);
+			const repository = createChangedRepository(CONFIG_WITH_THRESHOLD);
 
-			const run = await runWithLeafHitsAsync(repo.sandbox, { args: [], leafHits: 1 });
+			const run = await runWithLeafHitsAsync(repository.sandbox, { args: [], leafHits: 1 });
 
 			expect(run.exitCode, `stderr: ${run.stderr}\nstdout: ${run.stdout}`).toBe(1);
 			expect(run.stdout).toContain("unused.luau");
@@ -210,10 +210,10 @@ describe.skipIf(!rojoOnPath())("--changed", () => {
 		async () => {
 			expect.assertions(3);
 
-			const repo = createChangedRepo(CONFIG_WITH_SETUP);
-			repo.write("src/unused.luau", "return { unused = true }\n");
+			const repository = createChangedRepository(CONFIG_WITH_SETUP);
+			repository.write("src/unused.luau", "return { unused = true }\n");
 
-			const run = await runChangedAsync(repo.sandbox, ["--changed"]);
+			const run = await runChangedAsync(repository.sandbox, ["--changed"]);
 
 			expect(run.exitCode, `stderr: ${run.stderr}\nstdout: ${run.stdout}`).toBe(0);
 			expect(run.patterns).toStrictEqual([]);

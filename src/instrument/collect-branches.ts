@@ -6,7 +6,7 @@ import type {
 } from "@isentinel/luau-ast/ast";
 import type { LuauVisitor } from "@isentinel/luau-ast/visit";
 
-import assert from "node:assert";
+import assert from "node:assert/strict";
 
 import { getBodyFirstStatement } from "./collect-functions.ts";
 import type { CoverageAccumulator, StatementBranchArm } from "./coverage-accumulator.ts";

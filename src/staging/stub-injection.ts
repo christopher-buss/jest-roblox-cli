@@ -69,16 +69,12 @@ function demoteAutoMountToExplicit({
 }): void {
 	const entries = fileSystem.readdirSync(parentPath, { withFileTypes: true });
 	for (const entry of entries) {
-		if (entry.name.startsWith("$")) {
-			continue;
-		}
-
-		if (parent[entry.name] !== undefined) {
-			continue;
-		}
-
 		// Rojo hard-errors on a `$path` file with an unknown extension.
-		if (!entry.isDirectory()) {
+		if (
+			entry.name.startsWith("$") ||
+			parent[entry.name] !== undefined ||
+			!entry.isDirectory()
+		) {
 			continue;
 		}
 

@@ -200,10 +200,17 @@ class RojoWalker {
 		}
 
 		// Symlinks, NTFS junctions, and entries on network or FUSE mounts can
-		// report neither type. A broken symlink throws ENOENT: warn and skip it.
+		// report neither type. A broken symlink has no target: warn and skip it.
 		const childPath = path.join(directory, entry.name);
 		try {
-			const stat = this.fileSystem.statSync(this.cachedRealpath(childPath));
+			const stat = this.fileSystem.statSync(childPath, { throwIfNoEntry: false });
+			if (stat === undefined) {
+				this.warn(`RojoResolver: Failed to resolve "${childPath}" (target does not exist)`);
+				return undefined;
+			}
+
+			// searchDirectory and parseConfig read this cache outside any try.
+			this.cachedRealpath(childPath);
 			isFile = stat.isFile();
 			isDirectory = stat.isDirectory();
 		} catch (err) {

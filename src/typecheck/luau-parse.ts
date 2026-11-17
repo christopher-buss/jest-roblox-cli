@@ -1,4 +1,4 @@
-import assert from "node:assert";
+import assert from "node:assert/strict";
 
 import type { RawErrorsMap, TypeTestDiagnostic } from "./typecheck-types.ts";
 

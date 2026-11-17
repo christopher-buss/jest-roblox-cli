@@ -1,4 +1,4 @@
-import assert from "node:assert";
+import assert from "node:assert/strict";
 
 import { countLinesThroughLastDirective } from "../luau/directive-header.ts";
 import { COVERAGE_GLOBAL, type CoverageBucket } from "../protocol/coverage.ts";

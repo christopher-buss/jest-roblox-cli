@@ -3,7 +3,7 @@ import * as path from "node:path";
 import { stripVTControlCharacters } from "node:util";
 import { describe, expect, it } from "vitest";
 
-import { initGitRepo } from "#test/e2e/cli/git-repo.ts";
+import { initGitRepository } from "#test/e2e/cli/git-repository.ts";
 import type { PartialRunResult } from "#test/e2e/cli/partial-run.ts";
 import {
 	PARTIAL_RUN_TIMEOUT_MS as RUN_TIMEOUT_MS,
@@ -55,9 +55,9 @@ const WIDENING_CASES: Array<WideningCase> = [
 
 function createGitWorkspace(): string {
 	const project = createFixtureSandbox(RELATED_FIXTURE_PATH);
-	const repo = initGitRepo(path.dirname(project));
-	repo.write("pnpm-workspace.yaml", "packages:\n  - related-project\n");
-	repo.commit("fixture");
+	const repository = initGitRepository(path.dirname(project));
+	repository.write("pnpm-workspace.yaml", "packages:\n  - related-project\n");
+	repository.commit("fixture");
 	return project;
 }
 

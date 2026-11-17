@@ -15,7 +15,6 @@ import TextSummaryReport from "istanbul-reports/lib/text-summary/index.js";
 import TextReport from "istanbul-reports/lib/text/index.js";
 
 import type { CoverageReporter } from "../config/config-types.ts";
-import type { HtmlAssetGroup } from "./html-assets.ts";
 import { writeIstanbulHtmlAssets } from "./html-assets.ts";
 
 // Static imports, not `istanbulReports.create(name)`: its dynamic require
@@ -23,7 +22,7 @@ import { writeIstanbulHtmlAssets } from "./html-assets.ts";
 const REPORTER_FACTORIES = {
 	"clover": (options: object) => new CloverReport(options),
 	"cobertura": (options: object) => new CoberturaReport(options),
-	"html": (options: object) => carryAssets(new HtmlReport(options), "html"),
+	"html": (options: object) => carryAssets(new HtmlReport(options)),
 	"html-spa": (options: object) => createHtmlSpaReport(options),
 	"json": (options: object) => new JsonReport(options),
 	"json-summary": (options: object) => new JsonSummaryReport(options),
@@ -46,9 +45,9 @@ export function createReporter(name: CoverageReporter, options: object): ReportB
 	return REPORTER_FACTORIES[name](options);
 }
 
-function carryAssets(report: HtmlReport, group: HtmlAssetGroup): HtmlReport {
+function carryAssets(report: HtmlReport): HtmlReport {
 	report.onStart = (_root, context) => {
-		writeIstanbulHtmlAssets(report.getWriter(context), group);
+		writeIstanbulHtmlAssets(report.getWriter(context), "html");
 	};
 
 	return report;
@@ -56,7 +55,7 @@ function carryAssets(report: HtmlReport, group: HtmlAssetGroup): HtmlReport {
 
 function createHtmlSpaReport(options: object): HtmlSpaReport {
 	const report = new HtmlSpaReport(options);
-	carryAssets(report.htmlReport, "html");
+	carryAssets(report.htmlReport);
 
 	report.onStart = (root, context) => {
 		report.htmlReport.onStart(root, context);
@@ -68,6 +67,6 @@ function createHtmlSpaReport(options: object): HtmlSpaReport {
 
 function createLcovReport(options: object): LcovReport {
 	const report = new LcovReport(options);
-	carryAssets(report.html, "html");
+	carryAssets(report.html);
 	return report;
 }

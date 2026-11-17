@@ -13,14 +13,7 @@ import type { CstIndexName, CstLocalDeclaration, CstNode, CstRoot } from "@isent
 
 import { assert, describe, expect, it } from "vitest";
 
-function parseCst(source: string): CstRoot {
-	const result = loadLuauParser().parseCst({ fileName: "test.luau", source });
-	if (!result.ok) {
-		throw new Error(result.errors.join("\n"));
-	}
-
-	return result.root;
-}
+import { parseCst } from "#test/helpers/integration/parse-cst";
 
 /**
  * The segment whose generated position is `position`.
@@ -473,17 +466,14 @@ describe("replacement conflicts", () => {
 });
 
 /**
- * The first node of `type` in source order.
+ * The first call in source order.
  * @param root - The tree searched in source order.
- * @param type - The node kind to match.
- * @returns The matching tree value.
- * @template Kind - The selected node or tree value type.
+ * @returns The first call node.
  */
-function firstNodeOfType<Kind extends CstNode["type"]>(
-	root: CstNode,
-	type: Kind,
-): Extract<CstNode, { type: Kind }> {
-	return findNode(root, (node): node is Extract<CstNode, { type: Kind }> => isKind(node, type));
+function firstCall(root: CstNode): Extract<CstNode, { type: "Call" }> {
+	return findNode(root, (node): node is Extract<CstNode, { type: "Call" }> => {
+		return isKind(node, "Call");
+	});
 }
 
 describe("node construction", () => {
@@ -517,7 +507,7 @@ describe("node construction", () => {
 		edits.replace({
 			caller: "inner",
 			replacement: parser.constructExpression("1"),
-			target: firstNodeOfType(block, "Call"),
+			target: firstCall(block),
 		});
 		edits.replace({ caller: "outer", replacement: block, target: root.body.body[0]! });
 		const { code, segments } = printCstMapped(root, {
@@ -567,7 +557,7 @@ describe("node construction", () => {
 		edits.replace({
 			caller: "inline",
 			replacement: parser.constructExpression("a + b"),
-			target: firstNodeOfType(root, "Call"),
+			target: firstCall(root),
 		});
 		const { code, segments } = printCstMapped(root, {
 			edits,

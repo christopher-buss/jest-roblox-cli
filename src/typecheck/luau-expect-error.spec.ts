@@ -1,6 +1,6 @@
 import { loadLuauParser } from "@isentinel/luau-ast/parser";
 
-import assert from "node:assert";
+import assert from "node:assert/strict";
 import { describe, expect, it } from "vitest";
 
 import { applyLuauExpectErrors } from "./luau-expect-error.ts";

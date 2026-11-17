@@ -156,18 +156,17 @@ async function runTestPlanAsync({ backend, discovery, staged }: ExecutionInput) 
 function setup({
 	backendKind = "studio",
 	config = makeConfig(),
-	plan = {
+}: {
+	backendKind?: Backend["kind"];
+	config?: ResolvedConfig;
+} = {}) {
+	const plan: TestPlan = {
 		jobs: [makeJob("client")],
 		matchedRuntimeFiles: [],
 		projects: [],
 		tsconfigCache: new Map(),
 		typeTestEntries: [],
-	},
-}: {
-	backendKind?: Backend["kind"];
-	config?: ResolvedConfig;
-	plan?: TestPlan;
-} = {}) {
+	};
 	const { fileSystem, volume } = createMemoryFileSystem();
 	writeRojoProject(volume);
 	const fakes = createFakes(volume);

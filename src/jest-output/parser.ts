@@ -88,7 +88,6 @@ export function parseJestOutput(output: string): ParseResult {
 	return parseParsedOutput(jestEnvelopeSchema.assert(JSON.parse(candidate)));
 }
 
-const PROMISE_TRACE_HEADER = /^-- Promise\.Error\(/;
 const PROMISE_TRACE_CAUSE_LINE = /:\d+:\s*(\S.*)$/;
 
 /**
@@ -124,7 +123,7 @@ function extractLuauTiming(runner: RunnerFields): Record<string, number> | undef
 }
 
 function looksLikePromiseTrace(text: string): boolean {
-	return PROMISE_TRACE_HEADER.test(text);
+	return text.startsWith("-- Promise.Error(");
 }
 
 function extractCauseFromPromiseTrace(trace: string): string | undefined {

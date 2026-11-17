@@ -1,4 +1,4 @@
-import assert from "node:assert";
+import assert from "node:assert/strict";
 
 const SNAPSHOT_HEADER = /^- Snapshot\s+- \d+/;
 const EXPECTED_VALUE = /Expected\b.*?:\s*(.+)/;
@@ -78,8 +78,8 @@ export function parseErrorMessage(message: string): ParsedError {
 		};
 	}
 
-	const expectedMatch = message.match(EXPECTED_VALUE);
-	const receivedMatch = message.match(RECEIVED_VALUE);
+	const expectedMatch = EXPECTED_VALUE.exec(message);
+	const receivedMatch = RECEIVED_VALUE.exec(message);
 	return {
 		expected: expectedMatch?.[1],
 		message: firstLine,

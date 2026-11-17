@@ -1,4 +1,4 @@
-import assert from "node:assert";
+import assert from "node:assert/strict";
 
 import { mergeCliWithConfig } from "../config/merge.ts";
 import type { ResolvedConfig } from "../config/resolved-config.ts";

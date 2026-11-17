@@ -1,6 +1,6 @@
 import type { RojoProject } from "@isentinel/rojo-utils";
 
-import assert from "node:assert";
+import assert from "node:assert/strict";
 
 import type { TsconfigMapping } from "../tsconfig/tsconfig-mappings.ts";
 import type { FileSystem } from "../utils/file-system.ts";

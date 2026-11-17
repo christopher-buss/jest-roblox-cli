@@ -71,11 +71,8 @@ function computeSkipFiles({
 		}
 
 		const currentHash = hashFile(sourcePath, fileSystem);
-		if (currentHash !== record.sourceHash) {
-			continue;
-		}
-
 		if (
+			currentHash !== record.sourceHash ||
 			!shadowHoldsFile(record.instrumentedLuauPath, fileSystem) ||
 			!shadowHoldsFile(record.coverageMapPath, fileSystem)
 		) {

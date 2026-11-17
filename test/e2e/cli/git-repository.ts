@@ -3,7 +3,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import nodeProcess from "node:process";
 
-export interface GitRepo {
+export interface GitRepository {
 	/** Stage every file and commit it. */
 	commit: (message: string) => void;
 	/** Run git in the repository. */
@@ -24,7 +24,7 @@ const GIT_IDENTITY = ["-c", "user.name=jest-roblox", "-c", "user.email=jest-robl
  * @param root - Folder to initialize.
  * @returns Commands that change the repository.
  */
-export function initGitRepo(root: string): GitRepo {
+export function initGitRepository(root: string): GitRepository {
 	const environment = isolatedGitEnvironment(root);
 	function git(...args: Array<string>): void {
 		execFileSync("git", [...GIT_IDENTITY, ...args], {

@@ -1,7 +1,7 @@
 import { type } from "arktype";
 import type istanbulCoverage from "istanbul-lib-coverage";
 import istanbulReport from "istanbul-lib-report";
-import assert from "node:assert";
+import assert from "node:assert/strict";
 import process from "node:process";
 import color from "tinyrainbow";
 

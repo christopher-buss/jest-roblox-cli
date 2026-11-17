@@ -88,8 +88,8 @@ describe(runTypecheckAsync, () => {
 		};
 	}
 
-	function exitWith(code: number): TsgoSpawnError {
-		return Object.assign(new Error(`tsgo exit ${String(code)}`), { code });
+	function typeErrorExit(): TsgoSpawnError {
+		return Object.assign(new Error("tsgo exit 2"), { code: 2 });
 	}
 
 	/**
@@ -145,7 +145,7 @@ describe(runTypecheckAsync, () => {
 		const filePath = "src/test.spec.ts";
 		const { childProcess } = stubTsgo((callback) => {
 			callback(
-				exitWith(2),
+				typeErrorExit(),
 				"other.ts(1,7): error TS2322: Type 'string' is not assignable to type 'number'.",
 				"",
 			);
@@ -720,7 +720,7 @@ describe(runTypecheckAsync, () => {
 
 		const { childProcess } = stubTsgo((callback) => {
 			callback(
-				exitWith(2),
+				typeErrorExit(),
 				`${relativePath}(1,7): error TS2322: Type 'string' is not assignable to type 'number'.`,
 				"",
 			);
@@ -750,7 +750,7 @@ describe(runTypecheckAsync, () => {
 
 		const { childProcess } = stubTsgo((callback) => {
 			callback(
-				exitWith(2),
+				typeErrorExit(),
 				"",
 				`${relativePath}(1,7): error TS2322: Type 'string' is not assignable to type 'number'.`,
 			);
@@ -774,7 +774,7 @@ describe(runTypecheckAsync, () => {
 		expect.assertions(1);
 
 		const { childProcess } = stubTsgo((callback) => {
-			callback(exitWith(2), "", "");
+			callback(typeErrorExit(), "", "");
 		});
 		const fileSystem = readingFiles(
 			JSON.stringify({ compilerOptions: {} }),
@@ -817,7 +817,7 @@ describe(runTypecheckAsync, () => {
 
 			const resolvedFile = path.resolve("src", fileName);
 			const { childProcess } = stubTsgo((callback) => {
-				callback(exitWith(2), `${fileName}(1,7): error TS2345: Bad argument.`, "");
+				callback(typeErrorExit(), `${fileName}(1,7): error TS2345: Bad argument.`, "");
 			});
 			const fileSystem = readingFiles(
 				JSON.stringify({ compilerOptions: {} }),
@@ -864,7 +864,7 @@ describe(runTypecheckAsync, () => {
 		expect.assertions(2);
 
 		const { childProcess, invocations } = stubTsgo((callback) => {
-			callback(exitWith(2), "src/source.ts(1,7): error TS2322: Bad source.", "");
+			callback(typeErrorExit(), "src/source.ts(1,7): error TS2322: Bad source.", "");
 		});
 		const fileSystem = readingFiles(JSON.stringify({ compilerOptions: {} }), "");
 

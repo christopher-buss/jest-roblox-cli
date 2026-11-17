@@ -26,12 +26,12 @@ function packageJson(json: JSONObject): string {
 	return JSON.stringify(json);
 }
 
-function seedPackage(directory: string, name: string): Record<string, string> {
+function seedFooPackage(): Record<string, string> {
 	return {
-		[path.join(directory, "jest.config.ts")]: "export default {}",
-		[path.join(directory, "package.json")]: packageJson({ name }),
-		[path.join(directory, "test.project.json")]: packageJson({
-			name: `${name}-test`,
+		[path.join(FOO_DIR, "jest.config.ts")]: "export default {}",
+		[path.join(FOO_DIR, "package.json")]: packageJson({ name: "@halcyon/foo" }),
+		[path.join(FOO_DIR, "test.project.json")]: packageJson({
+			name: "@halcyon/foo-test",
 			tree: { $className: "DataModel", ReplicatedStorage: { Pkg: { $path: "src" } } },
 		}),
 	};
@@ -76,7 +76,7 @@ function fooConfig(overrides: Partial<ResolvedConfig> = {}): PackageConfigs {
 async function openEmptyFooAsync(overrides: Partial<ResolvedConfig> = {}) {
 	const { fileSystem, volume } = createMemoryFileSystem();
 	const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
-	volume.fromJSON({ ...seedPackage(FOO_DIR, "@halcyon/foo"), ...WORKSPACE_FILE });
+	volume.fromJSON({ ...seedFooPackage(), ...WORKSPACE_FILE });
 
 	const opened = await openWorkspaceRunAsync(
 		openOptions(fileSystem, { configs: fooConfig(overrides) }),
@@ -150,7 +150,7 @@ describe(openWorkspaceRunAsync, () => {
 
 		const { fileSystem, volume } = createMemoryFileSystem();
 		volume.fromJSON({
-			...seedPackage(FOO_DIR, "@halcyon/foo"),
+			...seedFooPackage(),
 			[path.join(FOO_DIR, "src/foo.spec.luau")]: "",
 			...WORKSPACE_FILE,
 		});

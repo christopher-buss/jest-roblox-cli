@@ -36,19 +36,14 @@ function seedProject(files: Record<string, string>): FileSystem {
  * The map beside `out/shared/test.luau`, resolving the generated lines given.
  *
  * @param segments - Which generated lines map to which source lines.
- * @param sourceContent - The source text to embed, when the case needs one.
  * @returns The `.map` file keyed by its path.
  */
-function sharedMap(
-	segments: ReadonlyArray<SourceMapSegment>,
-	sourceContent?: string,
-): Record<string, string> {
+function sharedMap(segments: ReadonlyArray<SourceMapSegment>): Record<string, string> {
 	return {
 		"out/shared/test.luau.map": buildSourceMap({
 			file: "test.luau",
 			segments,
 			source: SHARED_SOURCE,
-			...(sourceContent === undefined ? {} : { sourceContent }),
 		}),
 	};
 }

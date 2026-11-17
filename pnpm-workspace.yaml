@@ -2,12 +2,12 @@ packages:
   - packages/*
 
 overrides:
-  "@typescript-eslint/eslint-plugin": 8.72.0
-  "@typescript-eslint/parser": 8.72.0
-  "@typescript-eslint/type-utils": 8.72.0
-  "@typescript-eslint/types": 8.72.0
-  "@typescript-eslint/typescript-estree": 8.72.0
-  "@typescript-eslint/utils": 8.72.0
+  "@typescript-eslint/eslint-plugin": 8.73.0
+  "@typescript-eslint/parser": 8.73.0
+  "@typescript-eslint/type-utils": 8.73.0
+  "@typescript-eslint/types": 8.73.0
+  "@typescript-eslint/typescript-estree": 8.73.0
+  "@typescript-eslint/utils": 8.73.0
   # weld's dts-bundle-generator needs the TypeScript JS API, which 7 lacks.
   dts-bundle-generator>typescript: 6.0.3
 
@@ -15,6 +15,7 @@ minimumReleaseAgeExclude:
   - "@bedrock-rbx/ocale"
   - "@isentinel/eslint-config"
   - tsrs@7.1.0-beta.tsrs2
+  - eslint-plugin-roblox-ts@1.5.0
 
 publicHoistPattern:
   - "*@rbxts*"

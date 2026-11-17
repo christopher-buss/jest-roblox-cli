@@ -1,4 +1,4 @@
-import assert from "node:assert";
+import assert from "node:assert/strict";
 
 import type { LuauSpan } from "./ast-types.ts";
 import type { CstRoot } from "./cst-statement-types.ts";

@@ -1,4 +1,4 @@
-import assert from "node:assert";
+import assert from "node:assert/strict";
 
 import type { TestRecord } from "../coverage-data/manifest.ts";
 import type { SourceMapper } from "../source-mapper/index.ts";

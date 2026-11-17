@@ -55,8 +55,10 @@ function isoNow(): string {
 	return now.toISOString();
 }
 
-function readRojoProjectJson(volume: MemoryVolume, filePath: string): JSONValue {
-	const parsed = JSON.parse(volume.readFileSync(filePath, "utf-8").toString());
+function readRojoProjectJson(volume: MemoryVolume): JSONValue {
+	const parsed = JSON.parse(
+		volume.readFileSync(".jest-roblox/place/synthesized.project.json", "utf-8").toString(),
+	);
 	if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
 		throw new Error("Expected rojo project to be a JSON object");
 	}
@@ -731,10 +733,7 @@ describe(prepareCoverageAsync, () => {
 
 			const { volume } = await prepareSeededAsync();
 
-			const written = readRojoProjectJson(
-				volume,
-				".jest-roblox/place/synthesized.project.json",
-			);
+			const written = readRojoProjectJson(volume);
 
 			expect(
 				readNestedProperty(
@@ -782,10 +781,7 @@ describe(prepareCoverageAsync, () => {
 				tsconfigReader: noTsconfig,
 			});
 
-			const written = readRojoProjectJson(
-				volume,
-				".jest-roblox/place/synthesized.project.json",
-			);
+			const written = readRojoProjectJson(volume);
 
 			// Paths are written relative to the project file's own directory:
 			// rojo matches globIgnorePaths against the path as expressed, so an
@@ -839,10 +835,7 @@ describe(prepareCoverageAsync, () => {
 				tsconfigReader: noTsconfig,
 			});
 
-			const parsed = readRojoProjectJson(
-				volume,
-				".jest-roblox/place/synthesized.project.json",
-			);
+			const parsed = readRojoProjectJson(volume);
 
 			// $path "../out" resolves against "config" → absolute "out";
 			// luauRoot "out" resolves against rootDir "." → absolute "out";
@@ -904,10 +897,7 @@ describe(prepareCoverageAsync, () => {
 				tsconfigReader: noTsconfig,
 			});
 
-			const written = readRojoProjectJson(
-				volume,
-				".jest-roblox/place/synthesized.project.json",
-			);
+			const written = readRojoProjectJson(volume);
 
 			// The nested $path: "default.project.json" is resolved to $path:
 			// "src", then redirected to the instrumented shadow dir since "src"
@@ -1170,10 +1160,7 @@ describe(prepareCoverageAsync, () => {
 				tsconfigReader: noTsconfig,
 			});
 
-			const written = readRojoProjectJson(
-				volume,
-				".jest-roblox/place/synthesized.project.json",
-			);
+			const written = readRojoProjectJson(volume);
 
 			// The redirected root is one directory over from the rewritten
 			// project file.
@@ -2236,7 +2223,7 @@ describe(prepareCoverageAsync, () => {
 
 			async function seedIncludeScenarioAsync(
 				fileSystem: FileSystem,
-				{ includeContent, volume }: { includeContent: string; volume: MemoryVolume },
+				volume: MemoryVolume,
 			): Promise<void> {
 				seedInto(volume);
 				volume.writeFileSync(
@@ -2244,10 +2231,7 @@ describe(prepareCoverageAsync, () => {
 					JSON.stringify(includeProject),
 				);
 				volume.mkdirSync(path.join(PROJECT_DIR, "include"), { recursive: true });
-				volume.writeFileSync(
-					path.join(PROJECT_DIR, "include/RuntimeLib.lua"),
-					includeContent,
-				);
+				volume.writeFileSync(path.join(PROJECT_DIR, "include/RuntimeLib.lua"), "-- v1");
 
 				const record = makeFileRecord({ key: "out-tsc/test/init.luau" });
 				volume.mkdirSync(".jest-roblox/coverage/out-tsc/test", { recursive: true });
@@ -2283,7 +2267,7 @@ describe(prepareCoverageAsync, () => {
 				const { fileSystem, volume } = createMemoryFileSystem();
 
 				const { childProcess, instrumenter } = setupMocks(volume);
-				await seedIncludeScenarioAsync(fileSystem, { includeContent: "-- v1", volume });
+				await seedIncludeScenarioAsync(fileSystem, volume);
 				await prepareRootAsync({ childProcess, fileSystem, instrumenter });
 				volume.writeFileSync(path.join(PROJECT_DIR, "include/RuntimeLib.lua"), "-- v2");
 
@@ -2301,7 +2285,7 @@ describe(prepareCoverageAsync, () => {
 
 				const { childProcess, instrumenter } = setupMocks(volume);
 				const stderrText = captureStderr();
-				await seedIncludeScenarioAsync(fileSystem, { includeContent: "-- v1", volume });
+				await seedIncludeScenarioAsync(fileSystem, volume);
 				seedValidBuildManifest(volume);
 				await prepareRootAsync({ childProcess, fileSystem });
 
@@ -2318,7 +2302,7 @@ describe(prepareCoverageAsync, () => {
 
 				const { fileSystem, volume } = createMemoryFileSystem();
 				const { childProcess } = setupMocks(volume);
-				await seedIncludeScenarioAsync(fileSystem, { includeContent: "-- v1", volume });
+				await seedIncludeScenarioAsync(fileSystem, volume);
 				await prepareRootAsync({ childProcess, fileSystem });
 				volume.writeFileSync(
 					path.join(PROJECT_DIR, "default.project.json"),

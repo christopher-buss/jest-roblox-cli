@@ -4,14 +4,7 @@ import type { CstNode, CstRoot } from "@isentinel/luau-ast/cst";
 
 import { assert, describe, expect, it } from "vitest";
 
-function parseCst(source: string, fileName = "test.luau"): CstRoot {
-	const result = loadLuauParser().parseCst({ fileName, source });
-	if (!result.ok) {
-		throw new Error(result.errors.join("\n"));
-	}
-
-	return result.root;
-}
+import { parseCst } from "#test/helpers/integration/parse-cst";
 
 /**
  * Binding numbers of every declaration and reference named `name`, in source

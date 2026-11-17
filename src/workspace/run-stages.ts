@@ -1,4 +1,4 @@
-import assert from "node:assert";
+import assert from "node:assert/strict";
 
 import type { Backend } from "../backends/dispatch-request.ts";
 import type { RunSettings } from "../backends/interface.ts";

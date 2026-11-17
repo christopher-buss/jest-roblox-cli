@@ -249,10 +249,12 @@ function collectGraph({
 
 			known.add(fileKey);
 			modules.add(dependencyKey);
-			if (!visited.has(dependency)) {
-				visited.add(dependency);
-				pending.push(dependency);
+			if (visited.has(dependency)) {
+				continue;
 			}
+
+			visited.add(dependency);
+			pending.push(dependency);
 		}
 	}
 

@@ -1,4 +1,4 @@
-import assert from "node:assert";
+import assert from "node:assert/strict";
 import { Buffer } from "node:buffer";
 
 /** A text's byte offsets resolved against its UTF-16 offsets. */

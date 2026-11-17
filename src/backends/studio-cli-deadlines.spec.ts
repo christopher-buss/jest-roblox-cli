@@ -17,7 +17,7 @@ function useFakeTimers(): void {
 	});
 }
 
-function deadlines({ bootTimeout = 100, timeout = 40 } = {}) {
+function deadlines({ bootTimeout = 100 } = {}) {
 	const { fileSystem, volume } = createMemoryFileSystem();
 	const onExpired = vi.fn<(error: Error) => void>();
 	const started = startRunDeadlines({
@@ -25,7 +25,7 @@ function deadlines({ bootTimeout = 100, timeout = 40 } = {}) {
 		fileSystem,
 		onExpired,
 		outputFile: OUTPUT_FILE,
-		timeout,
+		timeout: 40,
 	});
 	return { onExpired, started, volume };
 }

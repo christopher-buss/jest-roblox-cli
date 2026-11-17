@@ -1,6 +1,6 @@
 import { Buffer } from "node:buffer";
 import * as path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { describePlaceFile, describeProjectCount, LAST_STAGE, STAGE_IDS } from "./stages.ts";
@@ -82,5 +82,27 @@ describe(describePlaceFile, () => {
 		const { fileSystem } = createMemoryFileSystem();
 
 		expect(describePlaceFile(path.resolve("no-such-place.rbxl"), fileSystem)).toBeUndefined();
+	});
+
+	it("should stat a missing place without building an error", () => {
+		expect.assertions(1);
+
+		const { fileSystem } = createMemoryFileSystem();
+		const stat = vi.spyOn(fileSystem, "statSync");
+		const placeFilePath = path.resolve("no-such-place.rbxl");
+		describePlaceFile(placeFilePath, fileSystem);
+
+		expect(stat).toHaveBeenCalledExactlyOnceWith(placeFilePath, { throwIfNoEntry: false });
+	});
+
+	it("should report nothing for a place whose stat fails", () => {
+		expect.assertions(1);
+
+		const { fileSystem } = createMemoryFileSystem();
+		vi.spyOn(fileSystem, "statSync").mockImplementation(() => {
+			throw Object.assign(new Error("permission denied"), { code: "EACCES" });
+		});
+
+		expect(describePlaceFile(path.resolve("locked.rbxl"), fileSystem)).toBeUndefined();
 	});
 });

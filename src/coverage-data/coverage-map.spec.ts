@@ -6,7 +6,7 @@ import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import type { CoverageMap, ReadCoverageMapResult } from "./coverage-map.ts";
 import { readCoverageMap, writeCoverageMap } from "./coverage-map.ts";
 
-function exampleCoverageMap(overrides: Partial<CoverageMap> = {}): CoverageMap {
+function exampleCoverageMap(): CoverageMap {
 	return {
 		statementMap: {
 			"1": {
@@ -14,7 +14,6 @@ function exampleCoverageMap(overrides: Partial<CoverageMap> = {}): CoverageMap {
 				start: { column: asciiColumn(1), line: 1 },
 			},
 		},
-		...overrides,
 	};
 }
 

@@ -82,9 +82,9 @@ function useResultDeadlineTimers(): void {
 	});
 }
 
-function stubPlatform(platform: NodeJS.Platform): void {
+function stubWin32Platform(): void {
 	const original = Object.getOwnPropertyDescriptor(nodeProcess, "platform")!;
-	Object.defineProperty(nodeProcess, "platform", { value: platform });
+	Object.defineProperty(nodeProcess, "platform", { value: "win32" });
 	onTestFinished(() => {
 		Object.defineProperty(nodeProcess, "platform", original);
 	});
@@ -270,10 +270,8 @@ type RojoExec = (
 	done: (error: Error | null, stdout: string, stderr: string) => void,
 ) => void;
 
-function installed(
-	manualPlugins: Array<string> = [],
-): () => Promise<ManagedPluginInstall | undefined> {
-	return async () => ({ key: PLUGIN_KEY, manualPlugins });
+function installed(): () => Promise<ManagedPluginInstall | undefined> {
+	return async () => ({ key: PLUGIN_KEY, manualPlugins: [] });
 }
 
 function captureBootstrap(fileSystem: FileSystem, reply: ReplyOptions = {}) {
@@ -326,15 +324,12 @@ function makeBackend({
 	});
 }
 
-function startBootingRun(
-	extra: Partial<ConstructorParameters<typeof StudioCliBackend>[0]> = {},
-	timeout = 400,
-) {
+function startBootingRun(extra: Partial<ConstructorParameters<typeof StudioCliBackend>[0]> = {}) {
 	const { fileSystem } = createMemoryFileSystem();
 	useResultDeadlineTimers();
 	const studio = bootingStudio(fileSystem);
 	const settled = makeBackend({ extra, fileSystem, launch: studio.launch })
-		.runTestsAsync(timed(singleJob, timeout))
+		.runTestsAsync(timed(singleJob, 400))
 		.catch((err: unknown) => err);
 	return { settled, studio };
 }
@@ -347,25 +342,21 @@ function backendReplying(fileSystem: FileSystem, reply: ReplyOptions = {}): Stud
  * Workspace jobs carry `pkg` (set only in workspace mode) and a `placeFile`
  * pointing at the mega-place the workspace runner already built. The studio-cli
  * backend keys off `pkg` to switch into the staged/materializer dispatch.
- * @param root0 - Label, package and config overrides.
+ * @param root0 - Label and package.
  * @param root0.displayName - Label for the job and its test file.
- * @param root0.overrides - Config fields that override the workspace defaults.
  * @param root0.packageName - Package name set as `pkg`.
  * @returns A job that dispatches in workspace mode.
  */
 function workspaceJob({
 	displayName,
-	overrides = {},
 	packageName,
 }: {
 	readonly displayName: string;
-	readonly overrides?: Partial<ResolvedConfig>;
 	readonly packageName: string;
 }): ConfiguredJob {
 	return projectJob({
 		...job(displayName, {
 			placeFile: "/repo/.jest-roblox/workspace/synthesized.rbxl",
-			...overrides,
 		}),
 		pkg: packageName,
 	});
@@ -1172,7 +1163,7 @@ describe(StudioCliBackend, () => {
 		const { fileSystem } = createMemoryFileSystem();
 		vi.stubEnv("LOCALAPPDATA", "/local");
 		vi.stubEnv("JEST_ROBLOX_PLUGINS_DIR", undefined);
-		stubPlatform("win32");
+		stubWin32Platform();
 		const { bootstrap, launch } = captureBootstrap(fileSystem);
 		const backend = backendBuildingPlugin(fileSystem, { launch });
 
@@ -1191,7 +1182,7 @@ describe(StudioCliBackend, () => {
 
 		const { fileSystem } = createMemoryFileSystem();
 		vi.stubEnv("LOCALAPPDATA", "/local");
-		stubPlatform("win32");
+		stubWin32Platform();
 		const backend = backendBuildingPlugin(fileSystem, {
 			launch: replyWith({ fileSystem, reply: {} }).launch,
 			pluginsDirectory: "D:/Studio/Plugins",

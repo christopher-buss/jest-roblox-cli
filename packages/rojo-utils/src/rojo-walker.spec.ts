@@ -155,7 +155,31 @@ describe(walkRojoConfig, () => {
 		});
 		expect(result.walkedDirectories).toContain(path.join(directory, "real"));
 		expect(result.warnings).toStrictEqual([
-			expect.stringContaining(`Failed to resolve "${path.join(directory, "source/broken")}"`),
+			expect.stringContaining(
+				`Failed to resolve "${path.join(directory, "source/broken")}" (target does not exist)`,
+			),
+		]);
+	});
+
+	it("should warn about a link whose target cannot be read", () => {
+		expect.assertions(1);
+
+		const { directory, fileSystem, fs } = makeFileSystem({
+			"real/leaf.luau": "return 2",
+			"source/module.luau": "return 1",
+		});
+		const linkPath = path.join(directory, "source/linked");
+		fs.symlinkSync(path.join(directory, "real"), linkPath);
+		const realpathSync = fileSystem.realpathSync.bind(fileSystem);
+		vi.spyOn(fileSystem, "realpathSync")
+			.mockImplementationOnce((target) => realpathSync(target))
+			.mockImplementationOnce(() => {
+				throw new Error("EACCES: permission denied");
+			});
+		const result = walkRojoTree({ basePath: directory, tree: { $path: "source" } }, fileSystem);
+
+		expect(result.warnings).toStrictEqual([
+			expect.stringContaining(`Failed to resolve "${linkPath}" (Error: EACCES`),
 		]);
 	});
 });

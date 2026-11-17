@@ -7,7 +7,7 @@
  * named `type`, which is the kind.
  */
 
-import assert from "node:assert";
+import assert from "node:assert/strict";
 
 import type {
 	CstElseIfExpr,

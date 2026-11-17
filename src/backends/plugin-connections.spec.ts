@@ -46,9 +46,9 @@ function send(socket: MockWebSocket, encoded: string): void {
 	socket.emit("message", Buffer.from(encoded));
 }
 
-async function waitAsync(ms: number): Promise<void> {
+async function waitAsync(): Promise<void> {
 	return new Promise((resolve) => {
-		setTimeout(resolve, ms);
+		setTimeout(resolve, 60);
 	});
 }
 
@@ -202,7 +202,7 @@ describe(PluginConnectionPool, () => {
 		connectPlugin(wss, { protocolVersion: EXPECTED_VERSION - 1 });
 
 		// Lands after the connect timeout would have fired, inside the grace.
-		await waitAsync(60);
+		await waitAsync();
 		const current = connectPlugin(wss);
 
 		const selection = await selecting;
@@ -223,7 +223,7 @@ describe(PluginConnectionPool, () => {
 		const selecting = pool.selectAsync({ ...REQUEST, connectTimeoutMs: 600_000, graceMs: 10 });
 		const pending = Symbol("pending");
 
-		const raced = await Promise.race([selecting, waitAsync(60).then(() => pending)]);
+		const raced = await Promise.race([selecting, waitAsync().then(() => pending)]);
 		pool.abortSelection();
 		await selecting;
 

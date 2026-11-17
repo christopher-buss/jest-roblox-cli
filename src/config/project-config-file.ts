@@ -194,11 +194,7 @@ function deriveIncludeFromTestMatch({
 	readonly config: ProjectConfigFile;
 	readonly configDirectory: string;
 }): void {
-	if (config.include !== undefined) {
-		return;
-	}
-
-	if (!Array.isArray(config.testMatch)) {
+	if (config.include !== undefined || !Array.isArray(config.testMatch)) {
 		return;
 	}
 

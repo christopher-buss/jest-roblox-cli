@@ -29,14 +29,13 @@ function syncThroughBake({
 /**
  * A shadow whose mirror is where every mount is read from; no demote.
  *
- * @param root - Directory every mount resolves under.
  * @returns A layout that shadows every path.
  */
-function shadowAt(root: string): ShadowLayout {
+function shadowAtRoot(): ShadowLayout {
 	return {
 		isShadowed: () => true,
-		mountedDirectory: (relative) => path.posix.join(root, relative),
-		root,
+		mountedDirectory: (relative) => path.posix.join("/shadow", relative),
+		root: "/shadow",
 	};
 }
 
@@ -47,7 +46,7 @@ function syncWithoutMounts(): boolean {
 		fileSystem,
 		projects: [makeResolvedProject({ outDir: undefined, rojoMounts: [] })],
 		rootDirectory: "/root",
-		shadow: shadowAt("/shadow"),
+		shadow: shadowAtRoot(),
 	});
 }
 
@@ -63,7 +62,7 @@ describe("stub sync into the shadow", () => {
 			fileSystem,
 			projects: [],
 			rootDirectory: "/root",
-			shadow: shadowAt("/shadow"),
+			shadow: shadowAtRoot(),
 		});
 
 		expect(volume.existsSync("/shadow")).toBeTrue();
@@ -85,7 +84,7 @@ describe("stub sync into the shadow", () => {
 			fileSystem,
 			projects,
 			rootDirectory: "/root",
-			shadow: shadowAt("/shadow"),
+			shadow: shadowAtRoot(),
 		});
 
 		expect(volume.readFileSync("/shadow/out/client/jest.config.luau", "utf8")).toBe("-- stub");
@@ -102,7 +101,7 @@ describe("stub sync into the shadow", () => {
 			fileSystem,
 			projects: [makeResolvedProject({ outDir: "out/client" })],
 			rootDirectory: "/root",
-			shadow: { ...shadowAt("/shadow"), isShadowed: () => false },
+			shadow: { ...shadowAtRoot(), isShadowed: () => false },
 		});
 
 		expect(volume.existsSync("/shadow/out/client/jest.config.luau")).toBeFalse();
@@ -119,7 +118,7 @@ describe("stub sync into the shadow", () => {
 			fileSystem,
 			projects: [makeResolvedProject({ outDir: "out/client" })],
 			rootDirectory: "/root",
-			shadow: { ...shadowAt("/shadow"), isShadowed: () => false },
+			shadow: { ...shadowAtRoot(), isShadowed: () => false },
 		});
 
 		expect(hasChanged).toBeFalse();
@@ -140,7 +139,7 @@ describe("stub sync into the shadow", () => {
 			fileSystem,
 			projects,
 			rootDirectory: "/root",
-			shadow: shadowAt("/shadow"),
+			shadow: shadowAtRoot(),
 		});
 
 		expect(hasChanged).toBeTrue();
@@ -163,7 +162,7 @@ describe("stub sync into the shadow", () => {
 			fileSystem,
 			projects,
 			rootDirectory: "/root",
-			shadow: shadowAt("/shadow"),
+			shadow: shadowAtRoot(),
 		});
 
 		expect(hasChanged).toBeTrue();
@@ -186,7 +185,7 @@ describe("stub sync into the shadow", () => {
 			fileSystem,
 			projects,
 			rootDirectory: "/root",
-			shadow: shadowAt("/shadow"),
+			shadow: shadowAtRoot(),
 		});
 
 		expect(hasChanged).toBeFalse();
@@ -222,7 +221,7 @@ describe("stub sync into the shadow", () => {
 			fileSystem,
 			projects,
 			rootDirectory: "/root",
-			shadow: shadowAt("/shadow"),
+			shadow: shadowAtRoot(),
 		});
 
 		expect(volume.existsSync("/shadow/out/deep/nested/jest.config.luau")).toBeTrue();
@@ -247,7 +246,7 @@ describe("stub sync into the shadow", () => {
 			fileSystem,
 			projects,
 			rootDirectory: "/root",
-			shadow: shadowAt("/shadow"),
+			shadow: shadowAtRoot(),
 		});
 
 		expect(hasChanged).toBeTrue();
@@ -270,7 +269,7 @@ describe("stub sync into the shadow", () => {
 				fileSystem,
 				projects,
 				rootDirectory: "/root",
-				shadow: shadowAt("/shadow"),
+				shadow: shadowAtRoot(),
 			});
 		}).toThrow("mount fsPath must be relative");
 	});
@@ -291,7 +290,7 @@ describe("stub sync into the shadow", () => {
 				fileSystem,
 				projects,
 				rootDirectory: "/root",
-				shadow: shadowAt("/shadow"),
+				shadow: shadowAtRoot(),
 			});
 		}).toThrow("mount fsPath escapes root directory");
 	});
@@ -314,7 +313,7 @@ describe("stub sync into the shadow", () => {
 			fileSystem,
 			projects,
 			rootDirectory: "/root",
-			shadow: shadowAt("/shadow"),
+			shadow: shadowAtRoot(),
 		});
 
 		expect(volume.existsSync("/shadow/out/removed/deep")).toBeFalse();
@@ -349,7 +348,7 @@ describe("stub sync into the shadow", () => {
 			fileSystem,
 			projects,
 			rootDirectory: "/root",
-			shadow: shadowAt("/shadow"),
+			shadow: shadowAtRoot(),
 		});
 
 		expect(volume.existsSync("/shadow/out/mixed/jest.config.luau")).toBeFalse();
@@ -371,7 +370,7 @@ describe("stub sync into the shadow", () => {
 			fileSystem,
 			projects,
 			rootDirectory: "/root",
-			shadow: shadowAt("/shadow"),
+			shadow: shadowAtRoot(),
 		});
 
 		expect(hasChanged).toBeFalse();
@@ -394,7 +393,7 @@ describe("stub sync into the shadow", () => {
 			fileSystem,
 			projects: [],
 			rootDirectory: "/root",
-			shadow: shadowAt("/shadow"),
+			shadow: shadowAtRoot(),
 		});
 
 		expect(hasChanged).toBeTrue();
@@ -419,7 +418,7 @@ describe("stub sync into the shadow", () => {
 			fileSystem,
 			projects,
 			rootDirectory: "/root",
-			shadow: shadowAt("/shadow"),
+			shadow: shadowAtRoot(),
 		});
 
 		expect(hasChanged).toBeFalse();
@@ -453,7 +452,7 @@ describe("stub sync into the shadow", () => {
 			fileSystem,
 			projects,
 			rootDirectory: "/root",
-			shadow: shadowAt("/shadow"),
+			shadow: shadowAtRoot(),
 		});
 
 		expect(volume.existsSync("/shadow/src/Client/jest.config.luau")).toBeTrue();
@@ -489,7 +488,7 @@ describe("stub sync into the shadow", () => {
 			fileSystem,
 			projects,
 			rootDirectory: "/root",
-			shadow: shadowAt("/shadow"),
+			shadow: shadowAtRoot(),
 		});
 
 		expect(volume.existsSync("/shadow/src/Client/jest.config.luau")).toBeTrue();
@@ -527,7 +526,7 @@ describe(createStubBake, () => {
 			projects: [makeResolvedProject()],
 		});
 
-		expect(bake.run(shadowAt("/shadow"))).toBeTrue();
+		expect(bake.run(shadowAtRoot())).toBeTrue();
 		expect(volume.readFileSync("/shadow/out/client/jest.config.luau", "utf8")).toBe("-- stub");
 	});
 });
@@ -545,13 +544,13 @@ describe("createStubBake stub mounts", () => {
 			projects: [makeResolvedProject()],
 		});
 
-		expect(bake.stubMounts({ ...shadowAt("/shadow"), isShadowed: () => false })).toStrictEqual([
+		expect(bake.stubMounts({ ...shadowAtRoot(), isShadowed: () => false })).toStrictEqual([
 			{
 				absStubPath: path.resolve("/cache", "out/client", "jest.config.luau"),
 				dataModelPath: "ReplicatedStorage/client",
 			},
 		]);
-		expect(bake.stubMounts(shadowAt("/shadow"))).toStrictEqual([]);
+		expect(bake.stubMounts(shadowAtRoot())).toStrictEqual([]);
 	});
 
 	it("should mount nothing for a mount with no cached stub", () => {
@@ -564,9 +563,7 @@ describe("createStubBake stub mounts", () => {
 			projects: [makeResolvedProject()],
 		});
 
-		expect(bake.stubMounts({ ...shadowAt("/shadow"), isShadowed: () => false })).toStrictEqual(
-			[],
-		);
+		expect(bake.stubMounts({ ...shadowAtRoot(), isShadowed: () => false })).toStrictEqual([]);
 	});
 });
 
@@ -601,7 +598,7 @@ describe("syncStubsToShadowDirectory preserves user-authored configs", () => {
 			fileSystem,
 			projects,
 			rootDirectory: "/root/.cache",
-			shadow: shadowAt("/shadow"),
+			shadow: shadowAtRoot(),
 		});
 
 		// Server: cache stub was copied in (changed).
@@ -627,7 +624,7 @@ describe("syncStubsToShadowDirectory preserves user-authored configs", () => {
 			fileSystem,
 			projects: [makeResolvedProject({ rojoMounts: SHARED_MOUNT })],
 			rootDirectory: "/root/.cache",
-			shadow: shadowAt("/shadow"),
+			shadow: shadowAtRoot(),
 		});
 
 		expect(hasChanged).toBeTrue();
@@ -649,7 +646,7 @@ describe("syncStubsToShadowDirectory preserves user-authored configs", () => {
 			fileSystem,
 			projects: [makeResolvedProject({ rojoMounts: SHARED_MOUNT })],
 			rootDirectory: "/root/.cache",
-			shadow: shadowAt("/shadow"),
+			shadow: shadowAtRoot(),
 		});
 
 		expect(hasChanged).toBeFalse();
@@ -686,7 +683,7 @@ describe("syncStubsToShadowDirectory preserves user-authored configs", () => {
 				fileSystem,
 				projects: [makeResolvedProject({ rojoMounts: SHARED_MOUNT })],
 				rootDirectory: "/root/.cache",
-				shadow: shadowAt("/shadow"),
+				shadow: shadowAtRoot(),
 			});
 
 			expect(volume.readFileSync(`/shadow/out/Shared/${expectedName}`, "utf8")).toBe(

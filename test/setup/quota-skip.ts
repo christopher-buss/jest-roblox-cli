@@ -14,11 +14,10 @@ interface CliResult {
 }
 
 export function quotaSkipNote(result: CliResult): string | undefined {
-	if (result.exitCode !== INFRASTRUCTURE_EXIT_CODE) {
-		return undefined;
-	}
-
-	if (!result.stderr.includes("kind: create-quota")) {
+	if (
+		result.exitCode !== INFRASTRUCTURE_EXIT_CODE ||
+		!result.stderr.includes("kind: create-quota")
+	) {
 		return undefined;
 	}
 

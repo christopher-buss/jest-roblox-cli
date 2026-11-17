@@ -298,12 +298,11 @@ describe(prepareSpine, () => {
 		 * The bake's own copy, where the demote makes the place read it.
 		 *
 		 * @param volume - The volume the spine hangs off.
-		 * @param level - The demoted level the bake writes into.
 		 * @returns Path of the baked file.
 		 */
-		function bake(volume: MemoryVolume, level: string): string {
-			const bakedPath = `${mounted(level)}/${BAKED_NAME}`;
-			volume.mkdirSync(mounted(level), { recursive: true });
+		function bake(volume: MemoryVolume): string {
+			const bakedPath = `${mounted("out/server")}/${BAKED_NAME}`;
+			volume.mkdirSync(mounted("out/server"), { recursive: true });
 			volume.writeFileSync(bakedPath, "return {}\n");
 			return bakedPath;
 		}
@@ -316,7 +315,7 @@ describe(prepareSpine, () => {
 				levels: ["out/server"].map(posixRoot),
 				options: { isBakeOwned },
 			});
-			const bakedPath = bake(volume, "out/server");
+			const bakedPath = bake(volume);
 
 			// Nothing in the source tree produces this file (the bake writes
 			// it after the mirror), so clearing it would only be undone
@@ -338,7 +337,7 @@ describe(prepareSpine, () => {
 			expect.assertions(1);
 
 			const { fileSystem, volume } = seed({ [at("server/loose.luau")]: "return nil" });
-			const bakedPath = bake(volume, "out/server");
+			const bakedPath = bake(volume);
 
 			// A run with no bake wants its place free of what an earlier
 			// baking run left in the shared shadow.

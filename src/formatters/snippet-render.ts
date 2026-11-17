@@ -92,7 +92,8 @@ function formatLocationHeader({
 	return styles.location(` ❯ ${location}`) + langSuffix;
 }
 
-function expandTabs(text: string, tabWidth = 4): string {
+function expandTabs(text: string): string {
+	const tabWidth = 4;
 	let result = "";
 	for (const char of text) {
 		if (char === "\t") {

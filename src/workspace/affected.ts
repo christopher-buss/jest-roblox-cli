@@ -1,5 +1,5 @@
 import { type } from "arktype";
-import assert from "node:assert";
+import assert from "node:assert/strict";
 import type * as cp from "node:child_process";
 import * as path from "node:path";
 import process from "node:process";

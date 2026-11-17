@@ -23,10 +23,10 @@ function config(overrides: Partial<ResolvedConfig> = {}): ResolvedConfig {
 	});
 }
 
-function seedProject(fileSystem: FileSystem, fileName = "default.project.json"): void {
+function seedProject(fileSystem: FileSystem): void {
 	fileSystem.mkdirSync(ROOT, { recursive: true });
 	fileSystem.writeFileSync(
-		path.join(ROOT, fileName),
+		path.join(ROOT, "default.project.json"),
 		JSON.stringify({
 			name: "test",
 			tree: { ReplicatedStorage: { $path: "out/shared" } },

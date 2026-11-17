@@ -1,4 +1,4 @@
-import assert from "node:assert";
+import assert from "node:assert/strict";
 
 import type { MappedLocation, SourceMapper } from "../source-mapper/index.ts";
 import { formatBannerBar } from "../terminal/banner.ts";
@@ -215,7 +215,7 @@ export function formatLogHintLines(sources: LogHintSources): Array<string> {
 }
 
 function parseSourceLocation(message: string): FailureLocation | undefined {
-	const match = message.match(SOURCE_LOCATION);
+	const match = SOURCE_LOCATION.exec(message);
 	if (match === null) {
 		return undefined;
 	}

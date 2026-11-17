@@ -1,4 +1,4 @@
-import assert from "node:assert";
+import assert from "node:assert/strict";
 
 import type { Token } from "./cst-token.ts";
 import type { CstNode, CstNodeKind, CstWalker, TokenBounds } from "./cst.ts";

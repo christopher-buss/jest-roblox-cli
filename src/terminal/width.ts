@@ -15,14 +15,18 @@ export function getTerminalWidth(stream: ColumnsSource = process.stdout): number
 
 /**
  * The stream's column count, else the environment's `COLUMNS`.
- * @param stream - The stream the output goes to.
- * @param environment - Environment to read `COLUMNS` from.
+ * @param options - Where to read the width from.
+ * @param options.environment - Environment to read `COLUMNS` from.
+ * @param options.stream - The stream the output goes to.
  * @returns The column count, or undefined when neither gives a positive one.
  */
-export function readTerminalColumns(
-	stream: ColumnsSource = process.stdout,
-	environment: NodeJS.ProcessEnv = process.env,
-): number | undefined {
+export function readTerminalColumns({
+	environment = process.env,
+	stream = process.stdout,
+}: {
+	readonly environment?: NodeJS.ProcessEnv;
+	readonly stream?: ColumnsSource;
+} = {}): number | undefined {
 	const parsed = Number(environment["COLUMNS"]);
 	return (
 		readStreamColumns(stream) ?? (Number.isFinite(parsed) && parsed > 0 ? parsed : undefined)

@@ -116,15 +116,13 @@ function blockingTaskUrls({
 	request: HttpRequest;
 	result: Awaited<ReturnType<HttpClient["request"]>>;
 }): Array<string> | undefined {
-	if (request.method !== "POST" || !request.url.endsWith("/luau-execution-session-tasks")) {
-		return undefined;
-	}
-
-	if (result.success || !(result.err instanceof RateLimitError)) {
-		return undefined;
-	}
-
-	if (result.err.remaining === 0) {
+	if (
+		request.method !== "POST" ||
+		!request.url.endsWith("/luau-execution-session-tasks") ||
+		result.success ||
+		!(result.err instanceof RateLimitError) ||
+		result.err.remaining === 0
+	) {
 		return undefined;
 	}
 

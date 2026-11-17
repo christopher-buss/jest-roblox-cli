@@ -10,7 +10,7 @@ export interface CoverageMapFile {
 }
 
 export function createCoverageMap(
-	statementMap: CoverageMapFile["statementMap"] = {},
+	statementMap: CoverageMapFile["statementMap"],
 	{
 		branchMap,
 		functionMap,

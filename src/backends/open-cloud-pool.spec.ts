@@ -91,8 +91,8 @@ function stepTask(steps: Array<ExecuteStep>) {
 	});
 }
 
-function deferred(packageName: string): ExecuteStep {
-	return () => scriptResult(envelope([packageEntry(packageName)], { deferred: true }));
+function deferredAlpha(): ExecuteStep {
+	return () => scriptResult(envelope([packageEntry("alpha")], { deferred: true }));
 }
 
 function settled(...packageNames: Array<string>): ExecuteStep {
@@ -107,7 +107,7 @@ describe(drainStealingPoolAsync, () => {
 		// envelope fills up stops early and leaves the rest of the queue.
 		// The deferral must earn exactly one replacement launch, or the
 		// packages it left behind never come back.
-		const runTask = stepTask([deferred("alpha"), settled("beta"), settled("gamma")]);
+		const runTask = stepTask([deferredAlpha(), settled("beta"), settled("gamma")]);
 
 		await drainStealingPoolAsync({
 			requiredKeyCount: 3,
@@ -125,7 +125,7 @@ describe(drainStealingPoolAsync, () => {
 		// A replacement that drains the queue ends the chain. Without the
 		// claim on launch, the same deferral could be answered twice and
 		// the wave would keep firing tasks that have nothing left to do.
-		const runTask = stepTask([deferred("alpha"), settled("beta"), settled("gamma"), settled()]);
+		const runTask = stepTask([deferredAlpha(), settled("beta"), settled("gamma"), settled()]);
 
 		await drainStealingPoolAsync({
 			requiredKeyCount: 3,
@@ -142,7 +142,7 @@ describe(drainStealingPoolAsync, () => {
 
 		// A worker always takes at least one item, so a run can never need
 		// more than one extra task per job.
-		const runTask = stepTask([deferred("alpha")]);
+		const runTask = stepTask([deferredAlpha()]);
 
 		const results = await drainStealingPoolAsync({
 			requiredKeyCount: 2,
@@ -453,7 +453,7 @@ describe(drainDeferralsAsync, () => {
 		expect.assertions(2);
 
 		const scripts: Array<string> = [];
-		const steps = [deferred("alpha"), settled("beta")];
+		const steps = [deferredAlpha(), settled("beta")];
 
 		await drainDeferralsAsync({
 			bail: true,

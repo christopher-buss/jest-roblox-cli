@@ -121,7 +121,9 @@ function renderProject(entry: FormatterProjectEntry, options: FormatOptions): st
 }
 
 function renderProjectHeader(entry: FormatterProjectEntry, useColor = true): string {
-	return renderProject(entry, { ...defaultOptions, color: useColor }).split("\n", 1)[0]!;
+	const rendered = renderProject(entry, { ...defaultOptions, color: useColor });
+	const end = rendered.indexOf("\n");
+	return end === -1 ? rendered : rendered.slice(0, end);
 }
 
 describe(formatResult, () => {

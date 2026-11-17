@@ -16,11 +16,10 @@ const WORKSPACE = path.resolve("/workspace");
 interface PackageOptions {
 	name: string;
 	passWithNoTests?: boolean;
-	projectTypecheck?: TypecheckConfig;
 	typecheck?: TypecheckConfig;
 }
 
-function makeProject(displayName: string, typecheck?: TypecheckConfig): ResolvedProjectConfig {
+function makeProject(displayName: string): ResolvedProjectConfig {
 	return fromAny({
 		config: { ...createResolvedConfig() },
 		displayName,
@@ -29,16 +28,10 @@ function makeProject(displayName: string, typecheck?: TypecheckConfig): Resolved
 		projects: [`ServerScriptService/${displayName}`],
 		rojoMounts: [{ dataModelPath: `ServerScriptService/${displayName}`, fsPath: displayName }],
 		testMatch: ["**/*.spec"],
-		typecheck,
 	});
 }
 
-function makeContext({
-	name,
-	passWithNoTests = false,
-	projectTypecheck,
-	typecheck,
-}: PackageOptions): PackageContext {
+function makeContext({ name, passWithNoTests = false, typecheck }: PackageOptions): PackageContext {
 	const packageDirectory = path.join(WORKSPACE, name);
 	return fromAny({
 		info: { name, packageDirectory },
@@ -49,7 +42,7 @@ function makeContext({
 			timeout: 5000,
 			typecheck,
 		},
-		projects: [makeProject("main", projectTypecheck), makeProject("other")],
+		projects: [makeProject("main"), makeProject("other")],
 	});
 }
 

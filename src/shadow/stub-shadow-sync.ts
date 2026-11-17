@@ -187,11 +187,7 @@ function syncStubsToShadowDirectory({
 	}
 
 	for (const existing of findShadowStubs(fileSystem, shadow.root)) {
-		if (expectedPaths.has(existing)) {
-			continue;
-		}
-
-		if (!isGeneratedStub(existing, fileSystem)) {
+		if (expectedPaths.has(existing) || !isGeneratedStub(existing, fileSystem)) {
 			continue;
 		}
 

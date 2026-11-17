@@ -1,6 +1,6 @@
 import { isOptionalPath, isRojoTreeNode } from "@isentinel/rojo-utils";
 
-import assert from "node:assert";
+import assert from "node:assert/strict";
 import * as path from "node:path";
 
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";

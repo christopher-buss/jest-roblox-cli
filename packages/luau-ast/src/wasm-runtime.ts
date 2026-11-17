@@ -1,4 +1,4 @@
-import assert from "node:assert";
+import assert from "node:assert/strict";
 
 import { luauParserWasmBase64 } from "./luau-parser-wasm.ts";
 import { callWasm, instantiateWasm } from "./wasm-host.ts";

@@ -1,4 +1,4 @@
-import assert from "node:assert";
+import assert from "node:assert/strict";
 
 import type { CstParseResult } from "./cst-materialize.ts";
 import { forEachToken } from "./cst.ts";

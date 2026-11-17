@@ -21,18 +21,22 @@ describe(readTerminalColumns, () => {
 	it("should prefer the stream column count", () => {
 		expect.assertions(1);
 
-		expect(readTerminalColumns({ columns: 120 }, { COLUMNS: "200" })).toBe(120);
+		expect(
+			readTerminalColumns({ environment: { COLUMNS: "200" }, stream: { columns: 120 } }),
+		).toBe(120);
 	});
 
 	it("should fall back to a positive COLUMNS", () => {
 		expect.assertions(1);
 
-		expect(readTerminalColumns({}, { COLUMNS: "200" })).toBe(200);
+		expect(readTerminalColumns({ environment: { COLUMNS: "200" }, stream: {} })).toBe(200);
 	});
 
 	it.for(["", "0", "-5", "abc"])("should ignore COLUMNS %j", (columns) => {
 		expect.assertions(1);
 
-		expect(readTerminalColumns({}, { COLUMNS: columns })).toBeUndefined();
+		expect(
+			readTerminalColumns({ environment: { COLUMNS: columns }, stream: {} }),
+		).toBeUndefined();
 	});
 });

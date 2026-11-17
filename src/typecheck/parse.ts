@@ -27,7 +27,7 @@ export function parseTscOutput(stdout: string): RawErrorsMap {
 			continue;
 		}
 
-		if (line[0] === " ") {
+		if (line.startsWith(" ")) {
 			if (previousError !== undefined) {
 				previousError.message += `\n${line}`;
 			}

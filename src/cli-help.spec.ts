@@ -4,6 +4,17 @@ import { renderHelp } from "./cli-help.ts";
 import type { OptionRow } from "./config/option-row.ts";
 import { OPTION_ROWS } from "./config/options.ts";
 
+function backendSections(help: string): string {
+	const heading = "\n\nBackend:\n";
+	const start = help.indexOf(heading);
+	const end = help.indexOf("\n\nOpen Cloud credentials");
+	if (start === -1 || end === -1) {
+		throw new Error("help lacks the Backend or Open Cloud credentials section");
+	}
+
+	return help.slice(start + heading.length, end);
+}
+
 function spellings({ cli }: OptionRow): Array<string> {
 	if (cli === undefined) {
 		return [];
@@ -100,9 +111,7 @@ describe(renderHelp, () => {
 	it("should hold only flag rows and their wrapped lines under each section", () => {
 		expect.assertions(1);
 
-		const sections = renderHelp()
-			.split("\n\nOpen Cloud credentials", 1)[0]!
-			.split("\n\nBackend:\n", 2)[1]!;
+		const sections = backendSections(renderHelp());
 		const sectionLine = /^(?:|[A-Z][\w ]*:| {2}-.*| {36}\S.*)$/;
 		const strays = sections.split("\n").filter((line) => !sectionLine.test(line));
 

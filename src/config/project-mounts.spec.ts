@@ -27,9 +27,9 @@ function mapOutDirectory(outDirectory: string, rojoTree: RojoTreeNode): string {
 	return mounts[0]!.dataModelPath;
 }
 
-function captureMappingError(outDirectory: string, rojoTree: RojoTreeNode): unknown {
+function captureMappingError(outDirectory: string): unknown {
 	try {
-		mapOutDirectory(outDirectory, rojoTree);
+		mapOutDirectory(outDirectory, simpleRojoTree);
 	} catch (err) {
 		return err;
 	}
@@ -98,8 +98,8 @@ describe("outDir mapping", () => {
 	it("should throw a config error when no mapping found", () => {
 		expect.assertions(2);
 
-		expect(captureMappingError("out/unknown", simpleRojoTree)).toBeInstanceOf(Error);
-		expect(captureMappingError("out/unknown", simpleRojoTree)).toMatchObject({
+		expect(captureMappingError("out/unknown")).toBeInstanceOf(Error);
+		expect(captureMappingError("out/unknown")).toMatchObject({
 			hint: undefined,
 			message:
 				"No Rojo tree mapping found for path: out/unknown\n\nAvailable $path entries: out/client, out/server",
@@ -109,7 +109,7 @@ describe("outDir mapping", () => {
 	it("should include hint when path starts with src/", () => {
 		expect.assertions(1);
 
-		expect(captureMappingError("src/client", simpleRojoTree)).toHaveProperty(
+		expect(captureMappingError("src/client")).toHaveProperty(
 			"hint",
 			expect.stringMatching(/set "outDir"/),
 		);
@@ -118,10 +118,7 @@ describe("outDir mapping", () => {
 	it("should omit hint when path does not start with src/", () => {
 		expect.assertions(1);
 
-		expect(captureMappingError("out/unknown", simpleRojoTree)).toHaveProperty(
-			"hint",
-			undefined,
-		);
+		expect(captureMappingError("out/unknown")).toHaveProperty("hint", undefined);
 	});
 
 	it("should omit available paths line when tree has no $path entries", () => {

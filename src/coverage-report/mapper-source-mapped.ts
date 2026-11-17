@@ -1,4 +1,4 @@
-import assert from "node:assert";
+import assert from "node:assert/strict";
 
 import type { SourceLocation } from "../coverage-data/coverage-map.ts";
 import type { RawCoverageData } from "../coverage-data/coverage-types.ts";

@@ -34,13 +34,16 @@ function documented(names: Iterable<string>): Array<string> {
 	return [...unique].toSorted();
 }
 
+function beforeFirstDot(cell: string): string {
+	const dot = cell.indexOf(".");
+	return dot === -1 ? cell : cell.slice(0, dot);
+}
+
 describe("rEADME option tables", () => {
 	it("should list every root config key", () => {
 		expect.assertions(1);
 
-		const listed = firstCells(section("### Root config fields")).map(
-			(cell) => cell.split(".", 1)[0]!,
-		);
+		const listed = firstCells(section("### Root config fields")).map(beforeFirstDot);
 
 		expect(documented(listed)).toStrictEqual(
 			documented(OPTION_ROWS.filter((row) => row.location === "root").map(({ key }) => key)),

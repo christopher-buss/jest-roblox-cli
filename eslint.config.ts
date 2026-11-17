@@ -42,6 +42,8 @@ export default isentinel(
 			"flawless/no-shared-mocks": "off",
 			"flawless/prefer-mock-throw": "off",
 			"flawless/prefer-vitest-local-context": "off",
+			"package-json/consistent-package-manager-declaration": "off",
+			"package-json/require-devEngines": "off",
 		},
 		test: {
 			vitest: {

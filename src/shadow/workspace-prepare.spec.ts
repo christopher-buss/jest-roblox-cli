@@ -16,7 +16,7 @@ import { posixPath, posixRoot } from "#test/mocks/posix-path.ts";
 import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
 import type { CoverageSettings } from "../config/coverage-settings.ts";
 import type { BuildManifest, BuildManifestArtifact } from "../coverage-data/build-manifest.ts";
-import type { CoverageManifest, InstrumentedFileRecord } from "../coverage-data/manifest.ts";
+import type { CoverageManifest } from "../coverage-data/manifest.ts";
 import type { Instrumenter } from "../instrument/instrumenter.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import type { WorkspaceCoveragePackage } from "./workspace-prepare-types.ts";
@@ -76,30 +76,22 @@ function seedPackage(
 	}
 }
 
-function createInstrumenter(
-	implementation?: (options: {
-		luauRoot: string;
-		shadowDir: string;
-	}) => Record<string, InstrumentedFileRecord>,
-): MockedFunction<Instrumenter> {
+function createInstrumenter(): MockedFunction<Instrumenter> {
 	const instrumenter = vi.fn<Instrumenter>();
-	instrumenter.mockImplementation(
-		implementation ??
-			(({ luauRoot }) => {
-				const key = `${luauRoot}/init.luau`;
-				return {
-					[key]: {
-						key,
-						coverageMapPath: `${luauRoot}/init.cov-map.json`,
-						instrumentedLuauPath: `${luauRoot}/init.luau`,
-						originalLuauPath: `${luauRoot}/init.luau`,
-						sourceHash: "deadbeef",
-						sourceMapPath: `${luauRoot}/init.luau.map`,
-						statementCount: 1,
-					},
-				};
-			}),
-	);
+	instrumenter.mockImplementation(({ luauRoot }) => {
+		const key = `${luauRoot}/init.luau`;
+		return {
+			[key]: {
+				key,
+				coverageMapPath: `${luauRoot}/init.cov-map.json`,
+				instrumentedLuauPath: `${luauRoot}/init.luau`,
+				originalLuauPath: `${luauRoot}/init.luau`,
+				sourceHash: "deadbeef",
+				sourceMapPath: `${luauRoot}/init.luau.map`,
+				statementCount: 1,
+			},
+		};
+	});
 	return instrumenter;
 }
 

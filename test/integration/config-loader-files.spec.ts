@@ -10,8 +10,10 @@ function isErrorWithoutNotFoundMessage(error: unknown): boolean {
 	return error instanceof Error && !error.message.includes("Config file not found");
 }
 
-function makeTemporaryDirectory(prefix = "config-test-"): string {
-	const temporaryDirectory = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), prefix)));
+function makeTemporaryDirectory(): string {
+	const temporaryDirectory = fs.realpathSync(
+		fs.mkdtempSync(path.join(os.tmpdir(), "config-test-")),
+	);
 	onTestFinished(() => {
 		fs.rmSync(temporaryDirectory, { force: true, recursive: true });
 	});

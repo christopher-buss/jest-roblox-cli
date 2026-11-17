@@ -1,4 +1,4 @@
-import assert from "node:assert";
+import assert from "node:assert/strict";
 
 import type { AstStatBlock, LuauSpan } from "./ast-types.ts";
 import { constructExpression, constructStatements } from "./cst-construct.ts";

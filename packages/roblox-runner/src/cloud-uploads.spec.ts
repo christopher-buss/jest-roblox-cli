@@ -91,7 +91,7 @@ describe(CloudUploads, () => {
 		});
 	});
 
-	it.for([
+	it.for<{ error: ApiError | NetworkError; message: string }>([
 		{
 			error: new ApiError("quota", { statusCode: 400 }),
 			message: "Failed to allocate a binary input slot (HTTP 400): quota",
@@ -199,7 +199,7 @@ describe("place upload retries", () => {
 		},
 	);
 
-	it.for([
+	it.for<{ error: ApiError | NetworkError; kind: string }>([
 		{
 			error: new ApiError("HTTP 400", {
 				gatewaySummary: "The requested URL could not be retrieved",

@@ -34,13 +34,10 @@ function snippetByExtension(
 	return filePath.endsWith(".ts") ? snippets.ts : undefined;
 }
 
-function renderFailures(
-	result: JestResult,
-	{ maxFailures, ...options }: FailureFormatOptions & { maxFailures: number },
-): string {
+function renderFailures(result: JestResult, options: FailureFormatOptions): string {
 	return formatFailures({
 		failures: collectAgentFailures(result, options),
-		maxFailures,
+		maxFailures: 10,
 		totalFailures: result.numFailedTests,
 	}).join("\n");
 }
@@ -103,7 +100,6 @@ describe(formatFailures, () => {
 		});
 		const output = renderFailures(FAILING_RESULT, {
 			getSourceSnippet: mockedGetSourceSnippet,
-			maxFailures: 10,
 			rootDir: "/project",
 			sourceMapper: stubSourceMapper({
 				locations: [
@@ -173,7 +169,6 @@ describe(formatFailures, () => {
 
 		const output = renderFailures(result, {
 			getSourceSnippet: mockedGetSourceSnippet,
-			maxFailures: 10,
 			rootDir: "/project",
 			sourceMapper: stubSourceMapper({
 				locations: [
@@ -222,7 +217,6 @@ describe(formatFailures, () => {
 
 		const output = renderFailures(result, {
 			getSourceSnippet: mockedGetSourceSnippet,
-			maxFailures: 10,
 			rootDir: "D:\\project",
 			sourceMapper: stubSourceMapper({
 				locations: [
@@ -260,7 +254,6 @@ describe(formatFailures, () => {
 
 		const output = renderFailures(result, {
 			getSourceSnippet: mockedGetSourceSnippet,
-			maxFailures: 10,
 			rootDir: "/project",
 			sourceMapper: stubSourceMapper(TEST_SPEC_MAPPED),
 		});
@@ -283,7 +276,6 @@ describe(formatFailures, () => {
 
 		const output = renderFailures(result, {
 			getSourceSnippet: mockedGetSourceSnippet,
-			maxFailures: 10,
 			rootDir: "/project",
 			sourceMapper: stubSourceMapper(TEST_SPEC_MAPPED),
 		});
@@ -313,7 +305,6 @@ describe(formatFailures, () => {
 
 		const output = renderFailures(result, {
 			getSourceSnippet: mockedGetSourceSnippet,
-			maxFailures: 10,
 			rootDir: "/project",
 			sourceMapper: stubSourceMapper(PLAYER_LUAU_ONLY_MAPPED),
 		});
@@ -332,7 +323,6 @@ describe(formatFailures, () => {
 
 		const output = renderFailures(result, {
 			getSourceSnippet: mockedGetSourceSnippet,
-			maxFailures: 10,
 			rootDir: "/project",
 			sourceMapper: stubSourceMapper(PLAYER_LUAU_ONLY_MAPPED),
 		});
@@ -355,7 +345,6 @@ describe(formatFailures, () => {
 
 		const output = renderFailures(result, {
 			getSourceSnippet: mockedGetSourceSnippet,
-			maxFailures: 10,
 			rootDir: "/project",
 			sourceMapper: stubSourceMapper(),
 		});
@@ -387,7 +376,6 @@ describe(formatFailures, () => {
 
 		const output = renderFailures(result, {
 			getSourceSnippet: mockedGetSourceSnippet,
-			maxFailures: 10,
 			rootDir: "/project",
 			sourceMapper: stubSourceMapper(),
 		});

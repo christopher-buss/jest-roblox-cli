@@ -39,7 +39,8 @@ export function describePlaceFile(
 	fileSystem: FileSystem,
 ): string | undefined {
 	try {
-		return formatBytes(fileSystem.statSync(placeFilePath).size);
+		const stats = fileSystem.statSync(placeFilePath, { throwIfNoEntry: false });
+		return stats === undefined ? undefined : formatBytes(stats.size);
 	} catch {
 		return undefined;
 	}

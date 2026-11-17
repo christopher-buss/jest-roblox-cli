@@ -10,16 +10,14 @@ import type { ProjectConfigInput } from "./project-config-file.ts";
 import { loadProjectConfigFile } from "./project-config-file.ts";
 
 function seedLuauProjectConfig({
-	cwd = "/project",
 	directoryOrFile,
 	source,
 }: {
-	readonly cwd?: string;
 	readonly directoryOrFile: string;
 	readonly source: string;
 }): ProjectConfigInput {
 	const { fileSystem } = createMemoryFileSystem({
-		[path.resolve(cwd, directoryOrFile, "jest.config.luau")]: source,
+		[path.resolve("/project", directoryOrFile, "jest.config.luau")]: source,
 	});
 
 	return { fileSystem };

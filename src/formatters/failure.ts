@@ -1,4 +1,4 @@
-import assert from "node:assert";
+import assert from "node:assert/strict";
 
 import type { SourceMapper } from "../source-mapper/index.ts";
 import type { Styles } from "../terminal/palette.ts";

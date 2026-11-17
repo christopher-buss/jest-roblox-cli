@@ -132,6 +132,8 @@ describe(formatGapSummary, () => {
 			{ rootDir: "/repo", sourceMapper },
 		);
 
-		expect(summary!.split("\n", 2)[1]).toBe("  shown/src/gap.spec.ts > a");
+		const summaryLines = summary!.split("\n");
+
+		expect(summaryLines[1]).toBe("  shown/src/gap.spec.ts > a");
 	});
 });

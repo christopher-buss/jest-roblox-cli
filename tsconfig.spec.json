@@ -9,6 +9,7 @@
 		},
 		"types": [],
 		"emitDeclarationOnly": true,
+		"noEmit": false,
 		"outDir": "./out-tsc/vitest",
 		"isolatedDeclarations": false
 	},
@@ -34,13 +35,7 @@
 		"loaders/**/*.d.mts",
 		"loaders/*.spec.ts",
 		"loaders/*.spec-d.ts",
-		"bin/*.ts",
-		"*.config.ts",
-		"vitest.shared.ts",
-		"vitest.stryker.shared.ts",
-		"dependency-cruiser.shared.ts",
-		"oxlint.mirror.ts",
-		"oxlint.shared.ts"
+		"bin/*.ts"
 	],
 	"exclude": ["${configDir}/node_modules", "**/fixtures/"]
 }

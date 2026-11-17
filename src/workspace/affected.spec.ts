@@ -50,8 +50,8 @@ function turboItem(name: string, relativePath: string = packagePathFor(name)) {
 	return { name, path: relativePath };
 }
 
-function packageInfoFor(name: string, relativePath: string = packagePathFor(name)) {
-	return { name, packageDirectory: path.join(ROOT, relativePath) };
+function packageInfoFor(name: string) {
+	return { name, packageDirectory: path.join(ROOT, packagePathFor(name)) };
 }
 
 /**

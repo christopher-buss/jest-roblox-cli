@@ -1,4 +1,4 @@
-import assert from "node:assert";
+import assert from "node:assert/strict";
 import type { Except } from "type-fest";
 
 import type { JestResult, SnapshotSummary } from "./jest-result-types.ts";

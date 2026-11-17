@@ -8,7 +8,7 @@ import type {
 	Trivia,
 } from "@isentinel/luau-ast/cst";
 
-import assert from "node:assert";
+import assert from "node:assert/strict";
 
 import { luauParser } from "../luau/parser.ts";
 

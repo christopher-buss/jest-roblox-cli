@@ -208,7 +208,7 @@ function stubRojo(fileSystem: FileSystem): ChildProcessRunner {
 	return timedRojo(fileSystem, () => {});
 }
 
-function failingRojo(stderr: string): ChildProcessRunner {
+function failingRojo(): ChildProcessRunner {
 	return fromAny({
 		execFile: (
 			...args: [
@@ -218,7 +218,7 @@ function failingRojo(stderr: string): ChildProcessRunner {
 				callback: (cause: Error | null, stdout: string, stderr: string) => void,
 			]
 		) => {
-			args[3](new Error("rojo exited with 1"), "", stderr);
+			args[3](new Error("rojo exited with 1"), "", "rojo boom");
 		},
 	});
 }
@@ -945,7 +945,7 @@ describe(createWorkspaceRunStages, () => {
 		await expect(
 			runStagedWorkspaceAsync({
 				backend,
-				childProcess: failingRojo("rojo boom"),
+				childProcess: failingRojo(),
 				fileSystem,
 				packageInfos: [FOO_INFO],
 				timing: collector,
@@ -1970,7 +1970,7 @@ describe(createWorkspaceRunStages, () => {
 			await expect(
 				runStagedWorkspaceAsync({
 					backend,
-					childProcess: failingRojo("rojo boom"),
+					childProcess: failingRojo(),
 					cli: makeCli({ collectCoverage: true }),
 					fileSystem,
 					packageInfos: [FOO_INFO],

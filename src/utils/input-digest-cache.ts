@@ -1,4 +1,4 @@
-import assert from "node:assert";
+import assert from "node:assert/strict";
 
 import { atomicWrite } from "./atomic-write.ts";
 import type { FileSystem, Stats } from "./file-system.ts";

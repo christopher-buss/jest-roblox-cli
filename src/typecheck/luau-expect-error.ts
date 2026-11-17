@@ -2,7 +2,7 @@ import type { AstStat, AstStatBlock, LuauSpan } from "@isentinel/luau-ast/ast";
 import type { ParseSuccess } from "@isentinel/luau-ast/parser";
 import { visitBlock } from "@isentinel/luau-ast/visit";
 
-import assert from "node:assert";
+import assert from "node:assert/strict";
 import { Buffer } from "node:buffer";
 
 import type { TypeTestDiagnostic } from "./typecheck-types.ts";

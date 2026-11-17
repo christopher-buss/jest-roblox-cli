@@ -260,10 +260,10 @@ function cacheFixture() {
 	return { fileSystem, rootDirectory };
 }
 
-function cacheJob(rootDirectory: string, overrides: Partial<ResolvedConfig> = {}): ConfiguredJob {
+function cacheJob(rootDirectory: string): ConfiguredJob {
 	return job({
 		displayName: "alpha",
-		overrides: { placeFile: "place.rbxl", rootDir: rootDirectory, ...overrides },
+		overrides: { placeFile: "place.rbxl", rootDir: rootDirectory },
 	});
 }
 
@@ -282,13 +282,13 @@ function probeStub(): RunnerStub {
 	return stub;
 }
 
-async function runProbedRunAsync(
-	{ fileSystem, rootDirectory }: ReturnType<typeof cacheFixture>,
-	overrides: Partial<ResolvedConfig> = {},
-): Promise<RunnerStub> {
+async function runProbedRunAsync({
+	fileSystem,
+	rootDirectory,
+}: ReturnType<typeof cacheFixture>): Promise<RunnerStub> {
 	const stub = probeStub();
 	const backend = createBackend({ fileSystem, runner: stub.runner });
-	await backend.runTestsAsync(jobsOptions([cacheJob(rootDirectory, overrides)]));
+	await backend.runTestsAsync(jobsOptions([cacheJob(rootDirectory)]));
 	return stub;
 }
 
@@ -976,14 +976,10 @@ describe("upload cache", () => {
 	/**
 	 * How many uploads one passing run made.
 	 * @param fixture - Cache fixture of the spec.
-	 * @param overrides - Config overrides.
 	 * @returns Upload count.
 	 */
-	async function runOnceAsync(
-		fixture: ReturnType<typeof cacheFixture>,
-		overrides: Partial<ResolvedConfig> = {},
-	): Promise<number> {
-		const { uploadCalls } = await runProbedRunAsync(fixture, overrides);
+	async function runOnceAsync(fixture: ReturnType<typeof cacheFixture>): Promise<number> {
+		const { uploadCalls } = await runProbedRunAsync(fixture);
 		return uploadCalls.length;
 	}
 

@@ -27,8 +27,8 @@ function packageDirectoryFor(name: string): string {
 	return `packages/${name.replace(/^@[^/]+\//, "")}`;
 }
 
-function packageInfoFor(name: string, relativePath: string = packageDirectoryFor(name)) {
-	return { name, packageDirectory: path.join(ROOT, relativePath) };
+function packageInfoFor(name: string) {
+	return { name, packageDirectory: path.join(ROOT, packageDirectoryFor(name)) };
 }
 
 function seedWorkspace(names: Array<string>): Record<string, string> {

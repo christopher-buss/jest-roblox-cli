@@ -1,11 +1,17 @@
 {
 	"extends": "@isentinel/tsconfig/typescript",
 	"compilerOptions": {
+		"composite": true,
 		"lib": ["es2025", "esnext"],
+		"libReplacement": true,
+		"rootDir": "../..",
 		"customConditions": ["source"],
 		"paths": {
 			"jest-extended": ["../../types/jest-extended.d.ts"]
-		}
+		},
+		"emitDeclarationOnly": true,
+		"outDir": "./out-tsc/config",
+		"isolatedDeclarations": false
 	},
 	"references": [
 		{
@@ -15,6 +21,19 @@
 			"path": "./tsconfig.spec.json"
 		}
 	],
-	"files": [],
-	"include": []
+	"include": [
+		"eslint.config.ts",
+		"oxlint.config.ts",
+		"oxlint.mirror.ts",
+		"../../oxlint.shared.ts",
+		"vitest.config.ts",
+		"tsdown.config.ts",
+		"stryker.config.ts",
+		"vitest.stryker.config.ts",
+		"dependency-cruiser.config.ts",
+		"../../vitest.shared.ts",
+		"../../vitest.stryker.shared.ts",
+		"../../dependency-cruiser.shared.ts",
+		"../../stryker.shared.config.ts"
+	]
 }

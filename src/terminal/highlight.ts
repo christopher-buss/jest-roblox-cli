@@ -4,7 +4,7 @@
 
 import hljs from "highlight.js/lib/core";
 import typescript from "highlight.js/lib/languages/typescript";
-import assert from "node:assert";
+import assert from "node:assert/strict";
 import * as path from "node:path";
 import color from "tinyrainbow";
 

@@ -35,24 +35,21 @@ function chunk(name: string, payload: Buffer): Buffer {
 }
 
 /**
- * One compressed chunk with separate stored and decompressed lengths.
- * @param options - Chunk name, compressed body and decompressed size.
- * @param options.name - Four-character chunk name.
+ * One compressed `INST` chunk with separate stored and decompressed lengths.
+ * @param options - Compressed body and decompressed size.
  * @param options.compressed - Compressed body.
  * @param options.decompressedBytes - Size written as the decompressed length.
  * @returns Header and body.
  */
 function compressedChunk({
-	name,
 	compressed,
 	decompressedBytes,
 }: {
 	compressed: Buffer;
 	decompressedBytes: number;
-	name: string;
 }): Buffer {
 	const header = Buffer.alloc(16);
-	header.write(name, 0, "ascii");
+	header.write("INST", 0, "ascii");
 	header.writeUInt32LE(compressed.length, 4);
 	header.writeUInt32LE(decompressedBytes, 8);
 	return Buffer.concat([header, compressed]);
@@ -278,7 +275,7 @@ describe(readDeclaredClasses, () => {
 		const compressed = Buffer.concat([Buffer.from([0xf0, payload.length - 15]), payload]);
 		const model = Buffer.concat([
 			binaryHeader(),
-			compressedChunk({ name: "INST", compressed, decompressedBytes: payload.length }),
+			compressedChunk({ compressed, decompressedBytes: payload.length }),
 		]);
 
 		expect(readDeclaredClasses(...memoryFile("a.rbxm", model))).toStrictEqual(["Workspace"]);
@@ -293,7 +290,6 @@ describe(readDeclaredClasses, () => {
 			const model = Buffer.concat([
 				binaryHeader(),
 				compressedChunk({
-					name: "INST",
 					compressed: repeatedClassLz4(length),
 					decompressedBytes: 8 + length,
 				}),
@@ -310,7 +306,6 @@ describe(readDeclaredClasses, () => {
 		const model = Buffer.concat([
 			binaryHeader(),
 			compressedChunk({
-				name: "INST",
 				compressed: repeatedClassLz4(declared.length),
 				decompressedBytes: instancePayload(declared).length + 1,
 			}),
@@ -330,7 +325,6 @@ describe(readDeclaredClasses, () => {
 		const model = Buffer.concat([
 			binaryHeader(),
 			compressedChunk({
-				name: "INST",
 				compressed,
 				decompressedBytes: instancePayload(declared).length,
 			}),

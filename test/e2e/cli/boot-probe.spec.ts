@@ -25,10 +25,9 @@ const PASSING_TASK = { jestOutput: buildMixedOutput(buildPassingPayload()) };
  * probe on purpose costs seconds rather than the 90s a real cold boot is
  * allowed.
  * @param sandbox - Sandbox directory.
- * @param bootProbeTimeout - Boot probe budget in milliseconds.
  */
-function writeBootProbeTimeout(sandbox: string, bootProbeTimeout: number): void {
-	patchSandboxConfig(sandbox, `bootProbeTimeout: ${String(bootProbeTimeout)},`);
+function writeStallBudget(sandbox: string): void {
+	patchSandboxConfig(sandbox, `bootProbeTimeout: ${String(STALL_BUDGET_MS)},`);
 }
 
 describe("the boot probe gate", () => {
@@ -36,7 +35,7 @@ describe("the boot probe gate", () => {
 		expect.assertions(4);
 
 		const sandbox = createRbxtsFixtureSandbox(RBXTS_FIXTURE);
-		writeBootProbeTimeout(sandbox, STALL_BUDGET_MS);
+		writeStallBudget(sandbox);
 		const server = await startFakeOpenCloudServerAsync([PASSING_TASK], {
 			bootProbes: ["stall", "stall"],
 		});
@@ -58,7 +57,7 @@ describe("the boot probe gate", () => {
 		expect.assertions(3);
 
 		const sandbox = createRbxtsFixtureSandbox(RBXTS_FIXTURE);
-		writeBootProbeTimeout(sandbox, STALL_BUDGET_MS);
+		writeStallBudget(sandbox);
 		const server = await startFakeOpenCloudServerAsync([PASSING_TASK], {
 			bootProbes: ["stall", "complete"],
 		});
@@ -138,7 +137,7 @@ describe("the boot probe gate", () => {
 			expect.assertions(4);
 
 			const sandbox = createRbxtsFixtureSandbox(RBXTS_FIXTURE);
-			writeBootProbeTimeout(sandbox, STALL_BUDGET_MS);
+			writeStallBudget(sandbox);
 			const server = await startFakeOpenCloudServerAsync([PASSING_TASK], {
 				bootProbes: ["stall", "stall", "complete"],
 			});

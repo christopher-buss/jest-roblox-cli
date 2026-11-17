@@ -7,6 +7,8 @@
 		"rootDir": "../..",
 		"customConditions": ["source"],
 		"paths": { "jest-extended": ["../../types/jest-extended.d.ts"] },
+		"emitDeclarationOnly": true,
+		"noEmit": false,
 		"outDir": "./out-tsc/vitest",
 		"isolatedDeclarations": false
 	},
@@ -18,24 +20,11 @@
 	"include": [
 		"src/**/*.spec.ts",
 		"src/**/*.spec-d.ts",
-		"eslint.config.ts",
-		"oxlint.config.ts",
-		"oxlint.mirror.ts",
-		"../../oxlint.shared.ts",
-		"vitest.config.ts",
-		"tsdown.config.ts",
 		"wasm/build-wasm.ts",
 		"package.json",
 		"../../types/**/*.d.ts",
 		"test/**/*.ts",
 		"test/fixtures/trees/*.json",
-		"stryker.config.ts",
-		"vitest.stryker.config.ts",
-		"dependency-cruiser.config.ts",
-		"../../vitest.shared.ts",
-		"../../vitest.stryker.shared.ts",
-		"../../dependency-cruiser.shared.ts",
-		"../../stryker.shared.config.ts",
 		"src/**/*.d.ts"
 	]
 }

@@ -48,7 +48,10 @@ describe(formatFailure, () => {
 		const plainOutput = formatFailure({ styles: createPlainStyles(), test });
 
 		expect(output).toContain("<fail><bold>Error:</bold> mismatch</fail>");
-		expect(plainOutput.split("\n", 2)[1]).toBe("   FAIL  suite > case");
+
+		const plainLines = plainOutput.split("\n");
+
+		expect(plainLines[1]).toBe("   FAIL  suite > case");
 	});
 
 	it("should omit Luau snippets by default", () => {

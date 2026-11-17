@@ -115,7 +115,7 @@ describe("poll diagnostics", () => {
 		expect(describeStatus(new NetworkError("offline"))).toBe("");
 	});
 
-	it.for([
+	it.for<{ error: ApiError | NetworkError | RateLimitError; expected: string }>([
 		{
 			error: new ApiError("bad", {
 				elapsedMs: 1250,

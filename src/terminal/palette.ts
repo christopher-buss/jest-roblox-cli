@@ -1,4 +1,4 @@
-import assert from "node:assert";
+import assert from "node:assert/strict";
 import color from "tinyrainbow";
 import type { Except } from "type-fest";
 

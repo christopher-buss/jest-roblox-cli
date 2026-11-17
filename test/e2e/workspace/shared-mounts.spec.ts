@@ -17,21 +17,19 @@ const SHARED_STUB = { Config: { $path: "../../shared-config.luau" } };
 const PROBE_SPEC = "return {}\n";
 
 /**
- * A package whose test project mounts its own `src` plus whatever `shared`
- * declares under `ReplicatedStorage`, the shape every package in a real
- * workspace has, differing only in what it mounts beside its sources.
+ * A package whose test project mounts its own `src` plus `SHARED_STUB` under
+ * `ReplicatedStorage`.
  * @param name - Name for the package and its directory.
- * @param shared - What the package mounts beside its own sources.
- * @returns A workspace package that mounts `shared`.
+ * @returns A workspace package that mounts `SHARED_STUB`.
  */
-function sharingPackage(name: string, shared: Record<string, unknown>): WorkspacePackage {
+function sharingPackage(name: string): WorkspacePackage {
 	return {
 		name,
 		config: { luauRoots: ["tests"] },
 		files: { [`src/${name}.luau`]: PROBE_SPEC, [`tests/${name}.spec.luau`]: PROBE_SPEC },
 		tree: {
 			ReplicatedStorage: {
-				...shared,
+				...SHARED_STUB,
 				$className: "ReplicatedStorage",
 				Src: { $path: "src" },
 			},
@@ -46,7 +44,7 @@ describe.skipIf(!rojoOnPath())("workspace place shared mounts", () => {
 
 		const { projectPath, root: workspace } = await synthesizeWorkspaceAsync({
 			files: { "shared-config.luau": "return {}\n" },
-			packages: [sharingPackage("foo", SHARED_STUB), sharingPackage("bar", SHARED_STUB)],
+			packages: [sharingPackage("foo"), sharingPackage("bar")],
 		});
 		const stub = path.join(workspace, "shared-config.luau");
 

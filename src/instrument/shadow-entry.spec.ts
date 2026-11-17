@@ -23,6 +23,7 @@ describe(createShadowDirectory, () => {
 		vi.spyOn(fileSystem, "statSync").mockImplementation(() => {
 			const existing = volume.statSync("/shadow/init");
 			volume.unlinkSync("/shadow/init");
+			// eslint-disable-next-line ts/no-unsafe-class-instance-assignment -- memfs Stats stands in for node Stats in the memory filesystem
 			return existing;
 		});
 
@@ -53,6 +54,7 @@ describe(clearDirectoryAtFilePath, () => {
 		vi.spyOn(fileSystem, "statSync").mockImplementation(() => {
 			const existing = volume.statSync("/shadow/init");
 			volume.rmSync("/shadow/init", { recursive: true });
+			// eslint-disable-next-line ts/no-unsafe-class-instance-assignment -- memfs Stats stands in for node Stats in the memory filesystem
 			return existing;
 		});
 
