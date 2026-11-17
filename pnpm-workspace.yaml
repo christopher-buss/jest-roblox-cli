@@ -20,3 +20,6 @@ minimumReleaseAgeExclude:
 publicHoistPattern:
   - "*@rbxts*"
   - "@typescript/*"
+
+allowBuilds:
+  koffi: false
