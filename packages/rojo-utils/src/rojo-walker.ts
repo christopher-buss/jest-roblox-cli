@@ -1,9 +1,9 @@
-import { type, type Type } from "arktype";
+import { type } from "arktype";
 import path from "node:path";
 
 import type { DirectoryEntry, FileSystem } from "./file-system.ts";
 import { nodeFileSystem } from "./file-system.ts";
-import { getTreeSchema } from "./project-schema.ts";
+import { treeSchema } from "./project-schema.ts";
 import type { PartitionInfo, RbxPath } from "./rbx-path.ts";
 import {
 	convertToLuau,
@@ -71,7 +71,14 @@ interface RojoFile {
 	tree: RojoTree;
 }
 
-let rojoFileSchema: Type<RojoFile> | undefined;
+const rojoFileSchema = type({
+	"name": "string",
+	"servePort?": "number",
+	// `parseTree` reads `$path` and `$className` off this value unchecked.
+	// Members stay with `isRojoTree`: arktype would reject `$` keys this fork
+	// does not model.
+	"tree": treeSchema,
+}).as<RojoFile>();
 
 /**
  * Mutable state for a single walk. Kept private to this module: callers go
@@ -339,28 +346,15 @@ export function walkRojoTree(
 }
 
 /**
- * Parse a project file's JSON into the fields the resolver reads.
- *
- * The schema is built lazily on first use (not at module top level) so
- * consumers can auto-mock this module without a hoisting TDZ on the arktype
- * import, then memoized so repeated tree-walk validations don't re-allocate
- * it. Only the fields the resolver reads are checked; `parseTree` handles
- * arbitrary tree shapes defensively.
+ * Parse a project file's JSON into the fields the resolver reads. Only the
+ * fields the resolver reads are checked; `parseTree` handles arbitrary tree
+ * shapes defensively.
  *
  * @param value - The parsed JSON of a `*.project.json` file, or undefined
  *   when the file could not be parsed.
  * @returns The project's fields, or undefined when the file is not a project.
  */
 function parseRojoConfig(value: JSONValue | undefined): RojoFile | undefined {
-	rojoFileSchema ??= type({
-		"name": "string",
-		"servePort?": "number",
-		// `parseTree` reads `$path` and `$className` off this value unchecked.
-		// Members stay with `isRojoTree`: arktype would reject `$` keys this fork
-		// does not model.
-		"tree": getTreeSchema(),
-	}).as<RojoFile>();
-
 	const result = rojoFileSchema(value);
 	return result instanceof type.errors ? undefined : result;
 }

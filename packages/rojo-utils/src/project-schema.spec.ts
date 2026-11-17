@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { getTreeSchema } from "./project-schema.ts";
+import { treeSchema } from "./project-schema.ts";
 
-describe(getTreeSchema, () => {
+describe("treeSchema", () => {
 	it("should preserve valid metadata and reject invalid roots and optional mounts", () => {
-		expect.assertions(4);
+		expect.assertions(3);
 
 		const tree = {
 			$className: "DataModel",
@@ -14,10 +14,9 @@ describe(getTreeSchema, () => {
 			Child: false,
 		};
 
-		expect(getTreeSchema()(tree)).toStrictEqual(tree);
-		expect(getTreeSchema()).toBe(getTreeSchema());
-		expect(getTreeSchema()([])).toHaveProperty("summary", "must be an object (was an array)");
-		expect(getTreeSchema()({ $path: { optional: false } })).toHaveProperty("summary");
+		expect(treeSchema(tree)).toStrictEqual(tree);
+		expect(treeSchema([])).toHaveProperty("summary", "must be an object (was an array)");
+		expect(treeSchema({ $path: { optional: false } })).toHaveProperty("summary");
 	});
 
 	it.for([
@@ -30,6 +29,6 @@ describe(getTreeSchema, () => {
 	])("should reject invalid tree metadata %j", (value) => {
 		expect.assertions(1);
 
-		expect(getTreeSchema()(value)).toHaveProperty("summary");
+		expect(treeSchema(value)).toHaveProperty("summary");
 	});
 });

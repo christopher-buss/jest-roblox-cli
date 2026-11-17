@@ -1,14 +1,18 @@
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
-import type { TestProjectInlineConfiguration } from "vitest/config";
-import { configDefaults, defaultExclude, defineConfig } from "vitest/config";
+import type { TestProjectInlineConfiguration, ViteUserConfig } from "vitest/config";
+import { defaultExclude, defineConfig, mergeConfig } from "vitest/config";
 
 import { QuotaSkipReporter } from "#test/setup/quota-skip-reporter.ts";
 import { virtualModulesPlugin } from "./loaders/virtual-modules.mjs";
 import { nodeFileSystem } from "./src/utils/file-system.ts";
 import { normalizeWindowsPath } from "./src/utils/normalize-windows-path.ts";
-import { NO_PROCESS_START_SETUP, unitProject as sharedUnitProject } from "./vitest.shared.ts";
+import {
+	NO_PROCESS_START_SETUP,
+	sharedConfig,
+	unitProject as sharedUnitProject,
+} from "./vitest.shared.ts";
 
 const luauPlugin = {
 	name: "luau-raw",
@@ -26,14 +30,7 @@ const luauPlugin = {
 	},
 };
 
-const setupFiles = ["./test/setup/enable-colors.ts", "./test/setup/jest-extended.ts"];
-
-const projectTestDefaults = {
-	clearMocks: true,
-	restoreMocks: true,
-	setupFiles,
-	unstubEnvs: true,
-};
+const setupFiles = ["./test/setup/enable-colors.ts"];
 
 /**
  * The one boundary that decides which project an e2e spec joins. Specs under
@@ -55,8 +52,10 @@ const LIVE_DIRECTORY = "test/e2e/live";
 const SANDBOX_EXCLUDE = ["**/.tmp", "**/.tmp/**"];
 
 // Fixture configs import `@isentinel/jest-roblox`, so no broad `source`
-// condition: those self-imports must exercise the built package. Reading
-// goes through `readFileSync` because `require()` returns `any`, which
+// condition: those self-imports must exercise the built package.
+export const baseConfig: ViteUserConfig = { ...sharedConfig, environments: {} };
+
+// Reading goes through `readFileSync` because `require()` returns `any`, which
 // `ts/no-unsafe-type-assertion` forbids casting.
 const requireFromConfig = createRequire(import.meta.url);
 
@@ -196,8 +195,8 @@ export const sharedViteOptions = {
 
 /** The coverage-measured suite, which `vitest.stryker.config.ts` also runs. */
 export const unitProject = {
+	extends: true,
 	test: {
-		...projectTestDefaults,
 		name: "unit",
 		// Scoped here so the e2e/live projects never pick up benchmarks. `vitest
 		// bench` names this one `unit (bench)`, which the `bench` package script
@@ -224,9 +223,6 @@ export const unitProject = {
 			"scripts/**/*.spec.ts",
 			"loaders/**/*.spec.ts",
 		],
-		// Vitest clears the mock registry and the module cache between files
-		// only when `isolate` is true.
-		isolate: false,
 		provide: {
 			installedFixtureRoot: resolve(import.meta.dirname, "test/e2e/fixtures/live-place"),
 		},
@@ -234,172 +230,166 @@ export const unitProject = {
 	},
 } satisfies TestProjectInlineConfiguration;
 
-export default defineConfig({
-	...sharedViteOptions,
-	test: {
-		coverage: {
-			exclude: [
-				"src/**/*.spec.ts",
-				"src/**/*.spec-d.ts",
-				"src/**/*-types.ts",
-				"src/**/*.d.ts",
-				"src/**/__fixtures__/**",
-				"bin/jest-roblox.js",
-				"bin/sea-entry.ts",
-				"scripts/stamp-plugin-version.run.ts",
-			],
-			include: [
-				"src/**/*.ts",
-				"scripts/sea-executable.ts",
-				"scripts/stamp-plugin-version.ts",
-				"loaders/*.mjs",
-			],
-			thresholds: {
-				branches: 100,
-				functions: 100,
-				lines: 100,
-				statements: 100,
+export default mergeConfig(
+	baseConfig,
+	defineConfig({
+		...sharedViteOptions,
+		test: {
+			coverage: {
+				exclude: [
+					"src/**/*.spec.ts",
+					"src/**/*.spec-d.ts",
+					"src/**/*-types.ts",
+					"src/**/*.d.ts",
+					"src/**/__fixtures__/**",
+					"bin/jest-roblox.js",
+					"bin/sea-entry.ts",
+					"scripts/stamp-plugin-version.run.ts",
+				],
+				include: [
+					"src/**/*.ts",
+					"scripts/sea-executable.ts",
+					"scripts/stamp-plugin-version.ts",
+					"loaders/*.mjs",
+				],
 			},
+			projects: [
+				{
+					...unitProject,
+					test: { ...unitProject.test, maxWorkers: 4, sequence: { groupOrder: 1 } },
+				},
+				{
+					extends: true,
+					test: {
+						name: "type",
+						benchmark: {
+							include: [],
+						},
+						include: [],
+						setupFiles,
+						// Resolves `tsconfig.spec.json`'s reference to
+						// `tsconfig.lib.json` by building it; `--noEmit -p` reads
+						// the reference's emitted declarations and fails TS6305.
+						typecheck: {
+							build: true,
+							checker: "tsrs",
+							enabled: true,
+							include: ["src/**/*.spec-d.ts", "loaders/**/*.spec-d.ts"],
+							only: true,
+							tsconfig: "./tsconfig.spec.json",
+						},
+					},
+				},
+				{
+					extends: true,
+					test: {
+						name: "integration",
+						// Benchmarks belong to the unit project only.
+						benchmark: {
+							include: [],
+						},
+						// Resolve the package's own fixture imports to source
+						// so this project runs build-free (no `dist`). See the
+						// JITI_ALIAS note above for why these tests are
+						// isolated from coverage.
+						env: {
+							GITHUB_ACTIONS: "",
+							JITI_ALIAS: JITI_SOURCE_ALIAS,
+						},
+						include: ["test/integration/**/*.spec.ts"],
+						setupFiles,
+						// Fixture-sandbox pipelines and specs that spawn a real
+						// tsgo cross the 5s default under parallel hook load.
+						testTimeout: 15_000,
+					},
+				},
+				{
+					extends: true,
+					test: {
+						name: "luau",
+						benchmark: {
+							include: [],
+						},
+						include: ["test/luau/**/*.spec.ts"],
+						setupFiles,
+						// Each spec blocks on a synchronous Luau runtime spawn,
+						// whose wall time tracks machine load, not harness work.
+						testTimeout: 30_000,
+					},
+				},
+				{
+					extends: true,
+					test: {
+						name: "e2e",
+						// Benchmarks belong to the unit project only, so leave
+						// `e2e (bench)` with nothing to collect.
+						benchmark: {
+							include: [],
+						},
+						// A live-gated spec misfiled outside `LIVE_DIRECTORY`
+						// would otherwise reach the real wire from here, because
+						// CI exports the flag and the credentials for the whole
+						// `nx affected` command. Blanking it makes that spec skip
+						// instead. Nothing else reads it: `runCliAsync`'s
+						// allow-list never forwards it to a child.
+						env: {
+							JEST_ROBLOX_LIVE: "",
+						},
+						// Every `*.spec.ts` under `test/e2e/`, so no file misses
+						// both projects. `fixtures/**` holds Jest-on-Roblox
+						// inputs, and the live fixture's `node_modules` symlinks
+						// this package onto itself, so `defaultExclude` must be
+						// spread back in.
+						exclude: [
+							...defaultExclude,
+							...SANDBOX_EXCLUDE,
+							`${LIVE_DIRECTORY}/**`,
+							"test/e2e/fixtures/**",
+						],
+						globalSetup: ["./test/e2e/global-setup.ts"],
+						// `createFixtureSandbox` deletes its temp tree in
+						// `onTestFinished`, and a `--coverage` shadow tree
+						// outruns the default `hookTimeout` on Windows under I/O
+						// contention.
+						hookTimeout: 30_000,
+						include: ["test/e2e/**/*.spec.ts"],
+						setupFiles,
+						// The `--typecheckOnly` specs spawn a real tsgo build
+						// that scales with concurrent load, and a timeout in one
+						// `it` corrupts the next one's assertion count. Same
+						// reason the integration project sits above the default.
+						testTimeout: 60_000,
+					},
+				},
+				{
+					extends: true,
+					test: {
+						name: "live",
+						// Benchmarks belong to the unit project only. This leaves
+						// `live (bench)` empty but still derived, so the `bench`
+						// script names `unit (bench)` to skip the network setup.
+						benchmark: {
+							include: [],
+						},
+						// Every spec that reaches real Open Cloud lives here and
+						// nowhere else; the `e2e` project globs the complement.
+						include: [`${LIVE_DIRECTORY}/**/*.spec.ts`],
+						// Concurrent live runs must not collide, whether they are
+						// files here or other checkouts on the same place:
+						// version identity guards execution, streaming keys are
+						// per-run UUIDs, and each test builds its own sandbox.
+						// Nothing may serialize this project to keep that true.
+						pool: "forks",
+						// Exercise recovery without retrying failed assertions.
+						retry: 0,
+						setupFiles,
+						// Generous budget: a heavily-throttled upload can wait
+						// through several ~7s retry-after delays before landing.
+						testTimeout: 120_000,
+					},
+				},
+			],
+			reporters: ["default", new QuotaSkipReporter(nodeFileSystem)],
 		},
-		forceRerunTriggers: [
-			...configDefaults.forceRerunTriggers,
-			"**/fixtures/**",
-			"**/__fixtures__/**",
-			"**/pnpm-lock.yaml",
-			"**/test/setup/**",
-			"**/tsconfig*.json",
-			"**/vitest.shared.ts",
-		],
-		projects: [
-			{
-				...unitProject,
-				test: { ...unitProject.test, maxWorkers: 4, sequence: { groupOrder: 1 } },
-			},
-			{
-				test: {
-					...projectTestDefaults,
-					name: "type",
-					benchmark: {
-						include: [],
-					},
-					include: [],
-					// Resolves `tsconfig.spec.json`'s reference to
-					// `tsconfig.lib.json` by building it; `--noEmit -p` reads
-					// the reference's emitted declarations and fails TS6305.
-					typecheck: {
-						build: true,
-						checker: "tsrs",
-						enabled: true,
-						include: ["src/**/*.spec-d.ts", "loaders/**/*.spec-d.ts"],
-						only: true,
-						tsconfig: "./tsconfig.spec.json",
-					},
-				},
-			},
-			{
-				test: {
-					...projectTestDefaults,
-					name: "integration",
-					// Benchmarks belong to the unit project only.
-					benchmark: {
-						include: [],
-					},
-					// Resolve the package's own fixture imports to source
-					// so this project runs build-free (no `dist`). See the
-					// JITI_ALIAS note above for why these tests are
-					// isolated from coverage.
-					env: {
-						GITHUB_ACTIONS: "",
-						JITI_ALIAS: JITI_SOURCE_ALIAS,
-					},
-					include: ["test/integration/**/*.spec.ts"],
-					// Fixture-sandbox pipelines and specs that spawn a real
-					// tsgo cross the 5s default under parallel hook load.
-					testTimeout: 15_000,
-				},
-			},
-			{
-				test: {
-					...projectTestDefaults,
-					name: "luau",
-					benchmark: {
-						include: [],
-					},
-					include: ["test/luau/**/*.spec.ts"],
-					// Each spec blocks on a synchronous Luau runtime spawn,
-					// whose wall time tracks machine load, not harness work.
-					testTimeout: 30_000,
-				},
-			},
-			{
-				test: {
-					...projectTestDefaults,
-					name: "e2e",
-					// Benchmarks belong to the unit project only, so leave
-					// `e2e (bench)` with nothing to collect.
-					benchmark: {
-						include: [],
-					},
-					// A live-gated spec misfiled outside `LIVE_DIRECTORY` would
-					// otherwise reach the real wire from here, because CI
-					// exports the flag and the credentials for the whole `nx
-					// affected` command. Blanking it makes that spec skip
-					// instead. Nothing else reads it: `runCliAsync`'s allow-list
-					// never forwards it to a child.
-					env: {
-						JEST_ROBLOX_LIVE: "",
-					},
-					// Every `*.spec.ts` under `test/e2e/`, so no file misses both projects.
-					// `fixtures/**` holds Jest-on-Roblox inputs, and the live fixture's
-					// `node_modules` symlinks this package onto itself, so `defaultExclude`
-					// must be spread back in.
-					exclude: [
-						...defaultExclude,
-						...SANDBOX_EXCLUDE,
-						`${LIVE_DIRECTORY}/**`,
-						"test/e2e/fixtures/**",
-					],
-					globalSetup: ["./test/e2e/global-setup.ts"],
-					// `createFixtureSandbox` deletes its temp tree in
-					// `onTestFinished`, and a `--coverage` shadow tree outruns
-					// the default `hookTimeout` on Windows under I/O contention.
-					hookTimeout: 30_000,
-					include: ["test/e2e/**/*.spec.ts"],
-					// The `--typecheckOnly` specs spawn a real tsgo build that
-					// scales with concurrent load, and a timeout in one `it`
-					// corrupts the next one's assertion count. Same reason the
-					// integration project sits above the default.
-					testTimeout: 60_000,
-				},
-			},
-			{
-				test: {
-					...projectTestDefaults,
-					name: "live",
-					// Benchmarks belong to the unit project only. This leaves
-					// `live (bench)` empty but still derived, so the `bench`
-					// script names `unit (bench)` to skip the network setup.
-					benchmark: {
-						include: [],
-					},
-					// Every spec that reaches real Open Cloud lives here and
-					// nowhere else; the `e2e` project globs the complement.
-					include: [`${LIVE_DIRECTORY}/**/*.spec.ts`],
-					// Concurrent live runs must not collide, whether they are
-					// files here or other checkouts on the same place: version
-					// identity guards execution, streaming keys are per-run
-					// UUIDs, and each test builds its own sandbox. Nothing may
-					// serialize this project to keep that true.
-					pool: "forks",
-					// Exercise recovery without retrying failed assertions.
-					retry: 0,
-					// Generous budget: a heavily-throttled upload can wait
-					// through several ~7s retry-after delays before landing.
-					testTimeout: 120_000,
-				},
-			},
-		],
-		reporters: ["default", new QuotaSkipReporter(nodeFileSystem)],
-		watch: false,
-	},
-});
+	}),
+);

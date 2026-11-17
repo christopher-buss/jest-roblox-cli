@@ -1,14 +1,11 @@
-import { type ArkErrors, type, type Type } from "arktype";
+import { type ArkErrors, type } from "arktype";
 import { dirname, join } from "node:path";
 
 import type { FileSystem } from "./file-system.ts";
 import { nodeFileSystem } from "./file-system.ts";
-import { getTreeSchema } from "./project-schema.ts";
+import { treeSchema } from "./project-schema.ts";
 import { resolveNestedProjects } from "./rojo-tree.ts";
 import type { LoadedRojoProject, RojoProject } from "./rojo-types.ts";
-
-let objectSchema: Type<JSONObject> | undefined;
-let fieldsSchema: Type<RojoProject> | undefined;
 
 const PROJECT_FILE_SUFFIX = ".project.json";
 
@@ -117,29 +114,6 @@ function isMissing(err: unknown): boolean {
 }
 
 /**
- * Schema for the fields this loader reads. Undeclared top-level keys (gameId,
- * placeId, globIgnorePaths, …) pass through untouched and reach callers via
- * `raw`. The tree is checked one level deep: its `$`-metadata must have the
- * right types, but its members are left to the tree walkers, which handle
- * arbitrary shapes by design.
- *
- * Built lazily on first use (not at module top level) so consumers can
- * auto-mock this module without a hoisting TDZ on the arktype import,
- * mirroring `rojo-resolver.ts`.
- *
- * @returns The memoized schema.
- */
-function getFieldsSchema(): Type<RojoProject> {
-	fieldsSchema ??= type({
-		"name": "string > 0",
-		"servePort?": "number.integer",
-		"tree": getTreeSchema(),
-	}).as<RojoProject>();
-
-	return fieldsSchema;
-}
-
-/**
  * Unwrap an arktype result, turning a failure into the loader's error.
  *
  * @template T - The schema's output type.
@@ -178,14 +152,22 @@ function rejectArray(
 
 /**
  * Schema for "the file holds a JSON object". Separate from
- * {@link getFieldsSchema} because its output is what callers read as `raw`.
- *
- * @returns The memoized schema.
+ * {@link fieldsSchema} because its output is what callers read as `raw`.
  */
-function getObjectSchema(): Type<JSONObject> {
-	objectSchema ??= type("object").narrow(rejectArray).as<JSONObject>();
-	return objectSchema;
-}
+const objectSchema = type("object").narrow(rejectArray).as<JSONObject>();
+
+/**
+ * Schema for the fields this loader reads. Undeclared top-level keys (gameId,
+ * placeId, globIgnorePaths, …) pass through untouched and reach callers via
+ * `raw`. The tree is checked one level deep: its `$`-metadata must have the
+ * right types, but its members are left to the tree walkers, which handle
+ * arbitrary shapes by design.
+ */
+const fieldsSchema = type({
+	"name": "string > 0",
+	"servePort?": "number.integer",
+	"tree": treeSchema,
+}).as<RojoProject>();
 
 function parseProject(content: string, projectPath: string): ParsedProject {
 	let parsed: JSONValue;
@@ -195,8 +177,8 @@ function parseProject(content: string, projectPath: string): ParsedProject {
 		throw new Error(`Failed to parse Rojo project: ${projectPath}`, { cause: err });
 	}
 
-	const raw = orThrow(getObjectSchema()(parsed), projectPath);
-	return { fields: orThrow(getFieldsSchema()(raw), projectPath), raw };
+	const raw = orThrow(objectSchema(parsed), projectPath);
+	return { fields: orThrow(fieldsSchema(raw), projectPath), raw };
 }
 
 function readError(projectPath: string, cause: unknown): Error {

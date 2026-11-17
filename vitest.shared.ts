@@ -1,8 +1,9 @@
-import { fileURLToPath } from "node:url";
+import { resolve } from "node:path";
 import { configDefaults, defineConfig, type TestProjectInlineConfiguration } from "vitest/config";
 
-export const NO_PROCESS_START_SETUP = fileURLToPath(
-	new URL("test/setup/no-process-start.ts", import.meta.url),
+export const NO_PROCESS_START_SETUP = resolve(
+	import.meta.dirname,
+	"test/setup/no-process-start.ts",
 );
 
 const FULL_COVERAGE = { branches: 100, functions: 100, lines: 100, statements: 100 };
@@ -13,7 +14,6 @@ export const unitProject = {
 		name: "unit",
 		deps: { optimizer: { ssr: { enabled: true, include: ["jest-extended"] } } },
 		include: ["src/**/*.spec.ts"],
-		isolate: false,
 		maxWorkers: 4,
 		sequence: { groupOrder: 1 },
 		setupFiles: [NO_PROCESS_START_SETUP],
@@ -44,6 +44,7 @@ export const sharedConfig = defineConfig({
 			"**/tsconfig*.json",
 			"**/vitest.shared.ts",
 		],
+		isolate: false,
 		restoreMocks: true,
 		setupFiles: ["./test/setup/jest-extended.ts"],
 		unstubEnvs: true,

@@ -199,6 +199,27 @@ describe(planTests, () => {
 		},
 	);
 
+	it("should walk a project root once for its runtime and type test globs", () => {
+		expect.assertions(1);
+
+		const { fileSystem, volume } = createMemoryFileSystem();
+		volume.mkdirSync("/ws/pkg/src", { recursive: true });
+		volume.writeFileSync("/ws/pkg/src/a.spec.ts", "");
+		const readdir = vi.spyOn(fileSystem, "readdirSync");
+
+		planTests({
+			cliTypecheck: {},
+			fileSystem,
+			scopes: [makeScope({ typecheck: { enabled: true } })],
+			summaryRoot: "/ws",
+			tsconfigReader: () => null,
+		});
+
+		expect(
+			readdir.mock.calls.filter(([directory]) => directory === path.join("/ws/pkg", "src")),
+		).toHaveLength(1);
+	});
+
 	it("should keep type tests out of the runtime files when typecheck is off", () => {
 		expect.assertions(1);
 

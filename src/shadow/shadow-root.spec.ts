@@ -117,6 +117,31 @@ describe(prepareShadowRoot, () => {
 		expect(second.changed).toBeFalse();
 	});
 
+	it("should report an edited mirrored file in a full-cache run as changed", () => {
+		expect.assertions(1);
+
+		const { fileSystem, volume } = createMemoryFileSystem({
+			"init.luau": "local x = 1\n",
+			"init.spec.luau": "return nil\n",
+		});
+		const options = {
+			fileSystem,
+			isCopyIgnored: copyIgnoreMatcher([]),
+			luauRoot: posixRoot("."),
+			shadowDir: "/shadow",
+		};
+		const first = prepareShadowRoot({ ...options, useIncremental: false });
+		volume.writeFileSync("init.spec.luau", "return 1\n");
+
+		const second = prepareShadowRoot({
+			...options,
+			previousManifest: manifestFrom(first),
+			useIncremental: true,
+		});
+
+		expect(second.changed).toBeTrue();
+	});
+
 	it("should report a deleted source when its shadow artifacts are already absent", () => {
 		expect.assertions(1);
 

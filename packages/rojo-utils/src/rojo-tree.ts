@@ -4,9 +4,11 @@ import { dirname, join, relative } from "node:path";
 import type { FileSystem } from "./file-system.ts";
 import { nodeFileSystem } from "./file-system.ts";
 import { isAbsoluteMount, resolveMountPath, resolveNativeMountPath } from "./mount-paths.ts";
-import { getTreeSchema } from "./project-schema.ts";
+import { treeSchema } from "./project-schema.ts";
 import type { RojoTreeNode } from "./rojo-types.ts";
 import { isOptionalPath, isRojoTreeNode } from "./tree-node.ts";
+
+const nestedProjectSchema = type({ tree: treeSchema });
 
 /** Expanded mounts and the project files needed for cache invalidation. */
 export interface ResolvedNestedProjectSources {
@@ -94,7 +96,7 @@ function nestedProjectPath({
 }
 
 function parseNestedTree(content: string): RojoTreeNode {
-	const result = type({ tree: getTreeSchema() })(JSON.parse(content));
+	const result = nestedProjectSchema(JSON.parse(content));
 	if (result instanceof type.errors) {
 		throw new Error(result.summary);
 	}

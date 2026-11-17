@@ -52,4 +52,53 @@ describe(syncNonInstrumentedFiles, () => {
 		expect(volume.readFileSync("/shadow/data.json", "utf8")).toBe("payload");
 		expect(Object.keys(result.files)).toStrictEqual(["/source/data.json"]);
 	});
+
+	describe("changed", () => {
+		function sync(
+			fileSystem: ReturnType<typeof createMemoryFileSystem>["fileSystem"],
+			previousNonInstrumented?: ReturnType<typeof syncNonInstrumentedFiles>["files"],
+		): ReturnType<typeof syncNonInstrumentedFiles> {
+			return syncNonInstrumentedFiles({
+				excluded: new Set(),
+				fileSystem,
+				isCopyIgnored: () => false,
+				luauRoot: posixRoot("/source"),
+				previousNonInstrumented,
+				shadowDir: "/shadow",
+			});
+		}
+
+		it("should be false when the shadow already matches the source", () => {
+			expect.assertions(1);
+
+			const { fileSystem } = createMemoryFileSystem({ "/source/lib/data.json": "payload" });
+			const first = sync(fileSystem);
+
+			expect(sync(fileSystem, first.files).changed).toBeFalse();
+		});
+
+		it("should be true when a file changes under existing shadow directories", () => {
+			expect.assertions(1);
+
+			const { fileSystem, volume } = createMemoryFileSystem({
+				"/source/lib/data.json": "payload",
+			});
+			const first = sync(fileSystem);
+			volume.writeFileSync("/source/lib/data.json", "edited");
+
+			expect(sync(fileSystem, first.files).changed).toBeTrue();
+		});
+
+		it("should be true when only a new empty directory appears", () => {
+			expect.assertions(1);
+
+			const { fileSystem, volume } = createMemoryFileSystem({
+				"/source/lib/data.json": "payload",
+			});
+			const first = sync(fileSystem);
+			volume.mkdirSync("/source/empty");
+
+			expect(sync(fileSystem, first.files).changed).toBeTrue();
+		});
+	});
 });
