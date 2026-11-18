@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { configDefaults, defineConfig, type TestProjectInlineConfiguration } from "vitest/config";
 
@@ -5,6 +6,9 @@ export const NO_PROCESS_START_SETUP = resolve(
 	import.meta.dirname,
 	"test/setup/no-process-start.ts",
 );
+
+// sync.sh copies this file to the jest-roblox mirror without the setup.
+const MACHINE_BUDGET_SETUP = resolve(import.meta.dirname, "vitest.machine-budget.ts");
 
 const FULL_COVERAGE = { branches: 100, functions: 100, lines: 100, statements: 100 };
 
@@ -53,6 +57,7 @@ export const sharedConfig = defineConfig({
 			"**/tsconfig*.json",
 			"**/vitest.shared.ts",
 		],
+		globalSetup: existsSync(MACHINE_BUDGET_SETUP) ? [MACHINE_BUDGET_SETUP] : [],
 		isolate: false,
 		restoreMocks: true,
 		setupFiles: ["./test/setup/jest-extended.ts"],
