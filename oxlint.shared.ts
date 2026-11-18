@@ -15,6 +15,12 @@ const OXLINT_OVERRIDES: Array<OxlintOverride> = [
 		},
 	},
 	{
+		files: ["**/*.config.ts", "**/*.config.mts", "**/*.shared.ts"],
+		rules: {
+			"max-lines": "off",
+		},
+	},
+	{
 		files: ["**/*.d.ts"],
 		rules: {
 			"import/no-unassigned-import": ["error", { allow: ["jest-extended", "vitest"] }],

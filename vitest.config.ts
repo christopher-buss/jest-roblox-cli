@@ -190,7 +190,9 @@ const JITI_SOURCE_ALIAS = JSON.stringify({ "@isentinel/jest-roblox": selfSourceE
  */
 export const sharedViteOptions = {
 	plugins: [virtualModulesPlugin(), luauPlugin],
-	resolve: { alias: workspaceSourceAliases },
+	resolve: {
+		alias: workspaceSourceAliases,
+	},
 } satisfies TestProjectInlineConfiguration;
 
 /** The coverage-measured suite, which `vitest.stryker.config.ts` also runs. */
@@ -256,7 +258,13 @@ export default mergeConfig(
 			projects: [
 				{
 					...unitProject,
-					test: { ...unitProject.test, maxWorkers: 4, sequence: { groupOrder: 1 } },
+					test: {
+						...unitProject.test,
+						maxWorkers: 4,
+						sequence: {
+							groupOrder: 1,
+						},
+					},
 				},
 				{
 					extends: true,

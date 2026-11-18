@@ -21,7 +21,9 @@ export default createDependencyCruiserConfig({
 		},
 		{
 			name: "walker-does-not-import-query-or-loader",
-			from: { path: `^${SOURCE}/rojo-walker[.]ts$` },
+			from: {
+				path: `^${SOURCE}/rojo-walker[.]ts$`,
+			},
 			severity: "error",
 			to: {
 				path: `^${SOURCE}/(?:rojo-resolver|loader|rojo-tree|path-mapper|mount-collector|tree-mapper|index)[.]ts$`,
@@ -29,7 +31,9 @@ export default createDependencyCruiserConfig({
 		},
 		{
 			name: "tree-expansion-does-not-import-resolver-stack",
-			from: { path: `^${SOURCE}/(?:loader|rojo-tree)[.]ts$` },
+			from: {
+				path: `^${SOURCE}/(?:loader|rojo-tree)[.]ts$`,
+			},
 			severity: "error",
 			to: {
 				path: `^${SOURCE}/(?:rojo-walker|rojo-resolver|path-mapper|mount-collector|tree-mapper|index)[.]ts$`,
@@ -37,9 +41,14 @@ export default createDependencyCruiserConfig({
 		},
 		{
 			name: "production-imports-implementation-not-barrel",
-			from: { path: `^${SOURCE}/`, pathNot: "[.]spec(?:-d)?[.]ts$" },
+			from: {
+				path: `^${SOURCE}/`,
+				pathNot: "[.]spec(?:-d)?[.]ts$",
+			},
 			severity: "error",
-			to: { path: `^${SOURCE}/index[.]ts$` },
+			to: {
+				path: `^${SOURCE}/index[.]ts$`,
+			},
 		},
 	],
 	sourceRoots: [SOURCE],

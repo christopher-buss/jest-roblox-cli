@@ -68,12 +68,16 @@ function readPublishedSourceEntries(projectRoot: string): ReadonlyArray<string> 
 function noProductionCycles(production: string): IForbiddenRuleType {
 	return {
 		name: "no-production-cycles",
-		from: { path: production },
+		from: {
+			path: production,
+		},
 		severity: "error",
 		to: {
 			circular: true,
 			dependencyTypesNot: ["type-only"],
-			viaOnly: { dependencyTypesNot: ["type-only"] },
+			viaOnly: {
+				dependencyTypesNot: ["type-only"],
+			},
 		},
 	};
 }
@@ -100,7 +104,9 @@ function createImportRules({
 				pathNot: "[.]spec(?:-d)?[.]ts$",
 			},
 			severity: "error",
-			to: { path: pathPrefix(testRoot) },
+			to: {
+				path: pathPrefix(testRoot),
+			},
 		},
 		{
 			name: "no-unresolvable-project-imports",
@@ -129,13 +135,19 @@ function createStructureRules(
 		noProductionCycles(production),
 		{
 			name: "no-cross-spec-imports",
-			from: { path: spec },
+			from: {
+				path: spec,
+			},
 			severity: "error",
-			to: { path: spec },
+			to: {
+				path: spec,
+			},
 		},
 		{
 			name: "unit-spec-imports-only-sibling",
-			from: { path: `^(${alternation(sourceRoots)}/.+)[.]spec[.]ts$` },
+			from: {
+				path: `^(${alternation(sourceRoots)}/.+)[.]spec[.]ts$`,
+			},
 			severity: "error",
 			to: {
 				dependencyTypesNot: ["type-only"],
@@ -189,7 +201,10 @@ function createTierRules({
 				path: pathPrefix(projectRoot),
 				pathNot: [pathPrefix(`${testRoot}/fixtures`), "[.]spec[.]ts$"],
 			},
-			to: { ...testAliasTarget, pathNot: pathPrefix(`${testRoot}/fixtures`) },
+			to: {
+				...testAliasTarget,
+				pathNot: pathPrefix(`${testRoot}/fixtures`),
+			},
 		},
 		{
 			...testAliasRule,
@@ -197,7 +212,10 @@ function createTierRules({
 				path: `^(${projectDirectory}.+)[.]spec[.]ts$`,
 				pathNot: pathPrefix(`${testRoot}/fixtures`),
 			},
-			to: { ...testAliasTarget, pathNot: [pathPrefix(`${testRoot}/fixtures`), "^$1[.]ts$"] },
+			to: {
+				...testAliasTarget,
+				pathNot: [pathPrefix(`${testRoot}/fixtures`), "^$1[.]ts$"],
+			},
 		},
 
 		{
@@ -207,11 +225,16 @@ function createTierRules({
 				pathNot: productionUnitHelpers.map((helper) => `^${RegExp.escape(helper)}$`),
 			},
 			severity: "error",
-			to: { dependencyTypesNot: ["type-only"], path: production },
+			to: {
+				dependencyTypesNot: ["type-only"],
+				path: production,
+			},
 		},
 		{
 			name: "integration-imports-only-package-interface",
-			from: { path: integration },
+			from: {
+				path: integration,
+			},
 			severity: "error",
 			to: {
 				path: production,
@@ -222,9 +245,13 @@ function createTierRules({
 		},
 		{
 			name: "unit-specs-do-not-import-integration-helpers",
-			from: { path: unitSpec },
+			from: {
+				path: unitSpec,
+			},
 			severity: "error",
-			to: { path: pathPrefix(`${testRoot}/helpers/integration`) },
+			to: {
+				path: pathPrefix(`${testRoot}/helpers/integration`),
+			},
 		},
 		{
 			name: "only-file-system-seam-imports-node-fs",
@@ -238,27 +265,43 @@ function createTierRules({
 				],
 			},
 			severity: "error",
-			to: { dependencyTypes: ["core"], path: "^(?:node:)?fs(?:/promises)?$" },
+			to: {
+				dependencyTypes: ["core"],
+				path: "^(?:node:)?fs(?:/promises)?$",
+			},
 		},
 		{
 			name: "unit-tier-does-not-touch-real-disk",
 			comment: "Unit specs seed an in-memory file system; real disk belongs to integration.",
-			from: { path: [unitSpec, unitHelpers] },
+			from: {
+				path: [unitSpec, unitHelpers],
+			},
 			severity: "error",
-			to: { dependencyTypes: ["core"], path: "^(?:node:)?(?:fs|fs/promises|os)$" },
+			to: {
+				dependencyTypes: ["core"],
+				path: "^(?:node:)?(?:fs|fs/promises|os)$",
+			},
 		},
 		{
 			name: "integration-does-not-import-other-suite-helpers",
-			from: { path: integration },
+			from: {
+				path: integration,
+			},
 			severity: "error",
-			to: { path: pathPrefix(`${testRoot}/helpers/e2e`, `${testRoot}/helpers/unit`) },
+			to: {
+				path: pathPrefix(`${testRoot}/helpers/e2e`, `${testRoot}/helpers/unit`),
+			},
 		},
 		{
 			name: "unit-tier-does-not-import-workspace-helpers",
 			comment: "Workspace helpers write to real disk.",
-			from: { path: [unitSpec, unitHelpers] },
+			from: {
+				path: [unitSpec, unitHelpers],
+			},
 			severity: "error",
-			to: { path: pathPrefix(`${testRoot}/helpers/workspace`) },
+			to: {
+				path: pathPrefix(`${testRoot}/helpers/workspace`),
+			},
 		},
 		{
 			name: "neutral-fixtures-contain-no-production-access",
@@ -269,7 +312,9 @@ function createTierRules({
 				],
 			},
 			severity: "error",
-			to: { path: production },
+			to: {
+				path: production,
+			},
 		},
 	];
 }
@@ -316,7 +361,9 @@ export function createDependencyCruiserConfig({
 				conditionNames: ["source", "types", "import", "node", "default"],
 				exportsFields: ["exports"],
 			},
-			tsConfig: { fileName: tsConfig },
+			tsConfig: {
+				fileName: tsConfig,
+			},
 			tsPreCompilationDeps: true,
 		},
 	};

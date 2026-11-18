@@ -46,7 +46,9 @@ export default isentinel(
 	{
 		name: "project/src-max-params",
 		files: SOURCE_FILES,
-		rules: { "better-max-params/better-max-params": ["error", { func: 2 }] },
+		rules: {
+			"better-max-params/better-max-params": ["error", { func: 2 }],
+		},
 	},
 	{
 		name: "project/jsdoc",

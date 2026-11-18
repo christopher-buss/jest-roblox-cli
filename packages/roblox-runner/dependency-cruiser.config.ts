@@ -14,13 +14,19 @@ export default createDependencyCruiserConfig({
 	rules: [
 		{
 			name: "adapters-do-not-import-orchestration",
-			from: { path: ADAPTERS },
+			from: {
+				path: ADAPTERS,
+			},
 			severity: "error",
-			to: { path: ORCHESTRATION },
+			to: {
+				path: ORCHESTRATION,
+			},
 		},
 		{
 			name: "core-does-not-import-adapters-or-orchestration",
-			from: { path: CORE },
+			from: {
+				path: CORE,
+			},
 			severity: "error",
 			to: {
 				dependencyTypesNot: ["type-only"],
@@ -29,9 +35,14 @@ export default createDependencyCruiserConfig({
 		},
 		{
 			name: "production-imports-implementation-not-barrel",
-			from: { path: `^${SOURCE}/`, pathNot: "[.]spec(?:-d)?[.]ts$" },
+			from: {
+				path: `^${SOURCE}/`,
+				pathNot: "[.]spec(?:-d)?[.]ts$",
+			},
 			severity: "error",
-			to: { path: `^${SOURCE}/index[.]ts$` },
+			to: {
+				path: `^${SOURCE}/index[.]ts$`,
+			},
 		},
 	],
 	sourceRoots: [SOURCE],

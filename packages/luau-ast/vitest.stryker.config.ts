@@ -7,7 +7,9 @@ export default mergeConfig(
 	mergeConfig(sharedConfig, strykerConfig),
 	defineConfig({
 		test: {
-			coverage: { exclude: ["src/luau-compiler-wasm.ts", "src/luau-parser-wasm.ts"] },
+			coverage: {
+				exclude: ["src/luau-compiler-wasm.ts", "src/luau-parser-wasm.ts"],
+			},
 		},
 	}),
 );

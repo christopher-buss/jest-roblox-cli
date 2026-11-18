@@ -9,6 +9,8 @@ export const strykerConfig = defineConfig({
 		include: unitProject.test.include,
 		// Catches a mutant that spins an async loop past the run budget.
 		testTimeout: 1000,
-		typecheck: { enabled: false },
+		typecheck: {
+			enabled: false,
+		},
 	},
 });

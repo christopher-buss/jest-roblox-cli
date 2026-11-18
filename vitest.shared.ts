@@ -12,10 +12,19 @@ export const unitProject = {
 	extends: true,
 	test: {
 		name: "unit",
-		deps: { optimizer: { ssr: { enabled: true, include: ["jest-extended"] } } },
+		deps: {
+			optimizer: {
+				ssr: {
+					enabled: true,
+					include: ["jest-extended"],
+				},
+			},
+		},
 		include: ["src/**/*.spec.ts"],
 		maxWorkers: 4,
-		sequence: { groupOrder: 1 },
+		sequence: {
+			groupOrder: 1,
+		},
 		setupFiles: [NO_PROCESS_START_SETUP],
 	},
 } satisfies TestProjectInlineConfiguration;

@@ -106,7 +106,9 @@ export default defineConfig([
 		unbundle: false,
 	},
 	{
-		deps: { alwaysBundle: [/.*/] },
+		deps: {
+			alwaysBundle: [/.*/],
+		},
 		entry: ["bin/sea-entry.ts"],
 		exe: {
 			fileName: "jest-roblox",

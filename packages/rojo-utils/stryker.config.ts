@@ -5,7 +5,9 @@ import { type PartialStrykerOptions, sharedConfig } from "../../stryker.shared.c
 const config: PartialStrykerOptions = {
 	...sharedConfig,
 	tsconfigFile: "tsconfig.json",
-	vitest: { configFile: fileURLToPath(new URL("./vitest.stryker.config.ts", import.meta.url)) },
+	vitest: {
+		configFile: fileURLToPath(new URL("./vitest.stryker.config.ts", import.meta.url)),
+	},
 };
 
 export default config;

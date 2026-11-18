@@ -59,13 +59,20 @@ export default isentinel(
 		// `references/configuration.md` (linked from SKILL.md) must keep its
 		// name.
 		unicorn: {
-			nameReplacements: { configuration: false, expr: false, stmt: false, stmts: false },
+			nameReplacements: {
+				configuration: false,
+				expr: false,
+				stmt: false,
+				stmts: false,
+			},
 		},
 	},
 	{
 		name: "project/src-max-params",
 		files: SOURCE_FILES,
-		rules: { "better-max-params/better-max-params": ["error", { func: 2 }] },
+		rules: {
+			"better-max-params/better-max-params": ["error", { func: 2 }],
+		},
 	},
 	{
 		name: "project/no-module-mocks",

@@ -60,9 +60,15 @@ const OPTION_REGISTRY_MODULES = ["src/config/options.ts", "src/config/option-row
 function onlySeamImports(name: string, module: string, seam: string): IForbiddenRuleType {
 	return {
 		name,
-		from: { path: PRODUCTION, pathNot: [`^${RegExp.escape(seam)}$`, NOT_SPEC] },
+		from: {
+			path: PRODUCTION,
+			pathNot: [`^${RegExp.escape(seam)}$`, NOT_SPEC],
+		},
 		severity: "error",
-		to: { dependencyTypesNot: ["type-only"], path: module },
+		to: {
+			dependencyTypesNot: ["type-only"],
+			path: module,
+		},
 	};
 }
 
@@ -70,26 +76,45 @@ const ARCHITECTURE_RULES = [
 	{
 		name: "entry-points-are-not-imported-by-source",
 		comment: "The artifacts entry extends the root entry, so it alone may import it.",
-		from: { path: SOURCE, pathNot: [NOT_SPEC, `^${SOURCE_ROOT}/api[.]ts$`] },
+		from: {
+			path: SOURCE,
+			pathNot: [NOT_SPEC, `^${SOURCE_ROOT}/api[.]ts$`],
+		},
 		severity: "error",
-		to: { path: ENTRY_POINTS },
+		to: {
+			path: ENTRY_POINTS,
+		},
 	},
 	{
 		name: "pure-layers-do-not-import-orchestration",
-		from: { path: PURE_LAYERS, pathNot: NOT_SPEC },
+		from: {
+			path: PURE_LAYERS,
+			pathNot: NOT_SPEC,
+		},
 		severity: "error",
-		to: { dependencyTypesNot: ["type-only"], path: LAYERS_ABOVE_RESULTS },
+		to: {
+			dependencyTypesNot: ["type-only"],
+			path: LAYERS_ABOVE_RESULTS,
+		},
 	},
 	{
 		name: "output-does-not-import-orchestration",
 		comment: "The run hands output a finished result; output reads nothing of how it ran.",
-		from: { path: OUTPUT_LAYER, pathNot: NOT_SPEC },
+		from: {
+			path: OUTPUT_LAYER,
+			pathNot: NOT_SPEC,
+		},
 		severity: "error",
-		to: { path: ORCHESTRATION },
+		to: {
+			path: ORCHESTRATION,
+		},
 	},
 	{
 		name: "utils-import-only-leaf-modules",
-		from: { path: `^${SOURCE_ROOT}/utils/`, pathNot: NOT_SPEC },
+		from: {
+			path: `^${SOURCE_ROOT}/utils/`,
+			pathNot: NOT_SPEC,
+		},
 		severity: "error",
 		to: {
 			dependencyTypesNot: ["type-only"],
@@ -99,21 +124,39 @@ const ARCHITECTURE_RULES = [
 	},
 	{
 		name: "protocol-is-a-leaf",
-		from: { path: `^${SOURCE_ROOT}/protocol/`, pathNot: NOT_SPEC },
+		from: {
+			path: `^${SOURCE_ROOT}/protocol/`,
+			pathNot: NOT_SPEC,
+		},
 		severity: "error",
-		to: { path: SOURCE, pathNot: `^${SOURCE_ROOT}/protocol/` },
+		to: {
+			path: SOURCE,
+			pathNot: `^${SOURCE_ROOT}/protocol/`,
+		},
 	},
 	{
 		name: "terminal-is-a-leaf",
-		from: { path: `^${SOURCE_ROOT}/terminal/`, pathNot: NOT_SPEC },
+		from: {
+			path: `^${SOURCE_ROOT}/terminal/`,
+			pathNot: NOT_SPEC,
+		},
 		severity: "error",
-		to: { path: SOURCE, pathNot: `^${SOURCE_ROOT}/terminal/` },
+		to: {
+			path: SOURCE,
+			pathNot: `^${SOURCE_ROOT}/terminal/`,
+		},
 	},
 	{
 		name: "backends-do-not-import-run-orchestration",
-		from: { path: `^${SOURCE_ROOT}/backends/`, pathNot: NOT_SPEC },
+		from: {
+			path: `^${SOURCE_ROOT}/backends/`,
+			pathNot: NOT_SPEC,
+		},
 		severity: "error",
-		to: { dependencyTypesNot: ["type-only"], path: `${RUN_ORCHESTRATION}|${OUTPUT_LAYER}` },
+		to: {
+			dependencyTypesNot: ["type-only"],
+			path: `${RUN_ORCHESTRATION}|${OUTPUT_LAYER}`,
+		},
 	},
 	{
 		name: "coverage-does-not-import-orchestration",
@@ -130,15 +173,27 @@ const ARCHITECTURE_RULES = [
 	{
 		name: "workspace-layout-does-not-import-run-pipeline",
 		comment: "The workspace layout sees the run only through the pipeline's types.",
-		from: { path: `^${SOURCE_ROOT}/workspace/`, pathNot: NOT_SPEC },
+		from: {
+			path: `^${SOURCE_ROOT}/workspace/`,
+			pathNot: NOT_SPEC,
+		},
 		severity: "error",
-		to: { path: `^${SOURCE_ROOT}/run/`, pathNot: RUN_PIPELINE_TYPES },
+		to: {
+			path: `^${SOURCE_ROOT}/run/`,
+			pathNot: RUN_PIPELINE_TYPES,
+		},
 	},
 	{
 		name: "workspace-layout-imports-only-run-pipeline-types",
-		from: { path: `^${SOURCE_ROOT}/workspace/`, pathNot: NOT_SPEC },
+		from: {
+			path: `^${SOURCE_ROOT}/workspace/`,
+			pathNot: NOT_SPEC,
+		},
 		severity: "error",
-		to: { dependencyTypesNot: ["type-only"], path: RUN_PIPELINE_TYPES },
+		to: {
+			dependencyTypesNot: ["type-only"],
+			path: RUN_PIPELINE_TYPES,
+		},
 	},
 	{
 		name: "e2e-imports-only-package-interface",
@@ -149,15 +204,22 @@ const ARCHITECTURE_RULES = [
 			pathNot: E2E_PRIVATE_IMPORT_RETROFITS,
 		},
 		severity: "error",
-		to: { path: PRODUCTION, pathNot: [...PUBLISHED_INTERFACE, PROTOCOL_MODULES] },
+		to: {
+			path: PRODUCTION,
+			pathNot: [...PUBLISHED_INTERFACE, PROTOCOL_MODULES],
+		},
 	},
 	{
 		name: "luau-tier-imports-no-production",
 		comment:
 			"Luau harness specs drive Luau modules in lute; TypeScript production is not theirs.",
-		from: { path: `^${RegExp.escape(path.posix.join(TEST_ROOT, "luau"))}/` },
+		from: {
+			path: `^${RegExp.escape(path.posix.join(TEST_ROOT, "luau"))}/`,
+		},
 		severity: "error",
-		to: { path: PRODUCTION },
+		to: {
+			path: PRODUCTION,
+		},
 	},
 	onlySeamImports(
 		"only-child-process-seam-spawns",

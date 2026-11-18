@@ -21,7 +21,9 @@ export default createDependencyCruiserConfig({
 		},
 		{
 			name: "wasm-backends-do-not-import-language-apis",
-			from: { path: `^${SOURCE}/(?:wasm-host|wasm-runtime|compiler-wasm-runtime)[.]ts$` },
+			from: {
+				path: `^${SOURCE}/(?:wasm-host|wasm-runtime|compiler-wasm-runtime)[.]ts$`,
+			},
 			severity: "error",
 			to: {
 				path: `^${SOURCE}/`,
@@ -36,12 +38,16 @@ export default createDependencyCruiserConfig({
 					pathNot: `^${SOURCE}/${kind === "parser" ? "wasm-runtime" : "compiler-wasm-runtime"}[.]ts$`,
 				},
 				severity: "error" as const,
-				to: { path: `^${SOURCE}/luau-${kind}-wasm[.]ts$` },
+				to: {
+					path: `^${SOURCE}/luau-${kind}-wasm[.]ts$`,
+				},
 			};
 		}),
 		{
 			name: "parser-does-not-load-compiler",
-			from: { path: `^${SOURCE}/(?:parser|wasm-runtime)[.]ts$` },
+			from: {
+				path: `^${SOURCE}/(?:parser|wasm-runtime)[.]ts$`,
+			},
 			severity: "error",
 			to: {
 				dependencyTypesNot: ["type-only"],
@@ -50,7 +56,9 @@ export default createDependencyCruiserConfig({
 		},
 		{
 			name: "compiler-does-not-load-parser",
-			from: { path: `^${SOURCE}/(?:compiler|compiler-wasm-runtime)[.]ts$` },
+			from: {
+				path: `^${SOURCE}/(?:compiler|compiler-wasm-runtime)[.]ts$`,
+			},
 			severity: "error",
 			to: {
 				dependencyTypesNot: ["type-only"],
@@ -59,9 +67,15 @@ export default createDependencyCruiserConfig({
 		},
 		{
 			name: "only-lute-spawner-starts-processes",
-			from: { path: `^${SOURCE}/`, pathNot: `^${SOURCE}/lute-spawner[.]ts$` },
+			from: {
+				path: `^${SOURCE}/`,
+				pathNot: `^${SOURCE}/lute-spawner[.]ts$`,
+			},
 			severity: "error",
-			to: { dependencyTypes: ["core"], path: "^(?:node:)?child_process$" },
+			to: {
+				dependencyTypes: ["core"],
+				path: "^(?:node:)?child_process$",
+			},
 		},
 	],
 	sourceRoots: ["packages/luau-ast/src"],

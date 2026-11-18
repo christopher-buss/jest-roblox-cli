@@ -16,7 +16,9 @@ export default mergeConfig(
 					test: {
 						deps: {
 							optimizer: {
-								ssr: { include: ["arktype"] },
+								ssr: {
+									include: ["arktype"],
+								},
 							},
 						},
 					},
