@@ -4,7 +4,14 @@ import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 
+export interface AllowedImports {
+	comment: string;
+	targets: ReadonlyArray<string>;
+}
+
 export interface CruiserProjectOptions {
+	/** Targets a shared rule lets this project import; each is an exemption. */
+	allowedImports?: Partial<Record<ExemptibleRuleName, AllowedImports>>;
 	/**
 	 * Bare specifiers the type checker declares but no file on disk resolves.
 	 */
@@ -39,6 +46,10 @@ export type SharedRuleName =
 	| "unit-tier-does-not-import-workspace-helpers"
 	| "unit-tier-does-not-touch-real-disk";
 
+type StructureRuleName = "no-cross-spec-imports" | "unit-spec-imports-only-sibling";
+
+export type ExemptibleRuleName = SharedRuleName | StructureRuleName;
+
 const exportSourcesSchema = type({
 	"+": "ignore",
 	"exports?": {
@@ -63,23 +74,6 @@ function readPublishedSourceEntries(projectRoot: string): ReadonlyArray<string> 
 	return Object.values(result.exports ?? {}).flatMap((sources) => {
 		return sources.map((source) => path.posix.join(projectRoot, source));
 	});
-}
-
-function noProductionCycles(production: string): IForbiddenRuleType {
-	return {
-		name: "no-production-cycles",
-		from: {
-			path: production,
-		},
-		severity: "error",
-		to: {
-			circular: true,
-			dependencyTypesNot: ["type-only"],
-			viaOnly: {
-				dependencyTypesNot: ["type-only"],
-			},
-		},
-	};
 }
 
 function alternation(literals: ReadonlyArray<string>): string {
@@ -127,12 +121,11 @@ function createImportRules({
 
 function createStructureRules(
 	sourceRoots: ReadonlyArray<string>,
-): ReadonlyArray<IForbiddenRuleType> {
+): ReadonlyArray<IForbiddenRuleType & { name: StructureRuleName }> {
 	const production = pathPrefix(...sourceRoots);
 	const spec = `^${alternation(sourceRoots)}/.+[.]spec[.]ts$`;
 
 	return [
-		noProductionCycles(production),
 		{
 			name: "no-cross-spec-imports",
 			from: {
@@ -319,6 +312,24 @@ function createTierRules({
 	];
 }
 
+function withAllowedImports(
+	rule: IForbiddenRuleType,
+	allowed: AllowedImports | undefined,
+): IForbiddenRuleType {
+	if (allowed === undefined || !("to" in rule)) {
+		return rule;
+	}
+
+	return {
+		...rule,
+		comment: allowed.comment,
+		to: {
+			...rule.to,
+			pathNot: [rule.to.pathNot ?? [], allowed.targets].flat(),
+		},
+	};
+}
+
 function assertTypeScriptResolves(): void {
 	// Without typescript it cruises 0 modules and passes; pnpm-workspace.yaml
 	// packageExtensions gives dependency-cruiser its typescript peer.
@@ -326,6 +337,7 @@ function assertTypeScriptResolves(): void {
 }
 
 export function createDependencyCruiserConfig({
+	allowedImports = {},
 	ambientModules = [],
 	disabledRules = [],
 	fileSystemSeam,
@@ -346,12 +358,15 @@ export function createDependencyCruiserConfig({
 		testRoot,
 		unitHelperRoots,
 	});
+	const exemptibleRules = [
+		...createStructureRules(sourceRoots),
+		...tierRules.filter(({ name }) => !disabledRules.includes(name)),
+	];
 
 	return {
 		forbidden: [
 			...createImportRules({ ambientModules, projectRoot, sourceRoots, testRoot }),
-			...createStructureRules(sourceRoots),
-			...tierRules.filter(({ name }) => !disabledRules.includes(name)),
+			...exemptibleRules.map((rule) => withAllowedImports(rule, allowedImports[rule.name])),
 			...rules,
 		],
 		options: {

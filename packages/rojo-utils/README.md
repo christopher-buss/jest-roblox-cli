@@ -107,8 +107,8 @@ scans runtime and type specs at 75 tokens. `cpd` runs both. `knip` includes a
 production-only pass that rejects exports kept alive solely by specs.
 
 Boundaries enforce shared test ownership, tier isolation, package-interface
-integration, production cycles and a sole native filesystem adapter. Local rules
-keep pure tree/path mapping independent of I/O and orchestration, keep the
-walker independent of loader/query layers, and prevent production imports
-through the package barrel. The shared project schema earns metadata types at
-the input boundary; walkers narrow already-parsed child values.
+integration and a sole native filesystem adapter. Local rules keep pure
+tree/path mapping independent of I/O and orchestration, keep the walker
+independent of loader/query layers, and prevent production imports through the
+package barrel. The shared project schema earns metadata types at the input
+boundary; walkers narrow already-parsed child values.

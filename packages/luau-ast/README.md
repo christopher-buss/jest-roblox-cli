@@ -154,9 +154,9 @@ are outside the measured runtime population.
 The mutation command measures the whole population and reuses earlier verdicts.
 
 Architecture checks enforce unit ownership, test-tier isolation, package entry
-points, production cycles and filesystem access through the Lute adapter. Local
-rules keep tree logic independent of runtime adapters, keep WASM backends below
-language APIs and restrict embedded artifacts to their owning backend.
+points and filesystem access through the Lute adapter. Local rules keep tree
+logic independent of runtime adapters, keep WASM backends below language APIs
+and restrict embedded artifacts to their owning backend.
 
 `spawnLute({ scriptPath, args, timeout, maxBuffer })` requires `lute` on `PATH`.
 `writeTemporaryLuauScript({ name, source })` writes a process-specific temporary

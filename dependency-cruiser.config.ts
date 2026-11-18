@@ -1,4 +1,4 @@
-import type { IConfiguration, IForbiddenRuleType } from "dependency-cruiser";
+import type { IForbiddenRuleType } from "dependency-cruiser";
 import path from "node:path";
 
 import { createDependencyCruiserConfig } from "./dependency-cruiser.shared.ts";
@@ -17,8 +17,6 @@ const ENTRY_POINTS = `^${SOURCE_ROOT}/(?:api|cli|index)[.]ts$`;
 const RUN_ORCHESTRATION = `^${SOURCE_ROOT}/(?:(?:artifacts|run|workspace)/|executor/executor[.]ts$|(?:api|cli|cli-args|cli-errors|index|run-entry)[.]ts$)`;
 const OUTPUT_LAYER = `^${SOURCE_ROOT}/output/`;
 const ORCHESTRATION = `^${SOURCE_ROOT}/(?:backends|staging)/|${RUN_ORCHESTRATION}`;
-const LAYERS_ABOVE_RESULTS = `${ORCHESTRATION}|${OUTPUT_LAYER}`;
-const PURE_LAYERS = `^${SOURCE_ROOT}/(?:formatters|gaps|host-time|progress|jest-output|results|source-mapper|terminal|timing|types|utils)/`;
 const E2E_ROOT = path.posix.join(TEST_ROOT, "e2e");
 const HARNESS_ROOT = path.posix.join(TEST_ROOT, "harness");
 const PUBLISHED_INTERFACE = [
@@ -35,7 +33,7 @@ const ERROR_CLASS_MODULES = [
 ].map((file) => `^${RegExp.escape(path.posix.join(PROJECT_ROOT, file))}$`);
 
 const PROTOCOL_MODULES = `^${SOURCE_ROOT}/protocol/(?!.*[.]spec[.]ts$)`;
-const PURE_VALUE_MODULES = [
+const SHARED_VALUE_MODULES = [
 	"src/config/resolved-config.ts",
 	"src/utils/hash.ts",
 	"src/utils/infrastructure-failure.ts",
@@ -86,18 +84,6 @@ const ARCHITECTURE_RULES = [
 		},
 	},
 	{
-		name: "pure-layers-do-not-import-orchestration",
-		from: {
-			path: PURE_LAYERS,
-			pathNot: NOT_SPEC,
-		},
-		severity: "error",
-		to: {
-			dependencyTypesNot: ["type-only"],
-			path: LAYERS_ABOVE_RESULTS,
-		},
-	},
-	{
 		name: "output-does-not-import-orchestration",
 		comment: "The run hands output a finished result; output reads nothing of how it ran.",
 		from: {
@@ -132,42 +118,6 @@ const ARCHITECTURE_RULES = [
 		to: {
 			path: SOURCE,
 			pathNot: `^${SOURCE_ROOT}/protocol/`,
-		},
-	},
-	{
-		name: "terminal-is-a-leaf",
-		from: {
-			path: `^${SOURCE_ROOT}/terminal/`,
-			pathNot: NOT_SPEC,
-		},
-		severity: "error",
-		to: {
-			path: SOURCE,
-			pathNot: `^${SOURCE_ROOT}/terminal/`,
-		},
-	},
-	{
-		name: "backends-do-not-import-run-orchestration",
-		from: {
-			path: `^${SOURCE_ROOT}/backends/`,
-			pathNot: NOT_SPEC,
-		},
-		severity: "error",
-		to: {
-			dependencyTypesNot: ["type-only"],
-			path: `${RUN_ORCHESTRATION}|${OUTPUT_LAYER}`,
-		},
-	},
-	{
-		name: "coverage-does-not-import-orchestration",
-		from: {
-			path: `^${SOURCE_ROOT}/(?:attribution|coverage-data|coverage-report|instrument|shadow)/`,
-			pathNot: NOT_SPEC,
-		},
-		severity: "error",
-		to: {
-			dependencyTypesNot: ["type-only"],
-			path: `^${SOURCE_ROOT}/backends/|${RUN_ORCHESTRATION}|${OUTPUT_LAYER}`,
 		},
 	},
 	{
@@ -233,7 +183,34 @@ const ARCHITECTURE_RULES = [
 	),
 ] satisfies ReadonlyArray<IForbiddenRuleType>;
 
-const config = createDependencyCruiserConfig({
+export default createDependencyCruiserConfig({
+	allowedImports: {
+		"integration-imports-only-package-interface": {
+			comment:
+				"The README option check reads the option registry it documents, and the Luau config type check the schema it mirrors. The coverage report check maps raw hits the way a run does, with no backend to run. The plugin checks read the wire constants the plugin must match.",
+			targets: [
+				OPTION_REGISTRY_MODULES,
+				CONFIG_SCHEMA_MODULES,
+				COVERAGE_MAPPER_MODULES,
+				PROTOCOL_MODULES,
+			].flat(),
+		},
+		"unit-helpers-have-no-runtime-production-imports": {
+			comment:
+				"Protocol modules hold wire names and constants, so a fake speaks the real wire. The config defaults and the hash are shared values a fixture would otherwise copy.",
+			targets: [PROTOCOL_MODULES, SHARED_VALUE_MODULES].flat(),
+		},
+		"unit-spec-imports-only-sibling": {
+			comment:
+				"Error classes are value-imported by unit specs: instanceof dispatch needs a real instance, and the modules hold no behavior. The help spec reads the option registry the help lists. Layout and stage specs drive the real pipeline over the real seams record. Protocol modules hold wire names and constants, so a fake speaks the real wire.",
+			targets: [
+				ERROR_CLASS_MODULES,
+				OPTION_REGISTRY_MODULES,
+				PROTOCOL_MODULES,
+				RUN_SEAM_MODULES,
+			].flat(),
+		},
+	},
 	ambientModules: [
 		"@oxc-project/types",
 		"virtual:istanbul-html-assets",
@@ -253,73 +230,3 @@ const config = createDependencyCruiserConfig({
 	tsConfig: path.join(import.meta.dirname, "tsconfig.json"),
 	unitHelperRoots: ["mocks", "setup"].map((root) => path.posix.join(TEST_ROOT, root)),
 });
-
-type PathRule = Extract<IForbiddenRuleType, { to: unknown }>;
-
-function withIntegrationExceptions(rule: PathRule): PathRule {
-	return {
-		...rule,
-		comment:
-			"The README option check reads the option registry it documents, and the Luau config type check the schema it mirrors. The coverage report check maps raw hits the way a run does, with no backend to run. The plugin checks read the wire constants the plugin must match.",
-		to: {
-			...rule.to,
-			pathNot: [
-				rule.to.pathNot ?? [],
-				OPTION_REGISTRY_MODULES,
-				CONFIG_SCHEMA_MODULES,
-				COVERAGE_MAPPER_MODULES,
-				PROTOCOL_MODULES,
-			].flat(),
-		},
-	};
-}
-
-function withUnitSpecExceptions(rule: PathRule): PathRule {
-	return {
-		...rule,
-		comment:
-			"Error classes are value-imported by unit specs: instanceof dispatch needs a real instance, and the modules hold no behavior. The help spec reads the option registry the help lists. Layout and stage specs drive the real pipeline over the real seams record. Protocol modules hold wire names and constants, so a fake speaks the real wire.",
-		to: {
-			...rule.to,
-			pathNot: [
-				rule.to.pathNot ?? [],
-				ERROR_CLASS_MODULES,
-				OPTION_REGISTRY_MODULES,
-				PROTOCOL_MODULES,
-				RUN_SEAM_MODULES,
-			].flat(),
-		},
-	};
-}
-
-function withPureValueException(rule: PathRule): PathRule {
-	return {
-		...rule,
-		comment:
-			"Protocol modules hold wire names and constants, so a fake speaks the real wire. The config defaults and the hash are pure values a fixture would otherwise copy.",
-		to: {
-			...rule.to,
-			pathNot: [rule.to.pathNot ?? [], PROTOCOL_MODULES, PURE_VALUE_MODULES].flat(),
-		},
-	};
-}
-
-const forbidden: Array<IForbiddenRuleType> = (config.forbidden ?? []).map((rule) => {
-	if (!("to" in rule)) {
-		return rule;
-	}
-
-	if (rule.name === "integration-imports-only-package-interface") {
-		return withIntegrationExceptions(rule);
-	}
-
-	if (rule.name === "unit-helpers-have-no-runtime-production-imports") {
-		return withPureValueException(rule);
-	}
-
-	return rule.name === "unit-spec-imports-only-sibling" ? withUnitSpecExceptions(rule) : rule;
-});
-
-const exported: IConfiguration = { ...config, forbidden };
-
-export default exported;

@@ -121,8 +121,8 @@ tests use the package entry points. `knip` includes a production-only pass that
 rejects exports used only by specs.
 
 `cpd-production` scans production and test helpers at 40 tokens; `cpd-spec`
-scans specs at 75 tokens. Boundaries enforce test-tier isolation, production
-cycles, package interfaces and the disk adapter.
+scans specs at 75 tokens. Boundaries enforce test-tier isolation, package
+interfaces and the disk adapter.
 
 The mutation command measures the whole population and reuses earlier verdicts.
 
