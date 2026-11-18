@@ -22,6 +22,7 @@ export type {
 	GitHubActionsFormatterOptions,
 } from "./config/formatter-selection.ts";
 export type { CliOptions, ResolvedConfig } from "./config/resolved-config.ts";
+// oxlint-disable-next-line oxc/no-barrel-file -- the package root export re-exports its public API
 export * from "./coverage-data/artifacts.ts";
 export type { RawCoverageData, RawFileCoverage } from "./coverage-data/coverage-types.ts";
 export type { ProjectResult, RunResult } from "./results/run-result-types.ts";

@@ -14,6 +14,7 @@ export type { ProjectInput, RunProjectsResult } from "./executor/executor.ts";
 export { formatFailure } from "./formatters/failure.ts";
 export { formatResult } from "./formatters/formatter.ts";
 export { formatJson } from "./formatters/json.ts";
+// oxlint-disable-next-line oxc/no-barrel-file -- the ./api export re-exports its public API
 export * from "./index.ts";
 export type { InstrumentUniverse } from "./instrument/instrument-universe.ts";
 export { runJestRobloxAsync } from "./run-entry.ts";

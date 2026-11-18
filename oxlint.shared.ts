@@ -11,6 +11,7 @@ const OXLINT_OVERRIDES: Array<OxlintOverride> = [
 		files: ["**/*"],
 		rules: {
 			"import/consistent-type-specifier-style": "off",
+			"oxc/no-map-spread": "off",
 			"typescript/no-empty-object-type": ["error", { allowInterfaces: "always" }],
 		},
 	},
@@ -33,7 +34,7 @@ export function standaloneOxlint(
 	...userConfigs: Array<TypedOxlintConfigItem>
 ): OxlintConfig {
 	const { options: _rootOnly, ...config } = isentinel(
-		{ jsPlugins: false, oxc: false, roblox: false, ...options },
+		{ jsPlugins: false, roblox: false, ...options },
 		...userConfigs,
 	);
 
