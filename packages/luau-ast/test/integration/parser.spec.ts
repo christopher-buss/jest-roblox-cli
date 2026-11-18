@@ -64,6 +64,22 @@ describe("parse", () => {
 		expect(expression.conditionLocal!.isConst).toBeTrue();
 	});
 
+	it("should carry the `while local` binding on the statement", ({ expect }) => {
+		expect.assertions(2);
+
+		const parser = loadLuauParser();
+
+		const result = parser.parse("while const item = f() do end");
+
+		assert(result.ok);
+
+		const [statement] = result.root.body;
+		assert(statement!.type === "AstStatWhile");
+
+		expect(statement.conditionLocal!.name).toBe("item");
+		expect(statement.conditionLocal!.isConst).toBeTrue();
+	});
+
 	it("should decode every location into a 1-based exclusive-end span", ({ expect }) => {
 		expect.assertions(1);
 

@@ -102,6 +102,17 @@ describe("binding identity", () => {
 		expect(condition).not.toBe(outer);
 	});
 
+	it("should scope a `while local` binding to its body", ({ expect }) => {
+		expect.assertions(2);
+
+		const root = parseCst("local x = 1\nwhile local x = f(x) do\n\tprint(x)\nend\nreturn x\n");
+
+		const [outer, condition, conditionRef, bodyRef, afterRef] = bindingsNamed(root, "x");
+
+		expect([conditionRef, bodyRef, afterRef]).toStrictEqual([outer, condition, outer]);
+		expect(condition).not.toBe(outer);
+	});
+
 	it("should bind a parameter separately from a same-named outer local", ({ expect }) => {
 		expect.assertions(2);
 

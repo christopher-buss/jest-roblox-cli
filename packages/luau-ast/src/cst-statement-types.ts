@@ -100,6 +100,15 @@ export interface CstWhile extends CstStatBase<"While"> {
 	do?: Token;
 	/** End keyword closing the construct. */
 	end: Token;
+	/** Equals token introducing the assigned value or initializer. */
+	equals?: Token;
+	/**
+	 * Conditional binding, rebound each iteration and visible only in the
+	 * body.
+	 */
+	local?: CstLocalDeclaration;
+	/** Local or const keyword introducing a conditional binding. */
+	localKeyword?: Token;
 	/** While keyword introducing the loop. */
 	while: Token;
 }

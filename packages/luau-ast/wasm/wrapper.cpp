@@ -18,7 +18,7 @@
 
 // Defined in Analysis, which this build does not link; AstJsonEncoder reads them.
 LUAU_FASTFLAGVARIABLE(LuauExperimentalIfLocalAnalysis)
-LUAU_FASTFLAGVARIABLE(DebugLuauWhileLocalAnalysis)
+LUAU_FASTFLAGVARIABLE(LuauExperimentalWhileLocalAnalysis)
 
 static bool flagsInitialized = false;
 
@@ -975,7 +975,7 @@ struct CstWriter
             return;
         if (!keywordLocation || !equalsLocation)
         {
-            fail("cst writer: if local without keyword or '=' at line " + std::to_string(local->location.begin.line + 1));
+            fail("cst writer: conditional local without keyword or '=' at line " + std::to_string(local->location.begin.line + 1));
             return;
         }
         keyword("localKeyword", keywordLocation->begin, local->isConst ? "const" : "local");
@@ -989,6 +989,14 @@ struct CstWriter
         if (!n->conditionLocal || !n->conditionLocal->annotation)
             return Luau::Position::missing();
         Luau::CstStatIf* data = cstOf<Luau::CstStatIf>(n, "if local");
+        return data ? data->annotationColonPosition : Luau::Position::missing();
+    }
+
+    Luau::Position whileStatColon(Luau::AstStatWhile* n)
+    {
+        if (!n->conditionLocal || !n->conditionLocal->annotation)
+            return Luau::Position::missing();
+        Luau::CstStatWhile* data = cstOf<Luau::CstStatWhile>(n, "while local");
         return data ? data->annotationColonPosition : Luau::Position::missing();
     }
 
@@ -1217,7 +1225,7 @@ struct CstWriter
             tokLoc("token", n->location);
             closeObj();
         }
-        else if (node->is<Luau::AstExprConstantNumber>() || node->is<Luau::AstExprConstantInteger>())
+        else if (node->is<Luau::AstExprConstantNumber>())
         {
             begin("Number", node->location);
             tokLoc("token", node->location);
@@ -1616,6 +1624,7 @@ struct CstWriter
         {
             begin("While", n->location);
             keyword("while", n->location.begin, "while");
+            conditionLocal(n->conditionLocal, n->conditionKeywordLocation, n->conditionEqualsLocation, whileStatColon(n));
             key("condition");
             expr(n->condition);
             if (n->hasDo)

@@ -197,7 +197,17 @@ export const CST_SLOTS: SlotTable = defineSlots({
 	TypeUnion: ["items"],
 	Unary: ["operator", "expr"],
 	Varargs: ["token"],
-	While: ["while", "condition", "do", "body", "end", "semicolon"],
+	While: [
+		"while",
+		"localKeyword",
+		"local",
+		"equals",
+		"condition",
+		"do",
+		"body",
+		"end",
+		"semicolon",
+	],
 });
 
 type PunctuatedSlot = keyof Punctuated<CstNode>;

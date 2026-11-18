@@ -591,6 +591,8 @@ export interface AstStatWhile {
 	body: AstStatBlock;
 	/** Expression selecting a branch or controlling a loop. */
 	condition: AstExpr;
+	/** Present on `while local` and `while const`; in scope for `body` only. */
+	conditionLocal?: AstLocal;
 	/** Whether the parser recorded the do keyword. */
 	hasDo: boolean;
 	/** Source span with 1-based lines and UTF-8 byte columns. */
