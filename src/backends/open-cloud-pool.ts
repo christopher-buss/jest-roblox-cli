@@ -104,7 +104,11 @@ export async function drainStealingPoolAsync({
 
 	const pollPromise =
 		streaming !== undefined
-			? pollStreamingResultsAsync(streaming, () => tasksDone.value)
+			? pollStreamingResultsAsync({
+					hooks: streaming,
+					isDone: () => tasksDone.value,
+					wake: poolPromise,
+				})
 			: Promise.resolve();
 
 	await Promise.all([poolPromise, pollPromise]);
@@ -150,21 +154,31 @@ async function drainOnceAsync(hooks: StreamingHooks, state: PollState): Promise<
 	);
 }
 
-async function sleepAsync(ms: number): Promise<void> {
-	await new Promise((resolve) => {
-		setTimeout(resolve, ms);
-	});
+async function sleepUntilAsync(ms: number, wake: Promise<unknown>): Promise<void> {
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	await Promise.race([
+		new Promise((resolve) => {
+			timer = setTimeout(resolve, ms);
+		}),
+		Promise.allSettled([wake]),
+	]);
+	clearTimeout(timer);
 }
 
-async function pollStreamingResultsAsync(
-	hooks: StreamingHooks,
-	isDone: () => boolean,
-): Promise<void> {
+async function pollStreamingResultsAsync({
+	hooks,
+	isDone,
+	wake,
+}: {
+	readonly hooks: StreamingHooks;
+	readonly isDone: () => boolean;
+	readonly wake: Promise<unknown>;
+}): Promise<void> {
 	const state: PollState = { warned: false };
 
 	while (!isDone()) {
 		await drainOnceAsync(hooks, state);
-		await sleepAsync(STREAM_POLL_MS);
+		await sleepUntilAsync(STREAM_POLL_MS, wake);
 	}
 
 	await drainOnceAsync(hooks, state);

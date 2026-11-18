@@ -211,7 +211,7 @@ describe(drainStealingPoolAsync, () => {
 			// the entry is consumed mid-flight rather than only on the
 			// final drain.
 			await new Promise<void>((resolve) => {
-				setTimeout(resolve, 10);
+				setImmediate(resolve);
 			});
 			return scriptResult(
 				envelope([{ jestOutput: successJest(), pkg: "alpha", project: "client" }]),
@@ -233,6 +233,89 @@ describe(drainStealingPoolAsync, () => {
 		expect(seen).toContain("alpha");
 		expect(reader.deleted).toContain("alpha::client");
 		expect(reader.readCalls).toBeGreaterThanOrEqual(1);
+	});
+
+	it("should stop polling once the pool settles without waiting out the poll interval", async ({
+		expect,
+		onTestFinished,
+	}) => {
+		expect.assertions(2);
+
+		vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+		onTestFinished(() => {
+			vi.useRealTimers();
+		});
+
+		const drained = { value: false };
+		void drainStealingPoolAsync({
+			requiredKeyCount: 1,
+			runTask: async () => scriptResult(envelope([packageEntry("alpha")])),
+			streaming: { onPackageResult: vi.fn<() => void>(), reader: createStreamReader([]) },
+			taskCount: 1,
+		}).then(() => {
+			drained.value = true;
+		});
+		await vi.advanceTimersByTimeAsync(0);
+
+		expect(drained.value).toBeTrue();
+		expect(vi.getTimerCount()).toBe(0);
+	});
+
+	it("should deliver a streamed entry on the poll interval while the pool still runs", async ({
+		expect,
+		onTestFinished,
+	}) => {
+		expect.assertions(2);
+
+		vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+		onTestFinished(() => {
+			vi.useRealTimers();
+		});
+
+		const reader = createStreamReader([
+			[],
+			[
+				{
+					id: "alpha::alpha",
+					value: {
+						elapsedMs: 1,
+						numFailedTests: 0,
+						numPassedTests: 1,
+						numPendingTests: 0,
+						pkg: "alpha",
+						project: "alpha",
+						success: true,
+					},
+				},
+			],
+			[],
+		]);
+		const seen: Array<string> = [];
+		const { promise: taskEnd, resolve: endTask } = Promise.withResolvers<void>();
+
+		const drain = drainStealingPoolAsync({
+			requiredKeyCount: 1,
+			runTask: async () => {
+				await taskEnd;
+				return scriptResult(envelope([packageEntry("alpha")]));
+			},
+			streaming: {
+				onPackageResult: (entry) => {
+					seen.push(entry.pkg);
+				},
+				reader,
+			},
+			taskCount: 1,
+		});
+		await vi.advanceTimersByTimeAsync(0);
+		await vi.advanceTimersByTimeAsync(250);
+
+		expect(seen).toStrictEqual(["alpha"]);
+
+		endTask();
+		await drain;
+
+		expect(seen).toStrictEqual(["alpha"]);
 	});
 
 	it("should poll on its own cadence under fake timers", async ({ expect, onTestFinished }) => {

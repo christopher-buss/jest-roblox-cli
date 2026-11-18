@@ -233,22 +233,21 @@ function parserForPayload(payload: string) {
 }
 
 describe("normalized parser output", () => {
-	it.for([
-		{ remaining: [], suffix: "" },
-		{ remaining: [{ type: "AstExprConstantNumber", value: Infinity }], suffix: ", 1e999" },
-	])("should parse a large string alongside $suffix", ({ remaining, suffix }, { expect }) => {
+	it("should parse a large string alongside an infinite number", ({ expect }) => {
 		expect.assertions(2);
 
 		const value = "x".repeat(10_000_000);
-		const result = loadLuauParser().parse(`return "${value}"${suffix}`);
+		const payload = rawTree('return "x", 1e999', "ast").replace(
+			'"value":"x"',
+			() => `"value":${JSON.stringify(value)}`,
+		);
+		const result = parserForPayload(payload).parse(`return "${value}", 1e999`);
 		assert(result.ok);
 		const statement = result.root.body[0];
 		assert(statement!.type === "AstStatReturn");
 
 		expect(statement.list[0]).toMatchObject({ type: "AstExprConstantString", value });
-		expect(statement.list.slice(1)).toStrictEqual(
-			remaining.map((node) => expect.objectContaining(node)),
-		);
+		expect(statement.list[1]).toMatchObject({ type: "AstExprConstantNumber", value: Infinity });
 	});
 
 	it.for(["local x = 1", "return t.field"])(

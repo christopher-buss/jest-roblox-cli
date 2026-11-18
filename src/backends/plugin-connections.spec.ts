@@ -19,16 +19,20 @@ const EXPECTED_VERSION = 6;
 /** Short windows: every wait here is one the test means to run out. */
 const REQUEST = { connectTimeoutMs: 40, expectedVersion: EXPECTED_VERSION, graceMs: 10 };
 
-function makePool(): { pool: PluginConnectionPool; wss: MockWebSocketServer } {
-	const wss = new MockWebSocketServer({ port: 0 });
-	return { pool: new PluginConnectionPool(fromPartial<WebSocketServer>(wss)), wss };
-}
-
 function useFakeTimers(onTestFinished: TestContext["onTestFinished"]): void {
 	vi.useFakeTimers();
 	onTestFinished(() => {
 		vi.useRealTimers();
 	});
+}
+
+function makePool(onTestFinished: TestContext["onTestFinished"]): {
+	pool: PluginConnectionPool;
+	wss: MockWebSocketServer;
+} {
+	useFakeTimers(onTestFinished);
+	const wss = new MockWebSocketServer({ port: 0 });
+	return { pool: new PluginConnectionPool(fromPartial<WebSocketServer>(wss)), wss };
 }
 
 /**
@@ -47,9 +51,12 @@ function send(socket: MockWebSocket, encoded: string): void {
 }
 
 async function waitAsync(): Promise<void> {
-	return new Promise((resolve) => {
-		setTimeout(resolve, 60);
-	});
+	await vi.advanceTimersByTimeAsync(60);
+}
+
+async function afterAsync<T>(ms: number, promise: Promise<T>): Promise<T> {
+	await vi.advanceTimersByTimeAsync(ms);
+	return promise;
 }
 
 /**
@@ -77,15 +84,18 @@ function connectPlugin(
 }
 
 describe(PluginConnectionPool, () => {
-	it("should select the connection that announces the expected protocol", async ({ expect }) => {
+	it("should select the connection that announces the expected protocol", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(1);
 
-		const { pool, wss } = makePool();
+		const { pool, wss } = makePool(onTestFinished);
 		const selecting = pool.selectAsync(REQUEST);
 		connectPlugin(wss, { protocolVersion: EXPECTED_VERSION - 1 });
 		const current = connectPlugin(wss);
 
-		const selection = await selecting;
+		const selection = await afterAsync(REQUEST.connectTimeoutMs, selecting);
 
 		expect(selection).toStrictEqual({
 			kind: "selected",
@@ -95,14 +105,15 @@ describe(PluginConnectionPool, () => {
 
 	it("should select a connection that announced before the selection started", async ({
 		expect,
+		onTestFinished,
 	}) => {
 		// The probe's own connection: recorded on arrival, matched on request.
 		expect.assertions(1);
 
-		const { pool, wss } = makePool();
+		const { pool, wss } = makePool(onTestFinished);
 		const current = connectPlugin(wss);
 
-		const selection = await pool.selectAsync(REQUEST);
+		const selection = await afterAsync(REQUEST.connectTimeoutMs, pool.selectAsync(REQUEST));
 
 		expect(selection).toStrictEqual({
 			kind: "selected",
@@ -112,15 +123,16 @@ describe(PluginConnectionPool, () => {
 
 	it("should report every connection when none announce the expected protocol", async ({
 		expect,
+		onTestFinished,
 	}) => {
 		expect.assertions(3);
 
-		const { pool, wss } = makePool();
+		const { pool, wss } = makePool(onTestFinished);
 		const selecting = pool.selectAsync(REQUEST);
 		connectPlugin(wss, { protocolVersion: EXPECTED_VERSION - 1 });
 		connectPlugin(wss, { protocolVersion: EXPECTED_VERSION - 2 });
 
-		const selection = await selecting;
+		const selection = await afterAsync(REQUEST.connectTimeoutMs, selecting);
 
 		expect(selection.kind).toBe("incompatible");
 
@@ -135,15 +147,16 @@ describe(PluginConnectionPool, () => {
 
 	it("should count a connection that never announces itself as incompatible", async ({
 		expect,
+		onTestFinished,
 	}) => {
 		// What every plugin predating the handshake looks like on the wire.
 		expect.assertions(2);
 
-		const { pool, wss } = makePool();
+		const { pool, wss } = makePool(onTestFinished);
 		const selecting = pool.selectAsync(REQUEST);
 		connectSilent(wss);
 
-		const selection = await selecting;
+		const selection = await afterAsync(REQUEST.connectTimeoutMs, selecting);
 
 		assert(selection.kind === "incompatible");
 
@@ -151,29 +164,33 @@ describe(PluginConnectionPool, () => {
 		expect(selection.candidates[0]!.hello).toBeUndefined();
 	});
 
-	it("should report no connection when nothing connects at all", async ({ expect }) => {
+	it("should report no connection when nothing connects at all", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(1);
 
-		const { pool } = makePool();
+		const { pool } = makePool(onTestFinished);
 
-		const selection = await pool.selectAsync(REQUEST);
+		const selection = await afterAsync(REQUEST.connectTimeoutMs, pool.selectAsync(REQUEST));
 
 		expect(selection.kind).toBe("no-connection");
 	});
 
 	it("should answer on the grace window rather than wait out the connect timeout", async ({
 		expect,
+		onTestFinished,
 	}) => {
 		// The point of the grace window. `--backend studio` gives the connect
 		// timeout the whole run budget (300s by default), so without this a
 		// Studio full of stale plugins would hang rather than fail.
 		expect.assertions(1);
 
-		const { pool, wss } = makePool();
+		const { pool, wss } = makePool(onTestFinished);
 		const selecting = pool.selectAsync({ ...REQUEST, connectTimeoutMs: 600_000, graceMs: 10 });
 		connectPlugin(wss, { protocolVersion: EXPECTED_VERSION - 1 });
 
-		const selection = await selecting;
+		const selection = await afterAsync(10, selecting);
 
 		expect(selection.kind).toBe("incompatible");
 	});
@@ -184,8 +201,7 @@ describe(PluginConnectionPool, () => {
 	}) => {
 		expect.assertions(2);
 
-		useFakeTimers(onTestFinished);
-		const { pool, wss } = makePool();
+		const { pool, wss } = makePool(onTestFinished);
 		const selecting = pool.selectAsync({ ...REQUEST, connectTimeoutMs: 600_000, graceMs: 10 });
 		const settled = vi.fn<(selection: unknown) => void>();
 		void selecting.then(settled);
@@ -205,13 +221,14 @@ describe(PluginConnectionPool, () => {
 
 	it("should give a late plugin the whole grace window past the connect timeout", async ({
 		expect,
+		onTestFinished,
 	}) => {
 		// Auto-detection probes for 500ms against a 750ms grace, so the two
 		// windows overlap. A stale socket arriving late in the probe must not
 		// close selection while a compatible one still has window left.
 		expect.assertions(1);
 
-		const { pool, wss } = makePool();
+		const { pool, wss } = makePool(onTestFinished);
 		const selecting = pool.selectAsync({ ...REQUEST, connectTimeoutMs: 20, graceMs: 200 });
 		connectPlugin(wss, { protocolVersion: EXPECTED_VERSION - 1 });
 
@@ -219,7 +236,7 @@ describe(PluginConnectionPool, () => {
 		await waitAsync();
 		const current = connectPlugin(wss);
 
-		const selection = await selecting;
+		const selection = await afterAsync(REQUEST.connectTimeoutMs, selecting);
 
 		expect(selection).toStrictEqual({
 			kind: "selected",
@@ -229,13 +246,14 @@ describe(PluginConnectionPool, () => {
 
 	it("should keep waiting for a first connection rather than open the grace window early", async ({
 		expect,
+		onTestFinished,
 	}) => {
 		// The grace window is for deciding between connections. Opening it with
 		// none would cut the connect timeout down to it, and a Studio that is
 		// still starting would read as absent.
 		expect.assertions(1);
 
-		const { pool } = makePool();
+		const { pool } = makePool(onTestFinished);
 		const selecting = pool.selectAsync({ ...REQUEST, connectTimeoutMs: 600_000, graceMs: 10 });
 		const pending = Symbol("pending");
 
@@ -246,28 +264,31 @@ describe(PluginConnectionPool, () => {
 		expect(raced).toBe(pending);
 	});
 
-	it("should open a fresh grace window for a second selection", async ({ expect }) => {
+	it("should open a fresh grace window for a second selection", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		// A backend runs more than once against the same server. A spent grace
 		// window left in place would make the second run wait out the connect
 		// timeout instead: 300s on `--backend studio`.
 		expect.assertions(2);
 
-		const { pool, wss } = makePool();
+		const { pool, wss } = makePool(onTestFinished);
 		const request = { ...REQUEST, connectTimeoutMs: 600_000, graceMs: 10 };
 		connectPlugin(wss, { protocolVersion: EXPECTED_VERSION - 1 });
 
-		const first = await pool.selectAsync(request);
-		const second = await pool.selectAsync(request);
+		const first = await afterAsync(10, pool.selectAsync(request));
+		const second = await afterAsync(10, pool.selectAsync(request));
 
 		expect(first.kind).toBe("incompatible");
 		expect(second.kind).toBe("incompatible");
 	});
 
-	it("should ignore a frame that is not an announcement", async ({ expect }) => {
+	it("should ignore a frame that is not an announcement", async ({ expect, onTestFinished }) => {
 		// Results and version_mismatch frames reach this listener too.
 		expect.assertions(1);
 
-		const { pool, wss } = makePool();
+		const { pool, wss } = makePool(onTestFinished);
 		const selecting = pool.selectAsync(REQUEST);
 		const socket = connectSilent(wss);
 		send(
@@ -280,54 +301,61 @@ describe(PluginConnectionPool, () => {
 		);
 		socket.emit("message", Buffer.from("{not json"));
 
-		const selection = await selecting;
+		const selection = await afterAsync(REQUEST.connectTimeoutMs, selecting);
 
 		expect(selection.kind).toBe("incompatible");
 	});
 
-	it("should keep the first announcement when a socket announces twice", async ({ expect }) => {
+	it("should keep the first announcement when a socket announces twice", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		// A second claim from an already-identified socket is not something to
 		// act on: identity is established once, at open.
 		expect.assertions(1);
 
-		const { pool, wss } = makePool();
+		const { pool, wss } = makePool(onTestFinished);
 		const selecting = pool.selectAsync(REQUEST);
 		const socket = connectPlugin(wss, { protocolVersion: EXPECTED_VERSION - 1 });
 		send(socket, JSON.stringify({ protocolVersion: EXPECTED_VERSION, type: "hello" }));
 
-		const selection = await selecting;
+		const selection = await afterAsync(REQUEST.connectTimeoutMs, selecting);
 
 		assert(selection.kind === "incompatible");
 
 		expect(selection.candidates[0]!.hello!.protocolVersion).toBe(EXPECTED_VERSION - 1);
 	});
 
-	it("should drop a connection that closes before the selection settles", async ({ expect }) => {
+	it("should drop a connection that closes before the selection settles", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(1);
 
-		const { pool, wss } = makePool();
+		const { pool, wss } = makePool(onTestFinished);
 		const selecting = pool.selectAsync(REQUEST);
 		const socket = connectPlugin(wss, { protocolVersion: EXPECTED_VERSION - 1 });
 		socket.emit("close");
 
-		const selection = await selecting;
+		const selection = await afterAsync(REQUEST.connectTimeoutMs, selecting);
 
 		expect(selection.kind).toBe("no-connection");
 	});
 
 	it("should keep what a socket announced when its connection is announced twice", async ({
 		expect,
+		onTestFinished,
 	}) => {
 		// Re-tracking would reset the candidate, losing the announcement made at
 		// open. The plugin never sends a second one, so it would read as stale.
 		expect.assertions(2);
 
-		const { pool, wss } = makePool();
+		const { pool, wss } = makePool(onTestFinished);
 		const selecting = pool.selectAsync(REQUEST);
 		const socket = connectPlugin(wss, { protocolVersion: EXPECTED_VERSION - 1 });
 		wss.emit("connection", socket);
 
-		const selection = await selecting;
+		const selection = await afterAsync(REQUEST.connectTimeoutMs, selecting);
 
 		assert(selection.kind === "incompatible");
 
@@ -335,28 +363,31 @@ describe(PluginConnectionPool, () => {
 		expect(selection.candidates[0]!.hello!.protocolVersion).toBe(EXPECTED_VERSION - 1);
 	});
 
-	it("should end an in-flight selection on abort", async ({ expect }) => {
+	it("should end an in-flight selection on abort", async ({ expect, onTestFinished }) => {
 		// The server failed to bind: no plugin will ever arrive, and the
 		// connect timer would otherwise hold the event loop open.
 		expect.assertions(1);
 
-		const { pool, wss } = makePool();
+		const { pool, wss } = makePool(onTestFinished);
 		const selecting = pool.selectAsync({ ...REQUEST, connectTimeoutMs: 600_000 });
 		connectPlugin(wss, { protocolVersion: EXPECTED_VERSION - 1 });
 		pool.abortSelection();
 
-		const selection = await selecting;
+		const selection = await afterAsync(REQUEST.connectTimeoutMs, selecting);
 
 		expect(selection.kind).toBe("no-connection");
 	});
 
-	it("should ignore an abort with no selection in flight", async ({ expect }) => {
+	it("should ignore an abort with no selection in flight", async ({ expect, onTestFinished }) => {
 		expect.assertions(1);
 
-		const { pool } = makePool();
+		const { pool } = makePool(onTestFinished);
 		pool.abortSelection();
 
-		const selection = await pool.selectAsync({ ...REQUEST, connectTimeoutMs: 10 });
+		const selection = await afterAsync(
+			10,
+			pool.selectAsync({ ...REQUEST, connectTimeoutMs: 10 }),
+		);
 
 		expect(selection.kind).toBe("no-connection");
 	});

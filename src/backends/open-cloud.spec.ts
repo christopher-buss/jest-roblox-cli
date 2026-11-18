@@ -800,7 +800,7 @@ describe(OpenCloudBackend, () => {
 					() => scriptResult(envelope([packageEntry("alpha")])),
 					async () => {
 						await new Promise<void>((resolve) => {
-							setTimeout(resolve, 10);
+							setImmediate(resolve);
 						});
 						return scriptResult(envelope([packageEntry("beta")]));
 					},

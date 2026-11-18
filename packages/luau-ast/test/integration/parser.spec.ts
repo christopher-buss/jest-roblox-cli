@@ -13,6 +13,20 @@ describe(loadLuauParser, () => {
 });
 
 describe("parse", () => {
+	it("should parse a large string", ({ expect }) => {
+		expect.assertions(1);
+
+		const value = "x".repeat(10_000_000);
+		const result = loadLuauParser().parse(`return "${value}"`);
+		assert(result.ok);
+		const statement = result.root.body[0];
+		assert(statement!.type === "AstStatReturn");
+
+		expect(statement.list).toStrictEqual([
+			expect.objectContaining({ type: "AstExprConstantString", value }),
+		]);
+	});
+
 	it("should parse a local declaration into an AstStatBlock root", ({ expect }) => {
 		expect.assertions(2);
 

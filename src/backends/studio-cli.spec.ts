@@ -2078,7 +2078,7 @@ describe(StudioCliBackend, () => {
 			const setTimeoutSpy = vi.spyOn(globalThis, "setTimeout");
 
 			const { childProcess } = stubSpawn({ ignoredSignals: ["SIGTERM"] });
-			await backendWithDefaultLaunch({ childProcess, extra: { bootTimeout: 40 }, fileSystem })
+			await backendWithDefaultLaunch({ childProcess, extra: { bootTimeout: 1 }, fileSystem })
 				.runTestsAsync(singleJob)
 				.catch((err) => err);
 			const graceIndex = setTimeoutSpy.mock.calls.findIndex(([, delay]) => delay === 5000);

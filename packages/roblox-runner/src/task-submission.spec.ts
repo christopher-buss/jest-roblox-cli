@@ -786,8 +786,8 @@ describe("budgeted creates", () => {
 
 		await expect(
 			submitScriptAsync(makeSubmission(stalled), {
-				submitBudget: 10,
-				submitCapacityBudget: 20,
+				submitBudget: 1,
+				submitCapacityBudget: 2,
 			}),
 		).rejects.toThrow("0s inactivity limit; 0s maximum");
 	});
@@ -914,9 +914,14 @@ describe("capacity admission", () => {
 			submitBudget: 75_000,
 			submitCapacityBudget: 405_000,
 		}).catch((err) => err);
-		await vi.waitFor(() => {
-			expect(http.requests.filter(({ request }) => request.method === "GET")).toHaveLength(1);
-		});
+		await vi.waitFor(
+			() => {
+				expect(
+					http.requests.filter(({ request }) => request.method === "GET"),
+				).toHaveLength(1);
+			},
+			{ interval: 1 },
+		);
 		http.mockError(capacityError());
 		http.mockResponse({ body: { state: "PROCESSING" }, status: 200 });
 		const second = submitScriptAsync(submission, {
@@ -933,9 +938,12 @@ describe("capacity admission", () => {
 				isSecondSettled = true;
 				return err;
 			});
-		await vi.waitFor(() => {
-			expect(countPosts(http)).toBe(2);
-		});
+		await vi.waitFor(
+			() => {
+				expect(countPosts(http)).toBe(2);
+			},
+			{ interval: 1 },
+		);
 		firstController.abort(new Error("stop first"));
 
 		await expect(first).resolves.toMatchObject({

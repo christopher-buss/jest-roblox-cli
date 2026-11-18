@@ -612,7 +612,7 @@ describe(OcaleRunner, () => {
 			);
 
 			const caught = await runner
-				.executeScriptAsync({ pollBudget: 50, script: "return 1", timeout: 1000 })
+				.executeScriptAsync({ pollBudget: 10, script: "return 1", timeout: 1000 })
 				.catch((err) => err);
 
 			assert(caught instanceof Error);

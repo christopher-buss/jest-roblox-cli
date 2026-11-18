@@ -102,6 +102,10 @@ function splitStamp(name: string | undefined): [string, string, string] {
 	return [parts[0] ?? "", pid ?? "", nonce ?? ""];
 }
 
+function skipRetryPauses(): void {
+	vi.spyOn(Atomics, "wait").mockReturnValue("timed-out");
+}
+
 describe(atomicWrite, () => {
 	it("should write contents to the target path", ({ expect }) => {
 		expect.assertions(1);
@@ -146,6 +150,7 @@ describe(atomicWrite, () => {
 	it("should land the write when the first rename attempts fail", ({ expect }) => {
 		expect.assertions(1);
 
+		skipRetryPauses();
 		const { fileSystem, volume } = createMemoryFileSystem();
 
 		failRenameTimes(fileSystem, 2);
@@ -158,6 +163,7 @@ describe(atomicWrite, () => {
 	it("should replace an existing target on the last retry left", ({ expect }) => {
 		expect.assertions(1);
 
+		skipRetryPauses();
 		const { fileSystem, volume } = createMemoryFileSystem();
 
 		volume.fromJSON({ "/coverage/manifest.json": "old" });
@@ -173,6 +179,7 @@ describe(atomicWrite, () => {
 	}) => {
 		expect.assertions(2);
 
+		skipRetryPauses();
 		const { fileSystem, volume } = createMemoryFileSystem();
 
 		failRenameTimes(fileSystem, 5);
@@ -186,6 +193,7 @@ describe(atomicWrite, () => {
 	it("should normalize a non-Error rename failure", ({ expect }) => {
 		expect.assertions(1);
 
+		skipRetryPauses();
 		const { fileSystem } = createMemoryFileSystem();
 
 		vi.spyOn(fileSystem, "renameSync").mockThrow(
@@ -203,7 +211,7 @@ describe(atomicWrite, () => {
 
 		const { fileSystem, volume } = createMemoryFileSystem();
 
-		const waitSpy = vi.spyOn(Atomics, "wait");
+		const waitSpy = vi.spyOn(Atomics, "wait").mockReturnValue("timed-out");
 		failRenameTimes(fileSystem, 2);
 
 		atomicWrite({ contents: "hello", fileSystem, targetPath: "/coverage/manifest.json" });
