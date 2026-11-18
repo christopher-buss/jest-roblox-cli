@@ -1,16 +1,15 @@
 import * as path from "node:path";
 import process from "node:process";
-import { describe, expect, it, onTestFinished, vi } from "vitest";
+import { describe, it, type MockInstance, vi } from "vitest";
 
 import { createMemoryFileSystem, type MemoryVolume } from "#test/mocks/memory-file-system.ts";
 import { makeExecuteResult, makeJestResult } from "#test/mocks/spec-results.ts";
-import type { ExecuteResult } from "../executor/executor-types.ts";
+import type { GameOutputEntry } from "../protocol/game-output.ts";
 import type {
 	OutputSettings,
 	ProjectResult,
 	UnitTypecheckResult,
 } from "../results/run-result-types.ts";
-import type { GameOutputEntry } from "../protocol/game-output.ts";
 import type { JestResult } from "../types/jest-result-types.ts";
 import { writeRunSinksAsync } from "./sinks.ts";
 
@@ -34,10 +33,10 @@ function makeSettings(overrides: Partial<OutputSettings> = {}): OutputSettings {
 	};
 }
 
-function makeProject(
-	gameOutput: string | undefined = RAW_GAME_OUTPUT,
-	result: JestResult = makeJestResult(),
-): ProjectResult {
+function makeProject({
+	gameOutput = RAW_GAME_OUTPUT,
+	result = makeJestResult(),
+}: { gameOutput?: string; result?: JestResult } = {}): ProjectResult {
 	return {
 		displayName: "@halcyon/foo › client",
 		result: makeExecuteResult({ gameOutput, result }),
@@ -61,10 +60,10 @@ async function writeAsync({
 	settings: OutputSettings;
 	typecheckResult?: JestResult;
 	typecheckUnits?: Array<UnitTypecheckResult>;
-}): Promise<{ consoleError: ReturnType<typeof vi.spyOn>; volume: MemoryVolume }> {
+}): Promise<{ consoleError: MockInstance<typeof console.error>; volume: MemoryVolume }> {
 	const { fileSystem, volume } = createMemoryFileSystem();
 	const consoleError = vi.spyOn(console, "error").mockReturnValue(undefined);
-	const runtime: ExecuteResult | undefined = projectResults[0]?.result;
+	const runtime = projectResults[0]?.result;
 	const mergedResult =
 		givenMergedResult ?? typecheckResult ?? runtime?.result ?? makeJestResult();
 
@@ -81,12 +80,12 @@ async function writeAsync({
 }
 
 describe(writeRunSinksAsync, () => {
-	it("should write the run's merged result to the result file", async () => {
+	it("should write the run's merged result to the result file", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { volume } = await writeAsync({
 			mergedResult: makeJestResult({ numFailedTests: 1, numPassedTests: 3, success: false }),
-			projectResults: [makeProject(undefined, makeJestResult({ numPassedTests: 2 }))],
+			projectResults: [makeProject({ result: makeJestResult({ numPassedTests: 2 }) })],
 			settings: makeSettings({ outputFile: "/workspace/all.json" }),
 			typecheckResult: makeJestResult({ numFailedTests: 1, success: false }),
 		});
@@ -98,7 +97,7 @@ describe(writeRunSinksAsync, () => {
 		});
 	});
 
-	it("should write nothing when no sink is configured", async () => {
+	it("should write nothing when no sink is configured", async ({ expect }) => {
 		expect.assertions(2);
 
 		const { consoleError, volume } = await writeAsync({ settings: makeSettings() });
@@ -107,12 +106,14 @@ describe(writeRunSinksAsync, () => {
 		expect(consoleError).not.toHaveBeenCalled();
 	});
 
-	it("should write one sanitized result file per pair, merging its Type Tests", async () => {
+	it("should write one sanitized result file per pair, merging its Type Tests", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const typecheck = makeJestResult({ numPassedTests: 5 });
 		const { volume } = await writeAsync({
-			projectResults: [makeProject(undefined, makeJestResult({ numPassedTests: 2 }))],
+			projectResults: [makeProject({ result: makeJestResult({ numPassedTests: 2 }) })],
 			settings: makeSettings({ perUnitOutputFile: true }),
 			typecheckUnits: [
 				{ pkg: "@halcyon/foo", project: "client", result: typecheck },
@@ -121,14 +122,19 @@ describe(writeRunSinksAsync, () => {
 		});
 
 		expect(
-			JSON.parse(readSink(volume, path.join(OUTPUT_DIRECTORY, "@halcyon-foo--client.jest-output.log"))),
+			JSON.parse(
+				readSink(
+					volume,
+					path.join(OUTPUT_DIRECTORY, "@halcyon-foo--client.jest-output.log"),
+				),
+			),
 		).toMatchObject({ numPassedTests: 7 });
 		expect(
 			readSink(volume, path.join(OUTPUT_DIRECTORY, "@halcyon-foo--types.jest-output.log")),
 		).toBe(JSON.stringify(typecheck, null, 2));
 	});
 
-	it("should write per-pair result files for a run with no runtime job", async () => {
+	it("should write per-pair result files for a run with no runtime job", async ({ expect }) => {
 		expect.assertions(1);
 
 		const typecheck = makeJestResult();
@@ -144,7 +150,7 @@ describe(writeRunSinksAsync, () => {
 		]);
 	});
 
-	it("should group the aggregated Game Output by package and project", async () => {
+	it("should group the aggregated Game Output by package and project", async ({ expect }) => {
 		expect.assertions(3);
 
 		const { consoleError, volume } = await writeAsync({
@@ -162,12 +168,15 @@ describe(writeRunSinksAsync, () => {
 		);
 	});
 
-	it("should group a project without a package under its display name", async () => {
+	it("should group a project without a package under its display name", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { volume } = await writeAsync({
 			projectResults: [
-				{ displayName: "client", result: makeExecuteResult({ gameOutput: RAW_GAME_OUTPUT }) },
+				{
+					displayName: "client",
+					result: makeExecuteResult({ gameOutput: RAW_GAME_OUTPUT }),
+				},
 			],
 			settings: makeSettings({ gameOutput: "/workspace/game.json", perUnitGameOutput: true }),
 		});
@@ -177,13 +186,15 @@ describe(writeRunSinksAsync, () => {
 		]);
 	});
 
-	it("should write one batch group when the runner captured output for the batch", async () => {
+	it("should write one batch group when the runner captured output for the batch", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const batched = makeProject();
 		batched.result.gameOutputScope = "batch";
 		const { volume } = await writeAsync({
-			projectResults: [batched, makeProject("[]")],
+			projectResults: [batched, makeProject({ gameOutput: "[]" })],
 			settings: makeSettings({ gameOutput: "/workspace/game.json" }),
 		});
 
@@ -192,11 +203,13 @@ describe(writeRunSinksAsync, () => {
 		]);
 	});
 
-	it("should not name the aggregate on a failed run, whose report names it", async () => {
+	it("should not name the aggregate on a failed run, whose report names it", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const { consoleError, volume } = await writeAsync({
-			projectResults: [makeProject(RAW_GAME_OUTPUT, makeJestResult({ success: false }))],
+			projectResults: [makeProject({ result: makeJestResult({ success: false }) })],
 			settings: makeSettings({ gameOutput: "/workspace/game.json" }),
 		});
 
@@ -204,11 +217,13 @@ describe(writeRunSinksAsync, () => {
 		expect(consoleError).not.toHaveBeenCalled();
 	});
 
-	it("should name the per-package files for an agent, failed run included", async () => {
+	it("should name the per-package files for an agent, failed run included", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { consoleError } = await writeAsync({
-			projectResults: [makeProject(RAW_GAME_OUTPUT, makeJestResult({ success: false }))],
+			projectResults: [makeProject({ result: makeJestResult({ success: false }) })],
 			settings: makeSettings({
 				formatters: ["agent"],
 				gameOutput: "/workspace/game.json",
@@ -221,11 +236,13 @@ describe(writeRunSinksAsync, () => {
 		);
 	});
 
-	it("should name the per-package files when they are the only Game Output", async () => {
+	it("should name the per-package files when they are the only Game Output", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const { consoleError } = await writeAsync({
-			projectResults: [makeProject(), makeProject("[]")],
+			projectResults: [makeProject(), makeProject({ gameOutput: "[]" })],
 			settings: makeSettings({ perUnitGameOutput: true }),
 		});
 
@@ -234,12 +251,17 @@ describe(writeRunSinksAsync, () => {
 		);
 	});
 
-	it("should skip per-package Game Output for a project without a package", async () => {
+	it("should skip per-package Game Output for a project without a package", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const { consoleError, volume } = await writeAsync({
 			projectResults: [
-				{ displayName: "client", result: makeExecuteResult({ gameOutput: RAW_GAME_OUTPUT }) },
+				{
+					displayName: "client",
+					result: makeExecuteResult({ gameOutput: RAW_GAME_OUTPUT }),
+				},
 			],
 			settings: makeSettings({ perUnitGameOutput: true, perUnitOutputFile: true }),
 		});
@@ -248,18 +270,18 @@ describe(writeRunSinksAsync, () => {
 		expect(consoleError).not.toHaveBeenCalled();
 	});
 
-	it("should not announce an empty aggregate", async () => {
+	it("should not announce an empty aggregate", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { consoleError } = await writeAsync({
-			projectResults: [makeProject("[]")],
+			projectResults: [makeProject({ gameOutput: "[]" })],
 			settings: makeSettings({ gameOutput: "/workspace/game.json" }),
 		});
 
 		expect(consoleError).not.toHaveBeenCalled();
 	});
 
-	it("should name no Game Output under silent", async () => {
+	it("should name no Game Output under silent", async ({ expect }) => {
 		expect.assertions(2);
 
 		const { consoleError, volume } = await writeAsync({
@@ -274,7 +296,7 @@ describe(writeRunSinksAsync, () => {
 		expect(consoleError).not.toHaveBeenCalled();
 	});
 
-	it("should write no Game Output for a run with no runtime job", async () => {
+	it("should write no Game Output for a run with no runtime job", async ({ expect }) => {
 		expect.assertions(1);
 
 		const { volume } = await writeAsync({
@@ -286,7 +308,7 @@ describe(writeRunSinksAsync, () => {
 		expect(volume.existsSync(path.resolve("/workspace/game.json"))).toBeFalse();
 	});
 
-	it("should append the GitHub Actions job summary", async () => {
+	it("should append the GitHub Actions job summary", async ({ expect, onTestFinished }) => {
 		expect.assertions(1);
 
 		onTestFinished(() => {

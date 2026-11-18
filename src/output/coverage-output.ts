@@ -1,13 +1,13 @@
 import process from "node:process";
 import color from "tinyrainbow";
 
+import { usesAgentFormatter } from "../config/formatter-selection.ts";
 import type { CoverageDisplayPredicate } from "../coverage-report/agent-table-filter.ts";
 import {
 	checkThresholds,
 	generateReports,
 	printCoverageHeader,
 } from "../coverage-report/reporter.ts";
-import { usesAgentFormatter } from "../config/formatter-selection.ts";
 import type {
 	CoverageReportUnit,
 	OutputSettings,
@@ -22,11 +22,20 @@ export interface CoveragePipeline {
 	generateReports: typeof generateReports;
 }
 
+type CoverageSettings = Pick<OutputSettings, "formatters" | "silent" | "verbose">;
+
 interface ProcessCoverageOptions {
 	agentTextFilter?: CoverageDisplayPredicate | undefined;
 	coverage: RunCoverage | undefined;
 	pipeline: CoveragePipeline;
-	settings: Pick<OutputSettings, "formatters" | "silent" | "verbose">;
+	settings: CoverageSettings;
+}
+
+interface UnitReportOptions {
+	agentTextFilter: CoverageDisplayPredicate | undefined;
+	isAgentMode: boolean;
+	pipeline: CoveragePipeline;
+	settings: CoverageSettings;
 }
 
 export const defaultCoveragePipeline: CoveragePipeline = {
@@ -65,18 +74,7 @@ export function processCoverage({
 
 	let isPassed = true;
 	for (const unit of units) {
-		if (unit.label !== undefined && !settings.silent) {
-			process.stdout.write(`\n${unit.label}\n`);
-		}
-
-		pipeline.generateReports({
-			agentMode: isAgentMode,
-			agentTextFilter,
-			coverageDirectory: unit.coverageDirectory,
-			mapped: unit.universe,
-			reporters: unit.reporters,
-		});
-
+		writeUnitReports(unit, { agentTextFilter, isAgentMode, pipeline, settings });
 		isPassed = enforceUnitThreshold(unit, pipeline.checkThresholds) && isPassed;
 	}
 
@@ -92,6 +90,23 @@ export function printFinalStatus(passed: boolean): void {
 		? color.bgGreen(color.black(color.bold(" PASS ")))
 		: color.bgRed(color.white(color.bold(" FAIL ")));
 	process.stdout.write(`${badge}\n`);
+}
+
+function writeUnitReports(
+	unit: CoverageReportUnit,
+	{ agentTextFilter, isAgentMode, pipeline, settings }: UnitReportOptions,
+): void {
+	if (unit.label !== undefined && !settings.silent) {
+		process.stdout.write(`\n${unit.label}\n`);
+	}
+
+	pipeline.generateReports({
+		agentMode: isAgentMode,
+		agentTextFilter,
+		coverageDirectory: unit.coverageDirectory,
+		mapped: unit.universe,
+		reporters: unit.reporters,
+	});
 }
 
 function enforceUnitThreshold(

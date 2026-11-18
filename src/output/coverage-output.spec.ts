@@ -1,13 +1,15 @@
 import { fromAny } from "@total-typescript/shoehorn";
 
 import process from "node:process";
-import { describe, expect, it, onTestFinished, vi } from "vitest";
+import { describe, it, type TestContext, vi } from "vitest";
 
 import type { MappedCoverageResult } from "../coverage-report/mapper-types.ts";
 import type { CoverageReportUnit, OutputSettings } from "../results/run-result-types.ts";
 import { type CoveragePipeline, printFinalStatus, processCoverage } from "./coverage-output.ts";
 
 const UNIVERSE = fromAny<MappedCoverageResult, unknown>({ files: {} });
+
+type ThresholdFailure = ReturnType<CoveragePipeline["checkThresholds"]>["failures"][number];
 
 function makeSettings(
 	overrides: Partial<OutputSettings> = {},
@@ -25,7 +27,7 @@ function makePipeline(overrides: Partial<CoveragePipeline> = {}) {
 	};
 }
 
-function captureOutput() {
+function captureOutput(onTestFinished: TestContext["onTestFinished"]) {
 	const stdout = vi.spyOn(process.stdout, "write").mockReturnValue(true);
 	const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
 	onTestFinished(() => {
@@ -47,19 +49,22 @@ function makeUnit(overrides: Partial<CoverageReportUnit> = {}): CoverageReportUn
 	};
 }
 
-function failingPipeline(metric: "branches" | "lines", actual: number, threshold: number) {
+function failingPipeline(failure: ThresholdFailure) {
 	return makePipeline({
 		checkThresholds: vi.fn<CoveragePipeline["checkThresholds"]>(() => {
-			return { failures: [{ actual, metric, threshold }], passed: false };
+			return { failures: [failure], passed: false };
 		}),
 	});
 }
 
 describe(processCoverage, () => {
-	it("should skip everything when the run collected no coverage", () => {
+	it("should skip everything when the run collected no coverage", ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(2);
 
-		const output = captureOutput();
+		const output = captureOutput(onTestFinished);
 
 		expect(
 			processCoverage({
@@ -71,10 +76,13 @@ describe(processCoverage, () => {
 		expect(output.stdout()).toBe("");
 	});
 
-	it("should write the notice and pass when nothing was mappable", () => {
+	it("should write the notice and pass when nothing was mappable", ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(3);
 
-		const output = captureOutput();
+		const output = captureOutput(onTestFinished);
 		const pipeline = makePipeline();
 
 		expect(
@@ -88,10 +96,10 @@ describe(processCoverage, () => {
 		expect(pipeline.generateReports).not.toHaveBeenCalled();
 	});
 
-	it("should keep the notice off stderr when silent", () => {
+	it("should keep the notice off stderr when silent", ({ expect, onTestFinished }) => {
 		expect.assertions(1);
 
-		const output = captureOutput();
+		const output = captureOutput(onTestFinished);
 
 		processCoverage({
 			coverage: { notice: "Warning: nothing", units: [] },
@@ -102,10 +110,13 @@ describe(processCoverage, () => {
 		expect(output.stderr()).toBe("");
 	});
 
-	it("should report an unlabelled unit and pass without a threshold", () => {
+	it("should report an unlabelled unit and pass without a threshold", ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(5);
 
-		const output = captureOutput();
+		const output = captureOutput(onTestFinished);
 		const pipeline = makePipeline();
 
 		expect(
@@ -127,25 +138,28 @@ describe(processCoverage, () => {
 		expect(pipeline.checkThresholds).not.toHaveBeenCalled();
 	});
 
-	it("should fail and name each unmet metric of an unlabelled unit", () => {
+	it("should fail and name each unmet metric of an unlabelled unit", ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(2);
 
-		const output = captureOutput();
+		const output = captureOutput(onTestFinished);
 
 		expect(
 			processCoverage({
 				coverage: { units: [makeUnit({ coverageThreshold: { lines: 80 } })] },
-				pipeline: failingPipeline("lines", 50, 80),
+				pipeline: failingPipeline({ actual: 50, metric: "lines", threshold: 80 }),
 				settings: makeSettings(),
 			}),
 		).toBeFalse();
 		expect(output.stderr()).toBe("Coverage threshold not met for lines: 50.00% < 80%\n");
 	});
 
-	it("should pass when the threshold is met", () => {
+	it("should pass when the threshold is met", ({ expect, onTestFinished }) => {
 		expect.assertions(1);
 
-		captureOutput();
+		captureOutput(onTestFinished);
 
 		expect(
 			processCoverage({
@@ -156,11 +170,11 @@ describe(processCoverage, () => {
 		).toBeTrue();
 	});
 
-	it("should label and gate every package on its own threshold", () => {
+	it("should label and gate every package on its own threshold", ({ expect, onTestFinished }) => {
 		expect.assertions(4);
 
-		const output = captureOutput();
-		const pipeline = failingPipeline("branches", 10, 90);
+		const output = captureOutput(onTestFinished);
+		const pipeline = failingPipeline({ actual: 10, metric: "branches", threshold: 90 });
 
 		expect(
 			processCoverage({
@@ -183,10 +197,10 @@ describe(processCoverage, () => {
 		);
 	});
 
-	it("should print neither header nor labels when silent", () => {
+	it("should print neither header nor labels when silent", ({ expect, onTestFinished }) => {
 		expect.assertions(1);
 
-		const output = captureOutput();
+		const output = captureOutput(onTestFinished);
 
 		processCoverage({
 			coverage: { units: [makeUnit({ label: "alpha" })] },
@@ -199,12 +213,18 @@ describe(processCoverage, () => {
 });
 
 describe(printFinalStatus, () => {
-	it.for([true, false])("should write the badge for passed=%o", (passed) => {
-		expect.assertions(1);
+	it.for([
+		{ badge: " PASS ", passed: true },
+		{ badge: " FAIL ", passed: false },
+	])(
+		"should write the badge for passed=$passed",
+		({ badge, passed }, { expect, onTestFinished }) => {
+			expect.assertions(1);
 
-		const output = captureOutput();
-		printFinalStatus(passed);
+			const output = captureOutput(onTestFinished);
+			printFinalStatus(passed);
 
-		expect(output.stdout()).toContain(passed ? " PASS " : " FAIL ");
-	});
+			expect(output.stdout()).toContain(badge);
+		},
+	);
 });

@@ -1,6 +1,7 @@
 import * as path from "node:path";
 import process from "node:process";
 
+import { findGitHubActionsOptions, usesAgentFormatter } from "../config/formatter-selection.ts";
 import type { ExecuteResult } from "../executor/executor-types.ts";
 import {
 	formatAnnotations,
@@ -8,19 +9,6 @@ import {
 	resolveGitHubActions,
 } from "../formatters/github-actions.ts";
 import { formatJson, writeJsonFileAsync } from "../formatters/json.ts";
-import { findGitHubActionsOptions, usesAgentFormatter } from "../config/formatter-selection.ts";
-
-import { mergeResults } from "../types/jest-result-merge.ts";
-import type {
-	OutputSettings,
-	ProjectResult,
-	SinkUnit,
-	UnitTypecheckResult,
-} from "../results/run-result-types.ts";
-import type { SourceMapper } from "../source-mapper/index.ts";
-import type { PackageGameOutput } from "../types/game-output-types.ts";
-import type { JestResult } from "../types/jest-result-types.ts";
-import type { FileSystem } from "../utils/file-system.ts";
 import {
 	buildBatchGameOutput,
 	buildGroupedGameOutput,
@@ -30,6 +18,17 @@ import {
 	writeGameOutput,
 	writeGroupedGameOutput,
 } from "../game-output/game-output.ts";
+import type {
+	OutputSettings,
+	ProjectResult,
+	SinkUnit,
+	UnitTypecheckResult,
+} from "../results/run-result-types.ts";
+import type { SourceMapper } from "../source-mapper/index.ts";
+import type { PackageGameOutput } from "../types/game-output-types.ts";
+import { mergeResults } from "../types/jest-result-merge.ts";
+import type { JestResult } from "../types/jest-result-types.ts";
+import type { FileSystem } from "../utils/file-system.ts";
 import { WORK_DIRECTORY } from "../utils/work-directory.ts";
 
 const PER_UNIT_OUTPUT_DIRECTORY = path.join(WORK_DIRECTORY, "output");
@@ -104,12 +103,16 @@ function runGitHubActionsFormatter({
 		return;
 	}
 
-	const { annotations, context, jobSummaryPath } = resolveGitHubActions({
+	const {
+		annotations: shouldAnnotate,
+		context,
+		jobSummaryPath,
+	} = resolveGitHubActions({
 		sourceMapper,
 		userOptions,
 	});
 
-	if (annotations) {
+	if (shouldAnnotate) {
 		const commands = formatAnnotations(result, context);
 		if (commands !== "") {
 			process.stderr.write(`${commands}\n`);
@@ -121,17 +124,20 @@ function runGitHubActionsFormatter({
 	}
 }
 
-function unitKey({ pkg, project }: SinkUnit): string {
-	return JSON.stringify([pkg, project]);
-}
-
 function sanitizePathSegment(segment: string): string {
 	return segment.replace(FILESYSTEM_UNSAFE, "-");
 }
 
-function perUnitPath(rootDir: string, unit: SinkUnit, suffix: string): string {
+function perUnitPath(
+	unit: SinkUnit,
+	{ rootDir, suffix }: { rootDir: string; suffix: string },
+): string {
 	const filename = `${sanitizePathSegment(unit.pkg)}--${sanitizePathSegment(unit.project)}${suffix}`;
 	return path.join(rootDir, PER_UNIT_OUTPUT_DIRECTORY, filename);
+}
+
+function unitKey({ pkg, project }: SinkUnit): string {
+	return JSON.stringify([pkg, project]);
 }
 
 function collectUnitResults(
@@ -166,7 +172,7 @@ function writePerUnitResultFiles({
 	fileSystem.mkdirSync(path.join(rootDir, PER_UNIT_OUTPUT_DIRECTORY), { recursive: true });
 	for (const entry of collectUnitResults(projectResults, typecheckUnits)) {
 		fileSystem.writeFileSync(
-			perUnitPath(rootDir, entry, ".jest-output.log"),
+			perUnitPath(entry, { rootDir, suffix: ".jest-output.log" }),
 			formatJson(entry.result, rootDir),
 			"utf8",
 		);
@@ -203,7 +209,10 @@ function writePerUnitGameOutput({ fileSystem, projectResults, settings }: RunSin
 			return [];
 		}
 
-		const filePath = perUnitPath(settings.rootDir, unit, ".game-output.log");
+		const filePath = perUnitPath(unit, {
+			rootDir: settings.rootDir,
+			suffix: ".game-output.log",
+		});
 		const entries = parseGameOutput(result.gameOutput);
 		writeGameOutput({ entries, filePath, fileSystem });
 		const notice = formatGameOutputNotice(filePath, entries.length);

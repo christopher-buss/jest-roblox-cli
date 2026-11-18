@@ -2,7 +2,7 @@ import { fromPartial } from "@total-typescript/shoehorn";
 
 import process from "node:process";
 import { stripVTControlCharacters } from "node:util";
-import { describe, expect, it, onTestFinished, vi } from "vitest";
+import { describe, it, type TestContext, vi } from "vitest";
 
 import type { FormatterEntry } from "../config/formatter-selection.ts";
 import type { ExecuteResult } from "../executor/executor-types.ts";
@@ -77,7 +77,7 @@ function makeExecuteResult(numberFailedTests = 0): ExecuteResult {
 	});
 }
 
-function captureOutput() {
+function captureOutput(onTestFinished: TestContext["onTestFinished"]) {
 	const log = vi.spyOn(console, "log").mockReturnValue(undefined);
 	const stdout = vi.spyOn(process.stdout, "write").mockReturnValue(true);
 	const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
@@ -87,11 +87,12 @@ function captureOutput() {
 		stderr.mockRestore();
 	});
 	return {
-		log: () =>
-			log.mock.calls
+		log: () => {
+			return log.mock.calls
 				.map(([line]) => stripVTControlCharacters(String(line)))
 				.join("\n")
-				.replace(/^.*Start at.*\n/m, ""),
+				.replace(/^.*Start at.*\n/m, "");
+		},
 		stderr: () => stderr.mock.calls.map(([chunk]) => String(chunk)).join(""),
 		stdout: () => stdout.mock.calls.map(([chunk]) => String(chunk)).join(""),
 	};
@@ -116,20 +117,20 @@ function makeContext(overrides: Partial<RunPrintContext> = {}): RunPrintContext 
 }
 
 describe(printRunResults, () => {
-	it("should print nothing when silent", () => {
+	it("should print nothing when silent", ({ expect, onTestFinished }) => {
 		expect.assertions(1);
 
-		const output = captureOutput();
+		const output = captureOutput(onTestFinished);
 
 		printRunResults(makeContext({ settings: makeSettings({ silent: true }) }));
 
 		expect(output.log()).toBe("");
 	});
 
-	it("should render every project with the default formatter", () => {
+	it("should render every project with the default formatter", ({ expect, onTestFinished }) => {
 		expect.assertions(2);
 
-		const output = captureOutput();
+		const output = captureOutput(onTestFinished);
 
 		printRunResults(
 			makeContext({
@@ -157,10 +158,13 @@ describe(printRunResults, () => {
 		expect(output.stderr()).toBe("");
 	});
 
-	it("should render the merged result as JSON relative to the root", () => {
+	it("should render the merged result as JSON relative to the root", ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(1);
 
-		const output = captureOutput();
+		const output = captureOutput(onTestFinished);
 
 		printRunResults(makeContext({ settings: makeSettings({ formatters: ["json"] }) }));
 
@@ -173,20 +177,24 @@ describe(printRunResults, () => {
 	});
 
 	it.for<{ formatters: Array<FormatterEntry>; name: string }>([
-		{ formatters: ["agent"], name: "default" },
-		{ formatters: [["agent", { maxFailures: 1 }]], name: "one" },
+		{ name: "default", formatters: ["agent"] },
+		{ name: "one", formatters: [["agent", { maxFailures: 1 }]] },
 	])(
 		"should render agent output with $name max failures and the type detail",
-		({ formatters }) => {
+		({ formatters }, { expect, onTestFinished }) => {
 			expect.assertions(2);
 
-			const output = captureOutput();
+			const output = captureOutput(onTestFinished);
 
 			printRunResults(
 				makeContext({
 					bail: { notRun: 1, ran: 1 },
 					projectResults: [makeProject("core", 2)],
-					settings: makeSettings({ formatters, gameOutput: "game.log", outputFile: "out.json" }),
+					settings: makeSettings({
+						formatters,
+						gameOutput: "game.log",
+						outputFile: "out.json",
+					}),
 					typecheckResult: makeJestResult(2),
 				}),
 			);
@@ -198,28 +206,34 @@ describe(printRunResults, () => {
 });
 
 describe("printRunResults without a runtime job", () => {
-	it.for([false, true])("should write the whole typecheck report with color=%s", (color) => {
-		expect.assertions(2);
+	it.for([false, true])(
+		"should write the whole typecheck report with color=%s",
+		(color, { expect, onTestFinished }) => {
+			expect.assertions(2);
 
-		const output = captureOutput();
+			const output = captureOutput(onTestFinished);
 
-		printRunResults(
-			makeContext({
-				projectResults: [],
-				runtime: undefined,
-				settings: makeSettings({ color }),
-				typecheckResult: makeJestResult(1),
-			}),
-		);
+			printRunResults(
+				makeContext({
+					projectResults: [],
+					runtime: undefined,
+					settings: makeSettings({ color }),
+					typecheckResult: makeJestResult(1),
+				}),
+			);
 
-		expect(stripVTControlCharacters(output.stdout())).toMatchSnapshot();
-		expect(output.stdout() !== stripVTControlCharacters(output.stdout())).toBe(color);
-	});
+			expect(stripVTControlCharacters(output.stdout())).toMatchSnapshot();
+			expect(output.stdout() !== stripVTControlCharacters(output.stdout())).toBe(color);
+		},
+	);
 
-	it("should write the typecheck report without color for the agent formatter", () => {
+	it("should write the typecheck report without color for the agent formatter", ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(1);
 
-		const output = captureOutput();
+		const output = captureOutput(onTestFinished);
 
 		printRunResults(
 			makeContext({
@@ -233,10 +247,10 @@ describe("printRunResults without a runtime job", () => {
 		expect(output.stdout()).toBe(stripVTControlCharacters(output.stdout()));
 	});
 
-	it("should print nothing without a Type Test result", () => {
+	it("should print nothing without a Type Test result", ({ expect, onTestFinished }) => {
 		expect.assertions(1);
 
-		const output = captureOutput();
+		const output = captureOutput(onTestFinished);
 
 		printRunResults(makeContext({ projectResults: [], runtime: undefined }));
 
@@ -245,10 +259,13 @@ describe("printRunResults without a runtime job", () => {
 });
 
 describe("printRunResults type report beside the runtime output", () => {
-	it("should write the summary rows to stderr for the json formatter", () => {
+	it("should write the summary rows to stderr for the json formatter", ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(1);
 
-		const output = captureOutput();
+		const output = captureOutput(onTestFinished);
 
 		printRunResults(
 			makeContext({
@@ -265,10 +282,10 @@ describe("printRunResults type report beside the runtime output", () => {
 		`);
 	});
 
-	it("should not write a clean agent type report", () => {
+	it("should not write a clean agent type report", ({ expect, onTestFinished }) => {
 		expect.assertions(1);
 
-		const output = captureOutput();
+		const output = captureOutput(onTestFinished);
 
 		printRunResults(
 			makeContext({

@@ -1,25 +1,21 @@
-import assert from "node:assert";
+import assert from "node:assert/strict";
 
+import { usesAgentFormatter } from "../config/formatter-selection.ts";
 import type { ExecuteResult } from "../executor/executor-types.ts";
 import { formatGapSummary } from "../formatters/gap-summary.ts";
 import { mergeProjectResults } from "../results/merge.ts";
+import type { OutputSettings, ProjectResult, RunResult } from "../results/run-result-types.ts";
 import { mergeResults } from "../types/jest-result-merge.ts";
-import type { OutputSettings, RunResult } from "../results/run-result-types.ts";
+import type { JestResult } from "../types/jest-result-types.ts";
 import { type FileSystem, nodeFileSystem } from "../utils/file-system.ts";
-import { usesAgentFormatter } from "../config/formatter-selection.ts";
 import {
 	type CoveragePipeline,
 	defaultCoveragePipeline,
 	printFinalStatus,
 	processCoverage,
 } from "./coverage-output.ts";
-import { printRunResults } from "./print.ts";
+import { printRunResults, type RunPrintContext } from "./print.ts";
 import { writeRunSinksAsync } from "./sinks.ts";
-
-interface OutputDependencies {
-	coveragePipeline?: CoveragePipeline;
-	fileSystem?: FileSystem;
-}
 
 /** Input to `outputRunAsync`. */
 export interface OutputRunOptions {
@@ -28,6 +24,22 @@ export interface OutputRunOptions {
 	/** The run result to report; its output settings must be resolved. */
 	result: RunResult;
 }
+
+interface OutputDependencies {
+	coveragePipeline?: CoveragePipeline;
+	fileSystem?: FileSystem;
+}
+
+interface RunReport {
+	result: RunResult;
+	runtime: ExecuteResult | undefined;
+	settings: OutputSettings;
+}
+
+const DEFAULT_DEPENDENCIES = {
+	coveragePipeline: defaultCoveragePipeline,
+	fileSystem: nodeFileSystem,
+} satisfies Required<OutputDependencies>;
 
 /**
  * Report a run to the screen and every output sink.
@@ -38,25 +50,13 @@ export async function outputRunAsync({
 	dependencies = {},
 	result,
 }: OutputRunOptions): Promise<number> {
-	const { coveragePipeline, fileSystem } = {
-		coveragePipeline: defaultCoveragePipeline,
-		fileSystem: nodeFileSystem,
-		...dependencies,
-	};
+	const { coveragePipeline, fileSystem } = { ...DEFAULT_DEPENDENCIES, ...dependencies };
 	const { output: settings, projectResults, typecheckResult } = result;
 	assert(settings !== undefined, "a reported run resolves its output settings");
 
-	const runtime =
-		projectResults.length > 0
-			? mergeProjectResults(projectResults.map((entry) => entry.result))
-			: undefined;
+	const runtime = mergeRuntime(projectResults);
 	const mergedResult = mergeResults(typecheckResult, runtime?.result);
-	const isCoveragePassed = reportRun({
-		coveragePipeline,
-		result,
-		runtime,
-		settings,
-	});
+	const isCoveragePassed = reportRun({ result, runtime, settings }, coveragePipeline);
 
 	if (runtime !== undefined) {
 		printGapSummary(settings, runtime);
@@ -71,15 +71,24 @@ export async function outputRunAsync({
 		typecheckUnits: result.typecheckUnits ?? [],
 	});
 
-	const areSnapshotsPersisted = (runtime?.snapshotWriteFailures ?? 0) === 0;
-	const areSnapshotsCurrent = (mergedResult.snapshot?.unchecked ?? 0) === 0;
-	const isPassed =
-		mergedResult.success && isCoveragePassed && areSnapshotsPersisted && areSnapshotsCurrent;
+	const isPassed = isCoveragePassed && hasRunPassed(mergedResult, runtime);
 	if (!settings.silent && settings.collectCoverage) {
 		printFinalStatus(isPassed);
 	}
 
 	return isPassed ? 0 : 1;
+}
+
+function mergeRuntime(projectResults: Array<ProjectResult>): ExecuteResult | undefined {
+	return projectResults.length > 0
+		? mergeProjectResults(projectResults.map((entry) => entry.result))
+		: undefined;
+}
+
+function hasRunPassed(mergedResult: JestResult, runtime: ExecuteResult | undefined): boolean {
+	const areSnapshotsPersisted = (runtime?.snapshotWriteFailures ?? 0) === 0;
+	const areSnapshotsCurrent = (mergedResult.snapshot?.unchecked ?? 0) === 0;
+	return mergedResult.success && areSnapshotsPersisted && areSnapshotsCurrent;
 }
 
 function printGapSummary(settings: OutputSettings, runtime: ExecuteResult): void {
@@ -92,39 +101,32 @@ function printGapSummary(settings: OutputSettings, runtime: ExecuteResult): void
 	}
 }
 
+function toPrintContext({ result, runtime, settings }: RunReport): RunPrintContext {
+	return {
+		affected: result.affected,
+		bail: result.bail,
+		coverageMs: result.coverageMs,
+		projectResults: result.projectResults,
+		runtime,
+		settings,
+		stagingMs: result.stagingMs,
+		typecheckResult: result.typecheckResult,
+	};
+}
+
 /**
  * Prints a run and reports whether its coverage cleared the thresholds.
- * @param options - Settings, coverage pipeline, merged runtime and run result.
+ * @param report - Run result, merged runtime and settings.
+ * @param coveragePipeline - The coverage steps to run.
  * @returns Whether coverage cleared the thresholds.
  */
-function reportRun({
-	coveragePipeline,
-	result,
-	runtime,
-	settings,
-}: {
-	coveragePipeline: CoveragePipeline;
-	result: RunResult;
-	runtime: ExecuteResult | undefined;
-	settings: OutputSettings;
-}): boolean {
-	const printResults = (): void => {
-		printRunResults({
-			bail: result.bail,
- affected: result.affected,
-			coverageMs: result.coverageMs,
-			projectResults: result.projectResults,
-			runtime,
-			settings,
-			stagingMs: result.stagingMs,
-			typecheckResult: result.typecheckResult,
-		});
-	};
-	const shouldDeferResults =
-		settings.collectCoverage && usesAgentFormatter(settings);
+function reportRun(report: RunReport, coveragePipeline: CoveragePipeline): boolean {
+	const { result, settings } = report;
+	const printContext = toPrintContext(report);
+	const shouldDeferResults = settings.collectCoverage && usesAgentFormatter(settings);
 
 	if (!shouldDeferResults) {
-		printResults();
+		printRunResults(printContext);
 	}
 
 	try {
@@ -136,7 +138,7 @@ function reportRun({
 		});
 	} finally {
 		if (shouldDeferResults) {
-			printResults();
+			printRunResults(printContext);
 		}
 	}
 }

@@ -3,7 +3,7 @@ import { fromAny } from "@total-typescript/shoehorn";
 import * as path from "node:path";
 import process from "node:process";
 import { stripVTControlCharacters } from "node:util";
-import { describe, expect, it, onTestFinished, vi } from "vitest";
+import { describe, it, type Mock, type TestContext, vi } from "vitest";
 
 import { createMemoryFileSystem, type MemoryVolume } from "#test/mocks/memory-file-system.ts";
 import { mappedFile } from "#test/mocks/spec-coverage.ts";
@@ -18,33 +18,34 @@ import type { ResolvedConfig } from "../config/resolved-config.ts";
 import type { MappedCoverageResult } from "../coverage-report/mapper-types.ts";
 import type { checkThresholds, generateReports } from "../coverage-report/reporter.ts";
 import type { ExecuteResult } from "../executor/executor-types.ts";
-import { outputRunAsync } from "./output.ts";
+import type { GameOutputEntry } from "../protocol/game-output.ts";
 import type {
 	CoverageReportUnit,
 	OutputSettings,
 	ProjectResult,
 	RunResult,
 } from "../results/run-result-types.ts";
-import type { GameOutputEntry } from "../protocol/game-output.ts";
 import type { JestResult, TestCaseResult } from "../types/jest-result-types.ts";
 import type { FileSystem } from "../utils/file-system.ts";
+import { outputRunAsync } from "./output.ts";
 
 type OutputDependencies = NonNullable<Parameters<typeof outputRunAsync>[0]["dependencies"]>;
+
+interface CoveragePipelineMock {
+	checkThresholds: Mock<typeof checkThresholds>;
+	generateReports: Mock<typeof generateReports>;
+}
 
 interface OutputHarness {
 	dependencies: OutputDependencies;
 	fileSystem: FileSystem;
+	pipeline: CoveragePipelineMock;
 	volume: MemoryVolume;
 }
 
 const GAME_OUTPUT_ENTRY: GameOutputEntry = { message: "hi", messageType: 0, timestamp: 0 };
 const RAW_GAME_OUTPUT = JSON.stringify([GAME_OUTPUT_ENTRY]);
 const COVERAGE_HEADER = "Coverage report from";
-
-const pipeline = {
-	checkThresholds: vi.fn<typeof checkThresholds>(),
-	generateReports: vi.fn<typeof generateReports>(),
-};
 
 interface SingleFixture {
 	coverageMs: number;
@@ -88,7 +89,10 @@ function makeSingleResult(overrides: Partial<SingleFixture> = {}): SingleFixture
 	};
 }
 
-function makeProjectResult(displayName = "client", executeOverrides = {}): ProjectResult {
+function makeProjectResult(
+	displayName: string,
+	executeOverrides: Parameters<typeof makeExecuteResult>[0] = {},
+): ProjectResult {
 	return {
 		displayName,
 		result: makeExecuteResult(executeOverrides),
@@ -98,35 +102,10 @@ function makeProjectResult(displayName = "client", executeOverrides = {}): Proje
 function makeMultiResult(overrides: Partial<RunResult> = {}): RunResult {
 	return {
 		coverageMs: 0,
-		projectResults: [makeProjectResult()],
+		projectResults: [makeProjectResult("client")],
 		stagingMs: 0,
 		...overrides,
 	};
-}
-
-async function outputOneProjectAsync({
-	config,
-	dependencies,
-	result,
-}: {
-	config: ResolvedConfig;
-	dependencies: OutputDependencies;
-	result: SingleFixture;
-}): Promise<number> {
-	const { coverageMs, runtimeResult, stagingMs, typecheckResult } = result;
-	return outputMultiResultAsync({
-		dependencies,
-		result: makeMultiResult({
-			coverageMs,
-			projectResults:
-				runtimeResult === undefined
-					? []
-					: [{ displayName: "client", result: runtimeResult }],
-			stagingMs,
-			typecheckResult,
-		}),
-		rootConfig: config,
-	});
 }
 
 function settingsOf(config: ResolvedConfig): OutputSettings {
@@ -161,6 +140,31 @@ async function outputMultiResultAsync({
 	});
 }
 
+async function outputOneProjectAsync({
+	config,
+	dependencies,
+	result,
+}: {
+	config: ResolvedConfig;
+	dependencies: OutputDependencies;
+	result: SingleFixture;
+}): Promise<number> {
+	const { coverageMs, runtimeResult, stagingMs, typecheckResult } = result;
+	return outputMultiResultAsync({
+		dependencies,
+		result: makeMultiResult({
+			coverageMs,
+			projectResults:
+				runtimeResult === undefined
+					? []
+					: [{ displayName: "client", result: runtimeResult }],
+			stagingMs,
+			typecheckResult,
+		}),
+		rootConfig: config,
+	});
+}
+
 function makeReportOptions(overrides: Partial<OutputSettings> = {}): OutputSettings {
 	return {
 		collectCoverage: false,
@@ -176,9 +180,7 @@ function makeReportOptions(overrides: Partial<OutputSettings> = {}): OutputSetti
 	};
 }
 
-function makeCoverageGate(
-	overrides: Partial<CoverageReportUnit> = {},
-): CoverageReportUnit {
+function makeCoverageGate(overrides: Partial<CoverageReportUnit> = {}): CoverageReportUnit {
 	return {
 		coverageDirectory: "/workspace/packages/foo/coverage",
 		label: "@halcyon/foo",
@@ -196,8 +198,11 @@ function makeWorkspaceResult(overrides: Partial<RunResult> = {}): RunResult {
 		stagingMs: 0,
 		...overrides,
 	};
-	const collectCoverage = (result.coverage?.units.length ?? 0) > 0;
-	return { ...result, output: { ...makeReportOptions(), ...result.output, collectCoverage } };
+	const hasCoverage = (result.coverage?.units.length ?? 0) > 0;
+	return {
+		...result,
+		output: { ...makeReportOptions(), ...result.output, collectCoverage: hasCoverage },
+	};
 }
 
 /**
@@ -214,27 +219,30 @@ function hasSink(volume: MemoryVolume, filePath: string): boolean {
 	return volume.existsSync(path.resolve(filePath));
 }
 
-function setupOutput(): OutputHarness {
+function setupOutput(onTestFinished: TestContext["onTestFinished"]): OutputHarness {
 	onTestFinished(() => {
 		delete process.env["GITHUB_STEP_SUMMARY"];
 	});
 
-	pipeline.checkThresholds.mockReturnValue({ failures: [], passed: true });
-
+	const pipeline: CoveragePipelineMock = {
+		checkThresholds: vi.fn<typeof checkThresholds>(() => ({ failures: [], passed: true })),
+		generateReports: vi.fn<typeof generateReports>(),
+	};
 	const { fileSystem, volume } = createMemoryFileSystem();
 
 	return {
 		dependencies: { coveragePipeline: pipeline, fileSystem },
 		fileSystem,
+		pipeline,
 		volume,
 	};
 }
 
 describe("a one-project run", () => {
-	it("should print the gap summary on stderr", async () => {
+	it("should print the gap summary on stderr", async ({ expect, onTestFinished }) => {
 		expect.assertions(1);
 
-		const { dependencies } = setupOutput();
+		const { dependencies } = setupOutput(onTestFinished);
 		const spies = setupOutputSpies();
 
 		await outputOneProjectAsync({
@@ -252,10 +260,10 @@ describe("a one-project run", () => {
 		);
 	});
 
-	it("should not print the gap summary when silent", async () => {
+	it("should not print the gap summary when silent", async ({ expect, onTestFinished }) => {
 		expect.assertions(1);
 
-		const { dependencies } = setupOutput();
+		const { dependencies } = setupOutput(onTestFinished);
 		const spies = setupOutputSpies();
 
 		await outputOneProjectAsync({
@@ -271,10 +279,10 @@ describe("a one-project run", () => {
 		expect(spies.consoleError).not.toHaveBeenCalledWith(expect.stringContaining("Blocked"));
 	});
 
-	it("should return 1 when runtime fails", async () => {
+	it("should return 1 when runtime fails", async ({ expect, onTestFinished }) => {
 		expect.assertions(1);
 
-		const { dependencies } = setupOutput();
+		const { dependencies } = setupOutput(onTestFinished);
 		setupOutputSpies();
 
 		const code = await outputOneProjectAsync({
@@ -288,10 +296,13 @@ describe("a one-project run", () => {
 		expect(code).toBe(1);
 	});
 
-	it("should return 1 when snapshot writes failed even if tests passed", async () => {
+	it("should return 1 when snapshot writes failed even if tests passed", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(1);
 
-		const { dependencies } = setupOutput();
+		const { dependencies } = setupOutput(onTestFinished);
 		setupOutputSpies();
 
 		const code = await outputOneProjectAsync({
@@ -305,10 +316,13 @@ describe("a one-project run", () => {
 		expect(code).toBe(1);
 	});
 
-	it("should return 1 when obsolete snapshots are present even if tests passed", async () => {
+	it("should return 1 when obsolete snapshots are present even if tests passed", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(1);
 
-		const { dependencies } = setupOutput();
+		const { dependencies } = setupOutput(onTestFinished);
 		setupOutputSpies();
 
 		const code = await outputOneProjectAsync({
@@ -335,10 +349,13 @@ describe("a one-project run", () => {
 
 	// A bail is a test failure that ended the run early, not a run-level error,
 	// so it exits the same 1 an ordinary failing package does.
-	it("should return 1 when a bail stopped the run on a failing package", async () => {
+	it("should return 1 when a bail stopped the run on a failing package", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(1);
 
-		const { dependencies } = setupOutput();
+		const { dependencies } = setupOutput(onTestFinished);
 		setupOutputSpies();
 
 		const code = await outputMultiResultAsync({
@@ -357,10 +374,10 @@ describe("a one-project run", () => {
 		expect(code).toBe(1);
 	});
 
-	it("should suppress output when config.silent is true", async () => {
+	it("should suppress output when config.silent is true", async ({ expect, onTestFinished }) => {
 		expect.assertions(1);
 
-		const { dependencies } = setupOutput();
+		const { dependencies } = setupOutput(onTestFinished);
 		const spies = setupOutputSpies();
 
 		await outputOneProjectAsync({
@@ -372,10 +389,13 @@ describe("a one-project run", () => {
 		expect(spies.consoleLog).not.toHaveBeenCalled();
 	});
 
-	it("should suppress the final coverage status when silent", async () => {
+	it("should suppress the final coverage status when silent", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(1);
 
-		const { dependencies } = setupOutput();
+		const { dependencies } = setupOutput(onTestFinished);
 		const spies = setupOutputSpies();
 
 		await outputOneProjectAsync({
@@ -387,10 +407,13 @@ describe("a one-project run", () => {
 		expect(spies.stdout).not.toHaveBeenCalled();
 	});
 
-	it("should write JSON output when config.outputFile is set", async () => {
+	it("should write JSON output when config.outputFile is set", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(1);
 
-		const { dependencies, volume } = setupOutput();
+		const { dependencies, volume } = setupOutput(onTestFinished);
 		setupOutputSpies();
 
 		await outputOneProjectAsync({
@@ -404,10 +427,13 @@ describe("a one-project run", () => {
 		);
 	});
 
-	it("should print typecheck-only when typecheckResult is present and runtime is undefined", async () => {
+	it("should print typecheck-only when typecheckResult is present and runtime is undefined", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(1);
 
-		const { dependencies } = setupOutput();
+		const { dependencies } = setupOutput(onTestFinished);
 		const spies = setupOutputSpies();
 
 		await outputOneProjectAsync({
@@ -422,10 +448,13 @@ describe("a one-project run", () => {
 		expect(spies.stdout).toHaveBeenCalledWith(expect.stringContaining("Type Errors"));
 	});
 
-	it("should print final PASS status when coverage enabled and passed", async () => {
+	it("should print final PASS status when coverage enabled and passed", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(1);
 
-		const { dependencies } = setupOutput();
+		const { dependencies } = setupOutput(onTestFinished);
 		const spies = setupOutputSpies();
 
 		await outputOneProjectAsync({
@@ -437,10 +466,13 @@ describe("a one-project run", () => {
 		expect(spies.stdout).toHaveBeenCalledWith(expect.stringContaining("PASS"));
 	});
 
-	it("should print final FAIL status when coverage enabled and failed", async () => {
+	it("should print final FAIL status when coverage enabled and failed", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(1);
 
-		const { dependencies } = setupOutput();
+		const { dependencies } = setupOutput(onTestFinished);
 		const spies = setupOutputSpies();
 
 		await outputOneProjectAsync({
@@ -456,10 +488,13 @@ describe("a one-project run", () => {
 });
 
 describe(outputMultiResultAsync, () => {
-	it("should print formatted multi-project output and return 0 when all succeed", async () => {
+	it("should print formatted multi-project output and return 0 when all succeed", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(2);
 
-		const { dependencies } = setupOutput();
+		const { dependencies } = setupOutput(onTestFinished);
 		const spies = setupOutputSpies();
 
 		const code = await outputMultiResultAsync({
@@ -472,10 +507,10 @@ describe(outputMultiResultAsync, () => {
 		expect(spies.consoleLog).toHaveBeenCalledExactlyOnceWith(expect.stringContaining("client"));
 	});
 
-	it("should print one gap summary for every project", async () => {
+	it("should print one gap summary for every project", async ({ expect, onTestFinished }) => {
 		expect.assertions(1);
 
-		const { dependencies } = setupOutput();
+		const { dependencies } = setupOutput(onTestFinished);
 		const spies = setupOutputSpies();
 
 		await outputMultiResultAsync({
@@ -510,10 +545,10 @@ describe(outputMultiResultAsync, () => {
 		);
 	});
 
-	it("should return 1 when any project result fails", async () => {
+	it("should return 1 when any project result fails", async ({ expect, onTestFinished }) => {
 		expect.assertions(1);
 
-		const { dependencies } = setupOutput();
+		const { dependencies } = setupOutput(onTestFinished);
 		setupOutputSpies();
 
 		const code = await outputMultiResultAsync({
@@ -532,10 +567,13 @@ describe(outputMultiResultAsync, () => {
 		expect(code).toBe(1);
 	});
 
-	it("should return 1 when any project had snapshot write failures", async () => {
+	it("should return 1 when any project had snapshot write failures", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(1);
 
-		const { dependencies } = setupOutput();
+		const { dependencies } = setupOutput(onTestFinished);
 		setupOutputSpies();
 
 		const code = await outputMultiResultAsync({
@@ -558,10 +596,13 @@ describe(outputMultiResultAsync, () => {
 		expect(code).toBe(1);
 	});
 
-	it("should return 1 when any project had obsolete snapshots", async () => {
+	it("should return 1 when any project had obsolete snapshots", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(1);
 
-		const { dependencies } = setupOutput();
+		const { dependencies } = setupOutput(onTestFinished);
 		setupOutputSpies();
 
 		const code = await outputMultiResultAsync({
@@ -595,10 +636,10 @@ describe(outputMultiResultAsync, () => {
 		expect(code).toBe(1);
 	});
 
-	it("should suppress output when config.silent is true", async () => {
+	it("should suppress output when config.silent is true", async ({ expect, onTestFinished }) => {
 		expect.assertions(1);
 
-		const { dependencies } = setupOutput();
+		const { dependencies } = setupOutput(onTestFinished);
 		const spies = setupOutputSpies();
 
 		await outputMultiResultAsync({
@@ -610,10 +651,13 @@ describe(outputMultiResultAsync, () => {
 		expect(spies.consoleLog).not.toHaveBeenCalled();
 	});
 
-	it("should write JSON output when config.outputFile is set", async () => {
+	it("should write JSON output when config.outputFile is set", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(1);
 
-		const { dependencies, volume } = setupOutput();
+		const { dependencies, volume } = setupOutput(onTestFinished);
 		setupOutputSpies();
 
 		await outputMultiResultAsync({
@@ -627,10 +671,13 @@ describe(outputMultiResultAsync, () => {
 		);
 	});
 
-	it("should NOT write the result file for workspace results (the runner handles it)", async () => {
+	it("should NOT write the result file for workspace results (the runner handles it)", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(1);
 
-		const { dependencies, volume } = setupOutput();
+		const { dependencies, volume } = setupOutput(onTestFinished);
 		setupOutputSpies();
 
 		await outputMultiResultAsync({
@@ -642,10 +689,13 @@ describe(outputMultiResultAsync, () => {
 		expect(hasSink(volume, "/tmp/results.json")).toBeFalse();
 	});
 
-	it("should write a grouped aggregated game output file for multi results when config.gameOutput is set", async () => {
+	it("should write a grouped aggregated game output file for multi results when config.gameOutput is set", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(1);
 
-		const { dependencies, volume } = setupOutput();
+		const { dependencies, volume } = setupOutput(onTestFinished);
 		setupOutputSpies();
 
 		await outputMultiResultAsync({
@@ -661,10 +711,13 @@ describe(outputMultiResultAsync, () => {
 		);
 	});
 
-	it("should keep per-project groups when a vm-parallel request fell back to sequential", async () => {
+	it("should keep per-project groups when a vm-parallel request fell back to sequential", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(1);
 
-		const { dependencies, volume } = setupOutput();
+		const { dependencies, volume } = setupOutput(onTestFinished);
 		setupOutputSpies();
 
 		// The plugin runs the sequential path when no VM host is ready, and
@@ -696,10 +749,13 @@ describe(outputMultiResultAsync, () => {
 		);
 	});
 
-	it("should write one batch-scoped game output group for a vm-parallel run", async () => {
+	it("should write one batch-scoped game output group for a vm-parallel run", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(1);
 
-		const { dependencies, volume } = setupOutput();
+		const { dependencies, volume } = setupOutput(onTestFinished);
 		setupOutputSpies();
 
 		// `gameOutputScope` is the runner's own report of what it did: the
@@ -736,10 +792,13 @@ describe(outputMultiResultAsync, () => {
 		);
 	});
 
-	it("should keep per-project game output groups when the VM request collapses to one", async () => {
+	it("should keep per-project game output groups when the VM request collapses to one", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(1);
 
-		const { dependencies, volume } = setupOutput();
+		const { dependencies, volume } = setupOutput(onTestFinished);
 		setupOutputSpies();
 
 		await outputMultiResultAsync({
@@ -765,10 +824,13 @@ describe(outputMultiResultAsync, () => {
 		);
 	});
 
-	it("should NOT write aggregated game output for workspace results (the runner handles it)", async () => {
+	it("should NOT write aggregated game output for workspace results (the runner handles it)", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(1);
 
-		const { dependencies, volume } = setupOutput();
+		const { dependencies, volume } = setupOutput(onTestFinished);
 		setupOutputSpies();
 
 		await outputMultiResultAsync({
@@ -780,10 +842,13 @@ describe(outputMultiResultAsync, () => {
 		expect(hasSink(volume, "/tmp/game.json")).toBeFalse();
 	});
 
-	it("should fall back to outputSingleResult when no project results but typecheck present", async () => {
+	it("should fall back to outputSingleResult when no project results but typecheck present", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(1);
 
-		const { dependencies } = setupOutput();
+		const { dependencies } = setupOutput(onTestFinished);
 		const spies = setupOutputSpies();
 
 		await outputMultiResultAsync({
@@ -798,10 +863,10 @@ describe(outputMultiResultAsync, () => {
 		expect(spies.stdout).toHaveBeenCalledWith(expect.stringContaining("Type Errors"));
 	});
 
-	it("should use agent formatter when configured", async () => {
+	it("should use agent formatter when configured", async ({ expect, onTestFinished }) => {
 		expect.assertions(1);
 
-		const { dependencies } = setupOutput();
+		const { dependencies } = setupOutput(onTestFinished);
 		const spies = setupOutputSpies();
 
 		await outputMultiResultAsync({
@@ -813,10 +878,10 @@ describe(outputMultiResultAsync, () => {
 		expect(spies.consoleLog).toHaveBeenCalledWith(expect.stringContaining("client"));
 	});
 
-	it("should use json formatter when configured", async () => {
+	it("should use json formatter when configured", async ({ expect, onTestFinished }) => {
 		expect.assertions(1);
 
-		const { dependencies } = setupOutput();
+		const { dependencies } = setupOutput(onTestFinished);
 		const spies = setupOutputSpies();
 
 		await outputMultiResultAsync({
@@ -825,13 +890,18 @@ describe(outputMultiResultAsync, () => {
 			rootConfig: makeOutputConfig({ formatters: ["json"] }),
 		});
 
-		expect(JSON.parse(String(spies.consoleLog.mock.calls[0]![0]))).toStrictEqual(makeJestResult());
+		expect(JSON.parse(String(spies.consoleLog.mock.calls[0]![0]))).toStrictEqual(
+			makeJestResult(),
+		);
 	});
 
-	it("should print the type summary to stderr for a non-default formatter when typecheck present", async () => {
+	it("should print the type summary to stderr for a non-default formatter when typecheck present", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(1);
 
-		const { dependencies } = setupOutput();
+		const { dependencies } = setupOutput(onTestFinished);
 		const spies = setupOutputSpies();
 
 		await outputMultiResultAsync({
@@ -843,10 +913,13 @@ describe(outputMultiResultAsync, () => {
 		expect(spies.stderr).toHaveBeenCalledWith(expect.stringContaining("Type Errors"));
 	});
 
-	it("should print type failures without repeating the row for the agent formatter", async () => {
+	it("should print type failures without repeating the row for the agent formatter", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(1);
 
-		const { dependencies } = setupOutput();
+		const { dependencies } = setupOutput(onTestFinished);
 		const spies = setupOutputSpies();
 
 		await outputMultiResultAsync({
@@ -860,10 +933,10 @@ describe(outputMultiResultAsync, () => {
 		expect(spies.stderr).toHaveBeenCalledWith(expect.not.stringContaining("Type Errors"));
 	});
 
-	it("should accept a workspace result", async () => {
+	it("should accept a workspace result", async ({ expect, onTestFinished }) => {
 		expect.assertions(2);
 
-		const { dependencies } = setupOutput();
+		const { dependencies } = setupOutput(onTestFinished);
 		const spies = setupOutputSpies();
 
 		const code = await outputMultiResultAsync({
@@ -876,10 +949,13 @@ describe(outputMultiResultAsync, () => {
 		expect(spies.consoleLog).toHaveBeenCalledWith(expect.stringContaining("@halcyon/foo"));
 	});
 
-	it("should forward the result's coverage display filter to the reporter", async () => {
+	it("should forward the result's coverage display filter to the reporter", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(1);
 
-		const { dependencies } = setupOutput();
+		const { dependencies, pipeline } = setupOutput(onTestFinished);
 		setupOutputSpies();
 
 		function displayFilter(): boolean {
@@ -908,10 +984,13 @@ describe(outputMultiResultAsync, () => {
 });
 
 describe("per-package coverage reports via outputMultiResult", () => {
-	it("should generate reports for per-pkg opt-in even when workspace collectCoverage is false", async () => {
+	it("should generate reports for per-pkg opt-in even when workspace collectCoverage is false", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(1);
 
-		const { dependencies } = setupOutput();
+		const { dependencies, pipeline } = setupOutput(onTestFinished);
 		setupOutputSpies();
 
 		const fooUniverse: MappedCoverageResult = fromAny({ files: { "foo.ts": {} } });
@@ -928,10 +1007,13 @@ describe("per-package coverage reports via outputMultiResult", () => {
 		);
 	});
 
-	it("should suppress package coverage labels when workspace output is silent", async () => {
+	it("should suppress package coverage labels when workspace output is silent", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(2);
 
-		const { dependencies } = setupOutput();
+		const { dependencies, pipeline } = setupOutput(onTestFinished);
 		const spies = setupOutputSpies();
 
 		await outputMultiResultAsync({
@@ -952,26 +1034,31 @@ describe("per-package coverage reports via outputMultiResult", () => {
 		);
 	});
 
-	it("should emit one report per package, each into its own directory with its own reporters", async () => {
+	it("should emit one report per package, each into its own directory with its own reporters", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(3);
 
-		const { dependencies } = setupOutput();
+		const { dependencies, pipeline } = setupOutput(onTestFinished);
 		setupOutputSpies();
 
 		await outputMultiResultAsync({
 			dependencies,
 			result: makeWorkspaceResult({
-				coverage: { units: [
-					makeCoverageGate({
-						coverageDirectory: "/ws/packages/foo/coverage",
-						reporters: ["text"],
-					}),
-					makeCoverageGate({
-						coverageDirectory: "/ws/packages/bar/cov",
-						reporters: ["lcov"],
-						label: "@halcyon/bar",
-					}),
-				] },
+				coverage: {
+					units: [
+						makeCoverageGate({
+							coverageDirectory: "/ws/packages/foo/coverage",
+							reporters: ["text"],
+						}),
+						makeCoverageGate({
+							coverageDirectory: "/ws/packages/bar/cov",
+							label: "@halcyon/bar",
+							reporters: ["lcov"],
+						}),
+					],
+				},
 			}),
 			rootConfig: makeOutputConfig(),
 		});
@@ -991,10 +1078,13 @@ describe("per-package coverage reports via outputMultiResult", () => {
 		);
 	});
 
-	it("should head each package report with the package name", async () => {
+	it("should head each package report with the package name", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(1);
 
-		const { dependencies } = setupOutput();
+		const { dependencies } = setupOutput(onTestFinished);
 		const spies = setupOutputSpies();
 
 		await outputMultiResultAsync({
@@ -1006,10 +1096,13 @@ describe("per-package coverage reports via outputMultiResult", () => {
 		expect(spies.stdout).toHaveBeenCalledWith("\n@halcyon/foo\n");
 	});
 
-	it("should emit no report and no header when no package produced coverage", async () => {
+	it("should emit no report and no header when no package produced coverage", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(2);
 
-		const { dependencies } = setupOutput();
+		const { dependencies, pipeline } = setupOutput(onTestFinished);
 		const spies = setupOutputSpies();
 
 		await outputMultiResultAsync({
@@ -1022,10 +1115,13 @@ describe("per-package coverage reports via outputMultiResult", () => {
 		expect(pipeline.generateReports).not.toHaveBeenCalled();
 	});
 
-	it("should enforce a package's own threshold when workspace collectCoverage is false", async () => {
+	it("should enforce a package's own threshold when workspace collectCoverage is false", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(2);
 
-		const { dependencies } = setupOutput();
+		const { dependencies, pipeline } = setupOutput(onTestFinished);
 		pipeline.checkThresholds.mockReturnValue({
 			failures: [{ actual: 50, metric: "lines", threshold: 100 }],
 			passed: false,
@@ -1048,19 +1144,27 @@ describe("per-package coverage reports via outputMultiResult", () => {
 });
 
 describe("per-package threshold gates via outputMultiResult", () => {
-	it("should gate each package against its own universe and its own threshold", async () => {
+	it("should gate each package against its own universe and its own threshold", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(2);
 
-		const { dependencies } = setupOutput();
+		const { dependencies, pipeline } = setupOutput(onTestFinished);
 		setupOutputSpies();
 
 		const fooUniverse: MappedCoverageResult = fromAny({ files: { "foo.ts": {} } });
 		const code = await outputMultiResultAsync({
 			dependencies,
 			result: makeWorkspaceResult({
-				coverage: { units: [
-					makeCoverageGate({ coverageThreshold: { lines: 70 }, universe: fooUniverse }),
-				] },
+				coverage: {
+					units: [
+						makeCoverageGate({
+							coverageThreshold: { lines: 70 },
+							universe: fooUniverse,
+						}),
+					],
+				},
 			}),
 			rootConfig: makeOutputConfig(),
 		});
@@ -1074,22 +1178,27 @@ describe("per-package threshold gates via outputMultiResult", () => {
 		expect(code).toBe(0);
 	});
 
-	it("should gate only the metrics the package itself declared", async () => {
+	it("should gate only the metrics the package itself declared", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(1);
 
-		const { dependencies } = setupOutput();
+		const { dependencies, pipeline } = setupOutput(onTestFinished);
 		setupOutputSpies();
 
 		const fooUniverse: MappedCoverageResult = fromAny({ files: { "foo.ts": {} } });
 		await outputMultiResultAsync({
 			dependencies,
 			result: makeWorkspaceResult({
-				coverage: { units: [
-					makeCoverageGate({
-						coverageThreshold: { statements: 70 },
-						universe: fooUniverse,
-					}),
-				] },
+				coverage: {
+					units: [
+						makeCoverageGate({
+							coverageThreshold: { statements: 70 },
+							universe: fooUniverse,
+						}),
+					],
+				},
 			}),
 			rootConfig: makeOutputConfig(),
 		});
@@ -1100,10 +1209,13 @@ describe("per-package threshold gates via outputMultiResult", () => {
 		});
 	});
 
-	it("should not gate a package that declared no threshold", async () => {
+	it("should not gate a package that declared no threshold", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(2);
 
-		const { dependencies } = setupOutput();
+		const { dependencies, pipeline } = setupOutput(onTestFinished);
 		setupOutputSpies();
 
 		const code = await outputMultiResultAsync({
@@ -1116,10 +1228,13 @@ describe("per-package threshold gates via outputMultiResult", () => {
 		expect(code).toBe(0);
 	});
 
-	it("should print package-prefixed failures and exit 1 when a package misses its threshold", async () => {
+	it("should print package-prefixed failures and exit 1 when a package misses its threshold", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(2);
 
-		const { dependencies } = setupOutput();
+		const { dependencies, pipeline } = setupOutput(onTestFinished);
 		pipeline.checkThresholds
 			.mockReturnValueOnce({ failures: [], passed: true })
 			.mockReturnValueOnce({
@@ -1131,10 +1246,15 @@ describe("per-package threshold gates via outputMultiResult", () => {
 		const code = await outputMultiResultAsync({
 			dependencies,
 			result: makeWorkspaceResult({
-				coverage: { units: [
-					makeCoverageGate({ coverageThreshold: { lines: 70 } }),
-					makeCoverageGate({ coverageThreshold: { lines: 80 }, label: "@halcyon/bar" }),
-				] },
+				coverage: {
+					units: [
+						makeCoverageGate({ coverageThreshold: { lines: 70 } }),
+						makeCoverageGate({
+							coverageThreshold: { lines: 80 },
+							label: "@halcyon/bar",
+						}),
+					],
+				},
 			}),
 			rootConfig: makeOutputConfig(),
 		});
@@ -1150,10 +1270,10 @@ describe("per-package threshold gates via outputMultiResult", () => {
 const FAILURE_ANNOTATION = "title=player explodes::boom\n";
 
 describe("runGitHubActionsFormatter via a one-project run", () => {
-	it("should be a no-op when formatter not configured", async () => {
+	it("should be a no-op when formatter not configured", async ({ expect, onTestFinished }) => {
 		expect.assertions(2);
 
-		const { dependencies, volume } = setupOutput();
+		const { dependencies, volume } = setupOutput(onTestFinished);
 		const spies = setupOutputSpies();
 		process.env["GITHUB_STEP_SUMMARY"] = "/tmp/summary.md";
 		volume.mkdirSync("/tmp", { recursive: true });
@@ -1170,10 +1290,10 @@ describe("runGitHubActionsFormatter via a one-project run", () => {
 		expect(volume.existsSync("/tmp/summary.md")).toBeFalse();
 	});
 
-	it("should write annotations to stderr", async () => {
+	it("should write annotations to stderr", async ({ expect, onTestFinished }) => {
 		expect.assertions(1);
 
-		const { dependencies } = setupOutput();
+		const { dependencies } = setupOutput(onTestFinished);
 		const spies = setupOutputSpies();
 
 		await outputOneProjectAsync({
@@ -1187,10 +1307,13 @@ describe("runGitHubActionsFormatter via a one-project run", () => {
 		expect(spies.stderr).toHaveBeenCalledWith(expect.stringContaining(FAILURE_ANNOTATION));
 	});
 
-	it("should run the GitHub Actions formatter for multi-project results", async () => {
+	it("should run the GitHub Actions formatter for multi-project results", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(1);
 
-		const { dependencies } = setupOutput();
+		const { dependencies } = setupOutput(onTestFinished);
 		const spies = setupOutputSpies();
 
 		await outputMultiResultAsync({
@@ -1204,10 +1327,13 @@ describe("runGitHubActionsFormatter via a one-project run", () => {
 		expect(spies.stderr).toHaveBeenCalledWith(expect.stringContaining(FAILURE_ANNOTATION));
 	});
 
-	it("should skip annotations when displayAnnotations is false", async () => {
+	it("should skip annotations when displayAnnotations is false", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(1);
 
-		const { dependencies } = setupOutput();
+		const { dependencies } = setupOutput(onTestFinished);
 		const spies = setupOutputSpies();
 
 		await outputOneProjectAsync({
@@ -1223,10 +1349,13 @@ describe("runGitHubActionsFormatter via a one-project run", () => {
 		expect(spies.stderr).not.toHaveBeenCalledWith(expect.stringContaining("::error"));
 	});
 
-	it("should skip annotations when content is empty string", async () => {
+	it("should skip annotations when content is empty string", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(1);
 
-		const { dependencies } = setupOutput();
+		const { dependencies } = setupOutput(onTestFinished);
 		const spies = setupOutputSpies();
 
 		await outputOneProjectAsync({
@@ -1238,10 +1367,13 @@ describe("runGitHubActionsFormatter via a one-project run", () => {
 		expect(spies.stderr).not.toHaveBeenCalled();
 	});
 
-	it("should write job summary to GITHUB_STEP_SUMMARY env path", async () => {
+	it("should write job summary to GITHUB_STEP_SUMMARY env path", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(1);
 
-		const { dependencies, volume } = setupOutput();
+		const { dependencies, volume } = setupOutput(onTestFinished);
 
 		setupOutputSpies();
 		process.env["GITHUB_STEP_SUMMARY"] = "/tmp/summary.md";
@@ -1256,10 +1388,10 @@ describe("runGitHubActionsFormatter via a one-project run", () => {
 		expect(volume.readFileSync("/tmp/summary.md", "utf8")).toContain("## Test Results");
 	});
 
-	it("should write job summary to explicit outputPath", async () => {
+	it("should write job summary to explicit outputPath", async ({ expect, onTestFinished }) => {
 		expect.assertions(1);
 
-		const { dependencies, volume } = setupOutput();
+		const { dependencies, volume } = setupOutput(onTestFinished);
 
 		volume.mkdirSync("/tmp", { recursive: true });
 
@@ -1279,10 +1411,13 @@ describe("runGitHubActionsFormatter via a one-project run", () => {
 		expect(volume.readFileSync("/tmp/explicit.md", "utf8")).toContain("## Test Results");
 	});
 
-	it("should skip job summary when jobSummary.enabled is false", async () => {
+	it("should skip job summary when jobSummary.enabled is false", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(1);
 
-		const { dependencies, volume } = setupOutput();
+		const { dependencies, volume } = setupOutput(onTestFinished);
 		setupOutputSpies();
 		process.env["GITHUB_STEP_SUMMARY"] = "/tmp/summary.md";
 		volume.mkdirSync("/tmp", { recursive: true });
@@ -1298,10 +1433,13 @@ describe("runGitHubActionsFormatter via a one-project run", () => {
 		expect(volume.existsSync("/tmp/summary.md")).toBeFalse();
 	});
 
-	it("should skip job summary when no outputPath available", async () => {
+	it("should skip job summary when no outputPath available", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(1);
 
-		const { dependencies, volume } = setupOutput();
+		const { dependencies, volume } = setupOutput(onTestFinished);
 		setupOutputSpies();
 
 		await outputOneProjectAsync({
@@ -1315,10 +1453,13 @@ describe("runGitHubActionsFormatter via a one-project run", () => {
 });
 
 describe("writeGameOutput integration", () => {
-	it("should print aggregated notice for multi-project mode", async () => {
+	it("should print aggregated notice for multi-project mode", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(1);
 
-		const { dependencies } = setupOutput();
+		const { dependencies } = setupOutput(onTestFinished);
 		const spies = setupOutputSpies();
 
 		await outputMultiResultAsync({
@@ -1334,10 +1475,10 @@ describe("writeGameOutput integration", () => {
 		);
 	});
 
-	it("should suppress aggregated notice on failure", async () => {
+	it("should suppress aggregated notice on failure", async ({ expect, onTestFinished }) => {
 		expect.assertions(2);
 
-		const { dependencies, volume } = setupOutput();
+		const { dependencies, volume } = setupOutput(onTestFinished);
 		const spies = setupOutputSpies();
 
 		await outputMultiResultAsync({
@@ -1360,10 +1501,10 @@ describe("writeGameOutput integration", () => {
 		expect(spies.consoleError).not.toHaveBeenCalled();
 	});
 
-	it("should suppress aggregated notice when empty", async () => {
+	it("should suppress aggregated notice when empty", async ({ expect, onTestFinished }) => {
 		expect.assertions(2);
 
-		const { dependencies, volume } = setupOutput();
+		const { dependencies, volume } = setupOutput(onTestFinished);
 		const spies = setupOutputSpies();
 
 		await outputMultiResultAsync({
@@ -1386,10 +1527,13 @@ describe("result file sink", () => {
 	// identical guarantee is asserted in `workspace-runner.spec.ts` against the
 	// real on-disk file.)
 
-	it("should write exactly the shared mergeResults output for multi mode", async () => {
+	it("should write exactly the shared mergeResults output for multi mode", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(1);
 
-		const { dependencies, volume } = setupOutput();
+		const { dependencies, volume } = setupOutput(onTestFinished);
 		setupOutputSpies();
 
 		const typecheckResult = makeJestResult({ numFailedTests: 1, success: false });
@@ -1424,10 +1568,13 @@ describe("result file sink", () => {
 });
 
 describe("merged typecheck + runtime branches", () => {
-	it("should default numTodoTests to 0 when typecheck and runtime both lack it", async () => {
+	it("should default numTodoTests to 0 when typecheck and runtime both lack it", async ({
+		expect,
+		onTestFinished,
+	}) => {
 		expect.assertions(1);
 
-		const { dependencies } = setupOutput();
+		const { dependencies } = setupOutput(onTestFinished);
 		setupOutputSpies();
 
 		const code = await outputOneProjectAsync({
@@ -1497,26 +1644,17 @@ function mixedCoverage(): MappedCoverageResult {
 
 function makeCoverageWorkspaceResult(): RunResult {
 	return fromAny({
-		coverageMs: 0,
-		coverage: { units: [
-			{
-				coverageDirectory: "/test/coverage",
-				label: "client",
-				reporters: ["text"],
-				universe: mixedCoverage(),
-			},
-		] },
-		projectResults: [
-			{
-				displayName: "client",
-				result: {
-					exitCode: 0,
-					output: "",
-					result: passingResult(),
-					timing: { executionMs: 50, startTime: 1000, testsMs: 30, totalMs: 100 },
+		coverage: {
+			units: [
+				{
+					coverageDirectory: "/test/coverage",
+					label: "client",
+					reporters: ["text"],
+					universe: mixedCoverage(),
 				},
-			},
-		],
+			],
+		},
+		coverageMs: 0,
 		output: {
 			collectCoverage: true,
 			color: false,
@@ -1528,12 +1666,25 @@ function makeCoverageWorkspaceResult(): RunResult {
 			silent: false,
 			verbose: false,
 		},
+		projectResults: [
+			{
+				displayName: "client",
+				result: {
+					exitCode: 0,
+					output: "",
+					result: passingResult(),
+					timing: { executionMs: 50, startTime: 1000, testsMs: 30, totalMs: 100 },
+				},
+			},
+		],
 		stagingMs: 0,
 	});
 }
 
 describe("agent-mode output ordering", () => {
-	it("should render the run summary after the coverage report and above the status line", async () => {
+	it("should render the run summary after the coverage report and above the status line", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const chunks: Array<string> = [];
@@ -1570,6 +1721,8 @@ describe("agent-mode output ordering", () => {
 	});
 });
 
+type ReportHarness = ReturnType<typeof setupReport>;
+
 function setupReport() {
 	const coveragePipeline = {
 		checkThresholds: vi
@@ -1588,8 +1741,6 @@ function setupReport() {
 		dependencies: { coveragePipeline, fileSystem },
 	};
 }
-
-type ReportHarness = ReturnType<typeof setupReport>;
 
 function makeReportSettings(overrides: Partial<OutputSettings> = {}): OutputSettings {
 	return {
@@ -1631,7 +1782,9 @@ function isCoverageFirst(harness: ReportHarness): boolean {
 }
 
 describe("outputRunAsync report order", () => {
-	it("should print coverage before the agent summary so trimming keeps it", async () => {
+	it("should print coverage before the agent summary so trimming keeps it", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const harness = setupReport();
@@ -1640,7 +1793,7 @@ describe("outputRunAsync report order", () => {
 		expect(isCoverageFirst(harness)).toBeTrue();
 	});
 
-	it("should keep the summary before coverage for the default formatter", async () => {
+	it("should keep the summary before coverage for the default formatter", async ({ expect }) => {
 		expect.assertions(1);
 
 		const harness = setupReport();
@@ -1649,7 +1802,9 @@ describe("outputRunAsync report order", () => {
 		expect(isCoverageFirst(harness)).toBeFalse();
 	});
 
-	it("should keep the summary before coverage when verbose opts out of the agent formatter", async () => {
+	it("should keep the summary before coverage when verbose opts out of the agent formatter", async ({
+		expect,
+	}) => {
 		expect.assertions(1);
 
 		const harness = setupReport();
@@ -1658,7 +1813,7 @@ describe("outputRunAsync report order", () => {
 		expect(isCoverageFirst(harness)).toBeFalse();
 	});
 
-	it("should keep the agent summary inline when coverage is disabled", async () => {
+	it("should keep the agent summary inline when coverage is disabled", async ({ expect }) => {
 		expect.assertions(1);
 
 		const harness = setupReport();
@@ -1667,13 +1822,13 @@ describe("outputRunAsync report order", () => {
 		expect(isCoverageFirst(harness)).toBeFalse();
 	});
 
-	it("should still print the deferred agent summary when the coverage report throws", async () => {
+	it("should still print the deferred agent summary when the coverage report throws", async ({
+		expect,
+	}) => {
 		expect.assertions(2);
 
 		const harness = setupReport();
-		harness.coveragePipeline.generateReports.mockImplementation(() => {
-			throw new Error("malformed coverage map");
-		});
+		harness.coveragePipeline.generateReports.mockThrow(new Error("malformed coverage map"));
 
 		await expect(reportAsync(harness, makeReportSettings())).rejects.toThrow(
 			"malformed coverage map",
