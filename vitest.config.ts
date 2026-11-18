@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import type { TestProjectInlineConfiguration, ViteUserConfig } from "vitest/config";
-import { defaultExclude, defineConfig, mergeConfig } from "vitest/config";
+import { configDefaults, defaultExclude, defineConfig, mergeConfig } from "vitest/config";
 
 import { QuotaSkipReporter } from "#test/setup/quota-skip-reporter.ts";
 import { virtualModulesPlugin } from "./loaders/virtual-modules.mjs";
@@ -389,7 +389,7 @@ export default mergeConfig(
 					},
 				},
 			],
-			reporters: ["default", new QuotaSkipReporter(nodeFileSystem)],
+			reporters: [...configDefaults.reporters, new QuotaSkipReporter(nodeFileSystem)],
 		},
 	}),
 );

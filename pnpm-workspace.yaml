@@ -15,7 +15,6 @@ minimumReleaseAgeExclude:
   - "@bedrock-rbx/ocale"
   - "@isentinel/eslint-config"
   - tsrs@7.1.0-beta.tsrs2
-  - eslint-plugin-roblox-ts@1.5.0
 
 publicHoistPattern:
   - "*@rbxts*"
