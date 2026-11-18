@@ -22,6 +22,11 @@ using System.Runtime.InteropServices;
 using System.Text;
 
 public static class JestRobloxHiddenDesktop {
+	const uint CreateSuspended = 0x4;
+	const uint JobObjectLimitKillOnJobClose = 0x2000;
+	const int JobObjectExtendedLimitInformationClass = 9;
+	const uint ResumeThreadFailed = 0xFFFFFFFF;
+
 	[StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
 	struct StartupInfo {
 		public int cb;
@@ -39,6 +44,38 @@ public static class JestRobloxHiddenDesktop {
 		public int processId, threadId;
 	}
 
+	[StructLayout(LayoutKind.Sequential)]
+	struct BasicLimitInformation {
+		public long perProcessUserTimeLimit, perJobUserTimeLimit;
+		public uint limitFlags;
+		public UIntPtr minimumWorkingSetSize, maximumWorkingSetSize;
+		public uint activeProcessLimit;
+		public UIntPtr affinity;
+		public uint priorityClass, schedulingClass;
+	}
+
+	[StructLayout(LayoutKind.Sequential)]
+	struct ExtendedLimitInformation {
+		public BasicLimitInformation basic;
+		public ulong readOperations, writeOperations, otherOperations, readTransfer, writeTransfer, otherTransfer;
+		public UIntPtr processMemoryLimit, jobMemoryLimit, peakProcessMemoryUsed, peakJobMemoryUsed;
+	}
+
+	[DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+	static extern IntPtr CreateJobObjectW(IntPtr attributes, string name);
+
+	[DllImport("kernel32.dll", SetLastError = true)]
+	static extern bool SetInformationJobObject(IntPtr job, int infoClass, ref ExtendedLimitInformation info, int length);
+
+	[DllImport("kernel32.dll", SetLastError = true)]
+	static extern bool AssignProcessToJobObject(IntPtr job, IntPtr process);
+
+	[DllImport("kernel32.dll", SetLastError = true)]
+	static extern uint ResumeThread(IntPtr thread);
+
+	[DllImport("kernel32.dll")]
+	static extern bool TerminateProcess(IntPtr process, uint exitCode);
+
 	[DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
 	static extern IntPtr CreateDesktopW(string name, IntPtr device, IntPtr mode, int flags, uint access, IntPtr attributes);
 
@@ -51,6 +88,12 @@ public static class JestRobloxHiddenDesktop {
 	[DllImport("kernel32.dll")]
 	static extern bool CloseHandle(IntPtr handle);
 
+	static void Abandon(ProcessInformation information, string api) {
+		var error = Marshal.GetLastWin32Error();
+		TerminateProcess(information.process, 1);
+		throw new Win32Exception(error, api + " failed");
+	}
+
 	public static void Launch(string desktop, string application, string commandLine) {
 		if (CreateDesktopW(desktop, IntPtr.Zero, IntPtr.Zero, 0, 0x10000000, IntPtr.Zero) == IntPtr.Zero) {
 			throw new Win32Exception(Marshal.GetLastWin32Error(), "CreateDesktopW failed");
@@ -60,8 +103,27 @@ public static class JestRobloxHiddenDesktop {
 		startupInfo.cb = Marshal.SizeOf(startupInfo);
 		startupInfo.desktop = "WinSta0\\\\" + desktop;
 		ProcessInformation information;
-		if (!CreateProcessW(application, new StringBuilder(commandLine), IntPtr.Zero, IntPtr.Zero, false, 0, IntPtr.Zero, null, ref startupInfo, out information)) {
+		if (!CreateProcessW(application, new StringBuilder(commandLine), IntPtr.Zero, IntPtr.Zero, false, CreateSuspended, IntPtr.Zero, null, ref startupInfo, out information)) {
 			throw new Win32Exception(Marshal.GetLastWin32Error(), "CreateProcessW failed");
+		}
+
+		var job = CreateJobObjectW(IntPtr.Zero, null);
+		if (job == IntPtr.Zero) {
+			Abandon(information, "CreateJobObjectW");
+		}
+
+		var info = new ExtendedLimitInformation();
+		info.basic.limitFlags = JobObjectLimitKillOnJobClose;
+		if (!SetInformationJobObject(job, JobObjectExtendedLimitInformationClass, ref info, Marshal.SizeOf(info))) {
+			Abandon(information, "SetInformationJobObject");
+		}
+
+		if (!AssignProcessToJobObject(job, information.process)) {
+			Abandon(information, "AssignProcessToJobObject");
+		}
+
+		if (ResumeThread(information.thread) == ResumeThreadFailed) {
+			Abandon(information, "ResumeThread");
 		}
 
 		Console.Out.WriteLine(information.processId);

@@ -120,6 +120,24 @@ describe(launchOnHiddenDesktop, () => {
 		);
 	});
 
+	it("should hold Studio in a kill-on-close job before printing its PID", ({ expect }) => {
+		expect.assertions(5);
+
+		const { calls } = makeLaunch();
+		const script = Buffer.from(calls[0]!.args[3]!, "base64").toString("utf16le");
+
+		expect(script).toContain("false, CreateSuspended, IntPtr.Zero");
+		expect(script).toContain("info.basic.limitFlags = JobObjectLimitKillOnJobClose;");
+
+		const assign = script.indexOf("AssignProcessToJobObject(job, information.process)");
+		const resume = script.indexOf("ResumeThread(information.thread)");
+		const print = script.indexOf("Console.Out.WriteLine(information.processId)");
+
+		expect(assign).toBeGreaterThan(-1);
+		expect(resume).toBeGreaterThan(assign);
+		expect(print).toBeGreaterThan(resume);
+	});
+
 	it("should kill the printed PID", ({ expect }) => {
 		expect.assertions(1);
 
