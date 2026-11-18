@@ -33,7 +33,7 @@ export function readLuauTree(relativePath: string, stubbed: ReadonlySet<string>)
 	const directory = path.posix.dirname(relativePath);
 	return readLuauModule(relativePath).replace(
 		RELATIVE_REQUIRE_PATTERN,
-		(call: string, request: unknown) => {
+		(call, request: unknown) => {
 			const target = String(request);
 			if (stubbed.has(path.posix.basename(target))) {
 				return call;

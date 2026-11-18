@@ -96,7 +96,7 @@ interface ProjectSectionOptions {
 export function formatResult({ options, result, timing }: FormatResultOptions): string {
 	const styles = createStyles(options.color, options.slowTestThreshold);
 	// run/run-header.ts prints the header; this blank line follows it.
-	const lines: Array<string> = ["", ...formatFileSummaries({ options, result, styles })];
+	const lines = ["", ...formatFileSummaries({ options, result, styles })];
 
 	const totalDetailedFailures = countDetailedFailures(result);
 	if (totalDetailedFailures > 0) {
@@ -147,7 +147,7 @@ export function formatMultiProjectResult({
 	});
 
 	// run/run-header.ts prints the header; this blank line follows it.
-	const lines: Array<string> = ["", sections.join("\n\n")];
+	const lines = ["", sections.join("\n\n")];
 
 	const mergedResult = mergeJestResults(projects.map((project) => project.result));
 	lines.push(...formatSummaryAndHints({ options, result: mergedResult, styles, timing }));
@@ -236,7 +236,7 @@ function formatSummaryAndHints({
 	styles,
 	timing,
 }: ReportPhaseOptions & { timing: TimingResult }): Array<string> {
-	const lines: Array<string> = [
+	const lines = [
 		"",
 		formatTestSummary({
 			affected: options.affected,
@@ -294,7 +294,7 @@ function formatProjectSection({
 	result,
 	styles: resolved,
 }: ProjectSectionOptions): string {
-	const lines: Array<string> = [
+	const lines = [
 		formatProjectHeader({
 			displayColor,
 			displayName,

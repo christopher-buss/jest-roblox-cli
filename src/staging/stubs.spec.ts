@@ -494,7 +494,7 @@ describe(cleanLeftoverStubs, () => {
 			"return { displayName = 'shared' }\n",
 		);
 
-		const projects: Array<ResolvedProjectConfig> = [
+		const projects = [
 			makeResolvedProject({
 				displayName: "client",
 				rojoMounts: [{ dataModelPath: "ReplicatedStorage/Client", fsPath: "out/Client" }],
@@ -528,7 +528,7 @@ describe(cleanLeftoverStubs, () => {
 			makeResolvedProject({ rojoMounts: mountsAt("out/Client", "out/Server") }),
 		]);
 
-		const projects: Array<ResolvedProjectConfig> = [
+		const projects = [
 			makeResolvedProject({
 				displayName: "client",
 				rojoMounts: [{ dataModelPath: "ReplicatedStorage/Client", fsPath: "out/Client" }],

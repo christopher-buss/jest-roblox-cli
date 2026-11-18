@@ -261,7 +261,7 @@ function attachPluginSocket({
 		reject(new Error("Studio plugin disconnected before sending results"));
 	});
 
-	socket.on("error", (err: Error) => {
+	socket.on("error", (err) => {
 		clearTimeout(timer);
 		reject(err);
 	});

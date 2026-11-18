@@ -179,7 +179,7 @@ function listenForRunFrames({
 	requestId: string;
 	server: WebSocketServer;
 }): void {
-	server.on("connection", (socket: WebSocket) => {
+	server.on("connection", (socket) => {
 		socket.on("message", (data: buffer.Buffer) => {
 			let raw: JSONValue;
 			try {

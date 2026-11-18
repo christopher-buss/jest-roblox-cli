@@ -39,7 +39,7 @@ export function luauGrammar(hljs: HLJSApi): Language {
 		end: CLOSING_LONG_BRACKET,
 	} satisfies Mode;
 
-	const comments: Array<Mode> = [
+	const comments = [
 		hljs.COMMENT(`--(?!${OPENING_LONG_BRACKET})`, "$"),
 		hljs.COMMENT(`--${OPENING_LONG_BRACKET}`, CLOSING_LONG_BRACKET, {
 			contains: [longBrackets],

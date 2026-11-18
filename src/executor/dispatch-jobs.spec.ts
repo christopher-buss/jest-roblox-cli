@@ -10,7 +10,6 @@ import type { Backend } from "../backends/dispatch-request.ts";
 import type { TimingCollector } from "../timing/orchestration-collector.ts";
 import type { TsconfigReader } from "../tsconfig/tsconfig-mappings.ts";
 import { dispatchJobsAsync } from "./dispatch-jobs.ts";
-import type { ConfiguredJob } from "./executor-types.ts";
 import type { ExecuteJobs, JobResult } from "./executor.ts";
 
 describe(dispatchJobsAsync, () => {
@@ -20,7 +19,7 @@ describe(dispatchJobsAsync, () => {
 		expect.assertions(3);
 
 		const config = createResolvedConfig();
-		const jobs: Array<ConfiguredJob> = [
+		const jobs = [
 			projectJob({ config, displayName: "a", testFiles: ["a.spec.ts"] }),
 			projectJob({ config, displayName: "b", testFiles: ["b.spec.ts"] }),
 		];

@@ -1,7 +1,6 @@
 import { describe, it } from "vitest";
 
 import { collectTestDefinitions } from "./collect.ts";
-import type { TestDefinition } from "./typecheck-types.ts";
 
 describe(collectTestDefinitions, () => {
 	it("should ignore indirect calls returned by another function", ({ expect }) => {
@@ -93,7 +92,7 @@ describe("outer", () => {
 	});
 });`;
 		const definitions = collectTestDefinitions(source);
-		const testDefinition = definitions.find((item: TestDefinition) => item.type === "test");
+		const testDefinition = definitions.find((item) => item.type === "test");
 
 		expect(testDefinition).toBeDefined();
 		expect(testDefinition!.ancestorNames).toStrictEqual(["outer", "inner"]);
@@ -130,7 +129,7 @@ describe("types", () => {
 		const definitions = collectTestDefinitions(source);
 
 		expect(definitions).toHaveLength(2);
-		expect(definitions.every((item: TestDefinition) => item.name !== "")).toBeTrue();
+		expect(definitions.every((item) => item.name !== "")).toBeTrue();
 	});
 
 	it("should handle template literal test names", ({ expect }) => {
@@ -149,7 +148,7 @@ describe("types", () => {
 describe("first", () => { it("should a", () => {}); });
 describe("second", () => { it("should b", () => {}); });`;
 		const definitions = collectTestDefinitions(source);
-		const tests = definitions.filter((item: TestDefinition) => item.type === "test");
+		const tests = definitions.filter((item) => item.type === "test");
 
 		expect(tests[0]!.ancestorNames).toStrictEqual(["first"]);
 		expect(tests[1]!.ancestorNames).toStrictEqual(["second"]);
@@ -226,7 +225,7 @@ describe("suite", () => {
 	it("should second", () => {});
 });`;
 		const definitions = collectTestDefinitions(source);
-		const tests = definitions.filter((item: TestDefinition) => item.type === "test");
+		const tests = definitions.filter((item) => item.type === "test");
 
 		expect(tests).toHaveLength(2);
 		expect(tests[0]!.ancestorNames).toStrictEqual(["suite"]);

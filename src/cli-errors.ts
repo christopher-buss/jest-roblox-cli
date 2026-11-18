@@ -133,7 +133,7 @@ function formatChainDetailLines(entry: ChainEntry): Array<string> {
 }
 
 function formatBackendErrorBanner(err: Error): string {
-	const body: Array<string> = [color.red(err.message)];
+	const body = [color.red(err.message)];
 	const chain = walkErrorChain(err.cause);
 	body.push(`\n  ${color.dim("Caused by:")}`);
 	for (const [index, entry] of chain.entries()) {

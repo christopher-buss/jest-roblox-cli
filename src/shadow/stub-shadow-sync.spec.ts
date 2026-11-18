@@ -589,7 +589,7 @@ describe("syncStubsToShadowDirectory preserves user-authored configs", () => {
 			"/shadow/out/Shared/jest.config.luau": "return { displayName = 'user-authored' }\n",
 		});
 
-		const projects: Array<ResolvedProjectConfig> = [
+		const projects = [
 			makeResolvedProject({
 				displayName: "server",
 				rojoMounts: [{ dataModelPath: "ServerStorage/Server", fsPath: "out/Server" }],

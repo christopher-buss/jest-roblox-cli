@@ -76,7 +76,7 @@ export function formatAnnotations(result: JestResult, options: GitHubActionsOpti
  */
 export function formatJobSummary(result: JestResult, options: GitHubActionsOptions): string {
 	const fileLink = createFileLink(options);
-	const lines: Array<string> = ["## Test Results\n", renderStats(result)];
+	const lines = ["## Test Results\n", renderStats(result)];
 
 	const failures: Array<{ file: string; title: string }> = [];
 
@@ -139,7 +139,7 @@ function escapeProperty(value: string): string {
 }
 
 function formatAnnotation(annotation: GitHubAnnotation): string {
-	const properties: Array<string> = [`file=${escapeProperty(annotation.file)}`];
+	const properties = [`file=${escapeProperty(annotation.file)}`];
 
 	if (annotation.line !== undefined) {
 		properties.push(`line=${String(annotation.line)}`);

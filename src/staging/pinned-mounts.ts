@@ -96,31 +96,25 @@ function sourceDigest(source: string): string {
  * @returns The text with pinned classes folded to `Folder`.
  */
 function foldPinnedClasses(xml: string): string {
-	const stripped = xml.replaceAll(
-		CLASSED_PROPERTIES,
-		(match: string, ...groups: Array<number | string>) => {
-			const [open, declared, body, close] = groups;
-			if (!PINNED_PARENT_CLASSES.has(String(declared))) {
-				return match;
-			}
+	const stripped = xml.replaceAll(CLASSED_PROPERTIES, (match, ...groups) => {
+		const [open, declared, body, close] = groups;
+		if (!PINNED_PARENT_CLASSES.has(String(declared))) {
+			return match;
+		}
 
-			const kept = [...String(body).matchAll(XML_PROPERTY)]
-				.filter((property) => INSTANCE_PROPERTIES.has(String(property[2])))
-				.map((property) => `\n      ${property[0]}`)
-				.join("");
-			return `${open}${kept}\n    ${close}`;
-		},
-	);
+		const kept = [...String(body).matchAll(XML_PROPERTY)]
+			.filter((property) => INSTANCE_PROPERTIES.has(String(property[2])))
+			.map((property) => `\n      ${property[0]}`)
+			.join("");
+		return `${open}${kept}\n    ${close}`;
+	});
 
-	return stripped.replaceAll(
-		PINNED_XML_CLASS,
-		(match: string, ...groups: Array<number | string>) => {
-			const [open, declared, close] = groups;
-			return PINNED_PARENT_CLASSES.has(String(declared))
-				? `${String(open)}Folder${String(close)}`
-				: match;
-		},
-	);
+	return stripped.replaceAll(PINNED_XML_CLASS, (match, ...groups) => {
+		const [open, declared, close] = groups;
+		return PINNED_PARENT_CLASSES.has(String(declared))
+			? `${String(open)}Folder${String(close)}`
+			: match;
+	});
 }
 
 async function writeFolderShadowAsync({

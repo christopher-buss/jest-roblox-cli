@@ -134,7 +134,7 @@ function emptyArrays(): IndexArrays {
 
 function readTree(root: CstNode): IndexArrays {
 	const arrays = emptyArrays();
-	const open: Array<number> = [-1];
+	const open = [-1];
 	walkCst(root, {
 		onExit: () => {
 			const ordinal = at(open, open.length - 1);

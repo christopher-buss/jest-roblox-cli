@@ -59,7 +59,7 @@ export class PluginConnectionPool {
 	 * @param wss - Plugin server whose connections the pool tracks.
 	 */
 	constructor(wss: WebSocketServer) {
-		wss.on("connection", (socket: WebSocket) => {
+		wss.on("connection", (socket) => {
 			this.track(socket);
 		});
 	}

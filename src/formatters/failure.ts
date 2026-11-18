@@ -217,7 +217,7 @@ export function formatExecErrorDetail({
 	const badge =
 		block.badge === "TIMEOUT" ? styles.timeoutBadge(" TIMEOUT ") : styles.failBadge(" FAIL ");
 
-	const lines: Array<string> = [
+	const lines = [
 		`  ${badge} ${styles.status.fail(displayPath)}`,
 		`  ${styles.status.fail(block.title)}`,
 		"",
@@ -249,7 +249,7 @@ function formatErrorLine(parsed: ParsedError, styles: Styles): string {
 
 function formatDiffBlock(detail: FailureDetail, styles: Styles): Array<string> {
 	if (detail.kind === "snapshot") {
-		const lines: Array<string> = [""];
+		const lines = [""];
 		for (const diffLine of detail.diff.split("\n")) {
 			if (diffLine.startsWith("- ")) {
 				lines.push(styles.diff.expected(diffLine));
