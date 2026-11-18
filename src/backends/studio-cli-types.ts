@@ -12,6 +12,8 @@ export interface StudioCliProcess {
 	killOnLockRelease: (graceCapMs: number) => void;
 	/** Subscribe to a spawn failure, such as a bad `studioPath`. */
 	onError: (listener: (error: Error) => void) => void;
+	/** Subscribe to Studio exiting after it launched. */
+	onExit: (listener: () => void) => void;
 }
 
 /** What a Studio CLI launch needs. */

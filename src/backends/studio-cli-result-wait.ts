@@ -20,6 +20,7 @@ import {
 	type NilReturnRelay,
 	type ResultDeadline,
 	startNilReturnRelay,
+	startProcessWatch,
 	startRunDeadlines,
 } from "./studio-cli-deadlines.ts";
 import type { StudioCliProcess } from "./studio-cli-types.ts";
@@ -213,7 +214,10 @@ function awaitStudioCliResult({
 	const deadlines = startRunDeadlines({ ...deadlineOptions, onExpired: bail });
 	const nilRelay = startNilReturnRelay({ ...deadlineOptions, onExpired: bail, requestId });
 
+	const processWatch = startProcessWatch({ ...deadlineOptions, child, onExpired: bail });
+
 	function settle(action: () => void): void {
+		processWatch.clear();
 		deadlines.clear();
 		nilRelay.clear();
 		action();
@@ -224,10 +228,6 @@ function awaitStudioCliResult({
 			reject(error);
 		});
 	}
-
-	child.onError((error) => {
-		bail(new Error(error.message, { cause: error }));
-	});
 
 	listenForRunFrames({
 		deadlines,

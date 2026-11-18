@@ -22,6 +22,7 @@ function fakeProcess() {
 		kill: vi.fn<() => void>(),
 		killOnLockRelease: vi.fn<(graceCapMs: number) => void>(),
 		onError: vi.fn<StudioCliProcess["onError"]>(),
+		onExit: vi.fn<StudioCliProcess["onExit"]>(),
 	};
 }
 
@@ -113,6 +114,28 @@ describe(startGracefulTeardown, () => {
 });
 
 describe(launchStudioProcess, () => {
+	it("should report when the spawned Studio exits", ({ expect }) => {
+		expect.assertions(1);
+
+		const { fileSystem } = createMemoryFileSystem();
+		const child = new EventEmitter();
+		const studio = launchStudioProcess({
+			args: [],
+			childProcess: fromAny<ChildProcessRunner, unknown>({ spawn: () => child }),
+			fileSystem,
+			headed: false,
+			hiddenDesktop: false,
+			placeFile: "/repo/place.rbxl",
+			platform: "linux",
+			studioPath: "/opt/studio",
+		});
+		const onExit = vi.fn<() => void>();
+		studio.onExit(onExit);
+		child.emit("exit", 0, null);
+
+		expect(onExit).toHaveBeenCalledOnce();
+	});
+
 	it("should spawn Studio directly when it is not hidden", ({ expect }) => {
 		expect.assertions(2);
 

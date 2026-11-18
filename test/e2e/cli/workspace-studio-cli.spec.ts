@@ -11,6 +11,7 @@ import {
 
 const WORKSPACE_FIXTURE_PATH = path.resolve(__dirname, "../fixtures/workspace-studio");
 const RUN_TIMEOUT_MS = 180_000;
+const CLI_TIMEOUT_MS = 90_000;
 const IS_STUDIO_ON_HOST = isStudioOnHost();
 
 describe("workspace studio-cli smoke", () => {
@@ -34,6 +35,8 @@ describe("workspace studio-cli smoke", () => {
 					"--packages=@e2e/studio-foo,@e2e/studio-bar",
 					"--backend",
 					"studio-cli",
+					"--timeout",
+					CLI_TIMEOUT_MS.toString(),
 				],
 				{ cwd: sandbox, env: hostStudioEnvironment(), timeoutMs: RUN_TIMEOUT_MS },
 			);

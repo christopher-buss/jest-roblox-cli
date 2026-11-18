@@ -13,18 +13,62 @@ end)
 if not sideChannelSet then
 	print("studio-cli: failed to set the run side channel: " .. tostring(sideChannelError))
 end
-local startedOpened, startedSocket = pcall(function()
-	return HttpService:CreateWebStreamClient(Enum.WebStreamClientType.WebSocket, { Url = URL })
-end)
-if startedOpened then
-	startedSocket.Opened:Once(function()
-		startedSocket:Send(HttpService:JSONEncode({ type = "started", requestId = REQUEST_ID }))
+local socket = nil
+local socketOpen = false
+local socketClosed = false
+local outbox = {}
+local function connect(label)
+	local openStart = os.clock()
+	local opened, client
+	while true do
+		opened, client = pcall(function()
+			return HttpService:CreateWebStreamClient(Enum.WebStreamClientType.WebSocket, { Url = URL })
+		end)
+		if opened or os.clock() - openStart >= 10 then
+			break
+		end
+		task.wait(0.25)
+	end
+	if not opened then
+		print("studio-cli: failed to open " .. label .. " socket: " .. tostring(client))
+		return false
+	end
+	socket = client
+	socketOpen = false
+	socketClosed = false
+	outbox = {}
+	client.Opened:Once(function()
+		if socket ~= client then
+			return
+		end
+		socketOpen = true
+		for _, encoded in outbox do
+			client:Send(encoded)
+		end
+		outbox = {}
 	end)
-	startedSocket.Error:Once(function(_statusCode, errorMessage)
-		print("studio-cli: start socket error: " .. tostring(errorMessage))
+	client.Error:Once(function(_statusCode, errorMessage)
+		print("studio-cli: " .. label .. " socket error: " .. tostring(errorMessage))
+		if socket == client then
+			socketClosed = true
+		end
 	end)
-else
-	print("studio-cli: failed to open start socket: " .. tostring(startedSocket))
+	client.Closed:Once(function()
+		if socket == client then
+			socketClosed = true
+		end
+	end)
+	return true
+end
+local function send(encoded)
+	if socketOpen then
+		socket:Send(encoded)
+	else
+		table.insert(outbox, encoded)
+	end
+end
+if connect("start") then
+	send(HttpService:JSONEncode({ type = "started", requestId = REQUEST_ID }))
 end
 local ok, result = pcall(function()
 	return StudioTestService:ExecuteRunModeAsync(payload)
@@ -43,27 +87,19 @@ elseif typeof(result) ~= "table" or result.jestOutput == nil then
 else
 	message = { type = "results", requestId = REQUEST_ID, protocolVersion = result.protocolVersion, pluginVersion = result.pluginVersion, gameOutput = result.gameOutput or "[]", jestOutput = result.jestOutput }
 end
-local encoded = HttpService:JSONEncode(message)
-local connected, socket = pcall(function()
-	return HttpService:CreateWebStreamClient(Enum.WebStreamClientType.WebSocket, { Url = URL })
-end)
-if not connected then
-	print("studio-cli: failed to open result socket: " .. tostring(socket))
-	return
+if not socketOpen or socketClosed then
+	if socket ~= nil then
+		pcall(function()
+			socket:Close()
+		end)
+	end
+	if not connect("result") then
+		return
+	end
 end
-local finished = false
-socket.Opened:Once(function()
-	socket:Send(encoded)
-end)
-socket.Error:Once(function(_statusCode, errorMessage)
-	print("studio-cli: result socket error: " .. tostring(errorMessage))
-	finished = true
-end)
-socket.Closed:Once(function()
-	finished = true
-end)
+send(HttpService:JSONEncode(message))
 local start = os.clock()
-while not finished and (keepAlive or os.clock() - start < 30) do
+while not socketClosed and (keepAlive or os.clock() - start < 30) do
 	task.wait(0.05)
 end
 "

@@ -24,7 +24,9 @@ function makeLaunch() {
 	studio.onError((error) => {
 		errors.push(error);
 	});
-	return { errors, fileSystem, helper, killProcess, studio, volume };
+	const onExit = vi.fn<() => void>();
+	studio.onExit(onExit);
+	return { errors, fileSystem, helper, killProcess, onExit, studio, volume };
 }
 
 function useFakeTimers(onTestFinished: TestContext["onTestFinished"]): void {
@@ -102,6 +104,28 @@ describe(launchThroughHelper, () => {
 		helper.finish({ code: 1, stderr: "WaitForInputIdle failed" });
 
 		expect(errors).toStrictEqual([]);
+	});
+
+	it("should report Studio's exit when the helper closes after the PID", ({ expect }) => {
+		expect.assertions(1);
+
+		const { helper, onExit } = makeLaunch();
+		helper.stdout.emit("data", "5\n");
+		helper.finish({ code: 0 });
+
+		expect(onExit).toHaveBeenCalledOnce();
+	});
+
+	it("should report only a launch failure when the helper closes before the PID", ({
+		expect,
+	}) => {
+		expect.assertions(2);
+
+		const { errors, helper, onExit } = makeLaunch();
+		helper.finish({ code: 1, stderr: "boom" });
+
+		expect(errors).toHaveLength(1);
+		expect(onExit).not.toHaveBeenCalled();
 	});
 
 	it("should clear the stale place lock before spawning the helper", ({ expect }) => {

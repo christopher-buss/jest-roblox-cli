@@ -1,7 +1,7 @@
 import { fromAny, fromPartial } from "@total-typescript/shoehorn";
 
 import { Buffer } from "node:buffer";
-import { describe, it, vi } from "vitest";
+import { describe, it, type TestContext, vi } from "vitest";
 import type { WebSocketServer } from "ws";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
@@ -56,6 +56,48 @@ function pendingServer(boundPort: number | undefined): WebSocketServer {
 		server.emit("listening");
 	});
 	return fromPartial(server);
+}
+
+function useFakeTimers(onTestFinished: TestContext["onTestFinished"]): void {
+	vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+	onTestFinished(() => {
+		vi.useRealTimers();
+	});
+}
+
+function startWait() {
+	const { fileSystem } = createMemoryFileSystem();
+	const server = new MockWebSocketServer({ port: 0 });
+	const exits: Array<() => void> = [];
+	const child: StudioCliProcess = {
+		kill: vi.fn<() => void>(),
+		killOnLockRelease: vi.fn<(graceCapMs: number) => void>(),
+		onError: vi.fn<StudioCliProcess["onError"]>(),
+		onExit: (listener) => {
+			exits.push(listener);
+		},
+	};
+	const waiting = waitForResultAsync({
+		child,
+		deadline: { bootTimeout: 60_000, outputFile: "/repo/output.log", timeout: 60_000 },
+		fileSystem,
+		pluginKey: undefined,
+		requestId: "request-1",
+		server: fromPartial(server),
+	});
+	const socket = new MockWebSocket();
+	server.emit("connection", socket);
+	return {
+		exit: () => {
+			for (const listener of exits) {
+				listener();
+			}
+		},
+		reply: () => {
+			socket.emit("message", Buffer.from(JSON.stringify(result({ protocolVersion: 12 }))));
+		},
+		waiting,
+	};
 }
 
 describe(buildBackendResult, () => {
@@ -153,6 +195,7 @@ describe(waitForResultAsync, () => {
 			kill: vi.fn<() => void>(),
 			killOnLockRelease: vi.fn<(graceCapMs: number) => void>(),
 			onError: vi.fn<StudioCliProcess["onError"]>(),
+			onExit: vi.fn<StudioCliProcess["onExit"]>(),
 		};
 		const waiting = waitForResultAsync({
 			child,
@@ -173,5 +216,46 @@ describe(waitForResultAsync, () => {
 		}
 
 		await expect(waiting).resolves.toStrictEqual(result({ protocolVersion: 12 }));
+	});
+
+	it("should fail once Studio exits without a result", async ({ expect, onTestFinished }) => {
+		expect.assertions(1);
+
+		useFakeTimers(onTestFinished);
+		const { exit, waiting } = startWait();
+		exit();
+		vi.advanceTimersByTime(2000);
+
+		await expect(waiting).rejects.toThrow(
+			/^studio-cli: Studio exited before it sent a result\.\n {2}Studio log: \/repo\/output\.log$/u,
+		);
+	});
+
+	it("should take a result that arrives in the grace after the exit", async ({
+		expect,
+		onTestFinished,
+	}) => {
+		expect.assertions(2);
+
+		useFakeTimers(onTestFinished);
+		const { exit, reply, waiting } = startWait();
+		exit();
+		vi.advanceTimersByTime(1999);
+		reply();
+
+		await expect(waiting).resolves.toStrictEqual(result({ protocolVersion: 12 }));
+		expect(vi.getTimerCount()).toBe(0);
+	});
+
+	it("should ignore an exit after the result", async ({ expect, onTestFinished }) => {
+		expect.assertions(2);
+
+		useFakeTimers(onTestFinished);
+		const { exit, reply, waiting } = startWait();
+		reply();
+		exit();
+
+		await expect(waiting).resolves.toStrictEqual(result({ protocolVersion: 12 }));
+		expect(vi.getTimerCount()).toBe(0);
 	});
 });

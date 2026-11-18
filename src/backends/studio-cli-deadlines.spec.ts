@@ -6,7 +6,11 @@ import type { WebSocket } from "ws";
 
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { MockWebSocket } from "#test/mocks/mock-web-socket.ts";
-import { startNilReturnRelay, startRunDeadlines } from "./studio-cli-deadlines.ts";
+import {
+	startNilReturnRelay,
+	startProcessWatch,
+	startRunDeadlines,
+} from "./studio-cli-deadlines.ts";
 
 const OUTPUT_FILE = path.resolve("/repo/.jest-roblox/studio-cli/output.log");
 
@@ -170,6 +174,48 @@ describe(startNilReturnRelay, () => {
 
 		expect(onExpired.mock.calls[0]![0].message).toContain(
 			"the play server never started running",
+		);
+	});
+});
+
+describe(startProcessWatch, () => {
+	it("should quote Studio's log when Studio exits and no result follows", ({
+		expect,
+		onTestFinished,
+	}) => {
+		expect.assertions(2);
+
+		useFakeTimers(onTestFinished);
+		const { fileSystem, volume } = createMemoryFileSystem();
+		volume.mkdirSync(path.dirname(OUTPUT_FILE), { recursive: true });
+		volume.writeFileSync(OUTPUT_FILE, "studio-cli: failed to open result socket: full\n");
+		const onExpired = vi.fn<(error: Error) => void>();
+		const exits: Array<() => void> = [];
+		startProcessWatch({
+			child: fromPartial({
+				onError: vi.fn<(listener: (error: Error) => void) => void>(),
+				onExit: (listener: () => void) => {
+					exits.push(listener);
+				},
+			}),
+			fileSystem,
+			onExpired,
+			outputFile: OUTPUT_FILE,
+		});
+		exits[0]!();
+		vi.advanceTimersByTime(1999);
+
+		expect(onExpired).not.toHaveBeenCalled();
+
+		vi.advanceTimersByTime(1);
+
+		expect(expiredMessage(onExpired)).toBe(
+			[
+				"studio-cli: Studio exited before it sent a result.",
+				`  Studio log: ${OUTPUT_FILE}`,
+				"  Last lines Studio logged:",
+				"    studio-cli: failed to open result socket: full",
+			].join("\n"),
 		);
 	});
 });

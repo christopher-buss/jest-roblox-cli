@@ -118,6 +118,19 @@ function terminateStudio(child: ChildProcess): void {
 	child.kill("SIGTERM");
 }
 
+function childEvents(child: ChildProcess): Pick<StudioCliProcess, "onError" | "onExit"> {
+	return {
+		onError: (listener) => {
+			child.on("error", listener);
+		},
+		onExit: (listener) => {
+			child.on("exit", () => {
+				listener();
+			});
+		},
+	};
+}
+
 function spawnStudio(request: StudioCliLaunchRequest): StudioCliProcess {
 	const { childProcess, fileSystem } = request;
 	const lockFile = clearStaleLock(fileSystem, request.placeFile);
@@ -143,8 +156,6 @@ function spawnStudio(request: StudioCliLaunchRequest): StudioCliProcess {
 				},
 			});
 		},
-		onError: (listener) => {
-			child.on("error", listener);
-		},
+		...childEvents(child),
 	};
 }

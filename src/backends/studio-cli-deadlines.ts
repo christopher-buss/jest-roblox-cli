@@ -3,6 +3,7 @@ import type { WebSocket } from "ws";
 
 import { encodeNilRelayFrame, NIL_RETURN_PLUGIN_WAIT_MS } from "../protocol/studio.ts";
 import type { FileSystem } from "../utils/file-system.ts";
+import type { StudioCliProcess } from "./studio-cli-types.ts";
 
 /** Overrides how long Studio may take to start the run, in milliseconds. */
 export const BOOT_TIMEOUT_ENV = "JEST_ROBLOX_STUDIO_BOOT_TIMEOUT";
@@ -15,6 +16,8 @@ const LOG_LINE_SPLIT_PATTERN = /\r?\n/u;
 const STUDIO_LOG_TAIL = 15;
 
 const STUDIO_LOG_LINE_LIMIT = 300;
+
+const STUDIO_EXIT_GRACE_MS = 2000;
 
 const NIL_RETURN_HEADLINE =
 	"studio-cli: ExecuteRunModeAsync ended the test session early (it returned nil), " +
@@ -139,6 +142,50 @@ export function startNilReturnRelay({
 			if (timer !== undefined) {
 				relayTo(socket);
 			}
+		},
+	};
+}
+
+/**
+ * Fail the run when Studio fails to launch, or exits and no result follows
+ * within a short grace.
+ *
+ * @param options - The Studio process, the log path, and the expiry callback.
+ * @returns Controls that stop the watch once the run settles.
+ */
+export function startProcessWatch({
+	child,
+	fileSystem,
+	onExpired,
+	outputFile,
+}: Pick<ResultDeadline, "outputFile"> & {
+	child: StudioCliProcess;
+	fileSystem: FileSystem;
+	onExpired: (error: Error) => void;
+}): {
+	/** Stops the watch and any pending exit grace. */
+	clear: () => void;
+} {
+	let isCleared = false;
+	let timer: NodeJS.Timeout | undefined;
+	child.onError((error) => {
+		onExpired(new Error(error.message, { cause: error }));
+	});
+	child.onExit(() => {
+		if (isCleared) {
+			return;
+		}
+
+		timer = setTimeout(() => {
+			const headline = "studio-cli: Studio exited before it sent a result.";
+			onExpired(unansweredError({ fileSystem, headline, outputFile }));
+		}, STUDIO_EXIT_GRACE_MS);
+	});
+
+	return {
+		clear: () => {
+			isCleared = true;
+			clearTimeout(timer);
 		},
 	};
 }

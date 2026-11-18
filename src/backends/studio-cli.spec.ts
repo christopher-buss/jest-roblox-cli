@@ -102,6 +102,7 @@ function makeFakeProcess(): FakeProcess {
 		onError: (listener) => {
 			errors.on("error", listener);
 		},
+		onExit: vi.fn<StudioCliProcess["onExit"]>(),
 	};
 }
 

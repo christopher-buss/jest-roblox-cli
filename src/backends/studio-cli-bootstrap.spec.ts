@@ -110,6 +110,40 @@ describe(buildStudioArgs, () => {
 		expect(guard).toBeLessThan(bootstrap.indexOf("ExecuteRunModeAsync"));
 	});
 
+	it("should open every socket through one retrying call site", ({ expect }) => {
+		expect.assertions(3);
+
+		const { bootstrap } = writeBootstrap();
+
+		expect(bootstrap.split("CreateWebStreamClient")).toHaveLength(2);
+		expect(bootstrap).toContain("task.wait(0.25)");
+		expect(bootstrap).toContain("os.clock() - openStart >= 10");
+	});
+
+	it("should send the result on the start socket while it is still open", ({ expect }) => {
+		expect.assertions(2);
+
+		const { bootstrap } = writeBootstrap();
+		const run = bootstrap.indexOf("ExecuteRunModeAsync");
+
+		expect(bootstrap.indexOf('connect("start")')).toBeLessThan(run);
+		expect(bootstrap.slice(run)).toContain(
+			[
+				"if not socketOpen or socketClosed then",
+				"\tif socket ~= nil then",
+				"\t\tpcall(function()",
+				"\t\t\tsocket:Close()",
+				"\t\tend)",
+				"\tend",
+				'\tif not connect("result") then',
+				"\t\treturn",
+				"\tend",
+				"end",
+				"send(HttpService:JSONEncode(message))",
+			].join("\n"),
+		);
+	});
+
 	it("should escape a config value containing the Luau long-string terminator", ({ expect }) => {
 		expect.assertions(2);
 

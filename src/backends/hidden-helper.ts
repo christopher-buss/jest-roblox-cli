@@ -39,6 +39,7 @@ export interface HiddenHelperLaunch {
 }
 
 interface HelperEvents {
+	exit: [];
 	failure: [Error];
 }
 
@@ -58,7 +59,7 @@ interface HelperOutput {
 export function launchThroughHelper(launch: HiddenHelperLaunch): StudioCliProcess {
 	const { fileSystem, label } = launch;
 	const lockFile = clearStaleLock(fileSystem, launch.placeFile);
-	const errors = new EventEmitter<HelperEvents>();
+	const events = new EventEmitter<HelperEvents>();
 	const helper = launch.spawnHelper();
 	const { onPid, terminate } = deferredKill({
 		killStudio: (pid) => {
@@ -68,13 +69,7 @@ export function launchThroughHelper(launch: HiddenHelperLaunch): StudioCliProces
 			stopHelper(helper);
 		},
 	});
-	watchHelper(helper, {
-		fail: (error) => {
-			errors.emit("failure", error);
-		},
-		label,
-		onPid,
-	});
+	watchHelper(helper, { events, label, onPid });
 
 	return {
 		kill: terminate,
@@ -82,7 +77,10 @@ export function launchThroughHelper(launch: HiddenHelperLaunch): StudioCliProces
 			watchLockRelease({ fileSystem, graceCapMs, lockFile, terminate });
 		},
 		onError: (listener) => {
-			errors.on("failure", listener);
+			events.on("failure", listener);
+		},
+		onExit: (listener) => {
+			events.on("exit", listener);
 		},
 	};
 }
@@ -177,10 +175,10 @@ function takePid(output: HelperOutput, lines: ReadonlyArray<string>): void {
 function watchHelper(
 	helper: ChildProcess,
 	{
-		fail,
+		events,
 		label,
 		onPid,
-	}: { fail: (error: Error) => void; label: string; onPid: (pid: number) => void },
+	}: { events: EventEmitter<HelperEvents>; label: string; onPid: (pid: number) => void },
 ): void {
 	const output: HelperOutput = { hasPid: false, onPid, stderr: "", stdout: "" };
 	helper.stdout?.setEncoding("utf8");
@@ -194,13 +192,19 @@ function watchHelper(
 	});
 	helper.on("error", (error) => {
 		if (!output.hasPid) {
-			fail(error);
+			events.emit("failure", error);
 		}
 	});
 	helper.on("close", (code) => {
 		takePid(output, output.stdout.split(LINE_SPLIT_PATTERN));
 		if (!output.hasPid) {
-			fail(helperFailure({ code, label, stderr: output.stderr, stdout: output.stdout }));
+			events.emit(
+				"failure",
+				helperFailure({ code, label, stderr: output.stderr, stdout: output.stdout }),
+			);
+			return;
 		}
+
+		events.emit("exit");
 	});
 }
