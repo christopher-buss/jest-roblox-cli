@@ -2,6 +2,7 @@ import type { RojoTreeNode } from "@isentinel/rojo-utils";
 
 import * as path from "node:path";
 import { describe, it, vi } from "vitest";
+import type { MockInstance } from "vitest";
 
 import type { MemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { posixPath } from "#test/mocks/posix-path.ts";
@@ -212,7 +213,8 @@ describe(findPinnedMounts, () => {
 				[metaPath]: '{"className":"Folder"}',
 				[path.join(ASSETS, value)]: "return 1",
 			});
-			const readFile = vi.spyOn(memory.fileSystem, "readFileSync");
+			const readFile: MockInstance<(file: string, encoding: BufferEncoding) => string> =
+				vi.spyOn(memory.fileSystem, "readFileSync");
 
 			expect(scan(memory, { stage: directoryStage(path.join(ASSETS, "src")) })).toBeEmpty();
 			expect(readFile).toHaveBeenCalledTimes(reads);

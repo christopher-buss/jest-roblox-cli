@@ -1,5 +1,4 @@
 import { createFakeHttpClient } from "@bedrock-rbx/ocale/testing";
-import { fromAny } from "@total-typescript/shoehorn";
 
 import { describe, it, vi } from "vitest";
 
@@ -44,7 +43,7 @@ describe("memory store flush", () => {
 
 		const fetchMock = vi
 			.fn<typeof fetch>()
-			.mockResolvedValue(fromAny(new Response("{}", { status: 200 })));
+			.mockResolvedValue(new Response("{}", { status: 200 }));
 		vi.stubGlobal("fetch", fetchMock);
 
 		await flushMemoryStoreAsync({ apiKey: "test-key", universeId: "123" });

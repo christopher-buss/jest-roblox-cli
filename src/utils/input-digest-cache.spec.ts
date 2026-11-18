@@ -1,5 +1,7 @@
+import type { Buffer } from "node:buffer";
 import { createHash } from "node:crypto";
 import { describe, it, vi } from "vitest";
+import type { MockInstance } from "vitest";
 
 import { ageFile, writeAgedFile } from "#test/mocks/aged-file.ts";
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
@@ -35,7 +37,10 @@ describe(openInputDigestCache, () => {
 		first.save();
 
 		const second = openInputDigestCache(CACHE_FILE, fileSystem);
-		const readFile = vi.spyOn(fileSystem.promises, "readFile");
+		const readFile: MockInstance<(file: string) => Promise<Buffer<ArrayBuffer>>> = vi.spyOn(
+			fileSystem.promises,
+			"readFile",
+		);
 
 		await expect(second.hashOfAsync("/project/a.lua")).resolves.toBe(recorded);
 		expect(readFile).not.toHaveBeenCalledWith("/project/a.lua");
@@ -86,7 +91,10 @@ describe(openInputDigestCache, () => {
 		first.save();
 
 		const second = openInputDigestCache(CACHE_FILE, fileSystem);
-		const readFile = vi.spyOn(fileSystem.promises, "readFile");
+		const readFile: MockInstance<(file: string) => Promise<Buffer<ArrayBuffer>>> = vi.spyOn(
+			fileSystem.promises,
+			"readFile",
+		);
 		await second.hashOfAsync("/project/a.lua");
 
 		expect(readFile).toHaveBeenCalledWith("/project/a.lua");
@@ -124,7 +132,10 @@ describe(openInputDigestCache, () => {
 		second.save();
 
 		const third = openInputDigestCache(CACHE_FILE, fileSystem);
-		const readFile = vi.spyOn(fileSystem.promises, "readFile");
+		const readFile: MockInstance<(file: string) => Promise<Buffer<ArrayBuffer>>> = vi.spyOn(
+			fileSystem.promises,
+			"readFile",
+		);
 		await third.hashOfAsync("/project/b.lua");
 
 		expect(readFile).toHaveBeenCalledWith("/project/b.lua");
@@ -196,7 +207,10 @@ describe(openInputDigestCache, () => {
 		second.save();
 
 		const third = openInputDigestCache(CACHE_FILE, fileSystem);
-		const readFile = vi.spyOn(fileSystem.promises, "readFile");
+		const readFile: MockInstance<(file: string) => Promise<Buffer<ArrayBuffer>>> = vi.spyOn(
+			fileSystem.promises,
+			"readFile",
+		);
 		await third.hashOfAsync("/project/a.lua");
 
 		expect(readFile).not.toHaveBeenCalledWith("/project/a.lua");

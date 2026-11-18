@@ -5,7 +5,7 @@ import { Buffer } from "node:buffer";
 import { createHash } from "node:crypto";
 import * as path from "node:path";
 import process from "node:process";
-import type { Mock } from "vitest";
+import type { Mock, MockInstance } from "vitest";
 import { describe, it, vi } from "vitest";
 
 import { ageFile } from "#test/mocks/aged-file.ts";
@@ -331,7 +331,10 @@ describe("place reuse", () => {
 		const rojo = seedBuild();
 		await buildAsync(rojo);
 
-		const readFile = vi.spyOn(rojo.fileSystem.promises, "readFile");
+		const readFile: MockInstance<(file: string) => Promise<Buffer<ArrayBuffer>>> = vi.spyOn(
+			rojo.fileSystem.promises,
+			"readFile",
+		);
 		await buildAsync(rojo);
 
 		expect(readFile).not.toHaveBeenCalledWith(`${MOUNT_DIR}/init.luau`);

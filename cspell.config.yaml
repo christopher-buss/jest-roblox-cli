@@ -113,6 +113,7 @@ words:
   - tsrs
   - typealias
   - typeassertion
+  - typedarrays
   - typefunction
   - typetest
   - uncompiled

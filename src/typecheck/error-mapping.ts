@@ -158,9 +158,8 @@ function partitionErrors({
 		const message = `${error.code}: ${error.message}`;
 
 		if (definition) {
-			const existing = errorsByTest.get(definition.name) ?? [];
+			const existing = errorsByTest.getOrInsert(definition.name, []);
 			existing.push(message);
-			errorsByTest.set(definition.name, existing);
 		} else {
 			fileErrors.push(message);
 		}

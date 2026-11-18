@@ -1,11 +1,13 @@
 import { fromAny } from "@total-typescript/shoehorn";
 
 import { type } from "arktype";
+import type { Buffer } from "node:buffer";
 import * as crypto from "node:crypto";
 import * as path from "node:path";
 import process from "node:process";
 import type { Except } from "type-fest";
 import { describe, it, vi } from "vitest";
+import type { MockInstance } from "vitest";
 
 import { writeAgedFile } from "#test/mocks/aged-file.ts";
 import { copyIgnoreHash as digestCopyIgnore } from "#test/mocks/coverage-hash.ts";
@@ -3714,7 +3716,10 @@ describe("when hashing the rojo build inputs", () => {
 			tsconfigReader: noTsconfig,
 		});
 
-		const readFile = vi.spyOn(fileSystem.promises, "readFile");
+		const readFile: MockInstance<(file: string) => Promise<Buffer<ArrayBuffer>>> = vi.spyOn(
+			fileSystem.promises,
+			"readFile",
+		);
 		await prepareCoverageAsync(config, {
 			childProcess,
 			fileSystem,

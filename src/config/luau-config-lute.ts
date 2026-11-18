@@ -1,5 +1,5 @@
 import { scope, type } from "arktype";
-import type { ExecFileException } from "node:child_process";
+import type { ExecException } from "node:child_process";
 import * as os from "node:os";
 import * as path from "node:path";
 import process from "node:process";
@@ -65,7 +65,7 @@ export interface LuteEvaluationRequest {
 }
 
 interface LuteRun {
-	readonly error: ExecFileException | null;
+	readonly error: ExecException | null;
 	readonly stderr: string;
 	readonly stdout: string;
 }

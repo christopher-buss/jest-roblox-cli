@@ -48,7 +48,7 @@ export function atomicWrite({
 		sweepAbandonedTemporaries({ basename, directory, fileSystem });
 	}
 
-	const stamp = `${process.pid}.${randomBytes(NONCE_BYTES).toString("hex")}`;
+	const stamp = `${process.pid}.${randomBytes(NONCE_BYTES).toHex()}`;
 	const temporaryPath = path.join(directory, `${basename}${TEMPORARY_INFIX}${stamp}`);
 	fileSystem.writeFileSync(temporaryPath, contents);
 

@@ -4,6 +4,7 @@ import type * as childProcess from "node:child_process";
 import * as path from "node:path";
 import process from "node:process";
 import { describe, it, vi } from "vitest";
+import type { MockInstance } from "vitest";
 
 import type { ChildProcessRunner } from "../utils/child-process.ts";
 import type { FileSystem } from "../utils/file-system.ts";
@@ -284,7 +285,10 @@ describe("tsgo composite detection", () => {
 		expect.assertions(1);
 
 		const fileSystem = readingText(JSON.stringify({ compilerOptions: { composite: true } }));
-		const readFile = vi.spyOn(fileSystem, "readFileSync");
+		const readFile: MockInstance<(file: string, encoding: BufferEncoding) => string> = vi.spyOn(
+			fileSystem,
+			"readFileSync",
+		);
 
 		await spawnFlagsAsync(fileSystem, "tsconfig.build.json");
 

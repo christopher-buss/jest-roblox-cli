@@ -24,7 +24,7 @@ const VALUE = "<<jest-roblox:luau-config-value>>";
 const ERROR = "<<jest-roblox:luau-config-error>>";
 
 interface Reply {
-	readonly error?: Partial<childProcess.ExecFileException>;
+	readonly error?: Partial<childProcess.ExecException>;
 	readonly stderr?: string;
 	readonly stdout?: string;
 }

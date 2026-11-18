@@ -64,7 +64,7 @@ describe("istanbul html assets module", () => {
 		// is the file rather than a mangled utf-8 read of it.
 		const favicon = decodeAsset(findAsset(assets, "favicon.png"));
 
-		expect(favicon.subarray(0, 4).toString("hex")).toBe("89504e47");
+		expect(favicon.subarray(0, 4).toHex()).toBe("89504e47");
 	});
 
 	it("should carry the html-spa bundle", ({ expect }) => {

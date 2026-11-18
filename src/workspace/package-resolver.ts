@@ -145,9 +145,8 @@ function assertNoDuplicateNames(packages: Array<PackageInfo>, workspaceRoot: str
 		const relative = normalizeWindowsPath(
 			path.relative(workspaceRoot, packageInfo.packageDirectory),
 		);
-		const list = byName.get(packageInfo.name) ?? [];
+		const list = byName.getOrInsert(packageInfo.name, []);
 		list.push(relative === "" ? "." : relative);
-		byName.set(packageInfo.name, list);
 	}
 
 	for (const [name, paths] of byName) {

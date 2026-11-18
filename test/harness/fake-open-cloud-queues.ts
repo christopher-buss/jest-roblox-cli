@@ -85,9 +85,8 @@ function handleQueueAdd({
 	state.queueAdds.push({ queue, value: itemValue });
 	state.counters.itemSeq += 1;
 	const itemId = `item-${state.counters.itemSeq.toString()}`;
-	const items = state.queues.get(queue) ?? [];
+	const items = state.queues.getOrInsert(queue, []);
 	items.push({ id: itemId, value: itemValue });
-	state.queues.set(queue, items);
 	response.writeHead(200, { "content-type": JSON_CONTENT_TYPE });
 	response.end(
 		JSON.stringify(
@@ -109,9 +108,8 @@ function handleQueueRead({
 	response: ServerResponse;
 	state: FakeOpenCloudState;
 }): void {
-	const queued = state.queues.get(queue) ?? [];
+	const queued = state.queues.getOrInsert(queue, []);
 	const next = queued.shift();
-	state.queues.set(queue, queued);
 	response.writeHead(200, { "content-type": JSON_CONTENT_TYPE });
 	if (next === undefined) {
 		response.end(JSON.stringify(validDequeueBody({ id: "read-empty", queueItems: [] })));

@@ -1,4 +1,4 @@
-import type { ChildProcess, ExecFileException } from "node:child_process";
+import type { ChildProcess, ExecException } from "node:child_process";
 
 import type { ChildProcessRunner } from "../utils/child-process.ts";
 
@@ -24,7 +24,7 @@ export interface SpawnCheckerOptions {
 }
 
 interface SettleOptions {
-	error: ExecFileException | null;
+	error: ExecException | null;
 	finish: (action: () => void) => void;
 	label: string;
 	reject: (reason: Error) => void;

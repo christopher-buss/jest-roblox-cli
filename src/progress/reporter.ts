@@ -218,14 +218,13 @@ class RunProgressReporter implements RunProgress {
 	}
 
 	private openRecord(id: StageId, detail: string | undefined): StageRecord {
-		const record = this.records.get(id) ?? {
+		const record = this.records.getOrInsert(id, {
 			id,
 			detail: undefined,
 			elapsedMs: 0,
 			openedAtMs: 0,
-			state: "active" as StageState,
-		};
-		this.records.set(id, record);
+			state: "active",
+		});
 		record.detail = detail === undefined ? record.detail : this.clampDetail(detail);
 		record.openedAtMs = this.options.now();
 		record.state = "active";

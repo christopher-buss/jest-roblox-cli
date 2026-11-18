@@ -1,5 +1,6 @@
+import type { Buffer } from "node:buffer";
 import process from "node:process";
-import { assert, describe, it, type TestContext, vi } from "vitest";
+import { assert, describe, it, type MockInstance, type TestContext, vi } from "vitest";
 
 import { writeAgedFile } from "#test/mocks/aged-file.ts";
 import type { MemoryFileSystem } from "#test/mocks/memory-file-system.ts";
@@ -127,7 +128,10 @@ describe(tryComputeRojoInputsHashAsync, () => {
 		writeAgedFile(fileSystem, "/project/include/a.lua", "-- v1");
 		const before = await hashOfAsync(fileSystem);
 
-		const readFile = vi.spyOn(fileSystem.promises, "readFile");
+		const readFile: MockInstance<(file: string) => Promise<Buffer<ArrayBuffer>>> = vi.spyOn(
+			fileSystem.promises,
+			"readFile",
+		);
 
 		await expect(hashOfAsync(fileSystem)).resolves.toBe(before);
 		expect(readFile).not.toHaveBeenCalledWith("/project/include/a.lua");

@@ -6,7 +6,6 @@ import {
 	createFakeSleep,
 	validBinaryInputBody,
 } from "@bedrock-rbx/ocale/testing";
-import { fromAny } from "@total-typescript/shoehorn";
 
 import buffer from "node:buffer";
 import path from "node:path";
@@ -30,9 +29,7 @@ function makeUploads(
 	};
 	const uploads = new CloudUploads({
 		credentials: { apiKey: "key", placeId: "456", universeId: "123" },
-		fetch: vi.fn<typeof globalThis.fetch>(async () => {
-			return fromAny(new Response("", { status: 200 }));
-		}),
+		fetch: vi.fn<typeof globalThis.fetch>(async () => new Response("", { status: 200 })),
 		luau: new LuauExecutionClient(options),
 		places: new PlacesClient(options),
 		readFile: () => buffer.Buffer.from('<roblox version="4"></roblox>'),
@@ -72,7 +69,7 @@ describe(CloudUploads, () => {
 		const clock = vi.spyOn(Date, "now").mockReturnValue(1000);
 		const fetch = vi.fn<typeof globalThis.fetch>(async () => {
 			clock.mockReturnValue(3000);
-			return fromAny(new Response("", { status: 200 }));
+			return new Response("", { status: 200 });
 		});
 		const { http, uploads } = makeUploads({ fetch });
 		http.mockResponse({
@@ -127,7 +124,7 @@ describe(CloudUploads, () => {
 		expect.assertions(1);
 
 		const fetch = vi.fn<typeof globalThis.fetch>(async () => {
-			return fromAny(new Response("expired", { status: 403 }));
+			return new Response("expired", { status: 403 });
 		});
 		const { http, uploads } = makeUploads({ fetch });
 		http.mockResponse({

@@ -1,9 +1,11 @@
 import { fromAny } from "@total-typescript/shoehorn";
 
+import type { Buffer } from "node:buffer";
 import * as path from "node:path";
 import process from "node:process";
 import { setTimeout as delayAsync } from "node:timers/promises";
 import { describe, it, vi } from "vitest";
+import type { MockInstance } from "vitest";
 
 import { ageFile } from "#test/mocks/aged-file.ts";
 import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
@@ -77,7 +79,10 @@ describe(computePlaceInputsKeyAsync, () => {
 		ageFile(fileSystem, "/cache/assets/model.txt", 60);
 		const first = await keyForAsync(fileSystem);
 
-		const readFile = vi.spyOn(fileSystem.promises, "readFile");
+		const readFile: MockInstance<(file: string) => Promise<Buffer<ArrayBuffer>>> = vi.spyOn(
+			fileSystem.promises,
+			"readFile",
+		);
 
 		await expect(keyForAsync(fileSystem)).resolves.toBe(first);
 		expect(readFile).not.toHaveBeenCalledWith("/cache/assets/model.txt");

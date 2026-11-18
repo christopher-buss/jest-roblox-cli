@@ -1,5 +1,3 @@
-import { fromAny } from "@total-typescript/shoehorn";
-
 import { describe, it, vi } from "vitest";
 
 import { createFetchHttpClient } from "./open-cloud-fetch.ts";
@@ -14,9 +12,7 @@ async function requestAsync(body?: { topic: string }) {
 }
 
 function stubOkFetch() {
-	const fetchMock = vi
-		.fn<typeof fetch>()
-		.mockResolvedValue(fromAny(new Response("{}", { status: 200 })));
+	const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(new Response("{}", { status: 200 }));
 	vi.stubGlobal("fetch", fetchMock);
 	return fetchMock;
 }
@@ -70,9 +66,7 @@ describe("open cloud fetch transport", () => {
 
 		vi.stubGlobal(
 			"fetch",
-			vi
-				.fn<typeof fetch>()
-				.mockResolvedValue(fromAny(new Response("quota", { status: 429 }))),
+			vi.fn<typeof fetch>().mockResolvedValue(new Response("quota", { status: 429 })),
 		);
 
 		const result = await requestAsync();

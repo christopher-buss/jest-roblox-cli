@@ -6,11 +6,7 @@ import { describe, it, vi } from "vitest";
 import type { ChildProcessRunner } from "../utils/child-process.ts";
 import { spawnCheckerAsync, type SpawnCheckerOptions } from "./spawn-checker.ts";
 
-type Callback = (
-	error: childProcess.ExecFileException | null,
-	stdout: string,
-	stderr: string,
-) => void;
+type Callback = (error: childProcess.ExecException | null, stdout: string, stderr: string) => void;
 
 function stubChecker(respond?: (callback: Callback) => void) {
 	const kill = vi.fn<() => void>();
@@ -50,8 +46,8 @@ function respondWith(...response: Parameters<Callback>): Partial<SpawnCheckerOpt
 	return { childProcess: runner };
 }
 
-function exitError(code: number | string): childProcess.ExecFileException {
-	return Object.assign(new Error(`exit ${String(code)}`), { code });
+function exitError(code: number | string): childProcess.ExecException {
+	return Object.assign(new Error(`exit ${String(code)}`), { cmd: "tsgo", code });
 }
 
 describe(spawnCheckerAsync, () => {
@@ -83,7 +79,11 @@ describe(spawnCheckerAsync, () => {
 		expect.assertions(1);
 
 		const { runner } = stubChecker((callback) => {
-			callback(Object.assign(new Error("killed"), { killed: true }), "partial", "");
+			callback(
+				Object.assign(new Error("killed"), { cmd: "tsgo", killed: true }),
+				"partial",
+				"",
+			);
 		});
 
 		await expect(
