@@ -1,15 +1,14 @@
 # Coverage
 
-Enable with `--coverage`. The pipeline: instruments compiled Luau via
-[lute](https://github.com/luau-lang/lute/) into a shadow copy
-(`.jest-roblox/coverage/`) → rewrites the Rojo project to point at it → builds
-the place with `rojo build` → runs tests → collects hit counts → maps Luau spans
-back to source via source maps → generates reports and checks thresholds.
+Enable with `--coverage`. The pipeline: instruments compiled Luau into a shadow
+copy (`.jest-roblox/coverage/`) → rewrites the Rojo project to point at it →
+builds the place with `rojo build` → runs tests → collects hit counts → maps
+Luau spans back to source via source maps → generates reports and checks
+thresholds.
 
 ## Prerequisites
 
-[Lute](https://github.com/luau-lang/lute/) and [rojo](https://rojo.space) on
-PATH, typically installed via `mise` or `rokit`.
+[rojo](https://rojo.space) on PATH, typically installed via `mise` or `rokit`.
 
 Run on `studio-cli` or `open-cloud`. The attached `studio` backend builds the
 coverage place to `.jest-roblox/place/`, which is not the place Studio serves.
@@ -62,12 +61,15 @@ const config = {
 };
 ```
 
-Available metrics: `statements`, `branches`, `functions`, `lines`.
-
 ## The coverage universe
 
-`collectCoverageFrom` and `coveragePathIgnorePatterns` narrow the universe: the
-files the report lists and the threshold judges.
+The universe is the set of files that the report lists and the threshold judges.
+`collectCoverageFrom` and `coveragePathIgnorePatterns` narrow it.
+
+With no `collectCoverageFrom`, the universe is every file under the Luau roots,
+minus `coveragePathIgnorePatterns` and `*.client.*` / `*.server.*` scripts.
+Roblox cannot require those scripts. An explicit `collectCoverageFrom` drops
+that exclusion.
 
 `coveragePathIgnorePatterns` matches the **TypeScript source path** with
 substring semantics (Jest-style), so a file-level glob like `**/index.ts`
@@ -77,9 +79,10 @@ The universe also decides which files get probes at all. A file outside it is
 mirrored into the shadow directory verbatim instead of instrumented, so the
 place stays loadable but the run never carries hit counts the report would
 discard. That matters on Open Cloud, which rejects a task returning more than 4
-MiB: a place probed across its whole source tree can spend most of that budget
-on files no report asks about. Narrowing `collectCoverageFrom` is the lever;
-`luauRoots` and `coveragePathIgnorePatterns` cut whole roots the same way.
+MiB with `OUTPUT_SIZE_LIMIT_EXCEEDED`: a place probed across its whole source
+tree can spend most of that budget on files no report asks about. Narrowing
+`collectCoverageFrom` is the lever; `luauRoots` and `coveragePathIgnorePatterns`
+cut whole roots the same way.
 
 A multi-project run with no `collectCoverageFrom` derives the universe from each
 project's `include` globs. Paths anchor on the invocation directory. Workspace

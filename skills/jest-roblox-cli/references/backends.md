@@ -15,6 +15,10 @@ Studio counts as installed when `studioPath` (or `--studioPath`,
 Windows and macOS only; on Linux or WSL, `auto` picks `open-cloud` unless a path
 is set.
 
+`JEST_ROBLOX_STUDIO_DISCOVERY=off` turns discovery off, so `auto` picks
+`open-cloud` unless a Studio path is set. Values other than `on`, `off` or empty
+are an error.
+
 The pick is made once, before the run. A failed `studio-cli` run fails the run,
 and a wrong `studioPath` fails at launch: neither moves to Open Cloud. `auto`
 never picks the attached `studio` backend.
@@ -44,11 +48,11 @@ three env vars with `JEST_` (e.g. `JEST_ROBLOX_PLACE_ID`) to override the
 unprefixed value when other tooling claims the generic names. `--apiKey`,
 `--universeId`, and `--placeId` also work, but leak into process listings.
 
-The upload is skipped when the place bytes are unchanged
-(`.jest-roblox/upload-cache.json`); `--no-upload-cache` forces it. Each new
-version is proved by a boot probe before any test task; a version that cannot
-boot exits 2 rather than failing tests; raise `bootProbeTimeout` (default 90s)
-for a slow boot.
+- **Upload cache**: the upload is skipped when the place bytes are unchanged
+  (`.jest-roblox/upload-cache.json`). `--no-upload-cache` forces it.
+- **Boot probe**: a boot probe proves each new version before any test task. A
+  version that cannot boot exits 2 rather than failing tests. Raise
+  `bootProbeTimeout` for a slow boot.
 
 ### API key scopes
 
@@ -65,14 +69,27 @@ Without the queue scopes a sharded run warns and falls back to static buckets.
 Streaming is off for `--silent`, `--formatters json`, and `--formatters agent`
 (unless `--verbose`); `--formatters github-actions` streams.
 
-`--parallel [n]` runs `n` concurrent sessions (`auto` = `min(jobs, 3)`). Each
-costs one task create against Roblox's create limit.
+Each `--parallel` session costs one task create against Roblox's create limit.
+
+The root `timeout` also bounds each task. A task that stays `PROCESSING` past it
+fails. The CLI never starts a replacement task, because a create refused by the
+limit locks every key and place the account owns.
+
+A task that reaches its deadline with no result, or a create refused with a 429,
+exits with code 3 and prints a `Roblox Infrastructure Error` banner. The banner
+holds the evidence to report to Roblox, without the API key.
 
 ## Studio
 
 Attaches to an open Studio over WebSocket (`port`, default `3001`) through the
 jest-roblox plugin. Studio exposes no open-place identity, so run one repo at a
 time.
+
+Get the plugin as `JestRobloxRunner.rbxm` from the
+[latest release](https://github.com/christopher-buss/jest-roblox-cli/releases)
+and put it in your Studio plugins folder, or install it with
+[Drillbit](https://github.com/jacktabscode/drillbit). With another `port`, set a
+number attribute `JEST_ROBLOX_PORT` on `ReplicatedStorage` in the open place.
 
 Every installed copy of the plugin opens its own connection; the CLI dispatches
 to the one announcing a matching protocol version. When none matches, the run

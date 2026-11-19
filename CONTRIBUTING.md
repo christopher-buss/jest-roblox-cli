@@ -14,6 +14,17 @@ pnpm watch         # Watch mode
 pnpm typecheck     # Check types
 ```
 
+## Run from source
+
+The bin uses the TypeScript source when it is present. Run
+`node --conditions=source bin/jest-roblox.js` to also load workspace
+dependencies from source. Run `pnpm build:bundle` first: the source imports the
+Luau runner and materializer it generates.
+
+A source consumer of `@isentinel/jest-roblox/api` registers the synchronous Node
+hooks from `@isentinel/jest-roblox/loader` before it imports the API. The hooks
+load raw Luau and the CLI's virtual asset modules.
+
 ## Test
 
 ```bash
@@ -36,10 +47,8 @@ pnpm vitest run --project unit src/cli.spec.ts
 
 ## Mutation testing
 
-Stryker mutates `src/`, `loaders/` and the two build scripts, and holds the
-mutation score at 100 alongside the coverage gate. The run is incremental:
-`reports/stryker-incremental.json` carries results forward. The script builds
-the Luau bundle first, so it works on a fresh checkout.
+Mutation testing holds the score at 100 alongside the coverage gate. The run is
+incremental: `reports/stryker-incremental.json` carries results forward.
 
 ```bash
 pnpm mutation
@@ -54,34 +63,21 @@ pnpm cpd           # Duplicate code (jscpd), production then specs
 pnpm knip          # Unused files, exports and dependencies
 ```
 
-`pnpm cpd` runs `cpd-production` (source, scripts, loaders, bin and the test
-helpers, 40 tokens) and `cpd-spec` (specs, 75 tokens). Remove a clone with a
-shared helper. Keep a `// jscpd:ignore-start` / `// jscpd:ignore-end` pair only
-with a comment that says why the copy stays.
+Remove a clone that `pnpm cpd` finds with a shared helper. Keep a
+`// jscpd:ignore-start` / `// jscpd:ignore-end` pair only with a comment that
+says why the copy stays.
 
-## Project structure
+## Recover missing release binaries
 
-```text
-jest-roblox-cli/
-├── bin/              CLI entry point
-├── src/
-│   ├── backends/     Open Cloud and Studio backends
-│   ├── config/       Config loading and validation
-│   ├── attribution/  Per-test coverage attribution
-│   ├── coverage-data/ Coverage and build manifests, raw coverage, universe
-│   ├── coverage-report/ Coverage mapping and istanbul reports
-│   ├── formatters/   Output formatters (default, agent, JSON, GitHub Actions)
-│   ├── instrument/   Luau probe instrumentation
-│   ├── jest-output/  Jest output parsing and validation
-│   ├── shadow/       Coverage roots, shadow tree and coverage place
-│   ├── source-mapper/ Luau-to-TypeScript error mapping
-│   ├── typecheck/    Type test runner
-│   ├── types/        Shared type definitions
-│   └── utils/        Helpers (glob, hash, cache, paths)
-├── luau/             Luau code that runs inside Roblox
-├── plugin/           Roblox Studio WebSocket plugin
-└── test/             Test fixtures and mocks
+Run the **Release binaries** workflow for an existing release tag:
+
+```bash
+gh workflow run release-binaries.yaml --repo christopher-buss/jest-roblox-cli --ref main --field tag=<tag>
 ```
+
+It builds from that tag and uploads the missing Linux x64, macOS arm64 and
+Windows x64 archives. It keeps existing assets, and does not publish to npm or
+change the tag.
 
 ## Guidelines
 

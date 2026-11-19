@@ -5,26 +5,33 @@
 [![npm](https://raw.githubusercontent.com/maneetoo/Roblox-OSS-Badges/5959dc76990e4dc70d697f8b39db48da5a282837/Badges/Community/Package/link-npm.svg)](https://npmx.dev/package/@isentinel/jest-roblox)
 [![Roblox OSS Discord](https://raw.githubusercontent.com/maneetoo/Roblox-OSS-Badges/5f7377f6de78a403fb2d49a34fc67d685f8eda3d/Badges/Community/Discord/link-discord-roblox-oss.svg)](https://discord.com/channels/385151591524597761/1508303470627651694)
 [![Sponsor me](https://raw.githubusercontent.com/maneetoo/Roblox-OSS-Badges/b880ff3b8ca27e95914b12adcb784e29ef5c7222/Badges/Roblox-Styled/Original/sponsor-me-var2.svg)](https://github.com/sponsors/christopher-buss)
-[![Rokit](https://raw.githubusercontent.com/maneetoo/Roblox-OSS-Badges/5959dc76990e4dc70d697f8b39db48da5a282837/Badges/Community/Package/rokit.svg)](#standalone-binary-no-nodejs-required)
+[![Rokit](https://raw.githubusercontent.com/maneetoo/Roblox-OSS-Badges/5959dc76990e4dc70d697f8b39db48da5a282837/Badges/Community/Package/rokit.svg)](#standalone-binary)
 
 [![CI](https://github.com/christopher-buss/jest-roblox-cli/actions/workflows/ci.yaml/badge.svg)](https://github.com/christopher-buss/jest-roblox-cli/actions/workflows/ci.yaml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/christopher-buss/jest-roblox-cli/blob/main/LICENSE)
 
 </div>
 
-Run your roblox-ts and Luau tests inside Roblox, get results in your terminal.
+`@isentinel/jest-roblox` is a package used to run roblox-ts and Luau tests
+inside Roblox and get the results in your terminal.
 
 <p align="center">
   <img src="assets/cli-example.png" alt="jest-roblox-cli output" width="700">
 </p>
 
-- roblox-ts and pure Luau
-- Source-mapped errors (Luau line numbers back to `.ts` files)
-- Code coverage (in-process Luau AST instrumentation)
-- Three backends: Open Cloud (remote), Studio (attached, local), and Studio CLI
-  (self-launched headless Studio, local)
-- Multiple output formatters (human, agent, JSON, GitHub Actions)
-- Live stage progress, so a long upload or dispatch never looks stalled
+## Features
+
+- Runs roblox-ts and pure Luau tests.
+- Maps Luau errors back to the lines of your `.ts` files.
+- Collects code coverage, with thresholds and Istanbul reporters.
+- Runs on three backends: a hidden Studio it starts itself, Open Cloud, or a
+  Studio you have open.
+- Runs every package of a monorepo in one command.
+- Runs only the tests that reach the files you changed.
+- Runs TypeScript and Luau type tests on your machine.
+- Prints results for people, for AI agents, as JSON, or as GitHub Actions
+  annotations.
+- Shows each step of a run as it happens, so a slow upload does not look stuck.
 
 <!-- prettier-ignore -->
 > [!NOTE]
@@ -35,66 +42,66 @@ Run your roblox-ts and Luau tests inside Roblox, get results in your terminal.
 
 ## Install
 
+The npm package needs Node.js 26 or later.
+
 ```bash
-npm install @isentinel/jest-roblox
+npm install -D @isentinel/jest-roblox
 ```
 
-The npm package needs Node.js 24.12 or later. Each run also needs a backend:
-Roblox Studio with [rojo](https://rojo.space) on `PATH`, or Open Cloud
-credentials (see [Backends](#backends)).
+A run also needs these tools:
 
-Type tests need a TypeScript 7 checker, an optional peer dependency. Install it
-only if you run `--typecheck` or `--typecheckOnly`; runtime tests do not use it.
+- **Backend**: install Roblox Studio and log in, or get Open Cloud credentials
+  (see [Backends](#backends)).
+- **[rojo](https://rojo.space)** on your `PATH`: the `studio-cli` and
+  `open-cloud` backends use it to build the place, and coverage uses it on every
+  backend.
+- **Jest Roblox** in your place: install `@rbxts/jest` (roblox-ts) or
+  [`roblox/jest`](https://wally.run/package/roblox/jest) (Wally), and put it in
+  your Rojo tree. The CLI finds it in `ReplicatedStorage`. Set `jestPath` when
+  it is somewhere else.
+- **[lute](https://github.com/luau-lang/lute)** 1.x on your `PATH`, only for
+  Luau type tests and for a `jest.config.luau` that holds code.
+
+### Type tests
+
+Type tests need a TypeScript 7 checker. It is an optional peer dependency.
+Install it only if you turn on type tests (`--typecheck`, `--typecheckOnly` or
+`test.typecheck.enabled`):
 
 ```bash
 npm install -D typescript@7
 ```
 
-Type tests use [tsrs](https://github.com/oxc-project/tsrs) first when it is
-installed:
-
-```bash
-npm install -D tsrs
-```
-
-A project that keeps TypeScript 6 for other tools can install 7 beside it as
-`@typescript/native`, which type tests use before `typescript`:
+If [tsrs](https://github.com/oxc-project/tsrs) is installed, type tests use it
+first. If your project keeps TypeScript 6 for other tools, install 7 beside it
+as `@typescript/native`. Type tests use it before `typescript`:
 
 ```bash
 npm install -D @typescript/native@npm:typescript@7
 ```
 
-An existing `@typescript/native-preview` install still works.
+### Standalone binary
 
-### Standalone binary (no Node.js required)
-
-Pre-built binaries are attached to each
-[GitHub release](https://github.com/christopher-buss/jest-roblox-cli/releases).
-Install with your preferred tool manager:
+You can run the CLI without Node.js. Each
+[GitHub release](https://github.com/christopher-buss/jest-roblox-cli/releases)
+has binaries for Linux x64, macOS on Apple silicon and Windows x64. Install one
+with mise or rokit:
 
 ```bash
 mise use github:christopher-buss/jest-roblox-cli
 rokit add christopher-buss/jest-roblox-cli
-
 ```
 
-Limitations vs the npm package:
+The binary has these limits:
 
-- TypeScript Type Tests (`.spec-d.ts`) are not available; Luau Type Tests
-  (`.spec-d.luau`) run when `lute` is on your `PATH`
-- `.ts` config files are not supported (use `jest.config.luau`, `.json`, `.js`,
-  or `.mjs`)
-- External tools (rojo) must still be on your `PATH`
-
-Before building, both single and workspace runs create missing Rojo `$path`
-directories and validate the Rojo project. A missing or invalid project prints
-`Pre-flight validation failed:` and exits with code 2.
+- TypeScript type tests (`.spec-d.ts`) do not run.
+- It cannot load a `.ts` config. Use `jest.config.luau`, `.json`, `.js` or
+  `.mjs`.
+- rojo must still be on your `PATH`.
 
 ## Quick start
 
-Add a `jest.config.ts` (or `.js`, `.json`, `.yaml`, `.toml`) to your project
-root. A Luau-only project can write `jest.config.luau` instead (see
-[Luau configs](#luau-configs)).
+Add a `jest.config.ts` to your project root:
 
 ```typescript
 import { defineConfig } from "@isentinel/jest-roblox";
@@ -110,29 +117,12 @@ export default defineConfig({
 Then run:
 
 ```bash
-jest-roblox
+npx jest-roblox
 ```
 
-<!-- prettier-ignore -->
-> [!NOTE]
-> `projects` is optional. With it omitted, the CLI derives one project over the
-> resolved `luauRoots` mounts (the compiled-output dirs your Rojo project mounts,
-> auto-detected from Rojo mounts, then tsconfig `outDir`), generating its
-> `jest.config` stubs for you. Set `projects` explicitly when you need
-> per-project overrides (a distinct `displayName`, `setupFiles`, `include`,
-> etc.) or a tighter project layout than the luau roots imply.
-
-### Luau packages without a Rojo project
-
-A package with no `.project.json`, no `rojoProject` setting and no
-`tsconfig.json` gets a Rojo project built from its file layout, written to
-`.jest-roblox-layout.project.json` on each run (add it to `.gitignore`). Each
-top-level directory except `node_modules` and dot-directories mounts under
-`ReplicatedStorage/<package directory>`, so a relative string require such as
-`require("../src")` resolves the same in the place as on disk. Jest comes from
-the nearest `node_modules/@rbxts-js.project.json` above the package, mounted at
-`ReplicatedStorage/node_modules/@rbxts-js`. The project sets
-`Workspace.SignalBehavior` to `Deferred`.
+`projects` is optional. Without it, the CLI makes one project from the folders
+your Rojo project mounts (or from tsconfig `outDir`). Set `projects` when you
+need a separate `displayName`, `setupFiles` or `include` for each project.
 
 ## Usage
 
@@ -140,63 +130,178 @@ the nearest `node_modules/@rbxts-js.project.json` above the package, mounted at
 # Run all tests
 jest-roblox
 
-# Run one file (TypeScript or Luau)
-jest-roblox src/player.spec.ts
-jest-roblox src/player.spec.luau
+# Run some files (TypeScript or Luau)
+jest-roblox src/player.spec.ts src/player.spec.luau
 
-# Run only the tests that reach these source files through require or
-# TS.import; supported in workspace mode too. Instance paths and TS.import
-# resolve through the Rojo project. A .ts file stands for its compiled .luau
-# module, so compile first. Every test runs when the run cannot be sure: a
-# given file matches forceRerunTriggers, or sits in the project root or Rojo
-# tree without being a Luau module or a compiled .ts file, or a test reaches a
-# require it cannot follow (dynamic, unresolved) or a test file it cannot read.
-# A file outside the project root, the Rojo tree and forceRerunTriggers is
-# ignored. The forceRerunTriggers globs are relative to the nearest folder with
-# a pnpm-workspace.yaml, turbo.json or nx.json, else to the project root.
-# Workspace mode does not widen yet.
-# Passes when no test reaches them, as --passWithNoTests does.
-# To run tests filtered to a file named related, write ./related
-jest-roblox related src/util.luau src/inventory/init.luau
+# Filter by test name or by file path
+jest-roblox -t "should spawn"
+jest-roblox --testPathPattern player
 
-# Run only the tests that reach a file changed in git, with the same rules.
-# Bare, the changes are the staged, unstaged and untracked files against HEAD;
-# with a ref, also every file committed since its merge base with HEAD.
-# A deleted module selects every test that required it.
-# With --coverage, both modes report and apply coverageThreshold only to the
-# changed or related source files.
+# Run only the tests that reach these source files
+jest-roblox related src/util.luau
+
+# Run only the tests that reach a file changed in git
 jest-roblox --changed
 jest-roblox --changed main
 
-# Filter by test name
-jest-roblox -t "should spawn"
-
-# Filter by file path
-jest-roblox --testPathPattern player
-jest-roblox --testPathPattern="modifiers|define\\.spec|triggers"
-
-# Use a specific backend (default "auto" picks studio-cli if Roblox Studio is
-# installed, else Open Cloud; see Backends below)
-jest-roblox --backend studio
-jest-roblox --backend studio-cli
+# Pick a backend
 jest-roblox --backend open-cloud
 
 # Collect coverage
 jest-roblox --coverage
 
-# Save game output (print/warn/error) to file
+# Save print, warn and error output from the game to a file
 jest-roblox --gameOutput game-logs.txt
-
-# Run only specific named projects (repeat the flag per project)
-jest-roblox --project client
-jest-roblox --project client --project server
 ```
 
-### Programmatic API
+Run `jest-roblox --help` for every flag.
 
-The `@isentinel/jest-roblox/api` entry exports the full programmatic API,
-including the run the CLI makes. `loadConfig` reads the same config files, and
-`runJestRobloxAsync` takes the parsed CLI options as an object:
+Before a build, the CLI creates missing Rojo `$path` folders and checks the Rojo
+project. If the project is not valid, the CLI prints
+`Pre-flight validation failed:` and exits with code 2.
+
+Each run writes what it printed to `.jest-roblox/last-run.log`. If you lose part
+of the output, read that file instead of running the tests again.
+
+`related` and `--changed` have rules for when they run every test. See
+[partial runs](skills/jest-roblox-cli/references/partial-runs.md).
+
+### Exit codes
+
+| Code | Meaning                                                                        |
+| ---- | ------------------------------------------------------------------------------ |
+| `0`  | All tests passed                                                               |
+| `1`  | A test failed, a project timed out, or coverage is below threshold             |
+| `2`  | The run stopped on an error: the configuration, the place, or a backend failed |
+| `3`  | Roblox failed to run the task; the report shows what to send Roblox            |
+
+## Configuration
+
+The CLI finds `jest.config.*` in any format that
+[c12](https://github.com/unjs/c12) loads (`.ts`, `.js`, `.mjs`, `.cjs`, `.json`,
+`.yaml`, `.toml`), and `jest.config.luau`. Keep one config file in a folder.
+
+A config can extend a shared config:
+
+```typescript
+export default defineConfig({
+	extends: "../../jest.shared.ts",
+	test: {
+		projects: ["ReplicatedStorage/shared"],
+	},
+});
+```
+
+CLI flags win over the config file. The config file wins over the config it
+extends.
+
+Root fields control the run: `backend`, `placeFile`, `timeout`, `formatters`.
+Jest fields go under `test`: `testMatch`, `setupFiles`, `collectCoverage`. Each
+field has a doc comment that your editor shows. For the list of fields, see
+[configuration](skills/jest-roblox-cli/references/configuration.md).
+
+A project in `projects` can be a DataModel path or an object made with
+`defineProject`:
+
+```typescript
+import { defineConfig, defineProject } from "@isentinel/jest-roblox";
+
+export default defineConfig({
+	test: {
+		projects: [
+			defineProject({
+				test: {
+					displayName: { name: "client", color: "magenta" },
+					include: ["**/*.spec.ts"],
+					outDir: "out/src/client",
+				},
+			}),
+		],
+	},
+});
+```
+
+Default test files are `*.spec` and `*.test` files with a `.ts`, `.tsx`, `.lua`
+or `.luau` extension. Type tests are `*.spec-d` and `*.test-d` files with a
+`.ts` or `.luau` extension. Type tests run only on your machine, never in
+Roblox.
+
+## Backends
+
+The default backend, `auto`, uses `studio-cli` when Roblox Studio is installed.
+Otherwise it uses `open-cloud`. The choice is made once: if a `studio-cli` run
+fails, the CLI does not try Open Cloud.
+
+| Backend      | How it runs                                                 | Coverage |
+| ------------ | ----------------------------------------------------------- | -------- |
+| `studio-cli` | Starts a hidden Studio, runs the tests, and closes it       | yes      |
+| `open-cloud` | Uploads the place to Roblox and runs it as a Luau task      | yes      |
+| `studio`     | Connects to a Studio you have open, through a Studio plugin | no       |
+
+`open-cloud` reads these environment variables:
+
+| Variable                    | Value                        |
+| --------------------------- | ---------------------------- |
+| `ROBLOX_OPEN_CLOUD_API_KEY` | Your Open Cloud API key      |
+| `ROBLOX_UNIVERSE_ID`        | The universe to run tests in |
+| `ROBLOX_PLACE_ID`           | The place to run tests in    |
+
+Add `JEST_` to the start of a name (for example `JEST_ROBLOX_PLACE_ID`) to
+override the value without the prefix.
+
+`studio` needs the `JestRobloxRunner.rbxm` plugin in Studio.
+
+For the API key scopes, CI setup, timeouts, plugin install and the experimental
+VM parallelism, see [backends](skills/jest-roblox-cli/references/backends.md).
+
+## Coverage
+
+Turn on coverage with `--coverage` or `test.collectCoverage`. The CLI adds
+probes to a copy of your compiled Luau, builds a separate place from it, and
+maps the hit counts back to your source files.
+
+Every file that `collectCoverageFrom` selects (by default, every file under your
+compiled Luau folders) is in the report. A source file with no test shows 0% and
+fails `coverageThreshold`. To leave out part of a file, put `-- cov ignore next`
+(`// cov ignore next` in TypeScript) above a statement.
+
+For `OUTPUT_SIZE_LIMIT_EXCEEDED` on Open Cloud and other details, see
+[coverage](skills/jest-roblox-cli/references/coverage.md).
+
+## Workspace mode
+
+`--workspace` runs the tests of every package in a monorepo in one command. A
+package joins the run when it has a `jest.config.*`. The CLI finds packages from
+the pnpm workspace, or from a `workspace` block in a shared config.
+
+```bash
+jest-roblox --workspace
+jest-roblox --workspace --packages @scope/pkg-a,@scope/pkg-b
+jest-roblox --workspace --affected-since main
+jest-roblox --workspace --bail
+```
+
+Each package reads most fields from its own config, and gets its own coverage
+report and threshold. See
+[workspace](skills/jest-roblox-cli/references/workspace.md).
+
+## Luau
+
+A Luau-only project can write `jest.config.luau`. A config that holds only
+literal values is read without running it. A config that holds code runs with
+[lute](https://github.com/luau-lang/lute). Run `jest-roblox setup` to get the
+`Config` type for luau-lsp.
+
+Luau type tests (`*.spec-d.luau`) run with `lute check`. The package also has a
+Luau module of type assertions.
+
+See [Luau](skills/jest-roblox-cli/references/luau.md).
+
+## Programmatic API
+
+The `@isentinel/jest-roblox/api` entry exports the function that the CLI uses to
+run tests. `loadConfig` reads the same config files, and `runJestRobloxAsync`
+takes the CLI options as an object:
 
 ```typescript
 import { loadConfig, runJestRobloxAsync } from "@isentinel/jest-roblox/api";
@@ -208,1228 +313,18 @@ const result = await runJestRobloxAsync({
 });
 ```
 
-It renders no report: the result holds the per-project results, for the exported
-formatters (`formatResult`, `formatJson`) to render.
+It prints no report. Pass the result to `formatResult` or `formatJson` to render
+it.
 
-When source mapping resolves a test file, its `testFilePath` is the absolute
-path on disk. Pass a root as the second argument of `formatJson` to write each
-path relative to it.
+## Agent skill
 
-## Configuration
-
-Config files are loaded by [c12](https://github.com/unjs/c12), which
-auto-discovers `jest.config.*` in any format it supports (`.ts`, `.js`, `.mjs`,
-`.cjs`, `.json`, `.yaml`, `.toml`). A `jest.config.luau` is discovered too (see
-[Luau configs](#luau-configs)). Keep one config: a `jest.config.luau` beside
-another format, or beside one in `.config/`, is an error that names both files.
-
-Configs can extend a shared base with `extends`:
-
-```typescript
-export default defineConfig({
-	extends: "../../jest.shared.ts",
-	test: {
-		projects: ["ReplicatedStorage/shared"],
-	},
-});
-```
-
-Precedence: CLI flags > config file > extended config > defaults.
-
-### Luau configs
-
-A Luau-only project can write its config as `jest.config.luau`. It has the same
-fields as every other format and returns them as a table:
-
-```luau
-return {
-	placeFile = "game.rbxl",
-	test = {
-		projects = { "ReplicatedStorage/client" },
-		testMatch = { "**/*.spec" },
-	},
-}
-```
-
-When the returned value holds only string, number and boolean literals, tables,
-`::` casts, and a `defineConfig(...)` call, which returns its argument, the CLI
-reads the file without running it, so no Luau runtime is needed. Statements
-before the `return`, such as a `require` used only for types, are ignored.
-
-A config that holds code (a `require` of a shared module, a branch on the
-environment, a computed value) runs with
-[lute](https://github.com/luau-lang/lute) 1.x. The config can return a table or
-a function that returns one, and `require` resolves from the config's own
-directory. Lute has no `os.getenv`; read the environment through `@std/process`:
-
-```luau
-local process = require("@std/process")
-local shared = require("./jest.shared")
-
-return {
-	placeFile = if process.env.CI then "ci.rbxl" else "game.rbxl",
-	test = { testMatch = shared.testMatch },
-}
-```
-
-The CLI runs `JEST_ROBLOX_LUTE_PATH` when it is set and not empty, and `lute` on
-`PATH` otherwise. If lute is missing, the error names the first line that needs
-it. The result must cross into JSON: a function value, such as the function form
-of a mergeable field, stops the load with an error that names the field.
-
-#### Types for Luau configs
-
-Run `jest-roblox setup` in the project root to get the `Config` type and
-`defineConfig`:
-
-```sh
-jest-roblox setup
-```
-
-Setup writes the type module to `~/.jest-roblox/typedefs/<version>/` and adds a
-`jest-roblox` alias that points there:
-
-- If `.config.luau` exists, setup adds the alias to its `luau.aliases` table and
-  keeps the file's comments and formatting. If `luau.aliases` is built by code,
-  setup changes nothing and prints the entry to add by hand.
-- If only `.luaurc` exists, setup adds the alias to its `aliases` and keeps the
-  other keys. Setup reads `.luaurc` as strict JSON. If the file has comments or
-  trailing commas, setup changes nothing and prints the entry to add by hand.
-- If neither exists, setup creates `.config.luau` with the alias.
-
-Then type your config, and luau-lsp and `lute check` check it:
-
-```luau
-local jest = require("@jest-roblox/config")
-
-return jest.defineConfig({
-	test = {
-		testMatch = { "**/*.spec" },
-	},
-})
-```
-
-Each CLI version has its own type folder, so run setup again after you upgrade.
-A run warns when the alias in the current directory's `.config.luau` or
-`.luaurc` points at the folder of another version; the warning does not change
-the exit code. The check reads only the current directory, where setup writes
-the alias: not a parent directory, not `--workspace-root`, and not a `.luaurc`
-with comments or trailing commas. Before lute runs a config, the CLI writes the
-type module for its own version if it is missing, so CI needs no setup step. If
-that write fails, lute still runs, and a lute error then also names the write
-failure. To run tests filtered to a file named `setup`, write the filter as
-`./setup`.
-
-`--config path/to/file.luau` loads a Luau config explicitly. A relative
-`rootDir` or `workspace.root` is relative to the Luau config's directory, as in
-other formats. Mergeable fields cannot take the function form in Luau.
-
-`extends` can mix formats: a Luau config can extend a `.ts` or `.mjs` base, and
-a `.ts` config can extend a `.luau` base. A relative `rootDir` in an extended
-config is relative to that config's directory. An `extends` entry for a Luau
-base must include the `.luau` extension.
-
-A string entry in `test.projects` can also point at a directory with a
-`jest.config.luau` project config, which holds the per-project `test` fields at
-its top level (`displayName`, `testMatch`, …). It is read the same way. Rojo
-also syncs a project config into the place as written, and Jest Roblox runs it
-there, so a project config must not `require` a module that only lute has, such
-as `@std/process`.
-
-On the Open Cloud and Studio CLI backends, the Roblox runtime never runs a
-`jest.config.luau` you write. Each project mount gets a generated `jest.config`
-stub that holds the project's evaluated test fields, in place of any
-`jest.config.luau` or `jest.config.lua` in that mount. Your file on disk does
-not change. One file can therefore be both the top-level config and the config
-in a mount: root fields such as `backend` or `placeId` do not reach the runtime,
-and a `require` in the file never runs in Roblox. A function in a project Luau
-config does not reach the runtime either.
-
-The attached Studio backend still runs your own `jest.config.luau` or
-`jest.config.lua` in the runtime, and adds a stub only at a mount that has none.
-On that backend, keep a config at a mount to Jest fields that Roblox can run.
-
-### Root config fields
-
-Two distinct buckets live at the root level. Jest passthrough fields live under
-`test:` (see "Test fields" below).
-
-#### Workspace Run Options
-
-Atomic to one invocation. These describe what the run targets and how the CLI
-presents output, not how any individual package runs. In `--workspace` mode they
-resolve as: CLI flag > unanimous per-package declaration > default. Mixed
-per-package declarations error loudly. `test.silent`, `test.verbose` and
-`test.slowTestThreshold` (see "Test fields") resolve the same way.
-
-| Field                  | What it does                                                                                                                                                                 | Default                      |
-| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------- |
-| `backend`              | `"auto"`, `"open-cloud"`, `"studio"`, or `"studio-cli"`                                                                                                                      | `"auto"`                     |
-| `color`                | Use ANSI colors in console output                                                                                                                                            | `true`                       |
-| `formatters`           | Output formatters (`"default"`, `"agent"`, `"json"`, `"github-actions"`)                                                                                                     | `["default"]`                |
-| `gameOutput`           | Write Game Output to a file: a path, or `true` for `game-output.log` under the root. In `--workspace` mode this is one grouped aggregate file across every package           | -                            |
-| `outputFile`           | Write the Jest result JSON: a path, or `true` for `jest-output.log` under the root. In `--workspace` mode this is the single merged result across every package              | -                            |
-| `workspace.exclude`    | Globs (workspace-root-relative) naming package directories an enumerated run must skip; `--packages` overrides it                                                            | -                            |
-| `workspace.gameOutput` | `true` to also emit per-package Game Output files under `.jest-roblox/output/` (`--workspace` only)                                                                          | -                            |
-| `workspace.outputFile` | `true` to also emit per-package result files under `.jest-roblox/output/` (`--workspace` only)                                                                               | -                            |
-| `parallel`             | Concurrent Open Cloud sessions, or `"auto"` (= `min(jobs, 3)`). Each session costs one task create against Roblox's create limit. studio-cli ignores it and runs one session | one session                  |
-| `placeId`              | Open Cloud place ID                                                                                                                                                          | -                            |
-| `hiddenDesktop`        | Run `studio-cli` Studio hidden so its windows and dialogs never reach yours (Windows, macOS; `--no-hiddenDesktop` opts out)                                                  | `true`                       |
-| `pluginsDirectory`     | Absolute path of the folder Studio loads local plugins from, where `studio-cli` installs its runner plugin (also `JEST_ROBLOX_PLUGINS_DIR`)                                  | per-OS Studio plugins folder |
-| `port`                 | WebSocket port for Studio backend; the plugin reads it from the `JEST_ROBLOX_PORT` attribute on `ReplicatedStorage`                                                          | `3001`                       |
-| `studioPath`           | Roblox Studio executable for the `studio-cli` backend (auto-detected if unset; also `--studioPath` / `JEST_ROBLOX_STUDIO_PATH`)                                              | -                            |
-| `universeId`           | Open Cloud universe ID                                                                                                                                                       | -                            |
-| `showLuau`             | Show Luau code snippets in failure output                                                                                                                                    | `true`                       |
-| `uploadCache`          | Skip the place upload when the place file's bytes are unchanged                                                                                                              | `true`                       |
-| `bootProbeTimeout`     | How long the boot probe is given to prove a place version starts                                                                                                             | `90000` (90 s)               |
-
-#### Per-package fields
-
-Loaded per package (directly or via `extends: "../jest.shared.ts"`). The
-workspace-root config is NOT a source of truth for these. Declare them in each
-package's own jest.config or in a shared config that every package extends.
-
-| Field                | What it does                                                                               | Default                                |
-| -------------------- | ------------------------------------------------------------------------------------------ | -------------------------------------- |
-| `placeFile`          | Path to your `.rbxl` file                                                                  | `"./game.rbxl"`                        |
-| `timeout`            | Max time for tests to run (ms)                                                             | `300000` (5 min)                       |
-| `sourceMap`          | Map Luau errors back to TypeScript (roblox-ts only)                                        | `true`                                 |
-| `rojoProject`        | Path to your Rojo project file                                                             | auto                                   |
-| `jestPath`           | Where Jest lives in the DataModel                                                          | auto                                   |
-| `coverageCache`      | Reuse incrementally-instrumented coverage shadow dir between runs                          | `true`                                 |
-| `luauRoots`          | Where Luau files live for coverage instrumentation, relative to `rootDir`                  | auto from Rojo, then tsconfig `outDir` |
-| `rootDir`            | Base directory for relative paths (relative values resolve against the config's directory) | current directory                      |
-| `extends`            | Config file(s) to inherit from, relative to this file; local keys win                      | -                                      |
-| `forceRerunTriggers` | Globs, relative to the workspace root, that make `related` or `--changed` run every test   | the lockfiles                          |
-
-A coverage run does not mirror a whole `luauRoot`. It resolves your coverage
-universe against the file system first and mirrors only the directories that
-actually hold a covered file, which on a large project is a small fraction of
-the tree. A Rojo `$path` mount that lands on such a directory is repointed at
-the shadow; a mount _above_ one is demoted instead: its `$path` moves to a copy
-of that directory's own loose files and the narrowed directory is hung
-underneath as an explicit child, so its unprobed siblings keep loading from your
-`outDir` rather than being copied.
-
-That makes a `luauRoot` above, at, or below a `$path` mount all work. Only a
-root no mount reaches at all reports nothing, and the run says so by name.
-
-Narrowing steps aside when it would not pay: a config whose covered files are
-scattered across a wide tree keeps most of the mount whichever way it is split,
-so the mount is taken whole instead of buying a project node per sibling.
-
-`timeout` is the deadline Roblox is given for the script, not a hard cap on the
-run. Roblox starts that clock when the script begins running (after the place
-boots), so a run that overruns waits a short fixed allowance past the deadline
-for Roblox's verdict, and reports the error Roblox gives rather than a poll
-timeout.
-
-On Open Cloud, `timeout` plus that allowance also bounds each task on the host.
-The clock starts when the task is submitted, and the submit and every poll share
-it. A task that stays `PROCESSING` fails when it runs out, not at Roblox's own
-internal limit (about 11 minutes). A server-directed wait that cannot finish
-before the deadline fails at once and names the wait and the time left.
-
-`bootProbeTimeout` covers the Open Cloud backend's boot probe: after uploading a
-place, it runs one trivial script pinned to the uploaded version and reads
-`game.PlaceVersion` before dispatching tests. A matching response records the
-version in `.jest-roblox/upload-cache.json`, so re-running the same place bytes
-skips the probe (see `uploadCache`). Every test task is then submitted to that
-same version, never to head, so another run saving the shared place cannot
-change which bytes execute your tests. A pinned task may miss the warm-server
-pool and pay a cold place boot.
-
-The probe is a gate. If it reaches no terminal state within `bootProbeTimeout`,
-one more probe is sent; if that one is lost too, or a probe reports another
-version, the run stops as boot unverified (exit code 2) before any test task is
-created, so a stalled version costs at most twice `bootProbeTimeout`. A lost
-probe does not prove the place cannot load: Open Cloud can stall a task on a
-version that boots. Nothing is cached, so the next run uploads and probes again.
-The probe's submit and poll share one `bootProbeTimeout` deadline, with a short
-script deadline. Set `bootProbeTimeout` to `0` to skip the probe; no new
-upload-cache entry is written in that case.
-
-Each logical execution creates exactly one Open Cloud task. Roblox can refuse
-task creates for longer than its per-minute limit, and the refusal covers every
-key, universe and place the account owns, so the backend never starts a
-replacement task: a stalled task, a poll timeout or an uncertain create fails
-the run instead of spending another create. Retries stay inside one request. A
-task create is sent again only when the edge rate limit refused it before
-Roblox's task service saw it; a 429 or 5xx from the task service itself is
-final, because that attempt already counted against the create limit. A 429
-fails with its code and its rate-limit headers; when its `retry-after` outlasts
-the per-minute window, the error names the UTC time the account can create tasks
-again. A create that loses its connection is also sent again, as it was before
-replacement tasks existed. Place uploads retry 429, 5xx and transport errors;
-task polls retry transient read failures. Test failures and terminal task errors
-are never retried.
-
-A test task that reaches its deadline without a terminal state, or a task create
-refused with a 429, is a Roblox infrastructure failure, not a test result. The
-run exits with code 3 and prints a `Roblox Infrastructure Error` banner with the
-evidence to report to Roblox: the task path, the place version, the timeout,
-Roblox's create and update times and the states seen, or for a 429 the unlock
-time, code and rate-limit headers. The API key is removed from the evidence. A
-Boot Probe that is lost stops the run as boot unverified instead.
-
-A 404 during a run using a cached upload clears that cache entry for the next
-invocation. It does not restart the current wave, whose other tasks may already
-have executed.
-
-### Test fields
-
-Put these under `test: { ... }`.
-
-| Field                    | What it does                                     | Default                              |
-| ------------------------ | ------------------------------------------------ | ------------------------------------ |
-| `projects`               | Where to look for tests in the DataModel         | one project over `luauRoots` mounts  |
-| `testMatch`              | Glob patterns that find test files               | `**/*.spec.ts`, `**/*.test.ts`, etc. |
-| `testPathIgnorePatterns` | Patterns to skip                                 | `/node_modules/`, `/dist/`, `/out/`  |
-| `setupFiles`             | Scripts to run before the test environment loads | -                                    |
-| `setupFilesAfterEnv`     | Scripts to run after the test environment loads  | -                                    |
-| `projectTimeout`         | Budget for one project's whole run (ms)          | `60000` (60 s)                       |
-| `verbose`                | Show individual test results                     | `false`                              |
-| `silent`                 | Suppress console output                          | `false`                              |
-
-Three budgets nest, from the inside out: `test.testTimeout` bounds a single
-test, `test.projectTimeout` bounds everything one project does in the runtime,
-and the root `timeout` bounds the whole Open Cloud task. Each is set on its own:
-`projectTimeout` lives in the config, has no CLI flag, and holds its default
-whatever `--timeout` says, so raising the task deadline gives a slow project
-nothing. Set `projectTimeout` on a single project (under its `projects[N].test`)
-to give a slow one more room without raising it for the rest; set it to `0` to
-turn the budget off.
-
-The runner periodically yields to Roblox between completed tests and files,
-after teardown and coverage accounting. This lets Heartbeat and deferred
-callbacks progress during long sequences of synchronous tests, preventing the
-sequence from exhausting Roblox's script watchdog. A single non-yielding test
-still needs to stay within the engine's execution limit.
-
-A project still running when its budget elapses is abandoned: its Jest run is
-cancelled, anything it staged is torn down, and the run moves on to the next
-project. It is reported as **timed out** rather than as a suite that threw: a
-distinct line in every formatter, naming the budget you can raise and the last
-test the run was seen in. For exit codes it counts as a failure (exit `1`): a
-project that never finished is not a pass, and greening on one would ship code
-no test reached.
-
-Without a budget one runaway project holds the whole task until Roblox ends it
-on the root `timeout`, taking every project behind it down with it and reporting
-`DEADLINE_EXCEEDED`, which names none of them.
-
-### Coverage fields
-
-Single-mode and workspace coverage runs preserve the `buildId` and build
-timestamp when the staged place inputs are unchanged. A rebuild refreshes the
-identity and writes the Build Manifest; reuse leaves that manifest untouched.
-Mounted Rojo input changes invalidate reuse, including files outside the
-instrumented roots.
-
-Put these under `test: { ... }`.
-
-| Field                        | What it does                             | Default                                       |
-| ---------------------------- | ---------------------------------------- | --------------------------------------------- |
-| `collectCoverage`            | Turn on coverage                         | `false`                                       |
-| `coverageDirectory`          | Where to write coverage reports          | `"coverage"`                                  |
-| `coverageReporters`          | Which report formats to use              | `["text", "lcov"]`                            |
-| `coverageThreshold`          | Minimum coverage to pass                 | -                                             |
-| `coveragePathIgnorePatterns` | Files to leave out of coverage           | test files, `node_modules`, `rbxts_include`   |
-| `collectCoverageFrom`        | Globs for files to include in coverage   | -                                             |
-| `coverageCopyIgnorePatterns` | Files to leave out of the coverage place | `**/*.d.ts`, `**/*.d.ts.map`, `**/*.luau.map` |
-
-To leave out part of a file, put `-- cov ignore next` (`// cov ignore next` in
-TypeScript) above a statement, or `cov ignore if` / `cov ignore else` above an
-`if`. See the coverage reference in the skill for the full rules.
-
-<!-- prettier-ignore -->
-> [!NOTE]
-> Coverage uses vitest `all` / Istanbul semantics: every instrumented
-> file matching the include globs is reported, so a source file with no test
-> shows **0%** (and fails `coverageThreshold`) instead of being silently
-> omitted. When `collectCoverageFrom` is unset, single and workspace runs include
-> every file under the resolved Luau roots, minus `coveragePathIgnorePatterns`
-> and `*.client.*` / `*.server.*` scripts (including their mapped TypeScript sources).
-> Roblox cannot require these scripts. This default applies even with custom ignore patterns.
-> An explicit `collectCoverageFrom` selects its own universe in either mode,
-> without the default client/server exclusions.
-> With `--changed` or related-file selection, reports narrow to the changed files.
-> Partial-run summaries print related paths relative to the workspace root in
-> workspace mode, or the project root in single mode.
-> In workspace mode `collectCoverageFrom` globs resolve against the package's
-> own `rootDir`, so a package at `packages/foo` writes `src/**/*.ts` for its own
-> sources no matter which directory the CLI was invoked from. Single and multi
-> runs anchor on the invocation directory.
-
-<!-- prettier-ignore -->
-> [!TIP]
-> The same universe decides what gets probes. A file outside it is copied into
-> the coverage place unprobed, so the run never carries hit counts the report
-> would discard. That is what keeps a large project under Open Cloud's 4 MiB
-> limit on a task's return value. Narrowing `collectCoverageFrom` is therefore
-> the lever to pull on `OUTPUT_SIZE_LIMIT_EXCEEDED`. Workspace mode has no
-> derived fallback, so a package that sets nothing probes its whole
-> `luauRoots` except client/server scripts.
->
-> Workspace mode also caps what one task returns, so there it is the lever on
-> run time rather than on the error: a task that fills its envelope stops and
-> hands the rest to another, and fatter payloads mean more tasks.
-
-`coverageCopyIgnorePatterns` is the other half of that: it decides what the
-coverage place carries at all, not what the report covers. A coverage run
-mirrors the covered directories into a shadow tree and builds the place from
-that, and the default drops the three sidecars roblox-ts emits beside every
-module. rojo mounts none of those extensions, and every reader of a source map
-opens the one in `outDir` (the stack mapper resolves `$path` from your own rojo
-project, not the synthesized one), so on a large project they are roughly three
-quarters of the copied files.
-
-Patterns match a path relative to its compiled root, directories included, and
-they are matched exactly (no substring containment) because an over-match drops
-something the runtime needs. An ignored path is never probed either, so a
-pattern naming a `.luau` keeps that module out of the place entirely.
-
-The mirror descends neither `node_modules` nor a dot-prefixed directory, which
-is what every walk in the pipeline does: nothing inside one is probed, and
-nothing inside one reaches the coverage place. A subtree the place has to load
-belongs under a `$path` mount of its own, outside any `luauRoot`.
-
-Narrowing never steps aside on a mount this list touches. A pattern naming the
-mount's only covered module leaves nothing to narrow towards, and taking the
-mount whole is what keeps the module out: the shadow is the one tree it is
-missing from, so a mount left on your `outDir` would serve it anyway.
-
-Declare a function to keep the defaults and add to them:
-
-```ts
-export default defineConfig({
-	test: {
-		coverageCopyIgnorePatterns: (defaults) => {
-			return [...defaults, "**/*.tsbuildinfo"];
-		},
-	},
-});
-```
-
-Passing an array replaces the defaults outright; `[]` copies everything.
-
-### Project-level config
-
-`projects` can be strings (DataModel paths) or objects with per-project
-overrides:
-
-```typescript
-import { defineConfig, defineProject } from "@isentinel/jest-roblox";
-
-export default defineConfig({
-	placeFile: "./game.rbxl",
-	test: {
-		projects: [
-			defineProject({
-				test: {
-					displayName: { name: "client", color: "magenta" },
-					include: ["**/*.spec.ts"],
-					mockDataModel: true,
-					outDir: "out/src/client",
-				},
-			}),
-			defineProject({
-				test: {
-					displayName: { name: "server", color: "white" },
-					include: ["**/*.spec.ts"],
-					outDir: "out/src/server",
-				},
-			}),
-		],
-	},
-});
-```
-
-### Full example
-
-```typescript
-import { defineConfig } from "@isentinel/jest-roblox";
-
-export default defineConfig({
-	backend: "open-cloud",
-	jestPath: "ReplicatedStorage/Packages/Jest",
-	placeFile: "./game.rbxl",
-	test: {
-		collectCoverage: true,
-		coverageThreshold: {
-			branches: 70,
-			functions: 80,
-			statements: 80,
-		},
-		projects: ["ReplicatedStorage/client", "ServerScriptService/server"],
-	},
-	timeout: 60000,
-});
-```
-
-## Backends
-
-Three ways to run tests, plus an auto-pick:
-
-### Auto (default)
-
-`--backend auto` (the default) runs via `studio-cli` when Roblox Studio is
-installed, and via Open Cloud otherwise (see Open Cloud below for the
-credentials it needs). Studio counts as installed when `studioPath` or
-`JEST_ROBLOX_STUDIO_PATH` is set, or when per-OS discovery finds it (see Studio
-CLI below).
-
-The choice is made once, before the run. A `studio-cli` run that fails (Studio
-not logged in, the plugin missing) fails the run; it does not retry on Open
-Cloud. Auto never selects the attached `studio` backend: request it with
-`--backend studio`.
-
-### Open Cloud (remote)
-
-Uploads your place file to Roblox and polls for results.
-
-You need these environment variables:
-
-| Variable                    | What it is                   |
-| --------------------------- | ---------------------------- |
-| `ROBLOX_OPEN_CLOUD_API_KEY` | Your Open Cloud API key      |
-| `ROBLOX_UNIVERSE_ID`        | The universe to run tests in |
-| `ROBLOX_PLACE_ID`           | The place to run tests in    |
-
-> Prefix any of the above with `JEST_` (e.g. `JEST_ROBLOX_PLACE_ID`) to override
-> the unprefixed value. Use the `JEST_`-prefixed form when the generic names
-> collide with other tooling.
-
-#### Required scopes
-
-Create the API key in the Creator Dashboard against the target universe, then
-grant it the scopes below. A `403` at runtime surfaces as a `PermissionError`
-with the missing scope name.
-
-Always required:
-
-| Scope                                         | What it's for                                    |
-| --------------------------------------------- | ------------------------------------------------ |
-| `universe-places:write`                       | Publish the built `.rbxl` as a new place version |
-| `universe.place.luau-execution-session:write` | Start the Luau session that runs the tests       |
-
-A sharding `--workspace` run (`--parallel auto` or an explicit count above 1)
-additionally requires the queue scopes for work-stealing across concurrent
-sessions. Without them the run warns and falls back to static bucketing: the
-same shard count, each session holding a fixed share it cannot rebalance:
-
-| Scope                                              | What it's for                                  |
-| -------------------------------------------------- | ---------------------------------------------- |
-| `memory-store.queue:add` / `:dequeue` / `:discard` | Work-stealing queue across concurrent sessions |
-
-The sorted-map scopes support live per-package results:
-
-| Scope                                     | What it's for    |
-| ----------------------------------------- | ---------------- |
-| `memory-store.sorted-map:read` / `:write` | Result streaming |
-
-Streaming is enabled by default and disabled only for `--silent`,
-`--formatters json`, and `--formatters agent` (without `--verbose`).
-`--formatters agent --verbose` re-enables streaming and therefore still needs
-the sorted-map scopes; `--formatters github-actions` also streams.
-
-#### One complete place
-
-An Open Cloud run builds its code into the place it uploads, and every task (the
-boot probe and the tests) runs against the exact version that upload returned. A
-shared place has no head this run can trust: another run may save over it at any
-moment, so the version is the only thing that names this run's bytes.
-
-### Studio (local)
-
-Connects to Roblox Studio over WebSocket. Faster than Open Cloud (no upload
-step), but Studio must be open with the plugin running. Studio doesn't expose
-which place is open, so multiple concurrent projects aren't supported yet.
-
-While no CLI is listening, the plugin retries at growing intervals, up to 5
-seconds apart, so a run can wait a few seconds for the plugin to connect.
-
-The plugin dials port 3001. With another `port`, set a number attribute
-`JEST_ROBLOX_PORT` on `ReplicatedStorage` in the open place to that port; the
-plugin reads it on each connect attempt.
-
-<!-- prettier-ignore -->
-> [!NOTE]
-> For `--coverage`, prefer `--backend open-cloud` since the coverage
-> output is built to a separate output under `.jest-roblox/place/` that is
-> likely not the studio place being served.
-
-Install the plugin with [Drillbit](https://github.com/jacktabscode/drillbit):
-
-#### Configuration file
-
-Create a file named drillbit.toml in your project's directory.
-
-```toml
-[plugins.jest_roblox]
-github = "https://github.com/christopher-buss/jest-roblox-cli/releases/download/v0.4.12/JestRobloxRunner.rbxm"
-```
-
-Then run `drillbit` and it will download the plugin and install it in Studio for
-you.
-
-Or download `JestRobloxRunner.rbxm` from the
-[latest release](https://github.com/christopher-buss/jest-roblox-cli/releases)
-and drop it into your Studio plugins folder.
-
-#### Several plugins installed
-
-Studio runs every plugin in your plugins folder, so a leftover copy of an older
-`JestRobloxRunner` opens its own connection alongside the current one. Each
-connection announces its protocol version, and the CLI runs on one that speaks
-the protocol this release speaks and leaves the others alone. The release
-numbers need not match; the protocol is the compatibility contract, so a plugin
-from a neighbouring release that speaks the same protocol serves the run.
-
-When no connection speaks it, the run stops before building a place and names
-every connection it found:
-
-```text
-No compatible jest-roblox Studio plugin. This CLI speaks protocol v8, and the 2 plugin connection(s) on this port report:
-  - JestRobloxRunner 0.3.18 (protocol v6)
-  - a plugin that sent no handshake (it predates the handshake entirely)
-Install the JestRobloxRunner.rbxm shipped with jest-roblox 0.4.12, and remove the other copies from your Studio plugins folder.
-```
-
-This is an error even when Open Cloud credentials are set: a plugin that cannot
-serve the run is something to fix, not a reason to switch backend.
-
-`--backend studio-cli` installs its own plugin and needs none of this; see
-below.
-
-### Studio CLI (self-launched, local)
-
-`--backend studio-cli` owns the whole Studio lifecycle: it builds the place at
-`placeFile`, launches Roblox Studio headless via Studio's `--task RunScript`
-interface, drives its plugin's Run mode, reads the result from Studio's output
-log, and quits Studio. No API key, no upload, no pre-opened editor. You just
-need Studio installed (logged in) and [rojo](https://rojo.space) on `PATH`. It
-spawns its own isolated Studio instance, so any editor you already have open is
-untouched.
-
-You never install or update the plugin for `studio-cli`. Before each run the CLI
-checks the Studio plugins folder for the plugin built from its own source
-(`JestRobloxRunner.cli-g<generation>-<version>-<hash>.rbxm`) and builds it with
-rojo when it is missing. The file stays for later runs, so only the first run
-after an upgrade pays for the build. The CLI records when each of its files was
-last used in its own folder (`%LOCALAPPDATA%\jest-roblox` on Windows,
-`~/Library/Caches/jest-roblox` on macOS), deletes its files for other versions
-once they have gone unused for a day, deletes files of an older generation at
-once, and never touches a plugin you installed yourself. Each run asks for its
-own plugin by name, so any other copy in the folder stands down; a copy that
-predates the key check can still answer first, and the error then names the
-files to remove.
-
-The plugins folder is `%LOCALAPPDATA%\Roblox\Plugins` on Windows and
-`~/Documents/Roblox/Plugins` on macOS. If Studio loads local plugins from a
-different folder, set `pluginsDirectory` (config key) or
-`JEST_ROBLOX_PLUGINS_DIR` to its absolute path; the config key wins. The CLI
-then installs its plugin there and sweeps only that folder.
-
-`auto` selects it whenever Studio is installed. Studio is auto-discovered
-per-OS; override the executable with `studioPath` (config key), `--studioPath`,
-or `JEST_ROBLOX_STUDIO_PATH`. `JEST_ROBLOX_STUDIO_DISCOVERY` takes `on` or
-`off`; unset or empty means `on`, and any other value is an error. With `off`,
-discovery finds no Studio: `auto` then picks Open Cloud unless a Studio path is
-set. The backend is serial: it ignores `--parallel` and runs one session.
-
-`timeout` starts once Studio has opened the place and begun the run, as on Open
-Cloud, so a slow Studio launch does not eat into the test budget. The launch has
-its own 45s window; on a slow machine, raise it with
-`JEST_ROBLOX_STUDIO_BOOT_TIMEOUT` (milliseconds). A logged-out Studio stops at
-its login screen and never starts the run, so the launch window runs out and the
-error names this cause: open Studio, log in, and run again.
-
-Pass `--headed` to show the Studio window during the run instead of the default
-hidden one. This is useful for watching a slow run or a hang (Studio still
-self-quits when tests finish, so a fast run just flashes). It is a per-run
-debugging flag, CLI-only and inert on every other backend.
-
-Studio runs hidden by default on Windows and macOS (`hiddenDesktop`). On Windows
-it runs on a separate, invisible desktop: no window or dialog reaches your
-desktop or takes focus. A dialog that waits for input stays invisible; the
-graceful-shutdown cap kills Studio if one blocks the close. On macOS Studio
-opens without taking focus and is hidden as soon as it shows itself; its windows
-can appear behind the front app for a moment while it loads. Clicking it shows
-it. Set `hiddenDesktop: false` (or pass `--no-hiddenDesktop`) to opt out.
-`--headed` overrides it for one run, showing the window of a run that hangs.
-Elsewhere the default does nothing, and an explicit `hiddenDesktop: true` is
-ignored with a warning.
-
-Once the result lands, Studio is shut down gracefully: it is allowed to close
-the place (running any edit-mode plugin `BindToClose` handlers and freeing the
-place lock), and is then killed the instant the lock releases, skipping Studio's
-slow telemetry teardown. The shutdown is decoupled from the result, so pass/fail
-prints immediately and the process exits once teardown finishes.
-
-Unlike the attached `studio` backend, `--coverage` works here: studio-cli opens
-the Coverage-Instrumented Place instead of the Clean Place, so the report
-universe, thresholds, reporters, and exclusions behave identically to the
-open-cloud backend (including the all-files semantics where an untested included
-file reports **0%** and fails `coverageThreshold`).
-
-<!-- prettier-ignore -->
-> [!NOTE]
-> studio-cli needs a logged-in Studio. On a CI machine with Studio installed,
-> pass `--backend open-cloud` to keep CI on Open Cloud.
-
-### Experimental: in-session VM parallelism
-
-`--experimental-vm-parallel [n]` runs a multi-project suite across `n` Luau VMs
-inside the one Studio session instead of one project after another. Bare, it
-asks for one VM per project, capped at the four `Actor` hosts the plugin ships
-(they are declared in its rojo project, so the pool is fixed when the plugin is
-built); an explicit `n` above that cap is rejected rather than quietly reduced.
-Both Studio backends drive it (`studio` and `studio-cli`). Open Cloud rejects
-it, because an Open Cloud session runs no scripts to host a second VM (use
-`--parallel` there to shard across sessions).
-
-In workspace mode the split is per package: packages still run one after
-another, each staged into the DataModel on its own, and a package's projects run
-across the VMs once it is staged. A workspace of single-project packages gains
-nothing. The package's Game Output is one capture, filed under its first
-project.
-
-Each host is an `Actor` in the plugin's own tree, so each project gets its own
-`_G`, its own module cache, and its own copy of Jest. That is what makes the
-overlap safe where running the projects concurrently in one VM is not: Jest
-keeps its run state (the circus describe tree, expect's matcher state) in
-VM-globals.
-
-Two caveats come with it, both inherent rather than temporary:
-
-- **Game output becomes batch-scoped.** `LogService.MessageOut` reports every
-  message to every listener with no source identity, so once projects overlap
-  nothing can say which project printed a line. The `--gameOutput` file writes
-  one group labelled `"project": "(all projects)"`, `"scope": "batch"` instead
-  of one group per project. The label follows what the run did rather than what
-  it asked for: a run that collapses to a single VM (one project, or
-  `--experimental-vm-parallel 1`), or one where no VM host was ready and the
-  plugin fell back to running the projects in turn, keeps per-project groups.
-- **The DataModel is still shared.** Projects that mutate `Workspace`,
-  `ReplicatedStorage`, `Players`, or a DataStore mock conflict when they
-  overlap, however the runner behaves. Turn this on for suites you know are
-  DataModel-disjoint.
-
-Projects whose runtime `jest.config` mounts nest (`ReplicatedStorage` and
-`ReplicatedStorage/Foo`) are always assigned to the same host, and so still run
-one after another. Their config stubs must never sit in the DataModel at the
-same time, or Jest's parent-traversal config lookup resolves the wrong project's
-config.
-
-A host that fails or stops answering yields ExecutionError entries for its own
-projects only; the other hosts' results come back normally. The plugin stops
-waiting inside the run timeout it was given (`--timeout`, 300s by default), so
-those partial results still reach you rather than arriving after the CLI has
-given up.
-
-## Workspace mode
-
-Run tests across multiple packages in a pnpm workspace in a single invocation.
-Works on every backend: Open Cloud (fans packages across parallel tasks),
-`studio-cli` (one self-launched Studio process drives every package, no
-sharding), and the attached `studio` backend (runs the workspace inside an open
-Studio, handy for debugging the flow). `studio-cli` is serial, so it ignores
-`--parallel` and runs one session.
-
-<!-- prettier-ignore -->
-> [!NOTE]
-> Package discovery uses one of two sources. By default it takes the pnpm
-> workspace: the project list pnpm records at install time, falling back to
-> `pnpm-workspace.yaml` when that record is missing or older than the file. Both
-> count the root `package.json` as a package whether or not `packages:` lists
-> `.`, matching pnpm. A package in a dot-directory resolves only from the
-> recorded list, so run `pnpm install` after adding one. Alternatively, declare a
-> `workspace` block in your jest config (see
-> [Workspaces without pnpm](#workspaces-without-pnpm)) to enumerate packages by
-> glob. This works in Luau-only, npm, and yarn repos. Either source honours `!`
-> exclusion entries, and either way a package joins the run by carrying a
-> `jest.config.*`; a library with no tests is not selected.
-> `--affected-since` always delegates change detection to `turbo` or
-> `nx` and is not yet wired for the `workspace.packages` source. When using Nx,
-> each project's Nx name must match the `package.json` `name` field:
-> `--affected-since` returns Nx project names and looks them up against the
-> package list, so a mismatch surfaces as
-> `Package "<name>" not found in workspace`.
-
-A bare `--workspace` runs every package in the workspace. The two selection
-flags narrow that set rather than enabling it, as does naming a file (see
-[Naming files](#naming-files)):
-
-```bash
-# Every package
-jest-roblox --workspace
-
-# Specific packages
-jest-roblox --workspace --packages @scope/pkg-a,@scope/pkg-b
-
-# Everything changed since a git ref (via turbo/nx affected)
-jest-roblox --workspace --affected-since main
-```
-
-`--packages` and `--affected-since` are mutually exclusive, and either flag
-requires `--workspace`. A `--workspace` that selects nothing exits 2: an empty
-workspace is a configuration problem, while `--affected-since` finding nothing
-is a clean run and exits 0.
-
-Workspace coverage resolves roots from `luauRoots`, then Rojo mounts, then
-tsconfig `outDir`. If no roots resolve, it reports a configuration error naming
-the package. A `luauRoots` merger function receives those auto-detected roots; a
-`formatters` merger receives the environment's default formatters.
-
-Packages without `projects` use the same implicit project as a standalone run:
-resolved Luau roots determine the Rojo mounts, and `displayName` (or the package
-folder name) names the project. A package whose roots map to no mount fails with
-a configuration error. Type-test patterns go to the type checker, not Roblox
-Jest.
-
-A workspace run stages every selected package into one synthesized place, under
-`ServerStorage.__pkg_stage`, one child per package. A `$path` the stage mounts
-twice or more (typically the dependency tree every package shares) is built once
-into a `__shared` pool beside them, and each occurrence becomes a marker Folder
-naming its pooled entry, which the run resolves by cloning that entry. Every
-package still receives its own fresh clone of every dependency, so only the size
-of the place changes. A run outside `--workspace` stages nothing and is
-unaffected.
-
-### Naming files
-
-A positional file narrows a workspace run the same way it narrows a
-single-package one, and it narrows all the way down: only the packages and
-projects whose `include` roots own the file are staged into the synthesized
-place, and each runs that file alone.
-
-```bash
-# Only the package that owns this file, only this file
-jest-roblox --workspace src/shared/dropdown.spec.ts
-```
-
-Paths are relative to the directory you run from, so the same argument works
-from a package subdirectory. (Outside `--workspace` the base is the config's
-`rootDir` instead; a workspace has no single one to use.) A file no package owns
-is an error listing the include roots that were searched: naming a file that
-nothing matches is a typo, not a clean run. Ownership is by include root, so a
-file under a root that several projects include selects all of them.
-
-Naming a `*.spec-d.ts` selects the type pass instead, and naming a runtime spec
-leaves the package's Type Tests out. `--project` still applies first: it decides
-which projects may run at all, and the file picks from what survives, so naming
-a file none of those projects owns is the same error, where outside
-`--workspace` the named projects would each be handed the file regardless.
-
-### Excluding packages
-
-`workspace.exclude` keeps a package out of a run that did not name it. Globs are
-relative to the workspace root and match package directories:
-
-```ts
-export default defineConfig({
-	workspace: {
-		exclude: ["test/fixtures/**"],
-	},
-});
-```
-
-This is for packages the package manager has to install but the test run must
-never pick up: a test fixture with real `workspace:*` dependencies has to stay a
-workspace member, and dropping it from `pnpm-workspace.yaml` would break its
-dependency links.
-
-The exclude applies to enumeration only: a bare `--workspace` and
-`--affected-since` both honour it, while `--packages @scope/fixture` still runs
-it, because naming a package is asking for it.
-
-### Failing fast
-
-`--bail` stops the run at the first failing package instead of testing the rest:
-
-```bash
-jest-roblox --workspace --packages @scope/pkg-a,@scope/pkg-b --bail
-```
-
-The packages that never ran are left out of the report, which ends with how far
-the run got:
-
-```text
-     Bailed  after 2 packages, 5 not run
-```
-
-A package counts as run once any of its projects ran, so a package the bail
-caught part-way through is not reported as skipped.
-
-The exit code is the usual `1`. A bail is a test failure that ended the run
-early, not an error in its own right.
-
-Under `--parallel` with work-stealing, the task that fails announces it through
-a MemoryStore signal map the wave shares, and its siblings stop before taking
-their next package. Open Cloud cannot cancel a task from outside, so a package
-already running finishes and reports; the bail stops the ones after it.
-
-That map is written and read inside the Roblox session, so it needs no extra
-API-key scopes. The `memory-store.sorted-map` scopes below are for the CLI's own
-streaming reads, which `--bail` does not require.
-
-Without the queue scopes there is no wave to broadcast to: each task holds a
-fixed bucket and bails only its own. The run still stops at the first failing
-package in every bucket and reports the rest as not run, but a sibling bucket
-runs its whole share out first.
-
-A Studio backend (`studio`, `studio-cli`) runs one package at a time, so it
-stops at the first failing package with nothing left running. It needs a Studio
-plugin from this release or later; an older plugin runs every package.
-
-Workspace mode only. `--bail` without `--workspace` is rejected rather than
-quietly running the whole batch.
-
-This is not Jest's `bail`. `test.bail` in your config still counts failing test
-suites inside a single package and is passed through to Jest untouched.
-
-### Workspaces without pnpm
-
-`pnpm-workspace.yaml` isn't required. Declare a `workspace` block in a shared
-config and have every package extend it:
-
-```ts
-// packages/testing/jest.shared.ts
-import { defineConfig } from "@isentinel/jest-roblox";
-
-export default defineConfig({
-	workspace: {
-		packages: ["packages/*"], // globs relative to root
-		root: "../..", // relative to THIS file; resolved at load
-	},
-	// shared jest options…
-});
-```
-
-```ts
-// packages/foo/jest.config.ts
-export default { extends: "../testing/jest.shared.ts" };
-```
-
-`workspace.root` and `workspace.packages` must be declared together. `root` is
-resolved to an absolute path relative to the file that declares it (the shared
-config), so it points at the same directory no matter which package you run
-from. Each glob in `packages` selects directories that contain a
-`jest.config.*`; the package name comes from `package.json#name`, falling back
-to the directory name (so Luau-only packages need no `package.json`). A `.` glob
-selects the workspace root itself, the same as a `packages: - .` entry in
-`pnpm-workspace.yaml`. Every selected package must resolve the same
-`workspace.packages`/`root`. Inheriting from one shared config guarantees this,
-and a package that overrides or omits it fails the run.
-
-Run from inside any package as usual. To run from a directory with no resolvable
-jest config (e.g. the repo root), either point at the shared config with
-`--workspace-root`:
-
-```bash
-jest-roblox --workspace --packages foo --workspace-root packages/testing
-```
-
-or add a re-export at the repo root so the config is discovered there:
-
-```ts
-// jest.config.ts (repo root)
-export { default } from "./packages/testing/jest.shared.ts";
-```
-
-Coverage reports per package. Each opted-in package gets its own report, built
-from its own `collectCoverageFrom` and `coveragePathIgnorePatterns`, rendered by
-its own `coverageReporters`, into its own `<rootDir>/<coverageDirectory>`. Its
-`rootDir` is the package directory, so the report lands beside the package.
-
-Coverage is opt-in per package (each package's own `collectCoverage`), and
-`coverageThreshold` is enforced per package: every opted-in package is gated
-against its own files, by the threshold it declared itself. A package that
-declares none is not gated: there is no run-level threshold to inherit, since
-the file at the directory you happen to run from is not a source of truth. There
-is no pooled cross-package gate either, so one package's high coverage cannot
-mask another's shortfall. Declaring a threshold without `collectCoverage` prints
-a warning: it cannot be enforced without instrumentation.
-
-Game Output has two independent sinks. Setting `gameOutput` (a path, or `true`)
-writes one **grouped** aggregate file at the workspace root:
-`[{ package, project, entries }]`, one group per (package, project) that ran.
-Setting `workspace.gameOutput: true` writes a **per-package** file per (package,
-project) under `.jest-roblox/output/`. Either, both, or neither may be set; with
-both, humans see the aggregate announced and agents see the per-package paths.
-
-Each capture opens before its package is materialized and closes after Jest's
-teardown, and holds only that package's output (a package with several projects
-carries the materialize-time slice on its first project's entry; Destroy-time
-output from the reset between packages is attributed to neither side). A package
-that fails also has its Game Output printed under its own section of the
-terminal report, so no file needs opening to tell which package printed which
-warning.
-
-`outputFile` (the Jest result JSON) follows the same two-sink model:
-`outputFile` (a path, or `true`) writes one merged result at the workspace root,
-and `workspace.outputFile: true` writes a per-package result file per (package,
-project) under `.jest-roblox/output/`. Both write each test file path relative
-to the run's root when it lies under it, as the terminal report shows it.
-
-## CLI flags
-
-Flag spellings mix camelCase and kebab-case, and `--showLuau` pairs with
-`--no-show-luau`. Every spelling stays, because scripts depend on them.
-
-| Flag                             | What it does                                                                                                                                                    |
-| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--backend <type>`               | Choose `auto`, `open-cloud`, `studio`, or `studio-cli`                                                                                                          |
-| `--port <n>`                     | WebSocket port for Studio                                                                                                                                       |
-| `--studioPath <path>`            | Roblox Studio executable for `studio-cli` (auto-detected if unset)                                                                                              |
-| `--headed`                       | Show the Studio window during the run (`studio-cli` only; default: hidden)                                                                                      |
-| `--hiddenDesktop`                | Run `studio-cli` Studio hidden (default on Windows and macOS)                                                                                                   |
-| `--no-hiddenDesktop`             | Let Studio open on your desktop (`studio-cli` only; default: hidden on Windows and macOS)                                                                       |
-| `--config <path>`                | Path to config file                                                                                                                                             |
-| `--testPathPattern <regex>`      | Filter test files by path                                                                                                                                       |
-| `-t, --testNamePattern <regex>`  | Filter tests by name                                                                                                                                            |
-| `--formatters <name>`            | Output formatter: `default`, `agent`, `json`, or `github-actions` (repeatable)                                                                                  |
-| `--outputFile <path>`            | Write results to a file                                                                                                                                         |
-| `--gameOutput <path>`            | Write game print/warn/error to a file                                                                                                                           |
-| `--coverage`                     | Collect coverage                                                                                                                                                |
-| `--no-coverage`                  | Disable coverage for this run, even when enabled in config                                                                                                      |
-| `--coverageDirectory <path>`     | Where to put coverage reports                                                                                                                                   |
-| `--coverageReporters <name>`     | Which report format to use (repeatable)                                                                                                                         |
-| `--collectCoverageFrom <glob>`   | Globs for files to include in coverage (repeatable)                                                                                                             |
-| `--showLuau`                     | Show Luau code in failure output (default)                                                                                                                      |
-| `--no-show-luau`                 | Hide Luau code in failure output                                                                                                                                |
-| `-u, --updateSnapshot`           | Update snapshot files                                                                                                                                           |
-| `--sourceMap`                    | Map Luau errors to TypeScript (roblox-ts only)                                                                                                                  |
-| `--rojoProject <path>`           | Path to Rojo project file                                                                                                                                       |
-| `--timeout <ms>`                 | Max time for tests to run                                                                                                                                       |
-| `--passWithNoTests`              | Exit `0` when no test files are found                                                                                                                           |
-| `--changed [ref]`                | Run only the tests that reach a file changed since `ref` (default: uncommitted changes against `HEAD`); passes when none does                                   |
-| `--verbose`                      | Show each test result                                                                                                                                           |
-| `--silent`                       | Hide all output                                                                                                                                                 |
-| `--color`                        | Force colors on                                                                                                                                                 |
-| `--no-color`                     | Turn off colors                                                                                                                                                 |
-| `--coverage-cache`               | Reuse the incrementally instrumented coverage place (default)                                                                                                   |
-| `--no-coverage-cache`            | Force a clean coverage re-instrumentation                                                                                                                       |
-| `--upload-cache`                 | Skip the upload when the place bytes are unchanged (default)                                                                                                    |
-| `--no-upload-cache`              | Always upload the place, even when its bytes are unchanged                                                                                                      |
-| `--parallel [n]`                 | Open Cloud concurrent sessions, or `auto` (= `min(jobs, 3)`); one by default, each costing one task create against Roblox's create limit; ignored on studio-cli |
-| `--experimental-vm-parallel [n]` | Studio-only: run the projects across `n` Luau VMs in one session (see [Experimental: in-session VM parallelism](#experimental-in-session-vm-parallelism))       |
-| `--project <name>`               | Filter which named projects to run (repeatable)                                                                                                                 |
-| `--setupFiles <path>`            | Script to run before env (repeatable)                                                                                                                           |
-| `--setupFilesAfterEnv <path>`    | Script to run after env (repeatable)                                                                                                                            |
-| `--typecheck`                    | Run type tests too                                                                                                                                              |
-| `--typecheckOnly`                | Run only type tests                                                                                                                                             |
-| `--typecheckTsconfig <path>`     | tsconfig for type tests                                                                                                                                         |
-| `--workspace`                    | Run every package in the workspace; narrow it with `--packages`, `--affected-since`, or a positional file (see [Workspace mode](#workspace-mode))               |
-| `--bail`                         | Workspace mode: stop at the first failing package (see [Failing fast](#failing-fast))                                                                           |
-| `--packages <names>`             | Comma-separated package names; narrows a workspace run                                                                                                          |
-| `--workspace-root <path>`        | Directory to load the workspace config from, when running outside any package                                                                                   |
-| `--affected-since <ref>`         | Run only packages affected since a git ref (workspace mode)                                                                                                     |
-| `--apiKey <key>`                 | Open Cloud API key (prefer env vars in CI, as it shows in process listings)                                                                                     |
-| `--universeId <id>`              | Target universe ID (Open Cloud)                                                                                                                                 |
-| `--placeId <id>`                 | Target place ID (Open Cloud)                                                                                                                                    |
-| `--help`                         | Show the help message                                                                                                                                           |
-| `--version`                      | Show the version number                                                                                                                                         |
-
-## How it works
-
-1. Finds files matching `testMatch` patterns
-2. Builds a `.rbxl` via Rojo
-3. Sends the place to Roblox (Open Cloud upload or Studio WebSocket)
-4. Parses Jest JSON output from the session
-5. Maps Luau line numbers to TypeScript via source maps (roblox-ts only)
-6. Prints results
-
-Every step up to the tests announces itself under the `RUN` header, with what it
-is working on (the size of the place going up, the version that booted, the
-number of projects dispatched), so a slow one says which it is. A terminal gets
-one block, repainted in place with a running duration; a pipe, a redirect and a
-CI log get a line as each step starts and another as it ends. Either way the
-block stops there and stays put: the results, the summary and the coverage
-report are the run saying where it is from then on. `--silent`,
-`--formatters json` and `--formatters agent` report no stages at all.
-
-Every run also writes what it printed to `.jest-roblox/last-run.log` under the
-root (the workspace root in workspace mode), overwritten per run, whatever the
-mode or exit code. An agent that read the output through `| tail` and missed a
-line reads the file instead of paying for the run again; the `agent` formatter
-says so on stderr once the run ends.
-
-<!-- prettier-ignore -->
-> [!NOTE]
-> Coverage adds extra steps: copy Luau files, insert tracking probes,
-> build a separate place file, then map hit counts back to source. For
-> roblox-ts, this goes through source maps to report TypeScript lines.
-
-## Test file patterns
-
-Default `testMatch` patterns (configurable):
-
-- TypeScript: `*.spec.ts`, `*.test.ts`, `*.spec.tsx`, `*.test.tsx`
-- Luau: `*.spec.lua`, `*.test.lua`, `*.spec.luau`, `*.test.luau`
-- Type tests: `*.spec-d.ts`, `*.test-d.ts`, `*.spec-d.luau`, `*.test-d.luau`
-
-Type Tests only run on the host. They never run in Roblox: the Roblox-side Jest
-config leaves them out of `testMatch` and ignores any `*.spec-d` or `*.test-d`
-module that a broader pattern of yours would match.
-
-### Luau Type Tests
-
-Luau Type Tests are `*.spec-d.luau` or `*.test-d.luau` files beside your runtime
-`*.spec.luau` / `*.test.luau` specs. They are checked on the host by
-`lute check`, so `lute` must be on `PATH`; no place is built for them. Enable
-them like TypeScript Type Tests, with `test.typecheck.enabled`, `--typecheck`,
-or `--typecheckOnly` (which skips Runtime Tests and makes no Roblox call). The
-include globs derive from the runtime ones (`.spec.luau` → `.spec-d.luau`)
-unless `test.typecheck.include` is set.
-
-Each file must start with `--!strict`. A file without it fails as a whole,
-because non-strict Luau reports no type errors. Projects that share a root
-directory are checked by one `lute` process; `tsconfig` does not apply.
-
-A `-- @expect-error` line comment asserts that the next statement fails type
-checking:
-
-```luau
-it("rejects a string field", function()
-	-- @expect-error
-	local _p: Point = {
-		x = 1,
-		y = "two",
-	}
-end)
-```
-
-- The directive targets the first statement that starts on a later line, over
-  that statement's whole span, so an error reported on a field inside a
-  multi-line literal still matches.
-- Every type error that starts inside the target is expected and does not fail
-  the test.
-- A directive that matches no error fails with `unused @expect-error`, in the
-  `it` that contains it or at file level.
-- It checks that an error exists, not what the error says.
-- Only comments count: `@expect-error` inside a string is ignored.
-
-#### Type assertions
-
-The package ships a Luau module for type assertions. Alias it in your `.luaurc`:
-
-```json
-{
-	"languageMode": "strict",
-	"aliases": {
-		"jest": "node_modules/@isentinel/jest-roblox/lib"
-	}
-}
-```
-
-The alias path is relative to the `.luaurc`. Then require it as
-`@jest/typecheck`:
-
-```luau
---!strict
-local t = require("@jest/typecheck")
-
-type GamePass = { name: string, price: number? }
-
-local function getPass(): GamePass
-	return { name = "VIP" }
-end
-
-t.describe("GamePass", function()
-	t.it("has a name and an optional price", function()
-		t.expectType<<GamePass>>():toEqualType<<{ name: string, price: number? }>>()
-	end)
-
-	t.it("is what getPass returns", function()
-		t.expectTypeOf(getPass()):toEqualType<<GamePass>>()
-	end)
-end)
-```
-
-- `describe` and `it` do nothing at runtime; they name the tests.
-- `expectType<<T>>()` takes a type; `expectTypeOf(value)` takes the type of a
-  value.
-- `:toEqualType<<U>>()` and `:toEqualTypeOf(value)` assert the types are equal.
-- `.never:toEqualType<<U>>()` and `.never:toEqualTypeOf(value)` assert the types
-  differ. The name is `never` because `not` is a Luau keyword, so `.not` is a
-  syntax error.
-- `:toExtend<<U>>()` asserts the subject is assignable to `U`, using Luau's own
-  subtyping and its error message. There is no negated form; put
-  `-- @expect-error` above a `toExtend` that must fail.
-
-Equality is structural: union and intersection order, property order and
-parameter names do not matter, `boolean` equals `true | false`, and generic
-functions match when their generics differ only in name. Read-only and
-read-write properties differ, as do `any` and `unknown`. Luau gives every
-function expression a `...any` parameter tail; equality ignores it.
-
-A failed assertion reports both types:
-
-```text
-Expected: { x: number, y: string }
-Received: { x: number, y: number }
-```
-
-A failed `.never` assertion reports `Expected a type other than: <U>`.
-
-A multi-line type literal inside `<<...>>()` is a Luau syntax error. Declare an
-alias first:
-
-```luau
-type Expected = {
-	name: string,
-	price: number?,
-}
-
-t.expectType<<GamePass>>():toEqualType<<Expected>>()
-```
+The package ships an agent skill in
+[`skills/jest-roblox-cli`](skills/jest-roblox-cli/SKILL.md). Inside an AI agent,
+the default formatter is `agent`, which prints less text.
 
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md).
-
-The bin prefers TypeScript source when present. Run it with
-`node --conditions=source bin/jest-roblox.js` to resolve workspace dependencies
-from source too. `pnpm build:bundle` still generates the Luau runner and
-materializer that the source imports.
-
-Source consumers of `@isentinel/jest-roblox/api` can register the synchronous
-Node hooks exported by `@isentinel/jest-roblox/loader` before dynamically
-importing that API. These hooks load raw Luau and the CLI's virtual asset
-modules.
-
-### Quality checks
-
-Run each check from the repository root:
-
-```bash
-pnpm lint            # oxlint, then ESLint
-pnpm typecheck       # TypeScript project build
-pnpm test            # Typecheck, then the test suite with coverage
-pnpm test-unit       # Unit tests, without coverage
-pnpm test-type       # Type tests
-pnpm integration     # Integration tests
-pnpm test-luau       # Luau harness tests in lute
-pnpm boundaries      # Import boundaries (dependency-cruiser)
-pnpm cpd             # Duplicate code (jscpd), production then specs
-pnpm knip            # Unused files, exports and dependencies
-pnpm mutation        # Mutation testing (Stryker)
-```
-
-### Recover missing release binaries
-
-Maintainers can run the **Release binaries** workflow for an existing release
-tag:
-
-```bash
-gh workflow run release-binaries.yaml --repo christopher-buss/jest-roblox-cli --ref main --field tag=v0.4.12
-```
-
-The workflow builds from that tag with LF checkout and uploads missing Linux
-x64, macOS arm64, and Windows x64 archives. Existing assets stay in place. It
-does not publish to npm or change the release tag.
 
 ## License
 

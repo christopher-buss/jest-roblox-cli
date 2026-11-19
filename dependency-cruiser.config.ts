@@ -187,7 +187,7 @@ export default createDependencyCruiserConfig({
 	allowedImports: {
 		"integration-imports-only-package-interface": {
 			comment:
-				"The README option check reads the option registry it documents, and the Luau config type check the schema it mirrors. The coverage report check maps raw hits the way a run does, with no backend to run. The plugin checks read the wire constants the plugin must match.",
+				"The configuration reference check reads the option registry it documents, and the Luau config type check the schema it mirrors. The coverage report check maps raw hits the way a run does, with no backend to run. The plugin checks read the wire constants the plugin must match.",
 			targets: [
 				OPTION_REGISTRY_MODULES,
 				CONFIG_SCHEMA_MODULES,
