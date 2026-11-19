@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
-import { configDefaults, defineConfig, type TestProjectInlineConfiguration } from "vitest/config";
+import process from "node:process";
+import { defineConfig, type TestProjectInlineConfiguration } from "vitest/config";
 
 export const NO_PROCESS_START_SETUP = resolve(
 	import.meta.dirname,
@@ -9,6 +10,19 @@ export const NO_PROCESS_START_SETUP = resolve(
 
 // sync.sh copies this file to the jest-roblox mirror without the setup.
 const MACHINE_BUDGET_SETUP = resolve(import.meta.dirname, "vitest.machine-budget.ts");
+
+const GLOB_SPECIAL = /[!()*+?@[\]{|}]/g;
+const DRIVE_LETTER = /^[a-z](?=:)/i;
+
+function globAnchor(directory: string): string {
+	return directory
+		.replaceAll("\\", "/")
+		.replace(GLOB_SPECIAL, "[$&]")
+		.replace(DRIVE_LETTER, (letter) => `[${letter.toUpperCase()}${letter.toLowerCase()}]`);
+}
+
+const PROJECT_GLOB = globAnchor(process.cwd());
+const WORKSPACE_GLOB = globAnchor(import.meta.dirname);
 
 const FULL_COVERAGE = { branches: 100, functions: 100, lines: 100, statements: 100 };
 
@@ -49,13 +63,14 @@ export const sharedConfig = defineConfig({
 			thresholds: FULL_COVERAGE,
 		},
 		forceRerunTriggers: [
-			...configDefaults.forceRerunTriggers,
-			"**/fixtures/**",
-			"**/__fixtures__/**",
-			"**/pnpm-lock.yaml",
-			"**/test/setup/**",
-			"**/tsconfig*.json",
-			"**/vitest.shared.ts",
+			`${PROJECT_GLOB}/**/package.json`,
+			`${PROJECT_GLOB}/**/{vitest,vite}.config.*`,
+			`${PROJECT_GLOB}/**/{fixtures,__fixtures__}/**`,
+			`${PROJECT_GLOB}/**/test/setup/**`,
+			`${PROJECT_GLOB}/**/tsconfig*.json`,
+			`${WORKSPACE_GLOB}/tsconfig*.json`,
+			`${WORKSPACE_GLOB}/test/setup/**`,
+			`${WORKSPACE_GLOB}/vitest.shared.ts`,
 		],
 		globalSetup: existsSync(MACHINE_BUDGET_SETUP) ? [MACHINE_BUDGET_SETUP] : [],
 		isolate: false,
