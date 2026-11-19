@@ -19,6 +19,9 @@
 			"type:fixture"
 		],
 		"includedScripts": [],
+		"namedInputs": {
+			"tools": []
+		},
 		"targets": {
 			"build": {
 				"executor": "nx:noop",
