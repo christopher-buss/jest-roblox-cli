@@ -61,5 +61,5 @@ export const absolutePathSchema: Type<string> = type("string").narrow((value, ct
 		return true;
 	}
 
-	return ctx.reject({ actual: `"${value}"`, expected: "an absolute path" });
+	return ctx.reject({ expected: "an absolute path" });
 });

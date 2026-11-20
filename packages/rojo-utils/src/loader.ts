@@ -163,11 +163,11 @@ const objectSchema = type("object").narrow(rejectArray).as<JSONObject>();
  * right types, but its members are left to the tree walkers, which handle
  * arbitrary shapes by design.
  */
-const fieldsSchema = type({
+const fieldsSchema = type.declare<RojoProject>().type({
 	"name": "string > 0",
-	"servePort?": "number.integer",
+	"servePort?": "number.integer | undefined",
 	"tree": treeSchema,
-}).as<RojoProject>();
+});
 
 function parseProject(content: string, projectPath: string): ParsedProject {
 	let parsed: JSONValue;

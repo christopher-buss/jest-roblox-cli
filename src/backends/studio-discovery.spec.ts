@@ -280,10 +280,7 @@ describe(discoverStudioPath, () => {
 				fileSystem,
 				platform: "darwin",
 			});
-		}).toThrowWithMessage(
-			Error,
-			'JEST_ROBLOX_STUDIO_DISCOVERY must be "on" or "off" (was "false")',
-		);
+		}).toThrowWithMessage(Error, 'JEST_ROBLOX_STUDIO_DISCOVERY must be "on" or "off"');
 	});
 
 	it("should throw an unsupported-platform error on Linux", ({ expect }) => {
@@ -375,7 +372,7 @@ describe(discoverUserDirectories, () => {
 
 			expect(() => discoverUserDirectories(input)).toThrowWithMessage(
 				Error,
-				/^JEST_ROBLOX_PLUGINS_DIR must be an absolute path \(was "/,
+				"JEST_ROBLOX_PLUGINS_DIR must be an absolute path",
 			);
 		},
 	);

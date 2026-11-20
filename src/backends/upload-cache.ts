@@ -32,11 +32,11 @@ interface CacheFile {
 // Bump with `version` in `cacheFileInputSchema` when an entry's meaning changes.
 const CACHE_VERSION = 2;
 
-const cacheEntrySchema = type({
+const cacheEntrySchema = type.declare<CacheEntry>().type({
 	"+": "delete",
 	"hash": "string",
 	"versionNumber": "number",
-}).as<CacheEntry>();
+});
 
 const cacheFileInputSchema = type({
 	entries: type({ "[string]": "unknown" }),

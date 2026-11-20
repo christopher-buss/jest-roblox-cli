@@ -17,7 +17,7 @@ export interface AgentFormatterOptions {
 	 *
 	 * @default 10
 	 */
-	maxFailures?: number | undefined;
+	maxFailures?: number;
 }
 
 /**
@@ -29,9 +29,9 @@ export interface GitHubActionsFormatterOptions {
 	 *
 	 * @default true
 	 */
-	displayAnnotations?: boolean | undefined;
+	displayAnnotations?: boolean;
 	/** Configuration for the GitHub Actions Job Summary. */
-	jobSummary?: Partial<JobSummaryOptions> | undefined;
+	jobSummary?: Partial<JobSummaryOptions>;
 }
 
 /** A formatter name, or a `[name, options]` pair. */
@@ -55,19 +55,19 @@ interface JobSummaryOptions {
 		 *
 		 * @default process.env.GITHUB_SHA
 		 */
-		commitHash?: string | undefined;
+		commitHash?: string;
 		/**
 		 * The GitHub repository in `owner/repo` format.
 		 *
 		 * @default process.env.GITHUB_REPOSITORY
 		 */
-		repository?: string | undefined;
+		repository?: string;
 		/**
 		 * The absolute path to the root of the repository on disk.
 		 *
 		 * @default process.env.GITHUB_WORKSPACE
 		 */
-		workspacePath?: string | undefined;
+		workspacePath?: string;
 	};
 	/**
 	 * File path to write the summary to.
@@ -77,12 +77,12 @@ interface JobSummaryOptions {
 	outputPath: string | undefined;
 }
 
-const agentFormatterOptionsSchema = type({
+const agentFormatterOptionsSchema = type.declare<AgentFormatterOptions>().type({
 	"+": "reject",
 	"maxFailures?": "number",
-}).as<AgentFormatterOptions>();
+});
 
-const ghFormatterOptionsSchema = type({
+const ghFormatterOptionsSchema = type.declare<GitHubActionsFormatterOptions>().type({
 	"+": "reject",
 	"displayAnnotations?": "boolean",
 	"jobSummary?": {
@@ -94,9 +94,9 @@ const ghFormatterOptionsSchema = type({
 			"repository?": "string",
 			"workspacePath?": "string",
 		},
-		"outputPath?": "string",
+		"outputPath?": "string | undefined",
 	},
-}).as<GitHubActionsFormatterOptions>();
+});
 
 const formatterNameSchema: Type<FormatterName> = type.enumerated(...FORMATTER_NAMES);
 

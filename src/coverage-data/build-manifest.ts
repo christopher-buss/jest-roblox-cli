@@ -99,24 +99,24 @@ export interface ReadBuildManifestOptions {
 	rootDir?: string;
 }
 
-const projectSchema = type({
+const projectSchema = type.declare<BuildManifestProject>().type({
 	"displayName": "string",
 	"jestDataModelPath?": "string",
 	"projectDataModelPath": "string",
 	"setupFiles": "string[]",
 	"setupFilesAfterEnv": "string[]",
 	"testMatch": "string[]",
-}).as<BuildManifestProject>();
+});
 
-const fileRecordSchema = type({ sourceHash: "string" }).as<BuildManifestFileRecord>();
+const fileRecordSchema = type.declare<BuildManifestFileRecord>().type({ sourceHash: "string" });
 
-const artifactSchema = type({
+const artifactSchema = type.declare<BuildManifestArtifact>().type({
 	"contentId?": "string",
 	"hash": "string",
 	"path": "string",
-}).as<BuildManifestArtifact>();
+});
 
-export const buildManifestSchema: type<BuildManifest> = type({
+export const buildManifestSchema: type<BuildManifest> = type.declare<BuildManifest>().type({
 	"buildId": "string",
 	"cleanPlace?": artifactSchema,
 	"coveragePlace": artifactSchema,
@@ -124,7 +124,7 @@ export const buildManifestSchema: type<BuildManifest> = type({
 	"generatedAt": "string",
 	"projects": projectSchema.array(),
 	"version": type.unit(BUILD_MANIFEST_VERSION),
-}).as<BuildManifest>();
+});
 
 /** The build record of a coverage run. */
 export interface CoverageArtifacts {

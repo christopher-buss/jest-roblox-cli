@@ -145,7 +145,16 @@ describe(parseJestOutput, () => {
 				numTotalTests: 1,
 				startTime: 1000,
 				success: false,
-				testResults: [{ failureMessages: [`expected ${brace}`] }],
+				testResults: [
+					{
+						failureMessage: `expected ${brace}`,
+						numFailingTests: 1,
+						numPassingTests: 0,
+						numPendingTests: 0,
+						testFilePath: "a.spec.ts",
+						testResults: [],
+					},
+				],
 			});
 
 			expect(parseJestOutput(output).result.numFailedTests).toBe(1);

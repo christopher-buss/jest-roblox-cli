@@ -71,10 +71,7 @@ describe(isStudioDiscoverable, () => {
 			return isStudioDiscoverable(() => {
 				throw new Error("Roblox Studio not found.");
 			});
-		}).toThrowWithMessage(
-			Error,
-			'JEST_ROBLOX_STUDIO_DISCOVERY must be "on" or "off" (was "true")',
-		);
+		}).toThrowWithMessage(Error, 'JEST_ROBLOX_STUDIO_DISCOVERY must be "on" or "off"');
 	});
 });
 

@@ -35,21 +35,11 @@ export interface RojoWalk {
 	warnings: Array<string>;
 }
 
-/**
- * Rojo `$properties` entry.
- *
- * @external
- */
-interface RojoTreeProperty {
-	Type: string;
-	Value: unknown;
-}
-
 interface RojoTreeMetadata {
 	$className?: string;
 	$ignoreUnknownInstances?: boolean;
 	$path?: string | { optional: string };
-	$properties?: Array<RojoTreeProperty>;
+	$properties?: Array<JSONValue> | JSONObject;
 }
 
 interface RojoTreeMembers {
@@ -57,8 +47,9 @@ interface RojoTreeMembers {
 	// the index signature has to admit their value types too. Walkers narrow
 	// with `isRojoTree` after filtering out the `$`-prefixed keys.
 	[name: string]:
-		| Array<RojoTreeProperty>
+		| Array<JSONValue>
 		| boolean
+		| JSONObject
 		| RojoTree
 		| string
 		| undefined

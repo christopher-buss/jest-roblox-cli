@@ -10,6 +10,7 @@ import {
 	type SnapshotWrites,
 } from "../protocol/runner-fields.ts";
 import type { JestResult, SnapshotSummary } from "../types/jest-result-types.ts";
+import { jestResultSchema, type UnparsedJestResult } from "./jest-result-schema.ts";
 import { findJestJsonCandidate } from "./json-extraction.ts";
 import { LuauScriptError } from "./luau-script-error.ts";
 
@@ -20,16 +21,6 @@ interface ParseResult {
 	setupSeconds?: number | undefined;
 	snapshotWrites?: SnapshotWrites | undefined;
 }
-
-const jestResultSchema = type({
-	numFailedTests: "number",
-	numPassedTests: "number",
-	numPendingTests: "number",
-	numTotalTests: "number",
-	startTime: "number",
-	success: "boolean",
-	testResults: "object[]",
-}).as<JestResult>();
 
 // Arktype has no keyword for the recursive JSON union, hence the brand.
 const jsonValueSchema = type("unknown").as<JSONValue>();
@@ -259,7 +250,7 @@ function unwrapResult(parsed: JestEnvelope, runner: RunnerFields): JestEnvelope 
 	return parsed;
 }
 
-function validateJestResult(value: unknown): JestResult {
+function validateJestResult(value: unknown): UnparsedJestResult {
 	const result = jestResultSchema(value);
 	if (result instanceof type.errors) {
 		throw new Error(`Invalid Jest result: ${result.summary}`);
@@ -276,9 +267,8 @@ function extractSetupSeconds({ setup }: RunnerFields): number | undefined {
 	return setup;
 }
 
-function extractSnapshotSummary(source: JestResult): SnapshotSummary | undefined {
-	const envelope = jestEnvelopeSchema.assert(source);
-	const snapshot = snapshotSummaryInputSchema(envelope.snapshot);
+function extractSnapshotSummary(source: UnparsedJestResult): SnapshotSummary | undefined {
+	const snapshot = snapshotSummaryInputSchema(source.snapshot);
 	if (snapshot instanceof type.errors) {
 		return undefined;
 	}

@@ -74,7 +74,7 @@ export interface CoverageManifest {
 	/** Shared UUID linking this manifest to its sibling `BuildManifest`. */
 	buildId: string;
 	/** Digest of the `coverageCopyIgnorePatterns`. */
-	copyIgnoreHash?: string | undefined;
+	copyIgnoreHash?: string;
 	/** Digest of the instrument universe; absent when nothing was narrowed. */
 	coverageUniverseHash?: string | undefined;
 	/** Instrumented files by key. */
@@ -102,7 +102,7 @@ export interface CoverageManifest {
 /** Outcome of reading a coverage manifest. */
 export type ReadManifestResult = ParsedManifest<CoverageManifest>;
 
-const instrumentedFileRecordSchema = type({
+const instrumentedFileRecordSchema = type.declare<InstrumentedFileRecord>().type({
 	"key": "string",
 	"branchCount?": "number",
 	"coverageMapPath": "string",
@@ -114,38 +114,38 @@ const instrumentedFileRecordSchema = type({
 	"sourceMapPath": "string",
 	"statementCount": "number",
 	"staticStatementIds?": "string[]",
-}).as<InstrumentedFileRecord>();
+});
 
-const testRecordSchema = type({
+const testRecordSchema = type.declare<TestRecord>().type({
 	"location?": type({ column: "number", line: "number" }),
 	"testCaseId": "string",
 	"testFilePath": "string",
 	"testFileSourceHash": "string",
 	"testId": "string",
 	"testSourceHash?": "string",
-}).as<TestRecord>();
+});
 
-const nonInstrumentedRecordSchema = type({
+const nonInstrumentedRecordSchema = type.declare<NonInstrumentedFileRecord>().type({
 	shadowPath: "string",
 	sourceHash: "string",
 	sourcePath: "string",
-}).as<NonInstrumentedFileRecord>();
+});
 
-export const manifestSchema: type<CoverageManifest> = type({
+export const manifestSchema: type<CoverageManifest> = type.declare<CoverageManifest>().type({
 	"buildId": "string",
 	"copyIgnoreHash?": "string",
-	"coverageUniverseHash?": "string",
+	"coverageUniverseHash?": "string | undefined",
 	"files": type({ "[string]": instrumentedFileRecordSchema }),
 	"generatedAt": "string",
 	"instrumenterVersion": "number",
 	"luauRoots": "string[]",
 	"nonInstrumentedFiles": type({ "[string]": nonInstrumentedRecordSchema }),
 	"placeFilePath?": "string",
-	"rojoInputsHash?": "string",
+	"rojoInputsHash?": "string | undefined",
 	"shadowDir": "string",
 	"tests?": testRecordSchema.array(),
 	"version": type.unit(MANIFEST_VERSION),
-}).as<CoverageManifest>();
+});
 
 /**
  * Writes a coverage manifest atomically.

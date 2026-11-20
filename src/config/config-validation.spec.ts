@@ -602,9 +602,7 @@ describe(configSchema, () => {
 
 				assert(result instanceof type.errors);
 
-				expect(result.summary).toBe(
-					`pluginsDirectory must be an absolute path (was "${pluginsDirectory}")`,
-				);
+				expect(result.summary).toBe("pluginsDirectory must be an absolute path");
 			},
 		);
 

@@ -86,7 +86,7 @@ export function isStudioDiscoveryOn(environment: NodeJS.ProcessEnv = process.env
 		return false;
 	}
 
-	throw new Error(`${DISCOVERY_ENV} must be "on" or "off" (was "${value}")`);
+	throw new Error(`${DISCOVERY_ENV} must be "on" or "off"`);
 }
 
 /**
