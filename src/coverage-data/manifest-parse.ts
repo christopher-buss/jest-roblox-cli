@@ -1,4 +1,3 @@
-import type { distill } from "arktype";
 import { type } from "arktype";
 
 import { isFileNotFound } from "../utils/file-not-found.ts";
@@ -37,7 +36,7 @@ export function readUnlessMissing(filePath: string, fileSystem: FileSystem): str
 
 /**
  * Reads, classifies, and validates a versioned JSON manifest.
- * @template T - Schema the manifest is validated against.
+ * @template T - Manifest shape the schema returns.
  * @param options - Expected version, path, filesystem and schema.
  * @returns The validated manifest, or why it was refused.
  * @throws When reading fails for a reason other than a missing file.
@@ -51,8 +50,8 @@ export function parseVersionedManifest<T>({
 	expectedVersion: number;
 	filePath: string;
 	fileSystem?: FileSystem;
-	schema: type<T>;
-}): ParsedManifest<distill.Out<T>> {
+	schema: (data: JSONValue) => T | type.errors;
+}): ParsedManifest<T> {
 	const contents = readUnlessMissing(filePath, fileSystem);
 	if (contents === undefined) {
 		return { kind: "missing" };

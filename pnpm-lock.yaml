@@ -191,8 +191,8 @@ importers:
         specifier: 0.3.31
         version: 0.3.31
       arktype:
-        specifier: 2.2.3
-        version: 2.2.3
+        specifier: 3.0.0-beta.1
+        version: 3.0.0-beta.1
       c12:
         specifier: 4.0.0-beta.5
         version: 4.0.0-beta.5(jiti@2.7.0)(magicast@0.5.5)
@@ -390,8 +390,8 @@ importers:
   packages/luau-ast:
     dependencies:
       arktype:
-        specifier: 2.2.3
-        version: 2.2.3
+        specifier: 3.0.0-beta.1
+        version: 3.0.0-beta.1
     devDependencies:
       '@isentinel/eslint-config':
         specifier: 7.1.0
@@ -463,8 +463,8 @@ importers:
         specifier: 0.3.4
         version: 0.3.4
       arktype:
-        specifier: 2.2.3
-        version: 2.2.3
+        specifier: 3.0.0-beta.1
+        version: 3.0.0-beta.1
     devDependencies:
       '@isentinel/eslint-config':
         specifier: 7.1.0
@@ -530,8 +530,8 @@ importers:
   packages/rojo-utils:
     dependencies:
       arktype:
-        specifier: 2.2.3
-        version: 2.2.3
+        specifier: 3.0.0-beta.1
+        version: 3.0.0-beta.1
     devDependencies:
       '@isentinel/eslint-config':
         specifier: 7.1.0
@@ -605,11 +605,17 @@ packages:
   '@ark/schema@0.56.8':
     resolution: {integrity: sha512-R05TOe85oQBGFFw2zKMuZpqkXibLKuC/aJt6VwFn5Cjc4x3NkWfhvGRpRDycNkj3ddcHnOPtIsmjVowJO9Yxdw==}
 
+  '@ark/schema@0.57.0-beta.1':
+    resolution: {integrity: sha512-OORWH7LDDI0sT3Sojbg2GuqcUcvmaVIFnqGVy8qS9nW1WgaCHYypx1f8eQFbkFlzaTCTWoEv4FObNGrEsclcvg==}
+
   '@ark/util@0.56.2':
     resolution: {integrity: sha512-9kU2sUE38FZEGG7l3hamYMBieLYEJh2L1mrYD2eXpT+78EnQSV1bhjxJhnxGBMSTbtwpBSDNSK+K60WvaI/DTQ==}
 
   '@ark/util@0.56.8':
     resolution: {integrity: sha512-XLiQyGfpJcws1zCtp2Cva8s1oheCdFn1Rt6JSyC4NnkDrpwCJnlaiawuuOc1Z97vMH+jEzW5vyyf0xOju5wUQA==}
+
+  '@ark/util@0.57.0-beta.1':
+    resolution: {integrity: sha512-Fkn5FrbemMU56TzT6STpf3jmIvP4hfjjyEfcPjhi03vDgH8phn2vSylInvieIAl5aKVzqhDEVongERZz/IkfHA==}
 
   '@babel/code-frame@8.0.6':
     resolution: {integrity: sha512-uMHhvmDmwFiLuiozaoRYTZHqMFuu3fem/X9JY78lohAuLoh8LSGGC8JqUzo2cVuBsBxkjMZNk56CE7ock8Xxkw==}
@@ -3416,14 +3422,23 @@ packages:
   arkregex@0.0.14:
     resolution: {integrity: sha512-G3I/uCtWE0IKQiPh0qqmmAFDdtjZKZQ5mNPR6gJBeAMZ7VqYCpoaDeXnLju2Zo6ywExtmxZJELeVFb0MPDjPyA==}
 
+  arkregex@0.0.16-beta.1:
+    resolution: {integrity: sha512-cCeEL92VwE0nuVNAo/+SFEYXVmv7y52tp9ZTwWzsebUABa/BAs3xO0H+3OEMp+eg0zFvUuFy3biN9/q08N30Pw==}
+
   arkregex@0.0.8:
     resolution: {integrity: sha512-PJcx6G1kQTgLKPUbeYlYecDRaKq15AMSGVajlKFYWlPeJRQL+j3dKE6tyMs40HZ99djS1l9Vhl3ezAHy9JBIqQ==}
+
+  arksets@0.0.1-beta.1:
+    resolution: {integrity: sha512-t0v24b9XcUG05rzQ1jSp+LMGFl6nCtmYUh6X3TskVBLpVuSRlaqQ0+65IlFC/dPicWDszSZp328oqo/HyDHRvw==}
 
   arktype@2.2.3:
     resolution: {integrity: sha512-7W+0RLTUNJiBFIIZXwOQxSR8Z273IAd6IvqBeG9+gHnQKFsIx2C0iOtGTmMrPnlX4qLXyc5+ll7A0BIj9WrbTg==}
 
   arktype@2.2.9:
     resolution: {integrity: sha512-Cja0IMEn19rB35on9da1i1z6QMasuS7ULffXbetCry09jvCGYT8Bi1KgYiqri5FymF4nQAXkM90yksYkgSK2EA==}
+
+  arktype@3.0.0-beta.1:
+    resolution: {integrity: sha512-JNBPjXOyFT+vlkKTVaWj5X4SzG549cSNzvJ7qkD6D7VzSsYReBv4AATYRkRBzFjg/wBwMoEFvOtKXY1JQ08f8g==}
 
   array-timsort@1.0.3:
     resolution: {integrity: sha512-/+3GRL7dDAGEfM6TseQk/U+mi18TU2Ms9I3UlLdUMhz2hbvGNTKdj9xniwXfUqgYhHxRx0+8UnKkvlNwVU+cWQ==}
@@ -5788,9 +5803,15 @@ snapshots:
     dependencies:
       '@ark/util': 0.56.8
 
+  '@ark/schema@0.57.0-beta.1':
+    dependencies:
+      '@ark/util': 0.57.0-beta.1
+
   '@ark/util@0.56.2': {}
 
   '@ark/util@0.56.8': {}
+
+  '@ark/util@0.57.0-beta.1': {}
 
   '@babel/code-frame@8.0.6':
     dependencies:
@@ -8407,9 +8428,18 @@ snapshots:
     dependencies:
       '@ark/util': 0.56.8
 
+  arkregex@0.0.16-beta.1:
+    dependencies:
+      '@ark/util': 0.57.0-beta.1
+
   arkregex@0.0.8:
     dependencies:
       '@ark/util': 0.56.2
+
+  arksets@0.0.1-beta.1:
+    dependencies:
+      '@ark/schema': 0.57.0-beta.1
+      '@ark/util': 0.57.0-beta.1
 
   arktype@2.2.3:
     dependencies:
@@ -8422,6 +8452,13 @@ snapshots:
       '@ark/schema': 0.56.8
       '@ark/util': 0.56.8
       arkregex: 0.0.14
+
+  arktype@3.0.0-beta.1:
+    dependencies:
+      '@ark/schema': 0.57.0-beta.1
+      '@ark/util': 0.57.0-beta.1
+      arkregex: 0.0.16-beta.1
+      arksets: 0.0.1-beta.1
 
   array-timsort@1.0.3: {}
 

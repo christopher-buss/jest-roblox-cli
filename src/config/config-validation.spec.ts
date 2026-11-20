@@ -569,7 +569,7 @@ describe(configSchema, () => {
 			assert(result instanceof type.errors);
 
 			expect(result.summary).toMatchInlineSnapshot(
-				'"backend must be "auto", "open-cloud", "studio" or "studio-cli" (was "bad")"',
+				'"backend must be "auto", "open-cloud", "studio" or "studio-cli""',
 			);
 		});
 
@@ -580,7 +580,7 @@ describe(configSchema, () => {
 
 			assert(result instanceof type.errors);
 
-			expect(result.summary).toMatchInlineSnapshot('"port must be a number (was a string)"');
+			expect(result.summary).toMatchInlineSnapshot('"port must be a number"');
 		});
 
 		it("should produce readable error for undeclared key", ({ expect }) => {
@@ -618,7 +618,7 @@ describe(configSchema, () => {
 			assert(result instanceof type.errors);
 
 			expect(result.summary).toMatchInlineSnapshot(
-				'"test.coverageThreshold.lines must be a number (was a string)"',
+				'"test.coverageThreshold.lines must be a number"',
 			);
 		});
 	});

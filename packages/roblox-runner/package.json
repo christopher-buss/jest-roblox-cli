@@ -53,7 +53,7 @@
 	},
 	"dependencies": {
 		"@bedrock-rbx/ocale": "0.3.4",
-		"arktype": "2.2.3"
+		"arktype": "3.0.0-beta.1"
 	},
 	"devDependencies": {
 		"@isentinel/eslint-config": "7.1.0",

@@ -141,7 +141,7 @@ describe(runSetup, () => {
 			configFile: ".luaurc",
 			entry: '"jest-roblox": "~/.jest-roblox/typedefs/1.2.3"',
 			kind: "unreadable",
-			problem: "aliases.x must be a string (was a number)",
+			problem: "aliases.x must be a string",
 			typesDirectory: TYPES_DIRECTORY,
 		});
 		expect(read(".luaurc")).toBe(source);

@@ -683,7 +683,7 @@ describe("setup subcommand", () => {
 
 		expect(code).toBe(2);
 		expect(renderedStderr(spies)).toContain(
-			"Failed to read .luaurc: aliases.x must be a string (was a number)",
+			"Failed to read .luaurc: aliases.x must be a string",
 		);
 		expect(renderedStderr(spies)).toContain(
 			`Hint: Fix the file and run setup again, or add this entry to its "aliases" by hand: "jest-roblox": "~/.jest-roblox/typedefs/${packageJson.version}"`,
