@@ -4,14 +4,14 @@ import * as crypto from "node:crypto";
 import * as path from "node:path";
 import { assert, describe, it } from "vitest";
 
-import { posixPath } from "#test/mocks/posix-path.ts";
+import { posixPath } from "#test/helpers/posix-path.ts";
 import {
 	poolKeyOf,
 	seed,
 	staged,
 	stagedProject,
 	stagedProjectSchema,
-} from "#test/mocks/staged-project.ts";
+} from "#test/helpers/unit/staged-project.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import { poolSharedMounts } from "./shared-pool.ts";
 

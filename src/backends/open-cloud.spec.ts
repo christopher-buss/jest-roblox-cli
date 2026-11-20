@@ -1,4 +1,5 @@
 import { PollTimeoutError } from "@bedrock-rbx/ocale";
+import { createMemoryFileSystem } from "@isentinel/dev-vitest-utils";
 import type {
 	ExecuteScriptOptions,
 	RemoteRunner,
@@ -11,16 +12,15 @@ import { formatPlaceMismatch, PLACE_MISMATCH } from "@isentinel/roblox-runner/te
 import * as path from "node:path";
 import { describe, it, vi } from "vitest";
 
-import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
-import { NOOP_PROGRESS } from "#test/mocks/noop-progress.ts";
-import { projectJob } from "#test/mocks/project-job.ts";
-import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
+import { NOOP_PROGRESS } from "#test/helpers/unit/noop-progress.ts";
+import { projectJob } from "#test/helpers/unit/project-job.ts";
+import { createResolvedConfig } from "#test/helpers/unit/resolved-config.ts";
 import {
 	captureStderr,
 	envelope,
 	packageJobIndex,
 	scriptResult,
-} from "#test/mocks/spec-open-cloud.ts";
+} from "#test/helpers/unit/spec-open-cloud.ts";
 import type { ResolvedConfig } from "../config/resolved-config.ts";
 import type { ConfiguredJob } from "../executor/executor-types.ts";
 import type { prepareWorkStealingQueueAsync } from "../memory-store/work-stealing.ts";

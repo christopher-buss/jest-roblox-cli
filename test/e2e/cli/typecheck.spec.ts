@@ -22,7 +22,7 @@ import {
 	createFixtureSandbox,
 	readMergedTestFilePaths,
 	runCliAsync,
-} from "#test/harness/helpers.ts";
+} from "#test/helpers/integration/helpers.ts";
 
 const SINGLE_FIXTURE = path.resolve(__dirname, "../fixtures/typecheck-single");
 const SINGLE_BROKEN_FIXTURE = path.resolve(__dirname, "../fixtures/typecheck-single-broken");

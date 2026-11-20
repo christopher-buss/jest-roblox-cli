@@ -1,11 +1,11 @@
+import { createMemoryFileSystem } from "@isentinel/dev-vitest-utils";
 import { fromAny } from "@total-typescript/shoehorn";
 
 import * as path from "node:path";
 import { isAgent } from "std-env";
 import { describe, it } from "vitest";
 
-import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
-import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
+import { createResolvedConfig } from "#test/helpers/unit/resolved-config.ts";
 import type { Config } from "./config-types.ts";
 import { resolveFunctionValues } from "./merger-functions.ts";
 import type { ResolvedConfig } from "./resolved-config.ts";

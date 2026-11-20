@@ -1,10 +1,10 @@
+import { createMemoryFileSystem } from "@isentinel/dev-vitest-utils";
 import type { RojoProject } from "@isentinel/rojo-utils";
 
 import * as path from "node:path";
 import process from "node:process";
 import { describe, it } from "vitest";
 
-import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import type { TsconfigMapping } from "../tsconfig/tsconfig-mappings.ts";
 import type { PathResolver } from "./path-resolver.ts";
 import { createPathResolver, luauInitToIndex } from "./path-resolver.ts";

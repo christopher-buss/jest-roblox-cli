@@ -6,7 +6,7 @@ import {
 	readLuauTree,
 	spawnHarness,
 	stubbedModules,
-} from "#test/luau/lute-harness.ts";
+} from "#test/helpers/integration/lute-harness.ts";
 
 // Drives the last-seen record under lute. Its circus-hook and data-model-path
 // dependencies are inlined in place of the relative requires, then the whole

@@ -1,11 +1,12 @@
+import type { MemoryVolume } from "@isentinel/dev-vitest-utils";
+import { createMemoryFileSystem } from "@isentinel/dev-vitest-utils";
+
 import * as path from "node:path";
 import process from "node:process";
 import { describe, it, vi } from "vitest";
 
-import { copyIgnoreMatcher } from "#test/mocks/coverage-copy-ignore.ts";
-import type { MemoryVolume } from "#test/mocks/memory-file-system.ts";
-import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
-import { posixRoot } from "#test/mocks/posix-path.ts";
+import { copyIgnoreMatcher } from "#test/helpers/unit/coverage-copy-ignore.ts";
+import { posixRoot } from "#test/helpers/unit/posix-root.ts";
 import type { PackageIgnore, WorkspacePackageDescriptor } from "./workspace-prepare-types.ts";
 import { narrowPackageRoots } from "./workspace-roots.ts";
 

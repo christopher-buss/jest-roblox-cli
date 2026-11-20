@@ -5,7 +5,7 @@ import {
 	readHarness,
 	readLuauModule,
 	spawnHarness,
-} from "#test/luau/lute-harness.ts";
+} from "#test/helpers/integration/lute-harness.ts";
 
 const MODULE_SOURCE = readLuauModule("../plugin/src/reconnect-loop.luau");
 const HARNESS = readHarness("reconnect-loop");

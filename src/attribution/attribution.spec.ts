@@ -1,6 +1,6 @@
 import { describe, it } from "vitest";
 
-import { MANIFEST_VERSION } from "#test/mocks/coverage-versions.ts";
+import { MANIFEST_VERSION } from "#test/helpers/unit/coverage-versions.ts";
 import type { CoverageManifest } from "../coverage-data/manifest.ts";
 import { applyAttribution, harvestAttribution, mergeAttribution } from "./attribution.ts";
 

@@ -1,3 +1,5 @@
+import type { MemoryVolume } from "@isentinel/dev-vitest-utils";
+import { createMemoryFileSystem } from "@isentinel/dev-vitest-utils";
 import { fromAny } from "@total-typescript/shoehorn";
 
 import { type } from "arktype";
@@ -9,28 +11,26 @@ import type { Except } from "type-fest";
 import { describe, it, vi } from "vitest";
 import type { MockInstance } from "vitest";
 
-import { writeAgedFile } from "#test/mocks/aged-file.ts";
-import { copyIgnoreHash as digestCopyIgnore } from "#test/mocks/coverage-hash.ts";
-import { rojoInputsHash } from "#test/mocks/coverage-prepare-rojo-hash.ts";
-import { stubBake } from "#test/mocks/coverage-prepare-stub-bake.ts";
+import { posixPath } from "#test/helpers/posix-path.ts";
+import { writeAgedFile } from "#test/helpers/unit/aged-file.ts";
+import { copyIgnoreHash as digestCopyIgnore } from "#test/helpers/unit/coverage-hash.ts";
+import { rojoInputsHash } from "#test/helpers/unit/coverage-prepare-rojo-hash.ts";
+import { stubBake } from "#test/helpers/unit/coverage-prepare-stub-bake.ts";
 import {
 	makeConfig,
 	PROJECT_DIR,
 	readingOutDirectory,
 	seedFilesystem,
 	seedInto,
-} from "#test/mocks/coverage-spec-prepare-seed.ts";
+} from "#test/helpers/unit/coverage-spec-prepare-seed.ts";
 import {
 	BUILD_MANIFEST_VERSION,
 	INSTRUMENTER_VERSION,
 	MANIFEST_VERSION,
-} from "#test/mocks/coverage-versions.ts";
-import type { MemoryVolume } from "#test/mocks/memory-file-system.ts";
-import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
-import { movableClockCollector, tickingClockCollector } from "#test/mocks/movable-clock.ts";
-import { posixPath } from "#test/mocks/posix-path.ts";
-import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
-import { writingRojoExec } from "#test/mocks/rojo-exec.ts";
+} from "#test/helpers/unit/coverage-versions.ts";
+import { movableClockCollector, tickingClockCollector } from "#test/helpers/unit/movable-clock.ts";
+import { createResolvedConfig } from "#test/helpers/unit/resolved-config.ts";
+import { writingRojoExec } from "#test/helpers/unit/rojo-exec.ts";
 import type { ResolvedConfig } from "../config/resolved-config.ts";
 import type { BuildManifestProject } from "../coverage-data/build-manifest.ts";
 import type {

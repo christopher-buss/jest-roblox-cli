@@ -1,10 +1,11 @@
+import { createMemoryFileSystem } from "@isentinel/dev-vitest-utils";
+
 import * as path from "node:path";
 import process from "node:process";
 import { describe, it, vi } from "vitest";
 
-import { createPassingResult } from "#test/mocks/executor-spec-results.ts";
-import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
-import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
+import { createPassingResult } from "#test/helpers/unit/executor-spec-results.ts";
+import { createResolvedConfig } from "#test/helpers/unit/resolved-config.ts";
 import { buildProjectSourceMap, resolveTestFilePaths } from "./project-source-map.ts";
 
 const ROOT = path.join(process.cwd(), "modules", "app");

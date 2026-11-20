@@ -1,6 +1,7 @@
+import { createMemoryFileSystem } from "@isentinel/dev-vitest-utils";
+
 import { describe, it } from "vitest";
 
-import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { SANDBOX_PREFIX, sweepStaleSandboxes } from "./sandbox-sweep.ts";
 
 const ROOT = "/sandboxes";

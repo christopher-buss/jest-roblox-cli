@@ -1,10 +1,11 @@
+import { createMemoryFileSystem } from "@isentinel/dev-vitest-utils";
+
 import type { Buffer } from "node:buffer";
 import { createHash } from "node:crypto";
 import { describe, it, vi } from "vitest";
 import type { MockInstance } from "vitest";
 
-import { ageFile, writeAgedFile } from "#test/mocks/aged-file.ts";
-import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
+import { ageFile, writeAgedFile } from "#test/helpers/unit/aged-file.ts";
 import { openInputDigestCache } from "./input-digest-cache.ts";
 
 function hashString(text: string): string {

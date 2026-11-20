@@ -1,3 +1,4 @@
+import { createMemoryFileSystem } from "@isentinel/dev-vitest-utils";
 import { fromAny } from "@total-typescript/shoehorn";
 
 import type * as childProcess from "node:child_process";
@@ -5,8 +6,7 @@ import * as path from "node:path";
 import process from "node:process";
 import { assert, describe, it, vi } from "vitest";
 
-import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
-import { posixPath } from "#test/mocks/posix-path.ts";
+import { posixPath } from "#test/helpers/posix-path.ts";
 import { ConfigError } from "../config/errors.ts";
 import type { ChildProcessRunner } from "../utils/child-process.ts";
 import type { FileSystem } from "../utils/file-system.ts";

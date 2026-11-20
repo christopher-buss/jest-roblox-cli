@@ -8,7 +8,7 @@ import {
 	envelope,
 	packageJobIndex,
 	scriptResult,
-} from "#test/mocks/spec-open-cloud.ts";
+} from "#test/helpers/unit/spec-open-cloud.ts";
 import type {
 	StreamingResultReader,
 	StreamingResultRecord,

@@ -4,19 +4,19 @@ import * as path from "node:path";
 import { stripVTControlCharacters } from "node:util";
 import { describe, it } from "vitest";
 
-import type { GitRepository } from "#test/e2e/cli/git-repository.ts";
-import { initGitRepository } from "#test/e2e/cli/git-repository.ts";
+import type { GitRepository } from "#test/helpers/e2e/git-repository.ts";
+import { initGitRepository } from "#test/helpers/e2e/git-repository.ts";
 import {
 	PARTIAL_RUN_TIMEOUT_MS as RUN_TIMEOUT_MS,
 	runPartialAsync,
-} from "#test/e2e/cli/partial-run.ts";
-import { startFakeOpenCloudServerAsync } from "#test/harness/fake-open-cloud.ts";
+} from "#test/helpers/e2e/partial-run.ts";
+import { startFakeOpenCloudServerAsync } from "#test/helpers/integration/fake-open-cloud.ts";
 import {
 	createFixtureSandbox,
 	createOpenCloudEnvironment,
 	rojoOnPath,
 	runCliAsync,
-} from "#test/harness/helpers.ts";
+} from "#test/helpers/integration/helpers.ts";
 
 const RELATED_FIXTURE_PATH = path.resolve(__dirname, "../fixtures/related-project");
 const SETUP_FILES = /"setupFiles":(\[[^\]]*\])/g;

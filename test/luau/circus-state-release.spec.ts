@@ -5,7 +5,7 @@ import {
 	readHarness,
 	readLuauModule,
 	spawnHarness,
-} from "#test/luau/lute-harness.ts";
+} from "#test/helpers/integration/lute-harness.ts";
 
 const MODULE_SOURCE = readLuauModule("circus-state-release.luau");
 const HARNESS = readHarness("circus-state-release");

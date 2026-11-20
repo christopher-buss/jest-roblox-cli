@@ -1,9 +1,10 @@
+import type { MemoryVolume } from "@isentinel/dev-vitest-utils";
+import { createMemoryFileSystem } from "@isentinel/dev-vitest-utils";
+
 import { Buffer } from "node:buffer";
 import { describe, it } from "vitest";
 
-import { hashBuffer, hashFile } from "#test/mocks/coverage-hash.ts";
-import type { MemoryVolume } from "#test/mocks/memory-file-system.ts";
-import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
+import { hashBuffer, hashFile } from "#test/helpers/unit/coverage-hash.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import type {
 	BuildManifest,

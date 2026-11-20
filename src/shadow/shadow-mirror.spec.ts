@@ -1,7 +1,8 @@
+import { createMemoryFileSystem } from "@isentinel/dev-vitest-utils";
+
 import { describe, it } from "vitest";
 
-import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
-import { posixRoot } from "#test/mocks/posix-path.ts";
+import { posixRoot } from "#test/helpers/unit/posix-root.ts";
 import { syncNonInstrumentedFiles, syncOneFile } from "./shadow-mirror.ts";
 
 describe(syncOneFile, () => {

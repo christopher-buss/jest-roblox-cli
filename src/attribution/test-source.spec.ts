@@ -1,7 +1,8 @@
+import { createMemoryFileSystem } from "@isentinel/dev-vitest-utils";
+
 import { describe, it } from "vitest";
 
-import { hashFile, hashString } from "#test/mocks/coverage-hash.ts";
-import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
+import { hashFile, hashString } from "#test/helpers/unit/coverage-hash.ts";
 import type { JestResult, TestCaseResult } from "../types/jest-result-types.ts";
 import { createTestSourceResolver } from "./test-source.ts";
 

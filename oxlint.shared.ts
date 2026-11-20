@@ -24,7 +24,10 @@ const OXLINT_OVERRIDES: Array<OxlintOverride> = [
 	{
 		files: ["**/*.d.ts"],
 		rules: {
-			"import/no-unassigned-import": ["error", { allow: ["jest-extended", "vitest"] }],
+			"import/no-unassigned-import": [
+				"error",
+				{ allow: ["@isentinel/dev-vitest-utils/jest-extended", "jest-extended", "vitest"] },
+			],
 		},
 	},
 ];

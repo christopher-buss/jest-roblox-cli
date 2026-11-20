@@ -4,7 +4,7 @@ import { fromAny } from "@total-typescript/shoehorn";
 import * as path from "node:path";
 import { describe, it, vi } from "vitest";
 
-import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
+import { createResolvedConfig } from "#test/helpers/unit/resolved-config.ts";
 import type { ResolvedConfig } from "./resolved-config.ts";
 import { createSetupResolver, resolveAllSetupFilePaths } from "./setup-resolver.ts";
 

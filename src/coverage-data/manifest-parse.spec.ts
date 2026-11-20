@@ -1,7 +1,8 @@
+import { createMemoryFileSystem } from "@isentinel/dev-vitest-utils";
+
 import { type } from "arktype";
 import { describe, it } from "vitest";
 
-import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { parseVersionedManifest } from "./manifest-parse.ts";
 
 const schema = type({ name: "string", version: "number" });

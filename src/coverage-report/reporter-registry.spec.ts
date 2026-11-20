@@ -2,7 +2,7 @@ import istanbulCoverage from "istanbul-lib-coverage";
 import * as path from "node:path";
 import { describe, it } from "vitest";
 
-import { createMemoryReportEnvironment } from "#test/mocks/memory-report-context.ts";
+import { createMemoryReportEnvironment } from "#test/helpers/unit/memory-report-context.ts";
 import type { CoverageReporter } from "../config/config-types.ts";
 import { createReporter } from "./reporter-registry.ts";
 

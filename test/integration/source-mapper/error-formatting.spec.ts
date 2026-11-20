@@ -3,12 +3,12 @@ import path from "node:path";
 import { describe, it } from "vitest";
 
 import { createStyles, formatFailure } from "#src/api.ts";
-import { createFixtureSandbox } from "#test/harness/helpers.ts";
+import { createFixtureSandbox } from "#test/helpers/integration/helpers.ts";
 import {
 	buildProjectSourceMapperAsync,
 	type SourceMapper,
-} from "#test/integration/source-mapper/project-source-mapper.ts";
-import { posixPath } from "#test/mocks/posix-path.ts";
+} from "#test/helpers/integration/project-source-mapper.ts";
+import { posixPath } from "#test/helpers/posix-path.ts";
 
 const FIXTURE_DIR = path.resolve(__dirname, "../../fixtures");
 

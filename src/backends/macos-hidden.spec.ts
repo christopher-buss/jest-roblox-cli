@@ -1,10 +1,10 @@
+import { createMemoryFileSystem } from "@isentinel/dev-vitest-utils";
 import { fromAny } from "@total-typescript/shoehorn";
 
 import { Script } from "node:vm";
 import { describe, it } from "vitest";
 
-import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
-import { FakeHelper, type FakeHelperSpawnCall } from "#test/mocks/spec-fake-helper.ts";
+import { FakeHelper, type FakeHelperSpawnCall } from "#test/helpers/unit/spec-fake-helper.ts";
 import type { ChildProcessRunner } from "../utils/child-process.ts";
 import { findAppBundle, launchHiddenOnMacos } from "./macos-hidden.ts";
 

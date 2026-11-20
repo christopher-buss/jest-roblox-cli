@@ -2,7 +2,7 @@ import { fromAny, fromPartial } from "@total-typescript/shoehorn";
 
 import { describe, it } from "vitest";
 
-import { makeJestResult } from "#test/mocks/spec-results.ts";
+import { makeJestResult } from "#test/helpers/unit/spec-results.ts";
 import { mergeJestResults, mergeResults } from "./jest-result-merge.ts";
 import type { JestResult, SnapshotSummary, TestFileResult } from "./jest-result-types.ts";
 

@@ -1,3 +1,4 @@
+import { createMemoryFileSystem } from "@isentinel/dev-vitest-utils";
 import type { RojoProject } from "@isentinel/rojo-utils";
 
 import * as path from "node:path";
@@ -9,10 +10,9 @@ import {
 	PROJECT_DIR,
 	readingOutDirectory,
 	seedFilesystem,
-} from "#test/mocks/coverage-spec-prepare-seed.ts";
-import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
-import { posixRoot } from "#test/mocks/posix-path.ts";
-import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
+} from "#test/helpers/unit/coverage-spec-prepare-seed.ts";
+import { posixRoot } from "#test/helpers/unit/posix-root.ts";
+import { createResolvedConfig } from "#test/helpers/unit/resolved-config.ts";
 import type { ResolvedConfig } from "../config/resolved-config.ts";
 import type { TsconfigReader } from "../tsconfig/tsconfig-mappings.ts";
 import type { FileSystem } from "../utils/file-system.ts";

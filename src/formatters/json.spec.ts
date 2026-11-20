@@ -1,8 +1,9 @@
+import { createMemoryFileSystem } from "@isentinel/dev-vitest-utils";
+
 import * as path from "node:path";
 import { describe, it } from "vitest";
 
-import { MINIMAL_RESULT } from "#test/mocks/format-results.ts";
-import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
+import { MINIMAL_RESULT } from "#test/helpers/unit/format-results.ts";
 import type { JestResult } from "../types/jest-result-types.ts";
 import { formatJson, writeJsonFileAsync } from "./json.ts";
 

@@ -18,7 +18,6 @@ const RUN_ORCHESTRATION = `^${SOURCE_ROOT}/(?:(?:artifacts|run|workspace)/|execu
 const OUTPUT_LAYER = `^${SOURCE_ROOT}/output/`;
 const ORCHESTRATION = `^${SOURCE_ROOT}/(?:backends|staging)/|${RUN_ORCHESTRATION}`;
 const E2E_ROOT = path.posix.join(TEST_ROOT, "e2e");
-const HARNESS_ROOT = path.posix.join(TEST_ROOT, "harness");
 const PUBLISHED_INTERFACE = [
 	ENTRY_POINTS,
 	`^${RegExp.escape(PROJECT_ROOT)}/(?:bin/|loaders/luau-raw[.]mjs$)`,
@@ -150,7 +149,9 @@ const ARCHITECTURE_RULES = [
 		comment:
 			"E2E reaches production through the published entries and the wire constants; each retrofit reaches a unit no entry can isolate.",
 		from: {
-			path: `^(?:${RegExp.escape(E2E_ROOT)}|${RegExp.escape(HARNESS_ROOT)})/`,
+			path: [E2E_ROOT, path.posix.join(TEST_ROOT, "helpers/e2e")].map(
+				(root) => `^${RegExp.escape(root)}/`,
+			),
 			pathNot: E2E_PRIVATE_IMPORT_RETROFITS,
 		},
 		severity: "error",
@@ -228,5 +229,5 @@ export default createDependencyCruiserConfig({
 	sourceRoots: SOURCE_ROOTS,
 	testRoot: TEST_ROOT,
 	tsConfig: path.join(import.meta.dirname, "tsconfig.json"),
-	unitHelperRoots: ["mocks", "setup"].map((root) => path.posix.join(TEST_ROOT, root)),
+	unitHelperRoots: ["helpers/unit", "setup"].map((root) => path.posix.join(TEST_ROOT, root)),
 });

@@ -1,7 +1,7 @@
 import process from "node:process";
 import { describe, it, vi } from "vitest";
 
-import { NOOP_PROGRESS } from "#test/mocks/noop-progress.ts";
+import { NOOP_PROGRESS } from "#test/helpers/unit/noop-progress.ts";
 import type { RunHeaderInput } from "./run-header.ts";
 import { emitRunHeader } from "./run-header.ts";
 

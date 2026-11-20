@@ -3,7 +3,7 @@ import { fromAny } from "@total-typescript/shoehorn";
 
 import { describe, it } from "vitest";
 
-import { COLLECTED_FIXTURES } from "#test/mocks/coverage-collected-fixtures.ts";
+import { COLLECTED_FIXTURES } from "#test/helpers/unit/coverage-collected-fixtures.ts";
 import type { CollectorResult } from "./coverage-accumulator.ts";
 import { insertProbes } from "./probe-inserter.ts";
 

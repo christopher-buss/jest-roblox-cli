@@ -1,10 +1,12 @@
+import type { MemoryFileSystem, MemoryVolume } from "@isentinel/dev-vitest-utils";
+import { createMemoryFileSystem } from "@isentinel/dev-vitest-utils";
+
 import * as path from "node:path";
 import { describe, it, vi } from "vitest";
 
-import { copyIgnoreMatcher } from "#test/mocks/coverage-copy-ignore.ts";
-import type { MemoryFileSystem, MemoryVolume } from "#test/mocks/memory-file-system.ts";
-import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
-import { posixPath, posixRoot } from "#test/mocks/posix-path.ts";
+import { posixPath } from "#test/helpers/posix-path.ts";
+import { copyIgnoreMatcher } from "#test/helpers/unit/coverage-copy-ignore.ts";
+import { posixRoot } from "#test/helpers/unit/posix-root.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import type { PosixRoot } from "../utils/normalize-windows-path.ts";
 import type { PreparedSpine, PrepareSpineOptions } from "./spine.ts";

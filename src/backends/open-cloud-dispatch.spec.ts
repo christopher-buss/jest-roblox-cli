@@ -2,9 +2,9 @@ import type { ScriptResult } from "@isentinel/roblox-runner";
 
 import { describe, it, vi } from "vitest";
 
-import { projectJob } from "#test/mocks/project-job.ts";
-import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
-import { envelope, packageJobIndex, scriptResult } from "#test/mocks/spec-open-cloud.ts";
+import { projectJob } from "#test/helpers/unit/project-job.ts";
+import { createResolvedConfig } from "#test/helpers/unit/resolved-config.ts";
+import { envelope, packageJobIndex, scriptResult } from "#test/helpers/unit/spec-open-cloud.ts";
 import type { ConfiguredJob } from "../executor/executor-types.ts";
 import type { ParallelOption } from "./interface.ts";
 import {

@@ -1,9 +1,9 @@
+import { createMemoryFileSystem } from "@isentinel/dev-vitest-utils";
 import { fromAny } from "@total-typescript/shoehorn";
 
 import * as path from "node:path";
 import { describe, it, vi } from "vitest";
 
-import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import type { TsconfigMapping, TsconfigReader } from "./tsconfig-mappings.ts";
 import {

@@ -5,7 +5,7 @@ import {
 	readHarness,
 	readLuauModule,
 	spawnHarness,
-} from "#test/luau/lute-harness.ts";
+} from "#test/helpers/integration/lute-harness.ts";
 
 // Drives the shared `runner.timing` envelope builder under lute. Pure module, no
 // dependencies to inline. Requires `lute` on PATH (mise, in dev and CI).

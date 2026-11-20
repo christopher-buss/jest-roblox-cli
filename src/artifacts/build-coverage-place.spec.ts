@@ -1,12 +1,12 @@
+import { createMemoryFileSystem } from "@isentinel/dev-vitest-utils";
 import { fromAny } from "@total-typescript/shoehorn";
 
 import * as path from "node:path";
 import { describe, it, vi } from "vitest";
 
-import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
-import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
-import { createRunSeams } from "#test/mocks/run-seams.ts";
-import { basenameSetupResolver } from "#test/mocks/setup-resolver.ts";
+import { createResolvedConfig } from "#test/helpers/unit/resolved-config.ts";
+import { createRunSeams } from "#test/helpers/unit/run-seams.ts";
+import { basenameSetupResolver } from "#test/helpers/unit/setup-resolver.ts";
 import type { ResolvedProjectConfig } from "../config/projects.ts";
 import type { ResolvedConfig } from "../config/resolved-config.ts";
 import type { RunSeams } from "../run/seams.ts";

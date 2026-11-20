@@ -2,7 +2,7 @@ import { fromPartial } from "@total-typescript/shoehorn";
 
 import { describe, it, vi } from "vitest";
 
-import { MANIFEST_VERSION } from "#test/mocks/run-constants.ts";
+import { MANIFEST_VERSION } from "#test/helpers/unit/run-constants.ts";
 import type { WorkspaceRunOptions } from "../config/resolved-config.ts";
 import type { CoverageMapper } from "../coverage-report/mapper.ts";
 import type { ExecuteResult } from "../executor/executor-types.ts";

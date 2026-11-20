@@ -1,6 +1,6 @@
 import { describe, it } from "vitest";
 
-import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
+import { createResolvedConfig } from "#test/helpers/unit/resolved-config.ts";
 import { isShardedParallel, pickRunSettings } from "./interface.ts";
 
 describe(isShardedParallel, () => {

@@ -1,7 +1,7 @@
 import { describe, it } from "vitest";
 
-import { createPlainStyles } from "#test/mocks/format-plain-styles.ts";
-import { createTaggedStyles } from "#test/mocks/format-tagged-styles.ts";
+import { createPlainStyles } from "#test/helpers/unit/format-plain-styles.ts";
+import { createTaggedStyles } from "#test/helpers/unit/format-tagged-styles.ts";
 import type { SourceSnippet } from "../source-mapper/index.ts";
 import type { Styles } from "../terminal/palette.ts";
 import { formatSourceSnippet } from "./snippet-render.ts";

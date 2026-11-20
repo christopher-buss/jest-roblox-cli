@@ -1,10 +1,10 @@
+import { createMemoryFileSystem } from "@isentinel/dev-vitest-utils";
 import { fromAny } from "@total-typescript/shoehorn";
 
 import { describe, it } from "vitest";
 
-import { fakeTimingCollector } from "#test/mocks/fake-timing-collector.ts";
-import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
-import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
+import { fakeTimingCollector } from "#test/helpers/unit/fake-timing-collector.ts";
+import { createResolvedConfig } from "#test/helpers/unit/resolved-config.ts";
 import type { Backend } from "../backends/dispatch-request.ts";
 import type { ConfiguredJob } from "./executor-types.ts";
 import { executeJobsAsync } from "./executor.ts";

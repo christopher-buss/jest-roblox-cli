@@ -1,8 +1,9 @@
+import { createMemoryFileSystem } from "@isentinel/dev-vitest-utils";
+
 import { Buffer } from "node:buffer";
 import * as path from "node:path";
 import { describe, it, vi } from "vitest";
 
-import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import type { FormatterEntry } from "../config/formatter-selection.ts";
 import type { RunLogOptions } from "./run-log.ts";
 import { withRunLogAsync } from "./run-log.ts";

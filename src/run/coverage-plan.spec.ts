@@ -1,9 +1,9 @@
+import { createMemoryFileSystem } from "@isentinel/dev-vitest-utils";
 import { fromAny } from "@total-typescript/shoehorn";
 
 import { describe, it } from "vitest";
 
-import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
-import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
+import { createResolvedConfig } from "#test/helpers/unit/resolved-config.ts";
 import { buildProjectCoveragePlan } from "./coverage-plan.ts";
 
 describe(buildProjectCoveragePlan, () => {

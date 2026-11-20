@@ -1,12 +1,12 @@
+import { createMemoryFileSystem } from "@isentinel/dev-vitest-utils";
 import { fromAny, fromPartial } from "@total-typescript/shoehorn";
 
 import { describe, it, type TestContext } from "vitest";
 
-import { createCoverageMap, span } from "#test/mocks/coverage-spec-mapper.ts";
-import type { CoverageMapFile, FileLocation } from "#test/mocks/coverage-spec-mapper.ts";
-import { MANIFEST_VERSION } from "#test/mocks/coverage-versions.ts";
-import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
-import { buildSourceMap } from "#test/mocks/source-map.ts";
+import { createCoverageMap, span } from "#test/helpers/unit/coverage-spec-mapper.ts";
+import type { CoverageMapFile, FileLocation } from "#test/helpers/unit/coverage-spec-mapper.ts";
+import { MANIFEST_VERSION } from "#test/helpers/unit/coverage-versions.ts";
+import { buildSourceMap } from "#test/helpers/unit/source-map.ts";
 import type { RawCoverageData } from "../coverage-data/coverage-types.ts";
 import type { CoverageManifest } from "../coverage-data/manifest.ts";
 import type { FileSystem } from "../utils/file-system.ts";

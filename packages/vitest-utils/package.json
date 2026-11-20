@@ -1,0 +1,88 @@
+{
+	"name": "@isentinel/dev-vitest-utils",
+	"version": "0.1.0",
+	"private": true,
+	"description": "Shared Vitest setup files and test helpers for the Node packages",
+	"license": "MIT",
+	"author": "Christopher Buss <christopher.buss@pm.me> (https://github.com/christopher-buss)",
+	"sideEffects": [
+		"./src/setup/*.ts"
+	],
+	"type": "module",
+	"imports": {
+		"#src/*": "./src/*"
+	},
+	"exports": {
+		".": {
+			"source": "./src/index.ts",
+			"default": "./src/index.ts"
+		},
+		"./jest-extended": {
+			"types": "./src/vitest-jest-extended.d.ts",
+			"source": "./src/vitest-jest-extended.d.ts"
+		},
+		"./package.json": "./package.json",
+		"./setup/jest-extended": {
+			"source": "./src/setup/jest-extended.ts",
+			"default": "./src/setup/jest-extended.ts"
+		},
+		"./setup/no-process-start": {
+			"source": "./src/setup/no-process-start.ts",
+			"default": "./src/setup/no-process-start.ts"
+		}
+	},
+	"types": "./src/index.ts",
+	"files": [
+		"src"
+	],
+	"scripts": {
+		"boundaries": "cd ../.. && dependency-cruiser --config packages/vitest-utils/dependency-cruiser.config.ts --output-type err -- packages/vitest-utils/src",
+		"cpd": "pnpm cpd-production && pnpm cpd-spec",
+		"cpd-production": "jscpd --config .jscpd.json --no-tips",
+		"cpd-spec": "jscpd --config .jscpd.spec.json --no-tips",
+		"knip": "pnpm knip-production && cd ../.. && knip --config packages/vitest-utils/knip.json --workspace packages/vitest-utils",
+		"knip-production": "cd ../.. && knip --production --config packages/vitest-utils/knip.json --workspace packages/vitest-utils",
+		"lint": "oxlint && eslint --cache",
+		"mutation": "stryker run stryker.config.ts",
+		"test": "vitest run --project unit --project type --coverage",
+		"test-type": "vitest run --project type",
+		"test-unit": "vitest run --project unit --coverage.enabled=false",
+		"typecheck": "tsc -b"
+	},
+	"dependencies": {
+		"@total-typescript/shoehorn": "0.1.2",
+		"jest-extended": "7.0.0",
+		"memfs": "4.68.1"
+	},
+	"devDependencies": {
+		"@isentinel/eslint-config": "7.1.0",
+		"@isentinel/tsconfig": "3.0.0",
+		"@stryker-mutator/core": "10.1.1",
+		"@stryker-mutator/typescript-checker": "10.1.1",
+		"@stryker-mutator/vitest-runner": "10.1.1",
+		"@types/node": "26.6.6",
+		"@vitest/coverage-v8": "5.1.0",
+		"@vitest/eslint-plugin": "1.6.27",
+		"dependency-cruiser": "18.4.0",
+		"eslint": "10.15.0",
+		"eslint-plugin-jest-extended": "3.0.1",
+		"eslint-plugin-n": "18.5.0",
+		"eslint-plugin-pnpm": "1.8.0",
+		"jscpd": "5.4.1",
+		"knip": "6.29.0",
+		"typescript": "6.0.3",
+		"vitest": "5.1.0"
+	},
+	"peerDependencies": {
+		"vitest": "*"
+	},
+	"engines": {
+		"node": ">=26.0.0"
+	},
+	"devEngines": {
+		"packageManager": {
+			"name": "pnpm",
+			"version": "12.21.0"
+		}
+	}
+}

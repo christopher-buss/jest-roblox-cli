@@ -6,7 +6,7 @@ import {
 	readLuauTree,
 	spawnHarness,
 	stubbedModules,
-} from "#test/luau/lute-harness.ts";
+} from "#test/helpers/integration/lute-harness.ts";
 
 // Drives the shared infinite-yield watchdog under lute. Its only engine
 // dependency is LogService, which the harness fakes. Requires `lute` on PATH

@@ -1,15 +1,15 @@
+import type { MemoryFileSystem } from "@isentinel/dev-vitest-utils";
+import { createMemoryFileSystem } from "@isentinel/dev-vitest-utils";
 import { fromAny } from "@total-typescript/shoehorn";
 
 import * as path from "node:path";
 import type { Mock } from "vitest";
 import { describe, it, vi } from "vitest";
 
-import { fakeTimingCollector } from "#test/mocks/fake-timing-collector.ts";
-import type { MemoryFileSystem } from "#test/mocks/memory-file-system.ts";
-import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
-import { NOOP_PROGRESS } from "#test/mocks/noop-progress.ts";
-import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
-import { writingRojoExec } from "#test/mocks/rojo-exec.ts";
+import { fakeTimingCollector } from "#test/helpers/unit/fake-timing-collector.ts";
+import { NOOP_PROGRESS } from "#test/helpers/unit/noop-progress.ts";
+import { createResolvedConfig } from "#test/helpers/unit/resolved-config.ts";
+import { writingRojoExec } from "#test/helpers/unit/rojo-exec.ts";
 import type { ResolvedProjectConfig } from "../config/projects.ts";
 import type { WorkspacePackageCoverage } from "../shadow/workspace-prepare.ts";
 import type { ChildProcessRunner } from "../utils/child-process.ts";

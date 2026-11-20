@@ -1,3 +1,4 @@
+import { createMemoryFileSystem } from "@isentinel/dev-vitest-utils";
 import { fromAny, fromPartial } from "@total-typescript/shoehorn";
 
 import path from "node:path";
@@ -5,11 +6,10 @@ import process from "node:process";
 import type { Except } from "type-fest";
 import { describe, it } from "vitest";
 
-import { clockTimingCollector } from "#test/mocks/clock-timing-collector.ts";
-import { createPassingResult } from "#test/mocks/executor-spec-results.ts";
-import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
-import { projectJob } from "#test/mocks/project-job.ts";
-import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
+import { clockTimingCollector } from "#test/helpers/unit/clock-timing-collector.ts";
+import { createPassingResult } from "#test/helpers/unit/executor-spec-results.ts";
+import { projectJob } from "#test/helpers/unit/project-job.ts";
+import { createResolvedConfig } from "#test/helpers/unit/resolved-config.ts";
 import type { RawBackendEntry } from "../backends/interface.ts";
 import type { GapRecord } from "../gaps/gap-types.ts";
 import type { ConfiguredJob, ExecuteResult } from "./executor-types.ts";

@@ -1,10 +1,10 @@
+import { createMemoryFileSystem } from "@isentinel/dev-vitest-utils";
 import { loadLuauParser } from "@isentinel/luau-ast/parser";
 
 import * as path from "node:path";
 import { describe, it } from "vitest";
 
-import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
-import { posixPath } from "#test/mocks/posix-path.ts";
+import { posixPath } from "#test/helpers/posix-path.ts";
 import { createReaderCache } from "./module-dependencies.ts";
 
 const ROOT = path.resolve("/project");

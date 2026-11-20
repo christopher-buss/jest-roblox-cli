@@ -1,7 +1,8 @@
+import { createMemoryFileSystem } from "@isentinel/dev-vitest-utils";
+
 import process from "node:process";
 import { describe, it, vi } from "vitest";
 
-import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { createGlobCache, globSync, matchesGlobPattern } from "./glob.ts";
 
 const CWD = "/project";

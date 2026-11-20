@@ -41,7 +41,7 @@ export default defineConfig<OxlintConfig>({
 		},
 		{
 			name: "project/e2e-global-setup",
-			files: ["test/e2e/global-setup.ts"],
+			files: ["test/helpers/e2e/global-setup.ts"],
 			rules: {
 				"import/no-default-export": "off",
 			},

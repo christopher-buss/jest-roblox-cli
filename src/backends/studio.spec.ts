@@ -4,21 +4,21 @@ import { type } from "arktype";
 import { Buffer } from "node:buffer";
 import { assert, describe, it, type TestContext, vi } from "vitest";
 
-import type { MockWebSocketServer } from "#test/mocks/mock-web-socket-server.ts";
+import type { MockWebSocketServer } from "#test/helpers/unit/mock-web-socket-server.ts";
 import {
 	getLastCreatedServer,
 	mockWebSocketServerFactory as webSocketServerFactory,
-} from "#test/mocks/mock-web-socket-server.ts";
-import { MockWebSocket } from "#test/mocks/mock-web-socket.ts";
-import { projectJob } from "#test/mocks/project-job.ts";
-import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
+} from "#test/helpers/unit/mock-web-socket-server.ts";
+import { MockWebSocket } from "#test/helpers/unit/mock-web-socket.ts";
+import { projectJob } from "#test/helpers/unit/project-job.ts";
+import { createResolvedConfig } from "#test/helpers/unit/resolved-config.ts";
 import {
 	type ConfiguredJobs,
 	envelope,
 	studioRequest,
 	successResult,
 	timed,
-} from "#test/mocks/studio-request.ts";
+} from "#test/helpers/unit/studio-request.ts";
 import type { ResolvedConfig } from "../config/resolved-config.ts";
 import type { ConfiguredJob } from "../executor/executor-types.ts";
 import type { RunProgress } from "../progress/run-progress.ts";

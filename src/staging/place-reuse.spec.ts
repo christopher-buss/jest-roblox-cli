@@ -1,3 +1,4 @@
+import { createMemoryFileSystem } from "@isentinel/dev-vitest-utils";
 import { fromAny } from "@total-typescript/shoehorn";
 
 import type { Buffer } from "node:buffer";
@@ -7,9 +8,8 @@ import { setTimeout as delayAsync } from "node:timers/promises";
 import { describe, it, vi } from "vitest";
 import type { MockInstance } from "vitest";
 
-import { ageFile } from "#test/mocks/aged-file.ts";
-import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
-import { MANIFEST_VERSION } from "#test/mocks/run-constants.ts";
+import { ageFile } from "#test/helpers/unit/aged-file.ts";
+import { MANIFEST_VERSION } from "#test/helpers/unit/run-constants.ts";
 import type { CoverageManifest } from "../coverage-data/manifest.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import {

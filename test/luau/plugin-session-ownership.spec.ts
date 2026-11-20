@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { describe, it } from "vitest";
 
-import { readHarness, spawnHarness } from "#test/luau/lute-harness.ts";
+import { readHarness, spawnHarness } from "#test/helpers/integration/lute-harness.ts";
 
 const REPOSITORY_DIRECTORY = path.resolve(import.meta.dirname, "../..");
 const PLUGIN_SOURCE = fs.readFileSync(

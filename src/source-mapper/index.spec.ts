@@ -1,10 +1,11 @@
+import { createMemoryFileSystem } from "@isentinel/dev-vitest-utils";
+
 import * as path from "node:path";
 import { describe, it } from "vitest";
 
-import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
-import { posixPath } from "#test/mocks/posix-path.ts";
-import type { SourceMapSegment } from "#test/mocks/source-map.ts";
-import { buildSourceMap } from "#test/mocks/source-map.ts";
+import { posixPath } from "#test/helpers/posix-path.ts";
+import type { SourceMapSegment } from "#test/helpers/unit/source-map.ts";
+import { buildSourceMap } from "#test/helpers/unit/source-map.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import type { SourceMapper } from "./index.ts";
 import { combineSourceMappers, createSourceMapper, getSourceSnippet } from "./index.ts";

@@ -1,9 +1,10 @@
+import { createMemoryFileSystem } from "@isentinel/dev-vitest-utils";
+
 import { describe, it, vi } from "vitest";
 
-import { copyIgnoreMatcher } from "#test/mocks/coverage-copy-ignore.ts";
-import { MANIFEST_VERSION } from "#test/mocks/coverage-versions.ts";
-import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
-import { posixRoot } from "#test/mocks/posix-path.ts";
+import { copyIgnoreMatcher } from "#test/helpers/unit/coverage-copy-ignore.ts";
+import { MANIFEST_VERSION } from "#test/helpers/unit/coverage-versions.ts";
+import { posixRoot } from "#test/helpers/unit/posix-root.ts";
 import type { CoverageManifest } from "../coverage-data/manifest.ts";
 import { prepareShadowRoot } from "./shadow-root.ts";
 

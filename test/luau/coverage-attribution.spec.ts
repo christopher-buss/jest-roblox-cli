@@ -5,7 +5,7 @@ import {
 	readHarness,
 	readLuauModule,
 	spawnHarness,
-} from "#test/luau/lute-harness.ts";
+} from "#test/helpers/integration/lute-harness.ts";
 
 // Inlines the attribution module into the harness as the runner welds it
 // and runs it under lute (on PATH via mise); a failed assertion exits

@@ -2,7 +2,7 @@ import { fromAny } from "@total-typescript/shoehorn";
 
 import { describe, it } from "vitest";
 
-import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
+import { createResolvedConfig } from "#test/helpers/unit/resolved-config.ts";
 import type { ResolvedConfig } from "../config/resolved-config.ts";
 import { buildWorkspaceCoveragePlan } from "./coverage-plan.ts";
 import type { LoadedPackage } from "./package-loader.ts";

@@ -1,11 +1,11 @@
+import { createMemoryFileSystem } from "@isentinel/dev-vitest-utils";
 import type { RojoTreeNode } from "@isentinel/rojo-utils";
 import { fromAny } from "@total-typescript/shoehorn";
 
 import { describe, it } from "vitest";
 
-import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
-import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
-import { configErrorLike } from "#test/mocks/run-config-error.ts";
+import { createResolvedConfig } from "#test/helpers/unit/resolved-config.ts";
+import { configErrorLike } from "#test/helpers/unit/run-config-error.ts";
 import type { BuildImplicitProjectOptions } from "./implicit-project.ts";
 import { buildImplicitProject } from "./implicit-project.ts";
 import type { ResolvedConfig } from "./resolved-config.ts";

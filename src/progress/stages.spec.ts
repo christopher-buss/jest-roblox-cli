@@ -1,8 +1,9 @@
+import { createMemoryFileSystem } from "@isentinel/dev-vitest-utils";
+
 import { Buffer } from "node:buffer";
 import * as path from "node:path";
 import { describe, it, vi } from "vitest";
 
-import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { describePlaceFile, describeProjectCount, LAST_STAGE, STAGE_IDS } from "./stages.ts";
 
 describe("the stage the block settles on", () => {

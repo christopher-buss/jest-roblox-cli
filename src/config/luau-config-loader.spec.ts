@@ -1,8 +1,9 @@
+import { createMemoryFileSystem } from "@isentinel/dev-vitest-utils";
+
 import * as path from "node:path";
 import { describe, it } from "vitest";
 
-import { createLuteChildProcess } from "#test/mocks/lute-child-process.ts";
-import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
+import { createLuteChildProcess } from "#test/helpers/unit/lute-child-process.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import { findLuauConfigFile, loadLuauConfig } from "./luau-config-loader.ts";
 

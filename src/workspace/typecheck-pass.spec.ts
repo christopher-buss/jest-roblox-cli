@@ -1,6 +1,6 @@
 import { describe, it, vi } from "vitest";
 
-import { makeJestResult } from "#test/mocks/spec-results.ts";
+import { makeJestResult } from "#test/helpers/unit/spec-results.ts";
 import type { RunTypecheck } from "../typecheck/runner.ts";
 import { runWorkspaceTypecheckPassAsync } from "./typecheck-pass.ts";
 

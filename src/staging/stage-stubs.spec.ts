@@ -1,8 +1,9 @@
+import { createMemoryFileSystem } from "@isentinel/dev-vitest-utils";
+
 import * as path from "node:path";
 import { describe, it } from "vitest";
 
-import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
-import { recordingTimingCollector } from "#test/mocks/workspace-timing-recorder.ts";
+import { recordingTimingCollector } from "#test/helpers/unit/workspace-timing-recorder.ts";
 import { stageProjectStubs, stubCacheRoot } from "./stage-stubs.ts";
 
 describe(stageProjectStubs, () => {

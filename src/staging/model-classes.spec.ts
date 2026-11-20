@@ -1,10 +1,11 @@
+import { createMemoryFileSystem } from "@isentinel/dev-vitest-utils";
+
 // cspell:ignore SSTR
 import { Buffer } from "node:buffer";
 import * as path from "node:path";
 import { assert, describe, it, vi } from "vitest";
 
 import compressedModel from "#test/fixtures/model-classes/rojo-compressed.json" with { type: "json" };
-import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { isModelFile, readDeclaredClasses } from "./model-classes.ts";
 
 const FIXTURES = path.join(import.meta.dirname, "__fixtures__/pinned");

@@ -1,8 +1,8 @@
+import { createMemoryFileSystem } from "@isentinel/dev-vitest-utils";
 import { fromPartial } from "@total-typescript/shoehorn";
 
 import { describe, it } from "vitest";
 
-import { memoryFileSystem } from "#test/helpers/unit/file-system";
 import { fixtureCstParser } from "#test/helpers/unit/trees";
 import type { LuauParser } from "./parser.ts";
 import { createAliasLookup } from "./require-aliases.ts";
@@ -11,7 +11,7 @@ const ALIASES =
 	'return { luau = { aliases = { Shared = "./shared", ["Deep-Lib"] = "lib/deep", abs = "/abs/root" } } }\n';
 
 function lookupOver(files: Record<string, string>) {
-	const { fileSystem, volume } = memoryFileSystem(files);
+	const { fileSystem, volume } = createMemoryFileSystem(files, "/");
 	return { lookup: createAliasLookup({ fileSystem, parser: fixtureCstParser() }), volume };
 }
 
@@ -152,7 +152,10 @@ describe(createAliasLookup, () => {
 	it("should report a .config.luau that does not parse", ({ expect }) => {
 		expect.assertions(1);
 
-		const { fileSystem } = memoryFileSystem({ "/project/.config.luau": "return {\n" });
+		const { fileSystem } = createMemoryFileSystem(
+			{ "/project/.config.luau": "return {\n" },
+			"/",
+		);
 		const parser = fromPartial<LuauParser>({
 			parseCst: () => ({ errors: ["Expected identifier", "Expected end"], ok: false }),
 		});

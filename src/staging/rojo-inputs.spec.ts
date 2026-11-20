@@ -1,10 +1,11 @@
+import type { MemoryFileSystem } from "@isentinel/dev-vitest-utils";
+import { createMemoryFileSystem } from "@isentinel/dev-vitest-utils";
+
 import type { Buffer } from "node:buffer";
 import process from "node:process";
 import { assert, describe, it, type MockInstance, type TestContext, vi } from "vitest";
 
-import { writeAgedFile } from "#test/mocks/aged-file.ts";
-import type { MemoryFileSystem } from "#test/mocks/memory-file-system.ts";
-import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
+import { writeAgedFile } from "#test/helpers/unit/aged-file.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import { tryComputeRojoInputsHashAsync } from "./rojo-inputs.ts";
 

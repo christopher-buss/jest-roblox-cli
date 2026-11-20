@@ -1,3 +1,4 @@
+import type { MemoryFileSystem } from "@isentinel/dev-vitest-utils";
 import { fromAny } from "@total-typescript/shoehorn";
 
 import { type } from "arktype";
@@ -6,15 +7,14 @@ import * as path from "node:path";
 import type { Mock } from "vitest";
 import { describe, it, vi } from "vitest";
 
-import type { MemoryFileSystem } from "#test/mocks/memory-file-system.ts";
-import { writingRojoExec } from "#test/mocks/rojo-exec.ts";
+import { writingRojoExec } from "#test/helpers/unit/rojo-exec.ts";
 import {
 	mountOf,
 	seed as seedVolume,
 	staged,
 	stagedProject,
 	stagedProjectSchema,
-} from "#test/mocks/staged-project.ts";
+} from "#test/helpers/unit/staged-project.ts";
 import type { ChildProcessRunner } from "../utils/child-process.ts";
 import { demotePinnedMountsAsync } from "./pinned-mounts.ts";
 

@@ -41,9 +41,9 @@ const setupFiles = ["./test/setup/enable-colors.ts"];
 const LIVE_DIRECTORY = "test/e2e/live";
 
 /**
- * The fixture sandbox root (see `test/harness/sandbox-root.ts`) holds copies
- * of Roblox fixtures, spec files included, and an interrupted run leaves one
- * behind. Every project that can glob into it subtracts it.
+ * The fixture sandbox root (see `test/helpers/integration/sandbox-root.ts`)
+ * holds copies of Roblox fixtures, spec files included, and an interrupted run
+ * leaves one behind. Every project that can glob into it subtracts it.
  *
  * Two patterns, because they do different jobs: the deep form is what stops a
  * file being collected, and the bare directory form is what makes the walker
@@ -354,7 +354,7 @@ export default mergeConfig(
 							`${LIVE_DIRECTORY}/**`,
 							"test/e2e/fixtures/**",
 						],
-						globalSetup: ["./test/e2e/global-setup.ts"],
+						globalSetup: ["./test/helpers/e2e/global-setup.ts"],
 						// `createFixtureSandbox` deletes its temp tree in
 						// `onTestFinished`, and a `--coverage` shadow tree
 						// outruns the default `hookTimeout` on Windows under I/O

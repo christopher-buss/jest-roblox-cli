@@ -7,16 +7,20 @@ import {
 	EXEC_ERROR_RESULT,
 	MIXED_WITH_EXEC_ERROR_RESULT,
 	TIMED_OUT_RESULT,
-} from "#test/mocks/format-error-results.ts";
-import { createPlainStyles } from "#test/mocks/format-plain-styles.ts";
-import { EMPTY_FILE_RESULT, MIXED_RESULT, PASSING_RESULT } from "#test/mocks/format-results.ts";
-import { createTaggedStyles } from "#test/mocks/format-tagged-styles.ts";
+} from "#test/helpers/unit/format-error-results.ts";
+import { createPlainStyles } from "#test/helpers/unit/format-plain-styles.ts";
+import {
+	EMPTY_FILE_RESULT,
+	MIXED_RESULT,
+	PASSING_RESULT,
+} from "#test/helpers/unit/format-results.ts";
+import { createTaggedStyles } from "#test/helpers/unit/format-tagged-styles.ts";
 import {
 	TIMING,
 	TIMING_COVERAGE,
 	TIMING_NO_UPLOAD,
 	TIMING_STAGING,
-} from "#test/mocks/format-timing.ts";
+} from "#test/helpers/unit/format-timing.ts";
 import type { JestResult, SnapshotSummary, TestFileResult } from "../types/jest-result-types.ts";
 import type { TimingResult } from "../types/timing-types.ts";
 import type { FormatOptions } from "./shared.ts";

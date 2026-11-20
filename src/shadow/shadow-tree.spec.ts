@@ -1,11 +1,13 @@
+import type { MemoryVolume } from "@isentinel/dev-vitest-utils";
+import { createMemoryFileSystem } from "@isentinel/dev-vitest-utils";
+
 import * as path from "node:path";
 import { describe, it, vi } from "vitest";
 
-import { MANIFEST_VERSION } from "#test/mocks/coverage-versions.ts";
-import type { MemoryVolume } from "#test/mocks/memory-file-system.ts";
-import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
-import { posixPath, posixRoot } from "#test/mocks/posix-path.ts";
-import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
+import { posixPath } from "#test/helpers/posix-path.ts";
+import { MANIFEST_VERSION } from "#test/helpers/unit/coverage-versions.ts";
+import { posixRoot } from "#test/helpers/unit/posix-root.ts";
+import { createResolvedConfig } from "#test/helpers/unit/resolved-config.ts";
 import type { CoverageManifest } from "../coverage-data/manifest.ts";
 import type { Instrumenter } from "../instrument/instrumenter.ts";
 import type { FileSystem } from "../utils/file-system.ts";

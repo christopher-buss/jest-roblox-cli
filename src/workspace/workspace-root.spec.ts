@@ -1,7 +1,8 @@
+import { createMemoryFileSystem } from "@isentinel/dev-vitest-utils";
+
 import * as path from "node:path";
 import { describe, it } from "vitest";
 
-import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { discoverWorkspaceRoot } from "./workspace-root.ts";
 
 const ROOT = path.resolve("/repo");

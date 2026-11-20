@@ -4,7 +4,7 @@
 		"scripts",
 		"loaders",
 		"bin",
-		"test/mocks",
+		"test/helpers",
 		"test/setup",
 		"test/e2e",
 		"test/integration",

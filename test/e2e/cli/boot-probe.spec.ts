@@ -2,7 +2,10 @@ import { appendFileSync } from "node:fs";
 import path from "node:path";
 import { describe, it } from "vitest";
 
-import { isTaskCreatePost, startFakeOpenCloudServerAsync } from "#test/harness/fake-open-cloud.ts";
+import {
+	isTaskCreatePost,
+	startFakeOpenCloudServerAsync,
+} from "#test/helpers/integration/fake-open-cloud.ts";
 import {
 	buildMixedOutput,
 	buildPassingPayload,
@@ -11,7 +14,7 @@ import {
 	patchSandboxConfig,
 	rojoOnPath,
 	runCliAsync,
-} from "#test/harness/helpers.ts";
+} from "#test/helpers/integration/helpers.ts";
 
 const RBXTS_FIXTURE = path.resolve(__dirname, "../fixtures/rbxts-project");
 

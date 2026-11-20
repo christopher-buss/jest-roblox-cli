@@ -2,14 +2,14 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { describe, it } from "vitest";
 
-import { startFakeOpenCloudServerAsync } from "#test/harness/fake-open-cloud.ts";
+import { startFakeOpenCloudServerAsync } from "#test/helpers/integration/fake-open-cloud.ts";
 import {
 	buildPassingJestOutput,
 	createFixtureSandbox,
 	createOpenCloudEnvironment,
 	rojoOnPath,
 	runCliAsync,
-} from "#test/harness/helpers.ts";
+} from "#test/helpers/integration/helpers.ts";
 
 const WORKSPACE_FIXTURE_PATH = path.resolve(__dirname, "../fixtures/workspace");
 

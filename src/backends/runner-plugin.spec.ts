@@ -1,11 +1,11 @@
 // cspell:ignore LOCALAPPDATA
+import { createMemoryFileSystem } from "@isentinel/dev-vitest-utils";
 import { fromAny } from "@total-typescript/shoehorn";
 
 import { type } from "arktype";
 import { assert, describe, it, vi } from "vitest";
 
-import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
-import { writingRojoExec } from "#test/mocks/rojo-exec.ts";
+import { writingRojoExec } from "#test/helpers/unit/rojo-exec.ts";
 import type { ChildProcessRunner } from "../utils/child-process.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import { installRunnerPluginAsync } from "./runner-plugin.ts";

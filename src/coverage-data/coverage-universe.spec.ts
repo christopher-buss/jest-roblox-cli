@@ -2,7 +2,7 @@ import * as path from "node:path";
 import process from "node:process";
 import { describe, it } from "vitest";
 
-import { posixPath } from "#test/mocks/posix-path.ts";
+import { posixPath } from "#test/helpers/posix-path.ts";
 import type { MappedCoverageResult, MappedFileCoverage } from "../coverage-report/mapper-types.ts";
 import {
 	createCoverageUniverseMatcher,

@@ -1,9 +1,10 @@
+import { createMemoryFileSystem } from "@isentinel/dev-vitest-utils";
+
 import * as path from "node:path";
 import { assert, describe, it, vi } from "vitest";
 
-import { createLuteChildProcess } from "#test/mocks/lute-child-process.ts";
-import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
-import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
+import { createLuteChildProcess } from "#test/helpers/unit/lute-child-process.ts";
+import { createResolvedConfig } from "#test/helpers/unit/resolved-config.ts";
 import type { ResolvedConfig } from "../config/resolved-config.ts";
 import type { SetupResolverFactory } from "../config/setup-resolver.ts";
 import type { TsconfigReader } from "../tsconfig/tsconfig-mappings.ts";

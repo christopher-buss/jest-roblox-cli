@@ -7,7 +7,7 @@ import {
 	LOADSTRING_ERROR_RESULT,
 	MIXED_WITH_EXEC_ERROR_RESULT,
 	TIMED_OUT_RESULT,
-} from "#test/mocks/format-error-results.ts";
+} from "#test/helpers/unit/format-error-results.ts";
 import {
 	createTestCase,
 	FAILING_RESULT,
@@ -15,8 +15,8 @@ import {
 	PASSING_RESULT,
 	SKIPPED_RESULT,
 	SNAPSHOT_FAILING_RESULT,
-} from "#test/mocks/format-results.ts";
-import { createSingleFileResult, failingFileResult } from "#test/mocks/spec-format.ts";
+} from "#test/helpers/unit/format-results.ts";
+import { createSingleFileResult, failingFileResult } from "#test/helpers/unit/spec-format.ts";
 import type { JestResult } from "../types/jest-result-types.ts";
 import { type AgentOptions, formatAgent, formatAgentMultiProject } from "./agent.ts";
 

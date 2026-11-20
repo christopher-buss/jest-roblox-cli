@@ -1,10 +1,10 @@
+import { createMemoryFileSystem } from "@isentinel/dev-vitest-utils";
 import { fromAny } from "@total-typescript/shoehorn";
 
 import * as path from "node:path";
 import { assert, describe, it, vi } from "vitest";
 
-import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
-import { posixPath } from "#test/mocks/posix-path.ts";
+import { posixPath } from "#test/helpers/posix-path.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import type { FrameMapperContext } from "./frame-mapper.ts";
 import { createFrameMapper, createLineMapper } from "./frame-mapper.ts";

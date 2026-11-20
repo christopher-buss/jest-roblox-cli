@@ -76,7 +76,7 @@ export default isentinel(
 	},
 	{
 		name: "project/no-module-mocks",
-		files: ["**/*.bench.ts", "**/*.spec.ts", "test/mocks/**/*.ts", "test/setup/**/*.ts"],
+		files: ["**/*.bench.ts", "**/*.spec.ts", "test/helpers/**/*.ts", "test/setup/**/*.ts"],
 		rules: {
 			"vitest/no-restricted-vi-methods": [
 				"error",

@@ -5,7 +5,7 @@ import {
 	readHarness,
 	readLuauModule,
 	spawnHarness,
-} from "#test/luau/lute-harness.ts";
+} from "#test/helpers/integration/lute-harness.ts";
 
 describe("edit-mode plugin socket url under lute", () => {
 	it("should dial the port the place names, or the default", ({ expect }) => {

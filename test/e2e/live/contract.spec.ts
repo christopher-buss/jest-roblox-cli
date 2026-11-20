@@ -7,12 +7,12 @@ import type { TestContext } from "vitest";
 import { assert, describe, it } from "vitest";
 
 import { taskEnvelopeSchema } from "#src/protocol/envelope.ts";
-import { MAXIMUM_SUBMIT_MS } from "#test/e2e/live/live-budgets.ts";
-import { IS_LIVE } from "#test/e2e/live/live-gate.ts";
+import { MAXIMUM_SUBMIT_MS } from "#test/helpers/e2e/live-budgets.ts";
+import { IS_LIVE } from "#test/helpers/e2e/live-gate.ts";
 import {
 	type FakeOpenCloudTask,
 	startFakeOpenCloudServerAsync,
-} from "#test/harness/fake-open-cloud.ts";
+} from "#test/helpers/integration/fake-open-cloud.ts";
 import { skipOnQuotaAsync } from "#test/setup/quota-skip.ts";
 
 // Each assertion runs twice through the CLI's own Open Cloud client: once

@@ -1,4 +1,5 @@
 // cspell:ignore LOCALAPPDATA
+import { createMemoryFileSystem } from "@isentinel/dev-vitest-utils";
 import { fromAny, fromPartial } from "@total-typescript/shoehorn";
 
 import { type } from "arktype";
@@ -9,18 +10,22 @@ import * as path from "node:path";
 import nodeProcess from "node:process";
 import { assert, describe, it, type Mock, type TestContext, vi } from "vitest";
 
-import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
+import { posixPath } from "#test/helpers/posix-path.ts";
 import {
 	getLastCreatedServer,
 	type MockWebSocketServer,
 	mockWebSocketServerFactory as webSocketServerFactory,
-} from "#test/mocks/mock-web-socket-server.ts";
-import { MockWebSocket } from "#test/mocks/mock-web-socket.ts";
-import { posixPath } from "#test/mocks/posix-path.ts";
-import { projectJob } from "#test/mocks/project-job.ts";
-import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
-import { writingRojoExec } from "#test/mocks/rojo-exec.ts";
-import { envelope, studioRequest, successResult, timed } from "#test/mocks/studio-request.ts";
+} from "#test/helpers/unit/mock-web-socket-server.ts";
+import { MockWebSocket } from "#test/helpers/unit/mock-web-socket.ts";
+import { projectJob } from "#test/helpers/unit/project-job.ts";
+import { createResolvedConfig } from "#test/helpers/unit/resolved-config.ts";
+import { writingRojoExec } from "#test/helpers/unit/rojo-exec.ts";
+import {
+	envelope,
+	studioRequest,
+	successResult,
+	timed,
+} from "#test/helpers/unit/studio-request.ts";
 import type { ResolvedConfig } from "../config/resolved-config.ts";
 import type { ConfiguredJob } from "../executor/executor-types.ts";
 import type { RunProgress } from "../progress/run-progress.ts";

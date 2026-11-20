@@ -1,13 +1,13 @@
+import { createMemoryFileSystem } from "@isentinel/dev-vitest-utils";
 import { fromAny } from "@total-typescript/shoehorn";
 
 import * as path from "node:path";
 import { describe, it, vi } from "vitest";
 
-import { clockTimingCollector } from "#test/mocks/clock-timing-collector.ts";
-import { fakeTimingCollector, phaseNamesOf } from "#test/mocks/fake-timing-collector.ts";
-import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
-import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
-import { createRunSeams } from "#test/mocks/run-seams.ts";
+import { clockTimingCollector } from "#test/helpers/unit/clock-timing-collector.ts";
+import { fakeTimingCollector, phaseNamesOf } from "#test/helpers/unit/fake-timing-collector.ts";
+import { createResolvedConfig } from "#test/helpers/unit/resolved-config.ts";
+import { createRunSeams } from "#test/helpers/unit/run-seams.ts";
 import type { ResolvedProjectConfig } from "../config/projects.ts";
 import type { ResolvedConfig } from "../config/resolved-config.ts";
 import type { PrepareCoverageResult } from "../shadow/prepare-types.ts";

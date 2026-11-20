@@ -1,13 +1,13 @@
+import type { MemoryFileSystem } from "@isentinel/dev-vitest-utils";
 import type { RojoTreeNode } from "@isentinel/rojo-utils";
 
 import * as path from "node:path";
 import { describe, it, vi } from "vitest";
 import type { MockInstance } from "vitest";
 
-import type { MemoryFileSystem } from "#test/mocks/memory-file-system.ts";
-import { posixPath } from "#test/mocks/posix-path.ts";
-import { configErrorLike } from "#test/mocks/run-config-error.ts";
-import { seed } from "#test/mocks/staged-project.ts";
+import { posixPath } from "#test/helpers/posix-path.ts";
+import { configErrorLike } from "#test/helpers/unit/run-config-error.ts";
+import { seed } from "#test/helpers/unit/staged-project.ts";
 import type { PinnedMount } from "./pinned-mount-scan.ts";
 import { findPinnedMounts } from "./pinned-mount-scan.ts";
 

@@ -1,10 +1,10 @@
+import { createMemoryFileSystem } from "@isentinel/dev-vitest-utils";
 import { fromAny } from "@total-typescript/shoehorn";
 
 import * as path from "node:path";
 import process from "node:process";
 import { describe, it, type TestContext, vi } from "vitest";
 
-import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import type { CliOptions } from "../config/resolved-config.ts";
 import type { ChildProcessRunner } from "../utils/child-process.ts";
 import {

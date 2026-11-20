@@ -1,3 +1,5 @@
+import type { MemoryVolume } from "@isentinel/dev-vitest-utils";
+import { createMemoryFileSystem } from "@isentinel/dev-vitest-utils";
 import { fromAny } from "@total-typescript/shoehorn";
 
 import { type } from "arktype";
@@ -8,12 +10,11 @@ import type { Except, SetOptional as PartialBy } from "type-fest";
 import type { MockedFunction } from "vitest";
 import { describe, it, vi } from "vitest";
 
-import { copyIgnoreHash } from "#test/mocks/coverage-hash.ts";
-import { INSTRUMENTER_VERSION, MANIFEST_VERSION } from "#test/mocks/coverage-versions.ts";
-import type { MemoryVolume } from "#test/mocks/memory-file-system.ts";
-import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
-import { posixPath, posixRoot } from "#test/mocks/posix-path.ts";
-import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
+import { posixPath } from "#test/helpers/posix-path.ts";
+import { copyIgnoreHash } from "#test/helpers/unit/coverage-hash.ts";
+import { INSTRUMENTER_VERSION, MANIFEST_VERSION } from "#test/helpers/unit/coverage-versions.ts";
+import { posixRoot } from "#test/helpers/unit/posix-root.ts";
+import { createResolvedConfig } from "#test/helpers/unit/resolved-config.ts";
 import type { CoverageSettings } from "../config/coverage-settings.ts";
 import type { BuildManifest, BuildManifestArtifact } from "../coverage-data/build-manifest.ts";
 import type { CoverageManifest } from "../coverage-data/manifest.ts";

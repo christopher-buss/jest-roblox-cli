@@ -1,13 +1,13 @@
 import { PollTimeoutError } from "@bedrock-rbx/ocale";
+import { createMemoryFileSystem } from "@isentinel/dev-vitest-utils";
 import type { ExecuteScriptOptions, RemoteRunner, ScriptResult } from "@isentinel/roblox-runner";
 
 import * as path from "node:path";
 import { assert, describe, it, vi } from "vitest";
 
-import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
-import { NOOP_PROGRESS } from "#test/mocks/noop-progress.ts";
-import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
-import { captureStderrForTest as captureStderr } from "#test/mocks/spec-open-cloud.ts";
+import { NOOP_PROGRESS } from "#test/helpers/unit/noop-progress.ts";
+import { createResolvedConfig } from "#test/helpers/unit/resolved-config.ts";
+import { captureStderrForTest as captureStderr } from "#test/helpers/unit/spec-open-cloud.ts";
 import type { ResolvedConfig } from "../config/resolved-config.ts";
 import type { RunProgress } from "../progress/run-progress.ts";
 import type { StageId } from "../progress/stages.ts";

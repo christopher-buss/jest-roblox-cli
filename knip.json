@@ -28,7 +28,6 @@
 				"loaders/*.mjs!",
 				"loaders/*.d.mts",
 				"src/**/*.d.ts",
-				"test/setup/vitest-jest-extended.d.ts",
 				"dependency-cruiser.config.ts",
 				"bin/sea-entry.ts!",
 				"scripts/*.run.ts!",

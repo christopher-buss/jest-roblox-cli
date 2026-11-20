@@ -1,6 +1,7 @@
+import { createMemoryFileSystem } from "@isentinel/dev-vitest-utils";
+
 import { describe, it } from "vitest";
 
-import { memoryFileSystem } from "#test/helpers/unit/file-system";
 import { fixtureCstParser } from "#test/helpers/unit/trees";
 import { createStringRequireResolver } from "./require-resolver.ts";
 import type { StringRequireResolution, StringRequireResolver } from "./require-resolver.ts";
@@ -10,7 +11,7 @@ const ALIASES =
 
 function resolverOver(files: Record<string, string>) {
 	const parser = fixtureCstParser();
-	const { fileSystem, volume } = memoryFileSystem(files);
+	const { fileSystem, volume } = createMemoryFileSystem(files, "/");
 	return { resolve: createStringRequireResolver({ fileSystem, parser }), volume };
 }
 

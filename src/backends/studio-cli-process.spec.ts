@@ -1,3 +1,4 @@
+import { createMemoryFileSystem } from "@isentinel/dev-vitest-utils";
 import { fromAny } from "@total-typescript/shoehorn";
 
 import type { ChildProcess } from "node:child_process";
@@ -5,9 +6,8 @@ import { EventEmitter } from "node:events";
 import nodeProcess from "node:process";
 import { describe, it, vi } from "vitest";
 
-import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
-import { MockWebSocketServer } from "#test/mocks/mock-web-socket-server.ts";
-import { MockWebSocket } from "#test/mocks/mock-web-socket.ts";
+import { MockWebSocketServer } from "#test/helpers/unit/mock-web-socket-server.ts";
+import { MockWebSocket } from "#test/helpers/unit/mock-web-socket.ts";
 import type { ChildProcessRunner } from "../utils/child-process.ts";
 import {
 	hardTeardown,

@@ -6,7 +6,7 @@ import {
 	readLuauTree,
 	spawnHarness,
 	stubbedModules,
-} from "#test/luau/lute-harness.ts";
+} from "#test/helpers/integration/lute-harness.ts";
 
 // Drives the workspace bail signal under lute. Pure module over an injected
 // SortedMap, so nothing Roblox-side has to be stubbed. Requires `lute` on PATH

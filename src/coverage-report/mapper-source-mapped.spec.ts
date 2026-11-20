@@ -2,7 +2,7 @@ import { fromAny } from "@total-typescript/shoehorn";
 
 import { assert, describe, it } from "vitest";
 
-import { emptyPending, pendingResult } from "#test/mocks/coverage-instr-pending.ts";
+import { emptyPending, pendingResult } from "#test/helpers/unit/coverage-instr-pending.ts";
 import { mapSourceMappedFile } from "./mapper-source-mapped.ts";
 import type { MappedFileCoverage, PositionResolver } from "./mapper-types.ts";
 

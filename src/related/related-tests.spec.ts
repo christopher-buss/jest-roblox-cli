@@ -1,13 +1,13 @@
+import { createMemoryFileSystem } from "@isentinel/dev-vitest-utils";
 import { loadLuauParser } from "@isentinel/luau-ast/parser";
 
 import * as path from "node:path";
 import type { Except } from "type-fest";
 import { describe, it, vi } from "vitest";
 
-import { clockTimingCollector } from "#test/mocks/clock-timing-collector.ts";
-import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
-import { posixPath } from "#test/mocks/posix-path.ts";
-import { readingVolume } from "#test/mocks/volume-tsconfig-reader.ts";
+import { posixPath } from "#test/helpers/posix-path.ts";
+import { clockTimingCollector } from "#test/helpers/unit/clock-timing-collector.ts";
+import { readingVolume } from "#test/helpers/unit/volume-tsconfig-reader.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import type { ChangeScope } from "./change-scope.ts";
 import type { RelatedFileFilterOptions } from "./related-tests.ts";

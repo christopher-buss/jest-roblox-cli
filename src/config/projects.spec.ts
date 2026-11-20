@@ -1,13 +1,13 @@
 // cspell:words includ
+import { createMemoryFileSystem } from "@isentinel/dev-vitest-utils";
 import type { PathKind, RojoTreeNode } from "@isentinel/rojo-utils";
 import { fromAny } from "@total-typescript/shoehorn";
 
 import * as path from "node:path";
 import { describe, it } from "vitest";
 
-import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
-import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
-import { createProjectSeams } from "#test/mocks/spec-project-seams.ts";
+import { createResolvedConfig } from "#test/helpers/unit/resolved-config.ts";
+import { createProjectSeams } from "#test/helpers/unit/spec-project-seams.ts";
 import type { ProjectTestConfig } from "./config-types.ts";
 import type { ResolvedProjectConfig } from "./projects.ts";
 import { extractStaticRoot, resolveAllProjects } from "./projects.ts";

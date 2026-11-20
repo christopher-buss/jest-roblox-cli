@@ -10,9 +10,9 @@ import * as path from "node:path";
 import process from "node:process";
 import { assert, describe, it } from "vitest";
 
-import { LIVE_STARTUP_BUDGET_MS, MAXIMUM_SUBMIT_MS } from "#test/e2e/live/live-budgets.ts";
-import { IS_LIVE, liveEnvironment } from "#test/e2e/live/live-gate.ts";
-import { createFixtureSandbox, runCliAsync } from "#test/harness/helpers.ts";
+import { LIVE_STARTUP_BUDGET_MS, MAXIMUM_SUBMIT_MS } from "#test/helpers/e2e/live-budgets.ts";
+import { IS_LIVE, liveEnvironment } from "#test/helpers/e2e/live-gate.ts";
+import { createFixtureSandbox, runCliAsync } from "#test/helpers/integration/helpers.ts";
 import { quotaSkipNote, skipOnQuotaAsync } from "#test/setup/quota-skip.ts";
 
 /**

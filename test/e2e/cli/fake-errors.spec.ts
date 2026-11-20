@@ -1,6 +1,6 @@
 import { describe, it } from "vitest";
 
-import { startFakeOpenCloudServerAsync } from "#test/harness/fake-open-cloud.ts";
+import { startFakeOpenCloudServerAsync } from "#test/helpers/integration/fake-open-cloud.ts";
 
 describe("fake Open Cloud request failures", () => {
 	it("should answer a rejected queue handler and keep serving requests", async ({ expect }) => {

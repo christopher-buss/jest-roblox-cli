@@ -6,7 +6,7 @@ import {
 	readHarness,
 	readLuauModule,
 	spawnHarness,
-} from "#test/luau/lute-harness.ts";
+} from "#test/helpers/integration/lute-harness.ts";
 
 // Drives the workspace materializer under lute against a fake DataModel the
 // harness supplies. Requires `lute` on PATH (mise, in dev and CI).

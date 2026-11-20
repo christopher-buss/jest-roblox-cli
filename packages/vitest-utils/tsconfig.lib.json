@@ -1,0 +1,23 @@
+{
+	"extends": "@isentinel/tsconfig/typescript",
+	"compilerOptions": {
+		"composite": true,
+		"tsBuildInfoFile": "dist/tsconfig.lib.tsbuildinfo",
+		"lib": ["es2025", "esnext"],
+		"libReplacement": true,
+		"rootDir": "src",
+		"rewriteRelativeImportExtensions": true,
+		"allowJs": false,
+		"noEmit": false,
+		"outDir": "dist"
+	},
+	"references": [],
+	"include": ["src/**/*.ts"],
+	"exclude": [
+		"./node_modules",
+		"src/**/*.d.ts",
+		"src/**/*.spec.ts",
+		"src/**/*.spec-d.ts",
+		"**/*.config.ts"
+	]
+}

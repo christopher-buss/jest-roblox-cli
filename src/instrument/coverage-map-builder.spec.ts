@@ -1,7 +1,7 @@
 import { describe, it } from "vitest";
 
-import { asciiColumn, asciiSpan } from "#test/mocks/ascii-columns.ts";
-import { COLLECTED_FIXTURES } from "#test/mocks/coverage-collected-fixtures.ts";
+import { asciiColumn, asciiSpan } from "#test/helpers/unit/ascii-columns.ts";
+import { COLLECTED_FIXTURES } from "#test/helpers/unit/coverage-collected-fixtures.ts";
 import type { CollectorResult } from "./coverage-accumulator.ts";
 import { buildCoverageMap } from "./coverage-map-builder.ts";
 

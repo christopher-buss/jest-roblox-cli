@@ -1,12 +1,12 @@
+import { createMemoryFileSystem } from "@isentinel/dev-vitest-utils";
 import { fromAny } from "@total-typescript/shoehorn";
 
 import * as path from "node:path";
 import { describe, it, vi } from "vitest";
 
-import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
-import { NOOP_PROGRESS } from "#test/mocks/noop-progress.ts";
-import { writingRojoExec } from "#test/mocks/rojo-exec.ts";
-import { recordingTimingCollector } from "#test/mocks/workspace-timing-recorder.ts";
+import { NOOP_PROGRESS } from "#test/helpers/unit/noop-progress.ts";
+import { writingRojoExec } from "#test/helpers/unit/rojo-exec.ts";
+import { recordingTimingCollector } from "#test/helpers/unit/workspace-timing-recorder.ts";
 import type { ChildProcessRunner } from "../utils/child-process.ts";
 import { buildStagedPlaceAsync } from "./staged-place.ts";
 

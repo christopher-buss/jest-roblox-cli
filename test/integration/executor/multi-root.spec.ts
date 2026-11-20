@@ -5,8 +5,8 @@ import { describe, it, vi } from "vitest";
 import type { JestResult } from "#src/api.ts";
 import { loadConfig } from "#src/api.ts";
 import { runAsync } from "#src/cli.ts";
-import { startFakeOpenCloudServerAsync } from "#test/harness/fake-open-cloud.ts";
-import { createFixtureSandbox } from "#test/harness/helpers.ts";
+import { startFakeOpenCloudServerAsync } from "#test/helpers/integration/fake-open-cloud.ts";
+import { createFixtureSandbox } from "#test/helpers/integration/helpers.ts";
 
 const MULTI_ROOT_FIXTURE = path.resolve(__dirname, "../../e2e/fixtures/multi-root-project");
 

@@ -4,8 +4,8 @@ import * as path from "node:path";
 import process from "node:process";
 import { describe, it, type TestContext } from "vitest";
 
-import { runCliAsync } from "#test/harness/helpers.ts";
-import { createSandboxDirectory } from "#test/harness/sandbox-root.ts";
+import { runCliAsync } from "#test/helpers/integration/helpers.ts";
+import { createSandboxDirectory } from "#test/helpers/integration/sandbox-root.ts";
 import packageJson from "../../../package.json" with { type: "json" };
 
 const [CHECKER, CHECK] = ["lute", "check"] as const;

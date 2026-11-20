@@ -10,8 +10,8 @@ import {
 	LOADSTRING_ERROR_RESULT,
 	MIXED_WITH_EXEC_ERROR_RESULT,
 	TIMED_OUT_RESULT,
-} from "#test/mocks/format-error-results.ts";
-import { createPlainStyles } from "#test/mocks/format-plain-styles.ts";
+} from "#test/helpers/unit/format-error-results.ts";
+import { createPlainStyles } from "#test/helpers/unit/format-plain-styles.ts";
 import {
 	EMPTY_FILE_RESULT,
 	FAILING_RESULT,
@@ -19,14 +19,14 @@ import {
 	PASSING_RESULT,
 	SKIPPED_RESULT,
 	SNAPSHOT_FAILING_RESULT,
-} from "#test/mocks/format-results.ts";
-import { createTaggedStyles } from "#test/mocks/format-tagged-styles.ts";
-import { TIMING, TIMING_NO_UPLOAD } from "#test/mocks/format-timing.ts";
+} from "#test/helpers/unit/format-results.ts";
+import { createTaggedStyles } from "#test/helpers/unit/format-tagged-styles.ts";
+import { TIMING, TIMING_NO_UPLOAD } from "#test/helpers/unit/format-timing.ts";
 import {
 	TYPECHECK_FAILING_RESULT,
 	TYPECHECK_MIXED_RESULT,
 	TYPECHECK_PASSING_RESULT,
-} from "#test/mocks/format-typecheck-results.ts";
+} from "#test/helpers/unit/format-typecheck-results.ts";
 import type { JestResult, TestCaseResult, TestFileResult } from "../types/jest-result-types.ts";
 import type { TimingResult } from "../types/timing-types.ts";
 import { formatMultiProjectResult, formatResult, formatTypecheckReport } from "./formatter.ts";

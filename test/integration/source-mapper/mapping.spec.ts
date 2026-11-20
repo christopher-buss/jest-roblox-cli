@@ -1,8 +1,11 @@
 import path from "node:path";
 import { describe, it } from "vitest";
 
-import { createFixtureSandbox, createRbxtsFixtureSandbox } from "#test/harness/helpers.ts";
-import { buildProjectSourceMapperAsync } from "#test/integration/source-mapper/project-source-mapper.ts";
+import {
+	createFixtureSandbox,
+	createRbxtsFixtureSandbox,
+} from "#test/helpers/integration/helpers.ts";
+import { buildProjectSourceMapperAsync } from "#test/helpers/integration/project-source-mapper.ts";
 
 const RBXTS_FIXTURE = path.resolve(__dirname, "../../e2e/fixtures/rbxts-project");
 const LUAU_FIXTURE = path.resolve(__dirname, "../../e2e/fixtures/luau-project");

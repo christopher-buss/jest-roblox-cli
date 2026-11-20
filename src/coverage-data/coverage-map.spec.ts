@@ -1,8 +1,9 @@
+import { createMemoryFileSystem } from "@isentinel/dev-vitest-utils";
+
 import process from "node:process";
 import { describe, it, vi } from "vitest";
 
-import { asciiColumn } from "#test/mocks/ascii-columns.ts";
-import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
+import { asciiColumn } from "#test/helpers/unit/ascii-columns.ts";
 import type { CoverageMap, ReadCoverageMapResult } from "./coverage-map.ts";
 import { readCoverageMap, writeCoverageMap } from "./coverage-map.ts";
 

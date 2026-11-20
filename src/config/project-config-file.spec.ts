@@ -1,11 +1,12 @@
 // cspell:words includ
 
+import { createMemoryFileSystem } from "@isentinel/dev-vitest-utils";
+
 import * as path from "node:path";
 import { describe, it } from "vitest";
 
-import { createLuteChildProcess } from "#test/mocks/lute-child-process.ts";
-import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
-import { createProjectSeams } from "#test/mocks/spec-project-seams.ts";
+import { createLuteChildProcess } from "#test/helpers/unit/lute-child-process.ts";
+import { createProjectSeams } from "#test/helpers/unit/spec-project-seams.ts";
 import type { ProjectConfigInput } from "./project-config-file.ts";
 import { loadProjectConfigFile } from "./project-config-file.ts";
 

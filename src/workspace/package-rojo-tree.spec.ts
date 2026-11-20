@@ -1,6 +1,7 @@
+import { createMemoryFileSystem } from "@isentinel/dev-vitest-utils";
+
 import { describe, it } from "vitest";
 
-import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { loadPackageRojoTree } from "./package-rojo-tree.ts";
 
 describe(loadPackageRojoTree, () => {

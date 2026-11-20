@@ -1,10 +1,10 @@
+import { createMemoryFileSystem } from "@isentinel/dev-vitest-utils";
 import { fromAny } from "@total-typescript/shoehorn";
 
 import type { ChildProcess } from "node:child_process";
 import { describe, it, type TestContext, vi } from "vitest";
 
-import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
-import { FakeHelper } from "#test/mocks/spec-fake-helper.ts";
+import { FakeHelper } from "#test/helpers/unit/spec-fake-helper.ts";
 import { launchThroughHelper } from "./hidden-helper.ts";
 
 const PLACE_FILE = "C:/work/place.rbxl";

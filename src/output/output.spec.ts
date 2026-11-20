@@ -1,3 +1,4 @@
+import { createMemoryFileSystem, type MemoryVolume } from "@isentinel/dev-vitest-utils";
 import { fromAny } from "@total-typescript/shoehorn";
 
 import * as path from "node:path";
@@ -5,15 +6,14 @@ import process from "node:process";
 import { stripVTControlCharacters } from "node:util";
 import { describe, it, type Mock, type TestContext, vi } from "vitest";
 
-import { createMemoryFileSystem, type MemoryVolume } from "#test/mocks/memory-file-system.ts";
-import { mappedFile } from "#test/mocks/spec-coverage.ts";
+import { mappedFile } from "#test/helpers/unit/spec-coverage.ts";
 import {
 	makeBlockedResult,
 	makeExecuteResult,
 	makeJestResult,
 	makeOutputConfig,
 	setupOutputSpies,
-} from "#test/mocks/spec-results.ts";
+} from "#test/helpers/unit/spec-results.ts";
 import type { ResolvedConfig } from "../config/resolved-config.ts";
 import type { MappedCoverageResult } from "../coverage-report/mapper-types.ts";
 import type { checkThresholds, generateReports } from "../coverage-report/reporter.ts";

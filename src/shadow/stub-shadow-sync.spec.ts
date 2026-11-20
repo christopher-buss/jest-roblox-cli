@@ -1,8 +1,9 @@
+import { createMemoryFileSystem } from "@isentinel/dev-vitest-utils";
+
 import * as path from "node:path";
 import { describe, it } from "vitest";
 
-import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
-import { makeResolvedProject } from "#test/mocks/spec-resolved-project.ts";
+import { makeResolvedProject } from "#test/helpers/unit/spec-resolved-project.ts";
 import type { ResolvedProjectConfig } from "../config/projects.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import type { ShadowLayout } from "./spine.ts";

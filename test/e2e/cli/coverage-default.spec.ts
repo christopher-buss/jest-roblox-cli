@@ -3,7 +3,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { assert, describe, it } from "vitest";
 
-import { startFakeOpenCloudServerAsync } from "#test/harness/fake-open-cloud.ts";
+import { startFakeOpenCloudServerAsync } from "#test/helpers/integration/fake-open-cloud.ts";
 import {
 	buildPassingJestOutput,
 	createFixtureSandbox,
@@ -12,7 +12,7 @@ import {
 	rojoOnPath,
 	RUN_TIMEOUT_MS,
 	runCliAsync,
-} from "#test/harness/helpers.ts";
+} from "#test/helpers/integration/helpers.ts";
 
 const FIXTURE = path.resolve(__dirname, "../fixtures/luau-project");
 const reportSchema = type({ "[string]": { s: "Record<string, number>" } });

@@ -1,3 +1,4 @@
+import { createMemoryFileSystem } from "@isentinel/dev-vitest-utils";
 import { OcaleRunner } from "@isentinel/roblox-runner";
 import { fromAny } from "@total-typescript/shoehorn";
 
@@ -7,14 +8,13 @@ import process from "node:process";
 import type { Except } from "type-fest";
 import { describe, it, type TestContext, vi } from "vitest";
 
-import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
+import { posixPath } from "#test/helpers/posix-path.ts";
 import {
 	getLastCreatedServer,
 	MockWebSocketServer,
 	mockWebSocketServerFactory as webSocketServerFactory,
-} from "#test/mocks/mock-web-socket-server.ts";
-import { posixPath } from "#test/mocks/posix-path.ts";
-import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
+} from "#test/helpers/unit/mock-web-socket-server.ts";
+import { createResolvedConfig } from "#test/helpers/unit/resolved-config.ts";
 import type { CliOptions, ResolvedConfig } from "../config/resolved-config.ts";
 import type { ChildProcessRunner } from "../utils/child-process.ts";
 import type { Backend } from "./dispatch-request.ts";

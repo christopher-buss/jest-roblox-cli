@@ -236,6 +236,9 @@ importers:
       '@cspell/parser-typescript':
         specifier: 1.3.1
         version: 1.3.1
+      '@isentinel/dev-vitest-utils':
+        specifier: workspace:*
+        version: link:packages/vitest-utils
       '@isentinel/dict-rbxts':
         specifier: 1.0.31
         version: 1.0.31
@@ -344,18 +347,12 @@ importers:
       eslint-plugin-project-structure:
         specifier: 3.14.4
         version: 3.14.4(eslint@10.15.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3)(typescript@7.0.2)
-      jest-extended:
-        specifier: 7.0.0
-        version: 7.0.0(typescript@6.0.3)
       jscpd:
         specifier: 5.4.1
         version: 5.4.1
       knip:
         specifier: 6.29.0
         version: 6.29.0
-      memfs:
-        specifier: 4.68.1
-        version: 4.68.1
       oxlint:
         specifier: 1.94.0
         version: 1.94.0(oxlint-tsgolint@7.0.2007)
@@ -393,6 +390,9 @@ importers:
         specifier: 3.0.0-beta.1
         version: 3.0.0-beta.1
     devDependencies:
+      '@isentinel/dev-vitest-utils':
+        specifier: workspace:*
+        version: link:../vitest-utils
       '@isentinel/eslint-config':
         specifier: 7.1.0
         version: 7.1.0(f419410026bd30484aa916f620697508)
@@ -435,18 +435,12 @@ importers:
       eslint-plugin-pnpm:
         specifier: 1.8.0
         version: 1.8.0(eslint@10.15.0(jiti@2.7.0)(supports-color@10.2.2))
-      jest-extended:
-        specifier: 7.0.0
-        version: 7.0.0(typescript@6.0.3)
       jscpd:
         specifier: 5.4.1
         version: 5.4.1
       knip:
         specifier: 6.29.0
         version: 6.29.0
-      memfs:
-        specifier: 4.68.1
-        version: 4.68.1
       tsdown:
         specifier: 0.23.0
         version: 0.23.0(@tsdown/exe@0.23.0)(@typescript/native-preview@7.0.0-dev.20260707.2)(oxc-resolver@11.24.2)(publint@0.3.24)(typescript@6.0.3)
@@ -466,6 +460,9 @@ importers:
         specifier: 3.0.0-beta.1
         version: 3.0.0-beta.1
     devDependencies:
+      '@isentinel/dev-vitest-utils':
+        specifier: workspace:*
+        version: link:../vitest-utils
       '@isentinel/eslint-config':
         specifier: 7.1.0
         version: 7.1.0(f419410026bd30484aa916f620697508)
@@ -508,9 +505,6 @@ importers:
       eslint-plugin-pnpm:
         specifier: 1.8.0
         version: 1.8.0(eslint@10.15.0(jiti@2.7.0)(supports-color@10.2.2))
-      jest-extended:
-        specifier: 7.0.0
-        version: 7.0.0(typescript@6.0.3)
       jscpd:
         specifier: 5.4.1
         version: 5.4.1
@@ -533,6 +527,9 @@ importers:
         specifier: 3.0.0-beta.1
         version: 3.0.0-beta.1
     devDependencies:
+      '@isentinel/dev-vitest-utils':
+        specifier: workspace:*
+        version: link:../vitest-utils
       '@isentinel/eslint-config':
         specifier: 7.1.0
         version: 7.1.0(f419410026bd30484aa916f620697508)
@@ -572,18 +569,76 @@ importers:
       eslint-plugin-pnpm:
         specifier: 1.8.0
         version: 1.8.0(eslint@10.15.0(jiti@2.7.0)(supports-color@10.2.2))
-      jest-extended:
-        specifier: 7.0.0
-        version: 7.0.0(typescript@6.0.3)
       knip:
         specifier: 6.29.0
         version: 6.29.0
-      memfs:
-        specifier: 4.68.1
-        version: 4.68.1
       tsdown:
         specifier: 0.23.0
         version: 0.23.0(@tsdown/exe@0.23.0)(@typescript/native-preview@7.0.0-dev.20260707.2)(oxc-resolver@11.24.2)(publint@0.3.24)(typescript@6.0.3)
+      typescript:
+        specifier: 6.0.3
+        version: 6.0.3
+      vitest:
+        specifier: 5.1.0
+        version: 5.1.0(@types/node@26.6.6)(@vitest/coverage-v8@5.1.0)(vite@8.3.8(@types/node@26.6.6)(jiti@2.7.0)(yaml@2.9.1))
+
+  packages/vitest-utils:
+    dependencies:
+      '@total-typescript/shoehorn':
+        specifier: 0.1.2
+        version: 0.1.2
+      jest-extended:
+        specifier: 7.0.0
+        version: 7.0.0(typescript@6.0.3)
+      memfs:
+        specifier: 4.68.1
+        version: 4.68.1
+    devDependencies:
+      '@isentinel/eslint-config':
+        specifier: 7.1.0
+        version: 7.1.0(f419410026bd30484aa916f620697508)
+      '@isentinel/tsconfig':
+        specifier: 3.0.0
+        version: 3.0.0(typescript@6.0.3)
+      '@stryker-mutator/core':
+        specifier: 10.1.1
+        version: 10.1.1(@types/node@26.6.6)
+      '@stryker-mutator/typescript-checker':
+        specifier: 10.1.1
+        version: 10.1.1(@stryker-mutator/core@10.1.1(@types/node@26.6.6))(typescript@6.0.3)
+      '@stryker-mutator/vitest-runner':
+        specifier: 10.1.1
+        version: 10.1.1(@stryker-mutator/core@10.1.1(@types/node@26.6.6))(vitest@5.1.0)
+      '@types/node':
+        specifier: 26.6.6
+        version: 26.6.6
+      '@vitest/coverage-v8':
+        specifier: 5.1.0
+        version: 5.1.0(vitest@5.1.0)
+      '@vitest/eslint-plugin':
+        specifier: 1.6.27
+        version: 1.6.27(@typescript-eslint/eslint-plugin@8.73.0(@typescript-eslint/parser@8.73.0(eslint@10.15.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3)(typescript@7.0.2))(eslint@10.15.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3)(typescript@7.0.2))(eslint@10.15.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3)(typescript@7.0.2)(vitest@5.1.0)
+      dependency-cruiser:
+        specifier: 18.4.0
+        version: 18.4.0
+      eslint:
+        specifier: 10.15.0
+        version: 10.15.0(jiti@2.7.0)(supports-color@10.2.2)
+      eslint-plugin-jest-extended:
+        specifier: 3.0.1
+        version: 3.0.1(eslint@10.15.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3)(typescript@7.0.2)
+      eslint-plugin-n:
+        specifier: 18.5.0
+        version: 18.5.0(eslint@10.15.0(jiti@2.7.0)(supports-color@10.2.2))(typescript@6.0.3)
+      eslint-plugin-pnpm:
+        specifier: 1.8.0
+        version: 1.8.0(eslint@10.15.0(jiti@2.7.0)(supports-color@10.2.2))
+      jscpd:
+        specifier: 5.4.1
+        version: 5.4.1
+      knip:
+        specifier: 6.29.0
+        version: 6.29.0
       typescript:
         specifier: 6.0.3
         version: 6.0.3

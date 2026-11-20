@@ -1,14 +1,14 @@
+import { createMemoryFileSystem } from "@isentinel/dev-vitest-utils";
 import { fromAny, fromPartial } from "@total-typescript/shoehorn";
 
 import { Buffer } from "node:buffer";
 import { describe, it, type TestContext, vi } from "vitest";
 import type { WebSocketServer } from "ws";
 
-import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
-import { MockWebSocketServer } from "#test/mocks/mock-web-socket-server.ts";
-import { MockWebSocket } from "#test/mocks/mock-web-socket.ts";
-import { projectJob } from "#test/mocks/project-job.ts";
-import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
+import { MockWebSocketServer } from "#test/helpers/unit/mock-web-socket-server.ts";
+import { MockWebSocket } from "#test/helpers/unit/mock-web-socket.ts";
+import { projectJob } from "#test/helpers/unit/project-job.ts";
+import { createResolvedConfig } from "#test/helpers/unit/resolved-config.ts";
 import type { ProjectJob } from "./interface.ts";
 import {
 	buildBackendResult,

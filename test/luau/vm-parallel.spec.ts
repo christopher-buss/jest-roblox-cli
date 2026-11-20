@@ -6,7 +6,7 @@ import {
 	readLuauTree,
 	spawnHarness,
 	stubbedModules,
-} from "#test/luau/lute-harness.ts";
+} from "#test/helpers/integration/lute-harness.ts";
 
 // Drives the coordinator's slice planner and gather under lute.  Requires `lute`
 // on PATH (mise, in dev and CI).

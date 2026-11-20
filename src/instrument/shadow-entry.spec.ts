@@ -1,8 +1,8 @@
+import { createMemoryFileSystem } from "@isentinel/dev-vitest-utils";
 import { fromAny } from "@total-typescript/shoehorn";
 
 import { describe, it, vi } from "vitest";
 
-import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { clearDirectoryAtFilePath, createShadowDirectory } from "./shadow-entry.ts";
 
 describe(createShadowDirectory, () => {

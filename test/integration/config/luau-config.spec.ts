@@ -1,11 +1,12 @@
 import { loadConfig, runJestRobloxAsync } from "@isentinel/jest-roblox/api";
+import { fromAny } from "@total-typescript/shoehorn";
 
 import * as fs from "node:fs";
 import * as os from "node:os";
 import path from "node:path";
 import { describe, it, type TestContext, vi } from "vitest";
 
-import { createLuteChildProcess } from "#test/mocks/lute-child-process.ts";
+import { luteExecFile } from "#test/helpers/lute-exec-file.ts";
 import packageJson from "../../../package.json" with { type: "json" };
 
 const ROJO_TREE = {
@@ -249,9 +250,11 @@ describe("luau configs through loadConfig", () => {
 		);
 
 		const config = await loadConfig({
-			childProcess: createLuteChildProcess({
-				value: '{"placeFile":"from-child-process.rbxl"}',
-				version: "1.0.1\n",
+			childProcess: fromAny({
+				execFile: luteExecFile({
+					value: '{"placeFile":"from-child-process.rbxl"}',
+					version: "1.0.1\n",
+				}),
 			}),
 			cwd: directory,
 		});

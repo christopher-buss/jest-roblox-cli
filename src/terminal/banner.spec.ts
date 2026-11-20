@@ -1,7 +1,7 @@
 import { stripVTControlCharacters } from "node:util";
 import { describe, it } from "vitest";
 
-import { createTaggedStyles } from "#test/mocks/format-tagged-styles.ts";
+import { createTaggedStyles } from "#test/helpers/unit/format-tagged-styles.ts";
 import { formatBanner, formatBannerBar } from "./banner.ts";
 
 describe(formatBannerBar, () => {

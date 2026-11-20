@@ -3,9 +3,9 @@ import { fromAny } from "@total-typescript/shoehorn";
 import process from "node:process";
 import { describe, it, vi } from "vitest";
 
-import { fakeTimingCollector } from "#test/mocks/fake-timing-collector.ts";
-import { NOOP_PROGRESS } from "#test/mocks/noop-progress.ts";
-import { makeJestResult } from "#test/mocks/spec-results.ts";
+import { fakeTimingCollector } from "#test/helpers/unit/fake-timing-collector.ts";
+import { NOOP_PROGRESS } from "#test/helpers/unit/noop-progress.ts";
+import { makeJestResult } from "#test/helpers/unit/spec-results.ts";
 import type { Backend } from "../backends/dispatch-request.ts";
 import type { RunResult } from "../results/run-result-types.ts";
 import type { LayoutTypes, RunLayout } from "./pipeline.ts";

@@ -1,7 +1,7 @@
 import { describe, it } from "vitest";
 
-import { recordingAccumulator } from "#test/mocks/coverage-accumulator.ts";
-import { block, NO_IGNORES, span } from "#test/mocks/coverage-spec-luau-ast.ts";
+import { recordingAccumulator } from "#test/helpers/unit/coverage-accumulator.ts";
+import { block, NO_IGNORES, span } from "#test/helpers/unit/coverage-spec-luau-ast.ts";
 import { createStatementCollector } from "./collect-statements.ts";
 
 describe(createStatementCollector, () => {

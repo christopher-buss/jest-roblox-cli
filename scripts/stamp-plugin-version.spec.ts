@@ -1,7 +1,8 @@
+import type { MemoryFileSystem } from "@isentinel/dev-vitest-utils";
+import { createMemoryFileSystem } from "@isentinel/dev-vitest-utils";
+
 import { describe, it } from "vitest";
 
-import type { MemoryFileSystem } from "#test/mocks/memory-file-system.ts";
-import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { stampPluginVersion } from "./stamp-plugin-version.ts";
 
 /**

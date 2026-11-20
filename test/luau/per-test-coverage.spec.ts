@@ -6,7 +6,7 @@ import {
 	readLuauTree,
 	spawnHarness,
 	stubbedModules,
-} from "#test/luau/lute-harness.ts";
+} from "#test/helpers/integration/lute-harness.ts";
 
 // Drives the per-test coverage hook under lute. Its coverage-attribution
 // dependency is inlined in place of the relative require, then the whole module

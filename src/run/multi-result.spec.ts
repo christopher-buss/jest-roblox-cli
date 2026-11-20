@@ -3,9 +3,9 @@ import { fromAny } from "@total-typescript/shoehorn";
 import * as path from "node:path";
 import { describe, it, vi } from "vitest";
 
-import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
-import { createRunSeams } from "#test/mocks/run-seams.ts";
-import { makeExecuteResult } from "#test/mocks/spec-results.ts";
+import { createResolvedConfig } from "#test/helpers/unit/resolved-config.ts";
+import { createRunSeams } from "#test/helpers/unit/run-seams.ts";
+import { makeExecuteResult } from "#test/helpers/unit/spec-results.ts";
 import type { ResolvedConfig } from "../config/resolved-config.ts";
 import type { CoverageManifest } from "../coverage-data/manifest.ts";
 import type { MappedCoverageResult } from "../coverage-report/mapper-types.ts";

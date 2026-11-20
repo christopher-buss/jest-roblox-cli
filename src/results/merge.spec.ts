@@ -2,7 +2,11 @@ import { fromAny } from "@total-typescript/shoehorn";
 
 import { describe, it } from "vitest";
 
-import { makeBlockedResult, makeExecuteResult, makeJestResult } from "#test/mocks/spec-results.ts";
+import {
+	makeBlockedResult,
+	makeExecuteResult,
+	makeJestResult,
+} from "#test/helpers/unit/spec-results.ts";
 import { mergeProjectResults } from "./merge.ts";
 
 describe(mergeProjectResults, () => {

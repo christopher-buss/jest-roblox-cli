@@ -1,3 +1,5 @@
+import type { MemoryVolume } from "@isentinel/dev-vitest-utils";
+import { createMemoryFileSystem } from "@isentinel/dev-vitest-utils";
 import { fromAny } from "@total-typescript/shoehorn";
 
 import { Buffer } from "node:buffer";
@@ -6,11 +8,9 @@ import * as path from "node:path";
 import process from "node:process";
 import { describe, it, vi } from "vitest";
 
-import type { MemoryVolume } from "#test/mocks/memory-file-system.ts";
-import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
-import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
-import { writingRojoExec } from "#test/mocks/rojo-exec.ts";
-import { createRunSeams } from "#test/mocks/run-seams.ts";
+import { createResolvedConfig } from "#test/helpers/unit/resolved-config.ts";
+import { writingRojoExec } from "#test/helpers/unit/rojo-exec.ts";
+import { createRunSeams } from "#test/helpers/unit/run-seams.ts";
 import type { AttributionResult } from "../attribution/attribution.ts";
 import type { Backend } from "../backends/dispatch-request.ts";
 import type { BackendResult, DispatchBase } from "../backends/interface.ts";

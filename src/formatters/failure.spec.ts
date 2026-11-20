@@ -1,10 +1,10 @@
+import { createMemoryFileSystem } from "@isentinel/dev-vitest-utils";
 import { fromPartial } from "@total-typescript/shoehorn";
 
 import * as path from "node:path";
 import { describe, it, vi } from "vitest";
 
-import { createPlainStyles } from "#test/mocks/format-plain-styles.ts";
-import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
+import { createPlainStyles } from "#test/helpers/unit/format-plain-styles.ts";
 import type { SourceMapper } from "../source-mapper/index.ts";
 import type { ColorFunc, Styles } from "../terminal/palette.ts";
 import type { TestCaseResult, TestFileResult } from "../types/jest-result-types.ts";

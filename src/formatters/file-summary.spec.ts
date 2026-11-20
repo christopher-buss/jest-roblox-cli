@@ -2,7 +2,7 @@ import { fromAny } from "@total-typescript/shoehorn";
 
 import { describe, it } from "vitest";
 
-import { createTaggedStyles } from "#test/mocks/format-tagged-styles.ts";
+import { createTaggedStyles } from "#test/helpers/unit/format-tagged-styles.ts";
 import type { JestResult, TestCaseResult, TestFileResult } from "../types/jest-result-types.ts";
 import { computeProjectStats, formatFileSummary } from "./file-summary.ts";
 

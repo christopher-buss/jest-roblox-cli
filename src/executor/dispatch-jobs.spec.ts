@@ -1,11 +1,11 @@
+import { createMemoryFileSystem } from "@isentinel/dev-vitest-utils";
 import { fromAny } from "@total-typescript/shoehorn";
 
 import { describe, it, vi } from "vitest";
 
-import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
-import { NOOP_PROGRESS } from "#test/mocks/noop-progress.ts";
-import { projectJob } from "#test/mocks/project-job.ts";
-import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
+import { NOOP_PROGRESS } from "#test/helpers/unit/noop-progress.ts";
+import { projectJob } from "#test/helpers/unit/project-job.ts";
+import { createResolvedConfig } from "#test/helpers/unit/resolved-config.ts";
 import type { Backend } from "../backends/dispatch-request.ts";
 import type { TimingCollector } from "../timing/orchestration-collector.ts";
 import type { TsconfigReader } from "../tsconfig/tsconfig-mappings.ts";

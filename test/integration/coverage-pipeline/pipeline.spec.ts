@@ -1,12 +1,12 @@
 import path from "node:path";
 import { describe, it } from "vitest";
 
-import { createRbxtsFixtureSandbox } from "#test/harness/helpers.ts";
 import {
 	instrumentFixtureAsync,
 	reportCoverageAsync,
-} from "#test/integration/coverage-pipeline/coverage-run.ts";
-import { buildSyntheticCoverage } from "#test/mocks/coverage-spec-synthetic.ts";
+} from "#test/helpers/integration/coverage-run.ts";
+import { buildSyntheticCoverage } from "#test/helpers/integration/coverage-spec-synthetic.ts";
+import { createRbxtsFixtureSandbox } from "#test/helpers/integration/helpers.ts";
 
 const RBXTS_FIXTURE = path.resolve(__dirname, "../../e2e/fixtures/rbxts-project");
 

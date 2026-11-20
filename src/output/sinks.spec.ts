@@ -1,9 +1,10 @@
+import { createMemoryFileSystem, type MemoryVolume } from "@isentinel/dev-vitest-utils";
+
 import * as path from "node:path";
 import process from "node:process";
 import { describe, it, type MockInstance, vi } from "vitest";
 
-import { createMemoryFileSystem, type MemoryVolume } from "#test/mocks/memory-file-system.ts";
-import { makeExecuteResult, makeJestResult } from "#test/mocks/spec-results.ts";
+import { makeExecuteResult, makeJestResult } from "#test/helpers/unit/spec-results.ts";
 import type { GameOutputEntry } from "../protocol/game-output.ts";
 import type {
 	OutputSettings,

@@ -1,11 +1,11 @@
+import { createMemoryFileSystem } from "@isentinel/dev-vitest-utils";
 import { fromPartial } from "@total-typescript/shoehorn";
 
 import * as path from "node:path";
 import { describe, it, type TestContext, vi } from "vitest";
 import type { WebSocket } from "ws";
 
-import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
-import { MockWebSocket } from "#test/mocks/mock-web-socket.ts";
+import { MockWebSocket } from "#test/helpers/unit/mock-web-socket.ts";
 import {
 	startNilReturnRelay,
 	startProcessWatch,

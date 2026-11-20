@@ -1,6 +1,7 @@
+import { createMemoryFileSystem } from "@isentinel/dev-vitest-utils";
+
 import { describe, it, vi } from "vitest";
 
-import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { readTimingSetting, settleRunEntry } from "./run-entry-options.ts";
 
 describe(readTimingSetting, () => {

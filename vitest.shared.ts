@@ -3,10 +3,7 @@ import { resolve } from "node:path";
 import process from "node:process";
 import { defineConfig, type TestProjectInlineConfiguration } from "vitest/config";
 
-export const NO_PROCESS_START_SETUP = resolve(
-	import.meta.dirname,
-	"test/setup/no-process-start.ts",
-);
+export const NO_PROCESS_START_SETUP = "@isentinel/dev-vitest-utils/setup/no-process-start";
 
 // sync.sh copies this file to the jest-roblox mirror without the setup.
 const MACHINE_BUDGET_SETUP = resolve(import.meta.dirname, "vitest.machine-budget.ts");
@@ -34,7 +31,7 @@ export const unitProject = {
 			optimizer: {
 				ssr: {
 					enabled: true,
-					include: ["jest-extended"],
+					include: ["@isentinel/dev-vitest-utils > jest-extended"],
 				},
 			},
 		},
@@ -69,13 +66,13 @@ export const sharedConfig = defineConfig({
 			`${PROJECT_GLOB}/**/test/setup/**`,
 			`${PROJECT_GLOB}/**/tsconfig*.json`,
 			`${WORKSPACE_GLOB}/tsconfig*.json`,
-			`${WORKSPACE_GLOB}/test/setup/**`,
+			`${WORKSPACE_GLOB}/libs/vitest-utils/src/setup/**`,
 			`${WORKSPACE_GLOB}/vitest.shared.ts`,
 		],
 		globalSetup: existsSync(MACHINE_BUDGET_SETUP) ? [MACHINE_BUDGET_SETUP] : [],
 		isolate: false,
 		restoreMocks: true,
-		setupFiles: ["./test/setup/jest-extended.ts"],
+		setupFiles: ["@isentinel/dev-vitest-utils/setup/jest-extended"],
 		unstubEnvs: true,
 		watch: false,
 	},

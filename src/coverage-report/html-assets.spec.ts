@@ -5,7 +5,7 @@ import * as path from "node:path";
 import istanbulHtmlAssets from "virtual:istanbul-html-assets";
 import { assert, describe, it, vi } from "vitest";
 
-import { createMemoryReportEnvironment } from "#test/mocks/memory-report-context.ts";
+import { createMemoryReportEnvironment } from "#test/helpers/unit/memory-report-context.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import type { HtmlAssetGroup } from "./html-assets.ts";
 import { writeIstanbulHtmlAssets } from "./html-assets.ts";

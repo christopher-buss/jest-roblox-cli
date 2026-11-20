@@ -1,14 +1,14 @@
+import type { MemoryVolume } from "@isentinel/dev-vitest-utils";
+import { createMemoryFileSystem } from "@isentinel/dev-vitest-utils";
 import { fromAny } from "@total-typescript/shoehorn";
 
 import * as path from "node:path";
 import process from "node:process";
 import { describe, it, vi } from "vitest";
 
-import { fakeTimingCollector, phaseNamesOf } from "#test/mocks/fake-timing-collector.ts";
-import type { MemoryVolume } from "#test/mocks/memory-file-system.ts";
-import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
-import { posixRoot } from "#test/mocks/posix-path.ts";
-import { STUB_FILENAME } from "#test/mocks/run-constants.ts";
+import { fakeTimingCollector, phaseNamesOf } from "#test/helpers/unit/fake-timing-collector.ts";
+import { posixRoot } from "#test/helpers/unit/posix-root.ts";
+import { STUB_FILENAME } from "#test/helpers/unit/run-constants.ts";
 import type { ResolvedProjectConfig } from "../config/projects.ts";
 import type { WorkspacePackageDescriptor } from "../shadow/workspace-prepare-types.ts";
 import type { WorkspacePackageCoverage } from "../shadow/workspace-prepare.ts";

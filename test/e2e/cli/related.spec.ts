@@ -3,13 +3,13 @@ import * as path from "node:path";
 import { stripVTControlCharacters } from "node:util";
 import { describe, it } from "vitest";
 
-import { initGitRepository } from "#test/e2e/cli/git-repository.ts";
-import type { PartialRunResult } from "#test/e2e/cli/partial-run.ts";
+import { initGitRepository } from "#test/helpers/e2e/git-repository.ts";
+import type { PartialRunResult } from "#test/helpers/e2e/partial-run.ts";
 import {
 	PARTIAL_RUN_TIMEOUT_MS as RUN_TIMEOUT_MS,
 	runPartialAsync,
-} from "#test/e2e/cli/partial-run.ts";
-import { createFixtureSandbox, rojoOnPath } from "#test/harness/helpers.ts";
+} from "#test/helpers/e2e/partial-run.ts";
+import { createFixtureSandbox, rojoOnPath } from "#test/helpers/integration/helpers.ts";
 
 const RELATED_FIXTURE_PATH = path.resolve(__dirname, "../fixtures/related-project");
 const RBXTS_FIXTURE_PATH = path.resolve(__dirname, "../fixtures/related-rbxts-project");

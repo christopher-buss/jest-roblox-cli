@@ -1,8 +1,9 @@
+import { createMemoryFileSystem } from "@isentinel/dev-vitest-utils";
+
 import { describe, it } from "vitest";
 
-import { copyIgnoreMatcher } from "#test/mocks/coverage-copy-ignore.ts";
-import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
-import { posixRoot } from "#test/mocks/posix-path.ts";
+import { copyIgnoreMatcher } from "#test/helpers/unit/coverage-copy-ignore.ts";
+import { posixRoot } from "#test/helpers/unit/posix-root.ts";
 import { reconcileShadowToSource, tryRemove } from "./shadow-reconcile.ts";
 
 describe(reconcileShadowToSource, () => {

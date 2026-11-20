@@ -2,9 +2,9 @@ import { fromPartial } from "@total-typescript/shoehorn";
 
 import { assert, describe, it } from "vitest";
 
-import { EXEC_ERROR_RESULT, TIMED_OUT_RESULT } from "#test/mocks/format-error-results.ts";
-import { FAILING_RESULT, MIXED_RESULT, PASSING_RESULT } from "#test/mocks/format-results.ts";
-import { posixRoot } from "#test/mocks/posix-path.ts";
+import { EXEC_ERROR_RESULT, TIMED_OUT_RESULT } from "#test/helpers/unit/format-error-results.ts";
+import { FAILING_RESULT, MIXED_RESULT, PASSING_RESULT } from "#test/helpers/unit/format-results.ts";
+import { posixRoot } from "#test/helpers/unit/posix-root.ts";
 import type { SourceMapper } from "../source-mapper/index.ts";
 import type { JestResult } from "../types/jest-result-types.ts";
 import { formatAnnotations, formatJobSummary, resolveGitHubActions } from "./github-actions.ts";

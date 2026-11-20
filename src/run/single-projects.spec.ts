@@ -1,12 +1,12 @@
+import { createMemoryFileSystem } from "@isentinel/dev-vitest-utils";
 import type { RojoTreeNode } from "@isentinel/rojo-utils";
 import { fromAny } from "@total-typescript/shoehorn";
 
 import * as path from "node:path";
 import { describe, it } from "vitest";
 
-import { fakeTimingCollector, phaseNamesOf } from "#test/mocks/fake-timing-collector.ts";
-import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
-import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
+import { fakeTimingCollector, phaseNamesOf } from "#test/helpers/unit/fake-timing-collector.ts";
+import { createResolvedConfig } from "#test/helpers/unit/resolved-config.ts";
 import { readRunRojoTree, resolveRunProjectsAsync } from "./single-projects.ts";
 
 const tree: RojoTreeNode = fromAny({

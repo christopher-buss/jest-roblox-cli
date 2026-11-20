@@ -3,7 +3,7 @@ import { fromAny, fromPartial } from "@total-typescript/shoehorn";
 import process from "node:process";
 import { describe, it } from "vitest";
 
-import { createPlainStyles } from "#test/mocks/format-plain-styles.ts";
+import { createPlainStyles } from "#test/helpers/unit/format-plain-styles.ts";
 import type { MappedLocation, SourceMapper } from "../source-mapper/index.ts";
 import type { TestFileResult } from "../types/jest-result-types.ts";
 import {

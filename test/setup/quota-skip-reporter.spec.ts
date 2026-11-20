@@ -1,10 +1,10 @@
+import { createMemoryFileSystem } from "@isentinel/dev-vitest-utils";
 import { fromPartial } from "@total-typescript/shoehorn";
 
 import process from "node:process";
 import { describe, it, type TestContext, vi } from "vitest";
 import type { TestModule } from "vitest/node";
 
-import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { NOTE_PREFIX, QuotaSkipReporter } from "./quota-skip-reporter.ts";
 
 const REPORT_DIRECTORY = "/reports";

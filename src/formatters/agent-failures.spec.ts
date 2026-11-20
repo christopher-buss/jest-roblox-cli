@@ -2,8 +2,8 @@ import { fromPartial } from "@total-typescript/shoehorn";
 
 import { describe, it, vi } from "vitest";
 
-import { createTestCase, FAILING_RESULT } from "#test/mocks/format-results.ts";
-import { createSingleFileResult, failingFileResult } from "#test/mocks/spec-format.ts";
+import { createTestCase, FAILING_RESULT } from "#test/helpers/unit/format-results.ts";
+import { createSingleFileResult, failingFileResult } from "#test/helpers/unit/spec-format.ts";
 import type { SourceMapper, SourceSnippet } from "../source-mapper/index.ts";
 import type { JestResult, TestCaseResult } from "../types/jest-result-types.ts";
 import {

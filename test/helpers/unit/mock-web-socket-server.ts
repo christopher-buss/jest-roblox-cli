@@ -1,0 +1,45 @@
+import { fromPartial } from "@total-typescript/shoehorn";
+
+import EventEmitter from "node:events";
+import type { AddressInfo } from "node:net";
+import type { Mock } from "vitest";
+import { vi } from "vitest";
+import type { WebSocketServer } from "ws";
+
+import type { WebSocketServerOptions } from "#src/backends/web-socket-server-factory.ts";
+import type { MockWebSocket } from "#test/helpers/unit/mock-web-socket.ts";
+
+const instances: Array<MockWebSocketServer> = [];
+
+export class MockWebSocketServer extends EventEmitter {
+	/**
+	 * Mirrors ws.WebSocketServer client tracking.
+	 */
+	public readonly clients = new Set<MockWebSocket>();
+	public readonly close: Mock<() => void> = vi.fn();
+	public readonly port: number;
+
+	constructor(options: { port: number }) {
+		super();
+		this.port = options.port;
+		instances.push(this);
+		this.on("connection", (socket: MockWebSocket) => {
+			this.clients.add(socket);
+			socket.on("close", () => {
+				this.clients.delete(socket);
+			});
+		});
+	}
+
+	public address(): Pick<AddressInfo, "port"> {
+		return { port: this.port };
+	}
+}
+
+export function mockWebSocketServerFactory(options: WebSocketServerOptions): WebSocketServer {
+	return fromPartial(new MockWebSocketServer(options));
+}
+
+export function getLastCreatedServer(): MockWebSocketServer | undefined {
+	return instances.at(-1);
+}

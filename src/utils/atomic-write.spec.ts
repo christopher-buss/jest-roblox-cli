@@ -1,9 +1,10 @@
+import { createMemoryFileSystem } from "@isentinel/dev-vitest-utils";
+
 import { Buffer } from "node:buffer";
 import * as path from "node:path";
 import process from "node:process";
 import { describe, it, vi } from "vitest";
 
-import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { atomicWrite } from "./atomic-write.ts";
 import type { FileSystem } from "./file-system.ts";
 

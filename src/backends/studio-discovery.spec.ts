@@ -1,8 +1,9 @@
+import type { MemoryFileSystem } from "@isentinel/dev-vitest-utils";
+import { createMemoryFileSystem } from "@isentinel/dev-vitest-utils";
+
 // cspell:ignore LOCALAPPDATA mtime mtimes
 import { describe, it, vi } from "vitest";
 
-import type { MemoryFileSystem } from "#test/mocks/memory-file-system.ts";
-import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { discoverStudioPath, discoverUserDirectories } from "./studio-discovery.ts";
 
 const WIN_ENV = { LOCALAPPDATA: "C:/Users/dev/AppData/Local" };

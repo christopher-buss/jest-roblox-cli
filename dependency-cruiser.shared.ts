@@ -39,6 +39,7 @@ export type SharedRuleName =
 	| "integration-does-not-import-other-suite-helpers"
 	| "integration-imports-only-package-interface"
 	| "neutral-fixtures-contain-no-production-access"
+	| "neutral-helpers-do-not-touch-real-disk"
 	| "only-file-system-seam-imports-node-fs"
 	| "test-imports-use-package-alias"
 	| "unit-helpers-have-no-runtime-production-imports"
@@ -307,6 +308,21 @@ function createTierRules({
 			severity: "error",
 			to: {
 				path: production,
+			},
+		},
+		{
+			name: "neutral-helpers-do-not-touch-real-disk",
+			comment: "Any test kind may import a neutral helper, the unit tier included.",
+			from: {
+				path: [
+					pathPrefix(`${testRoot}/fixtures`),
+					`^${RegExp.escape(testRoot)}/helpers/[^/]+$`,
+				],
+			},
+			severity: "error",
+			to: {
+				dependencyTypes: ["core"],
+				path: "^(?:node:)?(?:fs|fs/promises|os)$",
 			},
 		},
 	];

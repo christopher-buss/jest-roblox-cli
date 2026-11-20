@@ -1,6 +1,7 @@
+import { createMemoryFileSystem } from "@isentinel/dev-vitest-utils";
+
 import { describe, it, vi } from "vitest";
 
-import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { createV3Mapper } from "./v-3-mapper.ts";
 
 /** A map with one segment on line 1 and one on line 2. */

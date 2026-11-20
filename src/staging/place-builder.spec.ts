@@ -1,3 +1,5 @@
+import type { MemoryFileSystem } from "@isentinel/dev-vitest-utils";
+import { createMemoryFileSystem } from "@isentinel/dev-vitest-utils";
 import { PLACE_CONTENT_ID_NAME, PLACE_CONTENT_ID_SERVICE } from "@isentinel/roblox-runner";
 import { fromAny } from "@total-typescript/shoehorn";
 
@@ -8,12 +10,10 @@ import process from "node:process";
 import type { Mock, MockInstance } from "vitest";
 import { describe, it, vi } from "vitest";
 
-import { ageFile } from "#test/mocks/aged-file.ts";
-import type { MemoryFileSystem } from "#test/mocks/memory-file-system.ts";
-import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
-import { posixPath } from "#test/mocks/posix-path.ts";
-import { writingRojoExec } from "#test/mocks/rojo-exec.ts";
-import { poolKeyOf, staged, stagedProjectSchema } from "#test/mocks/staged-project.ts";
+import { posixPath } from "#test/helpers/posix-path.ts";
+import { ageFile } from "#test/helpers/unit/aged-file.ts";
+import { writingRojoExec } from "#test/helpers/unit/rojo-exec.ts";
+import { poolKeyOf, staged, stagedProjectSchema } from "#test/helpers/unit/staged-project.ts";
 import type { ChildProcessRunner } from "../utils/child-process.ts";
 import {
 	buildPlaceAsync,

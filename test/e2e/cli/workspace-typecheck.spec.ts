@@ -13,7 +13,7 @@ import {
 	createFixtureSandbox,
 	readMergedTestFilePaths,
 	runCliAsync,
-} from "#test/harness/helpers.ts";
+} from "#test/helpers/integration/helpers.ts";
 
 const WORKSPACE_FIXTURE = path.resolve(__dirname, "../fixtures/workspace");
 

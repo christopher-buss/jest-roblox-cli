@@ -1,7 +1,7 @@
 import * as path from "node:path";
 import { describe, it, vi } from "vitest";
 
-import { clockTimingCollector } from "#test/mocks/clock-timing-collector.ts";
+import { clockTimingCollector } from "#test/helpers/unit/clock-timing-collector.ts";
 import type { PartialRunInput } from "./partial-run.ts";
 import { resolvePartialRun } from "./partial-run.ts";
 

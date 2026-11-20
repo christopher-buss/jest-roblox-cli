@@ -1,3 +1,4 @@
+import { createMemoryFileSystem } from "@isentinel/dev-vitest-utils";
 import { TaskStallError } from "@isentinel/roblox-runner";
 import { fromAny } from "@total-typescript/shoehorn";
 
@@ -6,11 +7,14 @@ import process from "node:process";
 import { stripVTControlCharacters } from "node:util";
 import { assert, describe, it, vi } from "vitest";
 
-import { expectedDefaultFormatters } from "#test/mocks/config-default-formatters.ts";
-import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
-import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
-import type { OutputSpies } from "#test/mocks/spec-results.ts";
-import { makeExecuteResult, makeJestResult, setupOutputSpies } from "#test/mocks/spec-results.ts";
+import { expectedDefaultFormatters } from "#test/helpers/unit/config-default-formatters.ts";
+import { createResolvedConfig } from "#test/helpers/unit/resolved-config.ts";
+import type { OutputSpies } from "#test/helpers/unit/spec-results.ts";
+import {
+	makeExecuteResult,
+	makeJestResult,
+	setupOutputSpies,
+} from "#test/helpers/unit/spec-results.ts";
 import packageJson from "../package.json" with { type: "json" };
 import type { CliDependencies } from "./cli.ts";
 import { main, runAsync } from "./cli.ts";

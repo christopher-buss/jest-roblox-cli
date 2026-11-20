@@ -1,8 +1,9 @@
+import { createMemoryFileSystem } from "@isentinel/dev-vitest-utils";
+
 import * as path from "node:path";
 import { assert, describe, it, vi } from "vitest";
 
-import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
-import { ROOT, writeInstalledWorkspace } from "#test/mocks/spec-pnpm-workspace.ts";
+import { ROOT, writeInstalledWorkspace } from "#test/helpers/unit/spec-pnpm-workspace.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import type { PackageInfo } from "./package-resolver.ts";
 import {

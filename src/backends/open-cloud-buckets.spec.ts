@@ -1,7 +1,7 @@
 import { describe, it } from "vitest";
 
-import { projectJob } from "#test/mocks/project-job.ts";
-import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
+import { projectJob } from "#test/helpers/unit/project-job.ts";
+import { createResolvedConfig } from "#test/helpers/unit/resolved-config.ts";
 import type { ProjectJob } from "./interface.ts";
 import { bucketJobs, bucketScript, resolveBucketCount } from "./open-cloud-buckets.ts";
 

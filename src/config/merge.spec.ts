@@ -1,7 +1,7 @@
 import { describe, it, vi } from "vitest";
 
-import { expectedDefaultFormatters } from "#test/mocks/config-default-formatters.ts";
-import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
+import { expectedDefaultFormatters } from "#test/helpers/unit/config-default-formatters.ts";
+import { createResolvedConfig } from "#test/helpers/unit/resolved-config.ts";
 import { mergeCliWithConfig } from "./merge.ts";
 
 describe(mergeCliWithConfig, () => {

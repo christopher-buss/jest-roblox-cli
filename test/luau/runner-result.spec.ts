@@ -6,7 +6,7 @@ import {
 	readLuauTree,
 	spawnHarness,
 	stubbedModules,
-} from "#test/luau/lute-harness.ts";
+} from "#test/helpers/integration/lute-harness.ts";
 
 // Drives the shared runner-result builder under lute. Its instance-resolver and
 // per-test-coverage dependencies are stubbed by the harness, which the module

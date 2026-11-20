@@ -1,11 +1,12 @@
+import { createMemoryFileSystem } from "@isentinel/dev-vitest-utils";
 import { isRojoTreeNode } from "@isentinel/rojo-utils";
 import type { RojoTreeNode } from "@isentinel/rojo-utils";
 
 import * as path from "node:path";
 import { describe, it } from "vitest";
 
-import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
-import { posixPath, posixRoot } from "#test/mocks/posix-path.ts";
+import { posixPath } from "#test/helpers/posix-path.ts";
+import { posixRoot } from "#test/helpers/unit/posix-root.ts";
 import { absolutizePackagePaths } from "./absolutize-paths.ts";
 import type { PathRedirect } from "./path-redirect.ts";
 

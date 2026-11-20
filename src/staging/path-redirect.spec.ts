@@ -1,6 +1,6 @@
 import { describe, it } from "vitest";
 
-import { posixRoot } from "#test/mocks/posix-path.ts";
+import { posixRoot } from "#test/helpers/unit/posix-root.ts";
 import { redirectPath } from "./path-redirect.ts";
 
 describe(redirectPath, () => {

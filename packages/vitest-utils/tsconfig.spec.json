@@ -1,0 +1,30 @@
+{
+	"extends": "@isentinel/tsconfig/typescript",
+	"compilerOptions": {
+		"composite": true,
+		"lib": ["es2025", "esnext"],
+		"libReplacement": true,
+		"rootDir": "../..",
+		"customConditions": ["source"],
+		"paths": {
+			"jest-extended": ["../../types/jest-extended.d.ts"]
+		},
+		"emitDeclarationOnly": true,
+		"noEmit": false,
+		"outDir": "./out-tsc/vitest",
+		"isolatedDeclarations": false
+	},
+	"references": [
+		{
+			"path": "./tsconfig.lib.json"
+		}
+	],
+	"include": [
+		"src/**/*.spec.ts",
+		"src/**/*.spec-d.ts",
+		"package.json",
+		"../../types/**/*.d.ts",
+		"test/**/*.ts",
+		"src/**/*.d.ts"
+	]
+}

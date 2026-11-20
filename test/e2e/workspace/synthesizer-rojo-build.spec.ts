@@ -15,7 +15,7 @@ import {
 	namedNodes,
 	nodesBuiltFrom,
 	readSourcemap,
-} from "#test/e2e/workspace/sourcemap.ts";
+} from "#test/helpers/e2e/sourcemap.ts";
 
 function createTemporaryDirectory(onTestFinished: TestContext["onTestFinished"]): string {
 	const directory = fs.mkdtempSync(path.join(os.tmpdir(), "synth-rojo-"));

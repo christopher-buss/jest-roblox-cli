@@ -6,8 +6,8 @@ import process from "node:process";
 import { stripVTControlCharacters } from "node:util";
 import { describe, it, type Mock, type TestContext, vi } from "vitest";
 
-import { createMemoryReportEnvironment } from "#test/mocks/memory-report-context.ts";
-import { posixPath } from "#test/mocks/posix-path.ts";
+import { posixPath } from "#test/helpers/posix-path.ts";
+import { createMemoryReportEnvironment } from "#test/helpers/unit/memory-report-context.ts";
 import type { MappedCoverageResult, MappedFileCoverage } from "./mapper-types.ts";
 import type { createReporter as registryReporter } from "./reporter-registry.ts";
 import { checkThresholds, generateReports, printCoverageHeader } from "./reporter.ts";

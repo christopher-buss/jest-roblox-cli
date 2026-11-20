@@ -4,7 +4,7 @@ import * as path from "node:path";
 import { describe, it, vi } from "vitest";
 
 import { buildJestArgv, DEFAULT_CONFIG, OpenCloudBackend } from "#src/api.ts";
-import { startFakeOpenCloudServerAsync } from "#test/harness/fake-open-cloud.ts";
+import { startFakeOpenCloudServerAsync } from "#test/helpers/integration/fake-open-cloud.ts";
 
 const credentials = { apiKey: "test-api-key", placeId: "456", universeId: "123" };
 function successJest(): string {

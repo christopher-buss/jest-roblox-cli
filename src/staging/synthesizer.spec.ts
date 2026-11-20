@@ -1,3 +1,4 @@
+import { createMemoryFileSystem } from "@isentinel/dev-vitest-utils";
 import type { RojoTreeNode } from "@isentinel/rojo-utils";
 
 import { type } from "arktype";
@@ -5,9 +6,9 @@ import * as path from "node:path";
 import type { Except } from "type-fest";
 import { describe, it } from "vitest";
 
-import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
-import { posixPath, posixRoot } from "#test/mocks/posix-path.ts";
-import { configErrorLike } from "#test/mocks/run-config-error.ts";
+import { posixPath } from "#test/helpers/posix-path.ts";
+import { posixRoot } from "#test/helpers/unit/posix-root.ts";
+import { configErrorLike } from "#test/helpers/unit/run-config-error.ts";
 import type { PathRedirect } from "./path-redirect.ts";
 import type { PackageDescriptor } from "./synthesizer-types.ts";
 import { synthesize } from "./synthesizer.ts";

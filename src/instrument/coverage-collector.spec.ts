@@ -3,7 +3,7 @@ import { loadLuauParser } from "@isentinel/luau-ast/parser";
 
 import { assert, describe, it } from "vitest";
 
-import { COLLECTED_FIXTURES } from "#test/mocks/coverage-collected-fixtures.ts";
+import { COLLECTED_FIXTURES } from "#test/helpers/unit/coverage-collected-fixtures.ts";
 import type { CollectorResult } from "./coverage-accumulator.ts";
 import { collectCoverage } from "./coverage-collector.ts";
 

@@ -2,9 +2,9 @@ import { fromAny } from "@total-typescript/shoehorn";
 
 import { describe, it } from "vitest";
 
-import { emptyPending, pendingResult } from "#test/mocks/coverage-instr-pending.ts";
-import { createCoverageMap } from "#test/mocks/coverage-spec-mapper.ts";
-import type { CoverageMapFile } from "#test/mocks/coverage-spec-mapper.ts";
+import { emptyPending, pendingResult } from "#test/helpers/unit/coverage-instr-pending.ts";
+import { createCoverageMap } from "#test/helpers/unit/coverage-spec-mapper.ts";
+import type { CoverageMapFile } from "#test/helpers/unit/coverage-spec-mapper.ts";
 import type { RawCoverageData } from "../coverage-data/coverage-types.ts";
 import { passthroughFile } from "./mapper-passthrough.ts";
 import type { MappedFileCoverage } from "./mapper-types.ts";

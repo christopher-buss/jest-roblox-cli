@@ -3,7 +3,7 @@ import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { describe, it, type TestContext } from "vitest";
 
-import { createSandboxDirectory } from "#test/harness/sandbox-root.ts";
+import { createSandboxDirectory } from "#test/helpers/integration/sandbox-root.ts";
 
 const PACKAGE_ROOT = path.resolve(__dirname, "../..");
 const VITEST_BIN = path.resolve(PACKAGE_ROOT, "node_modules/vitest/vitest.mjs");

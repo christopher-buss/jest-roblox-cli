@@ -2,8 +2,8 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { describe, it } from "vitest";
 
-import { nodeAt, readPlaceTree } from "#test/e2e/cli/place-tree.ts";
-import { startFakeOpenCloudServerAsync } from "#test/harness/fake-open-cloud.ts";
+import { nodeAt, readPlaceTree } from "#test/helpers/e2e/place-tree.ts";
+import { startFakeOpenCloudServerAsync } from "#test/helpers/integration/fake-open-cloud.ts";
 import {
 	buildPassingJestOutput,
 	createFixtureSandbox,
@@ -12,7 +12,7 @@ import {
 	RUN_TIMEOUT_MS,
 	runCliAsync,
 	runSeaExecutableAsync,
-} from "#test/harness/helpers.ts";
+} from "#test/helpers/integration/helpers.ts";
 
 const LUAU_FIXTURE_PATH = path.resolve(__dirname, "../fixtures/luau-project");
 const WORKSPACE_FIXTURE_PATH = path.resolve(__dirname, "../fixtures/workspace");

@@ -1,8 +1,9 @@
+import { createMemoryFileSystem } from "@isentinel/dev-vitest-utils";
+
 import process from "node:process";
 import { describe, it, vi } from "vitest";
 
-import { MANIFEST_VERSION } from "#test/mocks/coverage-versions.ts";
-import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
+import { MANIFEST_VERSION } from "#test/helpers/unit/coverage-versions.ts";
 import { loadPriorManifest } from "./manifest-load.ts";
 import type { CoverageManifest } from "./manifest.ts";
 

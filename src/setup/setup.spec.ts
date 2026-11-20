@@ -1,7 +1,8 @@
+import { createMemoryFileSystem } from "@isentinel/dev-vitest-utils";
+
 import * as path from "node:path";
 import { describe, it } from "vitest";
 
-import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
 import { aliasVersionWarning, formatSetupOutcome, runSetup } from "./setup.ts";
 
 const HOME = path.resolve("/home/user");

@@ -1,11 +1,11 @@
+import type { MemoryVolume } from "@isentinel/dev-vitest-utils";
+import { createMemoryFileSystem } from "@isentinel/dev-vitest-utils";
 import type { RojoTreeNode } from "@isentinel/rojo-utils";
 
 import * as path from "node:path";
 import { describe, it, vi } from "vitest";
 
-import type { MemoryVolume } from "#test/mocks/memory-file-system.ts";
-import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
-import { posixRoot } from "#test/mocks/posix-path.ts";
+import { posixRoot } from "#test/helpers/unit/posix-root.ts";
 import type { RootDiscovery } from "./discover-roots.ts";
 import { discoverLuauRoots, isLuauFile } from "./discover-roots.ts";
 

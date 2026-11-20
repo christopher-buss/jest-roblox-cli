@@ -1,3 +1,5 @@
+import type { MemoryVolume } from "@isentinel/dev-vitest-utils";
+import { createMemoryFileSystem } from "@isentinel/dev-vitest-utils";
 import { fromAny } from "@total-typescript/shoehorn";
 
 import * as path from "node:path";
@@ -5,20 +7,18 @@ import process from "node:process";
 import type { Mock } from "vitest";
 import { describe, it, vi } from "vitest";
 
-import { fakeTimingCollector } from "#test/mocks/fake-timing-collector.ts";
-import type { MemoryVolume } from "#test/mocks/memory-file-system.ts";
-import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
-import { movableClockCollector } from "#test/mocks/movable-clock.ts";
-import { NOOP_PROGRESS } from "#test/mocks/noop-progress.ts";
-import { fakeBackendOfKind } from "#test/mocks/place-input.ts";
-import { posixPath } from "#test/mocks/posix-path.ts";
-import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
-import { writingRojoExec } from "#test/mocks/rojo-exec.ts";
-import { configErrorLike } from "#test/mocks/run-config-error.ts";
-import { MANIFEST_VERSION, STUB_FILENAME } from "#test/mocks/run-constants.ts";
-import { createRunSeams } from "#test/mocks/run-seams.ts";
-import { basenameSetupResolver } from "#test/mocks/setup-resolver.ts";
-import { makeExecuteResult, makeJestResult } from "#test/mocks/spec-results.ts";
+import { posixPath } from "#test/helpers/posix-path.ts";
+import { fakeTimingCollector } from "#test/helpers/unit/fake-timing-collector.ts";
+import { movableClockCollector } from "#test/helpers/unit/movable-clock.ts";
+import { NOOP_PROGRESS } from "#test/helpers/unit/noop-progress.ts";
+import { fakeBackendOfKind } from "#test/helpers/unit/place-input.ts";
+import { createResolvedConfig } from "#test/helpers/unit/resolved-config.ts";
+import { writingRojoExec } from "#test/helpers/unit/rojo-exec.ts";
+import { configErrorLike } from "#test/helpers/unit/run-config-error.ts";
+import { MANIFEST_VERSION, STUB_FILENAME } from "#test/helpers/unit/run-constants.ts";
+import { createRunSeams } from "#test/helpers/unit/run-seams.ts";
+import { basenameSetupResolver } from "#test/helpers/unit/setup-resolver.ts";
+import { makeExecuteResult, makeJestResult } from "#test/helpers/unit/spec-results.ts";
 import type { Backend } from "../backends/dispatch-request.ts";
 import type { BackendResult, DispatchBase } from "../backends/interface.ts";
 import type { InlineProjectConfig } from "../config/config-types.ts";

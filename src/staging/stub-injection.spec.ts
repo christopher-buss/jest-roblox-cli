@@ -1,12 +1,12 @@
+import { createMemoryFileSystem } from "@isentinel/dev-vitest-utils";
 import { isRojoTreeNode } from "@isentinel/rojo-utils";
 import type { RojoTreeNode } from "@isentinel/rojo-utils";
 
 import * as path from "node:path";
 import { describe, it, vi } from "vitest";
 
-import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
-import { posixPath } from "#test/mocks/posix-path.ts";
-import { configErrorLike } from "#test/mocks/run-config-error.ts";
+import { posixPath } from "#test/helpers/posix-path.ts";
+import { configErrorLike } from "#test/helpers/unit/run-config-error.ts";
 import { injectStubMounts } from "./stub-injection.ts";
 
 const ROOT = path.resolve("/repo");

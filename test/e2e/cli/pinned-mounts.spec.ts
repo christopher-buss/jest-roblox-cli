@@ -1,8 +1,12 @@
 import { describe, it } from "vitest";
 
-import { buildFixturePlaceAsync, FIXTURE_PACKAGE, modelXml } from "#test/e2e/cli/place-fixture.ts";
-import { descendants, nodeAt, readPlaceTree } from "#test/e2e/cli/place-tree.ts";
-import { rojoOnPath } from "#test/harness/helpers.ts";
+import {
+	buildFixturePlaceAsync,
+	FIXTURE_PACKAGE,
+	modelXml,
+} from "#test/helpers/e2e/place-fixture.ts";
+import { descendants, nodeAt, readPlaceTree } from "#test/helpers/e2e/place-tree.ts";
+import { rojoOnPath } from "#test/helpers/integration/helpers.ts";
 
 /**
  * The staged-tree fix has no unit seam that can prove it: whether a class the

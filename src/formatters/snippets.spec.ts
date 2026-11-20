@@ -1,9 +1,10 @@
+import { createMemoryFileSystem } from "@isentinel/dev-vitest-utils";
+
 import * as path from "node:path";
 import process from "node:process";
 import { describe, it } from "vitest";
 
-import { createTaggedStyles } from "#test/mocks/format-tagged-styles.ts";
-import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
+import { createTaggedStyles } from "#test/helpers/unit/format-tagged-styles.ts";
 import type { MappedLocation } from "../source-mapper/index.ts";
 import type { FailureLocation } from "./failure-model.ts";
 import { resolveSourceSnippets } from "./snippets.ts";

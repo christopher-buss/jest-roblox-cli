@@ -1,7 +1,7 @@
 import * as path from "node:path";
 import { describe, it } from "vitest";
 
-import { posixRoot } from "#test/mocks/posix-path.ts";
+import { posixRoot } from "#test/helpers/unit/posix-root.ts";
 import { toPathRedirects } from "./coverage-root.ts";
 
 const PACKAGE = path.resolve("/repo/packages/foo");

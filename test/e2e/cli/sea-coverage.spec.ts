@@ -2,14 +2,14 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { describe, it } from "vitest";
 
-import { startFakeOpenCloudServerAsync } from "#test/harness/fake-open-cloud.ts";
+import { startFakeOpenCloudServerAsync } from "#test/helpers/integration/fake-open-cloud.ts";
 import {
 	createFixtureSandbox,
 	createOpenCloudEnvironment,
 	rojoOnPath,
 	RUN_TIMEOUT_MS,
 	runSeaBundleAsync,
-} from "#test/harness/helpers.ts";
+} from "#test/helpers/integration/helpers.ts";
 
 // Regression (jest-roblox-cli#6): `istanbul-reports` loads reporters with
 // `require(path.join(__dirname, 'lib', name))`, which the standalone binary

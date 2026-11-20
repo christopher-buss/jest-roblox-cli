@@ -6,7 +6,7 @@ import {
 	readLuauTree,
 	spawnHarness,
 	stubbedModules,
-} from "#test/luau/lute-harness.ts";
+} from "#test/helpers/integration/lute-harness.ts";
 
 // Drives the multi-mode runner under lute with the real Game Output capture,
 // watchdog and result seam, and every other sibling stubbed by the harness.

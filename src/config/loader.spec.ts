@@ -1,3 +1,4 @@
+import { createMemoryFileSystem } from "@isentinel/dev-vitest-utils";
 import { fromAny } from "@total-typescript/shoehorn";
 
 import type { ResolvedConfig as C12ResolvedConfig, LoadConfigOptions } from "c12";
@@ -6,10 +7,9 @@ import process from "node:process";
 import type { Mock } from "vitest";
 import { describe, it, vi } from "vitest";
 
-import { createConfigFixture } from "#test/mocks/config-fixture.ts";
-import { createLuteChildProcess } from "#test/mocks/lute-child-process.ts";
-import { createMemoryFileSystem } from "#test/mocks/memory-file-system.ts";
-import { createResolvedConfig } from "#test/mocks/resolved-config.ts";
+import { createConfigFixture } from "#test/helpers/unit/config-fixture.ts";
+import { createLuteChildProcess } from "#test/helpers/unit/lute-child-process.ts";
+import { createResolvedConfig } from "#test/helpers/unit/resolved-config.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import type { Config } from "./config-types.ts";
 import type { ConfigLoader, ConfigLoadOptions } from "./loader.ts";

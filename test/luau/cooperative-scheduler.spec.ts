@@ -5,7 +5,7 @@ import {
 	readHarness,
 	readLuauModule,
 	spawnHarness,
-} from "#test/luau/lute-harness.ts";
+} from "#test/helpers/integration/lute-harness.ts";
 
 const HOOK_SOURCE = readLuauModule("circus-hook.luau");
 const MODULE_SOURCE = readLuauModule("cooperative-scheduler.luau");
