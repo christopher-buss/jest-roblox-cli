@@ -16,10 +16,6 @@ minimumReleaseAgeExclude:
   - "@isentinel/eslint-config"
   - arktype@3.0.0-beta.1
   - tsrs@7.1.0-beta.tsrs2
-  - "@ark/schema@0.57.0-beta.1"
-  - "@ark/util@0.57.0-beta.1"
-  - arkregex@0.0.16-beta.1
-  - arksets@0.0.1-beta.1
 
 publicHoistPattern:
   - "*@rbxts*"

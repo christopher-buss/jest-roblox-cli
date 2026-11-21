@@ -217,6 +217,11 @@ export default createDependencyCruiserConfig({
 		"virtual:istanbul-html-assets",
 		"virtual:runner-plugin-sources",
 	],
+	exclude: [
+		`^${RegExp.escape(E2E_ROOT)}/fixtures/`,
+		`^${RegExp.escape(PROJECT_ROOT)}/[.]standalone/`,
+		"^[.][.]/dist/",
+	],
 	fileSystemSeam: [
 		"src/utils/file-system.ts",
 		"bin/jest-roblox.js",

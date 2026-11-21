@@ -18,6 +18,7 @@ export interface CruiserProjectOptions {
 	ambientModules?: ReadonlyArray<string>;
 	/** Shared rules this project opts out of; each is a recorded retrofit. */
 	disabledRules?: ReadonlyArray<SharedRuleName>;
+	exclude?: ReadonlyArray<string>;
 	/** The production files allowed to import `node:fs`. */
 	fileSystemSeam?: ReadonlyArray<string> | string;
 	/** Unit helpers that run production code; each is a recorded exemption. */
@@ -48,6 +49,8 @@ export type SharedRuleName =
 	| "unit-tier-does-not-touch-real-disk";
 
 type StructureRuleName = "no-cross-spec-imports" | "unit-spec-imports-only-sibling";
+
+const GENERATED_DIRECTORIES = ["coverage", "dist", "out-tsc", "reports"];
 
 export type ExemptibleRuleName = SharedRuleName | StructureRuleName;
 
@@ -346,6 +349,10 @@ function withAllowedImports(
 	};
 }
 
+function generatedOutput(projectRoot: string): string {
+	return `^${RegExp.escape(projectRoot)}/${alternation(GENERATED_DIRECTORIES)}/`;
+}
+
 function assertTypeScriptResolves(): void {
 	// Without typescript it cruises 0 modules and passes; pnpm-workspace.yaml
 	// packageExtensions gives dependency-cruiser its typescript peer.
@@ -356,6 +363,7 @@ export function createDependencyCruiserConfig({
 	allowedImports = {},
 	ambientModules = [],
 	disabledRules = [],
+	exclude = [],
 	fileSystemSeam,
 	productionUnitHelpers = [],
 	projectRoot,
@@ -391,6 +399,9 @@ export function createDependencyCruiserConfig({
 			enhancedResolveOptions: {
 				conditionNames: ["source", "types", "import", "node", "default"],
 				exportsFields: ["exports"],
+			},
+			exclude: {
+				path: [generatedOutput(projectRoot), "/[.]tmp/", ...exclude],
 			},
 			tsConfig: {
 				fileName: tsConfig,
