@@ -142,10 +142,6 @@ function blockingTaskUrls({
 	return valid.length === 0 ? undefined : valid.map((ref) => `/cloud/v2/${ref}?view=BASIC`);
 }
 
-function isAborted(signal: AbortSignal): boolean {
-	return signal.aborted;
-}
-
 function throwIfAborted(signal: AbortSignal | undefined): void {
 	if (signal?.aborted === true) {
 		throw signal.reason;
@@ -170,7 +166,7 @@ async function observeBlockersOnceAsync({
 	for (const url of blockers) {
 		throwIfAborted(externalSignal);
 		const observed = await httpClient.request({ method: "GET", url }, observationConfig);
-		if (isAborted(deadline) || !observed.success) {
+		if (deadline.aborted || !observed.success) {
 			return true;
 		}
 
@@ -202,7 +198,7 @@ async function waitOnceAsync({
 	try {
 		await waitAsync(milliseconds, signal);
 	} catch (err) {
-		if (!isAborted(deadline)) {
+		if (!deadline.aborted) {
 			throw err;
 		}
 	}
@@ -232,7 +228,7 @@ async function waitForCapacityAsync({
 		config.signal === undefined ? deadline : AbortSignal.any([config.signal, deadline]);
 	const observationConfig = { ...config, signal };
 	try {
-		while (!isAborted(deadline)) {
+		while (!deadline.aborted) {
 			const shouldStop = await observeBlockersOnceAsync({
 				blockers,
 				deadline,

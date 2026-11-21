@@ -33,7 +33,7 @@ type IgnoreTarget = AstExprFunction | AstStat;
 
 const DIRECTIVE = /^--(?:\[=*\[)?\s*cov\s+ignore\s+(\w+)/u;
 
-const DIRECTIVE_HINTS: ReadonlySet<string> = new Set<DirectiveHint>(["else", "if", "next"]);
+const DIRECTIVE_HINTS: ReadonlyArray<DirectiveHint> = ["else", "if", "next"];
 
 const NO_IGNORES = {
 	covers: () => false,
@@ -82,10 +82,6 @@ export function resolveCoverageIgnores(
 	};
 }
 
-function isDirectiveHint(value: string): value is DirectiveHint {
-	return DIRECTIVE_HINTS.has(value);
-}
-
 function isBlank(byte: number | undefined): boolean {
 	return (
 		byte === BYTE_SPACE ||
@@ -121,8 +117,9 @@ function parseDirectives(comments: Array<CommentSpan>, bytes: SourceBytes): Arra
 	);
 
 	return comments.flatMap(({ location }) => {
-		const hint = DIRECTIVE.exec(bytes.sliceSpan(location))?.[1];
-		if (hint === undefined || !isDirectiveHint(hint)) {
+		const word = DIRECTIVE.exec(bytes.sliceSpan(location))?.[1];
+		const hint = DIRECTIVE_HINTS.find((candidate) => candidate === word);
+		if (hint === undefined) {
 			return [];
 		}
 

@@ -1,4 +1,5 @@
 import process from "node:process";
+import { keys } from "remeda";
 
 import { resolveLuauRoots } from "../shadow/luau-roots.ts";
 import { nodeTsconfigReader, type TsconfigReader } from "../tsconfig/tsconfig-mappings.ts";
@@ -6,19 +7,14 @@ import { type FileSystem, nodeFileSystem } from "../utils/file-system.ts";
 import { validateConfig } from "./config-validation.ts";
 import { defaultFormatters } from "./default-formatters.ts";
 import type { ConfigInput } from "./define-config.ts";
-import type { MergerKey } from "./option-row.ts";
-import { CONFIG_ROWS } from "./options.ts";
+import { MERGER_KINDS, type MergerKey } from "./option-row.ts";
 import type { ResolvedConfig } from "./resolved-config.ts";
 import { DEFAULT_CONFIG } from "./resolved-config.ts";
 import { resolveLayoutProject } from "./rojo-project.ts";
 
 type MergerDefault = NonNullable<ResolvedConfig[MergerKey]>;
 
-const MERGER_KINDS: ReadonlyMap<string, "array" | "object"> = new Map(
-	CONFIG_ROWS.flatMap(({ key, merger }) => {
-		return merger === undefined ? [] : [[key, merger] as const];
-	}),
-);
+const MERGER_KEYS = keys(MERGER_KINDS);
 
 /**
  * Replace each merger function on a mergeable key, top level and under
@@ -67,17 +63,13 @@ function isMergerFunction(value: unknown): value is (defaults: MergerDefault) =>
 	return typeof value === "function";
 }
 
-function isMergerKey(key: string): key is MergerKey {
-	return MERGER_KINDS.has(key);
-}
-
 function defaultForMergerKey(key: MergerKey): MergerDefault {
 	const defaultValue = key === "formatters" ? defaultFormatters() : DEFAULT_CONFIG[key];
 	if (Array.isArray(defaultValue)) {
 		return structuredClone(defaultValue);
 	}
 
-	if (MERGER_KINDS.get(key) === "array") {
+	if (MERGER_KINDS[key] === "array") {
 		return [];
 	}
 
@@ -86,9 +78,14 @@ function defaultForMergerKey(key: MergerKey): MergerDefault {
 
 function resolveEntries(entries: Record<string, unknown>): Record<string, unknown> {
 	return Object.fromEntries(
-		Object.entries(entries).map(([key, value]) => [
-			key,
-			isMergerKey(key) && isMergerFunction(value) ? value(defaultForMergerKey(key)) : value,
-		]),
+		Object.entries(entries).map(([key, value]) => {
+			const mergerKey = MERGER_KEYS.find((candidate) => candidate === key);
+			return [
+				key,
+				mergerKey !== undefined && isMergerFunction(value)
+					? value(defaultForMergerKey(mergerKey))
+					: value,
+			];
+		}),
 	);
 }

@@ -68,7 +68,6 @@ const ROOT_OPTIONS: { readonly [K in RootKey]-?: ConfigRow<K, Config[K]> } = {
 			section: "Output",
 			value: "<name>",
 		},
-		merger: "array",
 		schema: formatterEntriesSchema,
 		workspace: "custom",
 	},
@@ -96,7 +95,7 @@ const ROOT_OPTIONS: { readonly [K in RootKey]-?: ConfigRow<K, Config[K]> } = {
 		workspace: "custom",
 	},
 	jestPath: { schema: isString },
-	luauRoots: { merger: "array", schema: type("string[]") },
+	luauRoots: { schema: type("string[]") },
 	outputFile: {
 		cli: {
 			name: "outputFile",

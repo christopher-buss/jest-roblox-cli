@@ -101,6 +101,7 @@ function renderLines(lines: ReadonlyArray<string>, indent: string): string {
 	return `{\n${body}\n${indent}}`;
 }
 
+// eslint-disable-next-line flawless/no-trivial-functions -- Array.isArray does not narrow ReadonlyArray (TypeScript#17002).
 function isList(value: LuauTable | ReadonlyArray<string>): value is ReadonlyArray<string> {
 	return Array.isArray(value);
 }

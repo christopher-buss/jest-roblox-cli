@@ -10,10 +10,6 @@ import { classifyChange, resolveChangeScope } from "./change-scope.ts";
 const WORKSPACE = path.resolve("/workspace");
 const PROJECT = path.join(WORKSPACE, "packages", "game");
 
-function key(file: string): string {
-	return posixPath(file);
-}
-
 function scopeOf(seed: Record<string, string>): ChangeScope {
 	const { fileSystem } = createMemoryFileSystem(seed);
 	return resolveChangeScope({
@@ -32,7 +28,7 @@ describe(resolveChangeScope, () => {
 
 		const scope = scopeOf({ [path.join(WORKSPACE, "nx.json")]: "{}" });
 
-		expect(scope.workspaceRoot).toBe(key(WORKSPACE));
+		expect(scope.workspaceRoot).toBe(posixPath(WORKSPACE));
 	});
 
 	it("should fall back to the project root when no folder holds a workspace marker", ({
@@ -42,7 +38,7 @@ describe(resolveChangeScope, () => {
 
 		const scope = scopeOf({ [path.join(PROJECT, "default.project.json")]: "{}" });
 
-		expect(scope.workspaceRoot).toBe(key(PROJECT));
+		expect(scope.workspaceRoot).toBe(posixPath(PROJECT));
 	});
 });
 
@@ -61,6 +57,6 @@ describe(classifyChange, () => {
 
 		const scope = scopeOf({ [path.join(WORKSPACE, "pnpm-workspace.yaml")]: "" });
 
-		expect(classifyChange(scope, key(file))).toBe(kind);
+		expect(classifyChange(scope, posixPath(file))).toBe(kind);
 	});
 });

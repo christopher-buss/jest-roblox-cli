@@ -61,7 +61,8 @@ export function printRunResults(context: RunPrintContext): void {
 		return;
 	}
 
-	printRuntimeOutput({ ...context, runtime });
+	// oxlint-disable-next-line no-console -- CLI result output belongs on stdout.
+	console.log(formatRuntimeOutput({ ...context, runtime }));
 
 	if (typecheckResult !== undefined && !usesDefaultFormatter(settings)) {
 		writeTypecheckReport({ settings, typecheckResult });
@@ -89,11 +90,6 @@ function writeTypecheckReport({
 
 function usesDefaultFormatter(settings: OutputSettings): boolean {
 	return selectTerminalFormatter(settings).name === "default";
-}
-
-function printOutput(out: string): void {
-	// oxlint-disable-next-line no-console -- CLI result output belongs on stdout.
-	console.log(out);
 }
 
 function toProjectEntries(projectResults: Array<ProjectResult>): Array<FormatterProjectEntry> {
@@ -136,30 +132,26 @@ function formatDefaultOutput(context: RuntimePrintContext): string {
 	});
 }
 
-function printRuntimeOutput(context: RuntimePrintContext): void {
+function formatRuntimeOutput(context: RuntimePrintContext): string {
 	const { projectResults, runtime, settings, typecheckResult } = context;
 
 	const formatter = selectTerminalFormatter(settings);
 	if (formatter.name === "agent") {
-		printOutput(
-			formatAgentMultiProject(toProjectEntries(projectResults), {
-				affected: context.affected,
-				bail: context.bail,
-				gameOutput: settings.gameOutput,
-				maxFailures: formatter.maxFailures,
-				outputFile: settings.outputFile,
-				rootDir: settings.rootDir,
-				sourceMapper: runtime.sourceMapper,
-				typeErrorCount: typecheckResult?.numFailedTests,
-			}),
-		);
-		return;
+		return formatAgentMultiProject(toProjectEntries(projectResults), {
+			affected: context.affected,
+			bail: context.bail,
+			gameOutput: settings.gameOutput,
+			maxFailures: formatter.maxFailures,
+			outputFile: settings.outputFile,
+			rootDir: settings.rootDir,
+			sourceMapper: runtime.sourceMapper,
+			typeErrorCount: typecheckResult?.numFailedTests,
+		});
 	}
 
 	if (formatter.name === "json") {
-		printOutput(formatJson(runtime.result, settings.rootDir));
-		return;
+		return formatJson(runtime.result, settings.rootDir);
 	}
 
-	printOutput(formatDefaultOutput(context));
+	return formatDefaultOutput(context);
 }

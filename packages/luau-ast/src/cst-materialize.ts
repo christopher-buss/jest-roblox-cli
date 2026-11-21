@@ -4,7 +4,7 @@ import type { LuauSpan } from "./ast-types.ts";
 import type { CstRoot } from "./cst-statement-types.ts";
 import { createToken } from "./cst-token.ts";
 import type { Token, Trivia } from "./cst-token.ts";
-import { isCstNode, isRecord } from "./cst.ts";
+import { isCstNode } from "./cst.ts";
 import { indexSourceBytes } from "./source-bytes.ts";
 import type { ByteRange, SourceBytes } from "./source-bytes.ts";
 
@@ -106,10 +106,6 @@ function isPosition(value: JSONValue): value is Position {
 	);
 }
 
-function isJsonObject(value: JSONValue): value is JSONObject {
-	return isRecord(value);
-}
-
 /**
  * The serializer's 0-based position to the workspace's 1-based span.
  * @param position - The serializer's four zero-based coordinates.
@@ -159,7 +155,7 @@ function materializeInPlace(
 		for (const [index, element] of value.entries()) {
 			list[index] = materializeInPlace(element, { key: undefined, slicer });
 		}
-	} else if (isJsonObject(value)) {
+	} else if (value !== null && typeof value === "object") {
 		const slots: Record<string, unknown> = value;
 		for (const [slot, element] of Object.entries(value)) {
 			slots[slot] = materializeInPlace(element, { key: slot, slicer });

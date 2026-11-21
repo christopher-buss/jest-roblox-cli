@@ -37,6 +37,26 @@ export type MergerKey =
 	| "testMatch"
 	| "testPathIgnorePatterns";
 
+/** The shape each merger function receives. */
+export const MERGER_KINDS: Readonly<Record<MergerKey, "array" | "object">> = {
+	collectCoverageFrom: "array",
+	coverageCopyIgnorePatterns: "array",
+	coveragePathIgnorePatterns: "array",
+	coverageReporters: "array",
+	coverageThreshold: "object",
+	formatters: "array",
+	luauRoots: "array",
+	reporters: "array",
+	roots: "array",
+	selectProjects: "array",
+	setupFiles: "array",
+	setupFilesAfterEnv: "array",
+	snapshotFormat: "object",
+	snapshotSerializers: "array",
+	testMatch: "array",
+	testPathIgnorePatterns: "array",
+};
+
 /** `CliOptions` fields that no config key of the same name carries. */
 export type CliOnlyKey =
 	| "affectedSince"
@@ -82,17 +102,14 @@ export interface AnyCliFlag extends FlagBase {
  */
 export type ConfigRow<K extends string, V> = (K extends FlaggedConfigKey
 	? { readonly cli: CliFlag<NonNullable<CliOptions[K]>> }
-	: { readonly cli?: never }) &
-	(K extends MergerKey
-		? { readonly merger: "array" | "object" }
-		: { readonly merger?: never }) & {
-		/** Forwarded to Jest's argv. */
-		readonly jest?: true;
-		/** Validates the key's value. */
-		readonly schema: Type<NonNullable<V>>;
-		/** How a workspace run settles the key. */
-		readonly workspace?: WorkspaceResolution;
-	};
+	: { readonly cli?: never }) & {
+	/** Forwarded to Jest's argv. */
+	readonly jest?: true;
+	/** Validates the key's value. */
+	readonly schema: Type<NonNullable<V>>;
+	/** How a workspace run settles the key. */
+	readonly workspace?: WorkspaceResolution;
+};
 
 /**
  * A CLI-only option's row.
@@ -116,8 +133,6 @@ export interface OptionRow {
 	readonly jest?: true;
 	/** Where the option is written. */
 	readonly location: OptionLocation;
-	/** The value may be a `(defaults) => merged` function of this kind. */
-	readonly merger?: "array" | "object";
 	/** Required in a project's `test` block. */
 	readonly projectRequired?: true;
 	/** Validates the value; absent for a CLI-only option. */
