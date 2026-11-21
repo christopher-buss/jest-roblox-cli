@@ -53,7 +53,15 @@ export const sharedConfig: PartialStrykerOptions = {
 	htmlReporter: { fileName: "reports/mutation/index.html" },
 	// Stryker does not read `.gitignore`; a cache another target rewrites
 	// mid-copy fails the sandbox with ENOENT.
-	ignorePatterns: [".eslintcache", "coverage", "projectStructure.cache.json"],
+	ignorePatterns: [
+		".eslintcache",
+		"coverage",
+		"projectStructure.cache.json",
+		"/dist",
+		"/out-tsc",
+		"/reports",
+		"*.tgz",
+	],
 	ignorers: [ASSERT_MESSAGE_IGNORER],
 	ignoreStatic: true,
 	incremental: true,

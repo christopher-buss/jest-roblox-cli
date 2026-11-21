@@ -29,6 +29,10 @@
 		"./setup/no-process-start": {
 			"source": "./src/setup/no-process-start.ts",
 			"default": "./src/setup/no-process-start.ts"
+		},
+		"./setup/stryker-dry-run-budget": {
+			"source": "./src/setup/stryker-dry-run-budget.ts",
+			"default": "./src/setup/stryker-dry-run-budget.ts"
 		}
 	},
 	"types": "./src/index.ts",

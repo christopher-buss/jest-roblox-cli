@@ -13,19 +13,15 @@ export default mergeConfig(
 		...sharedViteOptions,
 		test: {
 			...unitProject.test,
-			// Threads over the vitest default (forks): no process spawn per
-			// worker. Safe since oxc-parser 0.146.0. At 0.123.0 its native
-			// bindings hit a segfault (0xC0000005) in worker threads, which
-			// forced `forks` here.
-			pool: "threads",
-			// Reaches the mutant runs only;
-			// `test/setup/stryker-dry-run-budget.ts` hands the dry run the
-			// suite's ordinary budget back.
-			setupFiles: [...unitProject.test.setupFiles, "./test/setup/stryker-dry-run-budget.ts"],
+			hookTimeout: 100,
+			// Reaches the mutant runs only; the dry-run setup hands the dry run
+			// the suite's ordinary budget back.
+			setupFiles: [
+				...unitProject.test.setupFiles,
+				"@isentinel/dev-vitest-utils/setup/stryker-dry-run-budget",
+			],
 			// A mutant that slips a busy async loop past Stryker's run budget is
-			// the pathology; a healthy unit test finishes far inside 100ms. Tests
-			// doing legitimately heavier work declare their own `{ timeout }` at
-			// the test site.
+			// the pathology; a healthy unit test finishes far inside 100ms.
 			testTimeout: 100,
 		},
 	}),
