@@ -6,7 +6,10 @@ import { defineConfig, type TestProjectInlineConfiguration } from "vitest/config
 export const NO_PROCESS_START_SETUP = "@isentinel/dev-vitest-utils/setup/no-process-start";
 
 // sync.sh copies this file to the jest-roblox mirror without the setup.
-const MACHINE_BUDGET_SETUP = resolve(import.meta.dirname, "vitest.machine-budget.ts");
+const MACHINE_BUDGET_SOURCE = resolve(
+	import.meta.dirname,
+	"libs/vitest-utils/src/machine-budget.ts",
+);
 
 const GLOB_SPECIAL = /[!()*+?@[\]{|}]/g;
 const DRIVE_LETTER = /^[a-z](?=:)/i;
@@ -68,7 +71,9 @@ export const sharedConfig = defineConfig({
 			`${WORKSPACE_GLOB}/libs/vitest-utils/src/setup/**`,
 			`${WORKSPACE_GLOB}/vitest.shared.ts`,
 		],
-		globalSetup: existsSync(MACHINE_BUDGET_SETUP) ? [MACHINE_BUDGET_SETUP] : [],
+		globalSetup: existsSync(MACHINE_BUDGET_SOURCE)
+			? ["@isentinel/dev-vitest-utils/setup/machine-budget"]
+			: [],
 		isolate: false,
 		maxWorkers: 4,
 		restoreMocks: true,
