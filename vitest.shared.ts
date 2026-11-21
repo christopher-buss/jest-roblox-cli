@@ -36,7 +36,6 @@ export const unitProject = {
 			},
 		},
 		include: ["src/**/*.spec.ts"],
-		maxWorkers: 4,
 		sequence: {
 			groupOrder: 1,
 		},
@@ -71,8 +70,10 @@ export const sharedConfig = defineConfig({
 		],
 		globalSetup: existsSync(MACHINE_BUDGET_SETUP) ? [MACHINE_BUDGET_SETUP] : [],
 		isolate: false,
+		maxWorkers: 4,
 		restoreMocks: true,
 		setupFiles: ["@isentinel/dev-vitest-utils/setup/jest-extended"],
+		slowTestThreshold: 100,
 		unstubEnvs: true,
 		watch: false,
 	},
