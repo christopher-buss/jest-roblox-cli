@@ -10,8 +10,9 @@ The package is not published to npm. A package in the same workspace adds it as
 a `workspace:*` devDependency. The root `vitest.shared.ts` loads its two setup
 files in every project:
 
-- `./setup/jest-extended` adds the jest-extended matchers. `./jest-extended`
-  types them; a project imports it from `test/setup/jest-extended.d.ts`.
+- `./setup/jest-extended` adds the jest-extended matchers that Vitest does not
+  have, so Vitest's own matchers stay in use. `./jest-extended` types them; a
+  project imports it from `test/setup/jest-extended.d.ts`.
 - `./setup/no-process-start` makes every `node:child_process` starter throw, for
   the unit project only.
 
