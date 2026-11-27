@@ -94,11 +94,6 @@ describe(normalizeWindowsPath, () => {
 });
 
 describe(toPosixRoot, () => {
-	/**
-	 * The canonical root as a plain string, so an assertion can name one.
-	 * @param spelling - The directory as written.
-	 * @returns Its canonical root.
-	 */
 	function root(spelling: string): string {
 		return toPosixRoot(spelling);
 	}

@@ -26,7 +26,6 @@ const TASK_TEST_TIMEOUT_MS = MAXIMUM_SUBMIT_MS + 120_000;
 const PLACE_FIXTURE_PATH = path.resolve(__dirname, "../fixtures/live-place/game.rbxl");
 
 interface ContractCase {
-	/** Starts a fresh fake seeded with the tasks; live ignores them. */
 	createRunnerAsync: (tasks: Array<FakeOpenCloudTask>) => Promise<OcaleRunner>;
 }
 

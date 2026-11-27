@@ -30,13 +30,6 @@ function pooledProject(
 	return stagedProjectSchema.assert(JSON.parse(run(fileSystem, projectJson)));
 }
 
-/**
- * The digest the pass is expected to key a pooled path on, derived here from
- * the documented rule (a sha256 over the posix path relative to the project
- * directory) rather than from the pass itself.
- * @param absolutePath - Pooled mount path.
- * @returns The expected 16-digit hex key.
- */
 function digestOf(absolutePath: string): string {
 	return crypto
 		.createHash("sha256")
@@ -45,21 +38,10 @@ function digestOf(absolutePath: string): string {
 		.slice(0, 16);
 }
 
-/**
- * A childless node mounting a directory: the shape the pass pools.
- * @param mountPath - Directory the node mounts.
- * @returns The Folder node.
- */
 function folderMount(mountPath: string): RojoTreeNode {
 	return { $className: "Folder", $path: mountPath };
 }
 
-/**
- * A package under coverage: it shares `include/` with its siblings and runs
- * against its own instrumented copy of its own `out`.
- * @param name - Package name its shadow directory is under.
- * @returns The package's Folder node.
- */
 function coveredPackage(name: string): RojoTreeNode {
 	return {
 		$className: "Folder",
@@ -68,12 +50,6 @@ function coveredPackage(name: string): RojoTreeNode {
 	};
 }
 
-/**
- * Two packages staging the same node under the same name.
- * @param node - Node both packages stage.
- * @param key - Name both stage it under.
- * @returns The project text.
- */
 function twoPackagesStaging(node: RojoTreeNode, key = "Include"): string {
 	return stagedProject({
 		a: { [key]: structuredClone(node), $className: "Folder" },

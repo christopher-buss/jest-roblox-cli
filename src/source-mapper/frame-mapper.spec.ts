@@ -11,12 +11,6 @@ import { createFrameMapper, createLineMapper } from "./frame-mapper.ts";
 import type { PathResolver } from "./path-resolver.ts";
 import type { V3Mapper } from "./v-3-mapper.ts";
 
-/**
- * A resolver that always answers with a roblox-ts mapping for `filePath`.
- * @param filePath - The path every resolve returns.
- * @param luauPath - The compiled path every resolve returns.
- * @returns The stub resolver.
- */
 function resolvingTo(filePath: string, luauPath: string): PathResolver {
 	return fromAny({
 		resolve: () => {
@@ -25,14 +19,6 @@ function resolvingTo(filePath: string, luauPath: string): PathResolver {
 	});
 }
 
-/**
- * A context whose source-map reader answers exactly what the test says, so a
- * frame's path chain is exercised without a `.map` file behind it.
- *
- * @param parts - The resolver, the source-map answers, and the filesystem a
- *   disk read would reach.
- * @returns The frame-mapper context.
- */
 function contextWith(parts: {
 	fileSystem?: FileSystem;
 	pathResolver: PathResolver;

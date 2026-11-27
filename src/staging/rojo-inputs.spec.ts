@@ -12,22 +12,10 @@ import { tryComputeRojoInputsHashAsync } from "./rojo-inputs.ts";
 const PROJECT = "/project/default.project.json";
 const DIGEST_CACHE = "/project/.jest-roblox/input-digests";
 
-/**
- * A volume holding a rojo project written out verbatim.
- *
- * @param contents - The project file's bytes.
- * @returns Memory file system holding the project.
- */
 function writeRawProject(contents: string): MemoryFileSystem {
 	return createMemoryFileSystem({ [PROJECT]: contents });
 }
 
-/**
- * A volume holding a rojo project with `tree`.
- *
- * @param tree - The project tree the walk reads.
- * @returns Memory file system holding the project.
- */
 function writeProject(tree: JSONObject): MemoryFileSystem {
 	return writeRawProject(JSON.stringify({ name: "test", tree }));
 }

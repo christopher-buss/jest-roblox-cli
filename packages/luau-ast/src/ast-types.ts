@@ -1,18 +1,6 @@
 /* oxlint-disable max-lines -- The official AST shape is inherently verbose. */
-/**
- * TypeScript types mirroring the official Luau parser's AST JSON, as emitted
- * by wasm/wrapper.cpp (Luau's AstJsonEncoder at the pinned version). Node
- * `type` values are the C++ class names. Type-annotation nodes are typed
- * `unknown`: no consumer traverses them.
- *
- * Optional fields are omitted by the encoder when absent, except `luauType`,
- * which is an explicit `null`.
- *
- * Locations arrive from the encoder as 0-based `"line,col - line,col"`
- * strings; the parser decodes them into {@link LuauSpan} before consumers see
- * a node, converting to this workspace's span convention (1-based, exclusive
- * end, UTF-8 byte columns) so span math matches the Lute-era helpers.
- */
+// Mirrors the AST JSON that wasm/wrapper.cpp emits (Luau's AstJsonEncoder at
+// the pinned version); node `type` values are the C++ class names.
 
 /**
  * Lines and columns are 1-based, and an end is exclusive. A column counts

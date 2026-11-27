@@ -61,13 +61,6 @@ export function createInstrumentUniverse(
 	};
 }
 
-/**
- * No sidecar: the file is its own source, as in `mapCoverageToTypeScript`.
- *
- * @param fileSystem - File system to read the sidecar through.
- * @param luauPath - Compiled Luau file path.
- * @returns Source paths, or `undefined` when the sidecar is unusable.
- */
 function readSourcePaths(fileSystem: FileSystem, luauPath: string): Array<string> | undefined {
 	const sourceMapPath = `${luauPath}.map`;
 

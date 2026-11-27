@@ -15,12 +15,6 @@ import { assert, describe, it } from "vitest";
 
 import { parseCst } from "#test/helpers/integration/parse-cst";
 
-/**
- * The segment whose generated position is `position`.
- * @param segments - The generated source mapping segments.
- * @param position - The generated token coordinates.
- * @returns The source segment at the requested generated coordinates.
- */
 function segmentAt(
 	segments: Array<CstSourcemapSegment>,
 	position: CstPosition,
@@ -38,13 +32,6 @@ function segmentAt(
 	return segment;
 }
 
-/**
- * The first node in source order that `matches`.
- * @param root - The tree searched in source order.
- * @param matches - The predicate selecting the requested node.
- * @returns The first node satisfying the predicate.
- * @template Found - The selected node or tree value type.
- */
 function findNode<Found extends CstNode>(
 	root: CstNode,
 	matches: (node: CstNode) => node is Found,
@@ -74,12 +61,6 @@ function isConfigAccess(node: CstNode): node is CstIndexName {
 	return node.type === "IndexName" && node.index.text === "cfg";
 }
 
-/**
- * The binding number of the first declaration named `name`.
- * @param root - The tree searched in source order.
- * @param name - The binding name to find.
- * @returns The first matching declaration's binding identity.
- */
 function bindingOf(root: CstRoot, name: string): number {
 	return findNode(
 		root,
@@ -485,11 +466,6 @@ describe("replacement conflicts", () => {
 	});
 });
 
-/**
- * The first call in source order.
- * @param root - The tree searched in source order.
- * @returns The first call node.
- */
 function firstCall(root: CstNode): Extract<CstNode, { type: "Call" }> {
 	return findNode(root, (node): node is Extract<CstNode, { type: "Call" }> => {
 		return isKind(node, "Call");

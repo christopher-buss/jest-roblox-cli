@@ -161,13 +161,6 @@ async function dispatchAsync(
 	});
 }
 
-/**
- * The packages a bail never ran.
- *
- * @param pending - Pending entries in dispatch order.
- * @param results - Results of the entries that ran.
- * @returns The packages with no project run.
- */
 function findBailedPackages(
 	pending: Array<PendingEntry>,
 	results: Array<WorkspaceProjectResult>,

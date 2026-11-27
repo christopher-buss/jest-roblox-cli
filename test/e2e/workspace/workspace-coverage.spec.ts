@@ -25,15 +25,8 @@ const WORKSPACE_FIXTURE_PATH = path.resolve(__dirname, "../fixtures/workspace");
 // `src/coverage-pipeline/manifest.ts` and is validated by the CLI itself.
 const manifestFilesSchema = type({ files: "object" });
 
-/** What a case here varies; everything else is held fixed. */
 interface VendoredMountOverrides {
-	/**
-	 * Dropped from the emitted config when omitted. One case needs it absent,
-	 * to prove `coveragePathIgnorePatterns` narrows the universe on its own
-	 * rather than riding on the `luauRoots` short-circuit.
-	 */
 	luauRoots?: Array<string>;
-	/** Folded into `test:`. */
 	test?: {
 		collectCoverageFrom?: Array<string>;
 		coveragePathIgnorePatterns?: Array<string>;
@@ -45,14 +38,6 @@ function readManifestFileKeys(manifestPath: string): Array<string> {
 	return Object.keys(manifest.files);
 }
 
-/**
- * Overwrite the vendored-mount package's config, keeping its rojo project and
- * its single Luau project and folding in whatever coverage knob the case under
- * test is about. Written from an object rather than hand-indented lines so the
- * differing key is the only thing a reader has to find.
- * @param sandbox - Sandbox directory.
- * @param overrides - Coverage fields to fold into the config.
- */
 function writeVendoredMountConfig(sandbox: string, overrides: VendoredMountOverrides): void {
 	const config = {
 		...(overrides.luauRoots === undefined ? {} : { luauRoots: overrides.luauRoots }),

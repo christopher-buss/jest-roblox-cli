@@ -130,13 +130,6 @@ function buildDiagnosticReport(error: LuauScriptError, entry: ExecErrorEntry): s
 	return lines.join("\n");
 }
 
-/**
- * Mirrors exit-code-only handling in `formatLuauErrorBanner` (cli-errors.ts).
- *
- * @param error - The Luau script failure.
- * @param entry - The entry that failed.
- * @returns The failure message.
- */
 function composeExecErrorMessage(error: LuauScriptError, entry: ExecErrorEntry): string {
 	if (!EXIT_CODE_MESSAGE.test(error.message)) {
 		return error.message;

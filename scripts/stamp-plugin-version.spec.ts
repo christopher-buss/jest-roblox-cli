@@ -5,12 +5,6 @@ import { describe, it } from "vitest";
 
 import { stampPluginVersion } from "./stamp-plugin-version.ts";
 
-/**
- * A volume holding a package whose plugin is waiting for its stamp.
- *
- * @param version - What the package manifest declares.
- * @returns Volume with the manifest and an unstamped plugin.
- */
 function seed(version: string): MemoryFileSystem {
 	return createMemoryFileSystem({
 		"/pkg/package.json": JSON.stringify({ name: "@isentinel/jest-roblox", version }),

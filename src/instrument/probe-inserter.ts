@@ -175,12 +175,6 @@ function collectProbes(result: CollectorResult): Array<ProbeInfo> {
 	return [...pointProbes(result), ...wrapProbes(result)].sort(compareProbes);
 }
 
-/**
- * `probes` must be sorted by `compareProbes`.
- *
- * @param mutableLines - Source lines, edited in place.
- * @param probes - Probes to insert at their positions.
- */
 function applyProbes(mutableLines: Array<string>, probes: Array<ProbeInfo>): void {
 	for (const { column, kind, line: probeLine, text } of probes) {
 		const lineIndex = probeLine - 1;
@@ -194,13 +188,6 @@ function applyProbes(mutableLines: Array<string>, probes: Array<ProbeInfo>): voi
 	}
 }
 
-/**
- * The preamble must follow the header: a `--!` line after code is no
- * directive.
- *
- * @param lines - Source lines; the header lines are removed.
- * @returns The header lines, each ending in a newline.
- */
 function extractDirectiveHeader(lines: Array<string>): string {
 	return lines
 		.splice(0, countLinesThroughLastDirective(lines))
@@ -237,12 +224,6 @@ function hasCoverageSites(result: CollectorResult): boolean {
 	);
 }
 
-/**
- * Sole escaper of the file key, which must match `instrumentRoot`'s manifest.
- *
- * @param value - Text to embed in a double-quoted Luau string.
- * @returns The escaped text, with NUL characters removed.
- */
 function escapeLuauString(value: string): string {
 	return value
 		.replaceAll("\\", "\\\\")

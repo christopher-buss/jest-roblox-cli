@@ -97,12 +97,6 @@ function resolveImplicitTypecheck(config: ResolvedConfig): TypecheckConfig | und
 	return { ...config.typecheck, include };
 }
 
-/**
- * Mirrors `resolveProjectConfig`'s `testMatch` derivation.
- *
- * @param glob - Runtime `testMatch` glob.
- * @returns The runner-side `testMatch` pattern.
- */
 function toTestMatchPattern(glob: string): string {
 	const stripped = stripTsExtension(glob);
 	return stripped.includes("/") ? stripped : `**/${stripped}`;

@@ -41,17 +41,6 @@ const pluginRequest = type({
 	requestId: "string",
 });
 
-/**
- * Connect a plugin that announces a protocol the CLI can use.
- *
- * Dispatch waits for that announcement now, so a socket that only connects is
- * never asked to run anything.
- * @param root0 - Connection input.
- * @param root0.hello - Fields that override the default announcement.
- * @param root0.socket - Socket to connect.
- * @param root0.wss - Server the socket connects to.
- * @returns The connected socket.
- */
 function connectPlugin({
 	hello = {},
 	socket = new MockWebSocket(),
@@ -77,11 +66,6 @@ function connectPlugin({
 	return socket;
 }
 
-/**
- * Fake the timers the plugin selection runs on, for a test that means to reach
- * the end of a window rather than wait one out.
- * @param onTestFinished - Restores the real timers after the test.
- */
 function useSelectionTimers(onTestFinished: TestContext["onTestFinished"]): void {
 	vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
 	onTestFinished(() => {
@@ -110,13 +94,6 @@ function job(displayName: string, overrides: Partial<ResolvedConfig> = {}): Conf
 	});
 }
 
-/**
- * Workspace jobs carry `pkg`; the backend then drives the staged materializer
- * dispatch by sending `workspace.entries` rather than `configs`.
- * @param packageName - Workspace package of the job.
- * @param displayName - Label for the job and its test file.
- * @returns The workspace job.
- */
 function wsJob(packageName: string, displayName: string): ConfiguredJob {
 	return { ...job(displayName), pkg: packageName };
 }
@@ -135,13 +112,6 @@ const vmRequestSchema = type({
 	"vmParallel?": "number",
 });
 
-/**
- * Run `jobCount` jobs through the backend with the given VM request and hand
- * back the payload the plugin saw.
- * @param jobCount - Number of jobs to run.
- * @param vmParallel - VM parallelism to request.
- * @returns The VM fields of the request the plugin received.
- */
 async function captureVmRequestAsync(
 	jobCount: number,
 	vmParallel: "auto" | number | undefined,

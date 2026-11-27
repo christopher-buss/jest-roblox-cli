@@ -44,13 +44,6 @@ function fakeModuleResolver(mapping: Record<string, string>) {
 	};
 }
 
-/**
- * Build the absolute logical path that the resolver constructs for package
- * specifiers.
- *
- * @param specifier - Package specifier.
- * @returns The path under the config directory's `node_modules`.
- */
 function logicalNodeModulesPath(specifier: string): string {
 	return path.resolve(CONFIG_DIRECTORY, "node_modules", specifier);
 }

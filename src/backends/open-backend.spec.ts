@@ -63,7 +63,6 @@ function stubNoCredentials(): void {
 	vi.stubEnv("JEST_ROBLOX_PLACE_ID", undefined);
 }
 
-/** A developer's own Studio path would otherwise decide auto. */
 function stubNoStudioPath(): void {
 	vi.stubEnv("JEST_ROBLOX_STUDIO_PATH", undefined);
 }

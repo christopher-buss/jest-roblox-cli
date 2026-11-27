@@ -114,12 +114,6 @@ function toPrintContext({ result, runtime, settings }: RunReport): RunPrintConte
 	};
 }
 
-/**
- * Prints a run and reports whether its coverage cleared the thresholds.
- * @param report - Run result, merged runtime and settings.
- * @param coveragePipeline - The coverage steps to run.
- * @returns Whether coverage cleared the thresholds.
- */
 function reportRun(report: RunReport, coveragePipeline: CoveragePipeline): boolean {
 	const { result, settings } = report;
 	const printContext = toPrintContext(report);

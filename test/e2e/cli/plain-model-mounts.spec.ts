@@ -9,19 +9,8 @@ import {
 import { nodeAt, readPlaceTree } from "#test/helpers/e2e/place-tree.ts";
 import { rojoOnPath } from "#test/helpers/integration/helpers.ts";
 
-/**
- * The pass-through half of the staged-mount story: a model carrying no pinned
- * class is rojo's business alone, and the classes it holds have to reach the
- * place unchanged. `pinned-mounts.spec.ts` covers the other half, where a
- * class the engine pins is folded to a Folder stand-in.
- *
- * Both halves have to be driven through a real `rojo build`, because the class
- * of a mounted instance lives in the model file and only rojo reads it.
- */
-
 const STAGE_PATH = ["ServerStorage", "__pkg_stage", FIXTURE_PACKAGE] as const;
 
-/** A `Model` holding a `Part`, the shape a package's plain assets have. */
 const PROP: FixtureInstance = {
 	name: "Prop",
 	children: [{ name: "Base", instanceClass: "Part" }],

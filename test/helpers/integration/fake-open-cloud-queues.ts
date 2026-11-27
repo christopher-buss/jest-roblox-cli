@@ -56,14 +56,6 @@ function isJsonObject(value: JSONValue): value is JSONObject {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-/**
- * The queue-add body's `data` field. Open Cloud rejects an absent or null
- * value, so a fake handed one is being driven wrongly. Fail loudly rather
- * than enqueue a bogus item.
- * @param parsed - Parsed request body.
- * @returns The non-null `data` value.
- * @throws {Error} When `data` is absent or null.
- */
 function readItemData(parsed: JSONValue): Exclude<JSONValue, null> {
 	const data = isJsonObject(parsed) ? parsed["data"] : undefined;
 	if (data === undefined || data === null) {

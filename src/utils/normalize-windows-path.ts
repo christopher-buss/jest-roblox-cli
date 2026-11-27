@@ -158,12 +158,6 @@ function splitNamespace(normalizedPath: string): NamespaceSplit | undefined {
 	return normalizedPath.startsWith("/") ? { body: normalizedPath, stem: "" } : undefined;
 }
 
-/**
- * The one place the brand is applied, so `toPosixRoot` is its only source.
- *
- * @param canonical - A path already in canonical form.
- * @returns The same path, branded.
- */
 function asPosixRoot(canonical: string): PosixRoot {
 	// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- see above
 	return canonical as PosixRoot;

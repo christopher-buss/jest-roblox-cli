@@ -13,14 +13,6 @@ import {
 	type SourceSnippetReader,
 } from "./agent-failures.ts";
 
-/**
- * Snippet stub routed by the requested file's extension: `getSourceSnippet` is
- * called once per language per failure, so a test that only stubs one of them
- * gets `undefined` for the other.
- * @param filePath - Requested file.
- * @param snippets - Stubbed snippet per language.
- * @returns The stub for the file's language, or undefined.
- */
 function snippetByExtension(
 	filePath: string,
 	snippets: { luau?: SourceSnippet; ts?: SourceSnippet },

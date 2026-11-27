@@ -41,13 +41,6 @@ function jestResult(testFilePath: string, cases: Array<TestCaseResult>): JestRes
 	};
 }
 
-/**
- * A mapper that resolves every test file to `diskPath` and offsets lines by
- * `lineShift`.
- * @param diskPath - Path every test file resolves to.
- * @param lineShift - Lines added to each Luau line.
- * @returns The test file mapper.
- */
 function mapperFor(diskPath: string | undefined, lineShift = 0) {
 	return {
 		mapTestFileLine: (_testFilePath: string, luauLine: number) => luauLine + lineShift,

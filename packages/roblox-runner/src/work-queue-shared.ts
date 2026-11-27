@@ -43,10 +43,6 @@ type BestEffortDequeueParameters = DequeueQueueItemsParameters & {
 	readonly allOrNothing?: never;
 };
 
-/**
- * The canonical status `items:read` answers when no item is visible: a 404
- * carrying `{"error":"NOT_FOUND"}`.
- */
 const EMPTY_READ_CODE = "NOT_FOUND";
 const EMPTY_READ = {
 	data: { items: [], readId: undefined },

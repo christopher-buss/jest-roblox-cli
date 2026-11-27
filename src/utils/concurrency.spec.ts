@@ -3,18 +3,11 @@ import { describe, it } from "vitest";
 import { mapWithLimitAsync } from "./concurrency.ts";
 
 interface Gate {
-	/** Resolves the call for `index`, letting its worker take the next item. */
 	release: (index: number, value: string) => void;
-	/** How many calls have been made but not yet resolved. */
 	started: Array<number>;
 	track: (item: string, index: number) => Promise<string>;
 }
 
-/**
- * A `func` whose calls hang until released, so a test can look at how many are
- * outstanding at once rather than inferring it from timing.
- * @returns The tracked `func`, the started indices and the release hook.
- */
 function createGate(): Gate {
 	const resolvers = new Map<number, (value: string) => void>();
 	const started: Array<number> = [];
@@ -33,7 +26,6 @@ function createGate(): Gate {
 	};
 }
 
-/** Lets every pending microtask run, so a released worker can take its next. */
 async function settleAsync(): Promise<void> {
 	for (let turn = 0; turn < 10; turn += 1) {
 		await Promise.resolve();

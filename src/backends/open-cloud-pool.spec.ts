@@ -75,13 +75,6 @@ async function drainWithFailingReaderAsync(fail: () => never): Promise<Array<str
 	return writes;
 }
 
-/**
- * Runs `steps[callIndex]`, repeating the final step once the list is
- * exhausted.
- *
- * @param steps - Task bodies, in call order.
- * @returns A mock task.
- */
 function stepTask(steps: Array<ExecuteStep>) {
 	let callIndex = 0;
 	return vi.fn<() => Promise<ScriptResult>>(async () => {
@@ -160,11 +153,6 @@ describe(drainStealingPoolAsync, () => {
 	}) => {
 		expect.assertions(1);
 
-		/**
-		 * The shared pool folds a task failure into a freed slot and
-		 * resolves, so without a post-pool guard the failure would be masked
-		 * whenever a sibling task drains the whole queue.
-		 */
 		const runTask = stepTask([
 			settled("alpha", "beta"),
 			() => {

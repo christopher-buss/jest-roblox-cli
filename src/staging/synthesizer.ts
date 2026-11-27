@@ -94,12 +94,6 @@ export function synthesize(input: SynthesizeInput): string {
 	});
 }
 
-/**
- * The materializer reads this attribute to restore the run context on clones.
- *
- * @param root - Package root node; mutated.
- * @param raw - Raw project object.
- */
 function markRunContextScripts(root: RojoTreeNode, raw: JSONObject): void {
 	if (raw["emitLegacyScripts"] !== false) {
 		return;
@@ -200,12 +194,6 @@ function enableLoadString(tree: RojoTreeNode): void {
 	service.$properties = { ...properties, LoadStringEnabled: true };
 }
 
-/**
- * Must stay in the project text: the place-reuse key covers the id there.
- *
- * @param tree - Place tree; mutated.
- * @param contentId - Id to stamp, or `undefined` to stamp nothing.
- */
 function stampPlaceContentId(tree: RojoTreeNode, contentId: string | undefined): void {
 	if (contentId === undefined) {
 		return;

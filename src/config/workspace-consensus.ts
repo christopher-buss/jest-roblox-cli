@@ -35,20 +35,12 @@ interface OptionalFieldSpec<T> extends ConsensusSpec<T> {
 	readCli: (cli: CliOptions) => T | undefined;
 }
 
-/** Thrown when selected packages disagree on a field that must be uniform. */
 class WorkspaceConsensusError extends Error {
 	public readonly field: string;
 	public readonly groups: ReadonlyArray<ConsensusGroup<unknown>>;
 	public override readonly name = "WorkspaceConsensusError";
 	public readonly omittedBy: ReadonlyArray<string>;
 
-	/**
-	 * Record the disagreement and format its message.
-	 *
-	 * @param field - Name of the disputed field.
-	 * @param groups - Packages grouped by the value they declare.
-	 * @param omittedBy - Packages that do not declare the field.
-	 */
 	constructor(
 		field: string,
 		groups: ReadonlyArray<ConsensusGroup<unknown>>,

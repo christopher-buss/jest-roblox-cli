@@ -4,7 +4,6 @@ import { describe, it, vi } from "vitest";
 
 import { createV3Mapper } from "./v-3-mapper.ts";
 
-/** A map with one segment on line 1 and one on line 2. */
 // cspell:ignore AACA
 const TWO_LINE_MAP = JSON.stringify({
 	file: "output.luau",
@@ -13,7 +12,6 @@ const TWO_LINE_MAP = JSON.stringify({
 	version: 3,
 });
 
-/** A map with a single segment on line 1, at generated column 0. */
 const ONE_LINE_MAP = JSON.stringify({
 	file: "output.luau",
 	mappings: "AAAA",

@@ -222,16 +222,6 @@ function enumerateFromGlobs({
 	return packages;
 }
 
-/**
- * `cache` must be declared for both leaves, or this walks the root again.
- *
- * @param options - Glob cache, file system, packages and root.
- * @param options.cache - Glob cache declared for both leaves.
- * @param options.fileSystem - File system to walk.
- * @param options.packages - Candidate packages.
- * @param options.workspaceRoot - Workspace root directory.
- * @returns The candidates that hold a `jest.config.*`.
- */
 function withJestConfig({
 	cache,
 	fileSystem,

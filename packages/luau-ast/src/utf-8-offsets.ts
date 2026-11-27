@@ -62,11 +62,6 @@ export function createUtf8OffsetMap(text: string): Utf8OffsetMap {
 	};
 }
 
-/**
- * How many UTF-8 bytes encode `codePoint` (0..0x10FFFF).
- * @param codePoint - The Unicode scalar value to measure.
- * @returns The number of bytes needed to encode the scalar value.
- */
 function utf8Width(codePoint: number): number {
 	if (codePoint < 0x80) {
 		return 1;

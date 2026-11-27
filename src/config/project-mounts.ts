@@ -114,14 +114,6 @@ export function resolveMounts({
 	return pruneAncestorMounts(dedupeMounts(allMounts));
 }
 
-/**
- * Find the DataModel path a Rojo tree mounts a file-system directory at.
- *
- * @param outDirectory - Compiled-output directory to look up.
- * @param rojoTree - Rojo project tree.
- * @returns The DataModel path.
- * @throws {ConfigError} If no tree entry maps the directory.
- */
 function mapFsRootToDataModel(outDirectory: PosixRoot, rojoTree: RojoTreeNode): string {
 	const result = findInTree({
 		currentDataModelPath: "",

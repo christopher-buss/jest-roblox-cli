@@ -5,14 +5,6 @@ import { describe, it } from "vitest";
 import type { Config } from "#src/config/config-types.ts";
 import { buildWorkspaceRunOptions } from "#src/config/workspace-run-options.ts";
 
-/**
- * `buildWorkspaceRunOptions` runs ~13 consensus passes per invocation, each
- * O(packages) with a deep-equal group match. This bench guards the agreeing-
- * packages path (the common case) against scaling regressions as the selected
- * package set grows.
- * @param count - Number of packages.
- * @returns Package configs that agree on every option.
- */
 function agreeingConfigs(count: number): Array<{ config: Config; name: string }> {
 	const configs: Array<{ config: Config; name: string }> = [];
 	for (let index = 0; index < count; index++) {

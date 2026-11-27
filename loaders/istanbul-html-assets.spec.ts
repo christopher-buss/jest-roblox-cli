@@ -11,12 +11,6 @@ const builtAssetsSchema = type({
 
 type BuiltAssets = typeof builtAssetsSchema.infer;
 
-/**
- * The emitted module, evaluated the way a loader's consumer would see it. It is
- * a single `export default` of a JSON literal, so stripping that prefix leaves
- * something `JSON.parse` reads.
- * @returns The parsed asset groups.
- */
 function buildAssets(): BuiltAssets {
 	const source = buildIstanbulHtmlAssetsModule();
 	const literal = source.replace(/^export default /, "").replace(/;\n?$/, "");

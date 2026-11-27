@@ -87,12 +87,6 @@ export async function stageRunAsync({
 	return { cacheRoot, ...coverage, stagingMs: stubStagingMs + coverageStagingMs };
 }
 
-/**
- * Map resolved projects to Build Manifest records, one per DataModel path.
- * Setup files must already be resolved to DataModel paths.
- * @param projects - Resolved project configs.
- * @returns One manifest record per project DataModel path.
- */
 function toBuildManifestProjects(
 	projects: Array<ResolvedProjectConfig>,
 ): Array<BuildManifestProject> {
@@ -117,12 +111,6 @@ function toBuildManifestProjects(
 	});
 }
 
-/**
- * Instrument and build the coverage place with the stubs baked in, and record
- * it in the Build Manifest. Stubs must already be generated into `cacheRoot`.
- * @param options - Bake inputs and the run's cache root.
- * @returns The staged coverage and the host time spent staging it.
- */
 async function prepareCoverageAsync({
 	cacheRoot,
 	fileSystem,

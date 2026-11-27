@@ -5,7 +5,6 @@ import { WORK_DIRECTORY } from "../utils/work-directory.ts";
 import { BUILD_MANIFEST_FILE } from "./build-manifest.ts";
 
 const SHADOW_DIR = `${WORK_DIRECTORY}/coverage`;
-/** Outside the shadow, so a cold wipe keeps the place. */
 const PLACE_DIR = `${WORK_DIRECTORY}/place`;
 
 /** Where one run's coverage artifacts live. */

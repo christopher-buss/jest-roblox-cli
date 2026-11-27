@@ -88,13 +88,6 @@ function sourceDigest(source: string): string {
 	return hashBuffer(Buffer.from(normalizeWindowsPath(source), "utf-8")).slice(0, 8);
 }
 
-/**
- * Strip properties before folding classes: after the fold, rewritten items
- * look like consumer-authored Folders.
- *
- * @param xml - Built `.rbxmx` text.
- * @returns The text with pinned classes folded to `Folder`.
- */
 function foldPinnedClasses(xml: string): string {
 	const stripped = xml.replaceAll(CLASSED_PROPERTIES, (match, ...groups) => {
 		const [open, declared, body, close] = groups;
@@ -187,14 +180,6 @@ async function standInForAsync(
 	return [normalizeWindowsPath(path.relative(projectDirectory, mount.source))];
 }
 
-/**
- * Keep serial: concurrent rojo runs can collide in the shadow directory.
- *
- * @param pinned - Offending mounts.
- * @param options - Adapters, declared ignores and directories.
- * @returns The full ignore list.
- * @rejects When a rojo build fails.
- */
 async function buildStandInsAsync(
 	pinned: Array<PinnedMount>,
 	options: {

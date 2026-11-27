@@ -38,13 +38,6 @@ const META_JSON = "init.meta.json";
 
 const demotedProjectSchema = stagedProjectSchema.and(type({ "globIgnorePaths?": "string[]" }));
 
-/**
- * A model whose root is a service, as `rojo build` would emit it. The nested
- * Folder is a consumer-authored one carrying a property of its own, so a
- * stripping pass that cannot tell it from a rewritten root shows up here.
- * @param rootClass - Class of the model's root item.
- * @returns The `.rbxmx` text.
- */
 function serviceModelXml(rootClass: string): string {
 	return [
 		'<roblox version="4">',
@@ -81,11 +74,6 @@ function seed(files: Record<string, string> = {}): Harness {
 	return { ...memory, childProcess: fromAny({ execFile }), execFile };
 }
 
-/**
- * The shape every walk test shares: one package staging `StarterPlayer`, which
- * auto-mounts its directory of assets.
- * @returns The project text.
- */
 function starterPlayerMount(): string {
 	return stagedProject({
 		pkg: {

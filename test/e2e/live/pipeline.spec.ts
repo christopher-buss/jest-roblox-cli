@@ -15,36 +15,8 @@ import { IS_LIVE, liveEnvironment } from "#test/helpers/e2e/live-gate.ts";
 import { createFixtureSandbox, runCliAsync } from "#test/helpers/integration/helpers.ts";
 import { quotaSkipNote, skipOnQuotaAsync } from "#test/setup/quota-skip.ts";
 
-/**
- * The live pipeline suite. Gated on JEST_ROBLOX_LIVE=1 plus the three Open
- * Cloud env vars; with the gate off vitest reports these skipped and the wire
- * is never touched, so the file runs on a machine without secrets.
- *
- * Every test here costs a place upload, and an upload is the one thing
- * measured to precede a ~20s cold place boot (see
- * `docs/research/open-cloud-warm-boot`). So the unit of economy is the CLI
- * invocation, not the test: flags that can share a run do share one, and each
- * `it` below is one invocation. Adding a case means asking first whether an
- * existing run can carry the assertion.
- *
- * The fixture (`test/e2e/fixtures/live-place`) ships a pre-built `.rbxl` and
- * two configured `projects` in its `jest.config.ts`: `live-place-shared`
- * (one spec) and `live-place-server` (four).
- *
- * Only the first run below carries the boot probe. One live proof that a fresh
- * version starts is the whole of what the wire can tell us; every later run
- * would spend a task and a cold boot re-proving it, so they point at
- * `jest.no-probe.config.ts` instead.
- */
-
 const LIVE_FIXTURE_PATH = path.resolve(__dirname, "../fixtures/live-place");
 
-/**
- * One-based line of the first line of `source` that contains `title`.
- * @param source - Source text.
- * @param title - Text to find.
- * @returns One-based line number, or 0 when no line contains `title`.
- */
 function lineOfTitle(source: string, title: string): number {
 	return source.split("\n").findIndex((line) => line.includes(title)) + 1;
 }
@@ -81,11 +53,6 @@ const placeProjectSchema = type({
 	tree: { ReplicatedStorage: { "PkgShared?": "object" } },
 });
 
-/**
- * The node the built place serves the shared mount at, if it serves one.
- * @param sandbox - Sandbox directory.
- * @returns The shared mount node, or `undefined`.
- */
 function readSharedMount(sandbox: string): object | undefined {
 	const projectFile = path.join(sandbox, PLACE_DIR, "synthesized.project.json");
 	return placeProjectSchema.assert(JSON.parse(fs.readFileSync(projectFile, "utf-8"))).tree

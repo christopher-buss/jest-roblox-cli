@@ -129,13 +129,6 @@ function makeCli(overrides: Partial<CliOptions> = {}): CliOptions {
 	return { ...overrides };
 }
 
-/**
- * Complete every job in the fake executor.
- * @param input - Jobs and the dispatch clock.
- * @param input.jobs - Selected runtime jobs.
- * @param input.startTime - Start of the dispatch window.
- * @returns Results identified by job index.
- */
 function allJobResults(input: {
 	jobs: ReadonlyArray<ConfiguredJob>;
 	startTime: number;

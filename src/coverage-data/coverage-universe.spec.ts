@@ -395,11 +395,6 @@ describe(createCoverageUniverseMatcher, () => {
 });
 
 describe(resolveUniverseAnchor, () => {
-	/**
-	 * The anchor as a plain string, so an assertion can name one.
-	 * @param rootDirectory - The configured rootDir, if any.
-	 * @returns The resolved anchor.
-	 */
 	function anchorFor(rootDirectory?: string): string {
 		return resolveUniverseAnchor(rootDirectory);
 	}

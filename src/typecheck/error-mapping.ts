@@ -130,12 +130,6 @@ function collectSourceResults(
 	return sourceResults;
 }
 
-/**
- * `sortedDefinitions` must be descending by `start`, so `find` hits the
- * innermost test.
- * @param options - Errors, line index and sorted test definitions.
- * @returns The errors grouped by the test that holds them.
- */
 function partitionErrors({
 	errors,
 	indexMap,

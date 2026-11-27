@@ -21,15 +21,6 @@ const TARGET: UploadCacheTarget = {
 	universeId: "111",
 };
 
-/**
- * Seed the place file on `volume` and report the hash the cache keys on.
- *
- * @param root0 - Seed input.
- * @param root0.volume - Where the place file lands.
- * @param root0.fileSystem - The same volume, as the code under test reads it.
- * @param root0.contents - The place bytes.
- * @returns The SHA-256 hash of the place file.
- */
 function seedPlaceFile({
 	contents = "place-bytes",
 	fileSystem,
@@ -230,11 +221,6 @@ describe("upload cache", () => {
 		);
 	});
 
-	/**
-	 * A write that fails leaves the entry in the file, so it is still the one
-	 * the next run reads. The caller says so out loud rather than promising a
-	 * re-upload that will not happen.
-	 */
 	it("should report a stale entry as surviving when the cache cannot be written", async ({
 		expect,
 	}) => {
@@ -299,11 +285,6 @@ describe("upload cache", () => {
 		).toBeUndefined();
 	});
 
-	/**
-	 * An entry now claims the bytes boot, which only a boot probe can say. A
-	 * file written before the probe existed makes no such claim, so serving it
-	 * would skip the probe on a version nothing ever started.
-	 */
 	it("should degrade to a miss when the cache file predates boot verification", ({ expect }) => {
 		expect.assertions(1);
 

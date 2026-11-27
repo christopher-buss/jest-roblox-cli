@@ -24,10 +24,6 @@ const ROOT = path.resolve("/repo");
 
 type NxResolveResult = "non-json" | "not-found" | "schema-violation" | { root: string };
 
-/**
- * A launcher whose `execFileSync` the test under way owns outright.
- * @returns A runner with a bare `execFileSync` mock.
- */
 function createRunner(): ChildProcessRunner {
 	return fromAny({ execFileSync: vi.fn<ChildProcessRunner["execFileSync"]>() });
 }
@@ -57,17 +53,6 @@ function packageInfoFor(name: string) {
 	return { name, packageDirectory: path.join(ROOT, packagePathFor(name)) };
 }
 
-/**
- * Route execFileSync mock calls between `nx show projects` and per-project
- * `nx show project <name>`. Linux platforms only. On Windows the args are
- * wrapped in `cmd /c "<command> <quoted args>"`, so `args[0]` is `/d`, not
- * `show`, and this helper's routing falls through. Any Windows nx test must
- * set up `execFileSync` manually and inspect the inner `/c` string.
- * @param childProcess - Runner whose `execFileSync` mock gets the routing.
- * @param responses - Canned nx output.
- * @param responses.affected - Project names `nx show projects` returns.
- * @param responses.responsesByName - `nx show project` output per project name.
- */
 function mockNxResponses(
 	childProcess: ChildProcessRunner,
 	{
@@ -106,13 +91,6 @@ function mockNxResponses(
 	});
 }
 
-/**
- * Windows wraps the nx args in `cmd /c "<command> <quoted args>"`, so
- * `mockNxResponses`' arg-routing falls through. Route on the inner `/c` string
- * instead.
- * @param childProcess - Runner whose `execFileSync` mock gets the routing.
- * @param responses - Canned nx output.
- */
 function mockWindowsNxResponses(
 	childProcess: ChildProcessRunner,
 	{

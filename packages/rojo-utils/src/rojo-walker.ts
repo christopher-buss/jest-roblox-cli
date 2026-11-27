@@ -71,11 +71,6 @@ const rojoFileSchema = type({
 	"tree": treeSchema,
 }).as<RojoFile>();
 
-/**
- * Mutable state for a single walk. Kept private to this module: callers go
- * through {@link walkRojoConfig} / {@link walkRojoTree} and receive a plain
- * {@link RojoWalk}.
- */
 class RojoWalker {
 	private readonly filePathToRbxPathMap = new Map<string, RbxPath>();
 	private readonly fileSystem: FileSystem;
@@ -343,15 +338,6 @@ export function walkRojoTree(
 	return walker.result();
 }
 
-/**
- * Parse a project file's JSON into the fields the resolver reads. Only the
- * fields the resolver reads are checked; `parseTree` handles arbitrary tree
- * shapes defensively.
- *
- * @param value - The parsed JSON of a `*.project.json` file, or undefined
- *   when the file could not be parsed.
- * @returns The project's fields, or undefined when the file is not a project.
- */
 function parseRojoConfig(value: JSONValue | undefined): RojoFile | undefined {
 	const result = rojoFileSchema(value);
 	return result instanceof type.errors ? undefined : result;

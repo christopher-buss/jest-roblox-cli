@@ -57,12 +57,6 @@ interface RunSnapshot {
 	stdout: string;
 }
 
-/**
- * Every file under the sandbox, sandbox-relative and sorted. The root config
- * itself is dropped so the two listings differ only by what the RUN wrote.
- * @param sandbox - Sandbox directory.
- * @returns Sorted sandbox-relative file paths.
- */
 function listFiles(sandbox: string): Array<string> {
 	const found: Array<string> = [];
 	const entries = fs.readdirSync(sandbox, { recursive: true, withFileTypes: true });
@@ -78,14 +72,6 @@ function listFiles(sandbox: string): Array<string> {
 	return found.filter((file) => file !== "jest.config.ts").sort();
 }
 
-/**
- * Blank the parts of a run that legitimately vary between two invocations: the
- * wall clock, elapsed times, the ephemeral port the fake Open Cloud server
- * bound, and the pid and import cache-buster Node stamps onto its own warnings.
- * What survives is everything the config could have changed.
- * @param text - CLI output.
- * @returns The output with varying parts replaced by placeholders.
- */
 function normalizeOutput(text: string): string {
 	return text
 		.replaceAll(/\d{2}:\d{2}:\d{2}/g, "<clock>")

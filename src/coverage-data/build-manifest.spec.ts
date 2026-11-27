@@ -29,14 +29,6 @@ function seedArtifacts(volume: MemoryVolume): void {
 	volume.writeFileSync(SOURCE_FILE, SOURCE_CONTENT);
 }
 
-/**
- * Hashes derive from the content constants, not from disk, so a fixture stays
- * valid even after a test unlinks or tampers with the artifacts. The example
- * carries both places (the shape `prepareArtifacts` emits); the coverage path
- * emits only `coveragePlace`, exercised via the `cleanPlace: undefined` case.
- * @param overrides - Fields replacing the defaults.
- * @returns A valid build manifest.
- */
 function exampleManifest(overrides: Partial<BuildManifest> = {}): BuildManifest {
 	return {
 		buildId: "11111111-1111-1111-1111-111111111111",
@@ -77,13 +69,6 @@ function expectOk(result: ReadBuildManifestResult): BuildManifest {
 
 const MANIFEST_PATH = "/project/.jest-roblox/coverage/build-manifest.json";
 
-/**
- * Callers pass an already-serialized manifest: serializing at the call site
- * keeps the concrete type, so the stricter JSON.stringify typing returns a
- * `string` rather than a possibly-`undefined` result.
- * @param volume - Volume the manifest is written to.
- * @param json - Serialized manifest.
- */
 function seedManifest(volume: MemoryVolume, json: string): void {
 	volume.mkdirSync("/project/.jest-roblox/coverage", { recursive: true });
 	volume.writeFileSync(MANIFEST_PATH, json);

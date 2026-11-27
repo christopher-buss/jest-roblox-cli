@@ -70,13 +70,6 @@ export async function resolveRunProjectsAsync(
 	return projects;
 }
 
-/**
- * Read and validate the Rojo project, then resolve its nested projects.
- * @param config - Config whose `rootDir` and `rojoProject` locate the file.
- * @param fileSystem - File system to read from; defaults to Node's.
- * @returns The resolved Rojo tree.
- * @throws {Error} When the file cannot be read or fails the Rojo schema.
- */
 function loadRojoTree(config: ResolvedConfig, fileSystem: FileSystem): RojoTreeNode {
 	return loadRojoProject(requireRojoProject(config), fileSystem).tree;
 }

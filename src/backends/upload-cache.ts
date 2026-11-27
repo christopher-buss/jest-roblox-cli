@@ -155,12 +155,6 @@ function entryKey({ placeFilePath, placeId, universeId }: UploadCacheTarget): st
 	return `${String(universeId)}/${String(placeId)}/${normalizeWindowsPath(placeFilePath)}`;
 }
 
-/**
- * Not under `.jest-roblox/coverage/`: a coverage rebuild wipes that folder.
- *
- * @param rootDirectory - Project root that holds the cache file.
- * @returns The path of the cache file.
- */
 function cachePath(rootDirectory: string): string {
 	return path.join(rootDirectory, WORK_DIRECTORY, "upload-cache.json");
 }

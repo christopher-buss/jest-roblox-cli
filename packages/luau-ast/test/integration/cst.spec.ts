@@ -6,13 +6,6 @@ import { assert, describe, it } from "vitest";
 
 import { parseCst } from "#test/helpers/integration/parse-cst";
 
-/**
- * Binding numbers of every declaration and reference named `name`, in source
- * order.
- * @param root - The tree searched in source order.
- * @param name - The binding name to find.
- * @returns The binding identities with the requested name.
- */
 function bindingsNamed(root: CstRoot, name: string): Array<number> {
 	const bindings: Array<number> = [];
 	forEachCstNode(root, (node) => {
@@ -24,12 +17,6 @@ function bindingsNamed(root: CstRoot, name: string): Array<number> {
 	return bindings;
 }
 
-/**
- * A copy of a tree with every node's and entry's keys in reverse order.
- * @param value - The tree value whose keys are reversed.
- * @returns The tree value with object keys reversed.
- * @template T - The selected node or tree value type.
- */
 function reverseKeys<T>(value: T): T;
 function reverseKeys(value: unknown): unknown {
 	if (Array.isArray(value)) {

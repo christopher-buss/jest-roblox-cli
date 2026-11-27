@@ -81,12 +81,6 @@ function buildFunctionMode(hljs: HLJSApi, comments: Array<Mode>): Mode {
 	};
 }
 
-/**
- * Order matters: highlight.js tries modes in array order.
- *
- * @param longBrackets - The caller's nestable long-bracket mode.
- * @returns The long-bracket and backtick string modes.
- */
 function buildStringModes(longBrackets: Mode): Array<Mode> {
 	return [
 		{

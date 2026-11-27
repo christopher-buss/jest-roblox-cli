@@ -6,7 +6,6 @@ import { countLinesThroughLastDirective } from "./directive-header.ts";
 
 const luauParser = loadLuauParser();
 
-/** Every shape the scanner and the parser have to agree on. */
 const SHAPES = [
 	"--!strict\n--!native\nlocal x = 1",
 	"local x = 1\n--!native",
@@ -20,13 +19,6 @@ const SHAPES = [
 	"--!strict\n--!native\n",
 ] as const;
 
-/**
- * The same answer read off Luau's own parse: the last `--!` comment that
- * still opens the file, where "opens" means no statement has started yet.
- * Luau decides this on tokens, and only a parse knows where the first one is.
- * @param source - The Luau fixture source.
- * @returns The line count through the last opening directive.
- */
 function parsedDirectiveLines(source: string): number {
 	const parsed = luauParser.parse(source);
 	assert(parsed.ok, "fixture must parse");

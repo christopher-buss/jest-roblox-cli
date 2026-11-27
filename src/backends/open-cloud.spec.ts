@@ -41,7 +41,6 @@ type ExecuteStep = () => Promise<ScriptResult> | ScriptResult;
 
 interface RunnerStub {
 	executeCalls: Array<ExecuteScriptOptions>;
-	/** Boot-probe submits, kept apart so a test counts only its own tasks. */
 	probeCalls: Array<ExecuteScriptOptions>;
 	runner: RemoteRunner;
 	setExecute: (handler: ExecuteHandler) => void;
@@ -80,13 +79,6 @@ function createRunnerStub(options: RunnerStubOptions = {}): RunnerStub {
 	let executeHandler: ExecuteHandler = defaultHandlerAsync;
 	let probeHandler: ExecuteHandler = defaultProbeAsync;
 
-	/**
-	 * The probe is infrastructure, not one of the run's tasks: routing it to
-	 * its own list and its own handler keeps every other test written as
-	 * though it did not exist.
-	 * @param executeOptions - Options of the submitted task.
-	 * @returns Result from the probe or the execute handler.
-	 */
 	async function executeScriptAsync(executeOptions: ExecuteScriptOptions): Promise<ScriptResult> {
 		if (executeOptions.script === "return tostring(game.PlaceVersion)") {
 			probeCalls.push(executeOptions);
@@ -145,32 +137,14 @@ function packageEntry(packageName: string) {
 	return { jestOutput: successJest(), jobIndex: packageJobIndex(packageName), pkg: packageName };
 }
 
-/**
- * The packages a materializer script carries, read back off the
- * submitted task.
- * @param options - Options of the submitted task.
- * @returns Package names in the script.
- */
 function requestedNames(options: ExecuteScriptOptions): Array<string> {
 	return Array.from(options.script.matchAll(/"pkg":"([^"]+)"/g), (match) => match[1]!);
 }
 
-/**
- * An envelope answering exactly the packages a script asked for.
- * @param options - Options of the submitted task.
- * @returns Passing result for each requested package.
- */
 function scriptedEntries(options: ExecuteScriptOptions): ScriptResult {
 	return scriptResult(envelope(requestedNames(options).map(packageEntry)));
 }
 
-/**
- * An execute handler that runs `steps[callIndex]`, repeating the final step
- * once the list is exhausted. Keeps per-call-index dispatch out of `it`
- * bodies.
- * @param steps - Handlers by call index.
- * @returns Execute handler.
- */
 function stepExecute(steps: Array<ExecuteStep>): ExecuteHandler {
 	let callIndex = 0;
 	return (): Promise<ScriptResult> | ScriptResult => {
@@ -180,11 +154,6 @@ function stepExecute(steps: Array<ExecuteStep>): ExecuteHandler {
 	};
 }
 
-/**
- * What a task once returned on booting another version. No task carries the
- * guard that produced it any more, so it is just an output that is not JSON.
- * @returns Result whose output is a place-mismatch message.
- */
 function versionMismatchOutput(): ScriptResult {
 	return { durationMs: 3, outputs: [formatPlaceMismatch(99)] };
 }
@@ -267,13 +236,8 @@ function cacheJob(rootDirectory: string): ConfiguredJob {
 	});
 }
 
-/** The version an upload lands on wherever a spec drives {@link probeStub}. */
 const PROBED_VERSION = 42;
 
-/**
- * A runner whose upload lands on {@link PROBED_VERSION} and whose tasks pass.
- * @returns The runner stub.
- */
 function probeStub(): RunnerStub {
 	const stub = createRunnerStub({
 		uploadResult: { uploadMs: 12, versionNumber: PROBED_VERSION },
@@ -1006,11 +970,6 @@ describe("construction", () => {
 });
 
 describe("upload cache", () => {
-	/**
-	 * How many uploads one passing run made.
-	 * @param fixture - Cache fixture of the spec.
-	 * @returns Upload count.
-	 */
 	async function runOnceAsync(fixture: ReturnType<typeof cacheFixture>): Promise<number> {
 		const { uploadCalls } = await runProbedRunAsync(fixture);
 		return uploadCalls.length;
@@ -1065,11 +1024,6 @@ describe("upload cache", () => {
 	});
 });
 
-/**
- * A Shared Place run submits everything to the Exact Version its upload
- * returned. Nothing goes to head, so no task carries a guard and none is
- * retried pinned: the first submission is already the right one.
- */
 describe("exact version submission", () => {
 	it("should pin the boot probe to the uploaded version", async ({ expect }) => {
 		expect.assertions(2);
@@ -1085,7 +1039,6 @@ describe("exact version submission", () => {
 		});
 	});
 
-	/** A 5xx create may still have counted against the create limit. */
 	it("should not re-send a probe create that Open Cloud answered with a 5xx", async ({
 		expect,
 	}) => {
@@ -1154,10 +1107,6 @@ describe("exact version submission", () => {
 	});
 });
 
-/**
- * What the runner throws when a task never reaches a terminal state.
- * @returns Error caused by a poll timeout.
- */
 function pollTimeout(): Error {
 	return new Error("Execution timed out: Roblox never reported a terminal state", {
 		cause: new PollTimeoutError("poll budget exhausted", { timeoutMs: 135_000 }),
@@ -1165,7 +1114,6 @@ function pollTimeout(): Error {
 }
 
 describe("boot probe", () => {
-	/** A lost probe says nothing about the place. */
 	it("should send one more probe when the first is lost, then run the tests", async ({
 		expect,
 	}) => {
@@ -1190,11 +1138,6 @@ describe("boot probe", () => {
 		expect(stub.executeCalls[0]!.bootProven).toBeTrue();
 	});
 
-	/**
-	 * The cache entry is written only once the probe passes, so a hit already
-	 * carries the proof. Re-probing would spend a boot on a question already
-	 * answered, on every run that reuses a version.
-	 */
 	it("should skip the probe and pin the tests to the version the upload cache reused", async ({
 		expect,
 	}) => {
@@ -1211,11 +1154,6 @@ describe("boot probe", () => {
 		expect(second.executeCalls[0]!.placeVersion).toBe(PROBED_VERSION);
 	});
 
-	/**
-	 * The runner falls back to naming a place Roblox cannot load when a task
-	 * never settles. The probe has just disproved that for these bytes, so a
-	 * later timeout must not send the reader to Studio over it.
-	 */
 	it("should tell the runner the place boots once the probe has passed", async ({ expect }) => {
 		expect.assertions(2);
 
@@ -1228,10 +1166,6 @@ describe("boot probe", () => {
 		expect(stub.executeCalls[0]!.bootProven).toBeTrue();
 	});
 
-	/**
-	 * A cache entry says the bytes booted when it was written, which is not
-	 * the same claim, so a reused version leaves the runner its own reading.
-	 */
 	it("should leave the runner to guess when the version came from the cache", async ({
 		expect,
 	}) => {
@@ -1245,16 +1179,6 @@ describe("boot probe", () => {
 		expect(second.executeCalls[0]!.bootProven).toBeFalse();
 	});
 
-	/**
-	 * The budget is wall clock, not a task deadline: the poll must stop asking
-	 * at the budget, or a 90s probe waits out the runner's boot-lag allowance
-	 * on top and the failure arrives 45s after it was known.
-	 *
-	 * The deadline stays short and separate. Set to the whole budget the two
-	 * would expire together, so a place that booted just inside the budget
-	 * would be reported as one Roblox cannot start while its script ran: the
-	 * one verdict that has to be trustworthy.
-	 */
 	it("should give the probe its own budget, 90s by default", async ({ expect }) => {
 		expect.assertions(3);
 

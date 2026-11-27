@@ -19,7 +19,6 @@ import type { FileSystem } from "../utils/file-system.ts";
 import type { PosixRoot } from "../utils/normalize-windows-path.ts";
 import { resolveLuauRoots } from "./luau-roots.ts";
 
-/** What every case that never reaches the tsconfig fallback hands in. */
 const noTsconfig = readingOutDirectory();
 
 describe(resolveLuauRoots, () => {
@@ -90,12 +89,6 @@ describe(resolveLuauRoots, () => {
 		}).toThrow(/Invalid Rojo project/);
 	});
 
-	/**
-	 * The roots as plain strings, so an assertion can name literals.
-	 * @param fileSystem - File system the roots are resolved on.
-	 * @param options - Config and tsconfig reader.
-	 * @returns The resolved roots.
-	 */
 	function rootsOf(
 		fileSystem: FileSystem,
 		{

@@ -114,13 +114,6 @@ function buildsAnInstance(fileSystem: FileSystem, mountPath: string): boolean {
 	return stats.isDirectory() || POOLED_FILE_EXTENSIONS.has(path.extname(mountPath).toLowerCase());
 }
 
-/**
- * Relative, so the place-reuse and upload caches hit across checkouts.
- *
- * @param mountPath - Path the nodes mount.
- * @param projectDirectory - Directory the key is relative to.
- * @returns The first `DIGEST_LENGTH` hex digits of the relative path's hash.
- */
 function pathDigest(mountPath: string, projectDirectory: string): string {
 	const relative = normalizeWindowsPath(path.relative(projectDirectory, mountPath));
 	return hashString(relative).slice(0, DIGEST_LENGTH);

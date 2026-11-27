@@ -1,11 +1,3 @@
-/**
- * E2e: workspace `--typecheckOnly`.
- *
- * Drives the real CLI binary through config-load → discovery → classification
- * → grouping → real tsgo → result-merge → exit-code, in workspace mode.
- * Pure-local tsgo: no rojo build, no Open Cloud, no secrets, so this lives in
- * the default `e2e` project (not the rojo/live-gated ones).
- */
 import * as path from "node:path";
 import { describe, it } from "vitest";
 

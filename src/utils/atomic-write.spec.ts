@@ -8,18 +8,8 @@ import { describe, it, vi } from "vitest";
 import { atomicWrite } from "./atomic-write.ts";
 import type { FileSystem } from "./file-system.ts";
 
-/** A stray's stamp: an owner pid, and the nonce of the write that left it. */
 const STRAY_STAMP = "4242.a1b2c3d4";
 
-/**
- * Stands in for the rename primitive: throws the `EPERM` Windows raises while
- * a scanner holds the fresh temp file, for the first `failures` calls, then
- * hands off to the real one. `restoreMocks` puts the original back after each
- * test.
- *
- * @param fileSystem - The volume whose rename primitive to stand in for.
- * @param failures - How many attempts to refuse before letting one through.
- */
 function failRenameTimes(fileSystem: FileSystem, failures: number): void {
 	const realRename = fileSystem.renameSync;
 	let remaining = failures;
@@ -33,15 +23,6 @@ function failRenameTimes(fileSystem: FileSystem, failures: number): void {
 	});
 }
 
-/**
- * Records the name of the temp file each write renames from, in call order,
- * and hands the rename itself to the real primitive. A temp file is gone by
- * the time the write returns, so the rename is the only place its name can be
- * read. `restoreMocks` puts the original back after each test.
- *
- * @param fileSystem - The volume whose rename primitive to stand in for.
- * @returns The temp file names, filled in as writes rename.
- */
 function captureTemporaryNames(fileSystem: FileSystem): Array<string> {
 	const names: Array<string> = [];
 	const realRename = fileSystem.renameSync;
@@ -53,15 +34,6 @@ function captureTemporaryNames(fileSystem: FileSystem): Array<string> {
 	return names;
 }
 
-/**
- * Stands in for the delete primitive: refuses the temp file belonging to
- * `owner` with the `EPERM` Windows raises while a scanner holds one open, and
- * hands every other path to the real one. `restoreMocks` puts the original
- * back after each test.
- *
- * @param fileSystem - The volume whose delete primitive to stand in for.
- * @param owner - Whose temp file the platform will not let go of.
- */
 function refuseToDeleteOwner(fileSystem: FileSystem, owner: number): void {
 	const realRemove = fileSystem.rmSync;
 	vi.spyOn(fileSystem, "rmSync").mockImplementation((targetPath, options) => {
@@ -73,13 +45,6 @@ function refuseToDeleteOwner(fileSystem: FileSystem, owner: number): void {
 	});
 }
 
-/**
- * Stands in for the liveness probe: every pid in `dead` answers `ESRCH` the
- * way `process.kill` does for a pid no longer running, and every other pid
- * answers as alive. `restoreMocks` puts the original back after each test.
- *
- * @param dead - Which owners the probe should report as gone.
- */
 function reportDeadOwners(dead: ReadonlyArray<number>): void {
 	vi.spyOn(process, "kill").mockImplementation((pid) => {
 		if (dead.includes(pid)) {
@@ -90,13 +55,6 @@ function reportDeadOwners(dead: ReadonlyArray<number>): void {
 	});
 }
 
-/**
- * Split a temp file's name into the target it publishes, its owner pid, and
- * its nonce.
- *
- * @param name - A temp file's basename, as the rename saw it.
- * @returns The target, the owner pid and the nonce.
- */
 function splitStamp(name: string | undefined): [string, string, string] {
 	const parts = (name ?? "").split(".tmp.");
 	const [pid, nonce] = (parts[1] ?? "").split(".", 2);

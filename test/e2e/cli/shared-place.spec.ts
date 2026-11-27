@@ -22,10 +22,6 @@ import {
 const RBXTS_FIXTURE = path.resolve(__dirname, "../fixtures/rbxts-project");
 const PLACE_FILE = "game.rbxlx";
 
-/**
- * The fixture's config, aimed at an XML place. Rojo picks the format off the
- * extension, and only the XML one can be read back as a tree.
- */
 const XML_PLACE_CONFIG = `import { defineConfig } from "@isentinel/jest-roblox";
 
 export default defineConfig({

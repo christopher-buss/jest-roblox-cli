@@ -7,14 +7,6 @@ import { buildWithRojoAsync } from "./rojo-builder.ts";
 
 type ExecCallback = (cause: Error | null, stdout: string, stderr: string) => void;
 
-/**
- * A launcher that settles the way the real `execFile` does: the error carries
- * no output of its own, and stderr arrives as the callback's own argument.
- *
- * @param cause - What the child failed with, or `null` for a clean exit.
- * @param stderr - What the child wrote to stderr.
- * @returns The stub launcher.
- */
 function answeringWith(cause: Error | null, stderr = ""): ChildProcessRunner {
 	return fromAny({
 		execFile: vi.fn<

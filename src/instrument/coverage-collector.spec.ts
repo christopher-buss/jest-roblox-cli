@@ -21,11 +21,6 @@ function span({
 	return { beginColumn, beginLine, endColumn, endLine };
 }
 
-/**
- * Parse real source and run the collector over it.
- * @param source - Luau source text.
- * @returns The collected coverage records.
- */
 function collect(source: string): CollectorResult<LuauSpan> {
 	const parsed = luauParser.parse(source);
 	assert(parsed.ok);

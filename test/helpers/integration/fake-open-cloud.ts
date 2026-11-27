@@ -147,10 +147,6 @@ function handlePublishVersion({
 	);
 }
 
-/**
- * The routes a run only ever reads from, plus the unhandled-route answer.
- * @param options - Request method, response, fake state and request URL.
- */
 function handleReadRequest({
 	method,
 	response,

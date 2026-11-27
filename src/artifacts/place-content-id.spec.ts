@@ -3,7 +3,6 @@ import { describe, it } from "vitest";
 import type { PlaceCoveringSet } from "./place-content-id.ts";
 import { computePlaceContentId } from "./place-content-id.ts";
 
-/** The id every case below has to arrive at. */
 const DIGEST = "22edc4ff38c8bb8dea2e58278b6a2e3c508f17ecc641fe0eb48be400cbace3a5";
 
 function covering(): PlaceCoveringSet {

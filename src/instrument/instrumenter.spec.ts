@@ -21,25 +21,12 @@ function callInstrumentWithDefaults(fileSystem: FileSystem) {
 	return { files: nodeInstrumenter({ fileSystem, luauRoot: LUAU_ROOT, shadowDir: "/shadow" }) };
 }
 
-/**
- * Read back the `__cov_file_key` literal baked into an instrumented file.
- *
- * @param volume - The shadow the instrumenter wrote into.
- * @param fileKey - The manifest key whose twin to read.
- * @returns The quoted literal, or undefined when absent.
- */
 function readEmbeddedFileKey(volume: MemoryVolume, fileKey: string): string | undefined {
 	const relativePath = fileKey.slice("/luau-root/".length);
 	const instrumented = volume.readFileSync(`/shadow/${relativePath}`, "utf-8").toString();
 	return /local __cov_file_key = ("(?:[^"\\]|\\.)*")/.exec(instrumented)?.[1];
 }
 
-/**
- * A volume holding source files; instrumentation parses them in process.
- *
- * @param options - The files, and the root they hang off.
- * @returns Memory file system holding the files.
- */
 function setupFilesystem({
 	files = DEFAULT_FILES,
 	luauRoot = "/luau-root",

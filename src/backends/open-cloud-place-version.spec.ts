@@ -54,11 +54,6 @@ function setup() {
 		return { ...createResolvedConfig(), rootDir: rootDirectory, ...overrides };
 	}
 
-	/**
-	 * Upload or reuse, then prove the version boots, as one run does.
-	 * @param options - Config overrides and progress sink.
-	 * @returns The upload outcome and whether the boot was proven.
-	 */
 	async function runAsync({
 		overrides,
 		progress = NOOP_PROGRESS,
@@ -198,7 +193,6 @@ describe(PlaceVersionGate, () => {
 			},
 		);
 
-		/** A lost probe says nothing about the place. */
 		it("should send one more probe when the first is lost", async ({ expect }) => {
 			expect.assertions(2);
 
@@ -271,10 +265,6 @@ describe(PlaceVersionGate, () => {
 			]);
 		});
 
-		/**
-		 * Zero is the off switch. The version then earns no cache entry: an
-		 * entry means "these bytes boot", and nothing proved it.
-		 */
 		it("should skip the probe, and cache nothing, when the budget is zero", async ({
 			expect,
 		}) => {
@@ -290,10 +280,6 @@ describe(PlaceVersionGate, () => {
 			expect(uploadPlaceAsync).toHaveBeenCalledTimes(2);
 		});
 
-		/**
-		 * A throttle or a bad key says something about the request, not about
-		 * the place, and must not be reported as one.
-		 */
 		it("should pass a probe failure that is not a timeout through untouched", async ({
 			expect,
 		}) => {

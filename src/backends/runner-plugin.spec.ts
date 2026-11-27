@@ -48,12 +48,6 @@ function fakeRojo(fileSystem: FileSystem) {
 	});
 }
 
-/**
- * A `rojo build <project> -o <output>` that writes the output and succeeds.
- *
- * @param fileSystem - File system the output is written to.
- * @returns The fake child process runner and its `execFile` mock.
- */
 function rojoChildProcess(fileSystem: FileSystem) {
 	const execFile = vi.fn<RojoExec>(writingRojoExec({ bytes: "rbxm-bytes", fileSystem }));
 	return { childProcess: fromAny<ChildProcessRunner, unknown>({ execFile }), execFile };

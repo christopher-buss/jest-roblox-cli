@@ -185,14 +185,6 @@ function deriveTypecheckInclude(runtimeInclude: ReadonlyArray<string>): Array<st
 	return runtimeInclude.map(toTypeTestPattern);
 }
 
-/**
- * Type Test globs stay out of `project.include`: coverage-source derivation
- * must never see a `-d` glob.
- *
- * @param project - Resolved project.
- * @param typecheck - Resolved typecheck config of the project.
- * @returns The globs that discover the project's tests.
- */
 function discoveryPatterns(
 	project: ResolvedProjectConfig,
 	typecheck: ResolvedTypecheckConfig,

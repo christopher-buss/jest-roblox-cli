@@ -87,12 +87,6 @@ interface TreeOverrides {
 	keyword?: string;
 }
 
-/**
- * Parse one serializer payload against its original source.
- * @param options - The diagnostic file name and source text.
- * @param payload - The serializer JSON or failure message.
- * @returns The materialized tree or serializer errors.
- */
 function parseWithPayload(
 	{ fileName, source = SOURCE }: { fileName: string; source?: string },
 	payload: string,
@@ -104,11 +98,6 @@ function parseWithPayload(
 	}).parseCst({ fileName, source });
 }
 
-/**
- * The tree for `local x = 1`, with chosen token positions substituted.
- * @returns The serializer JSON for a local declaration.
- * @param overrides - Substituted token positions.
- */
 function localStatement(overrides: TreeOverrides): string {
 	const keyword = overrides.keyword ?? "[0,0,0,5]";
 	const name = overrides.name ?? "[0,6,0,7]";

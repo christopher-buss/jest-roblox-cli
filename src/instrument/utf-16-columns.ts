@@ -30,13 +30,6 @@ export function toUtf16Columns(result: CollectorResult<LuauSpan>, source: string
 	};
 }
 
-/**
- * Convert a record from byte columns to UTF-16 columns.
- * @template T - Branch arm or function record.
- * @param node - Record with byte columns.
- * @param bytes - Byte index of the source.
- * @returns The record with UTF-16 columns.
- */
 function convertBody<
 	T extends { bodyFirstColumn: number; bodyFirstLine: number; location: LuauSpan },
 >(node: T, bytes: SourceBytes): T & { location: Utf16Span } {

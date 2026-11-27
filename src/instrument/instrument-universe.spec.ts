@@ -11,25 +11,12 @@ import type { FileSystem } from "../utils/file-system.ts";
 import { createInstrumentUniverse, type InstrumentUniverse } from "./instrument-universe.ts";
 
 const CWD = posixPath(process.cwd());
-/** A package sited away from the invocation directory. */
 const PACKAGE_ROOT = posixPath(path.resolve("/repo/packages/foo"));
 
-/**
- * Absolute POSIX path for a cwd-relative one, as the walkers produce.
- * @param relativePath - Path relative to the invocation directory.
- * @returns Absolute POSIX path.
- */
 function under(relativePath: string): string {
 	return path.posix.join(CWD, relativePath);
 }
 
-/**
- * The universe for a filter that is known to narrow, so the tests can call
- * `includes` without re-deciding whether one exists.
- * @param fileSystem - Volume the universe walks.
- * @param filter - Filter known to narrow.
- * @returns Narrowed universe.
- */
 function universeFor(fileSystem: FileSystem, filter: CoverageUniverseFilter): InstrumentUniverse {
 	const universe = createInstrumentUniverse(filter, fileSystem);
 	assert(universe !== undefined, "expected the filter to narrow the universe");
@@ -45,14 +32,6 @@ function writeSourceMap(
 	volume.writeFileSync(`${luauPath}.map`, contents);
 }
 
-/**
- * Write a compiled Luau file, optionally with its source-map sidecar.
- *
- * @param volume - Where the compiled file lands.
- * @param options - Its path relative to the invocation directory, and the
- *   sources its sidecar declares when it has one.
- * @returns Absolute path of the compiled file.
- */
 function writeCompiled(
 	volume: MemoryVolume,
 	{ luauRelative, sources }: { luauRelative: string; sources?: Array<string> | undefined },

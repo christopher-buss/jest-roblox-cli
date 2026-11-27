@@ -16,36 +16,18 @@ import { mapCoverageToTypeScript } from "./mapper.ts";
 type GeneratedPosition = Parameters<PositionResolver>[0];
 type OriginalPosition = ReturnType<PositionResolver>;
 
-/**
- * Position resolver: the span start (column 0) resolves to a.ts, its end to
- * b.ts. Hoisted to module scope; the split would otherwise be a conditional
- * inside a test body.
- * @param position - Generated position to resolve.
- * @returns Original position in a.ts or b.ts.
- */
 function positionSplitByColumn(position: GeneratedPosition): OriginalPosition {
 	return position.column === 0
 		? { column: 0, line: 3, source: "src/a.ts" }
 		: { column: 25, line: 3, source: "src/b.ts" };
 }
 
-/**
- * As {@linkcode positionSplitByColumn}, but the first branch arm resolves to
- * a.ts.
- * @param position - Generated position to resolve.
- * @returns Original position in a.ts or b.ts.
- */
 function positionSplitByLine(position: GeneratedPosition): OriginalPosition {
 	return position.line === 3
 		? { column: 0, line: 2, source: "src/a.ts" }
 		: { column: 0, line: 4, source: "src/b.ts" };
 }
 
-/**
- * Resolve one endpoint and leave the other source-less.
- * @param unmappedEndpoint - Endpoint that resolves to no source.
- * @returns Resolver for the span endpoints.
- */
 function resolverWithoutEndpoint(unmappedEndpoint: "end" | "start"): PositionResolver {
 	return (position) => {
 		const isStart = position.column === 0;
@@ -70,12 +52,6 @@ function createManifest(files: CoverageManifest["files"] = {}): CoverageManifest
 	};
 }
 
-/**
- * A volume holding the shadow outputs the mapper reads back.
- *
- * @param fileContents - The cov-maps and source maps, by path.
- * @returns File system over the volume.
- */
 function setupFs(fileContents: Record<string, string>): FileSystem {
 	return createMemoryFileSystem(fileContents).fileSystem;
 }

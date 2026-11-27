@@ -19,9 +19,6 @@ export interface LuauRunNarrowing {
 interface FileNarrowing {
 	config: ResolvedConfig;
 	files: ReadonlyArray<string>;
-	/**
-	 * Keep required: if omitted, narrowing silently falls back to file names.
-	 */
 	toInstancePath: InstancePathResolver;
 }
 

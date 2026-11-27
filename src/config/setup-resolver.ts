@@ -117,12 +117,6 @@ export function resolveAllSetupFilePaths({
 	}
 }
 
-/**
- * Do not swap in mapFsPathToDataModel: it keeps `out` on pnpm package paths.
- *
- * @param options - Cache, resolver factory and Rojo project file.
- * @returns The cached or newly built resolver.
- */
 function resolveRojo({
 	cache,
 	createResolver,
@@ -166,11 +160,6 @@ function resolvePackageSpecifier(resolve: (specifier: string) => string, input: 
 	throw new Error(`Could not resolve module "${input}". Ensure the package is installed.`);
 }
 
-/**
- * Create an empty resolver cache.
- *
- * @returns A new cache.
- */
 function createRojoResolverCache(): RojoResolverCache {
 	return new Map<string, RojoResolver>();
 }

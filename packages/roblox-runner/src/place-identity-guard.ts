@@ -30,7 +30,6 @@ export const PLACE_CONTENT_ID_NAME = "__place_content_id";
 /** Service the stamp is parented to. See {@link PLACE_CONTENT_ID_NAME}. */
 export const PLACE_CONTENT_ID_SERVICE = "ReplicatedStorage";
 
-/** Class the place build writes the stamp as. */
 const PLACE_CONTENT_ID_CLASS = "StringValue";
 
 /**
@@ -54,14 +53,8 @@ export type ExpectedPlaceIdentity =
 			placeVersion: number;
 	  };
 
-/**
- * What a Luau double-quoted literal cannot carry: the quote that would close it
- * early, the escape that would change what follows, and the line breaks that
- * would end the statement.
- */
 const UNSAFE_IN_LITERAL_PATTERN = /["\\\n\r]/u;
 
-/** Matches the sentinel and the version the guard appends to it. */
 const PLACE_MISMATCH_PATTERN = new RegExp(`^${PLACE_MISMATCH}:([0-9]+)$`);
 
 /**

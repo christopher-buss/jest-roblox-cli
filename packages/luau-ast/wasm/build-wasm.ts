@@ -57,10 +57,6 @@ const EMXX = process.env["EMXX"] ?? "em++";
 
 interface LuauCheckout {
 	directory: string;
-	/**
-	 * The temp root to remove afterwards, absent when the caller supplied a
-	 * checkout.
-	 */
 	temporaryRoot: string | undefined;
 }
 
@@ -145,18 +141,16 @@ function checkoutLuau(): LuauCheckout {
 	return { directory, temporaryRoot };
 }
 
-// readdir order is filesystem-dependent, and link order decides the layout of
-/**
- * The wasm. Sorting is what keeps the output byte-identical across machines.
- * @returns Absolute C++ source paths in stable link order.
- * @param sourceDirectory - The compiler or parser source directory.
- */
 function cppSources(sourceDirectory: string): Array<string> {
-	return fs
-		.readdirSync(sourceDirectory)
-		.filter((entry) => entry.endsWith(".cpp"))
-		.sort()
-		.map((entry) => path.join(sourceDirectory, entry));
+	return (
+		fs
+			.readdirSync(sourceDirectory)
+			.filter((entry) => entry.endsWith(".cpp"))
+			// Link order decides the wasm layout, and readdir order varies by
+			// filesystem: sorting keeps the output byte-identical.
+			.sort()
+			.map((entry) => path.join(sourceDirectory, entry))
+	);
 }
 
 function insertBefore(source: string, anchor: string, insertion: string): string {
@@ -168,13 +162,6 @@ function insertBefore(source: string, anchor: string, insertion: string): string
 	return `${source.slice(0, index)}${insertion}${source.slice(index)}`;
 }
 
-/**
- * The pinned Luau has no AstExprInstantiate encoder override, so its generic
- * visitor concatenates that node's children into invalid JSON.
- * @returns The patched encoder source file path.
- * @param luauSource - The pinned upstream Luau source checkout.
- * @param temporaryRoot - The build directory receiving the patched encoder.
- */
 function patchAstJsonEncoder(luauSource: string, temporaryRoot: string): string {
 	const filePath = path.join(temporaryRoot, "AstJsonEncoder.cpp");
 	const encoderPath = path.join(luauSource, "Analysis/src/AstJsonEncoder.cpp");

@@ -7,14 +7,6 @@ import { mergeRawCoverage } from "#src/coverage-data/merge-raw-coverage.ts";
 
 const ENTRIES_PER_FILE = 40;
 
-/**
- * Workspace coverage folds each project's raw hit counts into a per-package
- * total via `mergeRawCoverage`. The cost scales with the file count and the
- * statement/function/branch maps per file; this bench guards the additive
- * merge against regressions as coverage grows.
- * @param fileCount - Number of files.
- * @returns Synthetic raw coverage.
- */
 function rawCoverage(fileCount: number): RawCoverageData {
 	const data: RawCoverageData = {};
 	for (let fileIndex = 0; fileIndex < fileCount; fileIndex++) {

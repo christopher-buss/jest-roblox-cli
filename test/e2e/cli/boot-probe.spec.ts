@@ -18,17 +18,10 @@ import {
 
 const RBXTS_FIXTURE = path.resolve(__dirname, "../fixtures/rbxts-project");
 
-/** Every stalled probe waits this out, so it stays short. */
 const STALL_BUDGET_MS = 500;
 
 const PASSING_TASK = { jestOutput: buildMixedOutput(buildPassingPayload()) };
 
-/**
- * Shorten the boot probe's budget for a sandbox, so a spec that stalls the
- * probe on purpose costs seconds rather than the 90s a real cold boot is
- * allowed.
- * @param sandbox - Sandbox directory.
- */
 function writeStallBudget(sandbox: string): void {
 	patchSandboxConfig(sandbox, `bootProbeTimeout: ${String(STALL_BUDGET_MS)},`);
 }

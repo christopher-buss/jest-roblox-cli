@@ -1645,13 +1645,6 @@ describe("promise trace boundaries", () => {
 	});
 });
 
-/**
- * The failure a `{success:false, err}` envelope throws, for the dimensions
- * that only ever ride on one.
- *
- * @param output - Raw runner output that holds a failure envelope.
- * @returns The thrown error.
- */
 function thrownFrom(output: string): LuauScriptError {
 	try {
 		parseJestOutput(output);

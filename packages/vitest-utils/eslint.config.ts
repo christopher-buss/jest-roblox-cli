@@ -57,6 +57,7 @@ export default isentinel(
 			"jsdoc/require-jsdoc": [
 				"error",
 				{
+					checkConstructors: false,
 					contexts: [
 						"TSInterfaceDeclaration",
 						"TSTypeAliasDeclaration",

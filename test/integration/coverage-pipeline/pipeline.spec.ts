@@ -14,12 +14,6 @@ function normalizePath(filePath: string): string {
 	return filePath.replaceAll("\\", "/");
 }
 
-/**
- * A report key the mapper resolved back to TypeScript. The generated
- * `jest.config.luau` has no TS twin, so it is expected to stay Luau.
- * @param key - Key of the Istanbul JSON report.
- * @returns Whether the key is TypeScript or `jest.config.luau`.
- */
 function isMappedReportKey(key: string): boolean {
 	return key.endsWith(".ts") || key.endsWith("jest.config.luau");
 }

@@ -8,7 +8,6 @@ const STUDIO_EXECUTABLE = "Studio/RobloxStudioBeta.exe";
 
 type BackendConfig = BackendSettingsRequest["config"];
 
-/** A developer's own Studio path would otherwise decide auto. */
 function stubNoStudioPath(): void {
 	vi.stubEnv("JEST_ROBLOX_STUDIO_PATH", undefined);
 }

@@ -16,14 +16,6 @@ const INSTALLED_AT = Date.UTC(2026, 0, 2);
 const BEFORE_INSTALL = new Date(Date.UTC(2026, 0, 1));
 const AFTER_INSTALL = new Date(Date.UTC(2026, 0, 3));
 
-/**
- * A volume holding a workspace whose `pnpm-workspace.yaml` predates the
- * recorded install, so every guard but the one under test passes.
- *
- * @param state - What pnpm recorded, or the raw bytes to stand in for it.
- * @param yamlModifiedAt - When the manifest was last written.
- * @returns A file system over the seeded volume.
- */
 function writeWorkspace(
 	state: Record<string, unknown> | string,
 	yamlModifiedAt: Date = BEFORE_INSTALL,

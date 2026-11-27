@@ -40,10 +40,6 @@ function createHarness(overrides: Partial<RunProgressOptions> = {}) {
 	};
 }
 
-/**
- * Presents both standard streams as a terminal for the length of one test.
- * @param onTestFinished - Restores the streams after the test.
- */
 function pretendTerminal(onTestFinished: TestContext["onTestFinished"]): void {
 	for (const stream of [process.stdout, process.stderr]) {
 		const wasTTY = stream.isTTY;

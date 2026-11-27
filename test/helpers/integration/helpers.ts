@@ -190,17 +190,6 @@ async function execCliAsync({
 	});
 }
 
-/**
- * What a previous run wrote into a fixture, rather than what the fixture is.
- * The specs that drive the CLI at a fixture path directly (rather than at a
- * sandbox) leave these behind, and they are gitignored, so which of them exist
- * depends on what ran on this machine before.
- *
- * Copying them into a sandbox is how a spec ends up asserting on an artifact
- * it did not produce: `.jest-roblox/cache/<mount>/jest.config.luau` is a
- * generated stub, so a spec that checks the CLI generated one would pass
- * against a stale copy with generation entirely broken.
- */
 const FIXTURE_RUN_ARTIFACTS = new Set([".jest-roblox", "coverage"]);
 
 export function createFixtureSandbox(sourcePath: string): string {
@@ -368,12 +357,6 @@ export function isStudioOnHost(): boolean {
 	}
 }
 
-/**
- * Pins Open Cloud, so auto never launches a local Studio, unless the caller
- * names a `--backend`.
- * @param args - CLI arguments.
- * @returns The arguments, with `--backend open-cloud` first when none is given.
- */
 function withIsolatedBackend(args: Array<string>): Array<string> {
 	const hasBackend = args.some(
 		(argument) => argument === "--backend" || argument.startsWith("--backend="),

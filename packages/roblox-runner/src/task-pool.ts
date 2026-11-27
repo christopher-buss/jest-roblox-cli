@@ -12,16 +12,8 @@ import type { ScriptResult } from "./runner-types.ts";
  */
 export const MAX_TASKS_PER_PLACE = 10;
 
-/**
- * A freed slot needs ~10s before its place will accept a new task. A backoff
- * signal inside this window after a completion on that place is slot-recycle
- * lag, not a genuinely-full place, so the pool waits out the remainder of the
- * window rather than treating it as a hard place-full signal (and burning the
- * shared creation budget on an immediate retry storm).
- */
 const RECYCLE_LAG_MS = 10_000;
 
-/** Backoff when a place pushes back with no server-supplied retry delay. */
 const DEFAULT_BACKOFF_MS = 5_000;
 
 /**
@@ -136,18 +128,10 @@ export interface TaskPoolOptions {
 	warn?: (message: string) => void;
 }
 
-/**
- * A platform backoff signal the pool waits out and retries (never an error).
- */
 interface BackoffSignal {
-	/** Server-supplied retry delay, when the signal carried one (a 429). */
 	retryAfterMs?: number;
 }
 
-/**
- * A place's slot allocation plus the mutable recycle-lag clock shared by its
- * slots.
- */
 interface PlaceState {
 	lastCompletionMs: number;
 	place: TaskPoolPlace;
@@ -159,11 +143,6 @@ interface LiveTasks {
 	waiters: Array<() => void>;
 }
 
-/**
- * The pool's resolved dependencies, built once per run so the slot workers can
- * live at module scope instead of closing over {@link runTaskPoolAsync}'s
- * locals. Internal: {@link TaskPoolOptions} stays the public surface.
- */
 interface PoolRuntime {
 	isDone: () => boolean;
 	isWorkCovered: ((liveTasks: number) => boolean) | undefined;
@@ -248,13 +227,6 @@ export function allocateTaskSlots({
 	);
 }
 
-/**
- * Wait out a backoff signal on `state`'s place: the remainder of the
- * recycle-lag window when the signal landed within it of a completion,
- * otherwise the genuine place-full delay.
- * @param options - Place state, worker slot and server backoff policy.
- * @rejects When the injected wait fails for a reason other than cancellation.
- */
 async function backoffAsync({
 	retryAfterMs,
 	runtime,
@@ -307,16 +279,6 @@ function releaseTask(live: LiveTasks): void {
 	}
 }
 
-/**
- * Classify the platform backoff signal the pool waits out rather than failing:
- * a rate-limit 429 ({@link RateLimitError}, carrying the server retry delay)
- * or a genuinely-full place ({@link ApiError} with the `RESOURCE_EXHAUSTED`
- * code). Walks the `cause` chain because
- * `executeScriptAsync` wraps the transport error in a plain
- * `Error`. Any other error is not a backoff signal.
- * @param error - Failure to classify.
- * @returns Retry delay for a platform capacity refusal, otherwise undefined.
- */
 function classifyBackoff(error: unknown): BackoffSignal | undefined {
 	for (let current = error; current instanceof Error; current = current.cause) {
 		if (current instanceof RateLimitError) {
@@ -331,10 +293,6 @@ function classifyBackoff(error: unknown): BackoffSignal | undefined {
 	return undefined;
 }
 
-/**
- * Drive one slot on `state`'s place until the consumer signals done.
- * @param options - Pool runtime, place-local state and stable slot identity.
- */
 async function workerAsync({
 	runtime,
 	slot,
@@ -378,12 +336,6 @@ async function workerAsync({
 	}
 }
 
-/**
- * Start one worker per allocated slot.
- * @param runtime - Resolved pool callbacks and timing adapters.
- * @param allocations - Per-place slot ids.
- * @returns One worker promise for each allocated slot.
- */
 function spawnWorkers(
 	runtime: PoolRuntime,
 	allocations: ReadonlyArray<PlaceSlotAllocation & { place: TaskPoolPlace }>,

@@ -13,7 +13,6 @@ import { isTreeNode } from "./tree-node-guards.ts";
 interface AbsolutizeOptions {
 	fileSystem: FileSystem;
 	redirects: ReadonlyArray<PathRedirect>;
-	/** Spine directory by the absolute mount directory it stands in for. */
 	spine: Map<string, string>;
 }
 

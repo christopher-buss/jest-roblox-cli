@@ -37,13 +37,6 @@ interface ExecuteOptions {
 	version: string;
 }
 
-/**
- * A tsconfig reader over one volume. `get-tsconfig` reads through a `node:fs`
- * binding of its own, so a run under an in-memory volume is handed this
- * instead, the same seam production hands the real reader.
- * @param fileSystem - Volume to read from.
- * @returns A reader that returns null when the file is missing or invalid.
- */
 function readingVolume(fileSystem: FileSystem): TsconfigReader {
 	return fromAny((searchPath: string, configName = "tsconfig.json") => {
 		const filePath = path.join(path.resolve(searchPath), configName);
@@ -59,11 +52,6 @@ function readingVolume(fileSystem: FileSystem): TsconfigReader {
 	});
 }
 
-/**
- * A volume of its own, with the working directory already made: a run resolves
- * relative paths against it before it writes anything.
- * @returns The memory filesystem.
- */
 function memoryFileSystem(): MemoryFileSystem {
 	const memory = createMemoryFileSystem();
 	memory.volume.mkdirSync(process.cwd(), { recursive: true });
@@ -307,13 +295,6 @@ function createMockBackendWithCoverage(result: JestResult, coverageData: RawCove
 
 let temporaryDirectoryCounter = 0;
 
-/**
- * A directory on `volume`, named apart from every other test's.
- *
- * @param volume - Where the directory is made.
- * @param prefix - What its name starts with.
- * @returns Absolute path of the directory.
- */
 function createTemporaryDirectory(volume: MemoryVolume, prefix: string): string {
 	const directory = path.resolve(`/tmp/${prefix}${temporaryDirectoryCounter}`);
 	temporaryDirectoryCounter += 1;

@@ -58,7 +58,6 @@ export interface OcaleRunnerOptions extends Pick<
 }
 
 interface TaskObservation extends PollContext {
-	/** When the poll gives up, as Unix epoch milliseconds. */
 	deadlineMs: number;
 	observationSignal: AbortSignal | undefined;
 	startTime: number;
@@ -188,19 +187,6 @@ export class OcaleRunner implements BinaryInputUploader, RemoteRunner {
 		});
 	}
 
-	/**
-	 * Turns a settled poll into outputs, or throws the failure it describes.
-	 *
-	 * Async because a `FAILED` task is worth one more call: Roblox's
-	 * `error.message` names the category (`SCRIPT_ERROR`,
-	 * `DEADLINE_EXCEEDED`) while the task logs carry what the script actually
-	 * printed before it died, which is the part that identifies the fault.
-	 *
-	 * @param result - What `pollUntilDone` settled on.
-	 * @param context - The task polled, run start, and the server's deadline.
-	 * @returns The script's outputs when the task completed.
-	 * @rejects When observation fails or the task ends without completing.
-	 */
 	private async toScriptResultAsync(
 		result: Result<LuauExecutionTask, OpenCloudError>,
 		context: TaskObservation,

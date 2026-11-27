@@ -27,7 +27,6 @@ import type { SubmitBudgetController } from "./submit-budget.ts";
 import { isEdgeRateLimited, refuseUnfitWait, toSubmitError } from "./submit-diagnosis.ts";
 import { buildTaskParameters } from "./task-envelope.ts";
 
-/** What a task submit settles on, success or failure, before it is read. */
 type SubmitResult = Awaited<ReturnType<LuauExecutionClient["tasks"]["submit"]>>;
 
 type TaskParameters = SubmitAtHeadParameters | SubmitAtVersionParameters;
@@ -49,10 +48,8 @@ interface SubmitTaskOptions {
 	timeout: number;
 }
 
-/** Ocale's own per-request retry count, which an unbudgeted create mirrors. */
 const DEFAULT_MAX_RETRIES = 3;
 
-/** The least an edge-refused create waits before it is sent again. */
 const EDGE_RETRY_FLOOR_MS = 1000;
 
 /**
@@ -153,14 +150,6 @@ export class TaskSubmission {
 				});
 	}
 
-	/**
-	 * Create one task. Only a refusal from the edge rate limit is sent again;
-	 * anything dmaas answered is final.
-	 *
-	 * @param taskParameters - The task to create.
-	 * @param submitOptions - The request options every attempt carries.
-	 * @returns The create's result, unread.
-	 */
 	private async createTaskAsync(
 		taskParameters: TaskParameters,
 		submitOptions: RequestOptions & { deadlineMs: number },
@@ -187,20 +176,6 @@ export class TaskSubmission {
 		return result;
 	}
 
-	/**
-	 * Create the task, and say how long the create may spend being refused.
-	 *
-	 * A `submitBudget` moves the limit on a rate-limited create from attempts
-	 * to seconds. The two do not compose: an attempt count that bites first
-	 * would end the wait early and at a point the caller never chose, so a
-	 * budgeted submit is given a count high enough that the clock is what runs
-	 * out. Unbudgeted, the task deadline bounds every wait.
-	 *
-	 * @param taskParameters - The task to create.
-	 * @param budgets - The submit's wall clock or task deadline, and its
-	 *   request timeout.
-	 * @returns The submit's result, unread.
-	 */
 	private async submitTaskAsync(
 		taskParameters: TaskParameters,
 		{

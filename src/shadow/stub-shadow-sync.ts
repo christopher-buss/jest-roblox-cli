@@ -60,14 +60,6 @@ export function createStubBake({
 	};
 }
 
-/**
- * Rojo builds a mirrored `jest.config.lua` beside a `.luau` stub as a second
- * `jest.config`, so the stub takes its name.
- *
- * @param fileSystem - File system to read through.
- * @param mountedDirectory - Shadow directory the place mounts.
- * @returns The file name the stub is written to.
- */
 function shadowStubFilename(fileSystem: FileSystem, mountedDirectory: string): string {
 	const legacyPath = path.join(mountedDirectory, LEGACY_LUA_FILENAME);
 	if (!fileSystem.existsSync(legacyPath)) {

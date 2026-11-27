@@ -13,13 +13,9 @@ export interface TsconfigMapping {
 	rootDir: string;
 }
 
-/** The `compilerOptions` fields the executor reads. */
 interface TsconfigCompilerOptions {
-	/** Compiled-output directory. */
 	outDir?: string;
-	/** Source root directory; `null` clears an inherited value. */
 	rootDir?: null | string;
-	/** Source roots merged into one virtual directory. */
 	rootDirs?: Array<string>;
 }
 

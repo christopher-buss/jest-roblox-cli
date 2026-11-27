@@ -74,12 +74,6 @@ function isRecordable(filePath: string): boolean {
 	return !filePath.includes(LINE_SEPARATOR);
 }
 
-/**
- * Field order must match the destructuring in `readEntries`.
- *
- * @param entries - The digests by path.
- * @returns The record text.
- */
 function serialize(entries: Map<string, DigestEntry>): string {
 	const lines = [FORMAT_VERSION];
 	for (const [filePath, { hash, mtimeMs, size }] of entries) {

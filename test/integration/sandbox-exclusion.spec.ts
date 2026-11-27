@@ -8,14 +8,6 @@ import { createSandboxDirectory } from "#test/helpers/integration/sandbox-root.t
 const PACKAGE_ROOT = path.resolve(__dirname, "../..");
 const VITEST_BIN = path.resolve(PACKAGE_ROOT, "node_modules/vitest/vitest.mjs");
 
-/**
- * The project whose include glob reaches the sandbox root, paired with a file
- * it is known to collect. The sentinel is spelled the way the file list prints
- * one, and proves two things at once: the exclude did not swallow the real
- * suite, and the list really does print forward slashes. Without that second
- * half the negative assertions below could be needles that never match
- * anything. The sentinel is a spec that project always holds.
- */
 const COLLECTING_PROJECTS = [{ name: "e2e", sentinel: "test/e2e/bundle.spec.ts" }] as const;
 
 const DECOY_SPEC_NAMES = {
@@ -23,18 +15,6 @@ const DECOY_SPEC_NAMES = {
 	integration: "example.integration.spec.ts",
 } satisfies Record<string, string>;
 
-/**
- * What an interrupted run leaves behind: a sandbox whose copied fixture
- * carries Roblox specs, which fail on the Luau `print` global the moment a
- * later run collects one.
- *
- * Built through the entry point the fixture helpers use, so the decoys land
- * wherever real sandboxes land rather than wherever this file guesses.
- *
- * Returns the paths as the file list prints them.
- * @param onTestFinished - Removes the sandbox after the test.
- * @returns Decoy spec path per project.
- */
 function plantStaleSandbox(
 	onTestFinished: TestContext["onTestFinished"],
 ): Record<keyof typeof DECOY_SPEC_NAMES, string> {
@@ -58,16 +38,6 @@ function plantStaleSandbox(
 	};
 }
 
-/**
- * The real collector rather than a glob library standing in for it:
- * `--filesOnly` globs the project and prints what it found without running or
- * typechecking anything.
- *
- * `--no-fsModuleCache`: on a lockfile change Vitest deletes the workspace-wide
- * module cache that concurrent runs are writing into, failing with ENOTEMPTY.
- * @param project - Vitest project name.
- * @returns The file list Vitest prints.
- */
 function listProjectFiles(project: string): string {
 	return execFileSync(
 		"node",

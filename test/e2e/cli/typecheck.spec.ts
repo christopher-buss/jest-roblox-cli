@@ -1,20 +1,3 @@
-/**
- * E2e: bare-config + `projects:` `--typecheckOnly`.
- *
- * Drives the real CLI binary through config-load → discovery → classification
- * → grouping → real tsgo → result-merge → exit-code, for a bare config (which
- * collapses into the multi pipeline with no Rojo project on disk) and for an
- * explicit `projects:` config.
- * `--typecheckOnly` is pure-local tsgo: no rojo build, no Open Cloud, no
- * secrets, so this lives in the default `e2e` project (not the
- * rojo/live-gated ones).
- *
- * The runner-level integration spec (`integration/typecheck.spec.ts`) calls
- * `runTypecheck` directly; the flow spec (`run/multi.spec.ts`) mocks it.
- * Nothing else runs the binary end to end, so this is the only guard on the
- * CLI-arg → populated-`typecheckResult` wiring (discovery globs, `-d`
- * derivation, per-project grouping, exit code).
- */
 import * as path from "node:path";
 import { describe, it } from "vitest";
 

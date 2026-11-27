@@ -18,10 +18,6 @@ import {
 // cspell:ignore xtsconfig
 const collator = new Intl.Collator("en");
 
-/**
- * A reader recording what it was asked for, for a case that asserts on that.
- * @returns A mock reader that finds no tsconfig.
- */
 function createReader(): ReturnType<typeof vi.fn<TsconfigReader>> {
 	return vi.fn<TsconfigReader>(() => null);
 }

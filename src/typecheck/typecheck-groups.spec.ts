@@ -28,11 +28,6 @@ function makeResult(overrides: Partial<JestResult> = {}): JestResult {
 	};
 }
 
-/**
- * One group fails, so the merge is exercised over a mixed pass/fail pair.
- * @param tsconfig - The group's tsconfig; `b.json` fails.
- * @returns The group's result.
- */
 function resultForTsconfig(tsconfig?: string): JestResult {
 	const isFailing = tsconfig === "b.json";
 	return makeResult({
@@ -43,11 +38,6 @@ function resultForTsconfig(tsconfig?: string): JestResult {
 	});
 }
 
-/**
- * Out-of-order start times, so the merge has to take the earliest.
- * @param cwd - The group's working directory.
- * @returns The group's start time.
- */
 function startTimeForCwd(cwd: string): number {
 	return cwd === "/a" ? 50 : 20;
 }

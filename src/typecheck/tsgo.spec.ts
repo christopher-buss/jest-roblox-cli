@@ -12,13 +12,6 @@ import { spawnTsgoAsync } from "./tsgo.ts";
 
 const TSC_MANIFEST = JSON.stringify({ bin: { tsc: "./bin/tsc" }, version: "7.0.2" });
 
-/**
- * A filesystem that serves the compiler manifest and answers every other read
- * with `contents`.
- *
- * @param contents - What a tsconfig read returns.
- * @returns The stub filesystem.
- */
 function readingText(contents: string): FileSystem {
 	return fromAny({
 		readFileSync: (filePath: string) => {
@@ -27,12 +20,6 @@ function readingText(contents: string): FileSystem {
 	});
 }
 
-/**
- * A filesystem that serves the compiler manifest and fails every other read.
- *
- * @param failure - What the read throws.
- * @returns The stub filesystem.
- */
 function throwingOnRead(failure: unknown): FileSystem {
 	return fromAny({
 		readFileSync: (filePath: string) => {
@@ -45,14 +32,6 @@ function throwingOnRead(failure: unknown): FileSystem {
 	});
 }
 
-/**
- * Spawns tsgo against a launcher that exits cleanly, and returns the compiler
- * flags it was given.
- *
- * @param fileSystem - Where the tsconfig and manifest are read.
- * @param tsconfig - The configured tsconfig, if any.
- * @returns The arguments tsgo was launched with.
- */
 async function spawnFlagsAsync(fileSystem: FileSystem, tsconfig?: string): Promise<Array<string>> {
 	const invocations: Array<Array<string>> = [];
 	const child: childProcess.ChildProcess = fromAny({ once: () => child });

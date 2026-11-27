@@ -84,12 +84,6 @@ export function descend(node: SourcemapNode, ...names: Array<string>): Sourcemap
 	);
 }
 
-/**
- * Every Instance in the tree the predicate accepts, however deep.
- * @param node - Tree root.
- * @param accepts - Predicate to match.
- * @returns Matching nodes.
- */
 function collectNodes(
 	node: SourcemapNode,
 	accepts: (candidate: SourcemapNode) => boolean,
@@ -103,20 +97,6 @@ function collectNodes(
 	return found;
 }
 
-/**
- * The spelling two paths share when they name the same file.
- *
- * `rojo sourcemap --absolute` spells a path differently across releases. Up to
- * 7.7.0-rc.1 it wrote `std::path::absolute`, which keeps symlinks and 8.3
- * short names and collapses `..` only on Windows. From 7.7.0 it canonicalizes
- * the project first (rojo-rbx/rojo#1217), which on Windows yields a verbatim
- * `\\?\` path with every short name expanded, while `os.tmpdir()` is often
- * a short name itself. Asking the file system for the real path of both sides
- * reduces every one of those spellings to the same string; every path compared
- * here names a file on disk.
- * @param filePath - Path of a file on disk.
- * @returns Normalized real path.
- */
 function samePath(filePath: string): string {
 	return fs.realpathSync.native(filePath).replaceAll("\\", "/").replace(VERBATIM_PREFIX, "");
 }

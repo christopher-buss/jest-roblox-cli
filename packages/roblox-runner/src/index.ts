@@ -8,8 +8,8 @@ export type {
 } from "./infrastructure-evidence.ts";
 export { flushMemoryStoreAsync } from "./memory-store-flush.ts";
 export type { FlushMemoryStoreOptions } from "./memory-store-flush.ts";
-export { createMemoryStoreJanitor } from "./memory-store-janitor.ts";
-export type { MemoryStoreJanitor, MemoryStoreJanitorOptions } from "./memory-store-janitor.ts";
+export { MemoryStoreJanitor } from "./memory-store-janitor.ts";
+export type { MemoryStoreJanitorOptions } from "./memory-store-janitor.ts";
 export { publishMessageAsync } from "./messaging-publish.ts";
 export type { PublishMessageOptions } from "./messaging-publish.ts";
 export { OcaleRunner } from "./ocale-runner.ts";

@@ -33,46 +33,15 @@ export interface MemoryStoreJanitorOptions extends OpenCloudConnection {
 	readonly sleep?: SleepFunc;
 }
 
-/**
- * Best-effort cleanup after a run has stopped producing work.
- */
-export interface MemoryStoreJanitor {
-	/**
-	 * Best-effort cleanup of the run's own MemoryStore litter; never rejects.
-	 */
-	cleanupAsync(): Promise<void>;
-	/**
-	 * Outwait the claim window, then clean again: the pass that reaches items
-	 * a live consumer held when the run ended. Never rejects.
-	 */
-	reclaimClaimedAsync(): Promise<void>;
-}
-
-/** Server cap on items per dequeue and per list page. */
 const PAGE_SIZE = 100;
-/**
- * A failed discard must not hide leftovers from a retry for the default 30s
- * window. The janitor never processes what it claims, so the shortest window
- * the server accepts is the right one.
- */
 const DISCARD_CLAIM_SECONDS = 1;
-/**
- * Termination guarantee for the drain loop: a leftover backlog is finite (the
- * streaming budget bounds it well under one page), so hitting this cap means
- * something else is filling the queue. Stop and let the TTL take it.
- */
 const MAX_DRAIN_SWEEPS = 50;
 
 /**
- * Best-effort teardown for the MemoryStore structures a cancelled run leaves
- * behind: its work queue and the SortedMaps its tasks write. Bound to one
- * `queueId` and its `mapIds` at construction, so it structurally cannot touch a
- * concurrent sibling run's data, and it never issues the universe-wide
- * `memory-store:flush`. Every failure is logged and swallowed: leftovers the
- * janitor cannot reach (a mid-drain API error, a claim that outlives the
- * caller's reclaim budget) expire with the queue TTL backstop.
+ * Best-effort cleanup after a run has stopped producing work, bound to one
+ * run's queue and maps.
  */
-class OpenCloudMemoryStoreJanitor implements MemoryStoreJanitor {
+export class MemoryStoreJanitor {
 	private readonly claimWindowSeconds: number;
 	private readonly log: ((message: string) => void) | undefined;
 	private readonly mapIds: ReadonlyArray<string>;
@@ -95,6 +64,9 @@ class OpenCloudMemoryStoreJanitor implements MemoryStoreJanitor {
 		this.universeId = options.universeId;
 	}
 
+	/**
+	 * Best-effort cleanup of the run's own MemoryStore litter; never rejects.
+	 */
 	public async cleanupAsync(): Promise<void> {
 		await this.drainQueueAsync();
 		for (const mapId of this.mapIds) {
@@ -103,19 +75,8 @@ class OpenCloudMemoryStoreJanitor implements MemoryStoreJanitor {
 	}
 
 	/**
-	 * A dequeue returns visible items only, so an item a live consumer held
-	 * when the run ended is structurally unreachable until its claim elapses.
-	 * Wait that window out, then clean again.
-	 *
-	 * The caller's budget caps the wait, and a capped wait is a wait rather
-	 * than an age filter: sleeping `B` exposes only the claims with `B` or less
-	 * left to run: those already older than `window - B`. A claim taken long
-	 * before the run ended can still have most of its window ahead of it, so a
-	 * cap well under the window reclaims little. The log line says which case
-	 * this run is in.
-	 *
-	 * Cleans rather than merely drains: a consumer starved mid-run stays alive
-	 * until its next claim and rewrites its progress key during the wait.
+	 * Outwait the claim window, then clean again: the pass that reaches items
+	 * a live consumer held when the run ended. Never rejects.
 	 */
 	public async reclaimClaimedAsync(): Promise<void> {
 		const waitSeconds = Math.min(this.claimWindowSeconds, this.reclaimBudgetSeconds);
@@ -128,11 +89,6 @@ class OpenCloudMemoryStoreJanitor implements MemoryStoreJanitor {
 		await this.cleanupAsync();
 	}
 
-	/**
-	 * Delete every key the list surfaces. An individual delete failure skips to
-	 * the next key; the survivors self-expire.
-	 * @param mapId - Run-owned SortedMap resource to inspect.
-	 */
 	private async deleteMapKeysAsync(mapId: string): Promise<void> {
 		const itemIds = await this.listMapKeyIdsAsync(mapId);
 		for (const itemId of itemIds) {
@@ -149,11 +105,6 @@ class OpenCloudMemoryStoreJanitor implements MemoryStoreJanitor {
 		}
 	}
 
-	/**
-	 * Dequeue→discard sweeps until an empty read. Items currently invisible
-	 * (claimed by a dead task, window not yet elapsed) are not returned and are
-	 * left to the TTL. A clean completion costs exactly one empty dequeue.
-	 */
 	private async drainQueueAsync(): Promise<void> {
 		for (let sweep = 0; sweep < MAX_DRAIN_SWEEPS; sweep += 1) {
 			const hasMore = await this.sweepQueueOnceAsync();
@@ -167,12 +118,6 @@ class OpenCloudMemoryStoreJanitor implements MemoryStoreJanitor {
 		);
 	}
 
-	/**
-	 * Page through one map collecting key ids. A list failure abandons the
-	 * unseen pages (their keys self-expire).
-	 * @param mapId - Run-owned SortedMap resource to inspect.
-	 * @returns Item IDs from the current page, or an empty list on a failed read.
-	 */
 	private async listMapKeyIdsAsync(mapId: string): Promise<Array<string>> {
 		const itemIds: Array<string> = [];
 		let pageToken: string | undefined;
@@ -199,10 +144,6 @@ class OpenCloudMemoryStoreJanitor implements MemoryStoreJanitor {
 		return itemIds;
 	}
 
-	/**
-	 * Discard one claim without hiding a failed discard behind a new invisibility window.
-	 * @returns Whether another sweep can find work.
-	 */
 	private async sweepQueueOnceAsync(): Promise<boolean> {
 		const read = await dequeueOrEmptyAsync(this.storage, {
 			count: PAGE_SIZE,
@@ -235,13 +176,4 @@ class OpenCloudMemoryStoreJanitor implements MemoryStoreJanitor {
 
 		return true;
 	}
-}
-
-/**
- * Bind cleanup to the run-owned queue and maps.
- * @param options - Run-owned storage identity, timing limits and adapters.
- * @returns Cleanup handle bound to the run-owned queue and maps.
- */
-export function createMemoryStoreJanitor(options: MemoryStoreJanitorOptions): MemoryStoreJanitor {
-	return new OpenCloudMemoryStoreJanitor(options);
 }

@@ -9,6 +9,7 @@ describe("package interface", () => {
 		expect(Object.keys(runner).sort()).toStrictEqual(
 			[
 				"ExecutionTimeoutError",
+				"MemoryStoreJanitor",
 				"OcaleRunner",
 				"PLACE_CONTENT_ID_NAME",
 				"PLACE_CONTENT_ID_SERVICE",
@@ -19,7 +20,6 @@ describe("package interface", () => {
 				"TaskSubmitError",
 				"allocateTaskSlots",
 				"createJsonWorkQueueWriter",
-				"createMemoryStoreJanitor",
 				"createWorkQueueHost",
 				"createWorkQueueReader",
 				"createWorkQueueWriter",

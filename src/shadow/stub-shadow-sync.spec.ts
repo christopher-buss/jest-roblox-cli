@@ -27,11 +27,6 @@ function syncThroughBake({
 	return createStubBake({ cacheRoot: rootDirectory, fileSystem, projects }).run(shadow);
 }
 
-/**
- * A shadow whose mirror is where every mount is read from; no demote.
- *
- * @returns A layout that shadows every path.
- */
 function shadowAtRoot(): ShadowLayout {
 	return {
 		isShadowed: () => true,

@@ -11,17 +11,10 @@ import type { WorkspacePackage } from "#test/helpers/e2e/workspace-place.ts";
 import { synthesizeWorkspaceAsync } from "#test/helpers/e2e/workspace-place.ts";
 import { rojoOnPath } from "#test/helpers/integration/helpers.ts";
 
-/** One file, mounted from every package in a workspace run. */
 const SHARED_STUB = { Config: { $path: "../../shared-config.luau" } };
 
 const PROBE_SPEC = "return {}\n";
 
-/**
- * A package whose test project mounts its own `src` plus `SHARED_STUB` under
- * `ReplicatedStorage`.
- * @param name - Name for the package and its directory.
- * @returns A workspace package that mounts `SHARED_STUB`.
- */
 function sharingPackage(name: string): WorkspacePackage {
 	return {
 		name,

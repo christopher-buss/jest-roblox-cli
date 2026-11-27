@@ -172,12 +172,6 @@ function killStudio(childProcess: ChildProcessRunner, pid: number): void {
 	);
 }
 
-/**
- * Must match the `CommandLineToArgvW` rules Studio parses its arguments with.
- *
- * @param argument - One argument for the Studio command line.
- * @returns The argument, quoted when it holds whitespace or a quote.
- */
 function quoteWindowsArgument(argument: string): string {
 	if (argument !== "" && !NEEDS_QUOTES_PATTERN.test(argument)) {
 		return argument;

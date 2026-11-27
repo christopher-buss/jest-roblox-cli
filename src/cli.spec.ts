@@ -89,15 +89,6 @@ async function captureHelpAsync(): Promise<string> {
 
 const HELP_WRAP_REGEX = /\n {20,}/g;
 
-/**
- * One help entry, unwrapped onto a single line. The help text folds a long
- * description onto indented continuation lines, so a trailing note reads the
- * same whichever line it landed on.
- *
- * @param help - The full help text.
- * @param flag - The flag that starts the entry.
- * @returns The unwrapped entry line.
- */
 function helpEntry(help: string, flag: string): string {
 	const entries = help.replaceAll(HELP_WRAP_REGEX, " ").split("\n");
 

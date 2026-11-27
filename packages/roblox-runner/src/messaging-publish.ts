@@ -12,11 +12,6 @@ export interface PublishMessageOptions extends OpenCloudConnection {
 	readonly topic: string;
 }
 
-/**
- * The scope an Open Cloud key needs to publish. Named in the failure because
- * Roblox refuses a key it will not accept with a flat `Invalid API Key` that
- * says nothing about which permission is short.
- */
 const PUBLISH_SCOPE = "universe-messaging-service:publish";
 
 /**
@@ -55,13 +50,6 @@ export async function publishMessageAsync(options: PublishMessageOptions): Promi
 	}
 }
 
-/**
- * The permission line to add when the key itself was refused, and nothing
- * otherwise. Any other 4xx is a bug in the request, not a missing scope, and
- * pointing at the key would send the reader to the wrong place.
- * @param err - Failure returned by the transport.
- * @returns Required permission hint for refused keys, otherwise an empty string.
- */
 function describeScopeHint(err: OpenCloudError): string {
 	if (!(err instanceof ApiError)) {
 		return "";

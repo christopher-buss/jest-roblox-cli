@@ -86,16 +86,6 @@ export function selectProjectFiles(input: ProjectSelectionInput): ProjectSelecti
 	};
 }
 
-/**
- * Type Tests are discovered by `-d` globs derived from the Runtime `include`
- * (or an explicit `test.typecheck.include`). These stay in the local discovery
- * `testMatch` only (never folded into `project.include`), so coverage-source
- * derivation (which reads `project.include`) never sees a `-d` glob.
- *
- * @param project - Resolved project.
- * @param typecheck - Resolved typecheck config of the project.
- * @returns The project config with the discovery `testMatch`.
- */
 function buildDiscoveryConfig(
 	project: ResolvedProjectConfig,
 	typecheck: ResolvedTypecheckConfig,

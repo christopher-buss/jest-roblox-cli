@@ -36,7 +36,6 @@ export interface SortedMapEntry<T> {
 	readonly value: T;
 }
 
-/** Page size for the list sweep; the server caps it at 100. */
 const PAGE_SIZE = 100;
 
 /**

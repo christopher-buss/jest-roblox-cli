@@ -86,12 +86,6 @@ class OpenCloudWorkQueueReader<T> implements WorkQueueReader<T> {
 		};
 	}
 
-	/**
-	 * Discard the claim, so the items never resurface. An empty read yields no
-	 * `readId` and so has nothing to discard.
-	 * @param readId - Opaque receipt, absent for an empty claim.
-	 * @rejects When the discard request fails or the server refuses it.
-	 */
 	private async commitBatchAsync(readId: string | undefined): Promise<void> {
 		if (readId === undefined) {
 			return;

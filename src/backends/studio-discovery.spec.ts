@@ -10,12 +10,6 @@ const WIN_ENV = { LOCALAPPDATA: "C:/Users/dev/AppData/Local" };
 const MACOS_EXE = "/Applications/RobloxStudio.app/Contents/MacOS/RobloxStudio";
 const MACOS_BETA_EXE = "/Applications/RobloxStudio.app/Contents/MacOS/RobloxStudioBeta";
 
-/**
- * A volume holding the installs the probe should find.
- *
- * @param files - The executables on disk.
- * @returns An in-memory file system holding `files`.
- */
 function seed(files: Record<string, string> = {}): MemoryFileSystem {
 	return createMemoryFileSystem(files);
 }

@@ -217,11 +217,6 @@ function describeEvidence(evidence: InfrastructureEvidence): Array<string> {
 	return lines;
 }
 
-/**
- * Render the error banner for an infrastructure failure, with its evidence.
- * @param err - The infrastructure failure.
- * @returns The banner text.
- */
 function formatInfrastructureBanner(err: InfrastructureFailure): string {
 	if (err instanceof MissingGapRecordError) {
 		return formatBanner({

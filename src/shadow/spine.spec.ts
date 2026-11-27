@@ -16,18 +16,12 @@ const REPO = posixPath(path.resolve("/repo"));
 const SHADOW = `${REPO}/.jest-roblox/coverage`;
 const SPINE = `${SHADOW}/.spine`;
 
-/**
- * The copy the place mounts in one demoted level's stead.
- * @param level - Demoted level, relative to the spine.
- * @returns Path of the `.self` copy for that level.
- */
 function mounted(level: string): string {
 	return `${SPINE}/${level}/.self`;
 }
 
 const NO_COPY_IGNORE = copyIgnoreMatcher([]);
 
-/** Stands in for the run path's stub bake: one name the mirror never writes. */
 const BAKED_NAME = "jest.config.luau";
 
 function isBakeOwned(shadowPath: string): boolean {
@@ -40,10 +34,6 @@ function at(relativePath: string): PosixRoot {
 	return posixRoot(`${OUT}/${relativePath}`);
 }
 
-/**
- * Two mounts nesting above one root. Declared once and read in both
- * directions, so neither verdict rides on the mount set’s iteration order.
- */
 const NESTED_MOUNTS = [at("server"), at("server/modules")];
 
 describe(createShadowLayout, () => {
@@ -146,12 +136,6 @@ describe(prepareSpine, () => {
 		return createMemoryFileSystem(files);
 	}
 
-	/**
-	 * Prepares the listed spine levels under the `out/server` luauRoot.
-	 * @param fileSystem - Filesystem holding the sources and shadow.
-	 * @param options - Spine levels and option overrides.
-	 * @returns The prepared spine.
-	 */
 	function spineOf(
 		fileSystem: FileSystem,
 		{
@@ -294,12 +278,6 @@ describe(prepareSpine, () => {
 	});
 
 	describe("when a demoted level carries a file a bake owns", () => {
-		/**
-		 * The bake's own copy, where the demote makes the place read it.
-		 *
-		 * @param volume - The volume the spine hangs off.
-		 * @returns Path of the baked file.
-		 */
 		function bake(volume: MemoryVolume): string {
 			const bakedPath = `${mounted("out/server")}/${BAKED_NAME}`;
 			volume.mkdirSync(mounted("out/server"), { recursive: true });

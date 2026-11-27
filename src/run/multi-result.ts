@@ -89,12 +89,6 @@ export function buildMultiRunResult({
 	};
 }
 
-/**
- * The output settings of a single or multi run: the root config's.
- * @param rootConfig - Config with the CLI options merged in.
- * @param coverage - The run's coverage report, if any.
- * @returns The output settings.
- */
 function resolveProjectOutput(
 	rootConfig: ResolvedConfig,
 	coverage: RunCoverage | undefined,
@@ -107,11 +101,6 @@ function resolveProjectOutput(
 	});
 }
 
-/**
- * Map a run's raw hit counts through the staged coverage manifest.
- * @param options - Coverage globs, raw hits, manifest, root config and seams.
- * @returns The mapped coverage, or nothing when coverage is off.
- */
 function resolveProjectCoverage({
 	changedFiles,
 	collectCoverageFrom,

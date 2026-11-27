@@ -91,14 +91,6 @@ function decodeErrors(raw: string): Array<string> {
 		.filter((line) => line.length > 0);
 }
 
-/**
- * The encoder prints non-finite doubles as bare `Infinity` / `-Infinity`,
- * which is invalid JSON. Rewrite each bare occurrence to `1e999`, which
- * `JSON.parse` overflows back to the same infinity, sign included, while
- * leaving occurrences inside JSON strings untouched.
- * @param json - The raw serializer JSON to rewrite.
- * @returns Valid JSON retaining the original numeric values.
- */
 function sanitizeNonFinite(json: string): string {
 	// Stryker disable next-line ConditionalExpression,BlockStatement: same JSON
 	// Stryker disable next-line StringLiteral: an empty probe always scans
@@ -118,11 +110,6 @@ function sanitizeNonFinite(json: string): string {
 
 const JSON_ESCAPE_QUOTE_OR_INFINITY = /\\[\s\S]|"|Infinity/g;
 
-/**
- * Brand the root shape emitted by the vendored parser wrapper.
- * @param value - The value reached in the parsed tree.
- * @returns Whether the payload carries the expected root discriminator and comments list.
- */
 function isRawParseOutput(
 	value: JSONValue,
 ): value is JSONValue & { commentLocations: Array<CommentSpan>; root: AstStatBlock } {
@@ -151,12 +138,6 @@ function decodeResult(raw: string): ParseResult {
 	return { comments: parsed.commentLocations, ok: true, root: parsed.root };
 }
 
-/**
- * Decode parser payloads through the supplied runtime.
- *
- * @param runtime - The parser backend for this instance.
- * @returns An independent parser over the backend.
- */
 function createLuauParser(runtime: WasmRuntime): LuauParser {
 	function parseCst({ fileName, source }: CstParseOptions): CstParseResult {
 		const raw = runtime.parseToCstJson(source);
@@ -190,13 +171,6 @@ function isRecord(value: JSONValue): value is JSONObject {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-/**
- * The encoder emits locations as 0-based `"line,col - line,col"` strings under
- * `location` and `*Location` keys. Rewrite them in place into 1-based
- * {@link LuauSpan} objects (the workspace convention the Lute-era span helpers
- * expect); the +1 keeps the exclusive end exclusive.
- * @param node - The subtree or container to inspect.
- */
 function normalizeSpans(node: JSONValue): void {
 	if (Array.isArray(node)) {
 		for (const element of node) {

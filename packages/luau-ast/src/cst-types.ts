@@ -1,9 +1,3 @@
-/**
- * Type-level nodes of the concrete syntax tree: type annotations, type
- * packs, generics, and attributes. Slots are listed in alphabetical order;
- * `CST_SLOTS` holds the lexical order.
- */
-
 import type {
 	CstExpr,
 	CstGlobal,

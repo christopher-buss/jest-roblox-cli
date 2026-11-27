@@ -57,12 +57,6 @@ export function collectLuauTestDefinitions(source: string, filePath: string): Co
 	};
 }
 
-/**
- * Columns count bytes, as luau-ast spans do.
- *
- * @param source - The source text.
- * @returns The byte offset of each 1-indexed `line:column` key.
- */
 function createByteLocationsIndexMap(source: string): Map<string, number> {
 	const map = new Map<string, number>();
 	let offset = 0;

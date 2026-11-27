@@ -117,12 +117,6 @@ function resolveStreamingProgressSink({
 		return undefined;
 	}
 
-	/**
-	 * Write through `progress.interleave`: a bare write breaks the stage
-	 * block.
-	 *
-	 * @param entry - Streamed result entry of one package.
-	 */
 	return (entry) => {
 		const line = formatStreamingProgressLine(entry, createStyles(runOptions.color));
 		progress.interleave(() => {

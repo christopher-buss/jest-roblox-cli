@@ -113,15 +113,6 @@ function isMissing(err: unknown): boolean {
 	return err instanceof Error && "code" in err && err.code === "ENOENT";
 }
 
-/**
- * Unwrap an arktype result, turning a failure into the loader's error.
- *
- * @template T - The schema's output type.
- * @param result - What the schema returned.
- * @param projectPath - The file being parsed, named in the error.
- * @returns The parsed value.
- * @throws When the schema rejected the value.
- */
 function orThrow<T>(result: ArkErrors | T, projectPath: string): T {
 	if (result instanceof type.errors) {
 		throw new Error(`Invalid Rojo project ${projectPath}: ${result.summary}`);
@@ -130,15 +121,6 @@ function orThrow<T>(result: ArkErrors | T, projectPath: string): T {
 	return result;
 }
 
-/**
- * An array sits in arktype's `object` domain, so it satisfies a schema whose
- * keys are all optional. Reject it, and name it "an array" so the reader does
- * not have to work out why their array is not an object.
- *
- * @param value - The candidate object.
- * @param ctx - Arktype's narrow context.
- * @returns True when the value is not an array.
- */
 function rejectArray(
 	value: unknown,
 	ctx: { reject: (reason: { actual: string; expected: string }) => false },
@@ -150,19 +132,8 @@ function rejectArray(
 	return ctx.reject({ actual: "an array", expected: "an object" });
 }
 
-/**
- * Schema for "the file holds a JSON object". Separate from
- * {@link fieldsSchema} because its output is what callers read as `raw`.
- */
 const objectSchema = type("object").narrow(rejectArray).as<JSONObject>();
 
-/**
- * Schema for the fields this loader reads. Undeclared top-level keys (gameId,
- * placeId, globIgnorePaths, …) pass through untouched and reach callers via
- * `raw`. The tree is checked one level deep: its `$`-metadata must have the
- * right types, but its members are left to the tree walkers, which handle
- * arbitrary shapes by design.
- */
 const fieldsSchema = type.declare<RojoProject>().type({
 	"name": "string > 0",
 	"servePort?": "number.integer | undefined",

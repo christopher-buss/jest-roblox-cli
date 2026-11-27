@@ -42,7 +42,6 @@ export interface PrintOptions {
 	source?: SourceBytes;
 }
 
-/** Appends text while tracking where the next character lands. */
 interface Writer {
 	code: () => string;
 	position: () => CstPosition;
@@ -54,7 +53,6 @@ interface StatementPrint {
 	started: boolean;
 }
 
-/** One print pass: where output stands, and what to consult on the way. */
 interface Printer extends PrintOptions {
 	lastCode: string | undefined;
 	segments: Array<CstSourcemapSegment>;
@@ -181,11 +179,6 @@ function emitToken(printer: Printer, token: Token): void {
 	writeTrivia(printer, token.trailing);
 }
 
-/**
- * The tree walk; a replaced node prints its replacement and is not entered.
- * @param printer - The state of the current output pass.
- * @param value - The value reached in the parsed tree.
- */
 function walk(printer: Printer, value: CstValue): void {
 	walkCst(value, {
 		onNode: (target) => {
@@ -225,14 +218,6 @@ function isNewlineWhitespace(trivia: Trivia): boolean {
 	return trivia.kind === "whitespace" && trivia.text.includes("\n");
 }
 
-/**
- * Print a removal. The node held a whole line when nothing but indentation
- * precedes it on its line and a newline follows it; then the indentation
- * and the newline go with it. Otherwise the whitespace on both sides stays,
- * so what shared the line with it keeps its spacing.
- * @param printer - The state of the current output pass.
- * @param options - The removal policy and bounding tokens.
- */
 function printRemoval(
 	printer: Printer,
 	{ first, last, removal }: TokenBounds & { removal: Removal },

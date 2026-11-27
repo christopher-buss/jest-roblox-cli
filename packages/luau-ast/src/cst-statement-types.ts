@@ -1,8 +1,3 @@
-/**
- * Statement nodes of the concrete syntax tree. Every statement may end in a
- * `semicolon` token.
- */
-
 import type {
 	CstExpr,
 	CstFunctionBody,

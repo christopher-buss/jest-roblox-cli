@@ -1,8 +1,3 @@
-/**
- * Expression nodes of the concrete syntax tree. Slots are listed here in
- * alphabetical order; `CST_SLOTS` holds the lexical order walks visit them in.
- */
-
 import type { LuauSpan } from "./ast-types.ts";
 import type { CstBlock } from "./cst-statement-types.ts";
 import type { Token } from "./cst-token.ts";

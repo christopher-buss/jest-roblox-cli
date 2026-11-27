@@ -135,11 +135,6 @@ function copyLiterals({ cursor, destination, source, token }: Lz4Step): void {
 	cursor.written += literals;
 }
 
-/**
- * Byte at a time: an LZ4 match can overlap the bytes it is still writing.
- *
- * @param step - Token, buffers and cursor; the cursor advances.
- */
 function copyMatch({ cursor, destination, source, token }: Lz4Step): void {
 	const short = token & 15;
 	const distance = source.readUInt16LE(cursor.offset);

@@ -101,11 +101,6 @@ export function launchStudioProcess(request: StudioCliLaunchRequest): StudioCliP
 	return launchHiddenOnMacos(request, bundle);
 }
 
-/**
- * Studio in `--task RunScript` mode ignores SIGTERM on macOS.
- *
- * @param child - The Studio process to kill.
- */
 function terminateStudio(child: ChildProcess): void {
 	const escalation = setTimeout(() => {
 		child.kill("SIGKILL");

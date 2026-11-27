@@ -205,12 +205,6 @@ function makeWorkspaceResult(overrides: Partial<RunResult> = {}): RunResult {
 	};
 }
 
-/**
- * On Windows a bare "/tmp/x" and its resolved form are two different volume keys.
- * @param volume - Volume to read from.
- * @param filePath - Sink path as the code under test named it.
- * @returns The file contents.
- */
 function readSink(volume: MemoryVolume, filePath: string): string {
 	return String(volume.readFileSync(path.resolve(filePath), "utf8"));
 }
@@ -1624,11 +1618,6 @@ function passingResult(): JestResult {
 	};
 }
 
-/**
- * One file fully covered (hidden by skipFull), one partial (shown), so the agent
- * table and the raw-counts totals line both have something to print.
- * @returns The mapped coverage.
- */
 function mixedCoverage(): MappedCoverageResult {
 	return {
 		files: {

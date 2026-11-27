@@ -34,22 +34,11 @@ describe(runTypecheckAsync, () => {
 
 	type TsgoCallback = (error: null | TsgoSpawnError, stdout: string, stderr: string) => void;
 
-	/** One `execFile` invocation, in the shape `spawnTsgo` calls it. */
 	interface TsgoInvocation {
 		arguments: Array<string>;
 		options: { timeout?: number };
 	}
 
-	/**
-	 * `spawnTsgo` drives `execFile` in callback form and listens once for the
-	 * child `spawn` event to clear its launch timer. `stubTsgo` returns the
-	 * recorded invocations plus a fake child (`emitSpawn` fires the registered
-	 * `spawn` listener, `kill` is the spy `spawnTsgo` calls on a launch timeout)
-	 * and lets a test simulate tsgo finishing (exit 0), exiting non-zero with
-	 * diagnostics, failing to spawn, or never launching.
-	 * @param respond - Answers each `execFile` call through its callback.
-	 * @returns The stub runner, `emitSpawn`, the invocations and the spies.
-	 */
 	function stubTsgo(respond: (callback: TsgoCallback) => void) {
 		let spawnListener: (() => void) | undefined;
 		const invocations: Array<TsgoInvocation> = [];
@@ -92,14 +81,6 @@ describe(runTypecheckAsync, () => {
 		return Object.assign(new Error("tsgo exit 2"), { code: 2 });
 	}
 
-	/**
-	 * A volume answering every tsconfig read with one text and every other
-	 * read with another, which is the only distinction these cases need.
-	 *
-	 * @param tsconfigContent - What a tsconfig read returns.
-	 * @param testFileContent - What every other read returns.
-	 * @returns The stub filesystem.
-	 */
 	function readingFiles(tsconfigContent: string, testFileContent: string): FileSystem {
 		return fromAny({
 			readFileSync: (filePath: string) => {
@@ -570,13 +551,6 @@ describe(runTypecheckAsync, () => {
 		});
 	});
 
-	/**
-	 * Resolves each listed specifier to its manifest path; any other package
-	 * reads as not installed.
-	 *
-	 * @param manifests - Manifest path per `<package>/package.json` specifier.
-	 * @returns A resolver that throws `MODULE_NOT_FOUND` for unlisted specifiers.
-	 */
 	function resolvingManifests(manifests: Record<string, string>): (specifier: string) => string {
 		return (specifier) => {
 			const manifest = manifests[specifier];

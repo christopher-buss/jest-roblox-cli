@@ -10,14 +10,8 @@ import type { FileSystem } from "../utils/file-system.ts";
 import type { HtmlAssetGroup } from "./html-assets.ts";
 import { writeIstanbulHtmlAssets } from "./html-assets.ts";
 
-/** What istanbul's html reporter prepends to a `.js` asset as it copies it. */
 const JS_ASSET_HEADER = Buffer.from("/* eslint-disable */\n", "utf-8");
 
-/**
- * Every bundled asset, in the form istanbul's own copy would have left it.
- * @param group - Asset group to read.
- * @returns Asset bytes by file name.
- */
 function readBundledAssets(group: HtmlAssetGroup): Map<string, Buffer> {
 	return new Map(
 		istanbulHtmlAssets[group].map((asset) => {

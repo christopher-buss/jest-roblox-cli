@@ -104,14 +104,6 @@ export async function buildPlaceAsync(options: BuildPlaceOptions): Promise<Place
 	return { artifact: pickBy({ ...place, contentId }, isDefined), rebuilt: wasRebuilt };
 }
 
-/**
- * Order: pool, then pinned mounts, then relativize last; rojo matches
- * `globIgnorePaths` against relative `$path`s.
- *
- * @param options - Project text, paths, adapters and the reuse plan.
- * @returns The built place's path and hash.
- * @rejects When a buried pinned class is found or rojo fails.
- */
 async function stageAndBuildAsync({
 	childProcess,
 	fileSystem,

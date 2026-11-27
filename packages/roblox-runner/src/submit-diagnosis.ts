@@ -95,12 +95,6 @@ export function refuseUnfitWait({
 	);
 }
 
-/**
- * The unlock of an account lockout, when the 429 is one: a dmaas refusal whose
- * wait outlasts the per-minute window.
- * @param err - Failure returned by the transport.
- * @returns Account unlock timing when the refusal supplies it.
- */
 function describeLockoutUnlock(err: RateLimitError): Array<string> {
 	if (isEdgeRefusal(err) || err.retryAfterSeconds <= MINUTE_WINDOW_SECONDS) {
 		return [];
@@ -113,11 +107,6 @@ function describeLockoutUnlock(err: RateLimitError): Array<string> {
 	];
 }
 
-/**
- * The 429's evidence, one line each: the lockout unlock, code and headers.
- * @param err - Failure returned by the transport.
- * @returns Quota refusal details including retry hints and server evidence.
- */
 function describeRateLimit(err: RateLimitError): Array<string> {
 	return [
 		...describeLockoutUnlock(err),

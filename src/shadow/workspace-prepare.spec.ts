@@ -110,11 +110,6 @@ type LoosePackage = Except<
 
 type FooDescriptorFields = Except<LoosePackage, "name" | "packageDirectory" | "rojoProjectPath">;
 
-/**
- * Fill each package's coverage settings with the loaded defaults.
- * @param options - Prepare options whose packages may omit settings.
- * @returns What the prepare pass returned.
- */
 function prepare(
 	options: Except<WorkspaceCoverageOptions, "packages"> & {
 		packages: Array<LoosePackage>;
@@ -277,14 +272,6 @@ const writtenManifestSchema = type({
 	"nonInstrumentedFiles": "Record<string, unknown>",
 }).as<WrittenManifest>();
 
-/**
- * The fields of a published coverage manifest that these specs read.
- *
- * @param volume - Where the run wrote it.
- * @param manifestPath - Where the manifest sits on the volume.
- * @returns The manifest, checked only for the fields `WrittenManifest` names.
- * @throws When the file is not JSON or lacks one of those fields.
- */
 function readManifest(volume: MemoryVolume, manifestPath: string): WrittenManifest {
 	return writtenManifestSchema.assert(
 		JSON.parse(volume.readFileSync(manifestPath, "utf-8").toString()),
@@ -1993,10 +1980,6 @@ function readPackageBuildManifest(volume: MemoryVolume, safeName: string): Build
 }
 
 describe("narrowing a workspace package to its coverage universe", () => {
-	/**
-	 * A package whose probes all sit in one subtree below its rojo mount.
-	 * @param volume - Volume the package is written to.
-	 */
 	function seedNarrowablePackage(volume: MemoryVolume): void {
 		volume.fromJSON({
 			...fooProject({

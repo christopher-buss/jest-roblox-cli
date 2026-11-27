@@ -12,12 +12,6 @@ import { createRbxtsFixtureSandbox } from "#test/helpers/integration/helpers.ts"
 
 const RBXTS_FIXTURE = path.resolve(__dirname, "../../e2e/fixtures/rbxts-project");
 
-/**
- * A mapped path the pipeline failed to bring back to TypeScript. The generated
- * `jest.config.luau` has no TS twin, so it is expected to stay Luau.
- * @param filePath - Mapped path.
- * @returns Whether the path is not TypeScript and is not `jest.config.luau`.
- */
 function isUnmappedPath(filePath: string): boolean {
 	return !filePath.endsWith(".ts") && !filePath.endsWith("jest.config.luau");
 }

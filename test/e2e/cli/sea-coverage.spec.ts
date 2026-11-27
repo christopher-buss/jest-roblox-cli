@@ -18,12 +18,6 @@ import {
 
 const LUAU_FIXTURE_PATH = path.resolve(__dirname, "../fixtures/luau-project");
 
-/**
- * A passing run whose envelope carries hit counts for the fixture's one source
- * file, which is what makes the CLI reach the report step at all: a run with no
- * coverage data warns and returns before any reporter is created.
- * @returns Serialized envelope.
- */
 function buildCoverageOutput(): string {
 	return JSON.stringify({
 		runner: {

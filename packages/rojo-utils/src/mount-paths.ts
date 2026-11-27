@@ -142,12 +142,6 @@ function collectMountPaths({
 	}
 }
 
-/**
- * Drop a trailing separator, unless it is the whole location: `/` is the posix
- * root and `D:/` a drive root, and a mount can name either.
- * @param mountPath - Normalized mount with a possible trailing separator.
- * @returns The path without its trailing slash, unless that slash denotes a root.
- */
 function dropTrailingSlash(mountPath: string): string {
 	if (!mountPath.endsWith("/")) {
 		return mountPath;

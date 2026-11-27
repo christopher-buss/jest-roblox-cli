@@ -4,11 +4,6 @@ import {
 	RUNNER_PLUGIN_SOURCES_ID,
 } from "./runner-plugin-sources.mjs";
 
-/**
- * Every specifier the source imports that nothing on disk answers, and what
- * builds its module. The two tsdown configs, vitest, and the node hook
- * `bin/jest-roblox.js` registers all serve them from here.
- */
 const VIRTUAL_MODULES = {
 	[ISTANBUL_HTML_ASSETS_ID]: buildIstanbulHtmlAssetsModule,
 	[RUNNER_PLUGIN_SOURCES_ID]: buildRunnerPluginSourcesModule,

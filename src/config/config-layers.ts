@@ -170,15 +170,6 @@ export async function processExtends({
 	}
 }
 
-/**
- * A SEA binary's `import()` fails on disk paths (ERR_UNKNOWN_BUILTIN_MODULE);
- * `require()` works.
- *
- * @param id - Absolute path of the config module.
- * @param fileSystem - File system for JSON reads.
- * @returns The module, or the parsed JSON.
- * @rejects If the JSON file cannot be read or parsed.
- */
 async function seaImport(id: string, fileSystem: FileSystem): Promise<ConfigModule | JSONValue> {
 	if (id.endsWith(".json")) {
 		const content = await fileSystem.promises.readFile(id, "utf-8");
@@ -193,13 +184,6 @@ function merger(...sources: Array<Config | null | undefined>): Config {
 	return defuFn({}, ...sources);
 }
 
-/**
- * Must run per layer before merge; after it the declaring directory is lost.
- *
- * @param config - Layer config.
- * @param baseDirectory - Directory of the file that declares the layer.
- * @returns The config with an absolute `workspace.root`.
- */
 function anchorWorkspaceRoot(config: Config, baseDirectory: string): Config {
 	const { workspace } = config;
 	if (workspace?.root === undefined || isAbsolutePath(normalizeWindowsPath(workspace.root))) {
@@ -225,13 +209,6 @@ function anchorLayerRootDirectory(config: Config, configFile: string | undefined
 	return { ...config, rootDir: path.resolve(path.dirname(configFile), rootDir) };
 }
 
-/**
- * Returns layers lowest-priority-last, the order `merger` expects.
- *
- * @param options - Declaring file, load context, entries and extends stack.
- * @returns The resolved layers.
- * @rejects If an entry fails to load or the chain has a cycle.
- */
 async function loadExtendsLayers({
 	canonicalFile,
 	context,

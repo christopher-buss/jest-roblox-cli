@@ -11,10 +11,6 @@ type Slot<Kind extends CstNodeKind> = Exclude<
 
 type SlotTable = { readonly [Kind in CstNodeKind]: ReadonlyArray<Slot<Kind>> };
 
-/**
- * Each kind lists all its slots; the error names an unlisted one.
- * @template Table - The proposed lexical slot lists.
- */
 type ListsEverySlot<Table extends SlotTable> = {
 	[Kind in CstNodeKind]: [Exclude<Slot<Kind>, Table[Kind][number]>] extends [never]
 		? Table[Kind]

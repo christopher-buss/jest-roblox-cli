@@ -208,11 +208,6 @@ function markGenerated(subtree: CstNode, caller: string): void {
 	});
 }
 
-/**
- * Give a subtree's origin-less tokens one origin, through any subtree already
- * registered to replace a node inside it.
- * @param options - The subtree, inherited origin, and registered replacements.
- */
 function anchor({ origin, replacements, subtree }: AnchorOptions): void {
 	walkCst(subtree, {
 		onNode: (node) => {

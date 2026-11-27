@@ -25,17 +25,7 @@ function createTemporaryDirectory(onTestFinished: TestContext["onTestFinished"])
 	return directory;
 }
 
-/**
- * What one package mounts beside its own sources, nested the way a real
- * project mounts its dependencies: `rbxts_include.node_modules.<scope>` sits
- * two levels under the service, so the pool has to reach below the top.
- */
 const VENDOR_SHARED: RojoTreeNode = { Vendor: { Shared: { $path: "../../shared" } } };
-/**
- * The `rbxts_include` shape: the shared include tree mounted with the
- * generated `node_modules` project declared beside it as an explicit child.
- * What every roblox-ts package's test project mounts.
- */
 const RBXTS_INCLUDE: RojoTreeNode = {
 	rbxts_include: {
 		$path: "../../include",
@@ -45,20 +35,12 @@ const RBXTS_INCLUDE: RojoTreeNode = {
 	},
 };
 
-/**
- * A package whose test project mounts its own `src` plus whatever `shared`
- * declares under `ReplicatedStorage`, the shape every package in a real
- * workspace has, differing only in what it mounts beside its sources.
- * @param options - Package name, shared mounts and workspace directory.
- * @returns The written package.
- */
 function writePackage({
 	name,
 	shared,
 	workspace,
 }: {
 	name: string;
-	/** What the package mounts beside its own sources. */
 	shared: RojoTreeNode;
 	workspace: string;
 }): PackageDescriptor {
@@ -86,13 +68,8 @@ function writePackage({
 	};
 }
 
-/** The packages the generated `node_modules` project mounts, one each. */
 const NODE_MODULES_LEAVES = ["services", "t"];
 
-/**
- * The include tree and the generated `node_modules` project beside it.
- * @param workspace - Workspace directory.
- */
 function writeSharedDependencies(workspace: string): void {
 	const include = path.join(workspace, "include");
 	fs.mkdirSync(include, { recursive: true });

@@ -97,34 +97,14 @@ function success(jobIndex: number) {
 	return { jestOutput: successJest(), jobIndex };
 }
 
-/**
- * The packages a materializer script carries.
- *
- * @param request - Request holding the script.
- * @returns The package names in the script.
- */
 function requestedNames(request: ExecuteRequest): Array<string> {
 	return Array.from(request.script.matchAll(/"pkg":"([^"]+)"/g), (match) => match[1]!);
 }
 
-/**
- * An envelope answering exactly the packages a script asked for.
- *
- * @param request - Request holding the script.
- * @returns A result with one entry per requested package.
- */
 function scriptedEntries(request: ExecuteRequest): ScriptResult {
 	return scriptResult(envelope(requestedNames(request).map(packageEntry)));
 }
 
-/**
- * Answers every script with the packages it asked for, except one carrying
- * more than one entry and leading with `deferringHead`. That comes back
- * deferred, having run only the head.
- *
- * @param deferringHead - Package that leads the script to defer.
- * @returns The execute handler.
- */
 function deferOnceExecute(deferringHead: string): ExecuteHandler {
 	return (request): ScriptResult => {
 		const requested = requestedNames(request);
@@ -134,13 +114,6 @@ function deferOnceExecute(deferringHead: string): ExecuteHandler {
 	};
 }
 
-/**
- * The bucket whose script leads with `bailingHead` stops on it: one entry
- * back, flagged bailed and not deferred. Every other bucket answers in full.
- *
- * @param bailingHead - Package that leads the bailing bucket.
- * @returns The execute handler.
- */
 function bailingBucketExecute(bailingHead: string): ExecuteHandler {
 	return (request): ScriptResult => {
 		return requestedNames(request)[0] === bailingHead
@@ -149,13 +122,6 @@ function bailingBucketExecute(bailingHead: string): ExecuteHandler {
 	};
 }
 
-/**
- * Runs `steps[callIndex]`, repeating the final step once the list is
- * exhausted.
- *
- * @param steps - Results to give, one per call.
- * @returns The execute handler.
- */
 function stepExecute(steps: Array<ExecuteStep>): ExecuteHandler {
 	let callIndex = 0;
 	return (): Promise<ScriptResult> | ScriptResult => {
@@ -342,11 +308,6 @@ describe(dispatchJobsAsync, () => {
 	it("should re-send the entries a deferring task left behind", async ({ expect }) => {
 		expect.assertions(3);
 
-		/**
-		 * A task that fills its envelope has no queue to leave the rest in
-		 * once work-stealing is out of reach. The backend has to rebuild a
-		 * script from what did not come back, or those packages are lost.
-		 */
 		const stub = createExecuteStub(
 			stepExecute([
 				() => scriptResult(envelope([packageEntry("alpha")], { deferred: true })),
@@ -428,12 +389,6 @@ describe(dispatchJobsAsync, () => {
 	it("should stop re-sending when a task covers nothing new", async ({ expect }) => {
 		expect.assertions(2);
 
-		/**
-		 * A task that defers without running anything cannot be answered by
-		 * sending it the same work again. The missing packages go back
-		 * missing, which beats spending one task per job to reach the same
-		 * place.
-		 */
 		const stub = createExecuteStub(
 			stepExecute([
 				() => scriptResult(envelope([packageEntry("alpha")], { deferred: true })),

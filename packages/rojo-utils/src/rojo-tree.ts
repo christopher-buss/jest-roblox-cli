@@ -18,16 +18,9 @@ export interface ResolvedNestedProjectSources {
 	tree: RojoTreeNode;
 }
 
-/**
- * Mutable state threaded through {@link resolveTree} during a single
- * resolution.
- */
 interface ResolveContext {
-	/** Where nested project files are read from. */
 	fileSystem: FileSystem;
-	/** Absolute paths of every nested project file inlined so far. */
 	sources: Set<string>;
-	/** Project files on the current chain, for circular-reference detection. */
 	visited: Set<string>;
 }
 

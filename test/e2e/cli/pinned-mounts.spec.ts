@@ -8,13 +8,6 @@ import {
 import { descendants, nodeAt, readPlaceTree } from "#test/helpers/e2e/place-tree.ts";
 import { rojoOnPath } from "#test/helpers/integration/helpers.ts";
 
-/**
- * The staged-tree fix has no unit seam that can prove it: whether a class the
- * engine pins reaches the place depends on what rojo reads out of a model file,
- * which only a real `rojo build` decides. So this drives one, then walks the
- * built place and asserts on where the classes landed.
- */
-
 const PINNED_CLASSES = new Set([
 	"Lighting",
 	"ReplicatedStorage",
@@ -31,12 +24,6 @@ const PINNED_CLASSES = new Set([
 
 const STAGE_PATH = ["ServerStorage", "__pkg_stage"] as const;
 
-/**
- * A model whose root instance is a service, as a place round-trip produces.
- * @param rootClass - Class and name of the model root.
- * @param childName - Name of the child ModuleScript.
- * @returns The `.rbxmx` document text.
- */
 function serviceModel(rootClass: string, childName: string): string {
 	return modelXml({
 		name: rootClass,
@@ -51,13 +38,6 @@ function serviceModel(rootClass: string, childName: string): string {
 	});
 }
 
-/**
- * A package whose rojo project mounts a directory of service-rooted models:
- * what a place round-trip writes out, and what the synthesizer alone cannot
- * see, because the class lives in the file rather than in the project.
- * @param models - Child name per root service class.
- * @returns Path of the built place.
- */
 async function buildServiceModelPlaceAsync(models: Record<string, string>): Promise<string> {
 	return buildFixturePlaceAsync({
 		files: Object.fromEntries(

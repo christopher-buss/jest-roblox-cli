@@ -37,12 +37,6 @@ import type { StudioCliLauncher, StudioCliProcess } from "./studio-cli-types.ts"
 import { StudioCliBackend } from "./studio-cli.ts";
 import type { WebSocketServerFactory } from "./web-socket-server-factory.ts";
 
-/**
- * A launched Studio the backend can kill. `onError` mirrors the real seam (a
- * spawn failure); `emitError` lets a test drive that failure once the backend
- * has subscribed.
- */
-
 interface FakeProcess extends StudioCliProcess {
 	emitError: (error: Error) => void;
 	kill: Mock<StudioCliProcess["kill"]>;
@@ -76,11 +70,6 @@ function job(displayName: string, overrides: Partial<ResolvedConfig> = {}): Conf
 	});
 }
 
-/**
- * The lock-poll interval never arms on the timeout path (a hung run gets no
- * graceful wait), so setTimeout is the only timer worth faking here.
- * @param onTestFinished - Restores the real timers after the test.
- */
 function useResultDeadlineTimers(onTestFinished: TestContext["onTestFinished"]): void {
 	vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
 	onTestFinished(() => {
@@ -111,15 +100,6 @@ function makeFakeProcess(): FakeProcess {
 	};
 }
 
-/**
- * The bootstrap bakes its `requestId` as a Luau long string
- * (`local REQUEST_ID = [=[<uuid>]=]`); the reply must echo it for the host's
- * correlation check to accept the frame. Read it back from the written
- * bootstrap the same way real Studio would.
- * @param fileSystem - File system that holds the bootstrap.
- * @param args - Studio launch arguments that name the bootstrap.
- * @returns The baked request ID.
- */
 function readRequestId(fileSystem: FileSystem, args: Array<string>): string {
 	const bootstrapPath = args[args.indexOf("--runScriptFile") + 1]!;
 	const bootstrap = fileSystem.readFileSync(bootstrapPath, "utf8");
@@ -158,17 +138,6 @@ function resultFrame(requestId: string, reply: ReplyOptions): string {
 	);
 }
 
-/**
- * A launcher that, once the backend is listening, drives the canned result
- * frame back over the mock WebSocket server: the socket stand-in for a real
- * bootstrap pushing its envelope. `onLaunch` runs synchronously with the
- * launch request (to capture args/bootstrap before the reply).
- * @param root0 - Launcher input.
- * @param root0.fileSystem - File system that holds the bootstrap.
- * @param root0.onLaunch - Called with each launch request.
- * @param root0.reply - Shape of the canned result frame.
- * @returns The launcher and the fake process it returns.
- */
 function replyWith({
 	fileSystem,
 	onLaunch,
@@ -201,12 +170,6 @@ function replyWith({
 	};
 }
 
-/**
- * A Studio whose bootstrap frames the test sends by hand, so the clock can
- * advance between launch, run start, and result.
- * @param fileSystem - File system that holds the bootstrap.
- * @returns The fake Studio and the controls that send its frames.
- */
 function bootingStudio(fileSystem: FileSystem) {
 	const process = makeFakeProcess();
 	const socket = new MockWebSocket();
@@ -351,15 +314,6 @@ function backendReplying(fileSystem: FileSystem, reply: ReplyOptions = {}): Stud
 	return makeBackend({ fileSystem, launch: replyWith({ fileSystem, reply }).launch });
 }
 
-/**
- * Workspace jobs carry `pkg` (set only in workspace mode) and a `placeFile`
- * pointing at the mega-place the workspace runner already built. The studio-cli
- * backend keys off `pkg` to switch into the staged/materializer dispatch.
- * @param root0 - Label and package.
- * @param root0.displayName - Label for the job and its test file.
- * @param root0.packageName - Package name set as `pkg`.
- * @returns A job that dispatches in workspace mode.
- */
 function workspaceJob({
 	displayName,
 	packageName,
@@ -375,7 +329,6 @@ function workspaceJob({
 	});
 }
 
-/** Microtask turns the place build in front of the server can cost. */
 const SERVER_TURNS = 50;
 
 const singleJob = studioRequest({ jobs: [job("")] });
@@ -1726,15 +1679,6 @@ describe(StudioCliBackend, () => {
 		// graceful watch polls for release.
 		const lockPath = `${path.resolve("/repo", "game.rbxl")}.lock`;
 
-		/**
-		 * Drive the result frame back over the server once the backend is
-		 * listening (the real spawnStudio does not reply on its own).
-		 * @param root0 - Reply input.
-		 * @param root0.args - Reads the launch arguments.
-		 * @param root0.fileSystem - File system that holds the bootstrap.
-		 * @param root0.previous - Server that existed before the run began.
-		 * @rejects {Error} When the backend never creates a result server.
-		 */
 		async function replyOverServerAsync({
 			args,
 			fileSystem,
@@ -1750,12 +1694,6 @@ describe(StudioCliBackend, () => {
 			socket.emit("message", Buffer.from(resultFrame(readRequestId(fileSystem, args()), {})));
 		}
 
-		/**
-		 * Waits out the place build, so the spawn stub has been called.
-		 *
-		 * @param spawned - Whether the stub has recorded a launch yet.
-		 * @rejects {Error} When the backend never spawns Studio.
-		 */
 		async function settledSpawnAsync(spawned: () => boolean): Promise<void> {
 			for (let turn = 0; turn < SERVER_TURNS; turn += 1) {
 				if (spawned()) {
@@ -1768,16 +1706,6 @@ describe(StudioCliBackend, () => {
 			throw new Error("the backend never spawned Studio");
 		}
 
-		/**
-		 * The result server this run creates. Drained rather than awaited once:
-		 * the place build in front of it is asynchronous, so the number of
-		 * microtask turns before the server exists is an implementation detail.
-		 * Compared against the server standing when the run began, because the
-		 * mock's instance list outlives one test.
-		 * @param previous - Server that existed before the run began.
-		 * @returns The new result server.
-		 * @rejects {Error} When the backend never creates a result server.
-		 */
 		async function settledServerAsync(
 			previous: InstanceType<typeof MockWebSocketServer> | undefined,
 		): Promise<InstanceType<typeof MockWebSocketServer>> {

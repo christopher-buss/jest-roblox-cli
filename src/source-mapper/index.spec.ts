@@ -10,35 +10,18 @@ import type { FileSystem } from "../utils/file-system.ts";
 import type { SourceMapper } from "./index.ts";
 import { combineSourceMappers, createSourceMapper, getSourceSnippet } from "./index.ts";
 
-/** The rojo tree every roblox-ts case below maps through. */
 const SHARED_PROJECT = { name: "test", tree: { ReplicatedStorage: { $path: "out/shared" } } };
 
-/** The tsconfig mapping that pairs with {@link SHARED_PROJECT}. */
 const SHARED_MAPPINGS = [{ outDir: "out", rootDir: "src" }];
 
-/** Where a frame in `out/shared/test.luau` says its TypeScript lives. */
 const SHARED_SOURCE = "../src/shared/test.ts";
 
-/** That same source as an absolute path, which is what a location reports. */
 const SHARED_SOURCE_PATH = posixPath(path.resolve("out/shared", SHARED_SOURCE));
 
-/**
- * A volume seeded relative to the working directory, because a rojo `$path`
- * and a tsconfig `outDir` are both relative and the resolver joins onto them.
- *
- * @param files - What the run should find on disk.
- * @returns The seeded filesystem.
- */
 function seedProject(files: Record<string, string>): FileSystem {
 	return createMemoryFileSystem(files).fileSystem;
 }
 
-/**
- * The map beside `out/shared/test.luau`, resolving the generated lines given.
- *
- * @param segments - Which generated lines map to which source lines.
- * @returns The `.map` file keyed by its path.
- */
 function sharedMap(segments: ReadonlyArray<SourceMapSegment>): Record<string, string> {
 	return {
 		"out/shared/test.luau.map": buildSourceMap({
@@ -49,12 +32,6 @@ function sharedMap(segments: ReadonlyArray<SourceMapSegment>): Record<string, st
 	};
 }
 
-/**
- * One generated line mapped to one source line, both at column 0.
- * @param generatedLine - The Luau line.
- * @param sourceLine - The TypeScript line it maps to.
- * @returns The segment.
- */
 function lineToLine(generatedLine: number, sourceLine: number): SourceMapSegment {
 	return { generatedColumn: 0, generatedLine, sourceColumn: 0, sourceLine };
 }

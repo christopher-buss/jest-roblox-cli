@@ -4,23 +4,12 @@ import { createResolvedConfig } from "#test/helpers/unit/resolved-config.ts";
 import type { ResolvedConfig } from "../config/resolved-config.ts";
 import { narrowForLuauRun } from "./narrow-by-files.ts";
 
-/**
- * Stands in for a project whose mounts own no part of the file, which is what
- * drives the basename fallback.
- */
 function noMountOwnsIt(): undefined {}
 
 function make(overrides: Partial<ResolvedConfig> = {}): ResolvedConfig {
 	return { ...createResolvedConfig(), ...overrides };
 }
 
-/**
- * Narrow with no mount ownership, so every file takes the basename branch.
- *
- * @param config - Config to narrow.
- * @param files - Files to narrow to.
- * @returns The narrowed config.
- */
 function byBasename(config: ResolvedConfig, files: Array<string>): ResolvedConfig {
 	return narrowForLuauRun({
 		config,

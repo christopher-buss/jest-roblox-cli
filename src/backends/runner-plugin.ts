@@ -40,26 +40,14 @@ export interface RunnerPluginInstallOptions extends UserDirectoryOptions {
 
 type RunnerPluginSource = (typeof runnerPluginSources)[number];
 
-/** What a Managed Plugin install needs. */
 interface ManagedPluginOptions {
-	/** Builds a rojo project to an `.rbxm`. */
 	readonly buildAsync: (projectPath: string, outputPath: string) => Promise<void>;
-	/** File system the plugin and its marks are written to. */
 	readonly fileSystem: FileSystem;
-	/** Wall clock in milliseconds. */
 	readonly now: number;
-	/** The Studio plugins folder. */
 	readonly pluginsDirectory: string;
-	/** Plugin source files the build reads. */
 	readonly sources: ReadonlyArray<RunnerPluginSource>;
-	/** Scratch directory the plugin is built in. */
 	readonly stagingDirectory: string;
-	/**
-	 * Where each plugin's last use is marked. Never inside the plugins folder:
-	 * Studio reloads a plugin whose file changes, even by mtime alone.
-	 */
 	readonly usageDirectory: string;
-	/** The CLI's release version. */
 	readonly version: string;
 }
 

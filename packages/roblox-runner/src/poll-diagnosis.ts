@@ -41,31 +41,12 @@ export interface PollContext {
 }
 
 /**
- * Wall clock the poll keeps beyond the server's own task deadline, so the
- * terminal `FAILED` the server writes is observable rather than raced.
- *
- * Roblox starts a task's `timeout` when the script begins running, not when
- * the task is created. A submit answers immediately and the place boot sits
- * between the two. Measured against a warm server the gap is 4-7s; a version
- * nobody has booted yet costs a cold boot, which
- * `open-cloud.ts` documents at 10-45s. A poll budget equal to the deadline
- * therefore expires while the task is still `PROCESSING`, every time, and the
- * authoritative `DEADLINE_EXCEEDED` (or the `SCRIPT_ERROR` the Luau VM writes
- * when it kills a non-yielding loop) is never read: the run reports
- * `PollTimeoutError` for a failure Roblox described.
- *
- * This is a cap, not a wait. A task that fails on time ends the poll the
- * moment it turns terminal, so the grace costs nothing on any run that gets
- * an answer; only a task Roblox never resolves spends it.
- */
-/**
  * Task log messages carried on a failure, counted from the end. The tail is
  * what explains the failure; a full Jest run's output is megabytes and the
  * error banner is not where anyone reads it.
  */
 export const FAILURE_LOG_TAIL = 20;
 
-/** Per-message cap on the failure log tail, in characters. */
 const FAILURE_LOG_MESSAGE_LIMIT = 400;
 
 const TASK_DEADLINE_GRACE_MS = 45_000;
@@ -241,11 +222,6 @@ export function describeTaskFailure(task: FailedTask, logTail: ReadonlyArray<str
 	return lines.join("\n");
 }
 
-/**
- * How the poll budget was arrived at, or nothing when the caller named it.
- * @param context - Original task identity and observation budgets.
- * @returns Explanation of the explicit or default observation budget.
- */
 function describeBudgetOrigin(context: PollContext): string {
 	if (!context.hasDefaultBudget) {
 		return "";
@@ -257,11 +233,6 @@ function describeBudgetOrigin(context: PollContext): string {
 	);
 }
 
-/**
- * A poll timeout establishes neither script startup nor place-load failure.
- * @param context - Original task identity and observation budgets.
- * @returns Possible infrastructure causes qualified by available boot evidence.
- */
 function describeSuspects(context: PollContext): Array<string> {
 	const evidence = context.bootProven
 		? "  This place version is known to boot; another task ran against it."
@@ -273,17 +244,6 @@ function describeSuspects(context: PollContext): Array<string> {
 	];
 }
 
-/**
- * The state the last polled task was in, or `"unknown"`.
- *
- * `lastObservedTask` is `unknown` on the error type ocale hands back, and it is
- * absent entirely when the budget ran out before a single poll answered.
- * `Object()` flattens both into something readable, so one fallback covers a
- * missing task and an unrecognised one alike.
- *
- * @param task - The task the timeout error carried, if any.
- * @returns The task's state, or `"unknown"` when there is none to read.
- */
 function readObservedState(task: unknown): string {
 	const state = readTaskField(task, "state");
 	return typeof state === "string" ? state : "unknown";

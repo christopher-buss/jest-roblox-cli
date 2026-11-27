@@ -18,11 +18,6 @@ type GlobalOnlyKey = Exclude<keyof GlobalTestConfig, keyof ProjectTestConfig>;
 
 type ProjectOnlyKey = Exclude<keyof ProjectTestConfig, keyof GlobalTestConfig>;
 
-/**
- * A key a project's `test` block requires must say so.
- *
- * @template K - The key.
- */
 type ProjectRequirement<K extends keyof ProjectTestConfig> =
 	object extends Pick<ProjectTestConfig, K>
 		? { readonly projectRequired?: never }

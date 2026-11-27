@@ -40,14 +40,6 @@ function appendText(bytes: Array<number>, text: string): void {
 	}
 }
 
-/**
- * Resolve the escapes of a quoted literal's body. Byte escapes (`\xHH`,
- * `\ddd`) can spell any byte, so the body is assembled as bytes and decoded
- * once at the end, matching how the parser's UTF-8 output reaches JSON.
- *
- * @param body - The literal's text between its quotes.
- * @returns The decoded value.
- */
 function decodeEscapes(body: string): string {
 	const bytes: Array<number> = [];
 	let cursor = 0;

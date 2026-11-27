@@ -155,15 +155,6 @@ async function passthroughProfileAsync<T>(_name: string, func: () => Promise<T>)
 	return func();
 }
 
-/**
- * The caller closes the frame on success; a `finally` would close it twice.
- *
- * @template T - Result type of the phase.
- * @param close - Closes the frame.
- * @param func - The phase to run.
- * @returns What `func` returns.
- * @throws {unknown} Whatever `func` throws, after closing the frame.
- */
 function closeOnThrow<T>(
 	close: () => number,
 	func: () => T extends Promise<unknown> ? never : T,

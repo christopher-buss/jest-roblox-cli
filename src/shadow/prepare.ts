@@ -290,11 +290,6 @@ async function stageCoveragePlaceAsync({
 	});
 }
 
-/**
- * Bake stubs and build through the shared staging orchestrator.
- * @param options - Bake hook, process runner, config, shadow and profiler.
- * @returns The staged place and its coverage identity.
- */
 async function bakeCoveragePlaceAsync(
 	options: BakeCoveragePlaceOptions,
 ): Promise<BakedCoveragePlace> {

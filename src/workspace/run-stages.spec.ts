@@ -104,13 +104,6 @@ function failingResult(): string {
 	});
 }
 
-/**
- * What this run dispatched: each job's argv with its package and project, as
- * the materializer payload carries them.
- *
- * @param captured - Holder of the backend options the stub captured.
- * @returns The dispatched entries as JSON.
- */
 function dispatchedScript(captured: Partial<Record<"options", OpenCloudDispatch>>): string {
 	return JSON.stringify(
 		captured.options!.jobs.map((job) => {
@@ -265,13 +258,6 @@ function packageConfigLoader(fileSystem: FileSystem): typeof loadConfig {
 	};
 }
 
-/**
- * Drives the stages in the order the run pipeline does, so these specs read
- * the runner output the stages collect.
- * @param options - Run inputs.
- * @param openBackend - Opens the backend for a run with runtime jobs.
- * @returns The runner output, or `undefined` when selection refused the run.
- */
 async function runWorkspaceAsync(
 	options: RunWorkspaceOptions,
 	openBackend: () => Backend,
@@ -352,14 +338,6 @@ async function runStagedWorkspaceAsync({
 	);
 }
 
-/**
- * Most specs assert only on the runtime results array; unwrap it from the
- * runner output so they stay focused on the per-(package, project) entries.
- * Preserves the `undefined` preflight sentinel.
- *
- * @param options - Inputs passed through to the staged run.
- * @returns The runtime results, or `undefined` when preflight rejected the run.
- */
 async function runWorkspaceResultsAsync(
 	options: StagedRunOptions,
 ): Promise<Array<WorkspaceProjectResult> | undefined> {

@@ -158,23 +158,11 @@ function normalizeSnapshotFixturePaths(json: string): string {
 	return json.replaceAll(fixtureRoot, () => fixtureRoot.replace(DRIVE_LETTER_PREFIX, ""));
 }
 
-/**
- * Reads a foreign tree-node key, validating the child is itself a node.
- * @param node - Node to read.
- * @param key - Name of the child to read.
- * @returns The child node, or `undefined` when absent.
- */
 function child(node: RojoTreeNode, key: string): RojoTreeNode | undefined {
 	const value = node[key];
 	return value === undefined ? undefined : rojoTreeNodeSchema.assert(value);
 }
 
-/**
- * Walks a chain of foreign tree-node keys, short-circuiting on a miss.
- * @param node - Node to start from.
- * @param keys - Child keys in order.
- * @returns The node at the end of the chain, or `undefined` on a miss.
- */
 function descend(node: RojoTreeNode | undefined, ...keys: Array<string>): RojoTreeNode | undefined {
 	return keys.reduce<RojoTreeNode | undefined>(
 		(current, key) => (current === undefined ? undefined : child(current, key)),

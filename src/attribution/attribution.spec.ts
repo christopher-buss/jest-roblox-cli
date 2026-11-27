@@ -27,11 +27,6 @@ function exampleManifest(): CoverageManifest {
 	};
 }
 
-/**
- * A manifest as a warm run reads it: the shadow found `out/m.luau` unchanged
- * and carried the previous run's record forward verbatim, attribution included.
- * @returns Manifest whose `out/m.luau` record holds stale attribution.
- */
 function warmManifest(): CoverageManifest {
 	const manifest = exampleManifest();
 	manifest.files["out/m.luau"] = {

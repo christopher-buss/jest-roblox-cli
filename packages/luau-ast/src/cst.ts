@@ -1,12 +1,3 @@
-/**
- * The concrete syntax tree `parse_to_cst_json` (wasm/wrapper.cpp) emits, once
- * `cst-materialize.ts` has sliced token text and trivia from the source.
- * The serializer writes every node's slots in lexical order, which the gap
- * detector relies on; walks take that order from `CST_SLOTS`, not key order.
- * Every node kind at the pinned Luau version is modelled; a slot is never
- * named `type`, which is the kind.
- */
-
 import assert from "node:assert/strict";
 
 import type {

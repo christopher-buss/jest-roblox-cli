@@ -221,12 +221,6 @@ function readRojoContext({
 	return { check, config, fileSystem, read: readOnce(read), tsconfigReader };
 }
 
-/**
- * Not `path.isAbsolute`: it answers for the host OS, not the root's spelling.
- *
- * @param luauRoots - Canonical roots to check.
- * @throws {Error} When a root is absolute.
- */
 function validateRelativeRoots(luauRoots: ReadonlyArray<PosixRoot>): void {
 	for (const root of luauRoots) {
 		if (isAbsolutePath(root)) {

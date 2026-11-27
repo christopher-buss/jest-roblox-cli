@@ -37,13 +37,6 @@ function narrowLuauRoots(
 	});
 }
 
-/**
- * A volume holding prod `.luau` files under the mount, keyed by mount-relative
- * path.
- *
- * @param relativePaths - The files the walk should find.
- * @returns The memory filesystem holding the files.
- */
 function seed(...relativePaths: Array<string>): FileSystem {
 	return createMemoryFileSystem(
 		Object.fromEntries(relativePaths.map((entry) => [entry, "return nil\n"])),
@@ -51,11 +44,6 @@ function seed(...relativePaths: Array<string>): FileSystem {
 	).fileSystem;
 }
 
-/**
- * A universe that probes exactly the listed mount-relative paths.
- * @param probed - Mount-relative paths the universe includes.
- * @returns A universe that includes only those paths.
- */
 function universeOf(...probed: Array<string>): InstrumentUniverse {
 	const absolute = new Set(probed.map((entry) => `${MOUNT}/${entry}`));
 	return { digest: "test", includes: (luauPath) => absolute.has(luauPath) };

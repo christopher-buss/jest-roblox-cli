@@ -139,12 +139,6 @@ function isLuauCompileResult(value: JSONValue): value is JSONValue & LuauCompile
 		: value["ok"] === false && isCompileError(value["error"]);
 }
 
-/**
- * Decode compiler payloads through the supplied runtime.
- *
- * @param runtime - The compiler backend for this instance.
- * @returns An independent compiler over the backend.
- */
 function createLuauCompiler(runtime: CompilerWasmRuntime): LuauCompiler {
 	return {
 		compile(source, { bytecodeText = false, debugLevel, optimizationLevel }) {

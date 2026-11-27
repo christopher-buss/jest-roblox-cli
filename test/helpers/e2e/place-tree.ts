@@ -7,18 +7,8 @@ export interface PlaceNode {
 	instanceClass: string;
 }
 
-/**
- * An item's opening tag, its closing tag, or the `Name` property that names it.
- * Rojo writes an item's properties before its child items, so the first `Name`
- * after an open belongs to the item that opened; matching the property name
- * literally keeps every other string property out, whatever order the
- * serializer put them in.
- */
 const ITEM_TOKEN = /<Item\s+class="([^"]+)"[^>]*>|<\/Item>|<string name="Name">([^<]*)</g;
 
-/**
- * The synthetic root the walk starts at, which carries no `Name` of its own.
- */
 const ROOT_NAME = "the place";
 
 /**

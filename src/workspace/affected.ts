@@ -45,14 +45,6 @@ function resolvePosixShim({
 	return fileSystem.existsSync(candidate) ? candidate : command;
 }
 
-/**
- * Args rely on `validRefPattern` to keep `"` out. Keep `command` unquoted: a
- * quoted name breaks `%~dp0` in npm `.cmd` shims.
- *
- * @param command - Bare tool name, `turbo` or `nx`.
- * @param args - Tool arguments, each quoted.
- * @returns The cmd.exe argument list.
- */
 function buildCommandExeArgs(command: string, args: Array<string>): Array<string> {
 	const quotedArgs = args.map((argument) => `"${argument}"`).join(" ");
 	return ["/d", "/s", "/c", `"${command} ${quotedArgs}"`];
@@ -143,13 +135,6 @@ function toToolError(command: string, err: unknown): Error {
 	return new Error(message, { cause: err });
 }
 
-/**
- * Windows goes through cmd.exe: `shell: true` with args trips Node DEP0190,
- * and spawning a `.cmd` directly trips the CVE-2024-27980 guard (EINVAL).
- *
- * @param invocation - Tool, arguments, working directory and process seams.
- * @returns The tool's stdout.
- */
 function runTool({
 	args,
 	childProcess,

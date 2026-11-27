@@ -99,10 +99,6 @@ function textReportOutput(mapped: MappedCoverageResult): string {
 	return write.mock.calls.map((call) => String(call[0])).join("");
 }
 
-/**
- * One file at 100%, one below, for testing skipFull behavior.
- * @returns The two-file result.
- */
 function createMixedCoverageResult(): MappedCoverageResult {
 	return createResult({
 		"src/shared/inventory.ts": inventoryFile({
@@ -698,10 +694,6 @@ describe(generateReports, () => {
 	});
 
 	describe("agent text-table filtering", () => {
-		/**
-		 * Two universe files, each 2/3 statements covered (the default fixture).
-		 * @returns The two-file result.
-		 */
 		function twoFileUniverse(): MappedCoverageResult {
 			return createResult({
 				"src/shared/enemy.ts": createMappedFile({

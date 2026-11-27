@@ -9,13 +9,6 @@ import {
 	type MaterializerInput,
 } from "#src/runner-payload/materializer-script.ts";
 
-/**
- * The materializer payload is built once per workspace run and grows with the
- * package count. This bench guards the JSON substitution against regressions
- * as the workspace scales.
- * @param packageCount - Number of packages.
- * @returns Synthetic materializer inputs.
- */
 function materializerInputs(packageCount: number): Array<MaterializerInput> {
 	return Array.from({ length: packageCount }, (_unused, index) => {
 		const packageName = `@scope/pkg-${String(index)}`;

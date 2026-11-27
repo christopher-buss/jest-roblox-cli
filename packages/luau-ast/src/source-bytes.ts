@@ -117,28 +117,11 @@ export function indexSourceBytes(source: string): SourceBytes {
 	};
 }
 
-/**
- * The one place the brand is applied, so {@link indexSourceBytes} is its only
- * source. A tag exists only in the type system, so an assertion is how one is
- * ever attached.
- *
- * @param column - A column already counted in UTF-16 units.
- * @returns The same column, tagged.
- */
 function asUtf16Column(column: number): Utf16Column {
 	// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- see above
 	return column as Utf16Column;
 }
 
-/**
- * A byte-column-to-UTF-16-column converter over the lines `readLine` returns.
- * Each line's converter is built on first use and only where the two units
- * disagree: a source is overwhelmingly ASCII, and a caller converting columns
- * walks a handful of lines rather than the whole file.
- *
- * @param readLine - Reads a 1-based line's text, trailing newline and all.
- * @returns A function resolving byte columns to UTF-16 columns.
- */
 function createColumnConverter(
 	readLine: (line: number) => string,
 ): (line: number, column: number) => Utf16Column {
@@ -154,11 +137,6 @@ function createColumnConverter(
 		}
 
 		const offsets = createUtf8OffsetMap(text);
-		/**
-		 * Both columns count from 1 and the offset map from 0.
-		 * @param column - The one-based UTF-8 byte column.
-		 * @returns The corresponding one-based UTF-16 column.
-		 */
 		return (column) => asUtf16Column(offsets.toUtf16(column - 1) + 1);
 	}
 
@@ -173,13 +151,6 @@ function createColumnConverter(
 	};
 }
 
-/**
- * Decode the bytes of `buffer` the range covers as text.
- *
- * @param buffer - The UTF-8 encoded source.
- * @param range - The bytes to decode.
- * @returns The decoded text.
- */
 function decode(buffer: Buffer, range: ByteRange): string {
 	return buffer.subarray(range.start, range.end).toString("utf-8");
 }
@@ -218,14 +189,6 @@ function createUtf16Conversion({
 	};
 }
 
-/**
- * Byte offsets index the string directly when the source is ASCII, which
- * spares a decode per slice.
- *
- * @param buffer - The UTF-8 encoded source.
- * @param source - The source text.
- * @returns The slicer for {@link SourceBytes.slice}.
- */
 function createSlicer(buffer: Buffer, source: string): SourceBytes["slice"] {
 	if (buffer.length === source.length) {
 		return (start, end) => source.slice(start, end);
@@ -234,13 +197,6 @@ function createSlicer(buffer: Buffer, source: string): SourceBytes["slice"] {
 	return (start, end) => decode(buffer, { end, start });
 }
 
-/**
- * Resolve a parser span against the line the offsets come from.
- *
- * @param span - The span to resolve, 1-based with an exclusive end column.
- * @param lineStartOffset - See {@link SourceBytes.lineStartOffset}.
- * @returns The byte range the span covers.
- */
 function spanToByteRange(span: LuauSpan, lineStartOffset: (line: number) => number): ByteRange {
 	return {
 		end: lineStartOffset(span.endLine) + span.endColumn - 1,
@@ -248,12 +204,6 @@ function spanToByteRange(span: LuauSpan, lineStartOffset: (line: number) => numb
 	};
 }
 
-/**
- * Scan `buffer` for the byte offset each 1-based line starts at.
- *
- * @param buffer - The UTF-8 encoded source.
- * @returns One start offset per line, in line order.
- */
 function scanLineStarts(buffer: Buffer): Array<number> {
 	const lineStarts = [0];
 	let newlineOffset = buffer.indexOf(BYTE_LINE_FEED);
@@ -265,15 +215,6 @@ function scanLineStarts(buffer: Buffer): Array<number> {
 	return lineStarts;
 }
 
-/**
- * The 1-based line a byte offset sits on: the last line starting at or before
- * it. Binary search, because a caller resolving a span walks no lines at all
- * and the file may hold thousands.
- *
- * @param offset - The 0-based byte offset.
- * @param lineStarts - One start offset per line, in line order.
- * @returns The 1-based line.
- */
 function lineAt(offset: number, lineStarts: Array<number>): number {
 	let low = 0;
 	let high = lineStarts.length - 1;
@@ -291,13 +232,6 @@ function lineAt(offset: number, lineStarts: Array<number>): number {
 	return low + 1;
 }
 
-/**
- * The 1-based line and 1-based byte column a byte offset sits at.
- *
- * @param offset - The 0-based byte offset.
- * @param lineStarts - One start offset per line, in line order.
- * @returns The one-based source coordinates.
- */
 function positionAt(offset: number, lineStarts: Array<number>): { column: number; line: number } {
 	const line = lineAt(offset, lineStarts);
 	const start = lineStarts[line - 1];
@@ -306,13 +240,6 @@ function positionAt(offset: number, lineStarts: Array<number>): { column: number
 	return { column: offset - start + 1, line };
 }
 
-/**
- * Resolve a byte range back to the span it covers.
- *
- * @param range - The byte range to restate.
- * @param lineStarts - One start offset per line, in line order.
- * @returns The span the range covers.
- */
 function byteRangeToSpan(range: ByteRange, lineStarts: Array<number>): LuauSpan {
 	const begin = positionAt(range.start, lineStarts);
 	const end = positionAt(range.end, lineStarts);

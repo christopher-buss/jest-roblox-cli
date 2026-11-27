@@ -68,14 +68,6 @@ function readRojoProjectJson(volume: MemoryVolume): JSONValue {
 	return parsed;
 }
 
-/**
- * Walks a nested plain-object tree by key, so a test can reach into a parsed
- * rojo project without asserting a shape onto it. Lives at module scope; the
- * per-key guard would otherwise be a conditional inside a test body.
- * @param source - Parsed tree to walk.
- * @param keys - Property names, outermost first.
- * @returns The value at the path, or `undefined` when a level is missing.
- */
 function readNestedProperty(source: JSONValue, ...keys: Array<string>): JSONValue | undefined {
 	let current: JSONValue | undefined = source;
 	for (const key of keys) {
@@ -89,7 +81,6 @@ function readNestedProperty(source: JSONValue, ...keys: Array<string>): JSONValu
 	return current;
 }
 
-/** What every case that never reaches the tsconfig fallback hands in. */
 const noTsconfig = readingOutDirectory();
 
 type ExecCallback = (cause: Error | null, stdout: string, stderr: string) => void;
@@ -169,11 +160,6 @@ async function prepareSeededAsync() {
 	return { ...mocks, fileSystem, result, volume };
 }
 
-/**
- * A bake that owns nothing, for a test that only cares what the hook does.
- * @param run - What the bake does when the run invokes it.
- * @returns A bake that claims no shadow entry.
- */
 function makeBake(run: ShadowBake["run"]): ShadowBake {
 	return { isBakeOwned: () => false, run, stubMounts: () => [] };
 }
@@ -186,15 +172,6 @@ const writtenManifestSchema = type({
 	"version": "number",
 }).as<WrittenManifest>();
 
-/**
- * The fields of the coverage manifest a run published that these specs read.
- *
- * @param volume - Where the run wrote it.
- * @param filePath - Where the manifest sits on the volume.
- * @returns The manifest, checked only for the fields `WrittenManifest` names.
- * @throws When the file is not JSON, lacks one of those fields, or carries
- *   another manifest version.
- */
 function readCoverageManifestFile(volume: MemoryVolume, filePath: string): WrittenManifest {
 	const manifest = writtenManifestSchema.assert(
 		JSON.parse(volume.readFileSync(filePath, "utf-8").toString()),
@@ -1131,13 +1108,6 @@ describe(prepareCoverageAsync, () => {
 			expect(volume.existsSync(`.jest-roblox/coverage/${UNCOVERED_FILE}`)).toBeTrue();
 		});
 
-		/**
-		 * Two mounted roots where the universe reaches only the first. Written
-		 * from `rootDir: "."` so the rewritten project's `$path` entries are
-		 * comparable: a redirected mount is a sibling of the project file, an
-		 * untouched one is two levels up.
-		 * @returns The seeded file system, volume and mocks.
-		 */
 		async function seedTwoRootsAsync() {
 			const { fileSystem, volume } = createMemoryFileSystem();
 
@@ -3505,11 +3475,6 @@ describe(toCoverageArtifacts, () => {
 });
 
 describe("narrowing to the coverage universe", () => {
-	/**
-	 * A mount whose probes all sit in one subtree, with unprobed siblings
-	 * either side and a loose file the mount itself owns.
-	 * @param volume - Volume the mount is written to.
-	 */
 	function seedNarrowableRoot(volume: MemoryVolume): void {
 		// Rooted at the invocation directory, which is what `rootDir` is in a
 		// real single-mode run: the mount the demote rewrites has to resolve to
@@ -3732,16 +3697,11 @@ describe("when hashing the rojo build inputs", () => {
 });
 
 describe("when a run bakes generated jest.config stubs into the shadow", () => {
-	/** One rojo mount per project, by the directory each one covers. */
 	const mounts = {
 		server: "game.ServerScriptService",
 		shared: "game.ReplicatedStorage",
 	};
 
-	/**
-	 * Two rojo mounts under one coverage root, neither with a user config.
-	 * @param volume - Volume the mounts are written to.
-	 */
 	function seedMultiMountRoot(volume: MemoryVolume): void {
 		// Rooted at the invocation directory, which is what `rootDir` is in a
 		// real single-mode run: the mounts the stubs are keyed on have to
@@ -3804,13 +3764,6 @@ describe("when a run bakes generated jest.config stubs into the shadow", () => {
 	const sharedStub = ".jest-roblox/coverage/out/shared/jest.config.luau";
 	const absentStub = ".jest-roblox/coverage/out/absent/jest.config.luau";
 
-	/**
-	 * A `rmSync` that refuses one path and passes everything else through, for
-	 * the entry a real shadow loses to a lock or a permission.
-	 * @param volume - Volume removals pass through to.
-	 * @param suffix - Path suffix whose removal throws.
-	 * @returns The `rmSync` stand-in.
-	 */
 	function refuseRemovalOf(volume: MemoryVolume, suffix: string): FileSystem["rmSync"] {
 		return fromAny((target: string, options: object) => {
 			if (posixPath(target).endsWith(suffix)) {

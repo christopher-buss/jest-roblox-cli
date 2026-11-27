@@ -16,7 +16,6 @@ import {
 
 const EXPECTED_VERSION = 6;
 
-/** Short windows: every wait here is one the test means to run out. */
 const REQUEST = { connectTimeoutMs: 40, expectedVersion: EXPECTED_VERSION, graceMs: 10 };
 
 function useFakeTimers(onTestFinished: TestContext["onTestFinished"]): void {
@@ -35,11 +34,6 @@ function makePool(onTestFinished: TestContext["onTestFinished"]): {
 	return { pool: new PluginConnectionPool(fromPartial<WebSocketServer>(wss)), wss };
 }
 
-/**
- * Connect without announcing: every plugin predating the handshake.
- * @param wss - Server the socket connects to.
- * @returns The connected socket.
- */
 function connectSilent(wss: MockWebSocketServer): MockWebSocket {
 	const socket = new MockWebSocket();
 	wss.emit("connection", socket);
@@ -59,12 +53,6 @@ async function afterAsync<T>(ms: number, promise: Promise<T>): Promise<T> {
 	return promise;
 }
 
-/**
- * Connect a socket and let it announce itself, the way a real plugin does.
- * @param wss - Server the socket connects to.
- * @param hello - Fields that override the default announcement.
- * @returns The connected socket.
- */
 function connectPlugin(
 	wss: MockWebSocketServer,
 	hello: Record<string, unknown> = {},

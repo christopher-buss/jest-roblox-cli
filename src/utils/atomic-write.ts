@@ -77,12 +77,6 @@ function isNoSuchProcessError(err: unknown): boolean {
 	return err instanceof Error && "code" in err && err.code === "ESRCH";
 }
 
-/**
- * The lock-free sweep is safe only while this errs towards alive.
- *
- * @param pid - The owner pid read off a temp file's name.
- * @returns False only when the pid names no process.
- */
 function isProcessAlive(pid: number): boolean {
 	try {
 		process.kill(pid, 0);

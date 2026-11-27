@@ -9,7 +9,7 @@ import {
 
 import { describe, it, vi } from "vitest";
 
-import { createMemoryStoreJanitor, type MemoryStoreJanitor } from "./memory-store-janitor.ts";
+import { MemoryStoreJanitor } from "./memory-store-janitor.ts";
 
 interface SortedMapItemBody {
 	id: string;
@@ -29,7 +29,7 @@ function makeJanitor(
 		sleep?: FakeSleep;
 	} = {},
 ): MemoryStoreJanitor {
-	return createMemoryStoreJanitor({
+	return new MemoryStoreJanitor({
 		apiKey: "test-key",
 		claimWindowSeconds: 45,
 		httpClient,

@@ -36,10 +36,6 @@ interface InstrumentRootOptions {
 }
 
 interface ShadowPathContext {
-	/**
-	 * Scoped to one `instrumentRoot` call: it must not outlive its
-	 * `shadowDir`.
-	 */
 	createdDirectories: Set<string>;
 	shadowDir: string;
 }
@@ -105,13 +101,6 @@ function ensureShadowDirectory({
 	createdDirectories.add(directory);
 }
 
-/**
- * `prepareShadowRoot` instruments before it mirrors, so no level is judged
- * yet.
- *
- * @param options - Shadow directory, cache, relative and twin paths, and file
- * system.
- */
 function prepareTwinPath({
 	createdDirectories,
 	fileSystem,

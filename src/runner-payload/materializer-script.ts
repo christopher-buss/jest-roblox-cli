@@ -106,12 +106,6 @@ export function generateWorkStealingScript(options: WorkStealingOptions): string
 	return substitutePayload(payload);
 }
 
-/**
- * Omit unset fields so the payload stays cache-comparable without `bail`.
- *
- * @param options - Script options holding the bail settings.
- * @returns The bail payload fields, empty without `bail`.
- */
 function bailFields(options: ScriptOptions): Pick<MaterializerPayload, "bail" | "bailMapId"> {
 	if (options.bail !== true) {
 		return {};

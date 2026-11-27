@@ -12,17 +12,6 @@ import {
 	resolvePackages,
 } from "./package-resolver.ts";
 
-/**
- * Resolve one name, for the cases that only ask about one.
- *
- * @param options - The case to resolve.
- * @param options.fileSystem - The volume to resolve against.
- * @param options.name - The package to find.
- * @param options.patterns - `workspace.packages` globs, when the case declares
- *   any.
- * @param options.workspaceRoot - Where the workspace starts.
- * @returns The one package the name resolves to.
- */
 function resolveOne({
 	name,
 	fileSystem,

@@ -34,9 +34,6 @@ import type { WorkspaceRunnerOutput } from "./typecheck-pass.ts";
 const ROOT = path.resolve("/repo");
 const CONFIG_ROOT = path.resolve("/ws");
 
-/**
- * Every package name the specs below select, as the resolver would report.
- */
 const WORKSPACE_PACKAGES = ["@halcyon/bar", "@halcyon/foo", "a", "foo"];
 
 const CREDENTIAL_SUFFIXES = ["OPEN_CLOUD_API_KEY", "PLACE_ID", "UNIVERSE_ID"];
@@ -162,12 +159,6 @@ function toStdoutText(chunk: Parameters<typeof process.stdout.write>[0]): string
 	return typeof chunk === "string" ? chunk : String(chunk);
 }
 
-/**
- * Per-package `color`, disagreeing across packages to trip consensus.
- *
- * @param cwd - Package directory the config loads from.
- * @returns A `color` that is `true` only for the `foo` package.
- */
 function colorForPackageDirectory(cwd: string | undefined) {
 	return { color: cwd!.endsWith("foo") };
 }
@@ -201,14 +192,6 @@ interface SinglePackageRun {
 	workspace?: WorkspaceLayoutInput["workspace"];
 }
 
-/**
- * Stages that replay one runner output. The run has runtime jobs exactly when
- * the runner asked for a backend, and dispatch records the backend the
- * pipeline opened.
- * @param options - Options the layout built the stages with.
- * @param fake - Fake runner to replay, and the list each opened backend joins.
- * @returns Stages that replay the runner output.
- */
 function fakeStages(
 	options: RunWorkspaceOptions,
 	{ opened, runner }: { opened: Array<Backend>; runner: FakeRunner },

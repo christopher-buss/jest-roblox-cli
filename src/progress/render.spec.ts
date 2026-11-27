@@ -4,9 +4,7 @@ import { createPlainStyles } from "#test/helpers/unit/format-plain-styles.ts";
 import { formatStage } from "./render.ts";
 
 const PLAIN = createPlainStyles();
-/** The append-only shape: no spinner, so no frame. */
 const AS_LINE = { frame: undefined, styles: PLAIN };
-/** The repainting shape, mid-animation. */
 const AS_ROW = { frame: "⠹", styles: PLAIN };
 
 describe(formatStage, () => {

@@ -33,7 +33,6 @@ export type TypecheckGroupPolicy = Pick<
 	"ignoreSourceErrors" | "spawnTimeout" | "timeout"
 >;
 
-/** Runs one Type Test pass over a collapsed group. */
 type RunTypecheckGroup = (group: TypecheckGroupEntry) => Promise<JestResult>;
 
 interface GroupAccumulator {
@@ -146,14 +145,6 @@ async function groupTypecheckPassesAsync(
 	return mergeJestResults(results);
 }
 
-/**
- * Time a grouped Type Test pass; a plain clock, as the collector's LIFO stack
- * is not concurrency-safe.
- * @param entries - The Type Test entries to group.
- * @param run - Runs one group.
- * @returns The merged result and the elapsed wall-clock.
- * @rejects Whatever `run` rejects with.
- */
 async function runTypecheckPassAsync(
 	entries: ReadonlyArray<TypecheckGroupEntry>,
 	run: RunTypecheckGroup,

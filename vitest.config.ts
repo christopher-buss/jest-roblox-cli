@@ -32,23 +32,8 @@ const luauPlugin = {
 
 const setupFiles = ["./test/setup/enable-colors.ts"];
 
-/**
- * The one boundary that decides which project an e2e spec joins. Specs under
- * here reach real Open Cloud and run in `live`; every other spec under
- * `test/e2e/` is deterministic and runs in `e2e`. Declared once and used by
- * both projects so the two globs cannot drift apart.
- */
 const LIVE_DIRECTORY = "test/e2e/live";
 
-/**
- * The fixture sandbox root (see `test/helpers/integration/sandbox-root.ts`)
- * holds copies of Roblox fixtures, spec files included, and an interrupted run
- * leaves one behind. Every project that can glob into it subtracts it.
- *
- * Two patterns, because they do different jobs: the deep form is what stops a
- * file being collected, and the bare directory form is what makes the walker
- * skip the subtree instead of testing every file inside it.
- */
 const SANDBOX_EXCLUDE = ["**/.tmp", "**/.tmp/**"];
 
 // Fixture configs import `@isentinel/jest-roblox`, so no broad `source`
@@ -59,13 +44,6 @@ export const baseConfig: ViteUserConfig = { ...sharedConfig, environments: {} };
 // `ts/no-unsafe-type-assertion` forbids casting.
 const requireFromConfig = createRequire(import.meta.url);
 
-/**
- * Digs `exports[<subpath>].source` out of a package.json, narrowing as it
- * goes.
- * @param packageJsonPath - Absolute path of a package manifest.
- * @param subpath - Export subpath.
- * @returns The `source` entry, or `undefined`.
- */
 function readSourceEntry(packageJsonPath: string, subpath: string): string | undefined {
 	const parsed = JSON.parse(readFileSync(packageJsonPath, "utf-8"));
 	if (typeof parsed !== "object" || parsed === null || !("exports" in parsed)) {
@@ -94,11 +72,6 @@ function readSourceEntry(packageJsonPath: string, subpath: string): string | und
 	return typeof subpathExport["source"] === "string" ? subpathExport["source"] : undefined;
 }
 
-/**
- * Reads the export subpaths a package.json declares.
- * @param packageJsonPath - Absolute path of a package manifest.
- * @returns Keys of the manifest `exports` map.
- */
 function readExportSubpaths(packageJsonPath: string): Array<string> {
 	const parsed = JSON.parse(readFileSync(packageJsonPath, "utf-8"));
 	if (typeof parsed !== "object" || parsed === null || !("exports" in parsed)) {
@@ -113,12 +86,6 @@ function readExportSubpaths(packageJsonPath: string): Array<string> {
 	return Object.keys(exportsField);
 }
 
-/**
- * One alias per source-conditioned export subpath, longest specifier first so
- * `<pkg>/parser` wins over the bare `<pkg>` prefix.
- * @param packageName - Package to alias.
- * @returns Aliases from specifier to source entry.
- */
 function sourceAliases(packageName: string) {
 	const packageJsonPath = requireFromConfig.resolve(`${packageName}/package.json`);
 	const aliases: Array<{ find: string; replacement: string }> = [];
@@ -151,24 +118,6 @@ const workspaceSourceAliases = [
 	...sourceAliases("@isentinel/roblox-runner"),
 ];
 
-/**
- * The `config`/`executor` integration tests load a `jest.config.ts` fixture
- * through the real config loader (c12 → jiti). The fixture imports
- * `@isentinel/jest-roblox`, and that load happens inside jiti's own resolver
- * (not Vitest's module graph), so the `resolve.alias` above does not reach it
- * and plain resolution lands on `dist/index.mjs`, forcing a prior `build`.
- * Point jiti at the package's own `source` export via its `JITI_ALIAS` env
- * contract so the fixture load resolves to source, keeping `test` build-free.
- *
- * These tests live in a dedicated `integration` project run WITHOUT coverage,
- * kept out of the coverage-measured `unit` project on purpose: jiti executes
- * the package's real source files in-process, and `@vitest/coverage-v8`'s
- * process-wide V8 data then attributes jiti's import-only execution (module
- * top level ran, but the functions were never called) to those same `src`
- * files, shadowing the genuine `unit` coverage down from 100%. A separate
- * no-coverage run sidesteps the collision entirely.
- * @returns Absolute path of this package's `source` entry.
- */
 function selfSourceEntry(): string {
 	const sourceEntry = readSourceEntry(resolve(import.meta.dirname, "package.json"), ".");
 	if (sourceEntry === undefined) {

@@ -114,10 +114,6 @@ export function handlePoll({ response, state, url }: TaskRequest): void {
 	response.end(JSON.stringify(buildCompletedTaskBody({ queuedTask, taskPath })));
 }
 
-/**
- * Register a task under a fresh path and answer the submit with it.
- * @param options - Task to register, response and fake state.
- */
 function acceptTask({
 	queuedTask,
 	response,
@@ -161,13 +157,6 @@ function rejectConfiguredSubmission(state: FakeOpenCloudState, response: ServerR
 const WORKSPACE_JOB_PATTERN = /"runnerJobIndex":(\d+)\},"pkg":"([^"]*)","project":"([^"]*)"/g;
 const FIRST_JOB_PATTERN = /"runnerJobIndex":(\d+)/;
 
-/**
- * The job index a submitted script gives the task's package and project, or
- * its first job's index when the task names no package.
- * @param script - The submitted script.
- * @param queuedTask - Task whose package and project to look up.
- * @returns The job index, or 0 when the script names none.
- */
 function scriptJobIndex(script: string, { pkg, project }: FakeOpenCloudTask): number {
 	for (const match of script.matchAll(WORKSPACE_JOB_PATTERN)) {
 		if (match[2] === pkg && (project === undefined || match[3] === project)) {
@@ -202,11 +191,6 @@ function acceptQueuedTask({
 	});
 }
 
-/**
- * The auto-wrapped envelope entry returned when no `rawOutput` is supplied.
- * @param queuedTask - Task whose fields fill the entry.
- * @returns Serialized envelope.
- */
 function buildJestEnvelope(queuedTask: FakeOpenCloudTask): string {
 	return JSON.stringify({
 		entries: [

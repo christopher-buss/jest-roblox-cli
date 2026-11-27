@@ -35,13 +35,11 @@ export interface MaterializeOptions {
 	source: string;
 }
 
-/** A token with the byte range its text came from, in source order. */
 interface PlacedToken {
 	range: ByteRange;
 	token: Token;
 }
 
-/** What one materialization pass needs from the source. */
 interface Slicer {
 	bytes: SourceBytes;
 	placed: Array<PlacedToken>;
@@ -49,7 +47,6 @@ interface Slicer {
 
 interface ScannedTrivia {
 	items: Array<Trivia>;
-	/** The first run of bytes that is neither whitespace nor a comment. */
 	offending?: string;
 }
 
@@ -93,11 +90,6 @@ export function materializeCst(options: MaterializeOptions): CstParseResult {
 	return { ok: true, root };
 }
 
-/**
- * The serializer only emits four-number arrays as positions.
- * @param value - The value reached in the parsed tree.
- * @returns Whether the value is the serializer's position tuple.
- */
 function isPosition(value: JSONValue): value is Position {
 	return (
 		Array.isArray(value) &&
@@ -106,11 +98,6 @@ function isPosition(value: JSONValue): value is Position {
 	);
 }
 
-/**
- * The serializer's 0-based position to the workspace's 1-based span.
- * @param position - The serializer's four zero-based coordinates.
- * @returns The corresponding one-based, exclusive-end source span.
- */
 function toSpan(position: Position): LuauSpan {
 	return {
 		beginColumn: position[1] + 1,
@@ -120,14 +107,6 @@ function toSpan(position: Position): LuauSpan {
 	};
 }
 
-/**
- * Rebuild the parsed JSON in place: a position under `location` becomes a
- * span, any other position becomes a token, and containers recurse in slot
- * order so the tokens land in `placed` in source order.
- * @param value - The value reached in the parsed tree.
- * @param options - The slot name and source materialization state.
- * @returns The original container with positions replaced by spans or tokens.
- */
 function materializeInPlace(
 	value: JSONValue,
 	{ key, slicer }: { key: string | undefined; slicer: Slicer },
@@ -165,12 +144,6 @@ function materializeInPlace(
 	return value;
 }
 
-/**
- * Lute's rule: everything up to and including the first newline trails the
- * previous token.
- * @param items - The trivia between the two surrounding tokens.
- * @param options - The traversal state and surrounding node context.
- */
 function splitTrivia(
 	items: Array<Trivia>,
 	{ previous, token }: { previous: Token | undefined; token: Token },
@@ -203,14 +176,6 @@ function describeToken(placed: PlacedToken | undefined, bytes: SourceBytes): str
 	return `token ${JSON.stringify(placed.token.text)} at ${String(origin.beginLine)}:${String(origin.beginColumn)}`;
 }
 
-/**
- * Slice every inter-token gap into trivia and hand it to the tokens on
- * either side.
- *
- * @param placed - The tokens in their original source order.
- * @param bytes - The indexed source used to resolve byte locations.
- * @returns The first defect found, if any.
- */
 function attachTrivia(placed: Array<PlacedToken>, bytes: SourceBytes): string | undefined {
 	let previous: PlacedToken | undefined;
 	let previousEnd = 0;
@@ -235,19 +200,9 @@ function attachTrivia(placed: Array<PlacedToken>, bytes: SourceBytes): string | 
 }
 
 const BLOCK_COMMENT_OPEN = /--\[(=*)\[/y;
-/**
- * A whitespace run stops after a newline: that is where the trivia split
- * falls.
- */
 const WHITESPACE = /[ \t\r\f\v]*\n|[ \t\r\f\v]+/y;
 const TRIVIA_START = /[ \t\r\n\f\v]|--/g;
 
-/**
- * The comment at `cursor`, or `undefined` for an unterminated block.
- * @param gap - The source text between consecutive tokens.
- * @param cursor - The zero-based string offset to scan.
- * @returns The complete comment, or undefined for an unterminated block.
- */
 function scanComment(gap: string, cursor: number): Trivia | undefined {
 	BLOCK_COMMENT_OPEN.lastIndex = cursor;
 	const block = BLOCK_COMMENT_OPEN.exec(gap);
@@ -266,24 +221,12 @@ function scanComment(gap: string, cursor: number): Trivia | undefined {
 	return { kind: "blockComment", text: gap.slice(cursor, closeIndex + close.length) };
 }
 
-/**
- * The whitespace at `cursor`, or `undefined` when there is none.
- * @param gap - The source text between consecutive tokens.
- * @param cursor - The zero-based string offset to scan.
- * @returns The whitespace run, or undefined when none begins here.
- */
 function scanWhitespace(gap: string, cursor: number): Trivia | undefined {
 	WHITESPACE.lastIndex = cursor;
 	const text = WHITESPACE.exec(gap)?.[0];
 	return text === undefined ? undefined : { kind: "whitespace", text };
 }
 
-/**
- * Split a gap into trivia items.
- *
- * @param gap - The bytes between two tokens.
- * @returns The items, and the first offending run if the gap is not all trivia.
- */
 function scanTrivia(gap: string): ScannedTrivia {
 	const items: Array<Trivia> = [];
 	let cursor = 0;

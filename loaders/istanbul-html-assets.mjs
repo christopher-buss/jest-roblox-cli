@@ -17,11 +17,6 @@ import path from "node:path";
  */
 export const ISTANBUL_HTML_ASSETS_ID = "virtual:istanbul-html-assets";
 
-/**
- * Asset directories per reporter, in the order istanbul reads them. `html`
- * flattens `vendor/` into the report directory alongside the rest, so the two
- * are one list here as well.
- */
 const ASSET_DIRECTORIES = {
 	"html": ["lib/html/assets", "lib/html/assets/vendor"],
 	"html-spa": ["lib/html-spa/assets"],

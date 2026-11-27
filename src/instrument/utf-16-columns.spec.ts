@@ -17,11 +17,6 @@ function emptyResult(): CollectorResult<LuauSpan> {
 	};
 }
 
-/**
- * A span within one line. Every source under test here is one statement.
- * @param options - Begin and end columns.
- * @returns Single-line span.
- */
 function span({ beginColumn, endColumn }: { beginColumn: number; endColumn: number }): LuauSpan {
 	return { beginColumn, beginLine: 1, endColumn, endLine: 1 };
 }

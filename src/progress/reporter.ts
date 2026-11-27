@@ -45,9 +45,6 @@ class RunProgressReporter implements RunProgress {
 	private frameIndex = 0;
 	private isRevealed = false;
 	private isSettled = false;
-	/**
-	 * Not the record count: a stage is recorded before the repaint draws it.
-	 */
 	private paintedRows = 0;
 	private styles!: Styles;
 	private timer: NodeJS.Timeout | undefined;
@@ -159,11 +156,6 @@ class RunProgressReporter implements RunProgress {
 		return `${detail.slice(0, this.maxDetailWidth - 1)}…`;
 	}
 
-	/**
-	 * Assumes one line per row; `clampDetail` keeps rows from wrapping.
-	 *
-	 * @returns The ANSI erase sequence, or an empty string when nothing is drawn.
-	 */
 	private eraseBlock(): string {
 		if (this.paintedRows === 0) {
 			return "";
